@@ -19,6 +19,7 @@
 
 #include "storage/BlockFileStore.hpp"
 #include "storage/BlockchainStorageReader.hpp"
+#include "storage/BlockSnapshotHeader.hpp"
 #include "storage/BlockStorageIndex.hpp"
 #include "storage/ChainManifest.hpp"
 
@@ -51,6 +52,7 @@ int runBlockchainFoundationDemo() {
     using nodo::storage::BlockchainStorageReader;
     using nodo::storage::BlockchainStorageReadReport;
     using nodo::storage::StoredBlockSnapshot;
+    using nodo::storage::BlockSnapshotHeader;
     using nodo::storage::BlockStorageIndex;
     using nodo::storage::ChainManifest;
 
@@ -812,6 +814,56 @@ int runBlockchainFoundationDemo() {
         return 1;
     }
 
+    /*
+     * Block snapshot header parser foundation.
+     *
+     * This parses persisted block headers, validates their stored hashes, and
+     * verifies previous-hash continuity without deserializing full blocks yet.
+     */
+    std::vector<BlockSnapshotHeader> parsedSnapshotHeaders;
+
+    bool snapshotHeadersMatchStorageIndex = true;
+
+    for (std::size_t i = 0; i < storedSnapshots.size(); ++i) {
+        BlockSnapshotHeader parsedHeader =
+            BlockSnapshotHeader::fromFile(storedSnapshots[i].filePath());
+
+        if (parsedHeader.blockIndex() != storedSnapshots[i].blockIndex() ||
+            parsedHeader.blockHash() != storedSnapshots[i].blockHash()) {
+            snapshotHeadersMatchStorageIndex = false;
+        }
+
+        parsedSnapshotHeaders.push_back(parsedHeader);
+    }
+
+    const bool snapshotHeaderSequenceValid =
+        BlockSnapshotHeader::validateHeaderSequence(parsedSnapshotHeaders);
+
+    std::cout << "\nBlock snapshot header parser preview:\n";
+    std::cout << "Snapshot header sequence: "
+              << (snapshotHeaderSequenceValid ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Snapshot headers match storage index: "
+              << (snapshotHeadersMatchStorageIndex ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Parsed snapshot header count: "
+              << parsedSnapshotHeaders.size()
+              << "\n";
+    std::cout << "Genesis snapshot header hash: "
+              << (parsedSnapshotHeaders.empty() ? "" : parsedSnapshotHeaders.front().blockHash())
+              << "\n";
+    std::cout << "Latest snapshot previous hash: "
+              << (parsedSnapshotHeaders.empty() ? "" : parsedSnapshotHeaders.back().previousHash())
+              << "\n";
+    std::cout << "Latest snapshot header hash: "
+              << (parsedSnapshotHeaders.empty() ? "" : parsedSnapshotHeaders.back().blockHash())
+              << "\n";
+
+    if (!snapshotHeaderSequenceValid || !snapshotHeadersMatchStorageIndex) {
+        std::cerr << "Fatal: block snapshot header parser validation failed.\n";
+        return 1;
+    }
+
     char hashOutput[65] = {0};
     nodo_hash_string(genesisMint.serialize().c_str(), hashOutput, sizeof(hashOutput));
 
@@ -821,7 +873,7 @@ int runBlockchainFoundationDemo() {
     std::cout << "\nBlockchain preview:\n";
     std::cout << blockchain.serialize() << "\n";
 
-    std::cout << "\nNodo blockchain storage reader executed successfully.\n";
+    std::cout << "\nNodo block snapshot header parser executed successfully.\n";
 
     return 0;
 }
