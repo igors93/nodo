@@ -1,6 +1,7 @@
 #include "privacy/PrivateAccountingLedgerRebuilder.hpp"
 
 #include "core/LedgerRecord.hpp"
+#include "serialization/FieldCodec.hpp"
 
 #include <sstream>
 #include <stdexcept>
@@ -9,136 +10,9 @@
 
 namespace nodo::privacy {
 
+using nodo::serialization::FieldCodec;
+
 namespace {
-
-std::string extractField(
-    const std::string& serialized,
-    const std::string& key
-) {
-    const std::string prefix = key + "=";
-    const std::size_t start = serialized.find(prefix);
-
-    if (start == std::string::npos) {
-        throw std::invalid_argument("Missing serialized field: " + key);
-    }
-
-    const std::size_t valueStart = start + prefix.size();
-    std::size_t valueEnd = serialized.find(';', valueStart);
-
-    if (valueEnd == std::string::npos) {
-        valueEnd = serialized.find('}', valueStart);
-    }
-
-    if (valueEnd == std::string::npos || valueEnd < valueStart) {
-        throw std::invalid_argument("Invalid serialized field: " + key);
-    }
-
-    return serialized.substr(valueStart, valueEnd - valueStart);
-}
-
-std::string extractBetween(
-    const std::string& serialized,
-    const std::string& startToken,
-    const std::string& endToken
-) {
-    const std::size_t start = serialized.find(startToken);
-
-    if (start == std::string::npos) {
-        throw std::invalid_argument("Missing serialized section start.");
-    }
-
-    const std::size_t valueStart = start + startToken.size();
-    const std::size_t end = serialized.find(endToken, valueStart);
-
-    if (end == std::string::npos || end < valueStart) {
-        throw std::invalid_argument("Missing serialized section end.");
-    }
-
-    return serialized.substr(valueStart, end - valueStart);
-}
-
-std::string extractOutputCommitmentList(
-    const std::string& serialized
-) {
-    const std::string startToken = "];outputCommitments=[";
-    const std::size_t start = serialized.find(startToken);
-
-    if (start == std::string::npos) {
-        throw std::invalid_argument("Missing output commitment list.");
-    }
-
-    const std::size_t valueStart = start + startToken.size();
-    const std::size_t valueEnd = serialized.rfind("]}");
-
-    if (valueEnd == std::string::npos || valueEnd < valueStart) {
-        throw std::invalid_argument("Malformed output commitment list.");
-    }
-
-    return serialized.substr(valueStart, valueEnd - valueStart);
-}
-
-std::vector<std::string> splitSerializedObjects(
-    const std::string& serializedList,
-    const std::string& objectPrefix
-) {
-    std::vector<std::string> objects;
-
-    if (serializedList.empty()) {
-        return objects;
-    }
-
-    std::size_t index = 0;
-
-    while (index < serializedList.size()) {
-        while (index < serializedList.size() &&
-               (serializedList[index] == ',' || serializedList[index] == ' ')) {
-            ++index;
-        }
-
-        if (index >= serializedList.size()) {
-            break;
-        }
-
-        if (serializedList.compare(index, objectPrefix.size(), objectPrefix) != 0) {
-            throw std::invalid_argument("Unexpected object type in serialized list.");
-        }
-
-        const std::size_t objectStart = index;
-        int braceDepth = 0;
-        bool started = false;
-        bool completed = false;
-
-        for (; index < serializedList.size(); ++index) {
-            const char current = serializedList[index];
-
-            if (current == '{') {
-                ++braceDepth;
-                started = true;
-            } else if (current == '}') {
-                --braceDepth;
-
-                if (started && braceDepth == 0) {
-                    ++index;
-                    objects.push_back(
-                        serializedList.substr(objectStart, index - objectStart)
-                    );
-                    completed = true;
-                    break;
-                }
-            }
-
-            if (braceDepth < 0) {
-                throw std::invalid_argument("Malformed serialized object braces.");
-            }
-        }
-
-        if (!completed) {
-            throw std::invalid_argument("Unclosed serialized object.");
-        }
-    }
-
-    return objects;
-}
 
 PrivacyCommitmentType parsePrivacyCommitmentType(
     const std::string& value
@@ -216,12 +90,14 @@ PrivacyCommitment deserializePrivacyCommitment(
     }
 
     PrivacyCommitment commitment(
-        extractField(serialized, "id"),
-        parsePrivacyCommitmentType(extractField(serialized, "type")),
-        extractField(serialized, "commitmentHash"),
-        extractField(serialized, "ownerHint"),
-        extractField(serialized, "sourceReference"),
-        std::stoll(extractField(serialized, "timestamp"))
+        FieldCodec::extractField(serialized, "id"),
+        parsePrivacyCommitmentType(
+            FieldCodec::extractField(serialized, "type")
+        ),
+        FieldCodec::extractField(serialized, "commitmentHash"),
+        FieldCodec::extractField(serialized, "ownerHint"),
+        FieldCodec::extractField(serialized, "sourceReference"),
+        std::stoll(FieldCodec::extractField(serialized, "timestamp"))
     );
 
     if (!commitment.isValid()) {
@@ -239,11 +115,13 @@ PrivacyNullifier deserializePrivacyNullifier(
     }
 
     PrivacyNullifier nullifier(
-        extractField(serialized, "id"),
-        parsePrivacyNullifierType(extractField(serialized, "type")),
-        extractField(serialized, "nullifierHash"),
-        extractField(serialized, "contextHash"),
-        std::stoll(extractField(serialized, "createdAt"))
+        FieldCodec::extractField(serialized, "id"),
+        parsePrivacyNullifierType(
+            FieldCodec::extractField(serialized, "type")
+        ),
+        FieldCodec::extractField(serialized, "nullifierHash"),
+        FieldCodec::extractField(serialized, "contextHash"),
+        std::stoll(FieldCodec::extractField(serialized, "createdAt"))
     );
 
     if (!nullifier.isValid()) {
@@ -260,43 +138,51 @@ PrivateAccountingRecord deserializePrivateAccountingRecord(
         throw std::invalid_argument("Serialized object is not a PrivateAccountingRecord.");
     }
 
-    const std::string inputList = extractBetween(
+    const std::string inputList = FieldCodec::extractBetween(
         serialized,
         ";inputNullifiers=[",
         "];outputCommitments=["
     );
 
-    const std::string outputList = extractOutputCommitmentList(serialized);
+    const std::string outputList = FieldCodec::extractTrailingSection(
+        serialized,
+        "];outputCommitments=[",
+        "]}"
+    );
 
     std::vector<PrivacyNullifier> inputNullifiers;
     std::vector<PrivacyCommitment> outputCommitments;
 
     for (const auto& serializedNullifier :
-         splitSerializedObjects(inputList, "PrivacyNullifier{")) {
+         FieldCodec::splitTopLevelObjects(inputList, "PrivacyNullifier{")) {
         inputNullifiers.push_back(
             deserializePrivacyNullifier(serializedNullifier)
         );
     }
 
     for (const auto& serializedCommitment :
-         splitSerializedObjects(outputList, "PrivacyCommitment{")) {
+         FieldCodec::splitTopLevelObjects(outputList, "PrivacyCommitment{")) {
         outputCommitments.push_back(
             deserializePrivacyCommitment(serializedCommitment)
         );
     }
 
     PrivateAccountingRecord record(
-        extractField(serialized, "id"),
-        parsePrivateAccountingRecordType(extractField(serialized, "type")),
-        parsePublicSupplyEffect(extractField(serialized, "supplyEffect")),
+        FieldCodec::extractField(serialized, "id"),
+        parsePrivateAccountingRecordType(
+            FieldCodec::extractField(serialized, "type")
+        ),
+        parsePublicSupplyEffect(
+            FieldCodec::extractField(serialized, "supplyEffect")
+        ),
         utils::Amount::fromRawUnits(
-            std::stoll(extractField(serialized, "publicSupplyAmountRaw"))
+            std::stoll(FieldCodec::extractField(serialized, "publicSupplyAmountRaw"))
         ),
         std::move(inputNullifiers),
         std::move(outputCommitments),
-        extractField(serialized, "auditReference"),
-        extractField(serialized, "proofHash"),
-        std::stoll(extractField(serialized, "timestamp"))
+        FieldCodec::extractField(serialized, "auditReference"),
+        FieldCodec::extractField(serialized, "proofHash"),
+        std::stoll(FieldCodec::extractField(serialized, "timestamp"))
     );
 
     if (!record.isValid()) {

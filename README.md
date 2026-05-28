@@ -1,87 +1,102 @@
 # Nodo
 
-**Nodo** is an experimental blockchain project written in C and C++ with a strong focus on security, economic incentives, traceable coin creation, deterministic state reconstruction, and long-term cryptographic flexibility.
+**Nodo** is an experimental blockchain project written in C and C++ with a strong focus on deterministic accounting, traceable coin creation, economic security, privacy-oriented ledger design, and long-term cryptographic flexibility.
 
-Nodo is being built step by step as an educational yet serious blockchain foundation. The project intentionally avoids rushing into networking, validators, consensus, storage, or smart contracts before the core ledger model is deterministic, auditable, and safe.
-
-> **Warning:** Nodo is experimental software. It is not production-ready and must not be used to store, transfer, or secure real financial value.
-
----
+Nodo is being built step by step as an educational but serious blockchain foundation. The project intentionally prioritizes correctness, auditability, deterministic behavior, and security boundaries before adding networking, production cryptography, validator consensus, or smart contracts.
 
 ## Vision
 
-Nodo explores a blockchain architecture where coins are not treated as simple account balances. Each coin group is represented as a traceable `CoinLot`, created from an auditable `MintRecord`, moved through validated `Transaction`s, stored as `LedgerRecord`s, grouped inside `Block`s, and reconstructed from accepted `Blockchain` history.
+Nodo explores a blockchain architecture where coins are not only simple account balances. Each coin group can have an auditable origin, traceable movement, and eventually a privacy-preserving accounting representation.
 
 The long-term vision is to build a blockchain where:
 
-- every coin has a registered origin;
-- coin movement is traceable;
-- locked coins can contribute to network security;
+- every created coin has a registered origin;
+- public balances can be rebuilt from accepted chain history;
+- private accounting records can be anchored into public blocks;
+- private commitments and nullifiers can support privacy without uncontrolled money creation;
+- locked coins may contribute to network security;
 - validators are economically incentivized to defend the network;
-- monetary expansion is controlled, auditable, and rule-based;
+- monetary expansion is rule-based and auditable;
 - cryptographic algorithms can evolve over time;
-- post-quantum cryptography can be introduced without rewriting the whole chain.
-
----
+- post-quantum cryptography can be introduced without rewriting the whole system.
 
 ## Current Status
 
-Nodo currently implements the first foundations of a blockchain ledger:
+Nodo currently implements the first foundations of a blockchain ledger and a privacy-accounting subsystem.
+
+Implemented foundations:
 
 - deterministic monetary amounts using integer raw units;
-- mint records for auditable coin creation;
+- auditable mint records;
 - traceable coin lots;
+- account model with nonce validation;
 - development signature foundation;
 - crypto-agile signature model;
-- signed transactions;
+- signed public transactions;
 - ledger records;
 - blocks;
 - blockchain validation;
-- build scripts for Linux-style shells;
-- build scripts for Windows CMD / PowerShell;
-- chain audit reports;
-- state reconstruction from blockchain history;
-- mint state reconstruction;
-- transfer state reconstruction using CoinLots.
+- public state reconstruction from chain history;
+- transfer application using spendable coin lots;
+- fee pool accounting;
+- privacy commitments;
+- privacy nullifiers;
+- nullifier set for private double-spend protection;
+- private accounting records;
+- private accounting ledger;
+- private accounting ledger records anchored into blocks;
+- private accounting ledger reconstruction from blockchain history;
+- shared deterministic field codec foundation for safer parsing boundaries;
+- cross-platform build scripts for Linux-like shells and Windows.
 
 Nodo can currently:
 
 1. create an auditable genesis mint;
-2. convert that mint into a ledger record;
+2. convert that mint into a public ledger record;
 3. place the record inside a genesis block;
 4. create a signed transfer transaction;
 5. convert the transaction into a ledger record;
 6. place the transfer record inside a second block;
 7. validate the blockchain;
-8. rebuild the state from accepted blockchain history;
-9. apply a transfer by consuming spendable CoinLots;
-10. preserve supply by creating recipient, fee pool, and change CoinLots.
-
----
+8. rebuild public state from accepted blockchain history;
+9. apply public transfer effects using coin lots;
+10. create private commitments;
+11. create private nullifiers;
+12. reject duplicate private nullifiers;
+13. create private accounting records;
+14. validate a private accounting ledger;
+15. anchor private accounting records into blockchain blocks;
+16. rebuild the private accounting ledger from blockchain history.
 
 ## Core Principles
 
 ### 1. Chain History Is the Source of Truth
 
-Nodo does not treat a saved balance as the final truth. The state must be reconstructed from accepted blockchain history.
+Nodo does not treat a saved balance as the final truth. Public state must be rebuilt from accepted blockchain history.
 
 ```text
-Blockchain -> Blocks -> LedgerRecords -> State
+Blockchain -> Blocks -> LedgerRecords -> Public State
+```
+
+The same principle is now starting to apply to private accounting metadata:
+
+```text
+Blockchain -> PRIVATE_ACCOUNTING LedgerRecords -> PrivateAccountingLedger
 ```
 
 ### 2. Coins Have Origin
 
-Every newly created NODO coin must come from a valid `MintRecord`.
+Every newly created NODO coin must come from a valid mint record.
 
 ```text
-MintRecord -> CoinLot
+MintRecord -> LedgerRecord -> Block -> Blockchain
 ```
 
 This makes supply creation auditable.
 
 ### 3. Transactions Do Not Directly Modify State
 
-Transactions are requests. They must become accepted ledger records and be included in blocks before they affect the reconstructed state.
+Transactions are requests. They must become accepted ledger records and be included in blocks before they affect reconstructed state.
 
 ```text
 Transaction -> LedgerRecord -> Block -> Blockchain -> State
@@ -89,7 +104,7 @@ Transaction -> LedgerRecord -> Block -> Blockchain -> State
 
 ### 4. CoinLots Prevent Blind Balance Accounting
 
-Nodo currently uses `CoinLot`s instead of only increasing or decreasing balances.
+Nodo uses `CoinLot`s instead of only increasing or decreasing balances.
 
 When a transfer happens, source lots are marked as `SPENT`, and new output lots are created for:
 
@@ -97,25 +112,62 @@ When a transfer happens, source lots are marked as `SPENT`, and new output lots 
 - fee pool;
 - sender change.
 
-This makes coin movement traceable and helps prevent accidental double-spending inside the state engine.
+This makes coin movement more traceable and helps prevent accidental double-spending inside the state engine.
 
-### 5. Locked Coins Cannot Be Spent
+### 5. Account Nonces Protect Against Replay
 
-CoinLots locked for security are not spendable. This is important for Nodo's future economic security model.
+Each account tracks the next expected nonce.
 
-### 6. Crypto Agility
+If an account has already used nonce `1`, the next accepted transaction must use nonce `2`.
+
+This protects against replay-like errors where two different transactions attempt to use the same sender nonce.
+
+### 6. Locked Coins Cannot Be Spent
+
+Coin lots locked for future economic security must not be spendable while locked.
+
+This foundation prepares Nodo for staking-like security mechanics and validator incentives.
+
+### 7. Privacy Must Still Be Auditable
+
+Nodo's privacy direction is based on a simple rule:
+
+```text
+Privacy must not mean unverifiable money creation.
+```
+
+The current privacy architecture uses development versions of:
+
+- `PrivacyCommitment`;
+- `PrivacyNullifier`;
+- `NullifierSet`;
+- `PrivateAccountingRecord`;
+- `PrivateAccountingLedger`;
+- `PrivateAccountingLedgerRebuilder`.
+
+In the future, these must be backed by real cryptographic commitments, range proofs, nullifier derivation, and zero-knowledge proof verification.
+
+### 8. Serialization Must Be Deterministic
+
+Nodo currently uses deterministic text serialization for development.
+
+A shared `FieldCodec` has been introduced to centralize parsing helpers and reduce duplicated parsing logic.
+
+This is not the final serialization format. Future versions should evolve toward a stricter canonical format, such as a binary encoding or a formally specified deterministic serialization layer.
+
+### 9. Crypto Agility
 
 Nodo is designed so the blockchain is not permanently tied to one signature algorithm.
 
-The current development build uses a fake development signature for architecture testing only. Future versions should add real signature providers such as:
+The current development build uses fake development signatures for architecture testing only.
+
+Future versions should add real signature providers such as:
 
 - Ed25519 or ECDSA for classical signatures;
 - ML-DSA or SLH-DSA for post-quantum signatures;
 - hybrid signature bundles for critical operations.
 
----
-
-## Current Architecture
+## Architecture Overview
 
 ```text
 nodo/
@@ -128,6 +180,7 @@ nodo/
 │   │   └── DemoScenario.hpp
 │   │
 │   ├── core/
+│   │   ├── Account.hpp
 │   │   ├── Block.hpp
 │   │   ├── Blockchain.hpp
 │   │   ├── ChainStateRebuilder.hpp
@@ -149,6 +202,17 @@ nodo/
 │   ├── economics/
 │   │   └── MintRecord.hpp
 │   │
+│   ├── privacy/
+│   │   ├── NullifierSet.hpp
+│   │   ├── PrivacyCommitment.hpp
+│   │   ├── PrivacyNullifier.hpp
+│   │   ├── PrivateAccountingLedger.hpp
+│   │   ├── PrivateAccountingLedgerRebuilder.hpp
+│   │   └── PrivateAccountingRecord.hpp
+│   │
+│   ├── serialization/
+│   │   └── FieldCodec.hpp
+│   │
 │   ├── staking/
 │   │   └── SecurityWeight.hpp
 │   │
@@ -161,6 +225,7 @@ nodo/
 │   │   └── DemoScenario.cpp
 │   │
 │   ├── core/
+│   │   ├── Account.cpp
 │   │   ├── Block.cpp
 │   │   ├── Blockchain.cpp
 │   │   ├── ChainStateRebuilder.cpp
@@ -181,6 +246,17 @@ nodo/
 │   ├── economics/
 │   │   └── MintRecord.cpp
 │   │
+│   ├── privacy/
+│   │   ├── NullifierSet.cpp
+│   │   ├── PrivacyCommitment.cpp
+│   │   ├── PrivacyNullifier.cpp
+│   │   ├── PrivateAccountingLedger.cpp
+│   │   ├── PrivateAccountingLedgerRebuilder.cpp
+│   │   └── PrivateAccountingRecord.cpp
+│   │
+│   ├── serialization/
+│   │   └── FieldCodec.cpp
+│   │
 │   ├── staking/
 │   │   └── SecurityWeight.cpp
 │   │
@@ -189,21 +265,41 @@ nodo/
 │       └── Time.cpp
 │
 ├── scripts/
-│   ├── build.sh
-│   ├── clean.sh
 │   ├── build.bat
-│   └── clean.bat
+│   ├── build.sh
+│   ├── clean.bat
+│   └── clean.sh
 │
 ├── build/
 ├── README.md
 └── .gitignore
 ```
 
----
-
 ## Build
 
 Nodo supports both Linux-style shell builds and Windows builds.
+
+### Windows CMD / PowerShell
+
+Requirements:
+
+- MSYS2 UCRT64 or another GCC/G++ toolchain available in PATH;
+- `gcc`;
+- `g++` with C++20 support.
+
+If you use MSYS2 UCRT64, make sure this folder is available in your Windows PATH:
+
+```text
+C:\msys64\ucrt64\bin
+```
+
+Build and run:
+
+```powershell
+.\scripts\clean.bat
+.\scripts\build.bat
+.\build\nodo.exe
+```
 
 ### Linux / MSYS2 / Git Bash
 
@@ -213,96 +309,71 @@ Nodo supports both Linux-style shell builds and Windows builds.
 ./build/nodo
 ```
 
-### Windows CMD / PowerShell
-
-```powershell
-.\scripts\clean.bat
-.\scripts\build.bat
-.\build\nodo.exe
-```
-
-### Windows Requirement
-
-If you use MSYS2 UCRT64, make sure this folder is available in your Windows `PATH`:
-
-```text
-C:\msys64\ucrt64\bin
-```
-
-You can test the compiler with:
-
-```powershell
-gcc --version
-g++ --version
-```
-
-If both commands return a version, the Windows build script should work.
-
----
-
 ## Expected Demo Output
 
-The current demo should show a valid blockchain and a reconstructed state.
-
-Example final balances:
+The current demo should show:
 
 ```text
+Full Blockchain validation: VALID
+
 Rebuilt total supply: 1000.00000000 NODO
 Rebuilt Igor balance: 974.99900000 NODO
 Rebuilt Ana balance: 25.00000000 NODO
 Rebuilt fee pool balance: 0.00100000 NODO
 Rebuilt supply audit: VALID
+
+Private ledger validation: VALID
+Private ledger record count: 2
+Private ledger nullifier count: 1
+Private ledger commitment count: 3
+Private ledger minted supply: 1000.00000000 NODO
+Private ledger outstanding supply: 1000.00000000 NODO
+
+Private Accounting Ledger rebuilt from Blockchain.
+Rebuilt private ledger validation: VALID
+
+Nodo private accounting ledger rebuild executed successfully.
 ```
 
-This means:
+## Current Security Notes
 
-- 1000 NODO were minted to Igor;
-- Igor sent 25 NODO to Ana;
-- 0.001 NODO was preserved as a fee pool output;
-- total supply remained auditable.
+Nodo is still early-stage experimental software.
 
----
-
-## Current Security Foundations
-
-Nodo is still early-stage software, but the project already includes several protective foundations:
+The current code includes several protective foundations:
 
 - integer-based monetary amounts;
-- duplicate `MintRecord` rejection;
+- duplicate mint record rejection;
 - duplicate transaction application rejection;
-- locked `CoinLot`s cannot be spent;
-- spent `CoinLot`s cannot be spent again;
-- slashed `CoinLot`s cannot be spent;
+- account nonce validation;
+- locked coin lots cannot be spent;
+- spent coin lots cannot be spent again;
 - block hash validation;
 - previous-hash chain validation;
 - ledger record payload hashing;
 - deterministic serialization;
-- state reconstruction from chain history;
-- supply audit after state reconstruction.
+- centralized field codec foundation;
+- public state reconstruction from chain history;
+- private ledger reconstruction from chain history;
+- private nullifier duplicate protection;
+- private commitment duplicate protection.
 
----
-
-## Current Limitations
-
-The following areas are still experimental or incomplete:
+However, the following areas are still incomplete:
 
 - cryptographic signatures are development-only;
-- the hash implementation is not production-grade yet;
-- account nonces are not fully enforced through an account model;
-- deterministic address generation is not implemented yet;
+- the current hash implementation is not production-grade;
+- serialization is still development text serialization;
+- private accounting does not yet use real zero-knowledge proofs;
+- commitments and nullifiers are development models;
 - storage is not implemented yet;
 - networking is not implemented yet;
 - validator consensus is not implemented yet;
-- slashing and reward rules are not finalized;
-- no automated test suite exists yet.
+- slashing and reward rules are not finalized.
 
 Do not use Nodo for real funds.
 
----
-
 ## Roadmap
 
-### Phase 1: Core Ledger Foundation
+### Phase 1: Public Ledger Foundation
 
 - [x] Amount model
 - [x] MintRecord
@@ -314,36 +385,56 @@ Do not use Nodo for real funds.
 - [x] Chain audit
 - [x] Mint state reconstruction
 - [x] Transfer state reconstruction
-- [x] Linux build scripts
-- [x] Windows build scripts
+- [x] Account model
+- [x] Nonce validation
 
-### Phase 2: State Safety
+### Phase 2: Privacy Accounting Foundation
 
-- [ ] Account model
-- [ ] Nonce validation
-- [ ] Deterministic address generation
-- [ ] Stronger transaction replay protection
-- [ ] Transfer tests
-- [ ] Chain rebuild tests
-- [ ] Supply invariant tests
+- [x] PrivacyCommitment
+- [x] PrivacyNullifier
+- [x] NullifierSet
+- [x] PrivateAccountingRecord
+- [x] PrivateAccountingLedger
+- [x] PRIVATE_ACCOUNTING LedgerRecord
+- [x] PrivateAccountingLedgerRebuilder
 
-### Phase 3: Storage
+### Phase 3: Serialization Safety
+
+- [x] FieldCodec boundary
+- [ ] Move all legacy parsers into serialization module
+- [ ] Add deterministic serialization tests
+- [ ] Add round-trip tests for every ledger object
+- [ ] Define canonical serialization rules
+- [ ] Evaluate binary canonical encoding
+
+### Phase 4: Storage
 
 - [ ] Block file format
 - [ ] Blockchain persistence
 - [ ] Load chain from disk
 - [ ] Validate loaded chain
-- [ ] Rebuild state from stored blocks
+- [ ] Rebuild public state from stored blocks
+- [ ] Rebuild private ledger from stored blocks
 
-### Phase 4: Real Cryptography
+### Phase 5: Real Cryptography
 
-- [ ] Replace educational hash with production-grade hash
+- [ ] Replace development hash with production-grade hash
 - [ ] Add real signature provider
 - [ ] Add deterministic address derivation
 - [ ] Add key management boundary
 - [ ] Prepare post-quantum provider interfaces
 
-### Phase 5: Economic Security
+### Phase 6: Private Proof System
+
+- [ ] Commitment tree
+- [ ] Nullifier registry
+- [ ] Range proof interface
+- [ ] Zero-knowledge proof verifier interface
+- [ ] Private transfer verification
+- [ ] Private burn verification
+- [ ] Private mint policy verification
+
+### Phase 7: Economic Security
 
 - [ ] LockPolicy
 - [ ] StakePosition
@@ -354,15 +445,13 @@ Do not use Nodo for real funds.
 - [ ] Slashing rules
 - [ ] Proof-of-Locked-Security prototype
 
-### Phase 6: Network
+### Phase 8: Network
 
 - [ ] Peer protocol
 - [ ] Block gossip
 - [ ] Transaction gossip
 - [ ] Chain synchronization
 - [ ] Node validation rules
-
----
 
 ## Contributing
 
@@ -372,8 +461,10 @@ Contributions are welcome, especially in these areas:
 - deterministic serialization;
 - cryptography provider design;
 - ledger validation;
-- test coverage;
+- private accounting research;
+- zero-knowledge proof integration;
 - blockchain storage;
+- test coverage;
 - economic security research.
 
 Before contributing, please keep these rules in mind:
@@ -383,13 +474,14 @@ Before contributing, please keep these rules in mind:
 3. State must be rebuildable from chain history.
 4. No monetary value should appear without an auditable origin.
 5. No transaction should mutate state without becoming part of accepted history.
-6. No cryptographic primitive should be invented casually.
-7. Code comments and public documentation should be written in English.
-
----
+6. Privacy must not allow hidden inflation.
+7. No cryptographic primitive should be invented casually.
+8. Development-only cryptography must be clearly marked.
 
 ## Disclaimer
 
-Nodo is experimental software under active development. It is not production-ready and must not be used to store, transfer, or secure real financial value.
+Nodo is experimental software under active development.
 
-The project is currently focused on building a strong architectural foundation before adding networking, real cryptography, validator consensus, or economic rewards.
+It is not production-ready and must not be used to store, transfer, or secure real financial value.
+
+The project is currently focused on building a strong architectural foundation before adding networking, real cryptography, validator consensus, production privacy, or economic rewards.
