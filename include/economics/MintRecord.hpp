@@ -9,10 +9,10 @@
 namespace nodo::economics {
 
 /*
- * MintReason explica por que novas moedas foram criadas.
+ * MintReason explains why new coins were created.
  *
- * REGRA DA NODO:
- * Nenhuma moeda pode ser criada sem um motivo explícito.
+ * Nodo rule:
+ * No coin can be created without an explicit reason.
  */
 enum class MintReason {
     GENESIS_ALLOCATION,
@@ -22,14 +22,13 @@ enum class MintReason {
 };
 
 std::string mintReasonToString(MintReason reason);
+MintReason mintReasonFromString(const std::string& value);
 
 /*
- * MintRecord registra a origem de moedas novas.
+ * MintRecord records the origin of newly created coins.
  *
- * PRINCÍPIO CENTRAL:
- * Toda moeda NODO nasce de um MintRecord.
- *
- * Isso torna a emissão auditável.
+ * Core principle:
+ * Every NODO coin must be born from a MintRecord.
  */
 class MintRecord {
 public:
@@ -56,13 +55,20 @@ public:
     bool isValid() const;
 
     /*
-     * Serialização determinística.
+     * Deterministic serialization.
      *
-     * SEGURANÇA:
-     * Dados que entram em hash devem sempre ser serializados
-     * na mesma ordem e no mesmo formato.
+     * Security rule:
+     * Data used for hashing must always be serialized in the same order
+     * and in the same format.
      */
     std::string serialize() const;
+
+    /*
+     * Rebuilds a MintRecord from its deterministic serialized form.
+     *
+     * This is used by ChainStateRebuilder when reading LedgerRecord payloads.
+     */
+    static MintRecord deserialize(const std::string& serialized);
 
 private:
     std::string m_id;

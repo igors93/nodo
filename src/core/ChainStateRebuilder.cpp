@@ -1,8 +1,10 @@
 #include "core/ChainStateRebuilder.hpp"
 
 #include "core/LedgerRecord.hpp"
+#include "economics/MintRecord.hpp"
 
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace nodo::core {
@@ -118,6 +120,40 @@ StateRebuildReport ChainStateRebuilder::auditBlockchain(
     }
 
     return report;
+}
+
+State ChainStateRebuilder::rebuildStateFromMintRecords(
+    const Blockchain& blockchain
+) {
+    StateRebuildReport report = auditBlockchain(blockchain);
+
+    if (!report.success()) {
+        throw std::logic_error(
+            "Cannot rebuild State from invalid Blockchain: "
+            + report.failureReason()
+        );
+    }
+
+    State rebuiltState;
+
+    for (const auto& block : blockchain.blocks()) {
+        for (const auto& record : block.records()) {
+            if (record.type() != LedgerRecordType::MINT) {
+                continue;
+            }
+
+            economics::MintRecord mintRecord =
+                economics::MintRecord::deserialize(record.payload());
+
+            rebuiltState.applyMintRecord(mintRecord);
+        }
+    }
+
+    if (!rebuiltState.isSupplyAuditable()) {
+        throw std::logic_error("Rebuilt State failed supply audit.");
+    }
+
+    return rebuiltState;
 }
 
 } // namespace nodo::core

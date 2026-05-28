@@ -2,6 +2,7 @@
 #define NODO_CORE_CHAIN_STATE_REBUILDER_HPP
 
 #include "core/Blockchain.hpp"
+#include "core/State.hpp"
 
 #include <cstddef>
 #include <string>
@@ -55,12 +56,17 @@ private:
 class ChainStateRebuilder {
 public:
     /*
-     * First foundation step:
-     * Validate the chain and produce an audit report.
-     *
-     * This does not yet apply balances or CoinLot mutations.
+     * Validates the chain and produces an audit report.
      */
     static StateRebuildReport auditBlockchain(const Blockchain& blockchain);
+
+    /*
+     * Rebuilds State using only MINT LedgerRecords.
+     *
+     * This is the first real state reconstruction step.
+     * Transaction records are intentionally ignored in this phase.
+     */
+    static State rebuildStateFromMintRecords(const Blockchain& blockchain);
 };
 
 } // namespace nodo::core
