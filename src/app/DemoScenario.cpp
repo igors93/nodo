@@ -6,6 +6,7 @@
 #include "core/State.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
+#include "core/ChainStateRebuilder.hpp"
 #include "economics/MintRecord.hpp"
 #include "utils/Time.hpp"
 
@@ -28,6 +29,8 @@ int runBlockchainFoundationDemo() {
     using nodo::core::State;
     using nodo::core::Transaction;
     using nodo::core::TransactionType;
+    using nodo::core::ChainStateRebuilder;
+    using nodo::core::StateRebuildReport;
 
     using nodo::economics::MintRecord;
     using nodo::economics::MintReason;
@@ -256,10 +259,33 @@ int runBlockchainFoundationDemo() {
     std::cout << "\nGenesis MintRecord hash preview:\n";
     std::cout << hashOutput << "\n";
 
+    /*
+     * New phase:
+     * Audit the Blockchain by scanning it from genesis to latest block.
+     *
+     * This is the first step toward rebuilding State from chain history.
+     */
+    StateRebuildReport rebuildReport =
+        ChainStateRebuilder::auditBlockchain(blockchain);
+
+    std::cout << "\nChain rebuild audit report:\n";
+    std::cout << rebuildReport.serialize() << "\n";
+
+    std::cout << "Chain rebuild audit result: "
+              << (rebuildReport.success() ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!rebuildReport.success()) {
+        std::cerr << "Fatal: chain rebuild audit failed: "
+                  << rebuildReport.failureReason()
+                  << "\n";
+        return 1;
+    }
+
     std::cout << "\nBlockchain preview:\n";
     std::cout << blockchain.serialize() << "\n";
 
-    std::cout << "\nNodo Blockchain foundation executed successfully.\n";
+    std::cout << "\nNodo ChainStateRebuilder foundation executed successfully.\n";
 
     return 0;
 }

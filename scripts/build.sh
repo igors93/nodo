@@ -42,6 +42,7 @@ echo "Building Nodo C++ application..."
     "$ROOT_DIR/src/core/LedgerRecord.cpp" \
     "$ROOT_DIR/src/core/Block.cpp" \
     "$ROOT_DIR/src/core/Blockchain.cpp" \
+    "$ROOT_DIR/src/core/ChainStateRebuilder.cpp" \
     "$ROOT_DIR/src/staking/SecurityWeight.cpp" \
     "$ROOT_DIR/src/crypto/CryptoAlgorithm.cpp" \
     "$ROOT_DIR/src/crypto/CryptoPolicy.cpp" \
