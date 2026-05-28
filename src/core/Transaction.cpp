@@ -270,6 +270,10 @@ bool Transaction::isStructurallyValid(
     }
 
     if (m_timestamp <= 0) {
+    return false;
+    }
+
+    if (m_nonce == 0) {
         return false;
     }
 

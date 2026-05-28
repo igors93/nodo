@@ -250,11 +250,17 @@ int runBlockchainFoundationDemo() {
               << rebuiltFullState.balanceOf("ana").toString()
               << "\n";
     std::cout << "Rebuilt fee pool balance: "
-              << rebuiltFullState.balanceOf(State::feePoolAddress()).toString()
-              << "\n";
+          << rebuiltFullState.balanceOf(State::feePoolAddress()).toString()
+          << "\n";
+    std::cout << "Rebuilt Igor next nonce: "
+            << rebuiltFullState.nextNonceOf("igor")
+            << "\n";
+    std::cout << "Rebuilt Ana next nonce: "
+            << rebuiltFullState.nextNonceOf("ana")
+            << "\n";
     std::cout << "Rebuilt supply audit: "
-              << (rebuiltFullState.isSupplyAuditable() ? "VALID" : "INVALID")
-              << "\n";
+            << (rebuiltFullState.isSupplyAuditable() ? "VALID" : "INVALID")
+            << "\n";
 
     if (!rebuiltFullState.isSupplyAuditable()) {
         std::cerr << "Fatal: rebuilt State failed supply audit.\n";

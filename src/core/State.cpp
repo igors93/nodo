@@ -37,12 +37,30 @@ utils::Amount State::totalSupply() const {
     return m_totalSupply;
 }
 
+const std::vector<Account>& State::accounts() const {
+    return m_accounts;
+}
+
 const std::vector<economics::MintRecord>& State::mintRecords() const {
     return m_mintRecords;
 }
 
 const std::vector<CoinLot>& State::coinLots() const {
     return m_coinLots;
+}
+
+bool State::hasAccount(const std::string& address) const {
+    return findAccount(address) != nullptr;
+}
+
+std::uint64_t State::nextNonceOf(const std::string& address) const {
+    const Account* account = findAccount(address);
+
+    if (account == nullptr) {
+        throw std::invalid_argument("Account not found.");
+    }
+
+    return account->nextNonce();
 }
 
 void State::advanceBlock() {
@@ -81,6 +99,8 @@ void State::applyMintRecord(const economics::MintRecord& mintRecord) {
         throw std::logic_error("Generated CoinLot is invalid.");
     }
 
+    ensureAccountExists(mintRecord.recipientAddress());
+
     m_mintRecords.push_back(mintRecord);
     m_coinLots.push_back(coinLot);
     m_totalSupply = m_totalSupply + mintRecord.amount();
@@ -107,8 +127,22 @@ void State::applyTransferTransaction(const Transaction& transaction) {
         throw std::invalid_argument("Transfer amount must be positive.");
     }
 
+    if (transaction.nonce() == 0) {
+        throw std::invalid_argument("Transfer nonce must be positive.");
+    }
+
     if (isTransactionAlreadyApplied(transaction.id())) {
         throw std::logic_error("Duplicate transaction application rejected.");
+    }
+
+    const Account* senderAccount = findAccount(transaction.fromAddress());
+
+    if (senderAccount == nullptr) {
+        throw std::logic_error("Sender account does not exist.");
+    }
+
+    if (!senderAccount->canApplyNonce(transaction.nonce())) {
+        throw std::logic_error("Invalid sender nonce rejected.");
     }
 
     const utils::Amount totalDebit = transaction.amount() + transaction.fee();
@@ -179,6 +213,18 @@ void State::applyTransferTransaction(const Transaction& transaction) {
                 throw std::logic_error("Generated transfer output CoinLot is invalid.");
             }
 
+            for (const auto& existingLot : m_coinLots) {
+                if (existingLot.id() == outputLot.id()) {
+                    throw std::logic_error("Generated transfer output CoinLot id already exists.");
+                }
+            }
+
+            for (const auto& pendingLot : outputLots) {
+                if (pendingLot.id() == outputLot.id()) {
+                    throw std::logic_error("Duplicated pending transfer output CoinLot id.");
+                }
+            }
+
             outputLots.push_back(outputLot);
             ++outputIndex;
         };
@@ -227,6 +273,23 @@ void State::applyTransferTransaction(const Transaction& transaction) {
     if (remainingRecipientAmount.isPositive() || remainingFeeAmount.isPositive()) {
         throw std::logic_error("Transfer output allocation failed.");
     }
+
+    ensureAccountExists(transaction.toAddress());
+
+    if (transaction.fee().isPositive()) {
+        ensureAccountExists(feePoolAddress());
+    }
+
+    Account* mutableSenderAccount = findAccount(transaction.fromAddress());
+
+    if (mutableSenderAccount == nullptr) {
+        throw std::logic_error("Sender account disappeared during transfer application.");
+    }
+
+    mutableSenderAccount->markTransactionApplied(
+        transaction.nonce(),
+        m_currentBlockIndex
+    );
 
     for (const std::size_t inputIndex : selectedInputIndexes) {
         m_coinLots[inputIndex].markSpent();
@@ -307,6 +370,12 @@ bool State::isSupplyAuditable() const {
         return false;
     }
 
+    for (const auto& account : m_accounts) {
+        if (!account.isValid()) {
+            return false;
+        }
+    }
+
     utils::Amount activeCoinLotSupply = utils::Amount::fromRawUnits(0);
 
     for (const auto& coinLot : m_coinLots) {
@@ -320,6 +389,47 @@ bool State::isSupplyAuditable() const {
     }
 
     return activeCoinLotSupply == m_totalSupply;
+}
+
+Account* State::findAccount(const std::string& address) {
+    for (auto& account : m_accounts) {
+        if (account.address() == address) {
+            return &account;
+        }
+    }
+
+    return nullptr;
+}
+
+const Account* State::findAccount(const std::string& address) const {
+    for (const auto& account : m_accounts) {
+        if (account.address() == address) {
+            return &account;
+        }
+    }
+
+    return nullptr;
+}
+
+void State::ensureAccountExists(const std::string& address) {
+    if (address.empty()) {
+        throw std::invalid_argument("Account address cannot be empty.");
+    }
+
+    if (findAccount(address) != nullptr) {
+        return;
+    }
+
+    Account account = Account::create(
+        address,
+        m_currentBlockIndex
+    );
+
+    if (!account.isValid()) {
+        throw std::logic_error("Generated Account is invalid.");
+    }
+
+    m_accounts.push_back(account);
 }
 
 std::string State::createCoinLotIdFromMint(

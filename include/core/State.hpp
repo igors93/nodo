@@ -1,6 +1,7 @@
 #ifndef NODO_CORE_STATE_HPP
 #define NODO_CORE_STATE_HPP
 
+#include "core/Account.hpp"
 #include "core/CoinLot.hpp"
 #include "core/Transaction.hpp"
 #include "economics/MintRecord.hpp"
@@ -16,6 +17,7 @@ namespace nodo::core {
  * State represents the current reconstructed network state.
  *
  * It stores:
+ * - accounts and replay-protection nonces;
  * - created coins;
  * - traceable coin lots;
  * - total minted supply;
@@ -31,8 +33,12 @@ public:
     std::uint64_t currentBlockIndex() const;
     utils::Amount totalSupply() const;
 
+    const std::vector<Account>& accounts() const;
     const std::vector<economics::MintRecord>& mintRecords() const;
     const std::vector<CoinLot>& coinLots() const;
+
+    bool hasAccount(const std::string& address) const;
+    std::uint64_t nextNonceOf(const std::string& address) const;
 
     void advanceBlock();
 
@@ -41,6 +47,7 @@ public:
      *
      * Security rule:
      * Every created coin must generate a traceable CoinLot.
+     * The recipient account is created deterministically if it does not exist.
      */
     void applyMintRecord(const economics::MintRecord& mintRecord);
 
@@ -48,6 +55,8 @@ public:
      * Applies a transfer using spendable CoinLots.
      *
      * Security rules:
+     * - sender account must exist;
+     * - transaction nonce must match the sender's next expected nonce;
      * - locked lots cannot be spent;
      * - spent lots cannot be spent again;
      * - transfer outputs preserve origin MintRecord ids;
@@ -56,9 +65,6 @@ public:
      */
     void applyTransferTransaction(const Transaction& transaction);
 
-    /*
-     * Locks a CoinLot for economic security.
-     */
     void lockCoinLotForSecurity(
         const std::string& coinLotId,
         std::uint64_t lockedUntilBlock
@@ -70,20 +76,20 @@ public:
 
     bool isTransactionAlreadyApplied(const std::string& transactionId) const;
 
-    /*
-     * Verifies that minted supply is still represented by active CoinLots.
-     *
-     * This is intentionally strict for the current phase.
-     * Future burn and slashing policies will extend this rule.
-     */
     bool isSupplyAuditable() const;
 
 private:
     std::uint64_t m_currentBlockIndex;
     utils::Amount m_totalSupply;
+    std::vector<Account> m_accounts;
     std::vector<economics::MintRecord> m_mintRecords;
     std::vector<CoinLot> m_coinLots;
     std::vector<std::string> m_appliedTransactionIds;
+
+    Account* findAccount(const std::string& address);
+    const Account* findAccount(const std::string& address) const;
+
+    void ensureAccountExists(const std::string& address);
 
     std::string createCoinLotIdFromMint(const economics::MintRecord& mintRecord) const;
 
