@@ -18,6 +18,7 @@
 #include "privacy/PrivateAccountingRecord.hpp"
 
 #include "storage/BlockFileStore.hpp"
+#include "storage/BlockchainStorageReader.hpp"
 #include "storage/BlockStorageIndex.hpp"
 #include "storage/ChainManifest.hpp"
 
@@ -47,6 +48,9 @@ int runBlockchainFoundationDemo() {
     using nodo::economics::MintReason;
 
     using nodo::storage::BlockFileStore;
+    using nodo::storage::BlockchainStorageReader;
+    using nodo::storage::BlockchainStorageReadReport;
+    using nodo::storage::StoredBlockSnapshot;
     using nodo::storage::BlockStorageIndex;
     using nodo::storage::ChainManifest;
 
@@ -773,6 +777,41 @@ int runBlockchainFoundationDemo() {
         return 1;
     }
 
+    /*
+     * Blockchain storage reader foundation.
+     *
+     * This verifies storage metadata and block snapshot files before future
+     * code attempts full Blockchain reconstruction from disk.
+     */
+    BlockchainStorageReadReport storageReadReport =
+        BlockchainStorageReader::auditStorageRoot("data");
+
+    std::vector<StoredBlockSnapshot> storedSnapshots =
+        BlockchainStorageReader::readBlockSnapshots("data");
+
+    std::cout << "\nBlockchain storage reader preview:\n";
+    std::cout << "Storage reader audit: "
+              << (storageReadReport.success() ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Storage reader report:\n";
+    std::cout << storageReadReport.serialize() << "\n";
+    std::cout << "Stored snapshot count: "
+              << storedSnapshots.size()
+              << "\n";
+    std::cout << "First stored snapshot hash: "
+              << (storedSnapshots.empty() ? "" : storedSnapshots.front().contentHash())
+              << "\n";
+    std::cout << "Latest stored snapshot hash: "
+              << (storedSnapshots.empty() ? "" : storedSnapshots.back().contentHash())
+              << "\n";
+
+    if (!storageReadReport.success()) {
+        std::cerr << "Fatal: blockchain storage reader audit failed: "
+                  << storageReadReport.failureReason()
+                  << "\n";
+        return 1;
+    }
+
     char hashOutput[65] = {0};
     nodo_hash_string(genesisMint.serialize().c_str(), hashOutput, sizeof(hashOutput));
 
@@ -782,7 +821,7 @@ int runBlockchainFoundationDemo() {
     std::cout << "\nBlockchain preview:\n";
     std::cout << blockchain.serialize() << "\n";
 
-    std::cout << "\nNodo block storage index executed successfully.\n";
+    std::cout << "\nNodo blockchain storage reader executed successfully.\n";
 
     return 0;
 }
