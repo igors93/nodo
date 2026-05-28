@@ -11,10 +11,10 @@
 #include "utils/Time.hpp"
 
 #include "privacy/PrivacyCommitment.hpp"
-
 #include "privacy/NullifierSet.hpp"
 #include "privacy/PrivacyNullifier.hpp"
 #include "privacy/PrivateAccountingRecord.hpp"
+#include "privacy/PrivateAccountingLedger.hpp"
 
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/PrivateKey.hpp"
@@ -42,6 +42,7 @@ int runBlockchainFoundationDemo() {
     using nodo::privacy::PrivacyNullifier;
     using nodo::privacy::PrivacyNullifierType;
     using nodo::privacy::PrivateAccountingRecord;
+    using nodo::privacy::PrivateAccountingLedger;
 
     using nodo::economics::MintRecord;
     using nodo::economics::MintReason;
@@ -389,6 +390,63 @@ int runBlockchainFoundationDemo() {
     std::cout << "Private transfer output commitments: "
               << privateTransferRecord.outputCommitments().size()
               << "\n";
+
+    /*
+     * Private accounting ledger foundation.
+     *
+     * The ledger validates multiple private records together and prevents
+     * repeated nullifiers or repeated output commitments.
+     */
+    PrivateAccountingRecord privateMintRecord =
+        PrivateAccountingRecord::createPrivateMintRecord(
+            std::vector<PrivacyCommitment>{privateMintCommitment},
+            Amount::fromNodo(1000),
+            "demo-private-mint-audit-reference-001",
+            currentUnixTimestamp()
+        );
+
+    PrivateAccountingLedger privateAccountingLedger;
+    privateAccountingLedger.addRecord(privateMintRecord);
+    privateAccountingLedger.addRecord(privateTransferRecord);
+
+    const bool duplicatePrivateRecordRejected =
+        !privateAccountingLedger.canAppendRecord(privateTransferRecord);
+
+    std::cout << "\nPrivate accounting ledger foundation preview:\n";
+    std::cout << "Private ledger validation: "
+              << (privateAccountingLedger.isValid() ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Private ledger record count: "
+              << privateAccountingLedger.size()
+              << "\n";
+    std::cout << "Private ledger nullifier count: "
+              << privateAccountingLedger.nullifierSet().size()
+              << "\n";
+    std::cout << "Private ledger commitment count: "
+              << privateAccountingLedger.registeredCommitmentCount()
+              << "\n";
+    std::cout << "Private ledger minted supply: "
+              << privateAccountingLedger.privateMintedSupply().toString()
+              << "\n";
+    std::cout << "Private ledger burned supply: "
+              << privateAccountingLedger.privateBurnedSupply().toString()
+              << "\n";
+    std::cout << "Private ledger outstanding supply: "
+              << privateAccountingLedger.outstandingPrivateSupply().toString()
+              << "\n";
+    std::cout << "Duplicate private record protection: "
+              << (duplicatePrivateRecordRejected ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!privateAccountingLedger.isValid()) {
+        std::cerr << "Fatal: private accounting ledger is invalid.\n";
+        return 1;
+    }
+
+    if (!duplicatePrivateRecordRejected) {
+        std::cerr << "Fatal: duplicate private record protection failed.\n";
+        return 1;
+    }
 
     if (!privateTransferRecord.isValid()) {
         std::cerr << "Fatal: private transfer accounting record is invalid.\n";
