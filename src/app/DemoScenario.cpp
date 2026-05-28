@@ -12,6 +12,9 @@
 
 #include "privacy/PrivacyCommitment.hpp"
 
+#include "privacy/NullifierSet.hpp"
+#include "privacy/PrivacyNullifier.hpp"
+
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
@@ -33,6 +36,10 @@ int runBlockchainFoundationDemo() {
     using nodo::core::StateRebuildReport;
     using nodo::core::Transaction;
     using nodo::core::TransactionType;
+
+    using nodo::privacy::NullifierSet;
+    using nodo::privacy::PrivacyNullifier;
+    using nodo::privacy::PrivacyNullifierType;
 
     using nodo::economics::MintRecord;
     using nodo::economics::MintReason;
@@ -294,6 +301,47 @@ int runBlockchainFoundationDemo() {
     std::cout << "Private mint commitment owner hint: "
               << privateMintCommitment.ownerHint()
               << "\n";
+
+    /*
+     * Nullifier foundation.
+     *
+     * In future private transfers, the network should not need to know
+     * which private coin was spent. However, it must know that the same
+     * private coin was not spent twice.
+     */
+    PrivacyNullifier privateSpendNullifier =
+        PrivacyNullifier::createDevelopmentNullifier(
+            PrivacyNullifierType::SPEND_NULLIFIER,
+            privateMintCommitment.id(),
+            "development-owner-secret-igor-001",
+            "demo-private-spend-context-001",
+            currentUnixTimestamp()
+        );
+
+    NullifierSet nullifierSet;
+    nullifierSet.registerNullifier(privateSpendNullifier);
+
+    const bool duplicateNullifierRejected =
+        !nullifierSet.canRegisterNullifier(privateSpendNullifier);
+
+    std::cout << "\nPrivacy nullifier foundation preview:\n";
+    std::cout << "Private spend nullifier validation: "
+              << (privateSpendNullifier.isValid() ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Private spend nullifier id: "
+              << privateSpendNullifier.id()
+              << "\n";
+    std::cout << "Nullifier set size: "
+              << nullifierSet.size()
+              << "\n";
+    std::cout << "Duplicate nullifier protection: "
+              << (duplicateNullifierRejected ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!duplicateNullifierRejected) {
+        std::cerr << "Fatal: duplicate nullifier protection failed.\n";
+        return 1;
+    }
 
     if (!rebuiltFullState.isSupplyAuditable()) {
         std::cerr << "Fatal: rebuilt State failed supply audit.\n";
