@@ -1,13 +1,16 @@
 #ifndef NODO_CORE_TRANSACTION_TYPE_HPP
 #define NODO_CORE_TRANSACTION_TYPE_HPP
 
+#include <string>
+
 namespace nodo::core {
 
 /*
- * Tipos de transações planejadas para a Nodo.
+ * TransactionType defines every state-changing action planned for Nodo.
  *
- * Nem todos serão implementados agora.
- * Mas já deixamos os nomes definidos para guiar a arquitetura.
+ * Important:
+ * A transaction type is not only a label. It determines validation rules,
+ * required signatures, and how the transaction will affect the ledger.
  */
 enum class TransactionType {
     TRANSFER,
@@ -19,6 +22,12 @@ enum class TransactionType {
     PENALTY,
     BURN
 };
+
+std::string transactionTypeToString(TransactionType type);
+
+bool isMintTransaction(TransactionType type);
+bool isSecurityLockTransaction(TransactionType type);
+bool requiresUserSignature(TransactionType type);
 
 } // namespace nodo::core
 

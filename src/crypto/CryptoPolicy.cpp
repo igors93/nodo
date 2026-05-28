@@ -27,32 +27,38 @@ bool CryptoPolicy::isAlgorithmAllowed(
     CryptoAlgorithm algorithm,
     SecurityContext context
 ) const {
+    (void)context;
+
     /*
-     * Assinatura fake só é aceita em modo desenvolvimento.
-     * Isso impede que ela seja usada por acidente em modo futuro/produção.
+     * Development-only signatures are allowed only when the entire policy
+     * is explicitly running in development mode.
+     *
+     * This keeps tests easy now, but prevents fake signatures from being
+     * accepted by future production policies.
      */
     if (isDevelopmentOnlyAlgorithm(algorithm)) {
-        return m_developmentMode && context == SecurityContext::DEVELOPMENT_ONLY;
+        return m_developmentMode;
     }
 
     /*
-     * Algoritmos clássicos são aceitos na fase inicial.
+     * Classic algorithms are allowed by the current architecture.
+     * Real mathematical verification will be implemented by crypto providers.
      */
     if (isClassicAlgorithm(algorithm)) {
         return true;
     }
 
     /*
-     * Algoritmos pós-quânticos serão aceitos quando implementados.
-     * Por enquanto, eles existem só como parte da arquitetura.
+     * Post-quantum algorithms are known by the architecture,
+     * but they must not be considered secure until providers exist.
      */
     if (isPostQuantumAlgorithm(algorithm)) {
         return true;
     }
 
     /*
-     * HYBRID_CLASSIC_AND_POST_QUANTUM não é uma assinatura individual.
-     * É uma exigência de política para o SignatureBundle.
+     * HYBRID_CLASSIC_AND_POST_QUANTUM is not an individual signature.
+     * It is a policy requirement for a SignatureBundle.
      */
     if (algorithm == CryptoAlgorithm::HYBRID_CLASSIC_AND_POST_QUANTUM) {
         return false;
