@@ -16,7 +16,8 @@ StateRebuildReport::StateRebuildReport()
       m_blockCount(0),
       m_ledgerRecordCount(0),
       m_mintRecordCount(0),
-      m_transactionRecordCount(0) {}
+      m_transactionRecordCount(0),
+      m_privateAccountingRecordCount(0) {}
 
 bool StateRebuildReport::success() const {
     return m_success;
@@ -41,6 +42,9 @@ std::size_t StateRebuildReport::mintRecordCount() const {
 std::size_t StateRebuildReport::transactionRecordCount() const {
     return m_transactionRecordCount;
 }
+std::size_t StateRebuildReport::privateAccountingRecordCount() const {
+    return m_privateAccountingRecordCount;
+}
 
 void StateRebuildReport::markFailure(std::string reason) {
     m_success = false;
@@ -62,6 +66,9 @@ void StateRebuildReport::incrementMintRecordCount() {
 void StateRebuildReport::incrementTransactionRecordCount() {
     ++m_transactionRecordCount;
 }
+void StateRebuildReport::incrementPrivateAccountingRecordCount() {
+    ++m_privateAccountingRecordCount;
+}
 
 std::string StateRebuildReport::serialize() const {
     std::ostringstream oss;
@@ -73,6 +80,7 @@ std::string StateRebuildReport::serialize() const {
         << ";ledgerRecordCount=" << m_ledgerRecordCount
         << ";mintRecordCount=" << m_mintRecordCount
         << ";transactionRecordCount=" << m_transactionRecordCount
+        << ";privateAccountingRecordCount=" << m_privateAccountingRecordCount
         << "}";
 
     return oss.str();
@@ -113,6 +121,8 @@ StateRebuildReport ChainStateRebuilder::auditBlockchain(
                 report.incrementMintRecordCount();
             } else if (record.type() == LedgerRecordType::TRANSACTION) {
                 report.incrementTransactionRecordCount();
+            } else if (record.type() == LedgerRecordType::PRIVATE_ACCOUNTING) {
+                report.incrementPrivateAccountingRecordCount();
             } else {
                 report.markFailure("Unknown LedgerRecord type found during rebuild audit.");
                 return report;
@@ -194,6 +204,16 @@ State ChainStateRebuilder::rebuildStateFromLedgerRecords(
                 }
 
                 rebuiltState.applyTransferTransaction(transaction);
+                continue;
+            }
+
+            if (record.type() == LedgerRecordType::PRIVATE_ACCOUNTING) {
+                /*
+                * Private accounting records do not directly mutate public State.
+                *
+                * They are part of the official ledger history, but their private rules
+                * are validated by the privacy accounting subsystem.
+                */
                 continue;
             }
 

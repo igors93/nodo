@@ -12,8 +12,8 @@ namespace nodo::core {
 /*
  * StateRebuildReport summarizes the result of scanning a Blockchain.
  *
- * This is intentionally simple for now. Later, this report can include
- * balances, rejected records, supply totals, and validator state.
+ * Later, this report can include balances, rejected records, supply totals,
+ * validator state, and private accounting audit data.
  */
 class StateRebuildReport {
 public:
@@ -26,6 +26,7 @@ public:
     std::size_t ledgerRecordCount() const;
     std::size_t mintRecordCount() const;
     std::size_t transactionRecordCount() const;
+    std::size_t privateAccountingRecordCount() const;
 
     void markFailure(std::string reason);
 
@@ -33,6 +34,7 @@ public:
     void incrementLedgerRecordCount();
     void incrementMintRecordCount();
     void incrementTransactionRecordCount();
+    void incrementPrivateAccountingRecordCount();
 
     std::string serialize() const;
 
@@ -44,6 +46,7 @@ private:
     std::size_t m_ledgerRecordCount;
     std::size_t m_mintRecordCount;
     std::size_t m_transactionRecordCount;
+    std::size_t m_privateAccountingRecordCount;
 };
 
 /*
@@ -65,11 +68,15 @@ public:
     static State rebuildStateFromMintRecords(const Blockchain& blockchain);
 
     /*
-     * Rebuilds State from supported LedgerRecords.
+     * Rebuilds public State from supported LedgerRecords.
      *
      * Supported in this phase:
      * - MINT
      * - TRANSFER
+     * - PRIVATE_ACCOUNTING as public-state no-op
+     *
+     * Private accounting records are validated by the private accounting
+     * subsystem. They do not directly mutate the public State.
      */
     static State rebuildStateFromLedgerRecords(const Blockchain& blockchain);
 };

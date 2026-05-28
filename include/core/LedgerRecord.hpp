@@ -4,6 +4,7 @@
 #include "core/Transaction.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "economics/MintRecord.hpp"
+#include "privacy/PrivateAccountingRecord.hpp"
 
 #include <cstdint>
 #include <string>
@@ -19,7 +20,8 @@ namespace nodo::core {
  */
 enum class LedgerRecordType {
     MINT,
-    TRANSACTION
+    TRANSACTION,
+    PRIVATE_ACCOUNTING
 };
 
 std::string ledgerRecordTypeToString(LedgerRecordType type);
@@ -45,6 +47,18 @@ public:
         std::int64_t timestamp
     );
 
+    /*
+     * Converts a valid private accounting operation into an official ledger record.
+     *
+     * Security rule:
+     * Private accounting must enter the chain through the same deterministic
+     * record pipeline as public mints and public transactions.
+     */
+    static LedgerRecord fromPrivateAccountingRecord(
+        const privacy::PrivateAccountingRecord& privateAccountingRecord,
+        std::int64_t timestamp
+    );
+
     const std::string& id() const;
     LedgerRecordType type() const;
     const std::string& sourceId() const;
@@ -57,7 +71,7 @@ public:
     /*
      * Deterministic serialization.
      *
-     * This representation will later be used inside Block hashing.
+     * This representation is used inside Block hashing.
      */
     std::string serialize() const;
 
@@ -90,4 +104,4 @@ private:
 
 } // namespace nodo::core
 
-#endif
+#endif 

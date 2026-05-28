@@ -447,6 +447,82 @@ int runBlockchainFoundationDemo() {
         std::cerr << "Fatal: duplicate private record protection failed.\n";
         return 1;
     }
+    /*
+     * Private accounting records now enter the public blockchain as official
+     * LedgerRecords.
+     *
+     * This does not reveal private amounts or owners in a production model.
+     * It only anchors the private accounting operation into the public chain.
+     */
+    LedgerRecord privateAccountingLedgerRecord =
+        LedgerRecord::fromPrivateAccountingRecord(
+            privateTransferRecord,
+            currentUnixTimestamp()
+        );
+
+    if (!privateAccountingLedgerRecord.isValid()) {
+        std::cerr << "Fatal: invalid private accounting LedgerRecord.\n";
+        return 1;
+    }
+
+    Block privateAccountingBlock(
+        2,
+        blockchain.latestBlock().hash(),
+        std::vector<LedgerRecord>{privateAccountingLedgerRecord},
+        currentUnixTimestamp()
+    );
+
+    if (!privateAccountingBlock.isValid()) {
+        std::cerr << "Fatal: invalid private accounting block.\n";
+        return 1;
+    }
+
+    blockchain.addBlock(privateAccountingBlock);
+
+    StateRebuildReport finalBlockchainAudit =
+        ChainStateRebuilder::auditBlockchain(blockchain);
+
+    std::cout << "\nPrivate accounting block added to Blockchain.\n";
+    std::cout << "Private Accounting Block index: "
+              << privateAccountingBlock.index()
+              << "\n";
+    std::cout << "Private Accounting Block hash: "
+              << privateAccountingBlock.hash()
+              << "\n";
+    std::cout << "Blockchain size after private accounting: "
+              << blockchain.size()
+              << "\n";
+    std::cout << "Final Blockchain audit report:\n";
+    std::cout << finalBlockchainAudit.serialize() << "\n";
+    std::cout << "Final Blockchain audit result: "
+              << (finalBlockchainAudit.success() ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!finalBlockchainAudit.success()) {
+        std::cerr << "Fatal: final Blockchain audit failed: "
+                  << finalBlockchainAudit.failureReason()
+                  << "\n";
+        return 1;
+    }
+
+    State rebuiltStateWithPrivateAccounting =
+        ChainStateRebuilder::rebuildStateFromLedgerRecords(blockchain);
+
+    std::cout << "\nPublic State rebuilt after private accounting block.\n";
+    std::cout << "Rebuilt Igor balance after private block: "
+              << rebuiltStateWithPrivateAccounting.balanceOf("igor").toString()
+              << "\n";
+    std::cout << "Rebuilt Ana balance after private block: "
+              << rebuiltStateWithPrivateAccounting.balanceOf("ana").toString()
+              << "\n";
+    std::cout << "Rebuilt supply audit after private block: "
+              << (rebuiltStateWithPrivateAccounting.isSupplyAuditable() ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!rebuiltStateWithPrivateAccounting.isSupplyAuditable()) {
+        std::cerr << "Fatal: rebuilt State after private block failed supply audit.\n";
+        return 1;
+    }
 
     if (!privateTransferRecord.isValid()) {
         std::cerr << "Fatal: private transfer accounting record is invalid.\n";

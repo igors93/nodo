@@ -16,6 +16,9 @@ std::string ledgerRecordTypeToString(LedgerRecordType type) {
         case LedgerRecordType::TRANSACTION:
             return "TRANSACTION";
 
+        case LedgerRecordType::PRIVATE_ACCOUNTING:
+            return "PRIVATE_ACCOUNTING";
+
         default:
             return "UNKNOWN";
     }
@@ -50,6 +53,7 @@ LedgerRecord LedgerRecord::fromMintRecord(
 
     const std::string payload = mintRecord.serialize();
     const std::string payloadHash = hashPayload(payload);
+
     const std::string recordId = computeRecordId(
         LedgerRecordType::MINT,
         mintRecord.id(),
@@ -83,6 +87,7 @@ LedgerRecord LedgerRecord::fromTransaction(
 
     const std::string payload = transaction.serialize();
     const std::string payloadHash = hashPayload(payload);
+
     const std::string recordId = computeRecordId(
         LedgerRecordType::TRANSACTION,
         transaction.id(),
@@ -94,6 +99,38 @@ LedgerRecord LedgerRecord::fromTransaction(
         recordId,
         LedgerRecordType::TRANSACTION,
         transaction.id(),
+        payload,
+        payloadHash,
+        timestamp
+    );
+}
+
+LedgerRecord LedgerRecord::fromPrivateAccountingRecord(
+    const privacy::PrivateAccountingRecord& privateAccountingRecord,
+    std::int64_t timestamp
+) {
+    if (!privateAccountingRecord.isValid()) {
+        throw std::invalid_argument("Invalid PrivateAccountingRecord rejected by LedgerRecord.");
+    }
+
+    if (timestamp <= 0) {
+        throw std::invalid_argument("LedgerRecord timestamp must be positive.");
+    }
+
+    const std::string payload = privateAccountingRecord.serialize();
+    const std::string payloadHash = hashPayload(payload);
+
+    const std::string recordId = computeRecordId(
+        LedgerRecordType::PRIVATE_ACCOUNTING,
+        privateAccountingRecord.id(),
+        payloadHash,
+        timestamp
+    );
+
+    return LedgerRecord(
+        recordId,
+        LedgerRecordType::PRIVATE_ACCOUNTING,
+        privateAccountingRecord.id(),
         payload,
         payloadHash,
         timestamp
@@ -145,11 +182,24 @@ bool LedgerRecord::isValid() const {
         return false;
     }
 
+    if (m_type != LedgerRecordType::MINT &&
+        m_type != LedgerRecordType::TRANSACTION &&
+        m_type != LedgerRecordType::PRIVATE_ACCOUNTING) {
+        return false;
+    }
+
     if (m_payloadHash != hashPayload(m_payload)) {
         return false;
     }
 
-    if (m_id != computeRecordId(m_type, m_sourceId, m_payloadHash, m_timestamp)) {
+    const std::string expectedRecordId = computeRecordId(
+        m_type,
+        m_sourceId,
+        m_payloadHash,
+        m_timestamp
+    );
+
+    if (m_id != expectedRecordId) {
         return false;
     }
 
