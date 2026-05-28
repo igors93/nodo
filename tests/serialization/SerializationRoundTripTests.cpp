@@ -6,13 +6,13 @@
 #include "serialization/MintRecordCodec.hpp"
 #include "serialization/PrivacyCommitmentCodec.hpp"
 #include "serialization/PrivacyNullifierCodec.hpp"
+#include "serialization/PrivateAccountingRecordCodec.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace {
@@ -24,12 +24,12 @@ using nodo::privacy::PrivacyCommitmentType;
 using nodo::privacy::PrivacyNullifier;
 using nodo::privacy::PrivacyNullifierType;
 using nodo::privacy::PrivateAccountingRecord;
-using nodo::privacy::PrivateAccountingRecordType;
 using nodo::privacy::PublicSupplyEffect;
 using nodo::serialization::FieldCodec;
 using nodo::serialization::MintRecordCodec;
 using nodo::serialization::PrivacyCommitmentCodec;
 using nodo::serialization::PrivacyNullifierCodec;
+using nodo::serialization::PrivateAccountingRecordCodec;
 using nodo::utils::Amount;
 
 constexpr std::int64_t kTestTimestamp = 1700000000;
@@ -43,91 +43,47 @@ void requireCondition(
     }
 }
 
-PrivateAccountingRecordType parsePrivateAccountingRecordType(
+std::string tamperFirstHexCharacter(
     const std::string& value
 ) {
-    if (value == "PRIVATE_MINT") {
-        return PrivateAccountingRecordType::PRIVATE_MINT;
+    if (value.empty()) {
+        throw std::invalid_argument("Cannot tamper empty string.");
     }
 
-    if (value == "PRIVATE_TRANSFER") {
-        return PrivateAccountingRecordType::PRIVATE_TRANSFER;
-    }
+    const std::string replacementPrefix =
+        value.front() == '0' ? "1" : "0";
 
-    if (value == "PRIVATE_BURN") {
-        return PrivateAccountingRecordType::PRIVATE_BURN;
-    }
-
-    throw std::invalid_argument("Unknown PrivateAccountingRecordType: " + value);
+    return replacementPrefix + value.substr(1);
 }
 
-PublicSupplyEffect parsePublicSupplyEffect(
-    const std::string& value
+PrivacyCommitment createTestMintCommitment(
+    const std::string& owner,
+    const std::string& sourceReference,
+    std::int64_t timestamp
 ) {
-    if (value == "NO_SUPPLY_CHANGE") {
-        return PublicSupplyEffect::NO_SUPPLY_CHANGE;
-    }
-
-    if (value == "SUPPLY_INCREASE") {
-        return PublicSupplyEffect::SUPPLY_INCREASE;
-    }
-
-    if (value == "SUPPLY_DECREASE") {
-        return PublicSupplyEffect::SUPPLY_DECREASE;
-    }
-
-    throw std::invalid_argument("Unknown PublicSupplyEffect: " + value);
+    return PrivacyCommitment::createDevelopmentCommitment(
+        PrivacyCommitmentType::MINT_COMMITMENT,
+        owner,
+        Amount::fromNodo(1000),
+        "test-blinding-secret-" + owner + "-" + sourceReference,
+        sourceReference,
+        timestamp
+    );
 }
 
-PrivateAccountingRecord deserializePrivateAccountingRecordForTest(
-    const std::string& serialized
+PrivacyNullifier createTestSpendNullifier(
+    const std::string& commitmentId,
+    const std::string& ownerSecret,
+    const std::string& context,
+    std::int64_t timestamp
 ) {
-    if (serialized.rfind("PrivateAccountingRecord{", 0) != 0) {
-        throw std::invalid_argument("Serialized object is not a PrivateAccountingRecord.");
-    }
-
-    const std::string inputList = FieldCodec::extractBetween(
-        serialized,
-        ";inputNullifiers=[",
-        "];outputCommitments=["
+    return PrivacyNullifier::createDevelopmentNullifier(
+        PrivacyNullifierType::SPEND_NULLIFIER,
+        commitmentId,
+        ownerSecret,
+        context,
+        timestamp
     );
-
-    const std::string outputList = FieldCodec::extractTrailingSection(
-        serialized,
-        "];outputCommitments=[",
-        "]}"
-    );
-
-    std::vector<PrivacyNullifier> inputNullifiers =
-        PrivacyNullifierCodec::deserializeList(inputList);
-
-    std::vector<PrivacyCommitment> outputCommitments =
-        PrivacyCommitmentCodec::deserializeList(outputList);
-
-    PrivateAccountingRecord record(
-        FieldCodec::extractField(serialized, "id"),
-        parsePrivateAccountingRecordType(
-            FieldCodec::extractField(serialized, "type")
-        ),
-        parsePublicSupplyEffect(
-            FieldCodec::extractField(serialized, "supplyEffect")
-        ),
-        Amount::fromRawUnits(
-            std::stoll(FieldCodec::extractField(serialized, "publicSupplyAmountRaw"))
-        ),
-        std::move(inputNullifiers),
-        std::move(outputCommitments),
-        FieldCodec::extractField(serialized, "auditReference"),
-        FieldCodec::extractField(serialized, "proofHash"),
-        std::stoll(FieldCodec::extractField(serialized, "timestamp"))
-    );
-
-    requireCondition(
-        record.isValid(),
-        "Deserialized PrivateAccountingRecord is invalid."
-    );
-
-    return record;
 }
 
 void testFieldCodecBasicExtraction() {
@@ -332,10 +288,8 @@ void testPrivacyCommitmentCodecRejectsTamperedId() {
     std::string tampered = original.serialize();
 
     const std::string originalId = original.id();
-    const std::string replacementPrefix =
-        originalId.front() == '0' ? "1" : "0";
     const std::string tamperedId =
-        replacementPrefix + originalId.substr(1);
+        tamperFirstHexCharacter(originalId);
 
     tampered.replace(
         tampered.find(originalId),
@@ -359,8 +313,7 @@ void testPrivacyCommitmentCodecRejectsTamperedId() {
 
 void testPrivacyNullifierCodecRoundTrip() {
     PrivacyNullifier original =
-        PrivacyNullifier::createDevelopmentNullifier(
-            PrivacyNullifierType::SPEND_NULLIFIER,
+        createTestSpendNullifier(
             "commitment_test_001",
             "owner-secret-001",
             "context-001",
@@ -385,8 +338,7 @@ void testPrivacyNullifierCodecRoundTrip() {
 
 void testPrivacyNullifierCodecListRoundTrip() {
     PrivacyNullifier first =
-        PrivacyNullifier::createDevelopmentNullifier(
-            PrivacyNullifierType::SPEND_NULLIFIER,
+        createTestSpendNullifier(
             "commitment_test_list_001",
             "owner-secret-list-001",
             "context-list-a",
@@ -426,8 +378,7 @@ void testPrivacyNullifierCodecListRoundTrip() {
 
 void testPrivacyNullifierCodecRejectsTamperedId() {
     PrivacyNullifier original =
-        PrivacyNullifier::createDevelopmentNullifier(
-            PrivacyNullifierType::SPEND_NULLIFIER,
+        createTestSpendNullifier(
             "commitment_test_tamper_001",
             "owner-secret-tamper-001",
             "context-tamper-001",
@@ -437,10 +388,8 @@ void testPrivacyNullifierCodecRejectsTamperedId() {
     std::string tampered = original.serialize();
 
     const std::string originalId = original.id();
-    const std::string replacementPrefix =
-        originalId.front() == '0' ? "1" : "0";
     const std::string tamperedId =
-        replacementPrefix + originalId.substr(1);
+        tamperFirstHexCharacter(originalId);
 
     tampered.replace(
         tampered.find(originalId),
@@ -483,8 +432,7 @@ void testPrivacyNullifierCodecRejectsNegativeTimestamp() {
 
 void testNullifierDeterminismIgnoresContext() {
     PrivacyNullifier first =
-        PrivacyNullifier::createDevelopmentNullifier(
-            PrivacyNullifierType::SPEND_NULLIFIER,
+        createTestSpendNullifier(
             "commitment_test_001",
             "owner-secret-001",
             "context-a",
@@ -492,8 +440,7 @@ void testNullifierDeterminismIgnoresContext() {
         );
 
     PrivacyNullifier second =
-        PrivacyNullifier::createDevelopmentNullifier(
-            PrivacyNullifierType::SPEND_NULLIFIER,
+        createTestSpendNullifier(
             "commitment_test_001",
             "owner-secret-001",
             "context-b",
@@ -516,20 +463,16 @@ void testNullifierDeterminismIgnoresContext() {
     );
 }
 
-void testPrivateAccountingRecordRoundTrip() {
+PrivateAccountingRecord createTestPrivateTransferRecord() {
     PrivacyCommitment inputCommitment =
-        PrivacyCommitment::createDevelopmentCommitment(
-            PrivacyCommitmentType::MINT_COMMITMENT,
+        createTestMintCommitment(
             "igor",
-            Amount::fromNodo(1000),
-            "test-blinding-secret-input",
-            "mint_test_001",
+            "mint_test_private_accounting_001",
             kTestTimestamp
         );
 
     PrivacyNullifier inputNullifier =
-        PrivacyNullifier::createDevelopmentNullifier(
-            PrivacyNullifierType::SPEND_NULLIFIER,
+        createTestSpendNullifier(
             inputCommitment.id(),
             "owner-secret-igor-001",
             "private-transfer-test-context",
@@ -556,40 +499,156 @@ void testPrivateAccountingRecordRoundTrip() {
             kTestTimestamp
         );
 
+    return PrivateAccountingRecord::createPrivateTransferRecord(
+        std::vector<PrivacyNullifier>{inputNullifier},
+        std::vector<PrivacyCommitment>{
+            outputToAna,
+            changeToIgor
+        },
+        "test-private-transfer-audit-reference",
+        kTestTimestamp
+    );
+}
+
+void testPrivateAccountingRecordCodecRoundTrip() {
     PrivateAccountingRecord original =
-        PrivateAccountingRecord::createPrivateTransferRecord(
-            std::vector<PrivacyNullifier>{inputNullifier},
-            std::vector<PrivacyCommitment>{
-                outputToAna,
-                changeToIgor
-            },
-            "test-private-transfer-audit-reference",
-            kTestTimestamp
-        );
+        createTestPrivateTransferRecord();
 
     const std::string serialized = original.serialize();
 
     PrivateAccountingRecord rebuilt =
-        deserializePrivateAccountingRecordForTest(serialized);
+        PrivateAccountingRecordCodec::deserialize(serialized);
 
     requireCondition(
         rebuilt.isValid(),
-        "PrivateAccountingRecord round-trip produced an invalid object."
+        "PrivateAccountingRecordCodec round-trip produced an invalid object."
     );
 
     requireCondition(
         rebuilt.serialize() == serialized,
-        "PrivateAccountingRecord round-trip changed serialization."
+        "PrivateAccountingRecordCodec round-trip changed serialization."
     );
 
     requireCondition(
         rebuilt.inputNullifiers().size() == 1,
-        "PrivateAccountingRecord round-trip lost input nullifiers."
+        "PrivateAccountingRecordCodec round-trip lost input nullifiers."
     );
 
     requireCondition(
         rebuilt.outputCommitments().size() == 2,
-        "PrivateAccountingRecord round-trip lost output commitments."
+        "PrivateAccountingRecordCodec round-trip lost output commitments."
+    );
+}
+
+void testPrivateAccountingRecordCodecListRoundTrip() {
+    PrivacyCommitment mintCommitment =
+        createTestMintCommitment(
+            "igor",
+            "mint_test_private_list_001",
+            kTestTimestamp
+        );
+
+    PrivateAccountingRecord mintRecord =
+        PrivateAccountingRecord::createPrivateMintRecord(
+            std::vector<PrivacyCommitment>{mintCommitment},
+            Amount::fromNodo(1000),
+            "test-private-mint-audit-reference",
+            kTestTimestamp
+        );
+
+    PrivateAccountingRecord transferRecord =
+        createTestPrivateTransferRecord();
+
+    const std::string serializedList =
+        mintRecord.serialize() + "," + transferRecord.serialize();
+
+    const std::vector<PrivateAccountingRecord> records =
+        PrivateAccountingRecordCodec::deserializeList(serializedList);
+
+    requireCondition(
+        records.size() == 2,
+        "PrivateAccountingRecordCodec list round-trip returned an invalid size."
+    );
+
+    requireCondition(
+        records[0].serialize() == mintRecord.serialize(),
+        "PrivateAccountingRecordCodec list round-trip changed first record."
+    );
+
+    requireCondition(
+        records[1].serialize() == transferRecord.serialize(),
+        "PrivateAccountingRecordCodec list round-trip changed second record."
+    );
+}
+
+void testPrivateAccountingRecordCodecRejectsTamperedProofHash() {
+    PrivateAccountingRecord original =
+        createTestPrivateTransferRecord();
+
+    std::string tampered = original.serialize();
+
+    const std::string originalProofHash = original.proofHash();
+    const std::string tamperedProofHash =
+        tamperFirstHexCharacter(originalProofHash);
+
+    tampered.replace(
+        tampered.find(originalProofHash),
+        originalProofHash.size(),
+        tamperedProofHash
+    );
+
+    bool rejected = false;
+
+    try {
+        (void)PrivateAccountingRecordCodec::deserialize(tampered);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+
+    requireCondition(
+        rejected,
+        "PrivateAccountingRecordCodec accepted a tampered proof hash."
+    );
+}
+
+void testPrivateAccountingRecordCodecRejectsInvalidShape() {
+    PrivacyCommitment output =
+        createTestMintCommitment(
+            "ana",
+            "mint_test_invalid_shape_001",
+            kTestTimestamp
+        );
+
+    PrivateAccountingRecord mintRecord =
+        PrivateAccountingRecord::createPrivateMintRecord(
+            std::vector<PrivacyCommitment>{output},
+            Amount::fromNodo(1000),
+            "test-invalid-shape-reference",
+            kTestTimestamp
+        );
+
+    std::string tampered = mintRecord.serialize();
+
+    const std::string oldType = "type=PRIVATE_MINT";
+    const std::string newType = "type=PRIVATE_TRANSFER";
+
+    tampered.replace(
+        tampered.find(oldType),
+        oldType.size(),
+        newType
+    );
+
+    bool rejected = false;
+
+    try {
+        (void)PrivateAccountingRecordCodec::deserialize(tampered);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+
+    requireCondition(
+        rejected,
+        "PrivateAccountingRecordCodec accepted an invalid record shape."
     );
 }
 
@@ -610,7 +669,10 @@ int main() {
         testPrivacyNullifierCodecRejectsTamperedId();
         testPrivacyNullifierCodecRejectsNegativeTimestamp();
         testNullifierDeterminismIgnoresContext();
-        testPrivateAccountingRecordRoundTrip();
+        testPrivateAccountingRecordCodecRoundTrip();
+        testPrivateAccountingRecordCodecListRoundTrip();
+        testPrivateAccountingRecordCodecRejectsTamperedProofHash();
+        testPrivateAccountingRecordCodecRejectsInvalidShape();
 
         std::cout << "Nodo serialization round-trip tests passed.\n";
         return 0;
