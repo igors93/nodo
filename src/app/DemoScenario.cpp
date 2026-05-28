@@ -9,6 +9,7 @@
 #include "core/TransactionType.hpp"
 #include "economics/MintRecord.hpp"
 #include "utils/Time.hpp"
+#include "serialization/BlockCodec.hpp"
 #include "serialization/LedgerRecordCodec.hpp"
 
 #include "privacy/NullifierSet.hpp"
@@ -46,6 +47,7 @@ int runBlockchainFoundationDemo() {
     using nodo::core::Transaction;
     using nodo::core::TransactionType;
 
+    using nodo::serialization::BlockCodec;
     using nodo::serialization::LedgerRecordCodec;
 
     using nodo::economics::MintRecord;
@@ -928,6 +930,57 @@ int runBlockchainFoundationDemo() {
         return 1;
     }
 
+    /*
+     * Block snapshot deserialization foundation.
+     *
+     * This rebuilds full Block objects from stored block snapshot files and
+     * verifies that their deterministic serialization matches the original
+     * in-memory blockchain.
+     */
+    std::vector<core::Block> deserializedBlocks;
+    bool deserializedBlocksMatchBlockchain = true;
+
+    for (std::size_t blockPosition = 0;
+         blockPosition < storedSnapshots.size();
+         ++blockPosition) {
+        core::Block deserializedBlock =
+            BlockCodec::deserializeFromFile(
+                storedSnapshots[blockPosition].filePath()
+            );
+
+        if (!deserializedBlock.isValid()) {
+            deserializedBlocksMatchBlockchain = false;
+            break;
+        }
+
+        if (deserializedBlock.serialize() !=
+            blockchain.blocks()[blockPosition].serialize()) {
+            deserializedBlocksMatchBlockchain = false;
+            break;
+        }
+
+        deserializedBlocks.push_back(deserializedBlock);
+    }
+
+    std::cout << "\nBlock snapshot deserialization preview:\n";
+    std::cout << "Deserialized block count: "
+              << deserializedBlocks.size()
+              << "\n";
+    std::cout << "Deserialized blocks match Blockchain: "
+              << (deserializedBlocksMatchBlockchain ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "First deserialized block hash: "
+              << (deserializedBlocks.empty() ? "" : deserializedBlocks.front().hash())
+              << "\n";
+    std::cout << "Latest deserialized block hash: "
+              << (deserializedBlocks.empty() ? "" : deserializedBlocks.back().hash())
+              << "\n";
+
+    if (!deserializedBlocksMatchBlockchain) {
+        std::cerr << "Fatal: Block snapshot deserialization validation failed.\n";
+        return 1;
+    }
+
     char hashOutput[65] = {0};
     nodo_hash_string(genesisMint.serialize().c_str(), hashOutput, sizeof(hashOutput));
 
@@ -937,7 +990,7 @@ int runBlockchainFoundationDemo() {
     std::cout << "\nBlockchain preview:\n";
     std::cout << blockchain.serialize() << "\n";
 
-    std::cout << "\nNodo LedgerRecord deserialization executed successfully.\n";
+    std::cout << "\nNodo Block snapshot deserialization executed successfully.\n";
 
     return 0;
 }
