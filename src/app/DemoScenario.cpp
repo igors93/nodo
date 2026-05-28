@@ -10,11 +10,12 @@
 #include "economics/MintRecord.hpp"
 #include "utils/Time.hpp"
 
-#include "privacy/PrivacyCommitment.hpp"
 #include "privacy/NullifierSet.hpp"
+#include "privacy/PrivacyCommitment.hpp"
 #include "privacy/PrivacyNullifier.hpp"
-#include "privacy/PrivateAccountingRecord.hpp"
 #include "privacy/PrivateAccountingLedger.hpp"
+#include "privacy/PrivateAccountingLedgerRebuilder.hpp"
+#include "privacy/PrivateAccountingRecord.hpp"
 
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/PrivateKey.hpp"
@@ -38,20 +39,21 @@ int runBlockchainFoundationDemo() {
     using nodo::core::Transaction;
     using nodo::core::TransactionType;
 
-    using nodo::privacy::NullifierSet;
-    using nodo::privacy::PrivacyNullifier;
-    using nodo::privacy::PrivacyNullifierType;
-    using nodo::privacy::PrivateAccountingRecord;
-    using nodo::privacy::PrivateAccountingLedger;
-
     using nodo::economics::MintRecord;
     using nodo::economics::MintReason;
 
     using nodo::utils::Amount;
     using nodo::utils::currentUnixTimestamp;
 
+    using nodo::privacy::NullifierSet;
     using nodo::privacy::PrivacyCommitment;
     using nodo::privacy::PrivacyCommitmentType;
+    using nodo::privacy::PrivacyNullifier;
+    using nodo::privacy::PrivacyNullifierType;
+    using nodo::privacy::PrivateAccountingLedger;
+    using nodo::privacy::PrivateAccountingLedgerRebuilder;
+    using nodo::privacy::PrivateAccountingLedgerRebuildReport;
+    using nodo::privacy::PrivateAccountingRecord;
 
     using nodo::crypto::CryptoAlgorithm;
     using nodo::crypto::CryptoPolicy;
@@ -66,6 +68,12 @@ int runBlockchainFoundationDemo() {
     Blockchain blockchain;
     CryptoPolicy cryptoPolicy = CryptoPolicy::developmentPolicy();
 
+    /*
+     * Development keys.
+     *
+     * Warning:
+     * These keys are not secure. They exist only to validate the architecture.
+     */
     PublicKey igorPublicKey(
         CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
         "igor-development-public-key"
@@ -76,6 +84,12 @@ int runBlockchainFoundationDemo() {
         "igor-development-private-key"
     );
 
+    /*
+     * Simplified genesis mint.
+     *
+     * Rule:
+     * Even genesis coins must have an auditable MintRecord.
+     */
     MintRecord genesisMint(
         "mint_genesis_igor_001",
         "igor",
@@ -142,6 +156,12 @@ int runBlockchainFoundationDemo() {
               << (blockchain.isValid() ? "VALID" : "INVALID")
               << "\n";
 
+    /*
+     * Create a signed transfer transaction.
+     *
+     * This transaction proves that Nodo can create a signed,
+     * policy-checked public transfer and later replay it from chain history.
+     */
     Transaction transferTransaction(
         TransactionType::TRANSFER,
         "igor",
@@ -223,6 +243,9 @@ int runBlockchainFoundationDemo() {
               << (blockchain.isValid() ? "VALID" : "INVALID")
               << "\n";
 
+    /*
+     * First audit of the public chain before private records are anchored.
+     */
     StateRebuildReport rebuildReport =
         ChainStateRebuilder::auditBlockchain(blockchain);
 
@@ -265,17 +288,22 @@ int runBlockchainFoundationDemo() {
               << rebuiltFullState.balanceOf("ana").toString()
               << "\n";
     std::cout << "Rebuilt fee pool balance: "
-          << rebuiltFullState.balanceOf(State::feePoolAddress()).toString()
-          << "\n";
+              << rebuiltFullState.balanceOf(State::feePoolAddress()).toString()
+              << "\n";
     std::cout << "Rebuilt Igor next nonce: "
-            << rebuiltFullState.nextNonceOf("igor")
-            << "\n";
+              << rebuiltFullState.nextNonceOf("igor")
+              << "\n";
     std::cout << "Rebuilt Ana next nonce: "
-            << rebuiltFullState.nextNonceOf("ana")
-            << "\n";
+              << rebuiltFullState.nextNonceOf("ana")
+              << "\n";
     std::cout << "Rebuilt supply audit: "
-            << (rebuiltFullState.isSupplyAuditable() ? "VALID" : "INVALID")
-            << "\n";
+              << (rebuiltFullState.isSupplyAuditable() ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!rebuiltFullState.isSupplyAuditable()) {
+        std::cerr << "Fatal: rebuilt State failed supply audit.\n";
+        return 1;
+    }
 
     /*
      * Privacy accounting foundation.
@@ -340,6 +368,12 @@ int runBlockchainFoundationDemo() {
     std::cout << "Duplicate nullifier protection: "
               << (duplicateNullifierRejected ? "VALID" : "INVALID")
               << "\n";
+
+    if (!duplicateNullifierRejected) {
+        std::cerr << "Fatal: duplicate nullifier protection failed.\n";
+        return 1;
+    }
+
     /*
      * Private accounting record foundation.
      *
@@ -390,6 +424,11 @@ int runBlockchainFoundationDemo() {
     std::cout << "Private transfer output commitments: "
               << privateTransferRecord.outputCommitments().size()
               << "\n";
+
+    if (!privateTransferRecord.isValid()) {
+        std::cerr << "Fatal: private transfer accounting record is invalid.\n";
+        return 1;
+    }
 
     /*
      * Private accounting ledger foundation.
@@ -447,28 +486,44 @@ int runBlockchainFoundationDemo() {
         std::cerr << "Fatal: duplicate private record protection failed.\n";
         return 1;
     }
+
     /*
      * Private accounting records now enter the public blockchain as official
      * LedgerRecords.
      *
-     * This does not reveal private amounts or owners in a production model.
-     * It only anchors the private accounting operation into the public chain.
+     * Both private mint and private transfer records must be anchored.
+     * If only the private transfer is anchored, a node cannot rebuild the full
+     * private accounting supply from blockchain history.
      */
-    LedgerRecord privateAccountingLedgerRecord =
+    LedgerRecord privateMintLedgerRecord =
+        LedgerRecord::fromPrivateAccountingRecord(
+            privateMintRecord,
+            currentUnixTimestamp()
+        );
+
+    LedgerRecord privateTransferLedgerRecord =
         LedgerRecord::fromPrivateAccountingRecord(
             privateTransferRecord,
             currentUnixTimestamp()
         );
 
-    if (!privateAccountingLedgerRecord.isValid()) {
-        std::cerr << "Fatal: invalid private accounting LedgerRecord.\n";
+    if (!privateMintLedgerRecord.isValid()) {
+        std::cerr << "Fatal: invalid private mint LedgerRecord.\n";
+        return 1;
+    }
+
+    if (!privateTransferLedgerRecord.isValid()) {
+        std::cerr << "Fatal: invalid private transfer LedgerRecord.\n";
         return 1;
     }
 
     Block privateAccountingBlock(
         2,
         blockchain.latestBlock().hash(),
-        std::vector<LedgerRecord>{privateAccountingLedgerRecord},
+        std::vector<LedgerRecord>{
+            privateMintLedgerRecord,
+            privateTransferLedgerRecord
+        },
         currentUnixTimestamp()
     );
 
@@ -488,6 +543,9 @@ int runBlockchainFoundationDemo() {
               << "\n";
     std::cout << "Private Accounting Block hash: "
               << privateAccountingBlock.hash()
+              << "\n";
+    std::cout << "Private Accounting Block record count: "
+              << privateAccountingBlock.records().size()
               << "\n";
     std::cout << "Blockchain size after private accounting: "
               << blockchain.size()
@@ -524,19 +582,51 @@ int runBlockchainFoundationDemo() {
         return 1;
     }
 
-    if (!privateTransferRecord.isValid()) {
-        std::cerr << "Fatal: private transfer accounting record is invalid.\n";
+    /*
+     * New phase:
+     * Rebuild the private accounting ledger directly from Blockchain history.
+     */
+    PrivateAccountingLedgerRebuildReport privateLedgerRebuildReport =
+        PrivateAccountingLedgerRebuilder::auditBlockchain(blockchain);
+
+    std::cout << "\nPrivate Accounting Ledger rebuilt from Blockchain.\n";
+    std::cout << "Private ledger rebuild report:\n";
+    std::cout << privateLedgerRebuildReport.serialize() << "\n";
+
+    if (!privateLedgerRebuildReport.success()) {
+        std::cerr << "Fatal: private ledger rebuild failed: "
+                  << privateLedgerRebuildReport.failureReason()
+                  << "\n";
         return 1;
     }
 
+    PrivateAccountingLedger rebuiltPrivateLedger =
+        PrivateAccountingLedgerRebuilder::rebuildFromBlockchain(blockchain);
 
-    if (!duplicateNullifierRejected) {
-        std::cerr << "Fatal: duplicate nullifier protection failed.\n";
-        return 1;
-    }
+    std::cout << "Rebuilt private ledger validation: "
+              << (rebuiltPrivateLedger.isValid() ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Rebuilt private ledger record count: "
+              << rebuiltPrivateLedger.size()
+              << "\n";
+    std::cout << "Rebuilt private ledger nullifier count: "
+              << rebuiltPrivateLedger.nullifierSet().size()
+              << "\n";
+    std::cout << "Rebuilt private ledger commitment count: "
+              << rebuiltPrivateLedger.registeredCommitmentCount()
+              << "\n";
+    std::cout << "Rebuilt private ledger minted supply: "
+              << rebuiltPrivateLedger.privateMintedSupply().toString()
+              << "\n";
+    std::cout << "Rebuilt private ledger burned supply: "
+              << rebuiltPrivateLedger.privateBurnedSupply().toString()
+              << "\n";
+    std::cout << "Rebuilt private ledger outstanding supply: "
+              << rebuiltPrivateLedger.outstandingPrivateSupply().toString()
+              << "\n";
 
-    if (!rebuiltFullState.isSupplyAuditable()) {
-        std::cerr << "Fatal: rebuilt State failed supply audit.\n";
+    if (!rebuiltPrivateLedger.isValid()) {
+        std::cerr << "Fatal: rebuilt private ledger is invalid.\n";
         return 1;
     }
 
@@ -549,7 +639,7 @@ int runBlockchainFoundationDemo() {
     std::cout << "\nBlockchain preview:\n";
     std::cout << blockchain.serialize() << "\n";
 
-    std::cout << "\nNodo transfer state reconstruction executed successfully.\n";
+    std::cout << "\nNodo private accounting ledger rebuild executed successfully.\n";
 
     return 0;
 }

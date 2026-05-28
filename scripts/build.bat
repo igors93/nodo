@@ -62,6 +62,7 @@ echo Building Nodo C++ application...
     "%ROOT_DIR%\src\core\Account.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivateAccountingRecord.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivateAccountingLedger.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivateAccountingLedgerRebuilder.cpp" ^
     "%ROOT_DIR%\src\core\CoinLot.cpp" ^
     "%ROOT_DIR%\src\core\State.cpp" ^
     "%ROOT_DIR%\src\core\Transaction.cpp" ^
