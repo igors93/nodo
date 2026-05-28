@@ -9,6 +9,10 @@
 #include <cstdint>
 #include <string>
 
+namespace nodo::serialization {
+class LedgerRecordCodec;
+}
+
 namespace nodo::core {
 
 /*
@@ -76,6 +80,15 @@ public:
     std::string serialize() const;
 
 private:
+    /*
+     * LedgerRecordCodec is the only serialization boundary allowed to rebuild
+     * a LedgerRecord from trusted serialized fields.
+     *
+     * Security rule:
+     * Any reconstructed record must still pass LedgerRecord::isValid().
+     */
+    friend class nodo::serialization::LedgerRecordCodec;
+
     LedgerRecord(
         std::string id,
         LedgerRecordType type,
@@ -104,4 +117,4 @@ private:
 
 } // namespace nodo::core
 
-#endif 
+#endif

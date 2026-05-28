@@ -9,6 +9,7 @@
 #include "core/TransactionType.hpp"
 #include "economics/MintRecord.hpp"
 #include "utils/Time.hpp"
+#include "serialization/LedgerRecordCodec.hpp"
 
 #include "privacy/NullifierSet.hpp"
 #include "privacy/PrivacyCommitment.hpp"
@@ -44,6 +45,8 @@ int runBlockchainFoundationDemo() {
     using nodo::core::StateRebuildReport;
     using nodo::core::Transaction;
     using nodo::core::TransactionType;
+
+    using nodo::serialization::LedgerRecordCodec;
 
     using nodo::economics::MintRecord;
     using nodo::economics::MintReason;
@@ -864,6 +867,67 @@ int runBlockchainFoundationDemo() {
         return 1;
     }
 
+    /*
+     * LedgerRecord deserialization foundation.
+     *
+     * This rebuilds LedgerRecords from persisted block snapshot headers and
+     * verifies that their deterministic serialization matches the original
+     * in-memory blockchain records.
+     */
+    std::size_t deserializedLedgerRecordCount = 0;
+    bool deserializedLedgerRecordsMatchBlockchain = true;
+
+    for (std::size_t blockPosition = 0;
+         blockPosition < parsedSnapshotHeaders.size();
+         ++blockPosition) {
+        std::vector<LedgerRecord> deserializedRecords =
+            LedgerRecordCodec::deserializeListFromBlockHeaderPayload(
+                parsedSnapshotHeaders[blockPosition].headerPayload()
+            );
+
+        const auto& originalRecords =
+            blockchain.blocks()[blockPosition].records();
+
+        if (deserializedRecords.size() != originalRecords.size()) {
+            deserializedLedgerRecordsMatchBlockchain = false;
+            break;
+        }
+
+        for (std::size_t recordPosition = 0;
+             recordPosition < deserializedRecords.size();
+             ++recordPosition) {
+            if (!deserializedRecords[recordPosition].isValid()) {
+                deserializedLedgerRecordsMatchBlockchain = false;
+                break;
+            }
+
+            if (deserializedRecords[recordPosition].serialize() !=
+                originalRecords[recordPosition].serialize()) {
+                deserializedLedgerRecordsMatchBlockchain = false;
+                break;
+            }
+        }
+
+        deserializedLedgerRecordCount += deserializedRecords.size();
+
+        if (!deserializedLedgerRecordsMatchBlockchain) {
+            break;
+        }
+    }
+
+    std::cout << "\nLedgerRecord deserialization preview:\n";
+    std::cout << "Deserialized LedgerRecord count: "
+              << deserializedLedgerRecordCount
+              << "\n";
+    std::cout << "Deserialized LedgerRecords match Blockchain: "
+              << (deserializedLedgerRecordsMatchBlockchain ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!deserializedLedgerRecordsMatchBlockchain) {
+        std::cerr << "Fatal: LedgerRecord deserialization validation failed.\n";
+        return 1;
+    }
+
     char hashOutput[65] = {0};
     nodo_hash_string(genesisMint.serialize().c_str(), hashOutput, sizeof(hashOutput));
 
@@ -873,7 +937,7 @@ int runBlockchainFoundationDemo() {
     std::cout << "\nBlockchain preview:\n";
     std::cout << blockchain.serialize() << "\n";
 
-    std::cout << "\nNodo block snapshot header parser executed successfully.\n";
+    std::cout << "\nNodo LedgerRecord deserialization executed successfully.\n";
 
     return 0;
 }

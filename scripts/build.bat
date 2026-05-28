@@ -57,6 +57,7 @@ echo Building Nodo C++ application...
     "%ROOT_DIR%\src\utils\Time.cpp" ^
     "%ROOT_DIR%\src\economics\MintRecord.cpp" ^
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
+    "%ROOT_DIR%\src\serialization\LedgerRecordCodec.cpp" ^
     "%ROOT_DIR%\src\storage\BlockFileStore.cpp" ^
     "%ROOT_DIR%\src\storage\ChainManifest.cpp" ^
     "%ROOT_DIR%\src\storage\BlockStorageIndex.cpp" ^
