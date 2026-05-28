@@ -17,6 +17,8 @@
 #include "privacy/PrivateAccountingLedgerRebuilder.hpp"
 #include "privacy/PrivateAccountingRecord.hpp"
 
+#include "storage/BlockFileStore.hpp"
+
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
@@ -41,6 +43,8 @@ int runBlockchainFoundationDemo() {
 
     using nodo::economics::MintRecord;
     using nodo::economics::MintReason;
+
+    using nodo::storage::BlockFileStore;
 
     using nodo::utils::Amount;
     using nodo::utils::currentUnixTimestamp;
@@ -627,6 +631,41 @@ int runBlockchainFoundationDemo() {
 
     if (!rebuiltPrivateLedger.isValid()) {
         std::cerr << "Fatal: rebuilt private ledger is invalid.\n";
+        return 1;
+    }
+        /*
+     * Storage foundation.
+     *
+     * The current storage layer writes deterministic block snapshots to disk.
+     * Loading blocks back from disk will be implemented in a later phase.
+     */
+    BlockFileStore blockFileStore("data");
+
+    blockFileStore.clearBlockStorage();
+    blockFileStore.writeBlockchain(blockchain);
+
+    bool storedBlocksAreValid = true;
+
+    for (const auto& block : blockchain.blocks()) {
+        if (!blockFileStore.verifyStoredBlock(block)) {
+            storedBlocksAreValid = false;
+            break;
+        }
+    }
+
+    std::cout << "\nBlock storage foundation preview:\n";
+    std::cout << "Block storage directory: "
+              << blockFileStore.blockDirectoryPath()
+              << "\n";
+    std::cout << "Stored block file count: "
+              << blockFileStore.storedBlockFileCount()
+              << "\n";
+    std::cout << "Stored block verification: "
+              << (storedBlocksAreValid ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!storedBlocksAreValid) {
+        std::cerr << "Fatal: stored block verification failed.\n";
         return 1;
     }
 
