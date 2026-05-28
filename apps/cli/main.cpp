@@ -1,3 +1,4 @@
+#include "core/Block.hpp"
 #include "core/LedgerRecord.hpp"
 #include "core/State.hpp"
 #include "core/Transaction.hpp"
@@ -13,8 +14,10 @@
 
 #include <iostream>
 #include <string>
+#include <vector>
 
 int main() {
+    using nodo::core::Block;
     using nodo::core::LedgerRecord;
     using nodo::core::State;
     using nodo::core::Transaction;
@@ -33,8 +36,8 @@ int main() {
     using nodo::crypto::SecurityContext;
     using nodo::crypto::SignatureBundle;
 
-    std::cout << "Nodo Blockchain - LedgerRecord Foundation\n";
-    std::cout << "-----------------------------------------\n\n";
+    std::cout << "Nodo Blockchain - Block Foundation\n";
+    std::cout << "----------------------------------\n\n";
 
     State state;
     CryptoPolicy cryptoPolicy = CryptoPolicy::developmentPolicy();
@@ -95,10 +98,6 @@ int main() {
         return 1;
     }
 
-    /*
-     * New phase:
-     * Convert the genesis MintRecord into an official LedgerRecord.
-     */
     LedgerRecord genesisLedgerRecord =
         LedgerRecord::fromMintRecord(
             genesisMint,
@@ -106,15 +105,34 @@ int main() {
         );
 
     std::cout << "\nGenesis LedgerRecord created.\n";
-    std::cout << "Genesis LedgerRecord id: "
-              << genesisLedgerRecord.id()
-              << "\n";
     std::cout << "Genesis LedgerRecord validation: "
               << (genesisLedgerRecord.isValid() ? "VALID" : "INVALID")
               << "\n";
 
     if (!genesisLedgerRecord.isValid()) {
         std::cerr << "Fatal: invalid genesis LedgerRecord.\n";
+        return 1;
+    }
+
+    /*
+     * New phase:
+     * Create the first block of the Nodo ledger.
+     */
+    Block genesisBlock =
+        Block::createGenesisBlock(
+            std::vector<LedgerRecord>{genesisLedgerRecord},
+            currentUnixTimestamp()
+        );
+
+    std::cout << "\nGenesis Block created.\n";
+    std::cout << "Genesis Block index: " << genesisBlock.index() << "\n";
+    std::cout << "Genesis Block hash: " << genesisBlock.hash() << "\n";
+    std::cout << "Genesis Block validation: "
+              << (genesisBlock.isValid() ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!genesisBlock.isValid()) {
+        std::cerr << "Fatal: invalid genesis block.\n";
         return 1;
     }
 
@@ -186,10 +204,6 @@ int main() {
         return 1;
     }
 
-    /*
-     * New phase:
-     * Convert the signed Transaction into an official LedgerRecord.
-     */
     LedgerRecord transferLedgerRecord =
         LedgerRecord::fromTransaction(
             transferTransaction,
@@ -199,29 +213,71 @@ int main() {
         );
 
     std::cout << "\nTransfer LedgerRecord created.\n";
-    std::cout << "Transfer LedgerRecord id: "
-              << transferLedgerRecord.id()
-              << "\n";
-    std::cout << "Transfer LedgerRecord payload hash: "
-              << transferLedgerRecord.payloadHash()
-              << "\n";
     std::cout << "Transfer LedgerRecord validation: "
               << (transferLedgerRecord.isValid() ? "VALID" : "INVALID")
               << "\n";
 
-    std::cout << "\nTransfer LedgerRecord preview:\n";
-    std::cout << transferLedgerRecord.serialize() << "\n";
+    if (!transferLedgerRecord.isValid()) {
+        std::cerr << "Fatal: invalid transfer LedgerRecord.\n";
+        return 1;
+    }
 
     /*
-     * Hash preview for MintRecord.
+     * New phase:
+     * Create a second block linked to the genesis block.
      */
+    Block transferBlock(
+        1,
+        genesisBlock.hash(),
+        std::vector<LedgerRecord>{transferLedgerRecord},
+        currentUnixTimestamp()
+    );
+
+    std::cout << "\nTransfer Block created.\n";
+    std::cout << "Transfer Block index: " << transferBlock.index() << "\n";
+    std::cout << "Transfer Block previous hash: "
+              << transferBlock.previousHash()
+              << "\n";
+    std::cout << "Transfer Block hash: " << transferBlock.hash() << "\n";
+    std::cout << "Transfer Block validation: "
+              << (transferBlock.isValid() ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!transferBlock.isValid()) {
+        std::cerr << "Fatal: invalid transfer block.\n";
+        return 1;
+    }
+
+    /*
+     * Simple manual chain-link validation.
+     *
+     * This will later move into Blockchain.cpp.
+     */
+    const bool blocksAreLinked =
+        transferBlock.previousHash() == genesisBlock.hash();
+
+    std::cout << "\nManual block link validation: "
+              << (blocksAreLinked ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!blocksAreLinked) {
+        std::cerr << "Fatal: blocks are not linked correctly.\n";
+        return 1;
+    }
+
     char hashOutput[65] = {0};
     nodo_hash_string(genesisMint.serialize().c_str(), hashOutput, sizeof(hashOutput));
 
     std::cout << "\nGenesis MintRecord hash preview:\n";
     std::cout << hashOutput << "\n";
 
-    std::cout << "\nNodo LedgerRecord foundation executed successfully.\n";
+    std::cout << "\nGenesis Block preview:\n";
+    std::cout << genesisBlock.serialize() << "\n";
+
+    std::cout << "\nTransfer Block preview:\n";
+    std::cout << transferBlock.serialize() << "\n";
+
+    std::cout << "\nNodo Block foundation executed successfully.\n";
 
     return 0;
 }
