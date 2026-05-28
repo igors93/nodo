@@ -14,6 +14,7 @@
 
 #include "privacy/NullifierSet.hpp"
 #include "privacy/PrivacyNullifier.hpp"
+#include "privacy/PrivateAccountingRecord.hpp"
 
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/PrivateKey.hpp"
@@ -40,6 +41,7 @@ int runBlockchainFoundationDemo() {
     using nodo::privacy::NullifierSet;
     using nodo::privacy::PrivacyNullifier;
     using nodo::privacy::PrivacyNullifierType;
+    using nodo::privacy::PrivateAccountingRecord;
 
     using nodo::economics::MintRecord;
     using nodo::economics::MintReason;
@@ -337,6 +339,62 @@ int runBlockchainFoundationDemo() {
     std::cout << "Duplicate nullifier protection: "
               << (duplicateNullifierRejected ? "VALID" : "INVALID")
               << "\n";
+    /*
+     * Private accounting record foundation.
+     *
+     * A private transfer should consume public nullifiers and create new
+     * private commitments while keeping public supply unchanged.
+     */
+    PrivacyCommitment privateTransferOutputToAna =
+        PrivacyCommitment::createDevelopmentCommitment(
+            PrivacyCommitmentType::TRANSFER_OUTPUT_COMMITMENT,
+            "ana",
+            Amount::fromNodo(25),
+            "development-blinding-secret-ana-output-001",
+            privateSpendNullifier.id(),
+            currentUnixTimestamp()
+        );
+
+    PrivacyCommitment privateTransferChangeToIgor =
+        PrivacyCommitment::createDevelopmentCommitment(
+            PrivacyCommitmentType::TRANSFER_OUTPUT_COMMITMENT,
+            "igor",
+            Amount::fromRawUnits(97499900000),
+            "development-blinding-secret-igor-change-001",
+            privateSpendNullifier.id(),
+            currentUnixTimestamp()
+        );
+
+    PrivateAccountingRecord privateTransferRecord =
+        PrivateAccountingRecord::createPrivateTransferRecord(
+            std::vector<PrivacyNullifier>{privateSpendNullifier},
+            std::vector<PrivacyCommitment>{
+                privateTransferOutputToAna,
+                privateTransferChangeToIgor
+            },
+            "demo-private-transfer-audit-reference-001",
+            currentUnixTimestamp()
+        );
+
+    std::cout << "\nPrivate accounting record foundation preview:\n";
+    std::cout << "Private transfer record validation: "
+              << (privateTransferRecord.isValid() ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Private transfer record id: "
+              << privateTransferRecord.id()
+              << "\n";
+    std::cout << "Private transfer input nullifiers: "
+              << privateTransferRecord.inputNullifiers().size()
+              << "\n";
+    std::cout << "Private transfer output commitments: "
+              << privateTransferRecord.outputCommitments().size()
+              << "\n";
+
+    if (!privateTransferRecord.isValid()) {
+        std::cerr << "Fatal: private transfer accounting record is invalid.\n";
+        return 1;
+    }
+
 
     if (!duplicateNullifierRejected) {
         std::cerr << "Fatal: duplicate nullifier protection failed.\n";

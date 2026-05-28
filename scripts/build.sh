@@ -39,6 +39,7 @@ echo "Building Nodo C++ application..."
     "$ROOT_DIR/src/privacy/PrivacyCommitment.cpp" \
     "$ROOT_DIR/src/privacy/PrivacyNullifier.cpp" \
     "$ROOT_DIR/src/privacy/NullifierSet.cpp" \
+    "$ROOT_DIR/src/privacy/PrivateAccountingRecord.cpp" \
     "$ROOT_DIR/src/core/Account.cpp" \
     "$ROOT_DIR/src/core/CoinLot.cpp" \
     "$ROOT_DIR/src/core/State.cpp" \
