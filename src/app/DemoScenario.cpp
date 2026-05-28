@@ -18,6 +18,7 @@
 #include "privacy/PrivateAccountingRecord.hpp"
 
 #include "storage/BlockFileStore.hpp"
+#include "storage/ChainManifest.hpp"
 
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/PrivateKey.hpp"
@@ -45,6 +46,7 @@ int runBlockchainFoundationDemo() {
     using nodo::economics::MintReason;
 
     using nodo::storage::BlockFileStore;
+    using nodo::storage::ChainManifest;
 
     using nodo::utils::Amount;
     using nodo::utils::currentUnixTimestamp;
@@ -587,7 +589,6 @@ int runBlockchainFoundationDemo() {
     }
 
     /*
-     * New phase:
      * Rebuild the private accounting ledger directly from Blockchain history.
      */
     PrivateAccountingLedgerRebuildReport privateLedgerRebuildReport =
@@ -633,7 +634,8 @@ int runBlockchainFoundationDemo() {
         std::cerr << "Fatal: rebuilt private ledger is invalid.\n";
         return 1;
     }
-        /*
+
+    /*
      * Storage foundation.
      *
      * The current storage layer writes deterministic block snapshots to disk.
@@ -669,6 +671,54 @@ int runBlockchainFoundationDemo() {
         return 1;
     }
 
+    /*
+     * Chain manifest foundation.
+     *
+     * The manifest summarizes the persisted chain and gives future loading
+     * code a small validated metadata file before reading full block snapshots.
+     */
+    ChainManifest chainManifest =
+        ChainManifest::fromBlockchain(
+            blockchain,
+            currentUnixTimestamp()
+        );
+
+    chainManifest.writeToStorageRoot("data");
+
+    ChainManifest loadedChainManifest =
+        ChainManifest::readFromStorageRoot("data");
+
+    const bool manifestIsValid =
+        loadedChainManifest.isValid();
+
+    const bool manifestMatchesBlockchain =
+        loadedChainManifest.matchesBlockchain(blockchain);
+
+    std::cout << "\nChain storage manifest preview:\n";
+    std::cout << "Manifest validation: "
+              << (manifestIsValid ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Manifest matches Blockchain: "
+              << (manifestMatchesBlockchain ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Manifest block count: "
+              << loadedChainManifest.blockCount()
+              << "\n";
+    std::cout << "Manifest genesis hash: "
+              << loadedChainManifest.genesisHash()
+              << "\n";
+    std::cout << "Manifest latest hash: "
+              << loadedChainManifest.latestHash()
+              << "\n";
+    std::cout << "Manifest hash: "
+              << loadedChainManifest.manifestHash()
+              << "\n";
+
+    if (!manifestIsValid || !manifestMatchesBlockchain) {
+        std::cerr << "Fatal: chain manifest verification failed.\n";
+        return 1;
+    }
+
     char hashOutput[65] = {0};
     nodo_hash_string(genesisMint.serialize().c_str(), hashOutput, sizeof(hashOutput));
 
@@ -678,7 +728,7 @@ int runBlockchainFoundationDemo() {
     std::cout << "\nBlockchain preview:\n";
     std::cout << blockchain.serialize() << "\n";
 
-    std::cout << "\nNodo private accounting ledger rebuild executed successfully.\n";
+    std::cout << "\nNodo chain storage manifest executed successfully.\n";
 
     return 0;
 }
