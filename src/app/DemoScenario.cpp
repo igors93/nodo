@@ -18,6 +18,7 @@
 #include "privacy/PrivateAccountingRecord.hpp"
 
 #include "storage/BlockFileStore.hpp"
+#include "storage/BlockStorageIndex.hpp"
 #include "storage/ChainManifest.hpp"
 
 #include "crypto/CryptoPolicy.hpp"
@@ -46,6 +47,7 @@ int runBlockchainFoundationDemo() {
     using nodo::economics::MintReason;
 
     using nodo::storage::BlockFileStore;
+    using nodo::storage::BlockStorageIndex;
     using nodo::storage::ChainManifest;
 
     using nodo::utils::Amount;
@@ -719,6 +721,58 @@ int runBlockchainFoundationDemo() {
         return 1;
     }
 
+    /*
+     * Block storage index foundation.
+     *
+     * The index maps block heights and hashes to deterministic block snapshot
+     * file names. This prepares Nodo for safe disk loading in a later phase.
+     */
+    BlockStorageIndex blockStorageIndex =
+        BlockStorageIndex::fromBlockchainAndManifest(
+            blockchain,
+            loadedChainManifest,
+            currentUnixTimestamp()
+        );
+
+    blockStorageIndex.writeToStorageRoot("data");
+
+    BlockStorageIndex loadedBlockStorageIndex =
+        BlockStorageIndex::readFromStorageRoot("data");
+
+    const bool storageIndexIsValid =
+        loadedBlockStorageIndex.isValid();
+
+    const bool storageIndexMatchesChain =
+        loadedBlockStorageIndex.matchesBlockchainAndManifest(
+            blockchain,
+            loadedChainManifest
+        );
+
+    std::cout << "\nBlock storage index preview:\n";
+    std::cout << "Storage index validation: "
+              << (storageIndexIsValid ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Storage index matches Blockchain: "
+              << (storageIndexMatchesChain ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Storage index block count: "
+              << loadedBlockStorageIndex.blockCount()
+              << "\n";
+    std::cout << "Storage index entry count: "
+              << loadedBlockStorageIndex.entries().size()
+              << "\n";
+    std::cout << "Storage index manifest hash: "
+              << loadedBlockStorageIndex.chainManifestHash()
+              << "\n";
+    std::cout << "Storage index hash: "
+              << loadedBlockStorageIndex.indexHash()
+              << "\n";
+
+    if (!storageIndexIsValid || !storageIndexMatchesChain) {
+        std::cerr << "Fatal: block storage index verification failed.\n";
+        return 1;
+    }
+
     char hashOutput[65] = {0};
     nodo_hash_string(genesisMint.serialize().c_str(), hashOutput, sizeof(hashOutput));
 
@@ -728,7 +782,7 @@ int runBlockchainFoundationDemo() {
     std::cout << "\nBlockchain preview:\n";
     std::cout << blockchain.serialize() << "\n";
 
-    std::cout << "\nNodo chain storage manifest executed successfully.\n";
+    std::cout << "\nNodo block storage index executed successfully.\n";
 
     return 0;
 }
