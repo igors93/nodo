@@ -10,6 +10,8 @@
 #include "economics/MintRecord.hpp"
 #include "utils/Time.hpp"
 
+#include "privacy/PrivacyCommitment.hpp"
+
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
@@ -37,6 +39,9 @@ int runBlockchainFoundationDemo() {
 
     using nodo::utils::Amount;
     using nodo::utils::currentUnixTimestamp;
+
+    using nodo::privacy::PrivacyCommitment;
+    using nodo::privacy::PrivacyCommitmentType;
 
     using nodo::crypto::CryptoAlgorithm;
     using nodo::crypto::CryptoPolicy;
@@ -261,6 +266,34 @@ int runBlockchainFoundationDemo() {
     std::cout << "Rebuilt supply audit: "
             << (rebuiltFullState.isSupplyAuditable() ? "VALID" : "INVALID")
             << "\n";
+
+    /*
+     * Privacy accounting foundation.
+     *
+     * This does not provide production privacy yet.
+     * It introduces the architectural idea of representing private value
+     * through commitments instead of directly exposing all accounting data.
+     */
+    PrivacyCommitment privateMintCommitment =
+        PrivacyCommitment::createDevelopmentCommitment(
+            PrivacyCommitmentType::MINT_COMMITMENT,
+            "igor",
+            Amount::fromNodo(1000),
+            "development-blinding-secret-001",
+            genesisMint.id(),
+            currentUnixTimestamp()
+        );
+
+    std::cout << "\nPrivacy accounting foundation preview:\n";
+    std::cout << "Private mint commitment validation: "
+              << (privateMintCommitment.isValid() ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Private mint commitment id: "
+              << privateMintCommitment.id()
+              << "\n";
+    std::cout << "Private mint commitment owner hint: "
+              << privateMintCommitment.ownerHint()
+              << "\n";
 
     if (!rebuiltFullState.isSupplyAuditable()) {
         std::cerr << "Fatal: rebuilt State failed supply audit.\n";
