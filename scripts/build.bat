@@ -63,6 +63,7 @@ echo Building Nodo C++ application...
     "%ROOT_DIR%\src\storage\ChainManifest.cpp" ^
     "%ROOT_DIR%\src\storage\BlockStorageIndex.cpp" ^
     "%ROOT_DIR%\src\storage\BlockchainStorageReader.cpp" ^
+    "%ROOT_DIR%\src\storage\BlockchainLoader.cpp" ^
     "%ROOT_DIR%\src\storage\BlockSnapshotHeader.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyCommitment.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyNullifier.cpp" ^

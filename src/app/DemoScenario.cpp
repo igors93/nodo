@@ -20,6 +20,7 @@
 #include "privacy/PrivateAccountingRecord.hpp"
 
 #include "storage/BlockFileStore.hpp"
+#include "storage/BlockchainLoader.hpp"
 #include "storage/BlockchainStorageReader.hpp"
 #include "storage/BlockSnapshotHeader.hpp"
 #include "storage/BlockStorageIndex.hpp"
@@ -54,6 +55,8 @@ int runBlockchainFoundationDemo() {
     using nodo::economics::MintReason;
 
     using nodo::storage::BlockFileStore;
+    using nodo::storage::BlockchainLoader;
+    using nodo::storage::BlockchainLoadReport;
     using nodo::storage::BlockchainStorageReader;
     using nodo::storage::BlockchainStorageReadReport;
     using nodo::storage::StoredBlockSnapshot;
@@ -981,6 +984,67 @@ int runBlockchainFoundationDemo() {
         return 1;
     }
 
+    /*
+     * Blockchain loader foundation.
+     *
+     * This loads a complete Blockchain from disk using the manifest, index,
+     * and stored block snapshots.
+     */
+    BlockchainLoadReport blockchainLoadReport =
+        BlockchainLoader::auditStorageRoot("data");
+
+    core::Blockchain loadedBlockchain =
+        BlockchainLoader::loadFromStorageRoot("data");
+
+    const bool loadedBlockchainMatchesOriginal =
+        loadedBlockchain.serialize() == blockchain.serialize();
+
+    State loadedPublicState =
+        ChainStateRebuilder::rebuildStateFromLedgerRecords(loadedBlockchain);
+
+    PrivateAccountingLedger loadedPrivateLedger =
+        PrivateAccountingLedgerRebuilder::rebuildFromBlockchain(loadedBlockchain);
+
+    const bool loadedPublicStateAuditable =
+        loadedPublicState.isSupplyAuditable();
+
+    const bool loadedPrivateLedgerValid =
+        loadedPrivateLedger.isValid();
+
+    std::cout << "\nBlockchain loader foundation preview:\n";
+    std::cout << "Blockchain loader audit: "
+              << (blockchainLoadReport.success() ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Blockchain loader report:\n";
+    std::cout << blockchainLoadReport.serialize() << "\n";
+    std::cout << "Loaded Blockchain block count: "
+              << loadedBlockchain.size()
+              << "\n";
+    std::cout << "Loaded Blockchain validation: "
+              << (loadedBlockchain.isValid() ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Loaded Blockchain matches original: "
+              << (loadedBlockchainMatchesOriginal ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Loaded public state supply audit: "
+              << (loadedPublicStateAuditable ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Loaded private ledger validation: "
+              << (loadedPrivateLedgerValid ? "VALID" : "INVALID")
+              << "\n";
+    std::cout << "Loaded latest block hash: "
+              << loadedBlockchain.latestBlock().hash()
+              << "\n";
+
+    if (!blockchainLoadReport.success() ||
+        !loadedBlockchain.isValid() ||
+        !loadedBlockchainMatchesOriginal ||
+        !loadedPublicStateAuditable ||
+        !loadedPrivateLedgerValid) {
+        std::cerr << "Fatal: Blockchain loader validation failed.\n";
+        return 1;
+    }
+
     char hashOutput[65] = {0};
     nodo_hash_string(genesisMint.serialize().c_str(), hashOutput, sizeof(hashOutput));
 
@@ -990,7 +1054,7 @@ int runBlockchainFoundationDemo() {
     std::cout << "\nBlockchain preview:\n";
     std::cout << blockchain.serialize() << "\n";
 
-    std::cout << "\nNodo Block snapshot deserialization executed successfully.\n";
+    std::cout << "\nNodo Blockchain loader foundation executed successfully.\n";
 
     return 0;
 }
