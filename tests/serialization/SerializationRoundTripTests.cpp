@@ -1,7 +1,9 @@
+#include "economics/MintRecord.hpp"
 #include "privacy/PrivateAccountingRecord.hpp"
 #include "privacy/PrivacyCommitment.hpp"
 #include "privacy/PrivacyNullifier.hpp"
 #include "serialization/FieldCodec.hpp"
+#include "serialization/MintRecordCodec.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
@@ -13,6 +15,8 @@
 
 namespace {
 
+using nodo::economics::MintReason;
+using nodo::economics::MintRecord;
 using nodo::privacy::PrivacyCommitment;
 using nodo::privacy::PrivacyCommitmentType;
 using nodo::privacy::PrivacyNullifier;
@@ -21,6 +25,7 @@ using nodo::privacy::PrivateAccountingRecord;
 using nodo::privacy::PrivateAccountingRecordType;
 using nodo::privacy::PublicSupplyEffect;
 using nodo::serialization::FieldCodec;
+using nodo::serialization::MintRecordCodec;
 using nodo::utils::Amount;
 
 constexpr std::int64_t kTestTimestamp = 1700000000;
@@ -257,6 +262,82 @@ void testFieldCodecTopLevelObjectSplit() {
     );
 }
 
+void testMintRecordCodecRoundTrip() {
+    MintRecord original(
+        "mint_test_codec_001",
+        "igor",
+        Amount::fromNodo(1000),
+        MintReason::GENESIS_ALLOCATION,
+        0,
+        0,
+        "GENESIS",
+        kTestTimestamp
+    );
+
+    const std::string serialized = original.serialize();
+
+    MintRecord rebuilt =
+        MintRecordCodec::deserialize(serialized);
+
+    requireCondition(
+        rebuilt.isValid(),
+        "MintRecordCodec round-trip produced an invalid object."
+    );
+
+    requireCondition(
+        rebuilt.serialize() == serialized,
+        "MintRecordCodec round-trip changed serialization."
+    );
+}
+
+void testMintRecordLegacyDeserializeDelegatesToCodec() {
+    MintRecord original(
+        "mint_test_legacy_delegate_001",
+        "ana",
+        Amount::fromNodo(25),
+        MintReason::NETWORK_DEFENSE_REWARD,
+        7,
+        3,
+        "abc123",
+        kTestTimestamp + 1
+    );
+
+    const std::string serialized = original.serialize();
+
+    MintRecord rebuilt =
+        MintRecord::deserialize(serialized);
+
+    requireCondition(
+        rebuilt.isValid(),
+        "MintRecord::deserialize produced an invalid object."
+    );
+
+    requireCondition(
+        rebuilt.serialize() == serialized,
+        "MintRecord::deserialize changed serialization."
+    );
+}
+
+void testMintRecordCodecRejectsTamperedAmount() {
+    const std::string tampered =
+        "MintRecord{id=mint_bad_001;recipient=igor;amountRaw=-1;"
+        "reason=GENESIS_ALLOCATION;epoch=0;sourceBlockIndex=0;"
+        "sourceBlockHash=GENESIS;timestamp=1700000000}";
+
+    bool rejected = false;
+
+    try {
+        (void)MintRecordCodec::deserialize(tampered);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+
+    requireCondition(
+        rejected,
+        "MintRecordCodec accepted a tampered negative mint amount."
+    );
+}
+
 void testPrivacyCommitmentRoundTrip() {
     PrivacyCommitment original =
         PrivacyCommitment::createDevelopmentCommitment(
@@ -428,6 +509,9 @@ int main() {
     try {
         testFieldCodecBasicExtraction();
         testFieldCodecTopLevelObjectSplit();
+        testMintRecordCodecRoundTrip();
+        testMintRecordLegacyDeserializeDelegatesToCodec();
+        testMintRecordCodecRejectsTamperedAmount();
         testPrivacyCommitmentRoundTrip();
         testPrivacyNullifierRoundTrip();
         testNullifierDeterminismIgnoresContext();

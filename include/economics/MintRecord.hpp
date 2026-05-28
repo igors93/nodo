@@ -66,7 +66,8 @@ public:
     /*
      * Rebuilds a MintRecord from its deterministic serialized form.
      *
-     * This is used by ChainStateRebuilder when reading LedgerRecord payloads.
+     * This method delegates parsing to serialization::MintRecordCodec so that
+     * MintRecord parsing remains centralized in the serialization module.
      */
     static MintRecord deserialize(const std::string& serialized);
 

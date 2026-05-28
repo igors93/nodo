@@ -20,7 +20,9 @@ echo "Building Nodo serialization round-trip tests..."
 g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/tests/serialization/SerializationRoundTripTests.cpp" \
     "$ROOT_DIR/src/utils/Amount.cpp" \
+    "$ROOT_DIR/src/economics/MintRecord.cpp" \
     "$ROOT_DIR/src/serialization/FieldCodec.cpp" \
+    "$ROOT_DIR/src/serialization/MintRecordCodec.cpp" \
     "$ROOT_DIR/src/privacy/PrivacyCommitment.cpp" \
     "$ROOT_DIR/src/privacy/PrivacyNullifier.cpp" \
     "$ROOT_DIR/src/privacy/PrivateAccountingRecord.cpp" \
