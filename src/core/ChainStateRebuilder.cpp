@@ -1,6 +1,7 @@
 #include "core/ChainStateRebuilder.hpp"
 
 #include "core/LedgerRecord.hpp"
+#include "core/Transaction.hpp"
 #include "economics/MintRecord.hpp"
 
 #include <sstream>
@@ -146,6 +147,61 @@ State ChainStateRebuilder::rebuildStateFromMintRecords(
                 economics::MintRecord::deserialize(record.payload());
 
             rebuiltState.applyMintRecord(mintRecord);
+        }
+    }
+
+    if (!rebuiltState.isSupplyAuditable()) {
+        throw std::logic_error("Rebuilt State failed supply audit.");
+    }
+
+    return rebuiltState;
+}
+
+State ChainStateRebuilder::rebuildStateFromLedgerRecords(
+    const Blockchain& blockchain
+) {
+    StateRebuildReport report = auditBlockchain(blockchain);
+
+    if (!report.success()) {
+        throw std::logic_error(
+            "Cannot rebuild State from invalid Blockchain: "
+            + report.failureReason()
+        );
+    }
+
+    State rebuiltState;
+
+    for (const auto& block : blockchain.blocks()) {
+        if (rebuiltState.currentBlockIndex() != block.index()) {
+            throw std::logic_error("State block index does not match Blockchain block index.");
+        }
+
+        for (const auto& record : block.records()) {
+            if (record.type() == LedgerRecordType::MINT) {
+                economics::MintRecord mintRecord =
+                    economics::MintRecord::deserialize(record.payload());
+
+                rebuiltState.applyMintRecord(mintRecord);
+                continue;
+            }
+
+            if (record.type() == LedgerRecordType::TRANSACTION) {
+                Transaction transaction =
+                    Transaction::deserializeForStateReplay(record.payload());
+
+                if (transaction.type() != TransactionType::TRANSFER) {
+                    throw std::logic_error("Unsupported transaction type during State rebuild.");
+                }
+
+                rebuiltState.applyTransferTransaction(transaction);
+                continue;
+            }
+
+            throw std::logic_error("Unsupported LedgerRecord type during State rebuild.");
+        }
+
+        if (block.index() + 1 < blockchain.size()) {
+            rebuiltState.advanceBlock();
         }
     }
 

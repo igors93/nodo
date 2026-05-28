@@ -9,31 +9,35 @@
 namespace nodo::core {
 
 /*
- * Estado de um lote de moedas.
+ * CoinLotStatus describes the lifecycle of a traceable coin lot.
  *
  * AVAILABLE:
- * Pode ser usado em transações.
+ * The lot can be used as transaction input.
  *
  * LOCKED_FOR_SECURITY:
- * Está travado ajudando a segurança econômica da rede.
+ * The lot is locked and contributes to economic security.
+ *
+ * SPENT:
+ * The lot was consumed by a transaction and must never be spent again.
  *
  * SLASHED:
- * Sofreu penalidade por comportamento inválido.
+ * The lot was penalized for invalid behavior.
  */
 enum class CoinLotStatus {
     AVAILABLE,
     LOCKED_FOR_SECURITY,
+    SPENT,
     SLASHED
 };
 
 std::string coinLotStatusToString(CoinLotStatus status);
 
 /*
- * CoinLot representa um lote rastreável de moedas.
+ * CoinLot represents a traceable group of NODO coins.
  *
- * PRINCÍPIO CENTRAL:
- * A moeda NODO não é apenas um número no saldo.
- * Ela tem origem, dono, estado e histórico.
+ * Core principle:
+ * NODO coins are not only numbers in a balance.
+ * They have origin, owner, status and history.
  */
 class CoinLot {
 public:
@@ -59,10 +63,22 @@ public:
 
     bool isAvailable() const;
     bool isLockedForSecurity() const;
+    bool isSpent() const;
+    bool isSlashed() const;
+
+    /*
+     * Only spendable lots can be consumed by transfers.
+     *
+     * Security rule:
+     * Locked, spent and slashed lots must never be used as transaction inputs.
+     */
+    bool isSpendable() const;
+
     bool isValid() const;
 
     void lockForSecurity(std::uint64_t lockedUntilBlock);
     void unlockIfMature(std::uint64_t currentBlock);
+    void markSpent();
     void markSlashed();
 
     std::string serialize() const;

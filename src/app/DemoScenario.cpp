@@ -45,18 +45,12 @@ int runBlockchainFoundationDemo() {
     using nodo::crypto::SecurityContext;
     using nodo::crypto::SignatureBundle;
 
-    std::cout << "Nodo Blockchain - Mint State Reconstruction\n";
-    std::cout << "-------------------------------------------\n\n";
+    std::cout << "Nodo Blockchain - Transfer State Reconstruction\n";
+    std::cout << "-----------------------------------------------\n\n";
 
     Blockchain blockchain;
     CryptoPolicy cryptoPolicy = CryptoPolicy::developmentPolicy();
 
-    /*
-     * Development keys.
-     *
-     * Warning:
-     * These keys are not secure. They exist only to validate the architecture.
-     */
     PublicKey igorPublicKey(
         CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
         "igor-development-public-key"
@@ -67,12 +61,6 @@ int runBlockchainFoundationDemo() {
         "igor-development-private-key"
     );
 
-    /*
-     * Simplified genesis mint.
-     *
-     * Rule:
-     * Even genesis coins must have an auditable MintRecord.
-     */
     MintRecord genesisMint(
         "mint_genesis_igor_001",
         "igor",
@@ -139,12 +127,6 @@ int runBlockchainFoundationDemo() {
               << (blockchain.isValid() ? "VALID" : "INVALID")
               << "\n";
 
-    /*
-     * Create a signed transfer transaction.
-     *
-     * This transaction is not applied to State yet.
-     * It only proves that Nodo can create a signed, policy-checked transaction.
-     */
     Transaction transferTransaction(
         TransactionType::TRANSFER,
         "igor",
@@ -226,12 +208,6 @@ int runBlockchainFoundationDemo() {
               << (blockchain.isValid() ? "VALID" : "INVALID")
               << "\n";
 
-    char hashOutput[65] = {0};
-    nodo_hash_string(genesisMint.serialize().c_str(), hashOutput, sizeof(hashOutput));
-
-    std::cout << "\nGenesis MintRecord hash preview:\n";
-    std::cout << hashOutput << "\n";
-
     StateRebuildReport rebuildReport =
         ChainStateRebuilder::auditBlockchain(blockchain);
 
@@ -249,35 +225,52 @@ int runBlockchainFoundationDemo() {
         return 1;
     }
 
-    /*
-     * New phase:
-     * Rebuild State from MINT LedgerRecords.
-     *
-     * Transaction records are intentionally ignored in this phase.
-     */
-    State rebuiltMintState =
+    State rebuiltMintOnlyState =
         ChainStateRebuilder::rebuildStateFromMintRecords(blockchain);
 
     std::cout << "\nMint-only State rebuilt from Blockchain.\n";
-    std::cout << "Rebuilt total supply: "
-              << rebuiltMintState.totalSupply().toString()
+    std::cout << "Mint-only Igor balance: "
+              << rebuiltMintOnlyState.balanceOf("igor").toString()
               << "\n";
-    std::cout << "Rebuilt Igor balance: "
-              << rebuiltMintState.balanceOf("igor").toString()
-              << "\n";
-    std::cout << "Rebuilt supply audit: "
-              << (rebuiltMintState.isSupplyAuditable() ? "VALID" : "INVALID")
+    std::cout << "Mint-only Ana balance: "
+              << rebuiltMintOnlyState.balanceOf("ana").toString()
               << "\n";
 
-    if (!rebuiltMintState.isSupplyAuditable()) {
+    State rebuiltFullState =
+        ChainStateRebuilder::rebuildStateFromLedgerRecords(blockchain);
+
+    std::cout << "\nFull State rebuilt from Blockchain.\n";
+    std::cout << "Rebuilt total supply: "
+              << rebuiltFullState.totalSupply().toString()
+              << "\n";
+    std::cout << "Rebuilt Igor balance: "
+              << rebuiltFullState.balanceOf("igor").toString()
+              << "\n";
+    std::cout << "Rebuilt Ana balance: "
+              << rebuiltFullState.balanceOf("ana").toString()
+              << "\n";
+    std::cout << "Rebuilt fee pool balance: "
+              << rebuiltFullState.balanceOf(State::feePoolAddress()).toString()
+              << "\n";
+    std::cout << "Rebuilt supply audit: "
+              << (rebuiltFullState.isSupplyAuditable() ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!rebuiltFullState.isSupplyAuditable()) {
         std::cerr << "Fatal: rebuilt State failed supply audit.\n";
         return 1;
     }
 
+    char hashOutput[65] = {0};
+    nodo_hash_string(genesisMint.serialize().c_str(), hashOutput, sizeof(hashOutput));
+
+    std::cout << "\nGenesis MintRecord hash preview:\n";
+    std::cout << hashOutput << "\n";
+
     std::cout << "\nBlockchain preview:\n";
     std::cout << blockchain.serialize() << "\n";
 
-    std::cout << "\nNodo mint state reconstruction executed successfully.\n";
+    std::cout << "\nNodo transfer state reconstruction executed successfully.\n";
 
     return 0;
 }

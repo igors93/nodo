@@ -80,6 +80,16 @@ public:
         const std::string& signingPayload
     );
 
+    /*
+     * Rebuilds the transaction core fields from a serialized ledger payload.
+     *
+     * This function intentionally does not restore the SignatureBundle.
+     * Ledger replay applies already-accepted records from the validated chain.
+     */
+    static Transaction deserializeForStateReplay(
+        const std::string& serialized
+    );
+
 private:
     std::string m_id;
     TransactionType m_type;

@@ -24,6 +24,7 @@ enum class TransactionType {
 };
 
 std::string transactionTypeToString(TransactionType type);
+TransactionType transactionTypeFromString(const std::string& value);
 
 bool isMintTransaction(TransactionType type);
 bool isSecurityLockTransaction(TransactionType type);

@@ -55,18 +55,23 @@ private:
  */
 class ChainStateRebuilder {
 public:
-    /*
-     * Validates the chain and produces an audit report.
-     */
     static StateRebuildReport auditBlockchain(const Blockchain& blockchain);
 
     /*
      * Rebuilds State using only MINT LedgerRecords.
      *
-     * This is the first real state reconstruction step.
-     * Transaction records are intentionally ignored in this phase.
+     * This method remains useful for focused supply tests.
      */
     static State rebuildStateFromMintRecords(const Blockchain& blockchain);
+
+    /*
+     * Rebuilds State from supported LedgerRecords.
+     *
+     * Supported in this phase:
+     * - MINT
+     * - TRANSFER
+     */
+    static State rebuildStateFromLedgerRecords(const Blockchain& blockchain);
 };
 
 } // namespace nodo::core

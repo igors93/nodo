@@ -2,6 +2,7 @@
 
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 namespace nodo::core {
 
@@ -9,10 +10,16 @@ std::string coinLotStatusToString(CoinLotStatus status) {
     switch (status) {
         case CoinLotStatus::AVAILABLE:
             return "AVAILABLE";
+
         case CoinLotStatus::LOCKED_FOR_SECURITY:
             return "LOCKED_FOR_SECURITY";
+
+        case CoinLotStatus::SPENT:
+            return "SPENT";
+
         case CoinLotStatus::SLASHED:
             return "SLASHED";
+
         default:
             return "UNKNOWN";
     }
@@ -77,6 +84,18 @@ bool CoinLot::isLockedForSecurity() const {
     return m_status == CoinLotStatus::LOCKED_FOR_SECURITY;
 }
 
+bool CoinLot::isSpent() const {
+    return m_status == CoinLotStatus::SPENT;
+}
+
+bool CoinLot::isSlashed() const {
+    return m_status == CoinLotStatus::SLASHED;
+}
+
+bool CoinLot::isSpendable() const {
+    return m_status == CoinLotStatus::AVAILABLE;
+}
+
 bool CoinLot::isValid() const {
     if (m_id.empty()) {
         return false;
@@ -95,6 +114,11 @@ bool CoinLot::isValid() const {
     }
 
     if (m_timestamp <= 0) {
+        return false;
+    }
+
+    if (m_status == CoinLotStatus::LOCKED_FOR_SECURITY &&
+        m_lockedUntilBlock <= m_createdAtBlock) {
         return false;
     }
 
@@ -125,11 +149,20 @@ void CoinLot::unlockIfMature(std::uint64_t currentBlock) {
     }
 }
 
+void CoinLot::markSpent() {
+    if (!isSpendable()) {
+        throw std::logic_error("Only spendable coin lots can be marked as spent.");
+    }
+
+    m_status = CoinLotStatus::SPENT;
+    m_lockedUntilBlock = 0;
+}
+
 void CoinLot::markSlashed() {
-    /*
-     * No futuro, em vez de marcar o lote inteiro como SLASHED,
-     * poderemos aplicar penalidade parcial.
-     */
+    if (isSpent()) {
+        throw std::logic_error("Spent coin lots cannot be slashed.");
+    }
+
     m_status = CoinLotStatus::SLASHED;
 }
 
