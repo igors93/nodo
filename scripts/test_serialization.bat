@@ -50,6 +50,7 @@ echo Building Nodo serialization round-trip tests...
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\MintRecordCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\PrivacyCommitmentCodec.cpp" ^
+    "%ROOT_DIR%\src\serialization\PrivacyNullifierCodec.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyCommitment.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyNullifier.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivateAccountingRecord.cpp" ^

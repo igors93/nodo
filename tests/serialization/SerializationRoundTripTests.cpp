@@ -5,6 +5,7 @@
 #include "serialization/FieldCodec.hpp"
 #include "serialization/MintRecordCodec.hpp"
 #include "serialization/PrivacyCommitmentCodec.hpp"
+#include "serialization/PrivacyNullifierCodec.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
@@ -28,6 +29,7 @@ using nodo::privacy::PublicSupplyEffect;
 using nodo::serialization::FieldCodec;
 using nodo::serialization::MintRecordCodec;
 using nodo::serialization::PrivacyCommitmentCodec;
+using nodo::serialization::PrivacyNullifierCodec;
 using nodo::utils::Amount;
 
 constexpr std::int64_t kTestTimestamp = 1700000000;
@@ -39,20 +41,6 @@ void requireCondition(
     if (!condition) {
         throw std::runtime_error(failureMessage);
     }
-}
-
-PrivacyNullifierType parsePrivacyNullifierType(
-    const std::string& value
-) {
-    if (value == "SPEND_NULLIFIER") {
-        return PrivacyNullifierType::SPEND_NULLIFIER;
-    }
-
-    if (value == "BURN_NULLIFIER") {
-        return PrivacyNullifierType::BURN_NULLIFIER;
-    }
-
-    throw std::invalid_argument("Unknown PrivacyNullifierType: " + value);
 }
 
 PrivateAccountingRecordType parsePrivateAccountingRecordType(
@@ -91,31 +79,6 @@ PublicSupplyEffect parsePublicSupplyEffect(
     throw std::invalid_argument("Unknown PublicSupplyEffect: " + value);
 }
 
-PrivacyNullifier deserializePrivacyNullifierForTest(
-    const std::string& serialized
-) {
-    if (serialized.rfind("PrivacyNullifier{", 0) != 0) {
-        throw std::invalid_argument("Serialized object is not a PrivacyNullifier.");
-    }
-
-    PrivacyNullifier nullifier(
-        FieldCodec::extractField(serialized, "id"),
-        parsePrivacyNullifierType(
-            FieldCodec::extractField(serialized, "type")
-        ),
-        FieldCodec::extractField(serialized, "nullifierHash"),
-        FieldCodec::extractField(serialized, "contextHash"),
-        std::stoll(FieldCodec::extractField(serialized, "createdAt"))
-    );
-
-    requireCondition(
-        nullifier.isValid(),
-        "Deserialized PrivacyNullifier is invalid."
-    );
-
-    return nullifier;
-}
-
 PrivateAccountingRecord deserializePrivateAccountingRecordForTest(
     const std::string& serialized
 ) {
@@ -135,14 +98,8 @@ PrivateAccountingRecord deserializePrivateAccountingRecordForTest(
         "]}"
     );
 
-    std::vector<PrivacyNullifier> inputNullifiers;
-
-    for (const auto& serializedNullifier :
-         FieldCodec::splitTopLevelObjects(inputList, "PrivacyNullifier{")) {
-        inputNullifiers.push_back(
-            deserializePrivacyNullifierForTest(serializedNullifier)
-        );
-    }
+    std::vector<PrivacyNullifier> inputNullifiers =
+        PrivacyNullifierCodec::deserializeList(inputList);
 
     std::vector<PrivacyCommitment> outputCommitments =
         PrivacyCommitmentCodec::deserializeList(outputList);
@@ -375,8 +332,10 @@ void testPrivacyCommitmentCodecRejectsTamperedId() {
     std::string tampered = original.serialize();
 
     const std::string originalId = original.id();
+    const std::string replacementPrefix =
+        originalId.front() == '0' ? "1" : "0";
     const std::string tamperedId =
-        "0" + originalId.substr(1);
+        replacementPrefix + originalId.substr(1);
 
     tampered.replace(
         tampered.find(originalId),
@@ -398,7 +357,7 @@ void testPrivacyCommitmentCodecRejectsTamperedId() {
     );
 }
 
-void testPrivacyNullifierRoundTrip() {
+void testPrivacyNullifierCodecRoundTrip() {
     PrivacyNullifier original =
         PrivacyNullifier::createDevelopmentNullifier(
             PrivacyNullifierType::SPEND_NULLIFIER,
@@ -411,16 +370,114 @@ void testPrivacyNullifierRoundTrip() {
     const std::string serialized = original.serialize();
 
     PrivacyNullifier rebuilt =
-        deserializePrivacyNullifierForTest(serialized);
+        PrivacyNullifierCodec::deserialize(serialized);
 
     requireCondition(
         rebuilt.isValid(),
-        "PrivacyNullifier round-trip produced an invalid object."
+        "PrivacyNullifierCodec round-trip produced an invalid object."
     );
 
     requireCondition(
         rebuilt.serialize() == serialized,
-        "PrivacyNullifier round-trip changed serialization."
+        "PrivacyNullifierCodec round-trip changed serialization."
+    );
+}
+
+void testPrivacyNullifierCodecListRoundTrip() {
+    PrivacyNullifier first =
+        PrivacyNullifier::createDevelopmentNullifier(
+            PrivacyNullifierType::SPEND_NULLIFIER,
+            "commitment_test_list_001",
+            "owner-secret-list-001",
+            "context-list-a",
+            kTestTimestamp
+        );
+
+    PrivacyNullifier second =
+        PrivacyNullifier::createDevelopmentNullifier(
+            PrivacyNullifierType::BURN_NULLIFIER,
+            "commitment_test_list_002",
+            "owner-secret-list-002",
+            "context-list-b",
+            kTestTimestamp + 1
+        );
+
+    const std::string serializedList =
+        first.serialize() + "," + second.serialize();
+
+    const std::vector<PrivacyNullifier> nullifiers =
+        PrivacyNullifierCodec::deserializeList(serializedList);
+
+    requireCondition(
+        nullifiers.size() == 2,
+        "PrivacyNullifierCodec list round-trip returned an invalid size."
+    );
+
+    requireCondition(
+        nullifiers[0].serialize() == first.serialize(),
+        "PrivacyNullifierCodec list round-trip changed first nullifier."
+    );
+
+    requireCondition(
+        nullifiers[1].serialize() == second.serialize(),
+        "PrivacyNullifierCodec list round-trip changed second nullifier."
+    );
+}
+
+void testPrivacyNullifierCodecRejectsTamperedId() {
+    PrivacyNullifier original =
+        PrivacyNullifier::createDevelopmentNullifier(
+            PrivacyNullifierType::SPEND_NULLIFIER,
+            "commitment_test_tamper_001",
+            "owner-secret-tamper-001",
+            "context-tamper-001",
+            kTestTimestamp
+        );
+
+    std::string tampered = original.serialize();
+
+    const std::string originalId = original.id();
+    const std::string replacementPrefix =
+        originalId.front() == '0' ? "1" : "0";
+    const std::string tamperedId =
+        replacementPrefix + originalId.substr(1);
+
+    tampered.replace(
+        tampered.find(originalId),
+        originalId.size(),
+        tamperedId
+    );
+
+    bool rejected = false;
+
+    try {
+        (void)PrivacyNullifierCodec::deserialize(tampered);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+
+    requireCondition(
+        rejected,
+        "PrivacyNullifierCodec accepted a tampered nullifier id."
+    );
+}
+
+void testPrivacyNullifierCodecRejectsNegativeTimestamp() {
+    const std::string tampered =
+        "PrivacyNullifier{id=abc123;type=SPEND_NULLIFIER;"
+        "nullifierHash=abc123;contextHash=abc123;createdAt=-1}";
+
+    bool rejected = false;
+
+    try {
+        (void)PrivacyNullifierCodec::deserialize(tampered);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+
+    requireCondition(
+        rejected,
+        "PrivacyNullifierCodec accepted a negative timestamp."
     );
 }
 
@@ -548,7 +605,10 @@ int main() {
         testPrivacyCommitmentCodecRoundTrip();
         testPrivacyCommitmentCodecListRoundTrip();
         testPrivacyCommitmentCodecRejectsTamperedId();
-        testPrivacyNullifierRoundTrip();
+        testPrivacyNullifierCodecRoundTrip();
+        testPrivacyNullifierCodecListRoundTrip();
+        testPrivacyNullifierCodecRejectsTamperedId();
+        testPrivacyNullifierCodecRejectsNegativeTimestamp();
         testNullifierDeterminismIgnoresContext();
         testPrivateAccountingRecordRoundTrip();
 
