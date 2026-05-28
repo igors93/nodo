@@ -4,6 +4,7 @@
 #include "privacy/PrivacyNullifier.hpp"
 #include "serialization/FieldCodec.hpp"
 #include "serialization/MintRecordCodec.hpp"
+#include "serialization/PrivacyCommitmentCodec.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
@@ -26,6 +27,7 @@ using nodo::privacy::PrivateAccountingRecordType;
 using nodo::privacy::PublicSupplyEffect;
 using nodo::serialization::FieldCodec;
 using nodo::serialization::MintRecordCodec;
+using nodo::serialization::PrivacyCommitmentCodec;
 using nodo::utils::Amount;
 
 constexpr std::int64_t kTestTimestamp = 1700000000;
@@ -37,24 +39,6 @@ void requireCondition(
     if (!condition) {
         throw std::runtime_error(failureMessage);
     }
-}
-
-PrivacyCommitmentType parsePrivacyCommitmentType(
-    const std::string& value
-) {
-    if (value == "MINT_COMMITMENT") {
-        return PrivacyCommitmentType::MINT_COMMITMENT;
-    }
-
-    if (value == "TRANSFER_OUTPUT_COMMITMENT") {
-        return PrivacyCommitmentType::TRANSFER_OUTPUT_COMMITMENT;
-    }
-
-    if (value == "BURN_COMMITMENT") {
-        return PrivacyCommitmentType::BURN_COMMITMENT;
-    }
-
-    throw std::invalid_argument("Unknown PrivacyCommitmentType: " + value);
 }
 
 PrivacyNullifierType parsePrivacyNullifierType(
@@ -107,32 +91,6 @@ PublicSupplyEffect parsePublicSupplyEffect(
     throw std::invalid_argument("Unknown PublicSupplyEffect: " + value);
 }
 
-PrivacyCommitment deserializePrivacyCommitmentForTest(
-    const std::string& serialized
-) {
-    if (serialized.rfind("PrivacyCommitment{", 0) != 0) {
-        throw std::invalid_argument("Serialized object is not a PrivacyCommitment.");
-    }
-
-    PrivacyCommitment commitment(
-        FieldCodec::extractField(serialized, "id"),
-        parsePrivacyCommitmentType(
-            FieldCodec::extractField(serialized, "type")
-        ),
-        FieldCodec::extractField(serialized, "commitmentHash"),
-        FieldCodec::extractField(serialized, "ownerHint"),
-        FieldCodec::extractField(serialized, "sourceReference"),
-        std::stoll(FieldCodec::extractField(serialized, "timestamp"))
-    );
-
-    requireCondition(
-        commitment.isValid(),
-        "Deserialized PrivacyCommitment is invalid."
-    );
-
-    return commitment;
-}
-
 PrivacyNullifier deserializePrivacyNullifierForTest(
     const std::string& serialized
 ) {
@@ -178,7 +136,6 @@ PrivateAccountingRecord deserializePrivateAccountingRecordForTest(
     );
 
     std::vector<PrivacyNullifier> inputNullifiers;
-    std::vector<PrivacyCommitment> outputCommitments;
 
     for (const auto& serializedNullifier :
          FieldCodec::splitTopLevelObjects(inputList, "PrivacyNullifier{")) {
@@ -187,12 +144,8 @@ PrivateAccountingRecord deserializePrivateAccountingRecordForTest(
         );
     }
 
-    for (const auto& serializedCommitment :
-         FieldCodec::splitTopLevelObjects(outputList, "PrivacyCommitment{")) {
-        outputCommitments.push_back(
-            deserializePrivacyCommitmentForTest(serializedCommitment)
-        );
-    }
+    std::vector<PrivacyCommitment> outputCommitments =
+        PrivacyCommitmentCodec::deserializeList(outputList);
 
     PrivateAccountingRecord record(
         FieldCodec::extractField(serialized, "id"),
@@ -338,7 +291,7 @@ void testMintRecordCodecRejectsTamperedAmount() {
     );
 }
 
-void testPrivacyCommitmentRoundTrip() {
+void testPrivacyCommitmentCodecRoundTrip() {
     PrivacyCommitment original =
         PrivacyCommitment::createDevelopmentCommitment(
             PrivacyCommitmentType::MINT_COMMITMENT,
@@ -352,16 +305,96 @@ void testPrivacyCommitmentRoundTrip() {
     const std::string serialized = original.serialize();
 
     PrivacyCommitment rebuilt =
-        deserializePrivacyCommitmentForTest(serialized);
+        PrivacyCommitmentCodec::deserialize(serialized);
 
     requireCondition(
         rebuilt.isValid(),
-        "PrivacyCommitment round-trip produced an invalid object."
+        "PrivacyCommitmentCodec round-trip produced an invalid object."
     );
 
     requireCondition(
         rebuilt.serialize() == serialized,
-        "PrivacyCommitment round-trip changed serialization."
+        "PrivacyCommitmentCodec round-trip changed serialization."
+    );
+}
+
+void testPrivacyCommitmentCodecListRoundTrip() {
+    PrivacyCommitment first =
+        PrivacyCommitment::createDevelopmentCommitment(
+            PrivacyCommitmentType::MINT_COMMITMENT,
+            "igor",
+            Amount::fromNodo(1000),
+            "test-blinding-secret-list-001",
+            "mint_test_list_001",
+            kTestTimestamp
+        );
+
+    PrivacyCommitment second =
+        PrivacyCommitment::createDevelopmentCommitment(
+            PrivacyCommitmentType::TRANSFER_OUTPUT_COMMITMENT,
+            "ana",
+            Amount::fromNodo(25),
+            "test-blinding-secret-list-002",
+            first.id(),
+            kTestTimestamp + 1
+        );
+
+    const std::string serializedList =
+        first.serialize() + "," + second.serialize();
+
+    const std::vector<PrivacyCommitment> commitments =
+        PrivacyCommitmentCodec::deserializeList(serializedList);
+
+    requireCondition(
+        commitments.size() == 2,
+        "PrivacyCommitmentCodec list round-trip returned an invalid size."
+    );
+
+    requireCondition(
+        commitments[0].serialize() == first.serialize(),
+        "PrivacyCommitmentCodec list round-trip changed first commitment."
+    );
+
+    requireCondition(
+        commitments[1].serialize() == second.serialize(),
+        "PrivacyCommitmentCodec list round-trip changed second commitment."
+    );
+}
+
+void testPrivacyCommitmentCodecRejectsTamperedId() {
+    PrivacyCommitment original =
+        PrivacyCommitment::createDevelopmentCommitment(
+            PrivacyCommitmentType::MINT_COMMITMENT,
+            "igor",
+            Amount::fromNodo(1000),
+            "test-blinding-secret-tamper-001",
+            "mint_test_tamper_001",
+            kTestTimestamp
+        );
+
+    std::string tampered = original.serialize();
+
+    const std::string originalId = original.id();
+    const std::string tamperedId =
+        "0" + originalId.substr(1);
+
+    tampered.replace(
+        tampered.find(originalId),
+        originalId.size(),
+        tamperedId
+    );
+
+    bool rejected = false;
+
+    try {
+        (void)PrivacyCommitmentCodec::deserialize(tampered);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+
+    requireCondition(
+        rejected,
+        "PrivacyCommitmentCodec accepted a tampered commitment id."
     );
 }
 
@@ -512,7 +545,9 @@ int main() {
         testMintRecordCodecRoundTrip();
         testMintRecordLegacyDeserializeDelegatesToCodec();
         testMintRecordCodecRejectsTamperedAmount();
-        testPrivacyCommitmentRoundTrip();
+        testPrivacyCommitmentCodecRoundTrip();
+        testPrivacyCommitmentCodecListRoundTrip();
+        testPrivacyCommitmentCodecRejectsTamperedId();
         testPrivacyNullifierRoundTrip();
         testNullifierDeterminismIgnoresContext();
         testPrivateAccountingRecordRoundTrip();
