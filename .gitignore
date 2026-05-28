@@ -1,0 +1,11 @@
+@"
+build/
+*.exe
+*.o
+*.obj
+*.dll
+*.pdb
+*.ilk
+.vscode/
+.DS_Store
+"@ | Out-File -Encoding utf8 .gitignore
