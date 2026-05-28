@@ -1,3 +1,4 @@
+#include "core/LedgerRecord.hpp"
 #include "core/State.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
@@ -14,6 +15,7 @@
 #include <string>
 
 int main() {
+    using nodo::core::LedgerRecord;
     using nodo::core::State;
     using nodo::core::Transaction;
     using nodo::core::TransactionType;
@@ -31,8 +33,8 @@ int main() {
     using nodo::crypto::SecurityContext;
     using nodo::crypto::SignatureBundle;
 
-    std::cout << "Nodo Blockchain - Transaction Foundation\n";
-    std::cout << "----------------------------------------\n\n";
+    std::cout << "Nodo Blockchain - LedgerRecord Foundation\n";
+    std::cout << "-----------------------------------------\n\n";
 
     State state;
     CryptoPolicy cryptoPolicy = CryptoPolicy::developmentPolicy();
@@ -93,6 +95,29 @@ int main() {
         return 1;
     }
 
+    /*
+     * New phase:
+     * Convert the genesis MintRecord into an official LedgerRecord.
+     */
+    LedgerRecord genesisLedgerRecord =
+        LedgerRecord::fromMintRecord(
+            genesisMint,
+            currentUnixTimestamp()
+        );
+
+    std::cout << "\nGenesis LedgerRecord created.\n";
+    std::cout << "Genesis LedgerRecord id: "
+              << genesisLedgerRecord.id()
+              << "\n";
+    std::cout << "Genesis LedgerRecord validation: "
+              << (genesisLedgerRecord.isValid() ? "VALID" : "INVALID")
+              << "\n";
+
+    if (!genesisLedgerRecord.isValid()) {
+        std::cerr << "Fatal: invalid genesis LedgerRecord.\n";
+        return 1;
+    }
+
     state.applyMintRecord(genesisMint);
 
     std::cout << "\nGenesis mint applied.\n";
@@ -119,7 +144,6 @@ int main() {
               << "\n";
 
     /*
-     * New phase:
      * Create a signed transfer transaction.
      *
      * This transaction is not applied to State yet.
@@ -157,8 +181,36 @@ int main() {
               << (transferValid ? "VALID" : "INVALID")
               << "\n";
 
-    std::cout << "\nTransaction preview:\n";
-    std::cout << transferTransaction.serialize() << "\n";
+    if (!transferValid) {
+        std::cerr << "Fatal: invalid transfer transaction.\n";
+        return 1;
+    }
+
+    /*
+     * New phase:
+     * Convert the signed Transaction into an official LedgerRecord.
+     */
+    LedgerRecord transferLedgerRecord =
+        LedgerRecord::fromTransaction(
+            transferTransaction,
+            cryptoPolicy,
+            SecurityContext::USER_TRANSACTION,
+            currentUnixTimestamp()
+        );
+
+    std::cout << "\nTransfer LedgerRecord created.\n";
+    std::cout << "Transfer LedgerRecord id: "
+              << transferLedgerRecord.id()
+              << "\n";
+    std::cout << "Transfer LedgerRecord payload hash: "
+              << transferLedgerRecord.payloadHash()
+              << "\n";
+    std::cout << "Transfer LedgerRecord validation: "
+              << (transferLedgerRecord.isValid() ? "VALID" : "INVALID")
+              << "\n";
+
+    std::cout << "\nTransfer LedgerRecord preview:\n";
+    std::cout << transferLedgerRecord.serialize() << "\n";
 
     /*
      * Hash preview for MintRecord.
@@ -169,7 +221,7 @@ int main() {
     std::cout << "\nGenesis MintRecord hash preview:\n";
     std::cout << hashOutput << "\n";
 
-    std::cout << "\nNodo transaction foundation executed successfully.\n";
+    std::cout << "\nNodo LedgerRecord foundation executed successfully.\n";
 
     return 0;
 }
