@@ -821,6 +821,41 @@ New documentation:
 docs/economics/LEDGER_RECORD_INTEGRATION.md
 ```
 
+
+---
+
+## Implementation: Protection State Rebuilder
+
+The next code step adds a rebuildable view of the protection economy.
+
+New components:
+
+```text
+ProtectionEconomicsState
+ProtectionEconomicsRebuilder
+```
+
+This allows Nodo to read accepted blocks and reconstruct:
+
+```text
+validator accepted work
+latest validator score
+protection epoch totals
+GenesisReward coin lots
+```
+
+New test:
+
+```text
+tests/economics/ProtectionStateRebuilderTests.cpp
+```
+
+New documentation:
+
+```text
+docs/economics/PROTECTION_STATE_REBUILDER.md
+```
+
 ## Build
 
 Nodo supports Linux-style shells and Windows builds.

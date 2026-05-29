@@ -1,7 +1,7 @@
 # Nodo Economics and Protection Guides
 
 Status: Project Guide Index  
-Version: NODO-ECONOMICS-GUIDES-V3
+Version: NODO-ECONOMICS-GUIDES-V4
 
 This folder contains the main concept documents for Nodo's protection-based economic model.
 
@@ -16,6 +16,7 @@ Recommended reading order:
 6. NETWORK_RISK_AND_ANTI_SYBIL.md
 7. IMPLEMENTATION_START.md
 8. LEDGER_RECORD_INTEGRATION.md
+9. PROTECTION_STATE_REBUILDER.md
 ```
 
 Core idea:
@@ -33,4 +34,6 @@ EpochEmissionPolicy
 ProtectionEpoch
 GenesisRewardRecord
 LedgerRecord integration for protection economics records
+ProtectionEconomicsState
+ProtectionEconomicsRebuilder
 ```
