@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 REM Nodo Windows crypto test script.
-REM This script builds and runs hash, signature provider, and address tests.
+REM This script builds and runs hash, signature provider, address, and key management tests.
 
 set "ROOT_DIR=%~dp0.."
 set "BUILD_DIR=%ROOT_DIR%\build\tests"
@@ -88,6 +88,28 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Building Nodo key management tests...
+
+%CXX% -std=c++20 -Wall -Wextra -I"%ROOT_DIR%\include" ^
+    "%ROOT_DIR%\tests\crypto\KeyPairTests.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoAlgorithm.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoPolicy.cpp" ^
+    "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\PrivateKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\Signature.cpp" ^
+    "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
+    "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\crypto\Address.cpp" ^
+    "%ROOT_DIR%\src\crypto\AddressDerivation.cpp" ^
+    "%ROOT_DIR%\src\crypto\KeyPair.cpp" ^
+    "%BUILD_DIR%\hash_crypto_test.o" ^
+    -o "%BUILD_DIR%\key_pair_tests.exe"
+
+if errorlevel 1 (
+    echo Failed to build Nodo key management tests.
+    exit /b 1
+)
+
 echo.
 echo Running Nodo crypto hash tests...
 "%BUILD_DIR%\crypto_hash_tests.exe"
@@ -112,6 +134,15 @@ echo Running Nodo address derivation tests...
 
 if errorlevel 1 (
     echo Address derivation tests failed.
+    exit /b 1
+)
+
+echo.
+echo Running Nodo key management tests...
+"%BUILD_DIR%\key_pair_tests.exe"
+
+if errorlevel 1 (
+    echo Key management tests failed.
     exit /b 1
 )
 
