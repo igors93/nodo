@@ -1,7 +1,7 @@
 #include "storage/ChainManifest.hpp"
 
 #include "crypto/hash.h"
-#include "serialization/FieldCodec.hpp"
+#include "serialization/ChainManifestCodec.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -10,8 +10,6 @@
 #include <utility>
 
 namespace nodo::storage {
-
-using nodo::serialization::FieldCodec;
 
 ChainManifest ChainManifest::fromBlockchain(
     const core::Blockchain& blockchain,
@@ -61,26 +59,7 @@ ChainManifest ChainManifest::fromBlockchain(
 ChainManifest ChainManifest::deserialize(
     const std::string& serialized
 ) {
-    if (serialized.rfind("ChainManifest{", 0) != 0) {
-        throw std::invalid_argument("Serialized object is not a ChainManifest.");
-    }
-
-    ChainManifest manifest(
-        FieldCodec::extractField(serialized, "chainVersion"),
-        static_cast<std::size_t>(
-            std::stoull(FieldCodec::extractField(serialized, "blockCount"))
-        ),
-        FieldCodec::extractField(serialized, "genesisHash"),
-        FieldCodec::extractField(serialized, "latestHash"),
-        std::stoll(FieldCodec::extractField(serialized, "createdAt")),
-        FieldCodec::extractField(serialized, "manifestHash")
-    );
-
-    if (!manifest.isValid()) {
-        throw std::invalid_argument("Deserialized ChainManifest is invalid.");
-    }
-
-    return manifest;
+    return serialization::ChainManifestCodec::deserialize(serialized);
 }
 
 std::string ChainManifest::manifestFileName() {

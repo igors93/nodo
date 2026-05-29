@@ -53,6 +53,7 @@ echo Building Nodo blockchain storage integration tests...
     "%ROOT_DIR%\src\serialization\PrivacyCommitmentCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\PrivacyNullifierCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\PrivateAccountingRecordCodec.cpp" ^
+    "%ROOT_DIR%\src\serialization\ChainManifestCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\LedgerRecordCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\BlockCodec.cpp" ^
     "%ROOT_DIR%\src\storage\BlockFileStore.cpp" ^

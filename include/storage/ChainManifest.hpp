@@ -18,7 +18,7 @@ namespace nodo::storage {
  *
  * Current status:
  * This manifest validates saved chain metadata. Full block deserialization
- * and chain loading will be implemented in a later phase.
+ * and chain loading are handled by the storage loader components.
  */
 class ChainManifest {
 public:
@@ -27,6 +27,12 @@ public:
         std::int64_t createdAt
     );
 
+    /*
+     * Rebuilds a ChainManifest from its deterministic serialized form.
+     *
+     * This method delegates parsing to serialization::ChainManifestCodec so
+     * persisted chain metadata is parsed through a single audited boundary.
+     */
     static ChainManifest deserialize(
         const std::string& serialized
     );

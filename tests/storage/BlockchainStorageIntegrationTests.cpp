@@ -25,6 +25,8 @@
 #include "storage/BlockchainStorageReader.hpp"
 #include "storage/ChainManifest.hpp"
 
+#include "serialization/ChainManifestCodec.hpp"
+
 #include "utils/Amount.hpp"
 
 #include <cstdint>
@@ -71,6 +73,8 @@ using nodo::storage::BlockchainStorageReadReport;
 using nodo::storage::BlockchainStorageReader;
 using nodo::storage::ChainManifest;
 
+using nodo::serialization::ChainManifestCodec;
+
 using nodo::utils::Amount;
 
 constexpr std::int64_t kBaseTimestamp = 1800000000;
@@ -82,6 +86,20 @@ void requireCondition(
     if (!condition) {
         throw std::runtime_error(failureMessage);
     }
+}
+
+
+std::string tamperFirstHexCharacter(
+    const std::string& value
+) {
+    if (value.empty()) {
+        throw std::invalid_argument("Cannot tamper empty string.");
+    }
+
+    const std::string replacementPrefix =
+        value.front() == '0' ? "1" : "0";
+
+    return replacementPrefix + value.substr(1);
 }
 
 std::filesystem::path storageRootPath(
@@ -322,6 +340,43 @@ void writeCompleteStorage(
         loadedManifest.matchesBlockchain(blockchain),
         "Stored ChainManifest does not match Blockchain."
     );
+
+    ChainManifest codecRebuiltManifest =
+        ChainManifestCodec::deserialize(
+            loadedManifest.serialize()
+        );
+
+    requireCondition(
+        codecRebuiltManifest.serialize() == loadedManifest.serialize(),
+        "ChainManifestCodec round-trip changed stored manifest serialization."
+    );
+
+    std::string tamperedManifest = loadedManifest.serialize();
+
+    const std::string tamperedManifestHash =
+        tamperFirstHexCharacter(
+            loadedManifest.manifestHash()
+        );
+
+    tamperedManifest.replace(
+        tamperedManifest.find(loadedManifest.manifestHash()),
+        loadedManifest.manifestHash().size(),
+        tamperedManifestHash
+    );
+
+    bool manifestTamperRejected = false;
+
+    try {
+        (void)ChainManifestCodec::deserialize(tamperedManifest);
+    } catch (const std::exception&) {
+        manifestTamperRejected = true;
+    }
+
+    requireCondition(
+        manifestTamperRejected,
+        "ChainManifestCodec accepted a tampered manifest hash."
+    );
+
 
     BlockStorageIndex index =
         BlockStorageIndex::fromBlockchainAndManifest(
