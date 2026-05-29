@@ -2,8 +2,7 @@
 setlocal enabledelayedexpansion
 
 REM Nodo Windows crypto test script.
-REM This script builds and runs hash, signature provider, address, key management,
-REM and post-quantum provider interface tests.
+REM This script builds and runs all crypto tests.
 
 set "ROOT_DIR=%~dp0.."
 set "BUILD_DIR=%ROOT_DIR%\build\tests"
@@ -129,6 +128,25 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Building Nodo audited signature provider tests...
+
+%CXX% -std=c++20 -Wall -Wextra -I"%ROOT_DIR%\include" ^
+    "%ROOT_DIR%\tests\crypto\AuditedSignatureProviderTests.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoAlgorithm.cpp" ^
+    "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\PrivateKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\Signature.cpp" ^
+    "%ROOT_DIR%\src\crypto\AuditedSignatureProvider.cpp" ^
+    "%ROOT_DIR%\src\crypto\AuditedSignatureProviderProfile.cpp" ^
+    "%ROOT_DIR%\src\crypto\SignatureProviderRegistry.cpp" ^
+    "%BUILD_DIR%\hash_crypto_test.o" ^
+    -o "%BUILD_DIR%\audited_signature_provider_tests.exe"
+
+if errorlevel 1 (
+    echo Failed to build Nodo audited signature provider tests.
+    exit /b 1
+)
+
 echo.
 echo Running Nodo crypto hash tests...
 "%BUILD_DIR%\crypto_hash_tests.exe"
@@ -171,6 +189,15 @@ echo Running Nodo post-quantum provider interface tests...
 
 if errorlevel 1 (
     echo Post-quantum provider interface tests failed.
+    exit /b 1
+)
+
+echo.
+echo Running Nodo audited signature provider tests...
+"%BUILD_DIR%\audited_signature_provider_tests.exe"
+
+if errorlevel 1 (
+    echo Audited signature provider tests failed.
     exit /b 1
 )
 

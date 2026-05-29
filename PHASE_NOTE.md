@@ -1,22 +1,22 @@
-# Post-quantum provider interfaces phase
+# Audited signature provider boundary phase
 
-This phase adds post-quantum provider interfaces and planning metadata.
+This phase adds the audited signature provider integration boundary.
 
 In simple terms:
 
 ```text
-No real ML-DSA or SLH-DSA yet.
-Now Nodo has the interface where those providers will plug in later.
+No fake provider is marked as real.
+Nodo now has the gate where a real audited Ed25519/ECDSA provider will plug in.
 ```
 
 Recommended commit:
 
 ```bash
-git commit -m "Add post-quantum provider interfaces"
+git commit -m "Add audited signature provider boundary"
 ```
 
 Next phase:
 
 ```text
-Add real audited signature provider
+Connect real audited signature provider implementation
 ```

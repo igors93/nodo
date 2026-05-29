@@ -1,6 +1,8 @@
 @echo off
 setlocal enabledelayedexpansion
 
+REM Nodo Windows blockchain storage integration test script.
+
 set "ROOT_DIR=%~dp0.."
 set "BUILD_DIR=%ROOT_DIR%\build\tests"
 
@@ -34,7 +36,7 @@ echo Building Nodo C crypto module for storage integration tests...
     -o "%BUILD_DIR%\hash_storage_test.o"
 
 if errorlevel 1 (
-    echo Failed to build C crypto module.
+    echo Failed to build C crypto module for storage integration tests.
     exit /b 1
 )
 
@@ -88,6 +90,9 @@ echo Building Nodo blockchain storage integration tests...
     "%ROOT_DIR%\src\crypto\KeyPair.cpp" ^
     "%ROOT_DIR%\src\crypto\PostQuantumAlgorithmProfile.cpp" ^
     "%ROOT_DIR%\src\crypto\PostQuantumMigrationPlan.cpp" ^
+    "%ROOT_DIR%\src\crypto\AuditedSignatureProvider.cpp" ^
+    "%ROOT_DIR%\src\crypto\AuditedSignatureProviderProfile.cpp" ^
+    "%ROOT_DIR%\src\crypto\SignatureProviderRegistry.cpp" ^
     "%BUILD_DIR%\hash_storage_test.o" ^
     -o "%BUILD_DIR%\blockchain_storage_integration_tests.exe"
 

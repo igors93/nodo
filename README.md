@@ -87,6 +87,7 @@ Implemented foundations:
 - deterministic address derivation foundation;
 - key management boundary;
 - post-quantum provider interfaces;
+- audited signature provider integration boundary;
 - block file storage;
 - chain manifest storage;
 - block storage index;
@@ -149,7 +150,8 @@ nodo/
 │   │   ├── SIGNATURE_PROVIDER.md
 │   │   ├── ADDRESS_DERIVATION.md
 │   │   ├── KEY_MANAGEMENT.md
-│   │   └── POST_QUANTUM_PROVIDER_INTERFACES.md
+│   │   ├── POST_QUANTUM_PROVIDER_INTERFACES.md
+│   │   └── AUDITED_SIGNATURE_PROVIDER.md
 │   └── serialization/
 │       └── CANONICAL_SERIALIZATION.md
 │
@@ -312,6 +314,8 @@ docs/crypto/ADDRESS_DERIVATION.md
 docs/crypto/KEY_MANAGEMENT.md
 
 docs/crypto/POST_QUANTUM_PROVIDER_INTERFACES.md
+
+docs/crypto/AUDITED_SIGNATURE_PROVIDER.md
 ```
 
 ---
@@ -502,6 +506,7 @@ Nodo signature provider tests passed.
 Nodo address derivation tests passed.
 Nodo key management tests passed.
 Nodo post-quantum provider interface tests passed.
+Nodo audited signature provider tests passed.
 
 Running serialization tests...
 Nodo serialization round-trip tests passed.
@@ -728,7 +733,8 @@ Do not use Nodo for real funds.
 
 - [x] Replace development hash with SHA-256 provider foundation
 - [x] Add signature provider boundary
-- [ ] Add real audited signature provider
+- [x] Add audited signature provider integration boundary
+- [ ] Connect real audited signature provider implementation
 - [x] Add deterministic address derivation
 - [x] Add key management boundary
 - [x] Prepare post-quantum provider interfaces

@@ -1,36 +1,22 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
+
+# Nodo blockchain storage integration test script.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build/tests"
 
-CC="${CC:-gcc}"
-CXX="${CXX:-g++}"
-
-CFLAGS=(
-    -std=c11
-    -Wall
-    -Wextra
-    -I"$ROOT_DIR/include"
-)
-
-CXXFLAGS=(
-    -std=c++20
-    -Wall
-    -Wextra
-    -I"$ROOT_DIR/include"
-)
-
 mkdir -p "$BUILD_DIR"
 
 echo "Building Nodo C crypto module for storage integration tests..."
-"$CC" "${CFLAGS[@]}" \
+
+gcc -std=c11 -Wall -Wextra -I"$ROOT_DIR/include" \
     -c "$ROOT_DIR/src/crypto/hash.c" \
     -o "$BUILD_DIR/hash_storage_test.o"
 
 echo "Building Nodo blockchain storage integration tests..."
-"$CXX" "${CXXFLAGS[@]}" \
+
+g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/tests/storage/BlockchainStorageIntegrationTests.cpp" \
     "$ROOT_DIR/src/utils/Amount.cpp" \
     "$ROOT_DIR/src/utils/Time.cpp" \
@@ -78,6 +64,9 @@ echo "Building Nodo blockchain storage integration tests..."
     "$ROOT_DIR/src/crypto/KeyPair.cpp" \
     "$ROOT_DIR/src/crypto/PostQuantumAlgorithmProfile.cpp" \
     "$ROOT_DIR/src/crypto/PostQuantumMigrationPlan.cpp" \
+    "$ROOT_DIR/src/crypto/AuditedSignatureProvider.cpp" \
+    "$ROOT_DIR/src/crypto/AuditedSignatureProviderProfile.cpp" \
+    "$ROOT_DIR/src/crypto/SignatureProviderRegistry.cpp" \
     "$BUILD_DIR/hash_storage_test.o" \
     -o "$BUILD_DIR/blockchain_storage_integration_tests"
 
