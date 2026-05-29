@@ -84,6 +84,7 @@ Implemented foundations:
 - canonical serialization rules documentation;
 - SHA-256 hash provider foundation;
 - signature provider boundary;
+- deterministic address derivation foundation;
 - block file storage;
 - chain manifest storage;
 - block storage index;
@@ -143,7 +144,8 @@ nodo/
 ├── docs/
 │   ├── crypto/
 │   │   ├── HASH_PROVIDER.md
-│   │   └── SIGNATURE_PROVIDER.md
+│   │   ├── SIGNATURE_PROVIDER.md
+│   │   └── ADDRESS_DERIVATION.md
 │   └── serialization/
 │       └── CANONICAL_SERIALIZATION.md
 │
@@ -300,6 +302,8 @@ docs/serialization/CANONICAL_SERIALIZATION.md
 docs/crypto/HASH_PROVIDER.md
 
 docs/crypto/SIGNATURE_PROVIDER.md
+
+docs/crypto/ADDRESS_DERIVATION.md
 ```
 
 ---
@@ -487,6 +491,7 @@ Nodo unified test runner
 Running crypto tests...
 Nodo crypto hash tests passed.
 Nodo signature provider tests passed.
+Nodo address derivation tests passed.
 
 Running serialization tests...
 Nodo serialization round-trip tests passed.
@@ -714,7 +719,7 @@ Do not use Nodo for real funds.
 - [x] Replace development hash with SHA-256 provider foundation
 - [x] Add signature provider boundary
 - [ ] Add real audited signature provider
-- [ ] Add deterministic address derivation
+- [x] Add deterministic address derivation
 - [ ] Add key management boundary
 - [ ] Prepare post-quantum provider interfaces
 

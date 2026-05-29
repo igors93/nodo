@@ -84,6 +84,8 @@ echo Building Nodo C++ application...
     "%ROOT_DIR%\src\crypto\Signature.cpp" ^
     "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
     "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\crypto\Address.cpp" ^
+    "%ROOT_DIR%\src\crypto\AddressDerivation.cpp" ^
     "%BUILD_DIR%\hash.o" ^
     -o "%BUILD_DIR%\nodo.exe"
 

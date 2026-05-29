@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 REM Nodo Windows crypto test script.
-REM This script builds and runs cryptographic hash and signature provider tests.
+REM This script builds and runs hash, signature provider, and address tests.
 
 set "ROOT_DIR=%~dp0.."
 set "BUILD_DIR=%ROOT_DIR%\build\tests"
@@ -72,6 +72,22 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Building Nodo address derivation tests...
+
+%CXX% -std=c++20 -Wall -Wextra -I"%ROOT_DIR%\include" ^
+    "%ROOT_DIR%\tests\crypto\AddressDerivationTests.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoAlgorithm.cpp" ^
+    "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\Address.cpp" ^
+    "%ROOT_DIR%\src\crypto\AddressDerivation.cpp" ^
+    "%BUILD_DIR%\hash_crypto_test.o" ^
+    -o "%BUILD_DIR%\address_derivation_tests.exe"
+
+if errorlevel 1 (
+    echo Failed to build Nodo address derivation tests.
+    exit /b 1
+)
+
 echo.
 echo Running Nodo crypto hash tests...
 "%BUILD_DIR%\crypto_hash_tests.exe"
@@ -87,6 +103,15 @@ echo Running Nodo signature provider tests...
 
 if errorlevel 1 (
     echo Signature provider tests failed.
+    exit /b 1
+)
+
+echo.
+echo Running Nodo address derivation tests...
+"%BUILD_DIR%\address_derivation_tests.exe"
+
+if errorlevel 1 (
+    echo Address derivation tests failed.
     exit /b 1
 )
 

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Nodo crypto test script.
-# This script builds and runs cryptographic hash and signature provider tests.
+# This script builds and runs hash, signature provider, and address tests.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build/tests"
@@ -36,6 +36,17 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$BUILD_DIR/hash_crypto_test.o" \
     -o "$BUILD_DIR/signature_provider_tests"
 
+echo "Building Nodo address derivation tests..."
+
+g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
+    "$ROOT_DIR/tests/crypto/AddressDerivationTests.cpp" \
+    "$ROOT_DIR/src/crypto/CryptoAlgorithm.cpp" \
+    "$ROOT_DIR/src/crypto/PublicKey.cpp" \
+    "$ROOT_DIR/src/crypto/Address.cpp" \
+    "$ROOT_DIR/src/crypto/AddressDerivation.cpp" \
+    "$BUILD_DIR/hash_crypto_test.o" \
+    -o "$BUILD_DIR/address_derivation_tests"
+
 echo
 echo "Running Nodo crypto hash tests..."
 "$BUILD_DIR/crypto_hash_tests"
@@ -43,6 +54,10 @@ echo "Running Nodo crypto hash tests..."
 echo
 echo "Running Nodo signature provider tests..."
 "$BUILD_DIR/signature_provider_tests"
+
+echo
+echo "Running Nodo address derivation tests..."
+"$BUILD_DIR/address_derivation_tests"
 
 echo
 echo "Crypto tests completed successfully."
