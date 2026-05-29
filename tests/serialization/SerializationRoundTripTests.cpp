@@ -10,6 +10,7 @@
 #include "utils/Amount.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -54,6 +55,41 @@ std::string tamperFirstHexCharacter(
         value.front() == '0' ? "1" : "0";
 
     return replacementPrefix + value.substr(1);
+}
+
+std::string replaceFirst(
+    const std::string& input,
+    const std::string& target,
+    const std::string& replacement
+) {
+    const std::size_t position = input.find(target);
+
+    if (position == std::string::npos) {
+        throw std::runtime_error("Could not find text to replace: " + target);
+    }
+
+    std::string output = input;
+    output.replace(position, target.size(), replacement);
+
+    return output;
+}
+
+void requireRejected(
+    const std::string& failureMessage,
+    const std::function<void()>& action
+) {
+    bool rejected = false;
+
+    try {
+        action();
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+
+    requireCondition(
+        rejected,
+        failureMessage
+    );
 }
 
 PrivacyCommitment createTestMintCommitment(
@@ -652,6 +688,170 @@ void testPrivateAccountingRecordCodecRejectsInvalidShape() {
     );
 }
 
+
+void testCanonicalSerializationRejectsMintRecordFieldReordering() {
+    MintRecord original(
+        "mint_test_canonical_order_001",
+        "igor",
+        Amount::fromNodo(1000),
+        MintReason::GENESIS_ALLOCATION,
+        0,
+        0,
+        "GENESIS",
+        kTestTimestamp
+    );
+
+    const std::string nonCanonical =
+        "MintRecord{recipient=igor;id=mint_test_canonical_order_001;"
+        "amountRaw=100000000000;reason=GENESIS_ALLOCATION;epoch=0;"
+        "sourceBlockIndex=0;sourceBlockHash=GENESIS;timestamp=1700000000}";
+
+    requireRejected(
+        "MintRecordCodec accepted reordered fields.",
+        [&]() {
+            (void)MintRecordCodec::deserialize(nonCanonical);
+        }
+    );
+}
+
+void testCanonicalSerializationRejectsMintRecordUnknownField() {
+    MintRecord original(
+        "mint_test_canonical_unknown_001",
+        "igor",
+        Amount::fromNodo(1000),
+        MintReason::GENESIS_ALLOCATION,
+        0,
+        0,
+        "GENESIS",
+        kTestTimestamp
+    );
+
+    const std::string nonCanonical = replaceFirst(
+        original.serialize(),
+        ";timestamp=1700000000}",
+        ";timestamp=1700000000;unknownField=forbidden}"
+    );
+
+    requireRejected(
+        "MintRecordCodec accepted an unknown field.",
+        [&]() {
+            (void)MintRecordCodec::deserialize(nonCanonical);
+        }
+    );
+}
+
+void testCanonicalSerializationRejectsMintRecordLeadingZeroAmount() {
+    MintRecord original(
+        "mint_test_canonical_leading_zero_001",
+        "igor",
+        Amount::fromNodo(1000),
+        MintReason::GENESIS_ALLOCATION,
+        0,
+        0,
+        "GENESIS",
+        kTestTimestamp
+    );
+
+    const std::string nonCanonical = replaceFirst(
+        original.serialize(),
+        "amountRaw=100000000000",
+        "amountRaw=0100000000000"
+    );
+
+    requireRejected(
+        "MintRecordCodec accepted a non-canonical leading-zero amount.",
+        [&]() {
+            (void)MintRecordCodec::deserialize(nonCanonical);
+        }
+    );
+}
+
+void testCanonicalSerializationRejectsPrivacyCommitmentWhitespace() {
+    PrivacyCommitment original =
+        PrivacyCommitment::createDevelopmentCommitment(
+            PrivacyCommitmentType::MINT_COMMITMENT,
+            "igor",
+            Amount::fromNodo(1000),
+            "test-blinding-secret-canonical-whitespace",
+            "mint_test_canonical_whitespace_001",
+            kTestTimestamp
+        );
+
+    const std::string nonCanonical = replaceFirst(
+        original.serialize(),
+        ";type=",
+        "; type="
+    );
+
+    requireRejected(
+        "PrivacyCommitmentCodec accepted non-canonical whitespace.",
+        [&]() {
+            (void)PrivacyCommitmentCodec::deserialize(nonCanonical);
+        }
+    );
+}
+
+void testCanonicalSerializationRejectsPrivacyNullifierTrailingData() {
+    PrivacyNullifier original =
+        createTestSpendNullifier(
+            "commitment_test_canonical_trailing_001",
+            "owner-secret-canonical-trailing-001",
+            "context-canonical-trailing-001",
+            kTestTimestamp
+        );
+
+    const std::string nonCanonical =
+        original.serialize() + " ";
+
+    requireRejected(
+        "PrivacyNullifierCodec accepted trailing data.",
+        [&]() {
+            (void)PrivacyNullifierCodec::deserialize(nonCanonical);
+        }
+    );
+}
+
+void testCanonicalSerializationRejectsPrivateAccountingRecordListWhitespace() {
+    PrivateAccountingRecord original =
+        createTestPrivateTransferRecord();
+
+    const std::string nonCanonical = replaceFirst(
+        original.serialize(),
+        "},PrivacyCommitment{",
+        "}, PrivacyCommitment{"
+    );
+
+    requireRejected(
+        "PrivateAccountingRecordCodec accepted non-canonical list whitespace.",
+        [&]() {
+            (void)PrivateAccountingRecordCodec::deserialize(nonCanonical);
+        }
+    );
+}
+
+void testCanonicalSerializationRejectsPrivateAccountingRecordMissingField() {
+    PrivateAccountingRecord original =
+        createTestPrivateTransferRecord();
+
+    const std::string serialized = original.serialize();
+    const std::string auditReferenceToken =
+        ";auditReference=test-private-transfer-audit-reference";
+
+    const std::string nonCanonical = replaceFirst(
+        serialized,
+        auditReferenceToken,
+        ""
+    );
+
+    requireRejected(
+        "PrivateAccountingRecordCodec accepted a missing required field.",
+        [&]() {
+            (void)PrivateAccountingRecordCodec::deserialize(nonCanonical);
+        }
+    );
+}
+
+
 } // namespace
 
 int main() {
@@ -673,6 +873,13 @@ int main() {
         testPrivateAccountingRecordCodecListRoundTrip();
         testPrivateAccountingRecordCodecRejectsTamperedProofHash();
         testPrivateAccountingRecordCodecRejectsInvalidShape();
+        testCanonicalSerializationRejectsMintRecordFieldReordering();
+        testCanonicalSerializationRejectsMintRecordUnknownField();
+        testCanonicalSerializationRejectsMintRecordLeadingZeroAmount();
+        testCanonicalSerializationRejectsPrivacyCommitmentWhitespace();
+        testCanonicalSerializationRejectsPrivacyNullifierTrailingData();
+        testCanonicalSerializationRejectsPrivateAccountingRecordListWhitespace();
+        testCanonicalSerializationRejectsPrivateAccountingRecordMissingField();
 
         std::cout << "Nodo serialization round-trip tests passed.\n";
         return 0;
