@@ -2,6 +2,7 @@
 
 #include "core/State.hpp"
 
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -87,30 +88,24 @@ CoinLotTransactionValidationResult CoinLotTransactionValidator::validateTransfer
         );
     }
 
-    utils::Amount collected =
-        utils::Amount::fromRawUnits(0);
+    try {
+        const std::vector<CoinLot> selectedInputLots =
+            selectInputLots(
+                transaction,
+                registry,
+                totalDebit
+            );
 
-    for (const auto& entry : registry.lots()) {
-        const CoinLot& lot = entry.second;
-
-        if (lot.ownerAddress() != transaction.fromAddress()) {
-            continue;
-        }
-
-        if (!lot.isSpendable()) {
-            continue;
-        }
-
-        collected = collected + lot.amount();
-
-        if (collected >= totalDebit) {
-            return CoinLotTransactionValidationResult::valid();
-        }
+        return validateSelectedInputLots(
+            transaction,
+            selectedInputLots,
+            totalDebit
+        );
+    } catch (const std::exception& error) {
+        return CoinLotTransactionValidationResult::invalid(
+            error.what()
+        );
     }
-
-    return CoinLotTransactionValidationResult::invalid(
-        "Insufficient spendable CoinLot balance for transfer."
-    );
 }
 
 CoinLotTransferPlan CoinLotTransactionValidator::buildTransferPlan(
@@ -133,6 +128,13 @@ CoinLotTransferPlan CoinLotTransactionValidator::buildTransferPlan(
     const utils::Amount totalDebit =
         transaction.amount() + transaction.fee();
 
+    const std::vector<CoinLot> selectedInputLots =
+        selectInputLots(
+            transaction,
+            registry,
+            totalDebit
+        );
+
     std::vector<std::string> inputLotIds;
     std::vector<CoinLot> outputLots;
 
@@ -147,22 +149,7 @@ CoinLotTransferPlan CoinLotTransactionValidator::buildTransferPlan(
 
     std::size_t outputIndex = 0;
 
-    /*
-     * Deterministic input selection:
-     * CoinLotRegistry stores lots in std::map order by id. This keeps plan
-     * generation stable across nodes that see the same registry.
-     */
-    for (const auto& entry : registry.lots()) {
-        const CoinLot& inputLot = entry.second;
-
-        if (inputLot.ownerAddress() != transaction.fromAddress()) {
-            continue;
-        }
-
-        if (!inputLot.isSpendable()) {
-            continue;
-        }
-
+    for (const auto& inputLot : selectedInputLots) {
         inputLotIds.push_back(inputLot.id());
         collected = collected + inputLot.amount();
 
@@ -256,10 +243,6 @@ CoinLotTransferPlan CoinLotTransactionValidator::buildTransferPlan(
 
             remainingInputAmount = utils::Amount::fromRawUnits(0);
         }
-
-        if (collected >= totalDebit) {
-            break;
-        }
     }
 
     if (collected < totalDebit) {
@@ -343,6 +326,143 @@ void CoinLotTransactionValidator::applyTransfer(
     for (const auto& outputLot : plan.outputLots()) {
         registry.addLot(outputLot);
     }
+}
+
+std::vector<CoinLot> CoinLotTransactionValidator::selectInputLots(
+    const Transaction& transaction,
+    const CoinLotRegistry& registry,
+    utils::Amount totalDebit
+) {
+    std::vector<CoinLot> selectedInputLots;
+    utils::Amount collected =
+        utils::Amount::fromRawUnits(0);
+
+    if (transaction.hasExplicitInputCoinLotIds()) {
+        /*
+         * Explicit mode:
+         * Spend exactly the lots declared by the transaction. This prevents a
+         * validator from silently substituting different inputs and makes the
+         * transaction intent fully auditable.
+         */
+        std::set<std::string> seen;
+
+        for (const auto& inputLotId : transaction.inputCoinLotIds()) {
+            if (!seen.insert(inputLotId).second) {
+                throw std::invalid_argument("Duplicate explicit input CoinLot id rejected.");
+            }
+
+            const CoinLotVerificationResult inputVerification =
+                registry.verifySpendable(
+                    inputLotId,
+                    transaction.fromAddress()
+                );
+
+            if (!inputVerification.success()) {
+                throw std::invalid_argument(
+                    "Explicit input CoinLot is not spendable: " +
+                    inputVerification.reason()
+                );
+            }
+
+            const CoinLot& inputLot =
+                registry.lot(inputLotId);
+
+            selectedInputLots.push_back(inputLot);
+            collected = collected + inputLot.amount();
+        }
+
+        if (collected < totalDebit) {
+            throw std::invalid_argument(
+                "Explicit input CoinLots do not cover transfer amount plus fee."
+            );
+        }
+
+        return selectedInputLots;
+    }
+
+    /*
+     * Backward-compatible mode:
+     * Older local/demo transactions do not yet declare input lots, so the node
+     * chooses spendable inputs deterministically from the registry map order.
+     */
+    for (const auto& entry : registry.lots()) {
+        const CoinLot& lot = entry.second;
+
+        if (lot.ownerAddress() != transaction.fromAddress()) {
+            continue;
+        }
+
+        if (!lot.isSpendable()) {
+            continue;
+        }
+
+        selectedInputLots.push_back(lot);
+        collected = collected + lot.amount();
+
+        if (collected >= totalDebit) {
+            break;
+        }
+    }
+
+    if (collected < totalDebit) {
+        throw std::invalid_argument(
+            "Insufficient spendable CoinLot balance for transfer."
+        );
+    }
+
+    return selectedInputLots;
+}
+
+CoinLotTransactionValidationResult CoinLotTransactionValidator::validateSelectedInputLots(
+    const Transaction& transaction,
+    const std::vector<CoinLot>& selectedInputLots,
+    utils::Amount totalDebit
+) {
+    if (selectedInputLots.empty()) {
+        return CoinLotTransactionValidationResult::invalid(
+            "Transfer has no selected input CoinLots."
+        );
+    }
+
+    std::set<std::string> seen;
+    utils::Amount collected =
+        utils::Amount::fromRawUnits(0);
+
+    for (const auto& inputLot : selectedInputLots) {
+        if (!inputLot.isValid()) {
+            return CoinLotTransactionValidationResult::invalid(
+                "Selected input CoinLot is invalid."
+            );
+        }
+
+        if (inputLot.ownerAddress() != transaction.fromAddress()) {
+            return CoinLotTransactionValidationResult::invalid(
+                "Selected input CoinLot owner mismatch."
+            );
+        }
+
+        if (!inputLot.isSpendable()) {
+            return CoinLotTransactionValidationResult::invalid(
+                "Selected input CoinLot is not spendable."
+            );
+        }
+
+        if (!seen.insert(inputLot.id()).second) {
+            return CoinLotTransactionValidationResult::invalid(
+                "Duplicate selected input CoinLot id rejected."
+            );
+        }
+
+        collected = collected + inputLot.amount();
+    }
+
+    if (collected < totalDebit) {
+        return CoinLotTransactionValidationResult::invalid(
+            "Selected input CoinLots do not cover transfer amount plus fee."
+        );
+    }
+
+    return CoinLotTransactionValidationResult::valid();
 }
 
 std::string CoinLotTransactionValidator::createTransferOutputCoinLotId(

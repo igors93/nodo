@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace nodo::core {
 
@@ -39,6 +40,18 @@ public:
     );
 
 private:
+    static std::vector<CoinLot> selectInputLots(
+        const Transaction& transaction,
+        const CoinLotRegistry& registry,
+        utils::Amount totalDebit
+    );
+
+    static CoinLotTransactionValidationResult validateSelectedInputLots(
+        const Transaction& transaction,
+        const std::vector<CoinLot>& selectedInputLots,
+        utils::Amount totalDebit
+    );
+
     static std::string createTransferOutputCoinLotId(
         const Transaction& transaction,
         const CoinLot& inputLot,

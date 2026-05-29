@@ -1,32 +1,27 @@
-# Coin lot transaction integration phase
+# Explicit transaction CoinLot inputs phase
 
-This phase connects transactions directly to the CoinLotRegistry.
+This phase makes transaction input intent explicit.
 
-New components:
+New behavior:
 
 ```text
-CoinLotTransactionValidationResult
-CoinLotTransferPlan
-CoinLotTransactionValidator
+TRANSFER transactions can declare input CoinLot ids
+transaction id commits to those input ids
+validators must spend only declared input lots
+declared input lots must cover amount + fee
+legacy automatic-input transactions still work
 ```
 
-Modified:
+Security goal:
 
 ```text
-State
-```
-
-What this means:
-
-```text
-transfer transactions now use registry-backed coin lot validation
-locked/spent/slashed lots are rejected
-transfer plans explicitly preserve input/output conservation
-State keeps the old applyTransferTransaction API but delegates to the new registry path
+prevent silent input substitution
+make transaction intent auditable
+prepare the project for UTXO-style consensus validation
 ```
 
 Recommended commit:
 
 ```bash
-git commit -m "Connect transactions to coin lot registry"
+git commit -m "Add explicit transaction coin lot inputs"
 ```

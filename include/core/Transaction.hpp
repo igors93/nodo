@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace nodo::core {
 
@@ -30,6 +31,25 @@ public:
         std::int64_t timestamp
     );
 
+    /*
+     * Explicit-input constructor.
+     *
+     * Security principle:
+     * When input CoinLot ids are declared by the transaction, validators must
+     * spend only those declared lots. They must not silently replace them with
+     * other available lots owned by the same account.
+     */
+    Transaction(
+        TransactionType type,
+        std::string fromAddress,
+        std::string toAddress,
+        utils::Amount amount,
+        utils::Amount fee,
+        std::uint64_t nonce,
+        std::int64_t timestamp,
+        std::vector<std::string> inputCoinLotIds
+    );
+
     const std::string& id() const;
     TransactionType type() const;
     const std::string& fromAddress() const;
@@ -38,6 +58,9 @@ public:
     utils::Amount fee() const;
     std::uint64_t nonce() const;
     std::int64_t timestamp() const;
+
+    const std::vector<std::string>& inputCoinLotIds() const;
+    bool hasExplicitInputCoinLotIds() const;
 
     bool hasSignatureBundle() const;
     const crypto::SignatureBundle& signatureBundle() const;
@@ -99,6 +122,7 @@ private:
     utils::Amount m_fee;
     std::uint64_t m_nonce;
     std::int64_t m_timestamp;
+    std::vector<std::string> m_inputCoinLotIds;
     crypto::SignatureBundle m_signatureBundle;
     bool m_hasSignatureBundle;
 };

@@ -2,6 +2,8 @@
 setlocal enabledelayedexpansion
 
 REM Nodo Windows protection economics test script.
+REM Important linker rule:
+REM Each .cpp implementation file must appear only once per g++ command.
 
 set "ROOT_DIR=%~dp0.."
 set "BUILD_DIR=%ROOT_DIR%\build\tests"
@@ -73,7 +75,6 @@ echo Building Nodo protection ledger integration tests...
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
-    "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\LedgerRecordCodec.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyCommitment.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyNullifier.cpp" ^
@@ -114,7 +115,6 @@ echo Building Nodo protection state rebuilder tests...
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEconomicsState.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEconomicsRebuilder.cpp" ^
-    "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\LedgerRecordCodec.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyCommitment.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyNullifier.cpp" ^
@@ -156,7 +156,6 @@ echo Building Nodo coin lot registry tests...
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEconomicsState.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEconomicsRebuilder.cpp" ^
-    "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\LedgerRecordCodec.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyCommitment.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyNullifier.cpp" ^
@@ -184,7 +183,6 @@ if errorlevel 1 (
     echo Failed to build Nodo coin lot registry tests.
     exit /b 1
 )
-
 
 echo Building Nodo coin lot transaction integration tests...
 
@@ -217,6 +215,41 @@ echo Building Nodo coin lot transaction integration tests...
 
 if errorlevel 1 (
     echo Failed to build Nodo coin lot transaction integration tests.
+    exit /b 1
+)
+
+
+echo Building Nodo explicit transaction input tests...
+
+%CXX% -std=c++20 -Wall -Wextra -I"%ROOT_DIR%\include" ^
+    "%ROOT_DIR%\tests\core\TransactionExplicitInputTests.cpp" ^
+    "%ROOT_DIR%\src\utils\Amount.cpp" ^
+    "%ROOT_DIR%\src\utils\Time.cpp" ^
+    "%ROOT_DIR%\src\economics\MintRecord.cpp" ^
+    "%ROOT_DIR%\src\serialization\MintRecordCodec.cpp" ^
+    "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
+    "%ROOT_DIR%\src\core\Account.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLot.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotVerificationResult.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotRegistry.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransactionValidationResult.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransferPlan.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransactionValidator.cpp" ^
+    "%ROOT_DIR%\src\core\State.cpp" ^
+    "%ROOT_DIR%\src\core\Transaction.cpp" ^
+    "%ROOT_DIR%\src\staking\SecurityWeight.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoAlgorithm.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoPolicy.cpp" ^
+    "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\PrivateKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\Signature.cpp" ^
+    "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
+    "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%BUILD_DIR%\hash_economics_test.o" ^
+    -o "%BUILD_DIR%\transaction_explicit_input_tests.exe"
+
+if errorlevel 1 (
+    echo Failed to build Nodo explicit transaction input tests.
     exit /b 1
 )
 
@@ -256,13 +289,22 @@ if errorlevel 1 (
     exit /b 1
 )
 
-
 echo.
 echo Running Nodo coin lot transaction integration tests...
 "%BUILD_DIR%\coin_lot_transaction_integration_tests.exe"
 
 if errorlevel 1 (
     echo Coin lot transaction integration tests failed.
+    exit /b 1
+)
+
+
+echo.
+echo Running Nodo explicit transaction input tests...
+"%BUILD_DIR%\transaction_explicit_input_tests.exe"
+
+if errorlevel 1 (
+    echo Explicit transaction input tests failed.
     exit /b 1
 )
 
