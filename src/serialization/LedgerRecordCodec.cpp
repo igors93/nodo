@@ -107,6 +107,22 @@ core::LedgerRecordType LedgerRecordCodec::parseLedgerRecordType(
         return core::LedgerRecordType::PRIVATE_ACCOUNTING;
     }
 
+    if (value == "VALIDATION_WORK") {
+        return core::LedgerRecordType::VALIDATION_WORK;
+    }
+
+    if (value == "VALIDATOR_SCORE") {
+        return core::LedgerRecordType::VALIDATOR_SCORE;
+    }
+
+    if (value == "PROTECTION_EPOCH") {
+        return core::LedgerRecordType::PROTECTION_EPOCH;
+    }
+
+    if (value == "GENESIS_REWARD") {
+        return core::LedgerRecordType::GENESIS_REWARD;
+    }
+
     throw std::invalid_argument("Unknown LedgerRecordType: " + value);
 }
 
@@ -164,6 +180,30 @@ void LedgerRecordCodec::assertSafePayloadPrefixForType(
         case core::LedgerRecordType::PRIVATE_ACCOUNTING:
             if (payload.rfind("PrivateAccountingRecord{", 0) != 0) {
                 throw std::invalid_argument("PRIVATE_ACCOUNTING LedgerRecord payload type mismatch.");
+            }
+            return;
+
+        case core::LedgerRecordType::VALIDATION_WORK:
+            if (payload.rfind("ValidationWorkRecord{", 0) != 0) {
+                throw std::invalid_argument("VALIDATION_WORK LedgerRecord payload type mismatch.");
+            }
+            return;
+
+        case core::LedgerRecordType::VALIDATOR_SCORE:
+            if (payload.rfind("ValidatorScoreRecord{", 0) != 0) {
+                throw std::invalid_argument("VALIDATOR_SCORE LedgerRecord payload type mismatch.");
+            }
+            return;
+
+        case core::LedgerRecordType::PROTECTION_EPOCH:
+            if (payload.rfind("ProtectionEpoch{", 0) != 0) {
+                throw std::invalid_argument("PROTECTION_EPOCH LedgerRecord payload type mismatch.");
+            }
+            return;
+
+        case core::LedgerRecordType::GENESIS_REWARD:
+            if (payload.rfind("GenesisRewardRecord{", 0) != 0) {
+                throw std::invalid_argument("GENESIS_REWARD LedgerRecord payload type mismatch.");
             }
             return;
 

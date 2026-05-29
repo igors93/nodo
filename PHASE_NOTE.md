@@ -1,33 +1,29 @@
-# Protection economics foundation phase
+# Protection ledger integration phase
 
-This phase starts implementing the new Nodo economic model.
+This phase connects the new protection economics records to the official LedgerRecord pipeline.
 
-New code:
+New LedgerRecord types:
 
 ```text
-ValidationWorkRecord
-ValidatorScoreRecord
-EpochEmissionPolicy
-ProtectionEpoch
-GenesisRewardRecord
+VALIDATION_WORK
+VALIDATOR_SCORE
+PROTECTION_EPOCH
+GENESIS_REWARD
 ```
 
-What it does:
+What this means:
 
 ```text
-records useful validator work
-keeps validator score bounded from 0 to 100
-calculates controlled epoch emission caps
-calculates reward pool from fees + capped security emission
-creates traceable reward CoinLots from GenesisReward records
+validator work can enter blocks
+validator score changes can enter blocks
+epoch reward summaries can enter blocks
+GenesisReward coin creation can enter blocks
 ```
 
 Nothing is deleted yet.
 
-The old demo MintRecord remains until the new model is integrated safely into blocks, state rebuild, serialization and storage.
-
 Recommended commit:
 
 ```bash
-git commit -m "Add protection economics foundation"
+git commit -m "Integrate protection economics records into ledger"
 ```

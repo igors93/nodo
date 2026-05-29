@@ -3,7 +3,11 @@
 
 #include "core/Transaction.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "economics/GenesisRewardRecord.hpp"
 #include "economics/MintRecord.hpp"
+#include "economics/ProtectionEpoch.hpp"
+#include "economics/ValidationWorkRecord.hpp"
+#include "economics/ValidatorScoreRecord.hpp"
 #include "privacy/PrivateAccountingRecord.hpp"
 
 #include <cstdint>
@@ -25,7 +29,11 @@ namespace nodo::core {
 enum class LedgerRecordType {
     MINT,
     TRANSACTION,
-    PRIVATE_ACCOUNTING
+    PRIVATE_ACCOUNTING,
+    VALIDATION_WORK,
+    VALIDATOR_SCORE,
+    PROTECTION_EPOCH,
+    GENESIS_REWARD
 };
 
 std::string ledgerRecordTypeToString(LedgerRecordType type);
@@ -60,6 +68,32 @@ public:
      */
     static LedgerRecord fromPrivateAccountingRecord(
         const privacy::PrivateAccountingRecord& privateAccountingRecord,
+        std::int64_t timestamp
+    );
+
+    /*
+     * Protection economics records.
+     *
+     * These methods start integrating the new Proof of Protection model into
+     * the same auditable LedgerRecord pipeline used by blocks.
+     */
+    static LedgerRecord fromValidationWorkRecord(
+        const economics::ValidationWorkRecord& validationWorkRecord,
+        std::int64_t timestamp
+    );
+
+    static LedgerRecord fromValidatorScoreRecord(
+        const economics::ValidatorScoreRecord& validatorScoreRecord,
+        std::int64_t timestamp
+    );
+
+    static LedgerRecord fromProtectionEpoch(
+        const economics::ProtectionEpoch& protectionEpoch,
+        std::int64_t timestamp
+    );
+
+    static LedgerRecord fromGenesisRewardRecord(
+        const economics::GenesisRewardRecord& genesisRewardRecord,
         std::int64_t timestamp
     );
 
@@ -105,6 +139,11 @@ private:
         const std::string& sourceId,
         const std::string& payloadHash,
         std::int64_t timestamp
+    );
+
+    static std::string computeDerivedSourceId(
+        const std::string& sourcePrefix,
+        const std::string& payloadHash
     );
 
     std::string m_id;

@@ -791,6 +791,36 @@ scripts/test_economics.sh
 scripts/test_economics.bat
 ```
 
+
+---
+
+## Implementation: Protection Records Enter Ledger History
+
+The next code step integrates protection economics records into `LedgerRecord`.
+
+New ledger record types:
+
+```text
+VALIDATION_WORK
+VALIDATOR_SCORE
+PROTECTION_EPOCH
+GENESIS_REWARD
+```
+
+This means protection work, score updates, epoch summaries, and reward coin creation can now enter blocks as auditable records.
+
+New test:
+
+```text
+tests/economics/ProtectionLedgerIntegrationTests.cpp
+```
+
+New documentation:
+
+```text
+docs/economics/LEDGER_RECORD_INTEGRATION.md
+```
+
 ## Build
 
 Nodo supports Linux-style shells and Windows builds.

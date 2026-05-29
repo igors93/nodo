@@ -1,9 +1,9 @@
 # Nodo Economics and Protection Guides
 
 Status: Project Guide Index  
-Version: NODO-ECONOMICS-GUIDES-V2
+Version: NODO-ECONOMICS-GUIDES-V3
 
-This folder contains the main concept documents for Nodo's future protection-based economic model.
+This folder contains the main concept documents for Nodo's protection-based economic model.
 
 Recommended reading order:
 
@@ -15,6 +15,7 @@ Recommended reading order:
 5. STAKE_AND_SECURITY.md
 6. NETWORK_RISK_AND_ANTI_SYBIL.md
 7. IMPLEMENTATION_START.md
+8. LEDGER_RECORD_INTEGRATION.md
 ```
 
 Core idea:
@@ -23,7 +24,7 @@ Core idea:
 Nodo is a security-first blockchain where coins are born from verified protection work, every coin lot has provable existence, validator trust is recorded on-chain, and emission is dynamically controlled by transparent economic rules.
 ```
 
-Current implementation start:
+Implemented foundations so far:
 
 ```text
 ValidationWorkRecord
@@ -31,4 +32,5 @@ ValidatorScoreRecord
 EpochEmissionPolicy
 ProtectionEpoch
 GenesisRewardRecord
+LedgerRecord integration for protection economics records
 ```

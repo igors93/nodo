@@ -21,6 +21,11 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/utils/Amount.cpp" \
     "$ROOT_DIR/src/utils/Time.cpp" \
     "$ROOT_DIR/src/economics/MintRecord.cpp" \
+    "$ROOT_DIR/src/economics/ValidationWorkRecord.cpp" \
+    "$ROOT_DIR/src/economics/ValidatorScoreRecord.cpp" \
+    "$ROOT_DIR/src/economics/EpochEmissionPolicy.cpp" \
+    "$ROOT_DIR/src/economics/ProtectionEpoch.cpp" \
+    "$ROOT_DIR/src/economics/GenesisRewardRecord.cpp" \
     "$ROOT_DIR/src/serialization/FieldCodec.cpp" \
     "$ROOT_DIR/src/serialization/MintRecordCodec.cpp" \
     "$ROOT_DIR/src/serialization/PrivacyCommitmentCodec.cpp" \
