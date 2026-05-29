@@ -29,6 +29,7 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/serialization/PrivateAccountingRecordCodec.cpp" \
     "$ROOT_DIR/src/serialization/ChainManifestCodec.cpp" \
     "$ROOT_DIR/src/serialization/BlockStorageIndexCodec.cpp" \
+    "$ROOT_DIR/src/serialization/BlockSnapshotHeaderCodec.cpp" \
     "$ROOT_DIR/src/serialization/LedgerRecordCodec.cpp" \
     "$ROOT_DIR/src/serialization/BlockCodec.cpp" \
     "$ROOT_DIR/src/storage/BlockFileStore.cpp" \

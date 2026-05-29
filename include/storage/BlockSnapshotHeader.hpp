@@ -18,6 +18,12 @@ namespace nodo::storage {
  */
 class BlockSnapshotHeader {
 public:
+    /*
+     * Rebuilds a BlockSnapshotHeader from a serialized block snapshot.
+     *
+     * This method delegates parsing to serialization::BlockSnapshotHeaderCodec
+     * so block snapshot metadata is parsed through a single audited boundary.
+     */
     static BlockSnapshotHeader fromSerializedBlock(
         const std::string& serializedBlock
     );
@@ -54,14 +60,6 @@ public:
     std::string serialize() const;
 
 private:
-    static std::string extractHeaderPayload(
-        const std::string& serializedBlock
-    );
-
-    static std::size_t countLedgerRecordsInHeaderPayload(
-        const std::string& headerPayload
-    );
-
     static std::string readFile(
         const std::string& filePath
     );
@@ -72,10 +70,6 @@ private:
 
     static bool isSafePreviousHash(
         const std::string& previousHash
-    );
-
-    static std::string hashString(
-        const std::string& value
     );
 
     std::uint64_t m_blockIndex;

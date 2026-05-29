@@ -27,6 +27,7 @@
 
 #include "serialization/ChainManifestCodec.hpp"
 #include "serialization/BlockStorageIndexCodec.hpp"
+#include "serialization/BlockSnapshotHeaderCodec.hpp"
 
 #include "utils/Amount.hpp"
 
@@ -67,9 +68,10 @@ using nodo::privacy::PrivateAccountingLedgerRebuilder;
 using nodo::privacy::PrivateAccountingRecord;
 
 using nodo::storage::BlockFileStore;
+using nodo::storage::BlockIndexEntry;
 using nodo::storage::BlockStorageIndex;
 using nodo::storage::BlockchainLoadReport;
-using nodo::storage::BlockIndexEntry;
+using nodo::storage::BlockSnapshotHeader;
 using nodo::storage::BlockchainLoader;
 using nodo::storage::BlockchainStorageReadReport;
 using nodo::storage::BlockchainStorageReader;
@@ -77,6 +79,7 @@ using nodo::storage::ChainManifest;
 
 using nodo::serialization::ChainManifestCodec;
 using nodo::serialization::BlockStorageIndexCodec;
+using nodo::serialization::BlockSnapshotHeaderCodec;
 
 using nodo::utils::Amount;
 
@@ -103,6 +106,27 @@ std::string tamperFirstHexCharacter(
         value.front() == '0' ? "1" : "0";
 
     return replacementPrefix + value.substr(1);
+}
+
+std::string readTextFile(
+    const std::filesystem::path& filePath
+) {
+    std::ifstream input(filePath, std::ios::in | std::ios::binary);
+
+    requireCondition(
+        input.is_open(),
+        "Failed to open file for test reading: " + filePath.string()
+    );
+
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+
+    requireCondition(
+        input.good() || input.eof(),
+        "Failed while reading test file: " + filePath.string()
+    );
+
+    return buffer.str();
 }
 
 std::filesystem::path storageRootPath(
@@ -474,6 +498,66 @@ void writeCompleteStorage(
     requireCondition(
         entryTamperRejected,
         "BlockStorageIndexCodec accepted an unsafe index entry file name."
+    );
+
+    const std::filesystem::path firstBlockSnapshotPath =
+        rootPath /
+        "blocks" /
+        loadedIndex.entries().front().fileName();
+
+    const std::string firstSerializedBlock =
+        readTextFile(firstBlockSnapshotPath);
+
+    const BlockSnapshotHeader codecRebuiltHeader =
+        BlockSnapshotHeaderCodec::deserializeFromSerializedBlock(
+            firstSerializedBlock
+        );
+
+    requireCondition(
+        codecRebuiltHeader.isValid(),
+        "BlockSnapshotHeaderCodec produced an invalid header."
+    );
+
+    requireCondition(
+        codecRebuiltHeader.blockIndex() == loadedIndex.entries().front().blockIndex(),
+        "BlockSnapshotHeaderCodec produced an unexpected block index."
+    );
+
+    requireCondition(
+        codecRebuiltHeader.blockHash() == loadedIndex.entries().front().blockHash(),
+        "BlockSnapshotHeaderCodec produced an unexpected block hash."
+    );
+
+    std::string tamperedSerializedBlock = firstSerializedBlock;
+
+    const std::string recordCountMarker = "recordCount=1";
+    const std::size_t recordCountPosition =
+        tamperedSerializedBlock.find(recordCountMarker);
+
+    requireCondition(
+        recordCountPosition != std::string::npos,
+        "Could not find recordCount marker for header tamper test."
+    );
+
+    tamperedSerializedBlock.replace(
+        recordCountPosition,
+        recordCountMarker.size(),
+        "recordCount=999"
+    );
+
+    bool headerTamperRejected = false;
+
+    try {
+        (void)BlockSnapshotHeaderCodec::deserializeFromSerializedBlock(
+            tamperedSerializedBlock
+        );
+    } catch (const std::exception&) {
+        headerTamperRejected = true;
+    }
+
+    requireCondition(
+        headerTamperRejected,
+        "BlockSnapshotHeaderCodec accepted a tampered record count."
     );
 
 }

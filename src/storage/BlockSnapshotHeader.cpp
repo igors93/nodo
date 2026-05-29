@@ -1,7 +1,6 @@
 #include "storage/BlockSnapshotHeader.hpp"
 
-#include "crypto/hash.h"
-#include "serialization/FieldCodec.hpp"
+#include "serialization/BlockSnapshotHeaderCodec.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -10,98 +9,12 @@
 
 namespace nodo::storage {
 
-using nodo::serialization::FieldCodec;
-
-namespace {
-
-std::uint64_t parseUnsigned64(
-    const std::string& value,
-    const std::string& fieldName
-) {
-    try {
-        return static_cast<std::uint64_t>(std::stoull(value));
-    } catch (const std::exception&) {
-        throw std::invalid_argument("Invalid unsigned integer field: " + fieldName);
-    }
-}
-
-std::size_t parseSize(
-    const std::string& value,
-    const std::string& fieldName
-) {
-    try {
-        return static_cast<std::size_t>(std::stoull(value));
-    } catch (const std::exception&) {
-        throw std::invalid_argument("Invalid size field: " + fieldName);
-    }
-}
-
-std::int64_t parseInt64(
-    const std::string& value,
-    const std::string& fieldName
-) {
-    try {
-        return std::stoll(value);
-    } catch (const std::exception&) {
-        throw std::invalid_argument("Invalid signed integer field: " + fieldName);
-    }
-}
-
-} // namespace
-
 BlockSnapshotHeader BlockSnapshotHeader::fromSerializedBlock(
     const std::string& serializedBlock
 ) {
-    if (serializedBlock.rfind("Block{", 0) != 0) {
-        throw std::invalid_argument("Serialized object is not a Block.");
-    }
-
-    const std::uint64_t blockIndex = parseUnsigned64(
-        FieldCodec::extractField(serializedBlock, "index"),
-        "index"
+    return serialization::BlockSnapshotHeaderCodec::deserializeFromSerializedBlock(
+        serializedBlock
     );
-
-    const std::string previousHash =
-        FieldCodec::extractField(serializedBlock, "previousHash");
-
-    const std::string blockHash =
-        FieldCodec::extractField(serializedBlock, "hash");
-
-    const std::int64_t timestamp = parseInt64(
-        FieldCodec::extractField(serializedBlock, "timestamp"),
-        "timestamp"
-    );
-
-    const std::size_t recordCount = parseSize(
-        FieldCodec::extractField(serializedBlock, "recordCount"),
-        "recordCount"
-    );
-
-    const std::string headerPayload =
-        extractHeaderPayload(serializedBlock);
-
-    const std::size_t parsedRecordCount =
-        countLedgerRecordsInHeaderPayload(headerPayload);
-
-    if (recordCount != parsedRecordCount) {
-        throw std::logic_error("Block snapshot record count does not match payload.");
-    }
-
-    BlockSnapshotHeader header(
-        blockIndex,
-        previousHash,
-        blockHash,
-        timestamp,
-        recordCount,
-        headerPayload,
-        hashString(headerPayload)
-    );
-
-    if (!header.isValid()) {
-        throw std::logic_error("Parsed BlockSnapshotHeader is invalid.");
-    }
-
-    return header;
 }
 
 BlockSnapshotHeader BlockSnapshotHeader::fromFile(
@@ -232,43 +145,13 @@ bool BlockSnapshotHeader::isValid() const {
         return false;
     }
 
-    try {
-        const std::uint64_t payloadIndex = parseUnsigned64(
-            FieldCodec::extractField(m_headerPayload, "index"),
-            "payload.index"
-        );
-
-        const std::string payloadPreviousHash =
-            FieldCodec::extractField(m_headerPayload, "previousHash");
-
-        const std::int64_t payloadTimestamp = parseInt64(
-            FieldCodec::extractField(m_headerPayload, "timestamp"),
-            "payload.timestamp"
-        );
-
-        const std::size_t payloadRecordCount =
-            countLedgerRecordsInHeaderPayload(m_headerPayload);
-
-        if (payloadIndex != m_blockIndex) {
-            return false;
-        }
-
-        if (payloadPreviousHash != m_previousHash) {
-            return false;
-        }
-
-        if (payloadTimestamp != m_timestamp) {
-            return false;
-        }
-
-        if (payloadRecordCount != m_recordCount) {
-            return false;
-        }
-    } catch (...) {
-        return false;
-    }
-
-    return true;
+    return serialization::BlockSnapshotHeaderCodec::headerPayloadMatchesMetadata(
+        m_headerPayload,
+        m_blockIndex,
+        m_previousHash,
+        m_timestamp,
+        m_recordCount
+    );
 }
 
 std::string BlockSnapshotHeader::serialize() const {
@@ -284,55 +167,6 @@ std::string BlockSnapshotHeader::serialize() const {
         << "}";
 
     return oss.str();
-}
-
-std::string BlockSnapshotHeader::extractHeaderPayload(
-    const std::string& serializedBlock
-) {
-    const std::string marker = ";payload=";
-    const std::size_t markerPosition = serializedBlock.find(marker);
-
-    if (markerPosition == std::string::npos) {
-        throw std::invalid_argument("Serialized Block is missing payload.");
-    }
-
-    const std::size_t payloadStart = markerPosition + marker.size();
-
-    if (serializedBlock.size() <= payloadStart + 1) {
-        throw std::invalid_argument("Serialized Block payload is empty.");
-    }
-
-    if (serializedBlock.back() != '}') {
-        throw std::invalid_argument("Serialized Block is missing closing brace.");
-    }
-
-    const std::string payload =
-        serializedBlock.substr(payloadStart, serializedBlock.size() - payloadStart - 1);
-
-    if (payload.rfind("BlockHeader{", 0) != 0) {
-        throw std::invalid_argument("Serialized Block payload is not a BlockHeader.");
-    }
-
-    return payload;
-}
-
-std::size_t BlockSnapshotHeader::countLedgerRecordsInHeaderPayload(
-    const std::string& headerPayload
-) {
-    if (headerPayload.rfind("BlockHeader{", 0) != 0) {
-        throw std::invalid_argument("Serialized payload is not a BlockHeader.");
-    }
-
-    const std::string recordsList = FieldCodec::extractTrailingSection(
-        headerPayload,
-        ";records=[",
-        "]}"
-    );
-
-    return FieldCodec::splitTopLevelObjects(
-        recordsList,
-        "LedgerRecord{"
-    ).size();
 }
 
 std::string BlockSnapshotHeader::readFile(
@@ -386,15 +220,6 @@ bool BlockSnapshotHeader::isSafePreviousHash(
     }
 
     return isSafeHash(previousHash);
-}
-
-std::string BlockSnapshotHeader::hashString(
-    const std::string& value
-) {
-    char output[65] = {0};
-    nodo_hash_string(value.c_str(), output, sizeof(output));
-
-    return std::string(output);
 }
 
 } // namespace nodo::storage
