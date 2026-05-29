@@ -2,6 +2,9 @@
 set -euo pipefail
 
 # Nodo blockchain storage integration test script.
+# Important linker rule:
+# State.cpp now depends on CoinLotRegistry and CoinLotTransactionValidator.
+# Keep each .cpp implementation listed only once per g++ command.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build/tests"
@@ -50,6 +53,11 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/privacy/PrivateAccountingLedgerRebuilder.cpp" \
     "$ROOT_DIR/src/core/Account.cpp" \
     "$ROOT_DIR/src/core/CoinLot.cpp" \
+    "$ROOT_DIR/src/core/CoinLotVerificationResult.cpp" \
+    "$ROOT_DIR/src/core/CoinLotRegistry.cpp" \
+    "$ROOT_DIR/src/core/CoinLotTransactionValidationResult.cpp" \
+    "$ROOT_DIR/src/core/CoinLotTransferPlan.cpp" \
+    "$ROOT_DIR/src/core/CoinLotTransactionValidator.cpp" \
     "$ROOT_DIR/src/core/State.cpp" \
     "$ROOT_DIR/src/core/Transaction.cpp" \
     "$ROOT_DIR/src/core/LedgerRecord.cpp" \

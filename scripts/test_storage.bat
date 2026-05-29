@@ -2,6 +2,9 @@
 setlocal enabledelayedexpansion
 
 REM Nodo Windows blockchain storage integration test script.
+REM Important linker rule:
+REM State.cpp now depends on CoinLotRegistry and CoinLotTransactionValidator.
+REM Keep each .cpp implementation listed only once per g++ command.
 
 set "ROOT_DIR=%~dp0.."
 set "BUILD_DIR=%ROOT_DIR%\build\tests"
@@ -76,6 +79,11 @@ echo Building Nodo blockchain storage integration tests...
     "%ROOT_DIR%\src\privacy\PrivateAccountingLedgerRebuilder.cpp" ^
     "%ROOT_DIR%\src\core\Account.cpp" ^
     "%ROOT_DIR%\src\core\CoinLot.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotVerificationResult.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotRegistry.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransactionValidationResult.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransferPlan.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransactionValidator.cpp" ^
     "%ROOT_DIR%\src\core\State.cpp" ^
     "%ROOT_DIR%\src\core\Transaction.cpp" ^
     "%ROOT_DIR%\src\core\LedgerRecord.cpp" ^
