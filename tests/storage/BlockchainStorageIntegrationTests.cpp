@@ -26,6 +26,7 @@
 #include "storage/ChainManifest.hpp"
 
 #include "serialization/ChainManifestCodec.hpp"
+#include "serialization/BlockStorageIndexCodec.hpp"
 
 #include "utils/Amount.hpp"
 
@@ -68,12 +69,14 @@ using nodo::privacy::PrivateAccountingRecord;
 using nodo::storage::BlockFileStore;
 using nodo::storage::BlockStorageIndex;
 using nodo::storage::BlockchainLoadReport;
+using nodo::storage::BlockIndexEntry;
 using nodo::storage::BlockchainLoader;
 using nodo::storage::BlockchainStorageReadReport;
 using nodo::storage::BlockchainStorageReader;
 using nodo::storage::ChainManifest;
 
 using nodo::serialization::ChainManifestCodec;
+using nodo::serialization::BlockStorageIndexCodec;
 
 using nodo::utils::Amount;
 
@@ -397,6 +400,82 @@ void writeCompleteStorage(
         ),
         "Stored BlockStorageIndex does not match Blockchain and ChainManifest."
     );
+
+    BlockStorageIndex codecRebuiltIndex =
+        BlockStorageIndexCodec::deserialize(
+            loadedIndex.serialize()
+        );
+
+    requireCondition(
+        codecRebuiltIndex.serialize() == loadedIndex.serialize(),
+        "BlockStorageIndexCodec round-trip changed stored index serialization."
+    );
+
+    requireCondition(
+        !loadedIndex.entries().empty(),
+        "Stored BlockStorageIndex has no entries for codec verification."
+    );
+
+    BlockIndexEntry codecRebuiltEntry =
+        BlockStorageIndexCodec::deserializeEntry(
+            loadedIndex.entries().front().serialize()
+        );
+
+    requireCondition(
+        codecRebuiltEntry.serialize() == loadedIndex.entries().front().serialize(),
+        "BlockStorageIndexCodec round-trip changed first index entry serialization."
+    );
+
+    std::string tamperedIndex = loadedIndex.serialize();
+
+    const std::string tamperedIndexHash =
+        tamperFirstHexCharacter(
+            loadedIndex.indexHash()
+        );
+
+    tamperedIndex.replace(
+        tamperedIndex.find(loadedIndex.indexHash()),
+        loadedIndex.indexHash().size(),
+        tamperedIndexHash
+    );
+
+    bool indexTamperRejected = false;
+
+    try {
+        (void)BlockStorageIndexCodec::deserialize(tamperedIndex);
+    } catch (const std::exception&) {
+        indexTamperRejected = true;
+    }
+
+    requireCondition(
+        indexTamperRejected,
+        "BlockStorageIndexCodec accepted a tampered index hash."
+    );
+
+    std::string tamperedEntry = loadedIndex.entries().front().serialize();
+
+    const std::string originalEntryFileName =
+        loadedIndex.entries().front().fileName();
+
+    tamperedEntry.replace(
+        tamperedEntry.find(originalEntryFileName),
+        originalEntryFileName.size(),
+        "../" + originalEntryFileName
+    );
+
+    bool entryTamperRejected = false;
+
+    try {
+        (void)BlockStorageIndexCodec::deserializeEntry(tamperedEntry);
+    } catch (const std::exception&) {
+        entryTamperRejected = true;
+    }
+
+    requireCondition(
+        entryTamperRejected,
+        "BlockStorageIndexCodec accepted an unsafe index entry file name."
+    );
+
 }
 
 void assertLoadedBlockchainMatchesReference(

@@ -25,6 +25,12 @@ public:
         const core::Block& block
     );
 
+    /*
+     * Rebuilds a BlockIndexEntry from its deterministic serialized form.
+     *
+     * This method delegates parsing to serialization::BlockStorageIndexCodec
+     * so block index metadata is parsed through a single audited boundary.
+     */
     static BlockIndexEntry deserialize(
         const std::string& serialized
     );
@@ -72,7 +78,8 @@ private:
  * attempting to rebuild state from disk.
  *
  * Current status:
- * This index is a metadata foundation. It does not deserialize blocks yet.
+ * This index is a metadata foundation. Block deserialization is handled by the
+ * block codec and blockchain loader.
  */
 class BlockStorageIndex {
 public:
@@ -82,6 +89,13 @@ public:
         std::int64_t createdAt
     );
 
+    /*
+     * Rebuilds a BlockStorageIndex from its deterministic serialized form.
+     *
+     * This method delegates parsing to serialization::BlockStorageIndexCodec
+     * so persisted block index metadata is parsed through a single audited
+     * boundary.
+     */
     static BlockStorageIndex deserialize(
         const std::string& serialized
     );

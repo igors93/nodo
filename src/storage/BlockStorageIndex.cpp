@@ -1,7 +1,7 @@
 #include "storage/BlockStorageIndex.hpp"
 
 #include "crypto/hash.h"
-#include "serialization/FieldCodec.hpp"
+#include "serialization/BlockStorageIndexCodec.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -10,45 +10,6 @@
 #include <utility>
 
 namespace nodo::storage {
-
-using nodo::serialization::FieldCodec;
-
-namespace {
-
-std::uint64_t parseUnsigned64(
-    const std::string& value,
-    const std::string& fieldName
-) {
-    try {
-        return static_cast<std::uint64_t>(std::stoull(value));
-    } catch (const std::exception&) {
-        throw std::invalid_argument("Invalid unsigned integer field: " + fieldName);
-    }
-}
-
-std::size_t parseSize(
-    const std::string& value,
-    const std::string& fieldName
-) {
-    try {
-        return static_cast<std::size_t>(std::stoull(value));
-    } catch (const std::exception&) {
-        throw std::invalid_argument("Invalid size field: " + fieldName);
-    }
-}
-
-std::int64_t parseInt64(
-    const std::string& value,
-    const std::string& fieldName
-) {
-    try {
-        return std::stoll(value);
-    } catch (const std::exception&) {
-        throw std::invalid_argument("Invalid signed integer field: " + fieldName);
-    }
-}
-
-} // namespace
 
 BlockIndexEntry BlockIndexEntry::fromBlock(
     const core::Block& block
@@ -67,24 +28,7 @@ BlockIndexEntry BlockIndexEntry::fromBlock(
 BlockIndexEntry BlockIndexEntry::deserialize(
     const std::string& serialized
 ) {
-    if (serialized.rfind("BlockIndexEntry{", 0) != 0) {
-        throw std::invalid_argument("Serialized object is not a BlockIndexEntry.");
-    }
-
-    BlockIndexEntry entry(
-        parseUnsigned64(
-            FieldCodec::extractField(serialized, "blockIndex"),
-            "blockIndex"
-        ),
-        FieldCodec::extractField(serialized, "blockHash"),
-        FieldCodec::extractField(serialized, "fileName")
-    );
-
-    if (!entry.isValid()) {
-        throw std::invalid_argument("Deserialized BlockIndexEntry is invalid.");
-    }
-
-    return entry;
+    return serialization::BlockStorageIndexCodec::deserializeEntry(serialized);
 }
 
 BlockIndexEntry::BlockIndexEntry(
@@ -285,43 +229,7 @@ BlockStorageIndex BlockStorageIndex::fromBlockchainAndManifest(
 BlockStorageIndex BlockStorageIndex::deserialize(
     const std::string& serialized
 ) {
-    if (serialized.rfind("BlockStorageIndex{", 0) != 0) {
-        throw std::invalid_argument("Serialized object is not a BlockStorageIndex.");
-    }
-
-    const std::string entriesList = FieldCodec::extractTrailingSection(
-        serialized,
-        ";entries=[",
-        "]}"
-    );
-
-    std::vector<BlockIndexEntry> entries;
-
-    for (const auto& serializedEntry :
-         FieldCodec::splitTopLevelObjects(entriesList, "BlockIndexEntry{")) {
-        entries.push_back(BlockIndexEntry::deserialize(serializedEntry));
-    }
-
-    BlockStorageIndex index(
-        FieldCodec::extractField(serialized, "indexVersion"),
-        FieldCodec::extractField(serialized, "chainManifestHash"),
-        parseSize(
-            FieldCodec::extractField(serialized, "blockCount"),
-            "blockCount"
-        ),
-        std::move(entries),
-        parseInt64(
-            FieldCodec::extractField(serialized, "createdAt"),
-            "createdAt"
-        ),
-        FieldCodec::extractField(serialized, "indexHash")
-    );
-
-    if (!index.isValid()) {
-        throw std::invalid_argument("Deserialized BlockStorageIndex is invalid.");
-    }
-
-    return index;
+    return serialization::BlockStorageIndexCodec::deserialize(serialized);
 }
 
 std::string BlockStorageIndex::indexFileName() {
