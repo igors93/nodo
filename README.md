@@ -2,9 +2,9 @@
 
 [![Nodo CI](https://github.com/igors93/nodo/actions/workflows/ci.yml/badge.svg)](https://github.com/igors93/nodo/actions/workflows/ci.yml)
 
-**Nodo** is an experimental C/C++ blockchain foundation focused on deterministic accounting, auditable coin creation, privacy-oriented ledger design, strict serialization, verifiable disk storage, and long-term cryptographic agility.
+**Nodo** is an experimental C/C++ blockchain foundation focused on security, information reliability, auditable coin existence, deterministic state reconstruction, validator-based protection, and long-term cryptographic agility.
 
-Nodo is being built step by step as a serious educational blockchain engine. The project currently prioritizes correctness, auditability, deterministic behavior, storage safety, and maintainable architecture before adding networking, validator consensus, production cryptography, smart contracts, or real economic value.
+Nodo is being built as a serious educational blockchain engine. The project currently prioritizes correctness, traceability, deterministic behavior, verifiable storage, and maintainable architecture before adding public networking, validator consensus, wallet infrastructure, or real economic value.
 
 > **Warning**
 >
@@ -12,59 +12,66 @@ Nodo is being built step by step as a serious educational blockchain engine. The
 
 ---
 
-## What Nodo Is
+## Project Vision
 
-Nodo is currently a **local blockchain engine prototype**.
-
-It can create blocks, link them by hash, store them on disk, reload them, validate the chain, rebuild public balances from history, and rebuild private-accounting metadata from accepted blockchain records.
-
-In simple terms:
+Nodo is designed around one core idea:
 
 ```text
-accepted blockchain history
-        ↓
-validated blocks
-        ↓
-ledger records
-        ↓
-rebuilt public state
-        ↓
-rebuilt private accounting ledger
+The blockchain exists to protect information.
+Coins are created as a controlled reward for useful protection work.
+Every accepted state must be rebuildable from chain history.
 ```
 
-Nodo is not yet a decentralized public blockchain network. Networking, peer discovery, mempool, validator consensus, production signatures, and real wallet infrastructure are future phases.
+Nodo should not be a blockchain where coins simply appear at the beginning and then move around.
+
+The long-term goal is a network where:
+
+- the initial chain can start with zero spendable supply;
+- coins are created through validator protection work;
+- coin creation is limited by economic rules;
+- validators are rewarded for useful work, not for score alone;
+- validator score is a public trust signal stored on-chain;
+- coin existence is verifiable before a coin can interact with the chain;
+- every coin lot has an auditable origin;
+- storage, serialization, and cryptography are treated as security boundaries;
+- future post-quantum cryptography can be integrated without rewriting the whole project.
 
 ---
 
-## Vision
+## Simple Explanation
 
-Nodo explores a blockchain architecture where coins are not only simple account balances. Each coin group should have a traceable origin, controlled movement, and eventually a privacy-preserving accounting representation.
+In simple terms, Nodo should work like this:
 
-Long-term goals:
+```text
+Validators protect the blockchain.
+The blockchain records who protected it.
+The network calculates how much reward is allowed.
+Rewards are distributed only for valid work.
+Coins born from rewards are recorded on-chain.
+Any later use of those coins must prove that the coins exist and were not already spent.
+```
 
-- every created coin must have an auditable origin;
-- public state must be rebuildable from accepted chain history;
-- private accounting must not allow hidden inflation;
-- private commitments and nullifiers should support privacy without double-spending;
-- storage must be verifiable before loading;
-- validator security should eventually come from locked economic weight;
-- cryptography should be replaceable through versioned provider boundaries;
-- post-quantum cryptography should be possible without rewriting the whole system.
+Nodo's economic philosophy is:
+
+```text
+Coins are not born from nothing.
+Coins are born from verified protection work.
+Inflation is controlled by rules.
+Trust is earned over time.
+```
 
 ---
 
 ## Current Status
 
-Nodo currently implements foundational blockchain, storage, serialization, and privacy-accounting components.
+Nodo is currently a **local blockchain engine prototype**, not a decentralized public network yet.
 
-Implemented foundations:
+The current code already includes foundations for:
 
 - deterministic monetary amounts using integer raw units;
 - auditable mint records;
 - traceable coin lots;
 - account model with nonce validation;
-- development signature foundation;
-- crypto-agile signature model;
 - signed public transactions;
 - ledger records;
 - blocks;
@@ -74,130 +81,29 @@ Implemented foundations:
 - fee pool accounting;
 - privacy commitments;
 - privacy nullifiers;
-- nullifier set for private double-spend protection;
+- private double-spend protection foundation;
 - private accounting records;
 - private accounting ledger;
-- private accounting ledger records anchored into blocks;
+- private accounting records anchored into blocks;
 - private accounting ledger reconstruction from blockchain history;
-- deterministic field codec foundation;
 - dedicated serialization codecs;
-- canonical serialization rules documentation;
+- canonical serialization rules;
 - SHA-256 hash provider foundation;
 - signature provider boundary;
-- deterministic address derivation foundation;
-- key management boundary;
+- deterministic address derivation;
+- key pair boundary;
 - post-quantum provider interfaces;
 - audited signature provider integration boundary;
 - block file storage;
 - chain manifest storage;
 - block storage index;
 - blockchain storage reader;
-- block snapshot header validation;
 - blockchain loader foundation;
-- storage integration tests;
-- unified test runner;
-- GitHub Actions CI;
-- cross-platform build scripts for Linux-like shells and Windows.
+- automated tests;
+- cross-platform build and test scripts;
+- GitHub Actions CI.
 
-Nodo can currently:
-
-1. create an auditable genesis mint;
-2. convert that mint into a public ledger record;
-3. place the record inside a genesis block;
-4. create a signed transfer transaction;
-5. convert the transaction into a ledger record;
-6. place the transfer record inside a second block;
-7. validate the blockchain;
-8. rebuild public state from accepted blockchain history;
-9. apply public transfer effects using coin lots;
-10. create private commitments;
-11. create private nullifiers;
-12. reject duplicate private nullifiers;
-13. create private accounting records;
-14. validate a private accounting ledger;
-15. anchor private accounting records into blockchain blocks;
-16. rebuild the private accounting ledger from blockchain history;
-17. persist blocks to disk;
-18. write a chain manifest;
-19. write a block storage index;
-20. read and validate persisted storage metadata;
-21. parse stored block snapshot headers;
-22. deserialize persisted ledger records;
-23. deserialize persisted blocks;
-24. load a complete blockchain from disk;
-25. rebuild public state from the loaded blockchain;
-26. rebuild private ledger state from the loaded blockchain;
-27. run automated serialization and storage integration tests;
-28. validate the project in GitHub Actions CI.
-
----
-
-## Repository Layout
-
-```text
-nodo/
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-│
-├── apps/
-│   └── cli/
-│       └── main.cpp
-│
-├── docs/
-│   ├── crypto/
-│   │   ├── HASH_PROVIDER.md
-│   │   ├── SIGNATURE_PROVIDER.md
-│   │   ├── ADDRESS_DERIVATION.md
-│   │   ├── KEY_MANAGEMENT.md
-│   │   ├── POST_QUANTUM_PROVIDER_INTERFACES.md
-│   │   └── AUDITED_SIGNATURE_PROVIDER.md
-│   └── serialization/
-│       └── CANONICAL_SERIALIZATION.md
-│
-├── include/
-│   ├── app/
-│   ├── core/
-│   ├── crypto/
-│   ├── economics/
-│   ├── privacy/
-│   ├── serialization/
-│   ├── staking/
-│   ├── storage/
-│   └── utils/
-│
-├── src/
-│   ├── app/
-│   ├── core/
-│   ├── crypto/
-│   ├── economics/
-│   ├── privacy/
-│   ├── serialization/
-│   ├── staking/
-│   ├── storage/
-│   └── utils/
-│
-├── tests/
-│   ├── serialization/
-│   └── storage/
-│
-├── scripts/
-│   ├── build.bat
-│   ├── build.sh
-│   ├── clean.bat
-│   ├── clean.sh
-│   ├── test_all.bat
-│   ├── test_all.sh
-│   ├── test_serialization.bat
-│   ├── test_serialization.sh
-│   ├── test_storage.bat
-│   └── test_storage.sh
-│
-├── data/
-├── build/
-├── README.md
-└── .gitignore
-```
+The current demo still uses a development genesis mint. The long-term target described in this README is to evolve from that demo model into a protection-based coin creation model.
 
 ---
 
@@ -205,191 +111,641 @@ nodo/
 
 ### 1. Chain History Is the Source of Truth
 
-Nodo does not treat saved balances as final truth. State must be rebuilt from accepted blockchain history.
+Nodo must not trust a saved balance just because a file says it exists.
+
+The correct rule is:
 
 ```text
-Blockchain -> Blocks -> LedgerRecords -> Public State
+accepted blockchain history
+        ↓
+validated blocks
+        ↓
+ledger records
+        ↓
+rebuilt state
 ```
 
-The same rule applies to private accounting:
+If a state cannot be rebuilt from accepted history, it should not be trusted.
+
+---
+
+### 2. Coin Existence Must Be Verifiable
+
+A coin should not be treated only as a number inside an account.
+
+Nodo should track coin existence through identifiable coin lots.
+
+A coin lot is a group of spendable units with a known origin.
+
+Example:
 
 ```text
-Blockchain -> PRIVATE_ACCOUNTING LedgerRecords -> PrivateAccountingLedger
+CoinLot
+- id: unique identifier
+- origin: GenesisReward / transfer change / fee distribution
+- owner: address
+- amount: raw units
+- status: unspent or spent
 ```
 
-### 2. Coin Creation Must Be Auditable
-
-Coins must not appear from nowhere.
+Before a coin can interact with the blockchain, validators must be able to verify:
 
 ```text
-MintRecord -> LedgerRecord -> Block -> Blockchain
+Does this coin lot exist?
+Does the sender own it?
+Was it already spent?
+Is the signature valid?
+Does the transaction follow the rules?
 ```
 
-Every mint must have a reason, a recipient, an amount, a timestamp, and an accepted place in chain history.
+This protects the chain from hidden inflation and double spending.
 
-### 3. Transactions Are Requests, Not Direct State Mutations
+---
 
-A transaction does not directly modify state.
+### 3. Genesis Should Mean Reward Birth, Not Free Premine
+
+Nodo should move toward a model where the first spendable coins are not created as an arbitrary premine.
+
+The preferred long-term model is:
 
 ```text
-Transaction -> LedgerRecord -> Block -> Blockchain -> Rebuilt State
+initial chain starts with zero spendable supply
+        ↓
+validators perform useful protection work
+        ↓
+the epoch calculates allowed rewards
+        ↓
+GenesisReward records create new coin lots
 ```
 
-This keeps state reconstruction deterministic and auditable.
+In this model, "genesis" is not just the first block. It also means the birth certificate of newly created reward coins.
 
-### 4. CoinLots Prevent Blind Balance Accounting
-
-Nodo uses `CoinLot`s instead of only increasing or decreasing balances.
-
-When a transfer happens:
-
-- source lots are marked as spent;
-- a recipient lot is created;
-- a fee pool lot is created;
-- a sender change lot may be created.
-
-This improves auditability and helps prevent accidental double-spending inside the state engine.
-
-### 5. Nonces Protect Against Replay
-
-Each account tracks the next expected nonce.
-
-If an account already used nonce `1`, the next accepted transaction must use nonce `2`.
-
-### 6. Privacy Must Not Hide Inflation
-
-Nodo's privacy direction follows this rule:
+Recommended concept name:
 
 ```text
-privacy must not mean unverifiable money creation
+GenesisReward
 ```
 
-Private accounting records use commitments and nullifiers as development foundations. Future versions must use real cryptographic commitments, range proofs, nullifier derivation, and zero-knowledge proof verification.
+A `GenesisReward` should record:
 
-### 7. Persisted Storage Is Untrusted Input
+- epoch number;
+- validator address;
+- amount created;
+- reason for creation;
+- related work records;
+- reward policy version;
+- block hash where it was accepted.
 
-Files loaded from disk must be treated as untrusted until verified.
+---
+
+### 4. Validators Are Paid for Useful Work, Not for Score Alone
+
+Validator score should not create money by itself.
+
+The score should mean:
 
 ```text
-chain_manifest.nodo
-        ↓
-block_index.nodo
-        ↓
-block snapshots
-        ↓
-snapshot header validation
-        ↓
-BlockCodec
-        ↓
-BlockchainLoader
-        ↓
-Blockchain validation
+How much can the network trust this validator?
 ```
 
-### 8. Serialization Must Be Canonical
-
-Blockchain systems require deterministic serialization.
+The reward should come from useful work:
 
 ```text
-same object
-        ↓
-same serialization
-        ↓
-same hash
-        ↓
-same validation result
+What protection work did this validator perform for the network?
 ```
 
-Nodo's current canonical serialization rules are documented in:
+Correct idea:
 
 ```text
-docs/serialization/CANONICAL_SERIALIZATION.md
+high score = more trust / more chance to be selected
+valid work = reward eligibility
+```
 
-docs/crypto/HASH_PROVIDER.md
+Wrong idea:
 
-docs/crypto/SIGNATURE_PROVIDER.md
+```text
+high score = automatic passive income forever
+```
 
-docs/crypto/ADDRESS_DERIVATION.md
+Nodo should reward validators for actions such as:
 
-docs/crypto/KEY_MANAGEMENT.md
+- validating transactions;
+- checking whether coin lots exist;
+- checking whether coin lots were already spent;
+- verifying signatures;
+- validating blocks;
+- responding to integrity challenges;
+- helping reconstruct state;
+- serving old blocks or storage proofs;
+- participating honestly in consensus.
 
-docs/crypto/POST_QUANTUM_PROVIDER_INTERFACES.md
+---
 
-docs/crypto/AUDITED_SIGNATURE_PROVIDER.md
+### 5. Validator Score Is On-Chain Trust
+
+Validator score should be recorded in the blockchain.
+
+The score should be limited from 0 to 100.
+
+Example:
+
+```text
+ValidatorScoreRecord
+- validatorAddress
+- epoch
+- previousScore
+- newScore
+- reason
+- evidenceHash
+```
+
+The score should increase slowly and decrease quickly when there is bad behavior.
+
+Score should be affected by:
+
+- correct validation history;
+- uptime;
+- response to challenges;
+- no conflicting signatures;
+- no repeated invalid work;
+- no suspicious cluster behavior;
+- no double-signing;
+- no known protocol violations.
+
+Important rule:
+
+```text
+Score is trust, not money.
+Work is what earns reward.
 ```
 
 ---
 
-## Serialization Layer
+### 6. Epochs Control Reward and Inflation
 
-Nodo now uses dedicated codec boundaries for important objects.
+Nodo should use protection epochs.
 
-Current codec foundations:
+An epoch is a time or block interval where the network measures work and calculates rewards.
 
-- `FieldCodec`;
-- `MintRecordCodec`;
-- `PrivacyCommitmentCodec`;
-- `PrivacyNullifierCodec`;
-- `PrivateAccountingRecordCodec`;
-- `LedgerRecordCodec`;
-- `BlockCodec`;
-- `ChainManifestCodec`;
-- `BlockStorageIndexCodec`;
-- `BlockSnapshotHeaderCodec`.
-
-Codec responsibility:
+Example:
 
 ```text
-serialized text
-        ↓
-strict parsing
-        ↓
-object reconstruction
-        ↓
-object validation
-        ↓
-round-trip comparison
-        ↓
-accept or reject
+ProtectionEpoch
+- epoch number
+- start block
+- end block
+- total work accepted
+- fees collected
+- maximum new emission
+- final reward pool
 ```
 
-The main rule is:
+The epoch should decide:
 
-```text
-deserialize(serialize(object)).serialize() == serialize(object)
-```
-
-If a parsed object serializes back differently, the input is not canonical and must be rejected.
+- how much valid work happened;
+- how many fees were collected;
+- how much new emission is allowed;
+- which validators performed valid work;
+- how rewards are distributed.
 
 ---
 
-## Storage Foundation
+### 7. Emission Must Be Dynamic but Limited
 
-The current storage foundation writes development snapshots under:
+Nodo should not use unlimited emission.
+
+Nodo also does not need a hard fixed maximum supply in the first design.
+
+The preferred model is controlled dynamic emission.
+
+The network may target an inflation rule, for example:
 
 ```text
-data/
-├── chain_manifest.nodo
-├── block_index.nodo
-└── blocks/
-    ├── block_0_<hash>.nodo
-    ├── block_1_<hash>.nodo
-    └── block_2_<hash>.nodo
+target yearly inflation = 4%
 ```
 
-Storage components:
+The exact number can change later, but the principle is:
 
-- `BlockFileStore` writes deterministic block snapshots;
-- `ChainManifest` summarizes the persisted chain;
-- `ChainManifestCodec` validates manifest parsing;
-- `BlockStorageIndex` maps block heights and hashes to snapshot files;
-- `BlockStorageIndexCodec` validates index parsing;
-- `BlockchainStorageReader` audits storage metadata and snapshots;
-- `BlockSnapshotHeader` validates stored block headers;
-- `BlockSnapshotHeaderCodec` extracts and validates header metadata;
-- `LedgerRecordCodec` reconstructs ledger records;
-- `BlockCodec` reconstructs blocks;
-- `BlockchainLoader` reconstructs a complete blockchain from disk.
+```text
+each epoch has a maximum amount of new coins that can be created
+```
+
+A safe model is:
+
+```text
+NewEmissionCap = current circulating supply × target inflation rate / epochs per year
+```
+
+Then the epoch can use part of that cap depending on real network work.
+
+Important rule:
+
+```text
+work can decide how much of the allowed cap is used
+work must not create an unlimited cap
+```
+
+---
+
+### 8. Fees Should Help Pay Security
+
+Nodo should separate two sources of validator reward:
+
+```text
+1. fees already paid by users
+2. new security emission allowed by policy
+```
+
+Recommended formula:
+
+```text
+RewardPool = FeesCollected + SecurityEmission
+```
+
+Where:
+
+```text
+SecurityEmission <= NewEmissionCap
+```
+
+This means:
+
+- fees are recycled to validators;
+- new coins are created only inside a controlled limit;
+- more real network usage can help pay security;
+- fake spam cannot create unlimited new supply.
+
+---
+
+### 9. Work Can Affect Emission, but Only Inside the Cap
+
+Network work can affect how much new emission is used in an epoch.
+
+Example:
+
+```text
+Emission cap for epoch: 100 NODO
+
+Low useful work:
+SecurityEmission = 30 NODO
+
+Medium useful work:
+SecurityEmission = 60 NODO
+
+High useful work:
+SecurityEmission = 100 NODO
+```
+
+But even if work is very high:
+
+```text
+SecurityEmission cannot exceed 100 NODO
+```
+
+This protects Nodo from inflation attacks.
+
+---
+
+### 10. Stake Helps Security, but Must Not Buy the Network
+
+Validators should be able to lock coins to show commitment.
+
+This is useful because a validator with locked coins has something to lose.
+
+Recommended concept:
+
+```text
+StakeLock
+```
+
+A stake lock should record:
+
+- validator address;
+- amount locked;
+- lock start;
+- lock duration;
+- unlock rules;
+- slash or penalty rules;
+- reward eligibility effect.
+
+However, stake must not give unlimited power.
+
+Bad model:
+
+```text
+2x stake = 2x control forever
+```
+
+Better model:
+
+```text
+more stake helps,
+but each extra coin gives less additional influence
+```
+
+Possible rule:
+
+```text
+StakeWeight = sqrt(locked amount)
+```
+
+In simple terms:
+
+```text
+locking more helps,
+but rich validators cannot buy unlimited dominance
+```
+
+---
+
+### 11. Infrastructure Can Help, but Only Through Useful Work
+
+Nodo should allow people to invest in validation capacity, similar to how miners invest in physical equipment, but the work must be useful to the network.
+
+Useful infrastructure may include:
+
+- reliable uptime;
+- bandwidth;
+- storage for historical data;
+- ability to serve old blocks;
+- fast validation;
+- participation in integrity challenges;
+- redundant node operation;
+- availability proofs.
+
+But Nodo should avoid a system where the richest hardware owner automatically dominates the network.
+
+Correct direction:
+
+```text
+better infrastructure helps perform useful tasks
+useful tasks can earn rewards
+reward still follows epoch limits
+```
+
+---
+
+### 12. Network Concentration Should Reduce Trust Weight
+
+Multiple validators from the same network should not be banned automatically.
+
+However, the network should treat concentration as a risk signal.
+
+Possible rule:
+
+```text
+same IP or same network range = reduced trust factor
+```
+
+Recommended concept:
+
+```text
+NetworkClusterPenalty
+```
+
+This penalty should not say "you are guilty."
+
+It should say:
+
+```text
+this validator appears less diverse,
+so its trust weight is reduced
+```
+
+Examples:
+
+```text
+1 validator in a network: no penalty
+2 validators in same network: light penalty
+3 to 5 validators: medium penalty
+6 or more validators: strong penalty
+```
+
+This can make attacks more expensive while avoiding unfair automatic bans.
+
+---
+
+### 13. Reward Distribution Should Use Work, Trust, and Risk
+
+Nodo should calculate reward eligibility through valid work first.
+
+A simple direction:
+
+```text
+ValidatorRewardShare =
+ValidWorkWeight × TrustFactor × StakeFactor × NetworkDiversityFactor
+```
+
+Where:
+
+- `ValidWorkWeight` comes from accepted work records;
+- `TrustFactor` comes from validator score, 0 to 100;
+- `StakeFactor` comes from locked coins with diminishing returns;
+- `NetworkDiversityFactor` reduces concentrated validator clusters.
+
+Then:
+
+```text
+ValidatorReward =
+RewardPool × ValidatorRewardShare / TotalRewardShares
+```
+
+Important rule:
+
+```text
+RewardPool is limited before distribution starts.
+```
+
+This prevents infinite reward creation.
+
+---
+
+## Target Economic Flow
+
+The target future flow should be:
+
+```text
+1. Chain starts with zero spendable supply.
+2. Validators register identities.
+3. Validators perform useful protection work.
+4. Work records are written into blocks.
+5. Validator scores are updated on-chain.
+6. Epoch ends.
+7. Fees collected during the epoch are counted.
+8. New emission cap is calculated from policy.
+9. Useful network work decides how much of the cap is used.
+10. Reward pool is created from fees + allowed security emission.
+11. Rewards are distributed to validators.
+12. Each reward creates identifiable coin lots.
+13. Future transactions must prove coin lot existence and ownership.
+```
+
+---
+
+## Main On-Chain Records to Add
+
+Nodo should gradually add these concepts:
+
+```text
+ValidatorIdentity
+ValidatorScoreRecord
+ValidationWorkRecord
+ProtectionEpoch
+EpochEmissionPolicy
+GenesisRewardRecord
+CoinLotRegistry
+StakeLockRecord
+NetworkClusterPenaltyRecord
+RewardDistributionRecord
+```
+
+### ValidatorIdentity
+
+Represents a validator known by the chain.
+
+Should include:
+
+- validator address;
+- public key;
+- registration epoch;
+- current status;
+- score;
+- optional stake reference.
+
+### ValidationWorkRecord
+
+Records useful work performed by a validator.
+
+Should include:
+
+- validator address;
+- epoch;
+- work type;
+- target object hash;
+- result;
+- proof or evidence hash;
+- timestamp.
+
+### ProtectionEpoch
+
+Groups validation work and reward calculation.
+
+Should include:
+
+- epoch id;
+- start block;
+- end block;
+- policy version;
+- fees collected;
+- emission cap;
+- work factor;
+- final reward pool.
+
+### GenesisRewardRecord
+
+Creates new coins as reward for protection work.
+
+Should include:
+
+- epoch id;
+- validator address;
+- reward amount;
+- reward reason;
+- work summary hash;
+- policy version.
+
+### StakeLockRecord
+
+Records coins locked by a validator.
+
+Should include:
+
+- owner address;
+- validator address;
+- amount locked;
+- start epoch;
+- unlock epoch;
+- penalty rules.
+
+---
+
+## Current Engine vs Target Protocol
+
+Nodo already has many pieces that support the target direction:
+
+```text
+CoinLot
+LedgerRecord
+Block
+Blockchain
+State rebuild
+Serialization codecs
+Storage loader
+SHA-256
+SignatureProvider
+Address
+KeyPair
+Audited provider boundary
+Post-quantum provider interfaces
+```
+
+What needs to change over time:
+
+```text
+Current demo genesis mint
+        ↓
+zero-supply genesis + GenesisReward records
+
+basic account names
+        ↓
+address-based validator and wallet identities
+
+development signatures
+        ↓
+audited signature provider implementation
+
+local blockchain engine
+        ↓
+networked validator protocol
+
+simple chain validation
+        ↓
+validator consensus and epoch reward calculation
+```
+
+---
+
+## What Nodo Is Not Yet
+
+Nodo is not yet:
+
+- a public decentralized network;
+- a production cryptocurrency;
+- a wallet system;
+- a smart contract platform;
+- a MetaMask-compatible chain;
+- a production validator network;
+- a production privacy system;
+- a chain with audited real digital signatures fully connected;
+- a system safe for real funds.
+
+---
+
+## Security Direction
+
+Nodo should follow these security rules:
+
+```text
+Do not trust saved balances.
+Do not trust disk files before validation.
+Do not trust validator score unless it is derived from chain records.
+Do not reward work unless the work is useful and verifiable.
+Do not allow work to create unlimited emission.
+Do not allow score to become automatic passive income.
+Do not allow stake to buy unlimited network control.
+Do not allow development signatures to pretend to be production signatures.
+Do not allow privacy features to hide inflation.
+```
 
 ---
 
@@ -399,15 +755,8 @@ Nodo supports Linux-style shells and Windows builds.
 
 ### Fedora / Linux
 
-Install compiler tools:
-
 ```sh
 sudo dnf install -y gcc gcc-c++ make
-```
-
-Build and run:
-
-```sh
 chmod +x scripts/*.sh
 ./scripts/clean.sh
 ./scripts/build.sh
@@ -425,7 +774,7 @@ chmod +x scripts/*.sh
 ./build/nodo
 ```
 
-### Windows CMD / PowerShell
+### Windows PowerShell / CMD
 
 Requirements:
 
@@ -433,7 +782,7 @@ Requirements:
 - `gcc`;
 - `g++` with C++20 support.
 
-If using MSYS2 UCRT64, add this folder to your Windows PATH:
+If using MSYS2 UCRT64, add this folder to PATH:
 
 ```text
 C:\msys64\ucrt64\bin
@@ -442,16 +791,14 @@ C:\msys64\ucrt64\bin
 Build and run:
 
 ```powershell
-.\scripts\clean.bat
-.\scripts\build.bat
+cmd /c scripts\clean.bat
+cmd /c scripts\build.bat
 .\build\nodo.exe
 ```
 
 ---
 
 ## Tests
-
-Nodo currently includes framework-free test runners.
 
 ### Linux / Fedora
 
@@ -460,6 +807,12 @@ Run all tests:
 ```sh
 chmod +x scripts/*.sh
 ./scripts/test_all.sh
+```
+
+Run crypto tests only:
+
+```sh
+./scripts/test_crypto.sh
 ```
 
 Run serialization tests only:
@@ -474,358 +827,175 @@ Run storage integration tests only:
 ./scripts/test_storage.sh
 ```
 
-### Windows CMD / PowerShell
+### Windows PowerShell / CMD
 
 Run all tests:
 
 ```powershell
-.\scripts\test_all.bat
+cmd /c scripts\test_all.bat
+```
+
+Run crypto tests only:
+
+```powershell
+cmd /c scripts\test_crypto.bat
 ```
 
 Run serialization tests only:
 
 ```powershell
-.\scripts\test_serialization.bat
+cmd /c scripts\test_serialization.bat
 ```
 
 Run storage integration tests only:
 
 ```powershell
-.\scripts\test_storage.bat
+cmd /c scripts\test_storage.bat
 ```
 
-Expected output:
+---
+
+## Expected Development Direction
+
+This README replaces the old phase checklist with a concept-based roadmap.
+
+The project should now evolve around these implementation tracks:
+
+### Track A: Protection-Based Economics
+
+Goal:
 
 ```text
-Nodo unified test runner
-------------------------
-
-Running crypto tests...
-Nodo crypto hash tests passed.
-Nodo signature provider tests passed.
-Nodo address derivation tests passed.
-Nodo key management tests passed.
-Nodo post-quantum provider interface tests passed.
-Nodo audited signature provider tests passed.
-
-Running serialization tests...
-Nodo serialization round-trip tests passed.
-
-Running blockchain storage integration tests...
-Nodo blockchain storage integration tests passed.
-
-All Nodo tests completed successfully.
+replace arbitrary genesis supply with epoch-based GenesisReward records
 ```
 
----
+Work items:
 
-## GitHub Actions CI
+- define `ProtectionEpoch`;
+- define `EpochEmissionPolicy`;
+- define `GenesisRewardRecord`;
+- make genesis start with zero spendable supply;
+- create reward coin lots from epoch rewards;
+- test controlled emission.
 
-Nodo includes a GitHub Actions workflow at:
+### Track B: Validator Trust and Work
+
+Goal:
 
 ```text
-.github/workflows/ci.yml
+reward useful protection work, not passive score
 ```
 
-The workflow runs on:
+Work items:
 
-- pushes to `main`;
-- pull requests targeting `main`;
-- manual workflow dispatch.
+- define `ValidatorIdentity`;
+- define `ValidatorScoreRecord`;
+- define score range from 0 to 100;
+- define `ValidationWorkRecord`;
+- separate score from reward;
+- record validator work on-chain;
+- use score as trust selection, not automatic income.
 
-The workflow currently:
+### Track C: Coin Existence and Traceability
 
-1. checks out the repository;
-2. installs the compiler toolchain;
-3. prints compiler versions;
-4. makes shell scripts executable;
-5. builds Nodo;
-6. runs the demo;
-7. runs all tests.
-
----
-
-## Expected Demo Output
-
-The current demo should include sections similar to:
+Goal:
 
 ```text
-Full Blockchain validation: VALID
-
-Rebuilt total supply: 1000.00000000 NODO
-Rebuilt Igor balance: 974.99900000 NODO
-Rebuilt Ana balance: 25.00000000 NODO
-Rebuilt fee pool balance: 0.00100000 NODO
-Rebuilt supply audit: VALID
-
-Private ledger validation: VALID
-Private ledger record count: 2
-Private ledger nullifier count: 1
-Private ledger commitment count: 3
-Private ledger minted supply: 1000.00000000 NODO
-Private ledger outstanding supply: 1000.00000000 NODO
-
-Private Accounting Ledger rebuilt from Blockchain.
-Rebuilt private ledger validation: VALID
-
-Block storage foundation preview:
-Stored block verification: VALID
-
-Chain storage manifest preview:
-Manifest validation: VALID
-Manifest matches Blockchain: VALID
-
-Block storage index preview:
-Storage index validation: VALID
-Storage index matches Blockchain: VALID
-
-Blockchain storage reader preview:
-Storage reader audit: VALID
-
-Block snapshot header parser preview:
-Snapshot header sequence: VALID
-
-LedgerRecord deserialization preview:
-Deserialized LedgerRecords match Blockchain: VALID
-
-Block snapshot deserialization preview:
-Deserialized blocks match Blockchain: VALID
-
-Blockchain loader foundation preview:
-Blockchain loader audit: VALID
-Loaded Blockchain validation: VALID
-Loaded Blockchain matches original: VALID
-Loaded public state supply audit: VALID
-Loaded private ledger validation: VALID
+every coin lot must be verifiably real before it can move
 ```
 
-Exact hashes and timestamps will change between runs.
+Work items:
 
----
+- strengthen `CoinLot` identity;
+- define `CoinLotRegistry`;
+- validate lot existence before spending;
+- reject already spent lots;
+- connect reward lots to `GenesisRewardRecord`;
+- preserve traceability through transfer and change lots.
 
-## Current Security Notes
+### Track D: Stake and Infrastructure Security
 
-Nodo already includes several protective foundations:
-
-- integer-based monetary amounts;
-- duplicate mint record rejection;
-- duplicate transaction application rejection;
-- account nonce validation;
-- locked coin lots cannot be spent;
-- spent coin lots cannot be spent again;
-- block hash validation;
-- previous-hash chain validation;
-- ledger record payload hashing;
-- deterministic serialization;
-- canonical serialization documentation;
-- centralized codec boundaries;
-- controlled mint record deserialization;
-- controlled privacy commitment deserialization;
-- controlled privacy nullifier deserialization;
-- controlled private accounting record deserialization;
-- controlled ledger record deserialization;
-- controlled block deserialization;
-- controlled chain manifest deserialization;
-- controlled block storage index deserialization;
-- controlled block snapshot header parsing;
-- public state reconstruction from chain history;
-- private ledger reconstruction from chain history;
-- private nullifier duplicate protection;
-- private commitment duplicate protection;
-- storage manifest validation;
-- storage index validation;
-- block snapshot validation;
-- loaded-chain validation;
-- storage tamper rejection tests.
-
-Still incomplete:
-
-- cryptographic signatures are development-only;
-- the current hash boundary uses SHA-256, but still needs audit/provider hardening before real value;
-- serialization is still a development text format;
-- private accounting does not yet use real zero-knowledge proofs;
-- commitments and nullifiers are development models;
-- networking is not implemented yet;
-- mempool is not implemented yet;
-- validator consensus is not implemented yet;
-- slashing and reward rules are not finalized;
-- the storage format is not yet a final production format.
-
-Do not use Nodo for real funds.
-
----
-
-## Roadmap
-
-### Phase 1: Public Ledger Foundation
-
-- [x] Amount model
-- [x] MintRecord
-- [x] CoinLot
-- [x] Transaction
-- [x] LedgerRecord
-- [x] Block
-- [x] Blockchain
-- [x] Chain audit
-- [x] Mint state reconstruction
-- [x] Transfer state reconstruction
-- [x] Account model
-- [x] Nonce validation
-
-### Phase 2: Privacy Accounting Foundation
-
-- [x] PrivacyCommitment
-- [x] PrivacyNullifier
-- [x] NullifierSet
-- [x] PrivateAccountingRecord
-- [x] PrivateAccountingLedger
-- [x] PRIVATE_ACCOUNTING LedgerRecord
-- [x] PrivateAccountingLedgerRebuilder
-
-### Phase 3: Serialization Safety
-
-- [x] FieldCodec boundary
-- [x] MintRecordCodec
-- [x] PrivacyCommitmentCodec
-- [x] PrivacyNullifierCodec
-- [x] PrivateAccountingRecordCodec
-- [x] LedgerRecordCodec
-- [x] BlockCodec
-- [x] ChainManifestCodec
-- [x] BlockStorageIndexCodec
-- [x] BlockSnapshotHeaderCodec
-- [x] Deterministic serialization tests
-- [x] Serialization round-trip tests
-- [x] Move remaining major legacy parsers into serialization module
-- [x] Define canonical serialization rules
-- [x] Add canonical serialization rejection tests
-- [ ] Evaluate binary canonical encoding
-
-### Phase 4: Storage
-
-- [x] Block file store
-- [x] Chain manifest
-- [x] Block storage index
-- [x] Blockchain storage reader
-- [x] Block snapshot header parser
-- [x] Block snapshot deserializer
-- [x] Blockchain loader foundation
-- [x] Validate loaded chain
-- [x] Rebuild public state from loaded chain
-- [x] Rebuild private ledger from loaded chain
-- [x] Storage integration tests
-- [ ] Define final canonical storage format
-- [ ] Add snapshot corruption test matrix
-- [ ] Add missing-file test matrix
-- [ ] Add manifest/index mismatch test matrix
-
-### Phase 5: Project Automation
-
-- [x] Cross-platform build scripts
-- [x] Cross-platform test scripts
-- [x] Unified test runner
-- [x] GitHub Actions CI
-- [x] CI badge
-- [ ] Add contribution guide
-- [ ] Add issue templates
-
-### Phase 6: Real Cryptography
-
-- [x] Replace development hash with SHA-256 provider foundation
-- [x] Add signature provider boundary
-- [x] Add audited signature provider integration boundary
-- [ ] Connect real audited signature provider implementation
-- [x] Add deterministic address derivation
-- [x] Add key management boundary
-- [x] Prepare post-quantum provider interfaces
-
-### Phase 7: Private Proof System
-
-- [ ] Commitment tree
-- [ ] Nullifier registry
-- [ ] Range proof interface
-- [ ] Zero-knowledge proof verifier interface
-- [ ] Private transfer verification
-- [ ] Private burn verification
-- [ ] Private mint policy verification
-
-### Phase 8: Economic Security
-
-- [ ] LockPolicy
-- [ ] StakePosition
-- [ ] Validator
-- [ ] ValidatorSet
-- [ ] RewardPolicy
-- [ ] MonetaryPolicy
-- [ ] Slashing rules
-- [ ] Proof-of-Locked-Security prototype
-
-### Phase 9: Network
-
-- [ ] Peer protocol
-- [ ] Mempool
-- [ ] Block gossip
-- [ ] Transaction gossip
-- [ ] Chain synchronization
-- [ ] Node validation rules
-
----
-
-## Contributing
-
-Contributions are welcome, especially in these areas:
-
-- C++ safety and architecture;
-- deterministic serialization;
-- cryptography provider design;
-- ledger validation;
-- private accounting research;
-- zero-knowledge proof integration;
-- blockchain storage;
-- test coverage;
-- economic security research;
-- peer-to-peer network design.
-
-Before contributing, please follow these principles:
-
-1. Security comes before speed.
-2. Determinism comes before convenience.
-3. State must be rebuildable from chain history.
-4. No monetary value should appear without an auditable origin.
-5. No transaction should mutate state without becoming part of accepted history.
-6. Privacy must not allow hidden inflation.
-7. No cryptographic primitive should be invented casually.
-8. Development-only cryptography must be clearly marked.
-9. Persisted storage must be validated before loading.
-10. Tests should be added for any security-sensitive behavior.
-
----
-
-## Project Maturity
-
-Nodo is currently in the **foundation stage**.
-
-Current maturity:
+Goal:
 
 ```text
-local blockchain engine: active prototype
-disk persistence: implemented foundation
-serialization safety: implemented foundation
-privacy accounting: development foundation
-networking: not implemented
-consensus: not implemented
-production cryptography: not implemented
-wallet infrastructure: not implemented
+allow validators to invest in security without buying unlimited control
 ```
 
-Nodo is not yet a public blockchain network. It is a growing blockchain engine that is being prepared for future networking, consensus, cryptography, and privacy work.
+Work items:
+
+- define `StakeLockRecord`;
+- add diminishing returns for stake influence;
+- define infrastructure work types;
+- reward useful availability and storage work;
+- add uptime and challenge response records.
+
+### Track E: Risk and Anti-Sybil Protection
+
+Goal:
+
+```text
+make validator attacks more expensive and less profitable
+```
+
+Work items:
+
+- define `NetworkClusterPenaltyRecord`;
+- reduce trust factor for concentrated validators;
+- detect same IP and same network range as risk signals;
+- avoid automatic bans based only on network location;
+- add gradual penalties;
+- add conflict signing penalties.
+
+### Track F: Production Cryptography
+
+Goal:
+
+```text
+connect a real audited signature provider
+```
+
+Work items:
+
+- choose audited Ed25519 or ECDSA provider;
+- add official test vectors;
+- document dependency and audit source;
+- prevent development signatures from being used in production mode;
+- preserve provider boundary for future algorithms.
+
+### Track G: Network and Consensus
+
+Goal:
+
+```text
+turn the local engine into a real validator network
+```
+
+Work items:
+
+- peer discovery;
+- node identity;
+- mempool;
+- validator selection;
+- block proposal;
+- block voting;
+- finality rules;
+- fork handling;
+- slashing rules.
 
 ---
 
-## Disclaimer
+## Design Sentence
 
-Nodo is experimental software under active development.
+The long-term design sentence for Nodo is:
 
-It is not production-ready and must not be used to store, transfer, or secure real financial value.
+```text
+Nodo is a security-first blockchain where coins are born from verified protection work, every coin lot has provable existence, validator trust is recorded on-chain, and emission is dynamically controlled by transparent economic rules.
+```
 
-The project is currently focused on building a strong architectural foundation before adding networking, real cryptography, validator consensus, production privacy, or economic rewards.
+---
+
+## License
+
+This project currently has no production-use license statement in this README.
+
+Before public or commercial use, define the repository license clearly.
