@@ -10,6 +10,12 @@ echo Nodo unified test runner
 echo ------------------------
 echo.
 
+if not exist "%ROOT_DIR%\scripts\test_crypto.bat" (
+    echo Error: required test script was not found:
+    echo %ROOT_DIR%\scripts\test_crypto.bat
+    exit /b 1
+)
+
 if not exist "%ROOT_DIR%\scripts\test_serialization.bat" (
     echo Error: required test script was not found:
     echo %ROOT_DIR%\scripts\test_serialization.bat
@@ -22,6 +28,15 @@ if not exist "%ROOT_DIR%\scripts\test_storage.bat" (
     exit /b 1
 )
 
+echo Running crypto tests...
+call "%ROOT_DIR%\scripts\test_crypto.bat"
+
+if errorlevel 1 (
+    echo Crypto tests failed.
+    exit /b 1
+)
+
+echo.
 echo Running serialization tests...
 call "%ROOT_DIR%\scripts\test_serialization.bat"
 

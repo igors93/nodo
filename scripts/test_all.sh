@@ -11,6 +11,7 @@ echo "------------------------"
 echo
 
 required_scripts=(
+    "$ROOT_DIR/scripts/test_crypto.sh"
     "$ROOT_DIR/scripts/test_serialization.sh"
     "$ROOT_DIR/scripts/test_storage.sh"
 )
@@ -28,6 +29,10 @@ for script_path in "${required_scripts[@]}"; do
     fi
 done
 
+echo "Running crypto tests..."
+"$ROOT_DIR/scripts/test_crypto.sh"
+
+echo
 echo "Running serialization tests..."
 "$ROOT_DIR/scripts/test_serialization.sh"
 

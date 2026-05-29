@@ -82,6 +82,7 @@ Implemented foundations:
 - deterministic field codec foundation;
 - dedicated serialization codecs;
 - canonical serialization rules documentation;
+- SHA-256 hash provider foundation;
 - block file storage;
 - chain manifest storage;
 - block storage index;
@@ -139,6 +140,8 @@ nodo/
 │       └── main.cpp
 │
 ├── docs/
+│   ├── crypto/
+│   │   └── HASH_PROVIDER.md
 │   └── serialization/
 │       └── CANONICAL_SERIALIZATION.md
 │
@@ -291,6 +294,8 @@ Nodo's current canonical serialization rules are documented in:
 
 ```text
 docs/serialization/CANONICAL_SERIALIZATION.md
+
+docs/crypto/HASH_PROVIDER.md
 ```
 
 ---
@@ -475,6 +480,9 @@ Expected output:
 Nodo unified test runner
 ------------------------
 
+Running crypto tests...
+Nodo crypto hash tests passed.
+
 Running serialization tests...
 Nodo serialization round-trip tests passed.
 
@@ -608,7 +616,7 @@ Nodo already includes several protective foundations:
 Still incomplete:
 
 - cryptographic signatures are development-only;
-- the current hash implementation is not production-grade;
+- the current hash boundary uses SHA-256, but still needs audit/provider hardening before real value;
 - serialization is still a development text format;
 - private accounting does not yet use real zero-knowledge proofs;
 - commitments and nullifiers are development models;
@@ -665,7 +673,7 @@ Do not use Nodo for real funds.
 - [x] Serialization round-trip tests
 - [x] Move remaining major legacy parsers into serialization module
 - [x] Define canonical serialization rules
-- [ ] Add canonical serialization rejection tests
+- [x] Add canonical serialization rejection tests
 - [ ] Evaluate binary canonical encoding
 
 ### Phase 4: Storage
@@ -698,7 +706,7 @@ Do not use Nodo for real funds.
 
 ### Phase 6: Real Cryptography
 
-- [ ] Replace development hash with production-grade hash
+- [x] Replace development hash with SHA-256 provider foundation
 - [ ] Add real signature provider
 - [ ] Add deterministic address derivation
 - [ ] Add key management boundary
