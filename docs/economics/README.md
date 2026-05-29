@@ -1,7 +1,7 @@
 # Nodo Economics and Protection Guides
 
 Status: Project Guide Index  
-Version: NODO-ECONOMICS-GUIDES-V7
+Version: NODO-ECONOMICS-GUIDES-V8
 
 This folder contains the main concept documents for Nodo's protection-based economic model.
 
@@ -20,6 +20,7 @@ Recommended reading order:
 10. COIN_LOT_REGISTRY.md
 11. COIN_LOT_TRANSACTION_INTEGRATION.md
 12. EXPLICIT_TRANSACTION_COIN_LOT_INPUTS.md
+13. GENESIS_REWARD_MAIN_STATE_FLOW.md
 ```
 
 Implemented foundations so far:
@@ -41,4 +42,5 @@ CoinLotTransferPlan
 CoinLotTransactionValidator
 State registry-backed transfer path
 Explicit transaction CoinLot inputs
+GenesisReward main State flow
 ```

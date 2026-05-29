@@ -191,6 +191,7 @@ echo Building Nodo coin lot transaction integration tests...
     "%ROOT_DIR%\src\utils\Amount.cpp" ^
     "%ROOT_DIR%\src\utils\Time.cpp" ^
     "%ROOT_DIR%\src\economics\MintRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
     "%ROOT_DIR%\src\serialization\MintRecordCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\core\Account.cpp" ^
@@ -226,6 +227,7 @@ echo Building Nodo explicit transaction input tests...
     "%ROOT_DIR%\src\utils\Amount.cpp" ^
     "%ROOT_DIR%\src\utils\Time.cpp" ^
     "%ROOT_DIR%\src\economics\MintRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
     "%ROOT_DIR%\src\serialization\MintRecordCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\core\Account.cpp" ^
@@ -250,6 +252,54 @@ echo Building Nodo explicit transaction input tests...
 
 if errorlevel 1 (
     echo Failed to build Nodo explicit transaction input tests.
+    exit /b 1
+)
+
+
+echo Building Nodo GenesisReward state flow tests...
+
+%CXX% -std=c++20 -Wall -Wextra -I"%ROOT_DIR%\include" ^
+    "%ROOT_DIR%\tests\core\GenesisRewardStateFlowTests.cpp" ^
+    "%ROOT_DIR%\src\utils\Amount.cpp" ^
+    "%ROOT_DIR%\src\utils\Time.cpp" ^
+    "%ROOT_DIR%\src\economics\MintRecord.cpp" ^
+    "%ROOT_DIR%\src\serialization\MintRecordCodec.cpp" ^
+    "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
+    "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
+    "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
+    "%ROOT_DIR%\src\serialization\LedgerRecordCodec.cpp" ^
+    "%ROOT_DIR%\src\core\Account.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLot.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotVerificationResult.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotRegistry.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransactionValidationResult.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransferPlan.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransactionValidator.cpp" ^
+    "%ROOT_DIR%\src\core\State.cpp" ^
+    "%ROOT_DIR%\src\core\Transaction.cpp" ^
+    "%ROOT_DIR%\src\core\LedgerRecord.cpp" ^
+    "%ROOT_DIR%\src\core\Block.cpp" ^
+    "%ROOT_DIR%\src\core\Blockchain.cpp" ^
+    "%ROOT_DIR%\src\core\ChainStateRebuilder.cpp" ^
+    "%ROOT_DIR%\src\staking\SecurityWeight.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivacyCommitment.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivacyNullifier.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivateAccountingRecord.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoAlgorithm.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoPolicy.cpp" ^
+    "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\PrivateKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\Signature.cpp" ^
+    "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
+    "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%BUILD_DIR%\hash_economics_test.o" ^
+    -o "%BUILD_DIR%\genesis_reward_state_flow_tests.exe"
+
+if errorlevel 1 (
+    echo Failed to build Nodo GenesisReward state flow tests.
     exit /b 1
 )
 
@@ -305,6 +355,16 @@ echo Running Nodo explicit transaction input tests...
 
 if errorlevel 1 (
     echo Explicit transaction input tests failed.
+    exit /b 1
+)
+
+
+echo.
+echo Running Nodo GenesisReward state flow tests...
+"%BUILD_DIR%\genesis_reward_state_flow_tests.exe"
+
+if errorlevel 1 (
+    echo GenesisReward state flow tests failed.
     exit /b 1
 )
 

@@ -1,27 +1,19 @@
-# Explicit transaction CoinLot inputs phase
+# GenesisReward main State flow phase
 
-This phase makes transaction input intent explicit.
+This phase starts replacing demo MintRecord as the main supply-creation path.
 
 New behavior:
 
 ```text
-TRANSFER transactions can declare input CoinLot ids
-transaction id commits to those input ids
-validators must spend only declared input lots
-declared input lots must cover amount + fee
-legacy automatic-input transactions still work
-```
-
-Security goal:
-
-```text
-prevent silent input substitution
-make transaction intent auditable
-prepare the project for UTXO-style consensus validation
+State can apply GenesisRewardRecord directly
+ChainStateRebuilder can rebuild State from GENESIS_REWARD ledger records
+GenesisReward records create deterministic reward CoinLots
+State supply audit counts GenesisReward supply
+legacy MintRecord remains only for compatibility
 ```
 
 Recommended commit:
 
 ```bash
-git commit -m "Add explicit transaction coin lot inputs"
+git commit -m "Add GenesisReward main state flow"
 ```

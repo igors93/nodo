@@ -29,6 +29,10 @@ std::string genesisRewardReasonToString(
     GenesisRewardReason reason
 );
 
+GenesisRewardReason genesisRewardReasonFromString(
+    const std::string& value
+);
+
 class GenesisRewardRecord {
 public:
     GenesisRewardRecord();
@@ -62,6 +66,10 @@ public:
     ) const;
 
     std::string serialize() const;
+
+    static GenesisRewardRecord deserialize(
+        const std::string& serialized
+    );
 
 private:
     std::uint64_t m_epoch;

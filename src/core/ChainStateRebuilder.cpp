@@ -2,6 +2,7 @@
 
 #include "core/LedgerRecord.hpp"
 #include "core/Transaction.hpp"
+#include "economics/GenesisRewardRecord.hpp"
 #include "economics/MintRecord.hpp"
 
 #include <sstream>
@@ -16,8 +17,10 @@ StateRebuildReport::StateRebuildReport()
       m_blockCount(0),
       m_ledgerRecordCount(0),
       m_mintRecordCount(0),
+      m_genesisRewardRecordCount(0),
       m_transactionRecordCount(0),
-      m_privateAccountingRecordCount(0) {}
+      m_privateAccountingRecordCount(0),
+      m_protectionMetadataRecordCount(0) {}
 
 bool StateRebuildReport::success() const {
     return m_success;
@@ -39,11 +42,20 @@ std::size_t StateRebuildReport::mintRecordCount() const {
     return m_mintRecordCount;
 }
 
+std::size_t StateRebuildReport::genesisRewardRecordCount() const {
+    return m_genesisRewardRecordCount;
+}
+
 std::size_t StateRebuildReport::transactionRecordCount() const {
     return m_transactionRecordCount;
 }
+
 std::size_t StateRebuildReport::privateAccountingRecordCount() const {
     return m_privateAccountingRecordCount;
+}
+
+std::size_t StateRebuildReport::protectionMetadataRecordCount() const {
+    return m_protectionMetadataRecordCount;
 }
 
 void StateRebuildReport::markFailure(std::string reason) {
@@ -63,11 +75,20 @@ void StateRebuildReport::incrementMintRecordCount() {
     ++m_mintRecordCount;
 }
 
+void StateRebuildReport::incrementGenesisRewardRecordCount() {
+    ++m_genesisRewardRecordCount;
+}
+
 void StateRebuildReport::incrementTransactionRecordCount() {
     ++m_transactionRecordCount;
 }
+
 void StateRebuildReport::incrementPrivateAccountingRecordCount() {
     ++m_privateAccountingRecordCount;
+}
+
+void StateRebuildReport::incrementProtectionMetadataRecordCount() {
+    ++m_protectionMetadataRecordCount;
 }
 
 std::string StateRebuildReport::serialize() const {
@@ -79,8 +100,10 @@ std::string StateRebuildReport::serialize() const {
         << ";blockCount=" << m_blockCount
         << ";ledgerRecordCount=" << m_ledgerRecordCount
         << ";mintRecordCount=" << m_mintRecordCount
+        << ";genesisRewardRecordCount=" << m_genesisRewardRecordCount
         << ";transactionRecordCount=" << m_transactionRecordCount
         << ";privateAccountingRecordCount=" << m_privateAccountingRecordCount
+        << ";protectionMetadataRecordCount=" << m_protectionMetadataRecordCount
         << "}";
 
     return oss.str();
@@ -119,10 +142,16 @@ StateRebuildReport ChainStateRebuilder::auditBlockchain(
 
             if (record.type() == LedgerRecordType::MINT) {
                 report.incrementMintRecordCount();
+            } else if (record.type() == LedgerRecordType::GENESIS_REWARD) {
+                report.incrementGenesisRewardRecordCount();
             } else if (record.type() == LedgerRecordType::TRANSACTION) {
                 report.incrementTransactionRecordCount();
             } else if (record.type() == LedgerRecordType::PRIVATE_ACCOUNTING) {
                 report.incrementPrivateAccountingRecordCount();
+            } else if (record.type() == LedgerRecordType::VALIDATION_WORK ||
+                       record.type() == LedgerRecordType::VALIDATOR_SCORE ||
+                       record.type() == LedgerRecordType::PROTECTION_EPOCH) {
+                report.incrementProtectionMetadataRecordCount();
             } else {
                 report.markFailure("Unknown LedgerRecord type found during rebuild audit.");
                 return report;
@@ -167,6 +196,48 @@ State ChainStateRebuilder::rebuildStateFromMintRecords(
     return rebuiltState;
 }
 
+State ChainStateRebuilder::rebuildStateFromGenesisRewardRecords(
+    const Blockchain& blockchain
+) {
+    StateRebuildReport report = auditBlockchain(blockchain);
+
+    if (!report.success()) {
+        throw std::logic_error(
+            "Cannot rebuild State from invalid Blockchain: "
+            + report.failureReason()
+        );
+    }
+
+    State rebuiltState;
+
+    for (const auto& block : blockchain.blocks()) {
+        if (rebuiltState.currentBlockIndex() != block.index()) {
+            throw std::logic_error("State block index does not match Blockchain block index.");
+        }
+
+        for (const auto& record : block.records()) {
+            if (record.type() != LedgerRecordType::GENESIS_REWARD) {
+                continue;
+            }
+
+            economics::GenesisRewardRecord genesisRewardRecord =
+                economics::GenesisRewardRecord::deserialize(record.payload());
+
+            rebuiltState.applyGenesisRewardRecord(genesisRewardRecord);
+        }
+
+        if (block.index() + 1 < blockchain.size()) {
+            rebuiltState.advanceBlock();
+        }
+    }
+
+    if (!rebuiltState.isSupplyAuditable()) {
+        throw std::logic_error("Rebuilt GenesisReward State failed supply audit.");
+    }
+
+    return rebuiltState;
+}
+
 State ChainStateRebuilder::rebuildStateFromLedgerRecords(
     const Blockchain& blockchain
 ) {
@@ -195,6 +266,14 @@ State ChainStateRebuilder::rebuildStateFromLedgerRecords(
                 continue;
             }
 
+            if (record.type() == LedgerRecordType::GENESIS_REWARD) {
+                economics::GenesisRewardRecord genesisRewardRecord =
+                    economics::GenesisRewardRecord::deserialize(record.payload());
+
+                rebuiltState.applyGenesisRewardRecord(genesisRewardRecord);
+                continue;
+            }
+
             if (record.type() == LedgerRecordType::TRANSACTION) {
                 Transaction transaction =
                     Transaction::deserializeForStateReplay(record.payload());
@@ -207,13 +286,14 @@ State ChainStateRebuilder::rebuildStateFromLedgerRecords(
                 continue;
             }
 
-            if (record.type() == LedgerRecordType::PRIVATE_ACCOUNTING) {
+            if (record.type() == LedgerRecordType::PRIVATE_ACCOUNTING ||
+                record.type() == LedgerRecordType::VALIDATION_WORK ||
+                record.type() == LedgerRecordType::VALIDATOR_SCORE ||
+                record.type() == LedgerRecordType::PROTECTION_EPOCH) {
                 /*
-                * Private accounting records do not directly mutate public State.
-                *
-                * They are part of the official ledger history, but their private rules
-                * are validated by the privacy accounting subsystem.
-                */
+                 * These records are part of official ledger history but do not
+                 * directly mutate public coin ownership State.
+                 */
                 continue;
             }
 

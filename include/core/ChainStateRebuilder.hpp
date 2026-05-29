@@ -12,8 +12,8 @@ namespace nodo::core {
 /*
  * StateRebuildReport summarizes the result of scanning a Blockchain.
  *
- * Later, this report can include balances, rejected records, supply totals,
- * validator state, and private accounting audit data.
+ * It intentionally counts both legacy and protection-economics records so the
+ * migration from demo minting to GenesisReward can be audited.
  */
 class StateRebuildReport {
 public:
@@ -25,16 +25,20 @@ public:
     std::size_t blockCount() const;
     std::size_t ledgerRecordCount() const;
     std::size_t mintRecordCount() const;
+    std::size_t genesisRewardRecordCount() const;
     std::size_t transactionRecordCount() const;
     std::size_t privateAccountingRecordCount() const;
+    std::size_t protectionMetadataRecordCount() const;
 
     void markFailure(std::string reason);
 
     void setBlockCount(std::size_t value);
     void incrementLedgerRecordCount();
     void incrementMintRecordCount();
+    void incrementGenesisRewardRecordCount();
     void incrementTransactionRecordCount();
     void incrementPrivateAccountingRecordCount();
+    void incrementProtectionMetadataRecordCount();
 
     std::string serialize() const;
 
@@ -45,8 +49,10 @@ private:
     std::size_t m_blockCount;
     std::size_t m_ledgerRecordCount;
     std::size_t m_mintRecordCount;
+    std::size_t m_genesisRewardRecordCount;
     std::size_t m_transactionRecordCount;
     std::size_t m_privateAccountingRecordCount;
+    std::size_t m_protectionMetadataRecordCount;
 };
 
 /*
@@ -61,22 +67,32 @@ public:
     static StateRebuildReport auditBlockchain(const Blockchain& blockchain);
 
     /*
-     * Rebuilds State using only MINT LedgerRecords.
+     * Rebuilds State using only legacy MINT LedgerRecords.
      *
-     * This method remains useful for focused supply tests.
+     * This remains useful for compatibility tests during the migration.
      */
     static State rebuildStateFromMintRecords(const Blockchain& blockchain);
 
     /*
+     * Rebuilds State using only GENESIS_REWARD LedgerRecords.
+     *
+     * This is the new production-oriented supply creation path.
+     */
+    static State rebuildStateFromGenesisRewardRecords(const Blockchain& blockchain);
+
+    /*
      * Rebuilds public State from supported LedgerRecords.
      *
-     * Supported in this phase:
-     * - MINT
-     * - TRANSFER
-     * - PRIVATE_ACCOUNTING as public-state no-op
+     * Supported public mutations:
+     * - MINT as legacy development supply creation
+     * - GENESIS_REWARD as protection-economics supply creation
+     * - TRANSACTION as transfer movement
      *
-     * Private accounting records are validated by the private accounting
-     * subsystem. They do not directly mutate the public State.
+     * Supported public no-ops:
+     * - PRIVATE_ACCOUNTING
+     * - VALIDATION_WORK
+     * - VALIDATOR_SCORE
+     * - PROTECTION_EPOCH
      */
     static State rebuildStateFromLedgerRecords(const Blockchain& blockchain);
 };

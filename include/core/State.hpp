@@ -5,6 +5,7 @@
 #include "core/CoinLot.hpp"
 #include "core/CoinLotRegistry.hpp"
 #include "core/Transaction.hpp"
+#include "economics/GenesisRewardRecord.hpp"
 #include "economics/MintRecord.hpp"
 #include "utils/Amount.hpp"
 
@@ -19,11 +20,15 @@ namespace nodo::core {
  *
  * It stores:
  * - accounts and replay-protection nonces;
- * - created coins;
  * - traceable coin lots;
- * - total minted supply;
+ * - legacy development mint records;
+ * - GenesisReward records;
+ * - total public supply;
  * - current block height;
  * - applied transaction ids.
+ *
+ * Security principle:
+ * State is a rebuildable view. The chain history remains the source of truth.
  */
 class State {
 public:
@@ -36,6 +41,7 @@ public:
 
     const std::vector<Account>& accounts() const;
     const std::vector<economics::MintRecord>& mintRecords() const;
+    const std::vector<economics::GenesisRewardRecord>& genesisRewardRecords() const;
     const std::vector<CoinLot>& coinLots() const;
 
     /*
@@ -52,19 +58,29 @@ public:
     void advanceBlock();
 
     /*
-     * Creates coins from a valid MintRecord.
+     * Legacy development coin creation.
      *
-     * Security rule:
-     * Every created coin must generate a traceable CoinLot.
-     * The recipient account is created deterministically if it does not exist.
+     * This remains available for compatibility with old tests and demo code, but
+     * the production-oriented path should use applyGenesisRewardRecord().
      */
     void applyMintRecord(const economics::MintRecord& mintRecord);
 
     /*
+     * Creates coins from a valid GenesisRewardRecord.
+     *
+     * Security rule:
+     * New reward supply must enter State through a deterministic CoinLot created
+     * by GenesisRewardRecord::createRewardCoinLot().
+     */
+    void applyGenesisRewardRecord(
+        const economics::GenesisRewardRecord& genesisRewardRecord
+    );
+
+    /*
      * Applies a transfer using CoinLotRegistry-backed validation.
      *
-     * This method now delegates the security-critical lot selection and lot
-     * movement to CoinLotTransactionValidator.
+     * This method delegates the security-critical lot selection and lot movement
+     * to CoinLotTransactionValidator.
      */
     void applyTransferTransaction(const Transaction& transaction);
 
@@ -87,6 +103,13 @@ public:
 
     bool isTransactionAlreadyApplied(const std::string& transactionId) const;
 
+    /*
+     * Audits public supply by comparing active CoinLots against all accepted
+     * public supply-creation records.
+     *
+     * Both legacy MintRecord and new GenesisRewardRecord are counted so the
+     * migration can happen safely without breaking existing chain fixtures.
+     */
     bool isSupplyAuditable() const;
 
 private:
@@ -94,6 +117,7 @@ private:
     utils::Amount m_totalSupply;
     std::vector<Account> m_accounts;
     std::vector<economics::MintRecord> m_mintRecords;
+    std::vector<economics::GenesisRewardRecord> m_genesisRewardRecords;
     std::vector<CoinLot> m_coinLots;
     std::vector<std::string> m_appliedTransactionIds;
 
@@ -103,6 +127,9 @@ private:
     void ensureAccountExists(const std::string& address);
 
     std::string createCoinLotIdFromMint(const economics::MintRecord& mintRecord) const;
+
+    bool hasLegacyMintRecord(const std::string& mintRecordId) const;
+    bool hasGenesisRewardRecord(const std::string& genesisRewardId) const;
 
     void replaceCoinLotsFromRegistry(
         const CoinLotRegistry& registry

@@ -35,6 +35,10 @@ const std::vector<economics::MintRecord>& State::mintRecords() const {
     return m_mintRecords;
 }
 
+const std::vector<economics::GenesisRewardRecord>& State::genesisRewardRecords() const {
+    return m_genesisRewardRecords;
+}
+
 const std::vector<CoinLot>& State::coinLots() const {
     return m_coinLots;
 }
@@ -72,10 +76,8 @@ void State::applyMintRecord(const economics::MintRecord& mintRecord) {
         throw std::invalid_argument("Invalid MintRecord rejected by State.");
     }
 
-    for (const auto& existing : m_mintRecords) {
-        if (existing.id() == mintRecord.id()) {
-            throw std::logic_error("Duplicated MintRecord id rejected.");
-        }
+    if (hasLegacyMintRecord(mintRecord.id())) {
+        throw std::logic_error("Duplicated MintRecord id rejected.");
     }
 
     const std::string coinLotId = createCoinLotIdFromMint(mintRecord);
@@ -92,7 +94,7 @@ void State::applyMintRecord(const economics::MintRecord& mintRecord) {
     );
 
     if (!coinLot.isValid()) {
-        throw std::logic_error("Generated CoinLot is invalid.");
+        throw std::logic_error("Generated legacy mint CoinLot is invalid.");
     }
 
     ensureAccountExists(mintRecord.recipientAddress());
@@ -106,6 +108,46 @@ void State::applyMintRecord(const economics::MintRecord& mintRecord) {
 
     m_mintRecords.push_back(mintRecord);
     m_totalSupply = m_totalSupply + mintRecord.amount();
+}
+
+void State::applyGenesisRewardRecord(
+    const economics::GenesisRewardRecord& genesisRewardRecord
+) {
+    if (!genesisRewardRecord.isValid()) {
+        throw std::invalid_argument("Invalid GenesisRewardRecord rejected by State.");
+    }
+
+    const std::string rewardId =
+        genesisRewardRecord.deterministicId();
+
+    if (hasGenesisRewardRecord(rewardId)) {
+        throw std::logic_error("Duplicated GenesisRewardRecord id rejected.");
+    }
+
+    const CoinLot rewardLot =
+        genesisRewardRecord.createRewardCoinLot(
+            m_currentBlockIndex
+        );
+
+    if (!rewardLot.isValid()) {
+        throw std::logic_error("Generated GenesisReward CoinLot is invalid.");
+    }
+
+    if (rewardLot.originMintRecordId() != rewardId) {
+        throw std::logic_error("Generated GenesisReward CoinLot origin mismatch.");
+    }
+
+    ensureAccountExists(genesisRewardRecord.validatorAddress());
+
+    CoinLotRegistry registry =
+        coinLotRegistry();
+
+    registry.addLot(rewardLot);
+
+    replaceCoinLotsFromRegistry(registry);
+
+    m_genesisRewardRecords.push_back(genesisRewardRecord);
+    m_totalSupply = m_totalSupply + genesisRewardRecord.amount();
 }
 
 void State::applyTransferTransaction(const Transaction& transaction) {
@@ -257,17 +299,25 @@ bool State::isTransactionAlreadyApplied(const std::string& transactionId) const 
 }
 
 bool State::isSupplyAuditable() const {
-    utils::Amount calculatedMintedSupply = utils::Amount::fromRawUnits(0);
+    utils::Amount calculatedCreatedSupply = utils::Amount::fromRawUnits(0);
 
     for (const auto& mintRecord : m_mintRecords) {
         if (!mintRecord.isValid()) {
             return false;
         }
 
-        calculatedMintedSupply = calculatedMintedSupply + mintRecord.amount();
+        calculatedCreatedSupply = calculatedCreatedSupply + mintRecord.amount();
     }
 
-    if (calculatedMintedSupply != m_totalSupply) {
+    for (const auto& genesisRewardRecord : m_genesisRewardRecords) {
+        if (!genesisRewardRecord.isValid()) {
+            return false;
+        }
+
+        calculatedCreatedSupply = calculatedCreatedSupply + genesisRewardRecord.amount();
+    }
+
+    if (calculatedCreatedSupply != m_totalSupply) {
         return false;
     }
 
@@ -337,6 +387,30 @@ std::string State::createCoinLotIdFromMint(
     const economics::MintRecord& mintRecord
 ) const {
     return "coinlot_from_" + mintRecord.id();
+}
+
+bool State::hasLegacyMintRecord(
+    const std::string& mintRecordId
+) const {
+    for (const auto& mintRecord : m_mintRecords) {
+        if (mintRecord.id() == mintRecordId) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool State::hasGenesisRewardRecord(
+    const std::string& genesisRewardId
+) const {
+    for (const auto& genesisRewardRecord : m_genesisRewardRecords) {
+        if (genesisRewardRecord.deterministicId() == genesisRewardId) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void State::replaceCoinLotsFromRegistry(
