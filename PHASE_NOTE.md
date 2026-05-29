@@ -1,27 +1,32 @@
-# Coin lot registry phase
+# Coin lot transaction integration phase
 
-This phase adds the first official coin lot existence registry.
+This phase connects transactions directly to the CoinLotRegistry.
 
 New components:
 
 ```text
-CoinLotVerificationResult
-CoinLotRegistry
-CoinLotRegistryRebuilder
+CoinLotTransactionValidationResult
+CoinLotTransferPlan
+CoinLotTransactionValidator
+```
+
+Modified:
+
+```text
+State
 ```
 
 What this means:
 
 ```text
-Nodo can verify whether a coin lot exists
-Nodo can verify owner and amount
-Nodo can reject spent, locked, or slashed lots
-Nodo can consume one input lot and create traceable output lots
-Nodo can rebuild reward coin lots from GenesisReward history
+transfer transactions now use registry-backed coin lot validation
+locked/spent/slashed lots are rejected
+transfer plans explicitly preserve input/output conservation
+State keeps the old applyTransferTransaction API but delegates to the new registry path
 ```
 
 Recommended commit:
 
 ```bash
-git commit -m "Add coin lot registry"
+git commit -m "Connect transactions to coin lot registry"
 ```

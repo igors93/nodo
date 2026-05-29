@@ -1,5 +1,6 @@
 #include "core/State.hpp"
 
+#include "core/CoinLotTransactionValidator.hpp"
 #include "staking/SecurityWeight.hpp"
 
 #include <sstream>
@@ -8,17 +9,6 @@
 #include <vector>
 
 namespace nodo::core {
-
-namespace {
-
-utils::Amount minAmount(
-    const utils::Amount& left,
-    const utils::Amount& right
-) {
-    return left <= right ? left : right;
-}
-
-} // namespace
 
 State::State()
     : m_currentBlockIndex(0),
@@ -47,6 +37,12 @@ const std::vector<economics::MintRecord>& State::mintRecords() const {
 
 const std::vector<CoinLot>& State::coinLots() const {
     return m_coinLots;
+}
+
+CoinLotRegistry State::coinLotRegistry() const {
+    return CoinLotRegistry::fromCoinLots(
+        m_coinLots
+    );
 }
 
 bool State::hasAccount(const std::string& address) const {
@@ -101,12 +97,22 @@ void State::applyMintRecord(const economics::MintRecord& mintRecord) {
 
     ensureAccountExists(mintRecord.recipientAddress());
 
+    CoinLotRegistry registry =
+        coinLotRegistry();
+
+    registry.addLot(coinLot);
+
+    replaceCoinLotsFromRegistry(registry);
+
     m_mintRecords.push_back(mintRecord);
-    m_coinLots.push_back(coinLot);
     m_totalSupply = m_totalSupply + mintRecord.amount();
 }
 
 void State::applyTransferTransaction(const Transaction& transaction) {
+    applyTransferTransactionUsingRegistry(transaction);
+}
+
+void State::applyTransferTransactionUsingRegistry(const Transaction& transaction) {
     if (transaction.type() != TransactionType::TRANSFER) {
         throw std::invalid_argument("Only TRANSFER transactions can be applied by this method.");
     }
@@ -127,6 +133,10 @@ void State::applyTransferTransaction(const Transaction& transaction) {
         throw std::invalid_argument("Transfer amount must be positive.");
     }
 
+    if (transaction.fee().isNegative()) {
+        throw std::invalid_argument("Transfer fee cannot be negative.");
+    }
+
     if (transaction.nonce() == 0) {
         throw std::invalid_argument("Transfer nonce must be positive.");
     }
@@ -145,134 +155,26 @@ void State::applyTransferTransaction(const Transaction& transaction) {
         throw std::logic_error("Invalid sender nonce rejected.");
     }
 
-    const utils::Amount totalDebit = transaction.amount() + transaction.fee();
+    CoinLotRegistry registry =
+        coinLotRegistry();
 
-    if (!totalDebit.isPositive()) {
-        throw std::invalid_argument("Transfer total debit must be positive.");
+    const CoinLotTransactionValidationResult validation =
+        CoinLotTransactionValidator::validateTransferTransaction(
+            transaction,
+            registry
+        );
+
+    if (!validation.success()) {
+        throw std::logic_error(
+            "Transfer rejected by CoinLotRegistry: " + validation.reason()
+        );
     }
 
-    std::vector<std::size_t> selectedInputIndexes;
-    utils::Amount collected = utils::Amount::fromRawUnits(0);
-
-    for (std::size_t index = 0; index < m_coinLots.size(); ++index) {
-        const CoinLot& coinLot = m_coinLots[index];
-
-        if (coinLot.ownerAddress() != transaction.fromAddress()) {
-            continue;
-        }
-
-        if (!coinLot.isSpendable()) {
-            continue;
-        }
-
-        selectedInputIndexes.push_back(index);
-        collected = collected + coinLot.amount();
-
-        if (collected >= totalDebit) {
-            break;
-        }
-    }
-
-    if (collected < totalDebit) {
-        throw std::logic_error("Insufficient spendable balance for transfer.");
-    }
-
-    std::vector<CoinLot> outputLots;
-    utils::Amount remainingRecipientAmount = transaction.amount();
-    utils::Amount remainingFeeAmount = transaction.fee();
-    std::size_t outputIndex = 0;
-
-    for (const std::size_t inputIndex : selectedInputIndexes) {
-        const CoinLot& inputLot = m_coinLots[inputIndex];
-        utils::Amount remainingInputAmount = inputLot.amount();
-
-        auto createOutput = [&](const std::string& ownerAddress,
-                                const utils::Amount& amount,
-                                const std::string& outputKind) {
-            if (!amount.isPositive()) {
-                return;
-            }
-
-            CoinLot outputLot(
-                createTransferOutputCoinLotId(
-                    transaction,
-                    inputLot,
-                    outputKind,
-                    outputIndex
-                ),
-                inputLot.originMintRecordId(),
-                ownerAddress,
-                amount,
-                CoinLotStatus::AVAILABLE,
-                m_currentBlockIndex,
-                0,
-                transaction.timestamp()
-            );
-
-            if (!outputLot.isValid()) {
-                throw std::logic_error("Generated transfer output CoinLot is invalid.");
-            }
-
-            for (const auto& existingLot : m_coinLots) {
-                if (existingLot.id() == outputLot.id()) {
-                    throw std::logic_error("Generated transfer output CoinLot id already exists.");
-                }
-            }
-
-            for (const auto& pendingLot : outputLots) {
-                if (pendingLot.id() == outputLot.id()) {
-                    throw std::logic_error("Duplicated pending transfer output CoinLot id.");
-                }
-            }
-
-            outputLots.push_back(outputLot);
-            ++outputIndex;
-        };
-
-        while (remainingInputAmount.isPositive()) {
-            if (remainingRecipientAmount.isPositive()) {
-                const utils::Amount outputAmount =
-                    minAmount(remainingInputAmount, remainingRecipientAmount);
-
-                createOutput(
-                    transaction.toAddress(),
-                    outputAmount,
-                    "recipient"
-                );
-
-                remainingInputAmount = remainingInputAmount - outputAmount;
-                remainingRecipientAmount = remainingRecipientAmount - outputAmount;
-                continue;
-            }
-
-            if (remainingFeeAmount.isPositive()) {
-                const utils::Amount outputAmount =
-                    minAmount(remainingInputAmount, remainingFeeAmount);
-
-                createOutput(
-                    feePoolAddress(),
-                    outputAmount,
-                    "fee"
-                );
-
-                remainingInputAmount = remainingInputAmount - outputAmount;
-                remainingFeeAmount = remainingFeeAmount - outputAmount;
-                continue;
-            }
-
-            createOutput(
-                transaction.fromAddress(),
-                remainingInputAmount,
-                "change"
-            );
-
-            remainingInputAmount = utils::Amount::fromRawUnits(0);
-        }
-    }
-
-    if (remainingRecipientAmount.isPositive() || remainingFeeAmount.isPositive()) {
-        throw std::logic_error("Transfer output allocation failed.");
-    }
+    CoinLotTransactionValidator::applyTransfer(
+        registry,
+        transaction,
+        m_currentBlockIndex
+    );
 
     ensureAccountExists(transaction.toAddress());
 
@@ -291,13 +193,7 @@ void State::applyTransferTransaction(const Transaction& transaction) {
         m_currentBlockIndex
     );
 
-    for (const std::size_t inputIndex : selectedInputIndexes) {
-        m_coinLots[inputIndex].markSpent();
-    }
-
-    for (const auto& outputLot : outputLots) {
-        m_coinLots.push_back(outputLot);
-    }
+    replaceCoinLotsFromRegistry(registry);
 
     m_appliedTransactionIds.push_back(transaction.id());
 }
@@ -306,14 +202,19 @@ void State::lockCoinLotForSecurity(
     const std::string& coinLotId,
     std::uint64_t lockedUntilBlock
 ) {
-    for (auto& coinLot : m_coinLots) {
-        if (coinLot.id() == coinLotId) {
-            coinLot.lockForSecurity(lockedUntilBlock);
-            return;
-        }
-    }
+    CoinLotRegistry registry =
+        coinLotRegistry();
 
-    throw std::invalid_argument("CoinLot not found.");
+    const CoinLot& targetLot =
+        registry.lot(coinLotId);
+
+    registry.lockForSecurity(
+        coinLotId,
+        targetLot.ownerAddress(),
+        lockedUntilBlock
+    );
+
+    replaceCoinLotsFromRegistry(registry);
 }
 
 utils::Amount State::balanceOf(const std::string& ownerAddress) const {
@@ -438,24 +339,18 @@ std::string State::createCoinLotIdFromMint(
     return "coinlot_from_" + mintRecord.id();
 }
 
-std::string State::createTransferOutputCoinLotId(
-    const Transaction& transaction,
-    const CoinLot& inputLot,
-    const std::string& outputKind,
-    std::size_t outputIndex
-) const {
-    std::ostringstream oss;
+void State::replaceCoinLotsFromRegistry(
+    const CoinLotRegistry& registry
+) {
+    if (!registry.isValid()) {
+        throw std::invalid_argument("Cannot replace State CoinLots from invalid registry.");
+    }
 
-    oss << "coinlot_from_tx_"
-        << transaction.id()
-        << "_input_"
-        << inputLot.id()
-        << "_"
-        << outputKind
-        << "_"
-        << outputIndex;
+    m_coinLots.clear();
 
-    return oss.str();
+    for (const auto& entry : registry.lots()) {
+        m_coinLots.push_back(entry.second);
+    }
 }
 
 } // namespace nodo::core

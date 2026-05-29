@@ -3,6 +3,7 @@
 
 #include "core/Account.hpp"
 #include "core/CoinLot.hpp"
+#include "core/CoinLotRegistry.hpp"
 #include "core/Transaction.hpp"
 #include "economics/MintRecord.hpp"
 #include "utils/Amount.hpp"
@@ -37,6 +38,14 @@ public:
     const std::vector<economics::MintRecord>& mintRecords() const;
     const std::vector<CoinLot>& coinLots() const;
 
+    /*
+     * Builds a registry view from the currently reconstructed coin lots.
+     *
+     * Security rule:
+     * The registry is a view derived from State, not a separate source of truth.
+     */
+    CoinLotRegistry coinLotRegistry() const;
+
     bool hasAccount(const std::string& address) const;
     std::uint64_t nextNonceOf(const std::string& address) const;
 
@@ -52,18 +61,20 @@ public:
     void applyMintRecord(const economics::MintRecord& mintRecord);
 
     /*
-     * Applies a transfer using spendable CoinLots.
+     * Applies a transfer using CoinLotRegistry-backed validation.
      *
-     * Security rules:
-     * - sender account must exist;
-     * - transaction nonce must match the sender's next expected nonce;
-     * - locked lots cannot be spent;
-     * - spent lots cannot be spent again;
-     * - transfer outputs preserve origin MintRecord ids;
-     * - fee is preserved as a fee-pool CoinLot;
-     * - duplicate transaction ids are rejected.
+     * This method now delegates the security-critical lot selection and lot
+     * movement to CoinLotTransactionValidator.
      */
     void applyTransferTransaction(const Transaction& transaction);
+
+    /*
+     * Explicit registry-backed transfer entrypoint.
+     *
+     * Kept separate so tests and future migration code can call the new path
+     * directly while applyTransferTransaction remains backwards compatible.
+     */
+    void applyTransferTransactionUsingRegistry(const Transaction& transaction);
 
     void lockCoinLotForSecurity(
         const std::string& coinLotId,
@@ -93,12 +104,9 @@ private:
 
     std::string createCoinLotIdFromMint(const economics::MintRecord& mintRecord) const;
 
-    std::string createTransferOutputCoinLotId(
-        const Transaction& transaction,
-        const CoinLot& inputLot,
-        const std::string& outputKind,
-        std::size_t outputIndex
-    ) const;
+    void replaceCoinLotsFromRegistry(
+        const CoinLotRegistry& registry
+    );
 };
 
 } // namespace nodo::core

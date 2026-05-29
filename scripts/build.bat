@@ -80,6 +80,9 @@ echo Building Nodo C++ application...
     "%ROOT_DIR%\src\core\CoinLotVerificationResult.cpp" ^
     "%ROOT_DIR%\src\core\CoinLotRegistry.cpp" ^
     "%ROOT_DIR%\src\core\CoinLotRegistryRebuilder.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransactionValidationResult.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransferPlan.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransactionValidator.cpp" ^
     "%ROOT_DIR%\src\core\State.cpp" ^
     "%ROOT_DIR%\src\core\Transaction.cpp" ^
     "%ROOT_DIR%\src\core\LedgerRecord.cpp" ^

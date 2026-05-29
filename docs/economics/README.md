@@ -1,7 +1,7 @@
 # Nodo Economics and Protection Guides
 
 Status: Project Guide Index  
-Version: NODO-ECONOMICS-GUIDES-V5
+Version: NODO-ECONOMICS-GUIDES-V6
 
 This folder contains the main concept documents for Nodo's protection-based economic model.
 
@@ -18,12 +18,7 @@ Recommended reading order:
 8. LEDGER_RECORD_INTEGRATION.md
 9. PROTECTION_STATE_REBUILDER.md
 10. COIN_LOT_REGISTRY.md
-```
-
-Core idea:
-
-```text
-Nodo is a security-first blockchain where coins are born from verified protection work, every coin lot has provable existence, validator trust is recorded on-chain, and emission is dynamically controlled by transparent economic rules.
+11. COIN_LOT_TRANSACTION_INTEGRATION.md
 ```
 
 Implemented foundations so far:
@@ -40,4 +35,8 @@ ProtectionEconomicsRebuilder
 CoinLotVerificationResult
 CoinLotRegistry
 CoinLotRegistryRebuilder
+CoinLotTransactionValidationResult
+CoinLotTransferPlan
+CoinLotTransactionValidator
+State registry-backed transfer path
 ```
