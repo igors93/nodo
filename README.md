@@ -856,6 +856,43 @@ New documentation:
 docs/economics/PROTECTION_STATE_REBUILDER.md
 ```
 
+
+---
+
+## Implementation: Coin Lot Registry
+
+The next code step adds the first official registry for coin lot existence.
+
+New components:
+
+```text
+CoinLotVerificationResult
+CoinLotRegistry
+CoinLotRegistryRebuilder
+```
+
+This allows Nodo to verify:
+
+```text
+coin lot exists
+coin lot belongs to the expected owner
+coin lot is available
+coin lot amount matches
+coin lot was not already spent
+```
+
+New test:
+
+```text
+tests/core/CoinLotRegistryTests.cpp
+```
+
+New documentation:
+
+```text
+docs/economics/COIN_LOT_REGISTRY.md
+```
+
 ## Build
 
 Nodo supports Linux-style shells and Windows builds.

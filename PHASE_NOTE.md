@@ -1,27 +1,27 @@
-# Protection state rebuilder phase
+# Coin lot registry phase
 
-This phase adds a rebuildable state for Nodo's protection economy.
+This phase adds the first official coin lot existence registry.
 
 New components:
 
 ```text
-ProtectionEconomicsState
-ProtectionEconomicsRebuilder
+CoinLotVerificationResult
+CoinLotRegistry
+CoinLotRegistryRebuilder
 ```
 
 What this means:
 
 ```text
-Nodo can now read blocks
-find protection economics ledger records
-rebuild validator accepted work
-rebuild validator latest score
-rebuild epoch reward totals
-rebuild GenesisReward coin lots
+Nodo can verify whether a coin lot exists
+Nodo can verify owner and amount
+Nodo can reject spent, locked, or slashed lots
+Nodo can consume one input lot and create traceable output lots
+Nodo can rebuild reward coin lots from GenesisReward history
 ```
 
 Recommended commit:
 
 ```bash
-git commit -m "Add protection economics state rebuilder"
+git commit -m "Add coin lot registry"
 ```
