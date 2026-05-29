@@ -1,22 +1,33 @@
-# Audited signature provider boundary phase
+# Protection economics foundation phase
 
-This phase adds the audited signature provider integration boundary.
+This phase starts implementing the new Nodo economic model.
 
-In simple terms:
+New code:
 
 ```text
-No fake provider is marked as real.
-Nodo now has the gate where a real audited Ed25519/ECDSA provider will plug in.
+ValidationWorkRecord
+ValidatorScoreRecord
+EpochEmissionPolicy
+ProtectionEpoch
+GenesisRewardRecord
 ```
+
+What it does:
+
+```text
+records useful validator work
+keeps validator score bounded from 0 to 100
+calculates controlled epoch emission caps
+calculates reward pool from fees + capped security emission
+creates traceable reward CoinLots from GenesisReward records
+```
+
+Nothing is deleted yet.
+
+The old demo MintRecord remains until the new model is integrated safely into blocks, state rebuild, serialization and storage.
 
 Recommended commit:
 
 ```bash
-git commit -m "Add audited signature provider boundary"
-```
-
-Next phase:
-
-```text
-Connect real audited signature provider implementation
+git commit -m "Add protection economics foundation"
 ```

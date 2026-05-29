@@ -749,6 +749,48 @@ Do not allow privacy features to hide inflation.
 
 ---
 
+
+---
+
+## Implementation Start: Protection Economics Foundation
+
+The first code step for the new economic model adds these foundations:
+
+```text
+ValidationWorkRecord
+ValidatorScoreRecord
+EpochEmissionPolicy
+ProtectionEpoch
+GenesisRewardRecord
+```
+
+This starts the migration from:
+
+```text
+demo genesis mint
+```
+
+toward:
+
+```text
+zero-supply chain + protection work + GenesisReward records
+```
+
+This does not remove the current demo mint yet. The old code remains while the new protection economics model is built and tested safely.
+
+New test:
+
+```text
+tests/economics/ProtectionEconomicsTests.cpp
+```
+
+New test script:
+
+```text
+scripts/test_economics.sh
+scripts/test_economics.bat
+```
+
 ## Build
 
 Nodo supports Linux-style shells and Windows builds.

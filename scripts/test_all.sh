@@ -12,6 +12,7 @@ echo
 
 required_scripts=(
     "$ROOT_DIR/scripts/test_crypto.sh"
+    "$ROOT_DIR/scripts/test_economics.sh"
     "$ROOT_DIR/scripts/test_serialization.sh"
     "$ROOT_DIR/scripts/test_storage.sh"
 )
@@ -31,6 +32,10 @@ done
 
 echo "Running crypto tests..."
 "$ROOT_DIR/scripts/test_crypto.sh"
+
+echo
+echo "Running protection economics tests..."
+"$ROOT_DIR/scripts/test_economics.sh"
 
 echo
 echo "Running serialization tests..."

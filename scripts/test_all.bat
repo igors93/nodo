@@ -16,6 +16,12 @@ if not exist "%ROOT_DIR%\scripts\test_crypto.bat" (
     exit /b 1
 )
 
+if not exist "%ROOT_DIR%\scripts\test_economics.bat" (
+    echo Error: required test script was not found:
+    echo %ROOT_DIR%\scripts\test_economics.bat
+    exit /b 1
+)
+
 if not exist "%ROOT_DIR%\scripts\test_serialization.bat" (
     echo Error: required test script was not found:
     echo %ROOT_DIR%\scripts\test_serialization.bat
@@ -33,6 +39,15 @@ call "%ROOT_DIR%\scripts\test_crypto.bat"
 
 if errorlevel 1 (
     echo Crypto tests failed.
+    exit /b 1
+)
+
+echo.
+echo Running protection economics tests...
+call "%ROOT_DIR%\scripts\test_economics.bat"
+
+if errorlevel 1 (
+    echo Protection economics tests failed.
     exit /b 1
 )
 
