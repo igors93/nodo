@@ -1,5 +1,6 @@
 #include "crypto/SignatureBundle.hpp"
-#include "crypto/hash.h"
+
+#include "crypto/DevelopmentSignatureProvider.hpp"
 
 #include <sstream>
 #include <stdexcept>
@@ -14,9 +15,9 @@ void SignatureBundle::addSignature(const Signature& signature) {
     }
 
     /*
-     * Segurança básica:
-     * Não permitir duas assinaturas do mesmo algoritmo no mesmo bundle.
-     * No futuro podemos relaxar isso para multisig, mas agora mantemos simples.
+     * Basic safety:
+     * Do not allow two signatures with the same algorithm in the same bundle.
+     * This can be revisited later for multisig.
      */
     for (const auto& existing : m_signatures) {
         if (existing.algorithm() == signature.algorithm()) {
@@ -75,10 +76,43 @@ bool SignatureBundle::isValidForPolicy(
     }
 
     /*
-     * No futuro, operações críticas podem exigir assinatura híbrida.
+     * In future policies, critical operations may require hybrid signatures.
      */
     if (policy.requiresHybridSignature(context)) {
         return hasClassic && hasPostQuantum;
+    }
+
+    return true;
+}
+
+bool SignatureBundle::verifyForPolicy(
+    const std::string& message,
+    const CryptoPolicy& policy,
+    SecurityContext context,
+    const SignatureProvider& provider
+) const {
+    if (!isValidForPolicy(policy, context)) {
+        return false;
+    }
+
+    if (message.empty()) {
+        return false;
+    }
+
+    for (const auto& signature : m_signatures) {
+        if (signature.algorithm() != provider.algorithm()) {
+            return false;
+        }
+
+        const SignatureVerificationResult result =
+            provider.verify(
+                message,
+                signature
+            );
+
+        if (!result.success()) {
+            return false;
+        }
     }
 
     return true;
@@ -102,59 +136,42 @@ std::string SignatureBundle::serialize() const {
     return oss.str();
 }
 
+SignatureBundle SignatureBundle::createSignature(
+    const std::string& message,
+    const PublicKey& publicKey,
+    const PrivateKey& privateKey,
+    std::int64_t timestamp,
+    const SignatureProvider& provider
+) {
+    SignatureBundle bundle;
+
+    bundle.addSignature(
+        provider.sign(
+            message,
+            publicKey,
+            privateKey,
+            timestamp
+        )
+    );
+
+    return bundle;
+}
+
 SignatureBundle SignatureBundle::createDevelopmentSignature(
     const std::string& message,
     const PublicKey& publicKey,
     const PrivateKey& privateKey,
     std::int64_t timestamp
 ) {
-    if (publicKey.algorithm() != CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE) {
-        throw std::invalid_argument("Development signature requires development public key.");
-    }
+    const DevelopmentSignatureProvider provider;
 
-    if (privateKey.algorithm() != CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE) {
-        throw std::invalid_argument("Development signature requires development private key.");
-    }
-
-    if (!publicKey.isValid() || !privateKey.isValid()) {
-        throw std::invalid_argument("Invalid development key pair.");
-    }
-
-    /*
-     * ATENÇÃO:
-     * Isto NÃO É UMA ASSINATURA REAL.
-     *
-     * Estamos usando hash apenas para criar um valor determinístico
-     * e testar a arquitetura.
-     *
-     * No futuro, esta função será substituída por provedores reais:
-     * - Ed25519
-     * - ECDSA
-     * - ML-DSA
-     * - SLH-DSA
-     */
-    const std::string payload =
-        "NODO_DEVELOPMENT_SIGNATURE|"
-        + message
-        + "|publicKey="
-        + publicKey.serialize()
-        + "|privateKey="
-        + privateKey.keyMaterialForSigningOnly();
-
-    char output[65] = {0};
-    nodo_hash_string(payload.c_str(), output, sizeof(output));
-
-    Signature signature(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
+    return createSignature(
+        message,
         publicKey,
-        std::string(output),
-        timestamp
+        privateKey,
+        timestamp,
+        provider
     );
-
-    SignatureBundle bundle;
-    bundle.addSignature(signature);
-
-    return bundle;
 }
 
 } // namespace nodo::crypto

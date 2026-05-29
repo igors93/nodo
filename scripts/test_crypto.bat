@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 REM Nodo Windows crypto test script.
-REM This script builds and runs cryptographic hash provider tests.
+REM This script builds and runs cryptographic hash and signature provider tests.
 
 set "ROOT_DIR=%~dp0.."
 set "BUILD_DIR=%ROOT_DIR%\build\tests"
@@ -53,6 +53,25 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Building Nodo signature provider tests...
+
+%CXX% -std=c++20 -Wall -Wextra -I"%ROOT_DIR%\include" ^
+    "%ROOT_DIR%\tests\crypto\SignatureProviderTests.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoAlgorithm.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoPolicy.cpp" ^
+    "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\PrivateKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\Signature.cpp" ^
+    "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
+    "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%BUILD_DIR%\hash_crypto_test.o" ^
+    -o "%BUILD_DIR%\signature_provider_tests.exe"
+
+if errorlevel 1 (
+    echo Failed to build Nodo signature provider tests.
+    exit /b 1
+)
+
 echo.
 echo Running Nodo crypto hash tests...
 "%BUILD_DIR%\crypto_hash_tests.exe"
@@ -63,6 +82,15 @@ if errorlevel 1 (
 )
 
 echo.
-echo Crypto hash tests completed successfully.
+echo Running Nodo signature provider tests...
+"%BUILD_DIR%\signature_provider_tests.exe"
+
+if errorlevel 1 (
+    echo Signature provider tests failed.
+    exit /b 1
+)
+
+echo.
+echo Crypto tests completed successfully.
 
 endlocal

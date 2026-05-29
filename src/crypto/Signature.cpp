@@ -43,7 +43,7 @@ bool Signature::isValid() const {
         return false;
     }
 
-    if (m_signatureHex.empty()) {
+    if (!isSafeSignatureHex(m_signatureHex)) {
         return false;
     }
 
@@ -52,7 +52,8 @@ bool Signature::isValid() const {
     }
 
     /*
-     * A assinatura deve declarar o mesmo algoritmo da chave pública.
+     * A signature must declare the same algorithm as the public key that will
+     * verify it.
      */
     if (m_algorithm != m_publicKey.algorithm()) {
         return false;
@@ -72,6 +73,26 @@ std::string Signature::serialize() const {
         << "}";
 
     return oss.str();
+}
+
+bool Signature::isSafeSignatureHex(
+    const std::string& value
+) {
+    if (value.empty()) {
+        return false;
+    }
+
+    for (const char current : value) {
+        const bool isDigit = current >= '0' && current <= '9';
+        const bool isLowerHex = current >= 'a' && current <= 'f';
+        const bool isUpperHex = current >= 'A' && current <= 'F';
+
+        if (!isDigit && !isLowerHex && !isUpperHex) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 } // namespace nodo::crypto

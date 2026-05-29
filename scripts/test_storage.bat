@@ -84,6 +84,7 @@ echo Building Nodo blockchain storage integration tests...
     "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
     "%ROOT_DIR%\src\crypto\PrivateKey.cpp" ^
     "%ROOT_DIR%\src\crypto\Signature.cpp" ^
+    "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
     "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
     "%BUILD_DIR%\hash_storage_test.o" ^
     -o "%BUILD_DIR%\blockchain_storage_integration_tests.exe"

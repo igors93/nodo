@@ -72,6 +72,7 @@ echo "Building Nodo C++ application..."
     "$ROOT_DIR/src/crypto/PublicKey.cpp" \
     "$ROOT_DIR/src/crypto/PrivateKey.cpp" \
     "$ROOT_DIR/src/crypto/Signature.cpp" \
+    "$ROOT_DIR/src/crypto/DevelopmentSignatureProvider.cpp" \
     "$ROOT_DIR/src/crypto/SignatureBundle.cpp" \
     "$BUILD_DIR/hash.o" \
     -o "$BUILD_DIR/nodo"

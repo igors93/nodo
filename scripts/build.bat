@@ -1,12 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
 
-REM Nodo Windows build script.
-REM This script is intended for Windows CMD or PowerShell.
-REM It expects gcc.exe and g++.exe to be available in PATH.
-REM If using MSYS2 UCRT64, make sure this path exists in Windows PATH:
-REM C:\msys64\ucrt64\bin
-
 set "ROOT_DIR=%~dp0.."
 set "BUILD_DIR=%ROOT_DIR%\build"
 
@@ -16,20 +10,16 @@ set "CXX=g++"
 where %CC% >nul 2>nul
 if errorlevel 1 (
     echo Error: gcc was not found in PATH.
-    echo.
-    echo If you installed MSYS2 UCRT64, add this folder to PATH:
+    echo If using MSYS2 UCRT64, add this folder to PATH:
     echo C:\msys64\ucrt64\bin
-    echo.
     exit /b 1
 )
 
 where %CXX% >nul 2>nul
 if errorlevel 1 (
     echo Error: g++ was not found in PATH.
-    echo.
-    echo If you installed MSYS2 UCRT64, add this folder to PATH:
+    echo If using MSYS2 UCRT64, add this folder to PATH:
     echo C:\msys64\ucrt64\bin
-    echo.
     exit /b 1
 )
 
@@ -75,10 +65,10 @@ echo Building Nodo C++ application...
     "%ROOT_DIR%\src\privacy\PrivacyCommitment.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyNullifier.cpp" ^
     "%ROOT_DIR%\src\privacy\NullifierSet.cpp" ^
-    "%ROOT_DIR%\src\core\Account.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivateAccountingRecord.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivateAccountingLedger.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivateAccountingLedgerRebuilder.cpp" ^
+    "%ROOT_DIR%\src\core\Account.cpp" ^
     "%ROOT_DIR%\src\core\CoinLot.cpp" ^
     "%ROOT_DIR%\src\core\State.cpp" ^
     "%ROOT_DIR%\src\core\Transaction.cpp" ^
@@ -92,6 +82,7 @@ echo Building Nodo C++ application...
     "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
     "%ROOT_DIR%\src\crypto\PrivateKey.cpp" ^
     "%ROOT_DIR%\src\crypto\Signature.cpp" ^
+    "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
     "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
     "%BUILD_DIR%\hash.o" ^
     -o "%BUILD_DIR%\nodo.exe"

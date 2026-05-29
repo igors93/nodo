@@ -10,12 +10,12 @@
 namespace nodo::crypto {
 
 /*
- * Signature representa uma assinatura individual.
+ * Signature represents one signature produced by one algorithm.
  *
- * Um SignatureBundle pode conter várias assinaturas.
- * Isso prepara a Nodo para o modelo híbrido:
+ * A SignatureBundle can contain more than one signature. This prepares Nodo for
+ * future hybrid models:
  *
- * assinatura clássica + assinatura pós-quântica
+ * classic signature + post-quantum signature
  */
 class Signature {
 public:
@@ -38,6 +38,10 @@ public:
     std::string serialize() const;
 
 private:
+    static bool isSafeSignatureHex(
+        const std::string& value
+    );
+
     CryptoAlgorithm m_algorithm;
     PublicKey m_publicKey;
     std::string m_signatureHex;

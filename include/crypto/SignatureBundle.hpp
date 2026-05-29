@@ -5,6 +5,7 @@
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
+#include "crypto/SignatureProvider.hpp"
 
 #include <cstdint>
 #include <string>
@@ -13,15 +14,14 @@
 namespace nodo::crypto {
 
 /*
- * SignatureBundle é um pacote de assinaturas.
+ * SignatureBundle is a package of signatures.
  *
- * Ideia central:
- * Hoje ele pode carregar uma assinatura clássica.
- * No futuro ele poderá carregar:
+ * Today it usually carries one development signature. In future versions it can
+ * carry:
  *
- * - assinatura clássica;
- * - assinatura pós-quântica;
- * - ambas ao mesmo tempo.
+ * - one classic signature;
+ * - one post-quantum signature;
+ * - both at the same time.
  */
 class SignatureBundle {
 public:
@@ -36,27 +36,44 @@ public:
     bool hasAlgorithm(CryptoAlgorithm algorithm) const;
 
     /*
-     * Verifica se o conjunto de assinaturas respeita a política da rede.
+     * Checks structure and network policy.
      *
-     * IMPORTANTE:
-     * Isto ainda não verifica matematicamente a assinatura.
-     * Por enquanto, valida estrutura e política.
-     *
-     * A verificação real entrará depois com provedores criptográficos.
+     * This does not perform mathematical verification by itself. Use
+     * verifyForPolicy(...) when the message and provider are available.
      */
     bool isValidForPolicy(
         const CryptoPolicy& policy,
         SecurityContext context
     ) const;
 
+    /*
+     * Checks structure, network policy, and provider verification for a
+     * message.
+     */
+    bool verifyForPolicy(
+        const std::string& message,
+        const CryptoPolicy& policy,
+        SecurityContext context,
+        const SignatureProvider& provider
+    ) const;
+
     std::string serialize() const;
 
     /*
-     * Cria uma assinatura fake de desenvolvimento.
+     * Creates a signature through a provider boundary.
+     */
+    static SignatureBundle createSignature(
+        const std::string& message,
+        const PublicKey& publicKey,
+        const PrivateKey& privateKey,
+        std::int64_t timestamp,
+        const SignatureProvider& provider
+    );
+
+    /*
+     * Creates a development-only signature through DevelopmentSignatureProvider.
      *
-     * NÃO É SEGURA.
-     * Serve apenas para testar o fluxo:
-     * mensagem -> assinatura -> bundle -> política.
+     * NOT SECURE.
      */
     static SignatureBundle createDevelopmentSignature(
         const std::string& message,

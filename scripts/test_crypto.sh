@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Nodo crypto test script.
-# This script builds and runs cryptographic hash provider tests.
+# This script builds and runs cryptographic hash and signature provider tests.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build/tests"
@@ -22,9 +22,27 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$BUILD_DIR/hash_crypto_test.o" \
     -o "$BUILD_DIR/crypto_hash_tests"
 
+echo "Building Nodo signature provider tests..."
+
+g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
+    "$ROOT_DIR/tests/crypto/SignatureProviderTests.cpp" \
+    "$ROOT_DIR/src/crypto/CryptoAlgorithm.cpp" \
+    "$ROOT_DIR/src/crypto/CryptoPolicy.cpp" \
+    "$ROOT_DIR/src/crypto/PublicKey.cpp" \
+    "$ROOT_DIR/src/crypto/PrivateKey.cpp" \
+    "$ROOT_DIR/src/crypto/Signature.cpp" \
+    "$ROOT_DIR/src/crypto/DevelopmentSignatureProvider.cpp" \
+    "$ROOT_DIR/src/crypto/SignatureBundle.cpp" \
+    "$BUILD_DIR/hash_crypto_test.o" \
+    -o "$BUILD_DIR/signature_provider_tests"
+
 echo
 echo "Running Nodo crypto hash tests..."
 "$BUILD_DIR/crypto_hash_tests"
 
 echo
-echo "Crypto hash tests completed successfully."
+echo "Running Nodo signature provider tests..."
+"$BUILD_DIR/signature_provider_tests"
+
+echo
+echo "Crypto tests completed successfully."
