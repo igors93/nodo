@@ -77,6 +77,8 @@ echo "Building Nodo C++ application..."
     "$ROOT_DIR/src/crypto/Address.cpp" \
     "$ROOT_DIR/src/crypto/AddressDerivation.cpp" \
     "$ROOT_DIR/src/crypto/KeyPair.cpp" \
+    "$ROOT_DIR/src/crypto/PostQuantumAlgorithmProfile.cpp" \
+    "$ROOT_DIR/src/crypto/PostQuantumMigrationPlan.cpp" \
     "$BUILD_DIR/hash.o" \
     -o "$BUILD_DIR/nodo"
 

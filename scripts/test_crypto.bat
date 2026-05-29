@@ -2,7 +2,8 @@
 setlocal enabledelayedexpansion
 
 REM Nodo Windows crypto test script.
-REM This script builds and runs hash, signature provider, address, and key management tests.
+REM This script builds and runs hash, signature provider, address, key management,
+REM and post-quantum provider interface tests.
 
 set "ROOT_DIR=%~dp0.."
 set "BUILD_DIR=%ROOT_DIR%\build\tests"
@@ -110,6 +111,24 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Building Nodo post-quantum provider interface tests...
+
+%CXX% -std=c++20 -Wall -Wextra -I"%ROOT_DIR%\include" ^
+    "%ROOT_DIR%\tests\crypto\PostQuantumProviderInterfaceTests.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoAlgorithm.cpp" ^
+    "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\PrivateKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\Signature.cpp" ^
+    "%ROOT_DIR%\src\crypto\PostQuantumAlgorithmProfile.cpp" ^
+    "%ROOT_DIR%\src\crypto\PostQuantumMigrationPlan.cpp" ^
+    "%BUILD_DIR%\hash_crypto_test.o" ^
+    -o "%BUILD_DIR%\post_quantum_provider_interface_tests.exe"
+
+if errorlevel 1 (
+    echo Failed to build Nodo post-quantum provider interface tests.
+    exit /b 1
+)
+
 echo.
 echo Running Nodo crypto hash tests...
 "%BUILD_DIR%\crypto_hash_tests.exe"
@@ -143,6 +162,15 @@ echo Running Nodo key management tests...
 
 if errorlevel 1 (
     echo Key management tests failed.
+    exit /b 1
+)
+
+echo.
+echo Running Nodo post-quantum provider interface tests...
+"%BUILD_DIR%\post_quantum_provider_interface_tests.exe"
+
+if errorlevel 1 (
+    echo Post-quantum provider interface tests failed.
     exit /b 1
 )
 

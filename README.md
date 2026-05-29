@@ -86,6 +86,7 @@ Implemented foundations:
 - signature provider boundary;
 - deterministic address derivation foundation;
 - key management boundary;
+- post-quantum provider interfaces;
 - block file storage;
 - chain manifest storage;
 - block storage index;
@@ -147,7 +148,8 @@ nodo/
 │   │   ├── HASH_PROVIDER.md
 │   │   ├── SIGNATURE_PROVIDER.md
 │   │   ├── ADDRESS_DERIVATION.md
-│   │   └── KEY_MANAGEMENT.md
+│   │   ├── KEY_MANAGEMENT.md
+│   │   └── POST_QUANTUM_PROVIDER_INTERFACES.md
 │   └── serialization/
 │       └── CANONICAL_SERIALIZATION.md
 │
@@ -308,6 +310,8 @@ docs/crypto/SIGNATURE_PROVIDER.md
 docs/crypto/ADDRESS_DERIVATION.md
 
 docs/crypto/KEY_MANAGEMENT.md
+
+docs/crypto/POST_QUANTUM_PROVIDER_INTERFACES.md
 ```
 
 ---
@@ -497,6 +501,7 @@ Nodo crypto hash tests passed.
 Nodo signature provider tests passed.
 Nodo address derivation tests passed.
 Nodo key management tests passed.
+Nodo post-quantum provider interface tests passed.
 
 Running serialization tests...
 Nodo serialization round-trip tests passed.
@@ -726,7 +731,7 @@ Do not use Nodo for real funds.
 - [ ] Add real audited signature provider
 - [x] Add deterministic address derivation
 - [x] Add key management boundary
-- [ ] Prepare post-quantum provider interfaces
+- [x] Prepare post-quantum provider interfaces
 
 ### Phase 7: Private Proof System
 

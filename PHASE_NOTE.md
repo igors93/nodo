@@ -1,23 +1,22 @@
-# Address derivation phase
+# Post-quantum provider interfaces phase
 
-This phase adds deterministic Nodo address derivation.
+This phase adds post-quantum provider interfaces and planning metadata.
 
 In simple terms:
 
 ```text
-PublicKey -> Nodo address
+No real ML-DSA or SLH-DSA yet.
+Now Nodo has the interface where those providers will plug in later.
 ```
-
-It does not yet replace demo names like `igor` and `ana`, but it creates the foundation for wallet-style addresses.
 
 Recommended commit:
 
 ```bash
-git commit -m "Add deterministic address derivation"
+git commit -m "Add post-quantum provider interfaces"
 ```
 
 Next phase:
 
 ```text
-Add key management boundary
+Add real audited signature provider
 ```
