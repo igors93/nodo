@@ -303,6 +303,27 @@ if errorlevel 1 (
     exit /b 1
 )
 
+
+echo Building Nodo epoch reward distributor tests...
+
+%CXX% -std=c++20 -Wall -Wextra -I"%ROOT_DIR%\include" ^
+    "%ROOT_DIR%\tests\economics\EpochRewardDistributorTests.cpp" ^
+    "%ROOT_DIR%\src\utils\Amount.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
+    "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
+    "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLot.cpp" ^
+    "%BUILD_DIR%\hash_economics_test.o" ^
+    -o "%BUILD_DIR%\epoch_reward_distributor_tests.exe"
+
+if errorlevel 1 (
+    echo Failed to build Nodo epoch reward distributor tests.
+    exit /b 1
+)
+
 echo.
 echo Running Nodo protection economics tests...
 "%BUILD_DIR%\protection_economics_tests.exe"
@@ -365,6 +386,16 @@ echo Running Nodo GenesisReward state flow tests...
 
 if errorlevel 1 (
     echo GenesisReward state flow tests failed.
+    exit /b 1
+)
+
+
+echo.
+echo Running Nodo epoch reward distributor tests...
+"%BUILD_DIR%\epoch_reward_distributor_tests.exe"
+
+if errorlevel 1 (
+    echo Epoch reward distributor tests failed.
     exit /b 1
 )
 

@@ -41,6 +41,7 @@ echo "Building Nodo C++ application..."
     "$ROOT_DIR/src/economics/EpochEmissionPolicy.cpp" \
     "$ROOT_DIR/src/economics/ProtectionEpoch.cpp" \
     "$ROOT_DIR/src/economics/GenesisRewardRecord.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardDistributor.cpp" \
     "$ROOT_DIR/src/economics/ProtectionEconomicsState.cpp" \
     "$ROOT_DIR/src/economics/ProtectionEconomicsRebuilder.cpp" \
     "$ROOT_DIR/src/serialization/FieldCodec.cpp" \

@@ -242,6 +242,22 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$BUILD_DIR/hash_economics_test.o" \
     -o "$BUILD_DIR/genesis_reward_state_flow_tests"
 
+
+echo "Building Nodo epoch reward distributor tests..."
+
+g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
+    "$ROOT_DIR/tests/economics/EpochRewardDistributorTests.cpp" \
+    "$ROOT_DIR/src/utils/Amount.cpp" \
+    "$ROOT_DIR/src/economics/ValidationWorkRecord.cpp" \
+    "$ROOT_DIR/src/economics/ValidatorScoreRecord.cpp" \
+    "$ROOT_DIR/src/economics/EpochEmissionPolicy.cpp" \
+    "$ROOT_DIR/src/economics/ProtectionEpoch.cpp" \
+    "$ROOT_DIR/src/economics/GenesisRewardRecord.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardDistributor.cpp" \
+    "$ROOT_DIR/src/core/CoinLot.cpp" \
+    "$BUILD_DIR/hash_economics_test.o" \
+    -o "$BUILD_DIR/epoch_reward_distributor_tests"
+
 echo
 echo "Running Nodo protection economics tests..."
 "$BUILD_DIR/protection_economics_tests"
@@ -271,6 +287,11 @@ echo "Running Nodo explicit transaction input tests..."
 echo
 echo "Running Nodo GenesisReward state flow tests..."
 "$BUILD_DIR/genesis_reward_state_flow_tests"
+
+
+echo
+echo "Running Nodo epoch reward distributor tests..."
+"$BUILD_DIR/epoch_reward_distributor_tests"
 
 echo
 echo "Protection economics tests completed successfully."
