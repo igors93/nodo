@@ -9,6 +9,10 @@
 #include "economics/ValidationWorkRecord.hpp"
 #include "economics/ValidatorScoreRecord.hpp"
 #include "utils/Amount.hpp"
+#include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/PrivateKey.hpp"
+#include "crypto/PublicKey.hpp"
+#include "crypto/SignatureBundle.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -120,7 +124,7 @@ Blockchain buildRewardBlockchain() {
             kTimestamp + 4
         );
 
-    const Transaction transfer(
+    Transaction transfer(
         TransactionType::TRANSFER,
         "nodo1validatorA",
         "nodo1alice",
@@ -131,6 +135,25 @@ Blockchain buildRewardBlockchain() {
         {rewardA.createRewardCoinLot(0).id()}
     );
 
+    const nodo::crypto::PublicKey publicKey(
+        nodo::crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
+        "genesis-reward-state-flow-test-public-key"
+    );
+
+    const nodo::crypto::PrivateKey privateKey(
+        nodo::crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
+        "genesis-reward-state-flow-test-private-key"
+    );
+
+    transfer.attachSignatureBundle(
+        nodo::crypto::SignatureBundle::createDevelopmentSignature(
+            transfer.signingPayload(),
+            publicKey,
+            privateKey,
+            kTimestamp + 6
+        )
+    );
+
     const std::vector<LedgerRecord> secondRecords = {
         LedgerRecord::fromGenesisRewardRecord(
             rewardB,
@@ -139,7 +162,7 @@ Blockchain buildRewardBlockchain() {
         LedgerRecord::fromTransaction(
             transfer,
             nodo::crypto::CryptoPolicy::developmentPolicy(),
-            nodo::crypto::SecurityContext::Development,
+            nodo::crypto::SecurityContext::DEVELOPMENT_ONLY,
             kTimestamp + 7
         )
     };
