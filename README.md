@@ -1,36 +1,30 @@
 # Nodo
 
----
+## Implementation: Validator Proposal Registry and Double-Sign Detection
 
-## Implementation: Validator Block Proposal Signature
-
-The next code step signs protection block proposals with a validator identity.
+This phase adds a registry for signed validator block proposals.
 
 New components:
 
 ```text
-ValidatorBlockProposalSignature
-SignedProtectionBlockProposal
-ValidatorBlockProposalSigner
+ValidatorProposalRegistryEntry
+ValidatorDoubleSignEvidence
+ValidatorProposalRegistrationResult
+ValidatorProposalRegistry
 ```
 
-This allows Nodo to verify:
+Security behavior:
 
 ```text
-who proposed the reward block
-which exact block was signed
-which exact chain tip the proposal belongs to
-whether the signature matches the proposal payload
+valid signed proposals are stored
+duplicate proposal broadcasts are ignored safely
+the same validator signing two block hashes for the same height is detected
+invalid signatures are rejected before conflict checks
+wrong-chain-tip proposals are rejected
 ```
 
 New test:
 
 ```text
-tests/core/ValidatorBlockProposalSignatureTests.cpp
-```
-
-New documentation:
-
-```text
-docs/economics/VALIDATOR_BLOCK_PROPOSAL_SIGNATURE.md
+tests/core/ValidatorProposalRegistryTests.cpp
 ```

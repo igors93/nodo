@@ -82,6 +82,7 @@ echo "Building Nodo C++ application..."
     "$ROOT_DIR/src/core/Blockchain.cpp" \
     "$ROOT_DIR/src/core/ProtectionBlockProposal.cpp" \
     "$ROOT_DIR/src/core/ValidatorBlockProposalSignature.cpp" \
+    "$ROOT_DIR/src/core/ValidatorProposalRegistry.cpp" \
     "$ROOT_DIR/src/core/ChainStateRebuilder.cpp" \
     "$ROOT_DIR/src/staking/SecurityWeight.cpp" \
     "$ROOT_DIR/src/crypto/CryptoAlgorithm.cpp" \

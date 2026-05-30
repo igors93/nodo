@@ -1,28 +1,18 @@
-# Validator block proposal signature phase
+# Validator proposal registry and double-sign detection phase
 
-This phase adds validator signatures to protection block proposals.
+This phase adds a local registry for signed validator block proposals.
 
 New components:
 
 ```text
-ValidatorBlockProposalSignature
-SignedProtectionBlockProposal
-ValidatorBlockProposalSigner
-```
-
-What this means:
-
-```text
-reward block proposals now carry validator identity
-the signature commits to the exact block hash
-the signature commits to the exact chain tip
-signed proposals cannot be replayed on a different proposal
-signed proposals cannot be replayed on a different chain tip
-development signatures are rejected by future production-like policies
+ValidatorProposalRegistryEntry
+ValidatorDoubleSignEvidence
+ValidatorProposalRegistrationResult
+ValidatorProposalRegistry
 ```
 
 Recommended commit:
 
 ```bash
-git commit -m "Add validator block proposal signature"
+git commit -m "Add validator proposal registry and double-sign detection"
 ```
