@@ -1,75 +1,12 @@
 @echo off
-setlocal enabledelayedexpansion
-
-REM Nodo unified test runner for Windows.
-REM This script runs all available project-level tests in a deterministic order.
+setlocal
 
 set "ROOT_DIR=%~dp0.."
 
-echo Nodo unified test runner
-echo ------------------------
-echo.
+echo Nodo unified CMake/CTest runner
+echo ------------------------------
 
-if not exist "%ROOT_DIR%\scripts\test_crypto.bat" (
-    echo Error: required test script was not found:
-    echo %ROOT_DIR%\scripts\test_crypto.bat
-    exit /b 1
-)
-
-if not exist "%ROOT_DIR%\scripts\test_economics.bat" (
-    echo Error: required test script was not found:
-    echo %ROOT_DIR%\scripts\test_economics.bat
-    exit /b 1
-)
-
-if not exist "%ROOT_DIR%\scripts\test_serialization.bat" (
-    echo Error: required test script was not found:
-    echo %ROOT_DIR%\scripts\test_serialization.bat
-    exit /b 1
-)
-
-if not exist "%ROOT_DIR%\scripts\test_storage.bat" (
-    echo Error: required test script was not found:
-    echo %ROOT_DIR%\scripts\test_storage.bat
-    exit /b 1
-)
-
-echo Running crypto tests...
-call "%ROOT_DIR%\scripts\test_crypto.bat"
-
-if errorlevel 1 (
-    echo Crypto tests failed.
-    exit /b 1
-)
-
-echo.
-echo Running protection economics tests...
-call "%ROOT_DIR%\scripts\test_economics.bat"
-
-if errorlevel 1 (
-    echo Protection economics tests failed.
-    exit /b 1
-)
-
-echo.
-echo Running serialization tests...
-call "%ROOT_DIR%\scripts\test_serialization.bat"
-
-if errorlevel 1 (
-    echo Serialization tests failed.
-    exit /b 1
-)
-
-echo.
-echo Running blockchain storage integration tests...
-call "%ROOT_DIR%\scripts\test_storage.bat"
-
-if errorlevel 1 (
-    echo Blockchain storage integration tests failed.
-    exit /b 1
-)
-
-echo.
-echo All Nodo tests completed successfully.
+cmd /c "%ROOT_DIR%\scripts\cmake_test_all.bat"
+if errorlevel 1 exit /b 1
 
 endlocal

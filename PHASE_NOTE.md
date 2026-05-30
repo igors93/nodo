@@ -1,43 +1,48 @@
-# Cycle 1 first implementation
+# Cycle 2 implementation
 
-This phase starts Cycle 1 with two parallel foundations.
+This phase completes Cycle 2 integration in two fronts.
 
-## Front A — validator identity
-
-New components:
-
-```text
-ValidatorRegistrationRecord
-ValidatorRegistryEntry
-ValidatorRegistryUpdateResult
-ValidatorRegistry
-```
-
-This binds a validator address to a public key and rejects invalid address/key pairs.
-
-## Front B — modular build foundation
+## Front A — validator proposal admission
 
 New components:
 
 ```text
-CMakeLists.txt
-scripts/cmake_build.sh
-scripts/cmake_test_all.sh
-scripts/cmake_build.bat
-scripts/cmake_test_all.bat
+ValidatorProposalAdmissionStatus
+ValidatorProposalAdmissionResult
+ValidatorProposalAdmissionPolicy
 ```
 
-This creates a `nodo_core` static library and lets tests link against the library instead of manually listing every `.cpp` file.
+This connects signed block proposals to the ValidatorRegistry.
 
-Recommended commits:
+A signed proposal is now admitted only when:
 
-```bash
-git commit -m "Add CMake modular build foundation"
-git commit -m "Add validator registry identity binding"
+```text
+signature is valid
+proposal matches current blockchain tip
+validator is registered
+validator is active
+proposal public key matches registered public key
 ```
 
-If committed together:
+## Front B — complete CMake/CTest script integration
+
+Legacy build/test scripts now delegate to CMake/CTest:
+
+```text
+scripts/build.sh
+scripts/build.bat
+scripts/test_all.sh
+scripts/test_all.bat
+scripts/test_economics.sh
+scripts/test_economics.bat
+scripts/test_storage.sh
+scripts/test_storage.bat
+```
+
+This stops the manual `.cpp` linker-input problem.
+
+Recommended commit:
 
 ```bash
-git commit -m "Add validator registry and modular build foundation"
+git commit -m "Connect validator proposal admission and CMake test runner"
 ```

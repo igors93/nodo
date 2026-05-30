@@ -61,6 +61,8 @@ file(GLOB_RECURSE NODO_TEST_SOURCES CONFIGURE_DEPENDS
 
 foreach(test_source ${NODO_TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
+    get_filename_component(test_dir ${test_source} DIRECTORY)
+    file(RELATIVE_PATH test_relative_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${test_dir}")
     string(REGEX REPLACE "[^A-Za-z0-9_]" "_" test_target "${test_name}")
 
     add_executable(${test_target}
@@ -77,8 +79,35 @@ foreach(test_source ${NODO_TEST_SOURCES})
             ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
+    set_target_properties(${test_target}
+        PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tests/${test_relative_dir}"
+    )
+
     add_test(
-        NAME ${test_target}
+        NAME ${test_relative_dir}/${test_target}
         COMMAND ${test_target}
     )
+
+    if(test_relative_dir STREQUAL "economics")
+        set_tests_properties(${test_relative_dir}/${test_target}
+            PROPERTIES LABELS "economics;protection"
+        )
+    elseif(test_relative_dir STREQUAL "storage")
+        set_tests_properties(${test_relative_dir}/${test_target}
+            PROPERTIES LABELS "storage"
+        )
+    elseif(test_relative_dir STREQUAL "core")
+        set_tests_properties(${test_relative_dir}/${test_target}
+            PROPERTIES LABELS "core;protection"
+        )
+    elseif(test_relative_dir STREQUAL "crypto")
+        set_tests_properties(${test_relative_dir}/${test_target}
+            PROPERTIES LABELS "crypto"
+        )
+    else()
+        set_tests_properties(${test_relative_dir}/${test_target}
+            PROPERTIES LABELS "${test_relative_dir}"
+        )
+    endif()
 endforeach()
