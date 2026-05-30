@@ -1,6 +1,7 @@
 #include "node/RuntimeBlockPipeline.hpp"
 
 #include "consensus/ValidatorVoteRecord.hpp"
+#include "core/BlockStateTransitionValidator.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/DevelopmentSignatureProvider.hpp"
@@ -78,6 +79,8 @@ std::string runtimeBlockPipelineStatusToString(
             return "INVALID_RUNTIME";
         case RuntimeBlockPipelineStatus::BLOCK_PRODUCTION_FAILED:
             return "BLOCK_PRODUCTION_FAILED";
+        case RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED:
+            return "STATE_TRANSITION_FAILED";
         case RuntimeBlockPipelineStatus::NOT_ENOUGH_VALIDATORS:
             return "NOT_ENOUGH_VALIDATORS";
         case RuntimeBlockPipelineStatus::VOTE_BUILD_FAILED:
@@ -214,6 +217,19 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         return RuntimeBlockPipelineResult::rejected(
             RuntimeBlockPipelineStatus::BLOCK_PRODUCTION_FAILED,
             production.reason()
+        );
+    }
+
+    const core::BlockValidationResult transitionValidation =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            runtime.blockchain(),
+            production.block()
+        );
+
+    if (!transitionValidation.accepted()) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            transitionValidation.reason()
         );
     }
 

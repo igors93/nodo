@@ -1,0 +1,20 @@
+# Consensus Rules
+
+A validator may vote for a candidate block only when:
+
+- the validator is active in the validator registry;
+- the vote is structurally valid;
+- the vote signature verifies under the configured crypto policy;
+- the block passed state-transition validation;
+- the vote references the expected block height, block hash, previous hash and
+  consensus round.
+
+A quorum certificate is valid only when enough active validator weight approves
+the same block under the configured quorum threshold. Finality means the block
+has a valid quorum certificate, has been accepted by the finalizer and has been
+persisted with an auditable finalized record.
+
+Current localnet uses deterministic local votes through the development
+signature provider. That is acceptable only for localnet. Future testnet and
+mainnet configs must refuse startup without a real signature provider and key
+store.

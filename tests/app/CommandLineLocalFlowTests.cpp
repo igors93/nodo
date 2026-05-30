@@ -72,7 +72,8 @@ void testLocalRuntimeFlow() {
     const auto submit =
         CommandLineInterface::execute(
             {
-                "submit-demo-transaction",
+                "tx",
+                "submit",
                 "--data-dir",
                 path.string(),
                 "--timestamp",
@@ -89,7 +90,8 @@ void testLocalRuntimeFlow() {
     const auto produce =
         CommandLineInterface::execute(
             {
-                "produce-demo-block",
+                "block",
+                "produce",
                 "--data-dir",
                 path.string(),
                 peerOptions[0],
@@ -111,6 +113,7 @@ void testLocalRuntimeFlow() {
     const auto reload =
         CommandLineInterface::execute(
             {
+                "node",
                 "reload",
                 "--data-dir",
                 path.string(),
@@ -128,6 +131,29 @@ void testLocalRuntimeFlow() {
         reload.message().find("Loaded finalized blocks: 1") != std::string::npos &&
         reload.message().find("Loaded mempool transactions: 0") != std::string::npos,
         "Reload should rebuild the runtime from finalized block and empty mempool."
+    );
+
+    const auto audit =
+        CommandLineInterface::execute(
+            {
+                "chain",
+                "audit",
+                "--data-dir",
+                path.string(),
+                peerOptions[0],
+                peerOptions[1],
+                peerOptions[2],
+                peerOptions[3],
+                "--timestamp",
+                std::to_string(kTimestamp + 350)
+            }
+        );
+
+    requireCondition(
+        audit.success() &&
+        audit.message().find("Nodo chain audit passed.") != std::string::npos &&
+        audit.message().find("Loaded finalized blocks: 1") != std::string::npos,
+        "Chain audit should verify the persisted local chain."
     );
 
     const auto status =

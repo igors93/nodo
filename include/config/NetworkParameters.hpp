@@ -31,7 +31,13 @@ public:
         std::uint64_t quorumThresholdNumerator,
         std::uint64_t quorumThresholdDenominator,
         std::uint64_t maxTransactionsPerBlock,
-        std::uint64_t maxPeerCount
+        std::uint64_t maxPeerCount,
+        std::uint64_t maxMempoolTransactions = 10000,
+        std::uint64_t minimumFeeRawUnits = 0,
+        std::uint64_t targetBlockTimeSeconds = 60,
+        std::uint64_t finalityDepth = 1,
+        std::string signatureAlgorithm = "DEVELOPMENT_FAKE_SIGNATURE",
+        std::string storageFormatVersion = "NODO_STORAGE_V2"
     );
 
     const std::string& chainId() const;
@@ -43,6 +49,12 @@ public:
     std::uint64_t quorumThresholdDenominator() const;
     std::uint64_t maxTransactionsPerBlock() const;
     std::uint64_t maxPeerCount() const;
+    std::uint64_t maxMempoolTransactions() const;
+    std::uint64_t minimumFeeRawUnits() const;
+    std::uint64_t targetBlockTimeSeconds() const;
+    std::uint64_t finalityDepth() const;
+    const std::string& signatureAlgorithm() const;
+    const std::string& storageFormatVersion() const;
 
     bool isValid() const;
 
@@ -61,6 +73,12 @@ private:
     std::uint64_t m_quorumThresholdDenominator;
     std::uint64_t m_maxTransactionsPerBlock;
     std::uint64_t m_maxPeerCount;
+    std::uint64_t m_maxMempoolTransactions;
+    std::uint64_t m_minimumFeeRawUnits;
+    std::uint64_t m_targetBlockTimeSeconds;
+    std::uint64_t m_finalityDepth;
+    std::string m_signatureAlgorithm;
+    std::string m_storageFormatVersion;
 };
 
 /*

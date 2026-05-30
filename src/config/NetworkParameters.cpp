@@ -90,7 +90,13 @@ NetworkParameters::NetworkParameters()
       m_quorumThresholdNumerator(0),
       m_quorumThresholdDenominator(0),
       m_maxTransactionsPerBlock(0),
-      m_maxPeerCount(0) {}
+      m_maxPeerCount(0),
+      m_maxMempoolTransactions(0),
+      m_minimumFeeRawUnits(0),
+      m_targetBlockTimeSeconds(0),
+      m_finalityDepth(0),
+      m_signatureAlgorithm(""),
+      m_storageFormatVersion("") {}
 
 NetworkParameters::NetworkParameters(
     std::string chainId,
@@ -101,7 +107,13 @@ NetworkParameters::NetworkParameters(
     std::uint64_t quorumThresholdNumerator,
     std::uint64_t quorumThresholdDenominator,
     std::uint64_t maxTransactionsPerBlock,
-    std::uint64_t maxPeerCount
+    std::uint64_t maxPeerCount,
+    std::uint64_t maxMempoolTransactions,
+    std::uint64_t minimumFeeRawUnits,
+    std::uint64_t targetBlockTimeSeconds,
+    std::uint64_t finalityDepth,
+    std::string signatureAlgorithm,
+    std::string storageFormatVersion
 )
     : m_chainId(std::move(chainId)),
       m_networkName(std::move(networkName)),
@@ -111,7 +123,13 @@ NetworkParameters::NetworkParameters(
       m_quorumThresholdNumerator(quorumThresholdNumerator),
       m_quorumThresholdDenominator(quorumThresholdDenominator),
       m_maxTransactionsPerBlock(maxTransactionsPerBlock),
-      m_maxPeerCount(maxPeerCount) {}
+      m_maxPeerCount(maxPeerCount),
+      m_maxMempoolTransactions(maxMempoolTransactions),
+      m_minimumFeeRawUnits(minimumFeeRawUnits),
+      m_targetBlockTimeSeconds(targetBlockTimeSeconds),
+      m_finalityDepth(finalityDepth),
+      m_signatureAlgorithm(std::move(signatureAlgorithm)),
+      m_storageFormatVersion(std::move(storageFormatVersion)) {}
 
 const std::string& NetworkParameters::chainId() const {
     return m_chainId;
@@ -149,17 +167,46 @@ std::uint64_t NetworkParameters::maxPeerCount() const {
     return m_maxPeerCount;
 }
 
+std::uint64_t NetworkParameters::maxMempoolTransactions() const {
+    return m_maxMempoolTransactions;
+}
+
+std::uint64_t NetworkParameters::minimumFeeRawUnits() const {
+    return m_minimumFeeRawUnits;
+}
+
+std::uint64_t NetworkParameters::targetBlockTimeSeconds() const {
+    return m_targetBlockTimeSeconds;
+}
+
+std::uint64_t NetworkParameters::finalityDepth() const {
+    return m_finalityDepth;
+}
+
+const std::string& NetworkParameters::signatureAlgorithm() const {
+    return m_signatureAlgorithm;
+}
+
+const std::string& NetworkParameters::storageFormatVersion() const {
+    return m_storageFormatVersion;
+}
+
 bool NetworkParameters::isValid() const {
     if (!isSafeScalar(m_chainId) ||
         !isSafeScalar(m_networkName) ||
-        !isSafeScalar(m_protocolVersion)) {
+        !isSafeScalar(m_protocolVersion) ||
+        !isSafeScalar(m_signatureAlgorithm) ||
+        !isSafeScalar(m_storageFormatVersion)) {
         return false;
     }
 
     if (m_epochDurationSeconds == 0 ||
         m_minimumValidatorCount == 0 ||
         m_maxTransactionsPerBlock == 0 ||
-        m_maxPeerCount == 0) {
+        m_maxPeerCount == 0 ||
+        m_maxMempoolTransactions == 0 ||
+        m_targetBlockTimeSeconds == 0 ||
+        m_finalityDepth == 0) {
         return false;
     }
 
@@ -193,6 +240,12 @@ std::string NetworkParameters::serialize() const {
         << ";quorumThresholdDenominator=" << m_quorumThresholdDenominator
         << ";maxTransactionsPerBlock=" << m_maxTransactionsPerBlock
         << ";maxPeerCount=" << m_maxPeerCount
+        << ";maxMempoolTransactions=" << m_maxMempoolTransactions
+        << ";minimumFeeRawUnits=" << m_minimumFeeRawUnits
+        << ";targetBlockTimeSeconds=" << m_targetBlockTimeSeconds
+        << ";finalityDepth=" << m_finalityDepth
+        << ";signatureAlgorithm=" << m_signatureAlgorithm
+        << ";storageFormatVersion=" << m_storageFormatVersion
         << "}";
 
     return oss.str();
@@ -208,7 +261,13 @@ NetworkParameters NetworkParameters::developmentLocal() {
         2,
         3,
         1000,
-        128
+        128,
+        10000,
+        0,
+        60,
+        1,
+        "DEVELOPMENT_FAKE_SIGNATURE",
+        "NODO_STORAGE_V2"
     );
 }
 

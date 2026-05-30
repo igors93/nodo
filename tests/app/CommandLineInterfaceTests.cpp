@@ -47,8 +47,9 @@ void testHelpCommand() {
 
     requireCondition(
         result.success() &&
-        result.message().find("nodo init") != std::string::npos,
-        "Help command should succeed and include init usage."
+        result.message().find("nodo tx submit") != std::string::npos &&
+        result.message().find("nodo chain audit") != std::string::npos,
+        "Help command should succeed and include protocol command usage."
     );
 }
 

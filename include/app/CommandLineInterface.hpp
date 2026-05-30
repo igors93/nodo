@@ -94,6 +94,10 @@ private:
         const CommandLineOptions& options
     );
 
+    static CommandLineResult executeChainAudit(
+        const CommandLineOptions& options
+    );
+
     static CommandLineResult executeProduceDemoBlock(
         const CommandLineOptions& options
     );

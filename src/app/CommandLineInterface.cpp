@@ -85,6 +85,17 @@ bool isOption(
     return value.rfind("--", 0) == 0;
 }
 
+bool isCommandGroup(
+    const std::string& value
+) {
+    return value == "tx" ||
+           value == "block" ||
+           value == "node" ||
+           value == "chain" ||
+           value == "keys" ||
+           value == "validator";
+}
+
 } // namespace
 
 CommandLineOptions::CommandLineOptions()
@@ -209,16 +220,38 @@ CommandLineResult CommandLineInterface::execute(
             return executeInspect(options);
         }
 
-        if (options.command == "reload") {
+        if (options.command == "reload" ||
+            options.command == "node reload") {
             return executeReload(options);
         }
 
-        if (options.command == "produce-demo-block") {
+        if (options.command == "chain audit") {
+            return executeChainAudit(options);
+        }
+
+        if (options.command == "produce-demo-block" ||
+            options.command == "block produce") {
             return executeProduceDemoBlock(options);
         }
 
-        if (options.command == "submit-demo-transaction") {
+        if (options.command == "submit-demo-transaction" ||
+            options.command == "tx submit") {
             return executeSubmitDemoTransaction(options);
+        }
+
+        if (options.command == "keys create" ||
+            options.command == "keys list") {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "Key store commands are protocol commands but are not implemented yet.\n"
+            );
+        }
+
+        if (options.command == "validator list") {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "Validator listing is not implemented yet.\n"
+            );
         }
 
         return CommandLineResult::failure(
@@ -244,6 +277,13 @@ CommandLineOptions CommandLineInterface::parse(
         !isOption(args.front())) {
         options.command = args.front();
         index = 1;
+
+        if (isCommandGroup(options.command) &&
+            index < args.size() &&
+            !isOption(args[index])) {
+            options.command += " " + args[index];
+            ++index;
+        }
     }
 
     while (index < args.size()) {
@@ -314,10 +354,18 @@ std::string CommandLineInterface::helpText() {
         "\n"
         "Usage:\n"
         "  nodo help\n"
-        "  nodo demo\n"
         "  nodo init [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo status [--data-dir PATH]\n"
         "  nodo inspect [--data-dir PATH]\n"
+        "  nodo node reload [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
+        "  nodo tx submit [--data-dir PATH]\n"
+        "  nodo block produce [--data-dir PATH]\n"
+        "  nodo chain audit [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
+        "  nodo keys create|list\n"
+        "  nodo validator list\n"
+        "\n"
+        "Compatibility commands:\n"
+        "  nodo demo\n"
         "  nodo reload [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo submit-demo-transaction [--data-dir PATH]\n"
         "  nodo produce-demo-block [--data-dir PATH]\n"
@@ -490,6 +538,59 @@ CommandLineResult CommandLineInterface::executeReload(
     return CommandLineResult::success(output.str());
 }
 
+CommandLineResult CommandLineInterface::executeChainAudit(
+    const CommandLineOptions& options
+) {
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            developmentGenesisConfig(),
+            localPeerFromOptions(options)
+        );
+
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Nodo chain audit failed: "
+            + load.reason()
+            + "\n"
+        );
+    }
+
+    const node::NodeRuntime& runtime =
+        load.runtime();
+
+    if (!runtime.blockchain().isValid()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Nodo chain audit failed: rebuilt blockchain is invalid.\n"
+        );
+    }
+
+    if (!runtime.mempool().isValid(
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION
+        )) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Nodo chain audit failed: rebuilt mempool is invalid.\n"
+        );
+    }
+
+    std::ostringstream output;
+
+    output << "Nodo chain audit passed.\n"
+           << "Data directory: " << options.dataDirectory.string() << "\n"
+           << "Genesis id: " << load.manifest().genesisConfigId() << "\n"
+           << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
+           << "Latest hash: " << load.manifest().latestBlockHash() << "\n"
+           << "Loaded finalized blocks: " << load.loadedBlockCount() << "\n"
+           << "Loaded mempool transactions: " << load.loadedMempoolTransactionCount() << "\n"
+           << "Validators: " << load.manifest().validatorCount() << "\n";
+
+    return CommandLineResult::success(output.str());
+}
+
 CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
     const CommandLineOptions& options
 ) {
@@ -523,7 +624,7 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
     if (!persisted.success()) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
-            "Failed to persist demo transaction: "
+            "Failed to persist transaction: "
             + persisted.reason()
             + "\n"
         );
@@ -531,7 +632,7 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
 
     std::ostringstream output;
 
-    output << "Nodo demo transaction submitted.\n"
+    output << "Nodo transaction submitted.\n"
            << "Transaction id: " << persisted.transactionId() << "\n"
            << "Mempool file: " << persisted.path().string() << "\n";
 
@@ -584,7 +685,7 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
         if (!persisted.success()) {
             return CommandLineResult::failure(
                 CommandLineStatus::COMMAND_FAILED,
-                "Failed to create fallback demo transaction: "
+                "Failed to create fallback local transaction: "
                 + persisted.reason()
                 + "\n"
             );
@@ -601,7 +702,7 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
         if (!admission.success()) {
             return CommandLineResult::failure(
                 CommandLineStatus::COMMAND_FAILED,
-                "Failed to admit fallback demo transaction: "
+                "Failed to admit fallback local transaction: "
                 + admission.reason()
                 + "\n"
             );
@@ -622,7 +723,7 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
     if (!pipeline.finalized()) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
-            "Failed to produce finalized demo block: "
+            "Failed to produce finalized block: "
             + pipeline.reason()
             + "\n"
         );
@@ -653,7 +754,7 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
 
     std::ostringstream output;
 
-    output << "Nodo demo block finalized and persisted.\n"
+    output << "Nodo block finalized and persisted.\n"
            << "Block height: " << pipeline.block().index() << "\n"
            << "Block hash: " << pipeline.block().hash() << "\n"
            << "Transactions finalized: " << pipeline.finalizedTransactionIds().size() << "\n"

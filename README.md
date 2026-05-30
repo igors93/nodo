@@ -1,11 +1,15 @@
 # Nodo
 
-Nodo is an experimental C++ blockchain node focused on network protection,
-auditable state, reliable local persistence and useful validator work.
+Nodo is an experimental C++ foundation for the Nodo Protocol, a
+Proof-of-Protection blockchain protocol focused on network protection,
+auditable state transitions, safe finality and damage reduction when nodes or
+validators misbehave.
 
-The project is not production-ready. Current cryptography uses a real SHA-256
-hash boundary, but signatures and block production still run in a development
-mode so the runtime can be exercised end to end.
+Nodo is not a production mainnet. The current `localnet` path is intentionally
+small, but it uses the same protocol pipeline that future `testnet` and
+`mainnet` configurations should use: transaction admission, candidate block
+production, state-transition validation, validator votes, quorum certificate,
+finalization, persistence, reload and chain audit.
 
 ## Current Shape
 
@@ -28,23 +32,38 @@ The CLI binary is written to:
 build/nodo
 ```
 
-## Local Development Flow
+## Localnet Flow
 
 ```bash
 build/nodo init --data-dir .nodo
-build/nodo submit-demo-transaction --data-dir .nodo
-build/nodo produce-demo-block --data-dir .nodo
-build/nodo reload --data-dir .nodo
+build/nodo tx submit --data-dir .nodo
+build/nodo block produce --data-dir .nodo
+build/nodo node reload --data-dir .nodo
+build/nodo chain audit --data-dir .nodo
 build/nodo status --data-dir .nodo
 build/nodo inspect --data-dir .nodo
 ```
 
-Demo commands are intentionally local development commands. They use fake
-development signatures and are isolated from any claim of production consensus.
+Compatibility commands such as `submit-demo-transaction` and
+`produce-demo-block` still exist while tests and operator muscle memory migrate,
+but the preferred CLI names are protocol-oriented.
+
+Current limitations are explicit:
+
+- `localnet` still uses a development signature provider;
+- key-store commands are declared but not implemented;
+- no P2P validator networking is included in this phase;
+- deeper balance, nonce, fee, coin-lot and supply checks must continue moving
+  behind the state-transition validation gate.
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Protocol](docs/PROTOCOL.md)
+- [State transition](docs/STATE_TRANSITION.md)
+- [Consensus rules](docs/CONSENSUS_RULES.md)
+- [Security model](docs/SECURITY_MODEL.md)
+- [Networks](docs/NETWORKS.md)
 - [CLI](docs/CLI.md)
 - [Node data directory](docs/NODE_DATA_DIRECTORY.md)
 - [Development mode](docs/DEVELOPMENT_MODE.md)
