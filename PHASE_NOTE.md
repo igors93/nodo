@@ -1,28 +1,28 @@
-# Epoch reward block proposal phase
+# Validator block proposal signature phase
 
-This phase connects epoch reward distribution to deterministic block proposal.
+This phase adds validator signatures to protection block proposals.
 
 New components:
 
 ```text
-EpochRewardLedgerBuildResult
-EpochRewardLedgerBuilder
-ProtectionBlockProposal
-ProtectionBlockBuilder
+ValidatorBlockProposalSignature
+SignedProtectionBlockProposal
+ValidatorBlockProposalSigner
 ```
 
 What this means:
 
 ```text
-reward distributions can now become official LedgerRecords
-reward LedgerRecords are ordered canonically
-a protection reward block can be proposed for the next chain index
-the proposal is bound to the current chain tip
-no-reward epochs still produce an auditable ProtectionEpoch block
+reward block proposals now carry validator identity
+the signature commits to the exact block hash
+the signature commits to the exact chain tip
+signed proposals cannot be replayed on a different proposal
+signed proposals cannot be replayed on a different chain tip
+development signatures are rejected by future production-like policies
 ```
 
 Recommended commit:
 
 ```bash
-git commit -m "Connect epoch rewards to block proposal"
+git commit -m "Add validator block proposal signature"
 ```
