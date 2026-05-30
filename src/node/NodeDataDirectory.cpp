@@ -1,7 +1,10 @@
 #include "node/NodeDataDirectory.hpp"
 
-#include <fstream>
+#include "serialization/KeyValueFileCodec.hpp"
+#include "storage/AtomicFile.hpp"
+
 #include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -103,55 +106,6 @@ std::string parseString(
     }
 
     return found->second;
-}
-
-std::map<std::string, std::string> parseKeyValueFile(
-    const std::string& contents
-) {
-    std::istringstream input(contents);
-    std::string line;
-    std::map<std::string, std::string> fields;
-    bool sawVersion = false;
-
-    while (std::getline(input, line)) {
-        if (line.empty()) {
-            continue;
-        }
-
-        if (!sawVersion) {
-            if (line != MANIFEST_VERSION) {
-                throw std::invalid_argument("Unsupported manifest version.");
-            }
-
-            sawVersion = true;
-            continue;
-        }
-
-        const std::size_t separator =
-            line.find('=');
-
-        if (separator == std::string::npos ||
-            separator == 0 ||
-            separator + 1 >= line.size()) {
-            throw std::invalid_argument("Malformed manifest line.");
-        }
-
-        const std::string key =
-            line.substr(0, separator);
-
-        const std::string value =
-            line.substr(separator + 1);
-
-        if (!fields.emplace(key, value).second) {
-            throw std::invalid_argument("Duplicate manifest field: " + key);
-        }
-    }
-
-    if (!sawVersion) {
-        throw std::invalid_argument("Missing manifest version.");
-    }
-
-    return fields;
 }
 
 } // namespace
@@ -320,28 +274,49 @@ std::string NodeRuntimeManifest::serialize() const {
 }
 
 std::string NodeRuntimeManifest::toFileContents() const {
-    std::ostringstream oss;
-
-    oss << MANIFEST_VERSION << "\n"
-        << "chainId=" << m_chainId << "\n"
-        << "networkName=" << m_networkName << "\n"
-        << "protocolVersion=" << m_protocolVersion << "\n"
-        << "genesisConfigId=" << m_genesisConfigId << "\n"
-        << "latestBlockHeight=" << m_latestBlockHeight << "\n"
-        << "latestBlockHash=" << m_latestBlockHash << "\n"
-        << "validatorCount=" << m_validatorCount << "\n"
-        << "peerCount=" << m_peerCount << "\n"
-        << "createdAt=" << m_createdAt << "\n"
-        << "updatedAt=" << m_updatedAt << "\n";
-
-    return oss.str();
+    return serialization::KeyValueFileCodec::serialize(
+        MANIFEST_VERSION,
+        {
+            {"chainId", m_chainId},
+            {"networkName", m_networkName},
+            {"protocolVersion", m_protocolVersion},
+            {"genesisConfigId", m_genesisConfigId},
+            {"latestBlockHeight", std::to_string(m_latestBlockHeight)},
+            {"latestBlockHash", m_latestBlockHash},
+            {"validatorCount", std::to_string(m_validatorCount)},
+            {"peerCount", std::to_string(m_peerCount)},
+            {"createdAt", std::to_string(m_createdAt)},
+            {"updatedAt", std::to_string(m_updatedAt)}
+        }
+    );
 }
 
 NodeRuntimeManifest NodeRuntimeManifest::fromFileContents(
     const std::string& contents
 ) {
+    const serialization::KeyValueFileDocument document =
+        serialization::KeyValueFileCodec::parse(
+            contents,
+            MANIFEST_VERSION
+        );
+
+    document.requireOnlyFields(
+        {
+            "chainId",
+            "networkName",
+            "protocolVersion",
+            "genesisConfigId",
+            "latestBlockHeight",
+            "latestBlockHash",
+            "validatorCount",
+            "peerCount",
+            "createdAt",
+            "updatedAt"
+        }
+    );
+
     const std::map<std::string, std::string> fields =
-        parseKeyValueFile(contents);
+        document.fields();
 
     NodeRuntimeManifest manifest(
         parseString(fields, "chainId"),
@@ -776,35 +751,16 @@ void NodeDataDirectory::writeTextFile(
     const std::filesystem::path& path,
     const std::string& contents
 ) {
-    std::ofstream output(
+    storage::AtomicFile::writeTextFile(
         path,
-        std::ios::out | std::ios::trunc
+        contents
     );
-
-    if (!output) {
-        throw std::runtime_error("Unable to open file for writing: " + path.string());
-    }
-
-    output << contents;
-
-    if (!output) {
-        throw std::runtime_error("Unable to write file: " + path.string());
-    }
 }
 
 std::string NodeDataDirectory::readTextFile(
     const std::filesystem::path& path
 ) {
-    std::ifstream input(path);
-
-    if (!input) {
-        throw std::runtime_error("Unable to open file for reading: " + path.string());
-    }
-
-    std::ostringstream buffer;
-    buffer << input.rdbuf();
-
-    return buffer.str();
+    return storage::AtomicFile::readTextFile(path);
 }
 
 } // namespace nodo::node

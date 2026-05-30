@@ -3,9 +3,9 @@
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "serialization/KeyValueFileCodec.hpp"
+#include "storage/AtomicFile.hpp"
 
-#include <fstream>
-#include <map>
 #include <sstream>
 #include <utility>
 
@@ -13,62 +13,28 @@ namespace nodo::node {
 
 namespace {
 
-std::map<std::string, std::string> parseKeyValueLines(
+constexpr const char* MEMPOOL_TRANSACTION_VERSION =
+    "NODO_MEMPOOL_TRANSACTION_V1";
+
+serialization::KeyValueFileDocument parseTransactionDocument(
     const std::string& contents
 ) {
-    std::map<std::string, std::string> fields;
-    std::istringstream input(contents);
-    std::string line;
-    bool first = true;
-
-    while (std::getline(input, line)) {
-        if (line.empty()) {
-            continue;
-        }
-
-        if (first &&
-            line == "NODO_MEMPOOL_TRANSACTION_V1") {
-            fields.emplace("version", line);
-            first = false;
-            continue;
-        }
-
-        first = false;
-
-        const std::size_t separator =
-            line.find('=');
-
-        if (separator == std::string::npos ||
-            separator == 0 ||
-            separator + 1 >= line.size()) {
-            throw std::invalid_argument("Malformed mempool transaction file line.");
-        }
-
-        fields.emplace(
-            line.substr(0, separator),
-            line.substr(separator + 1)
+    serialization::KeyValueFileDocument document =
+        serialization::KeyValueFileCodec::parse(
+            contents,
+            MEMPOOL_TRANSACTION_VERSION
         );
-    }
 
-    if (fields.find("version") == fields.end()) {
-        throw std::invalid_argument("Missing mempool transaction file version.");
-    }
+    document.requireOnlyFields(
+        {
+            "transactionId",
+            "acceptedAt",
+            "publicKeyMaterial",
+            "transaction"
+        }
+    );
 
-    return fields;
-}
-
-std::string requireField(
-    const std::map<std::string, std::string>& fields,
-    const std::string& key
-) {
-    const auto found =
-        fields.find(key);
-
-    if (found == fields.end()) {
-        throw std::invalid_argument("Missing mempool transaction field: " + key);
-    }
-
-    return found->second;
+    return document;
 }
 
 bool isSafeTransactionId(
@@ -362,10 +328,10 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
                 continue;
             }
 
-            try {
-                const std::string contents =
-                    readTextFile(entry.path());
+            const std::string contents =
+                readTextFile(entry.path());
 
+            try {
                 core::Transaction transaction =
                     decodeTransactionFile(contents);
 
@@ -385,8 +351,14 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
                 } else {
                     ++skippedCount;
                 }
-            } catch (const std::exception&) {
-                ++skippedCount;
+            } catch (const std::exception& error) {
+                return PersistentMempoolLoadResult::rejected(
+                    PersistentMempoolLoadStatus::IO_ERROR,
+                    "Invalid persistent mempool file "
+                    + entry.path().string()
+                    + ": "
+                    + error.what()
+                );
             }
         }
     } catch (const std::exception& error) {
@@ -445,31 +417,31 @@ std::string PersistentMempoolStore::transactionFileContents(
     const crypto::PublicKey& developmentPublicKey,
     std::int64_t acceptedAt
 ) {
-    std::ostringstream oss;
-
-    oss << "NODO_MEMPOOL_TRANSACTION_V1\n"
-        << "transactionId=" << transaction.id() << "\n"
-        << "acceptedAt=" << acceptedAt << "\n"
-        << "publicKeyMaterial=" << developmentPublicKey.keyMaterial() << "\n"
-        << "transaction=" << transaction.serialize() << "\n";
-
-    return oss.str();
+    return serialization::KeyValueFileCodec::serialize(
+        MEMPOOL_TRANSACTION_VERSION,
+        {
+            {"transactionId", transaction.id()},
+            {"acceptedAt", std::to_string(acceptedAt)},
+            {"publicKeyMaterial", developmentPublicKey.keyMaterial()},
+            {"transaction", transaction.serialize()}
+        }
+    );
 }
 
 core::Transaction PersistentMempoolStore::decodeTransactionFile(
     const std::string& contents
 ) {
-    const std::map<std::string, std::string> fields =
-        parseKeyValueLines(contents);
+    const serialization::KeyValueFileDocument fields =
+        parseTransactionDocument(contents);
 
     core::Transaction transaction =
         core::Transaction::deserializeForStateReplay(
-            requireField(fields, "transaction")
+            fields.requireField("transaction")
         );
 
     const crypto::PublicKey publicKey(
         crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        requireField(fields, "publicKeyMaterial")
+        fields.requireField("publicKeyMaterial")
     );
 
     const crypto::PrivateKey privateKey(
@@ -486,7 +458,7 @@ core::Transaction PersistentMempoolStore::decodeTransactionFile(
         )
     );
 
-    if (transaction.id() != requireField(fields, "transactionId")) {
+    if (transaction.id() != fields.requireField("transactionId")) {
         throw std::invalid_argument("Persistent transaction id does not match transaction payload.");
     }
 
@@ -496,11 +468,11 @@ core::Transaction PersistentMempoolStore::decodeTransactionFile(
 std::int64_t PersistentMempoolStore::decodeAcceptedAt(
     const std::string& contents
 ) {
-    const std::map<std::string, std::string> fields =
-        parseKeyValueLines(contents);
+    const serialization::KeyValueFileDocument fields =
+        parseTransactionDocument(contents);
 
     return std::stoll(
-        requireField(fields, "acceptedAt")
+        fields.requireField("acceptedAt")
     );
 }
 
@@ -508,35 +480,16 @@ void PersistentMempoolStore::writeTextFile(
     const std::filesystem::path& path,
     const std::string& contents
 ) {
-    std::ofstream output(
+    storage::AtomicFile::writeTextFile(
         path,
-        std::ios::out | std::ios::trunc
+        contents
     );
-
-    if (!output) {
-        throw std::runtime_error("Unable to open persistent mempool file for writing: " + path.string());
-    }
-
-    output << contents;
-
-    if (!output) {
-        throw std::runtime_error("Unable to write persistent mempool file: " + path.string());
-    }
 }
 
 std::string PersistentMempoolStore::readTextFile(
     const std::filesystem::path& path
 ) {
-    std::ifstream input(path);
-
-    if (!input) {
-        throw std::runtime_error("Unable to open persistent mempool file for reading: " + path.string());
-    }
-
-    std::ostringstream buffer;
-    buffer << input.rdbuf();
-
-    return buffer.str();
+    return storage::AtomicFile::readTextFile(path);
 }
 
 } // namespace nodo::node

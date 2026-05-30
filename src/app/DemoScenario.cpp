@@ -655,7 +655,8 @@ int runBlockchainFoundationDemo() {
      * Storage foundation.
      *
      * The current storage layer writes deterministic block snapshots to disk.
-     * Loading blocks back from disk will be implemented in a later phase.
+     * Runtime reload now lives in the node data directory flow; this legacy
+     * demo remains a broad component smoke test.
      */
     BlockFileStore blockFileStore("data");
 
@@ -739,7 +740,7 @@ int runBlockchainFoundationDemo() {
      * Block storage index foundation.
      *
      * The index maps block heights and hashes to deterministic block snapshot
-     * file names. This prepares Nodo for safe disk loading in a later phase.
+     * file names for the generic storage foundation.
      */
     BlockStorageIndex blockStorageIndex =
         BlockStorageIndex::fromBlockchainAndManifest(

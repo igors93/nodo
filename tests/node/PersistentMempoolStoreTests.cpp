@@ -12,6 +12,7 @@
 #include "utils/Amount.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -255,12 +256,54 @@ void testPersistIsIdempotent() {
     clean(path);
 }
 
+void testMalformedPersistentMempoolFileIsRejected() {
+    const std::filesystem::path path =
+        tempPath("malformed");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig directoryConfig(path);
+    initDirectory(directoryConfig);
+
+    const std::filesystem::path malformedPath =
+        directoryConfig.mempoolDirectoryPath() / "tx_malformed.nodo";
+
+    {
+        std::ofstream output(malformedPath);
+        output << "NODO_MEMPOOL_TRANSACTION_V1\n"
+               << "transactionId=abc\n"
+               << "acceptedAt=" << (kTimestamp + 40) << "\n"
+               << "publicKeyMaterial=malformed-public-key\n"
+               << "transaction=Transaction{bad}\n"
+               << "unknownField=must-fail\n";
+    }
+
+    Mempool mempool;
+
+    const auto loaded =
+        PersistentMempoolStore::loadIntoMempool(
+            directoryConfig,
+            mempool,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION
+        );
+
+    requireCondition(
+        !loaded.loaded() &&
+        loaded.reason().find("unknownField") != std::string::npos,
+        "Malformed persistent mempool file should reject load."
+    );
+
+    clean(path);
+}
+
 } // namespace
 
 int main() {
     try {
         testPersistLoadAndRemoveTransaction();
         testPersistIsIdempotent();
+        testMalformedPersistentMempoolFileIsRejected();
 
         std::cout << "Nodo persistent mempool store tests passed.\n";
         return 0;

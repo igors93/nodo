@@ -2,9 +2,11 @@
 
 #include "node/FinalizedBlockStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
+#include "serialization/BlockCodec.hpp"
+#include "serialization/KeyValueFileCodec.hpp"
+#include "storage/AtomicFile.hpp"
 
-#include <fstream>
-#include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -13,298 +15,13 @@ namespace nodo::node {
 
 namespace {
 
+constexpr const char* FINALIZED_BLOCK_VERSION =
+    "NODO_FINALIZED_BLOCK_V2";
+
 std::string readTextFile(
     const std::filesystem::path& path
 ) {
-    std::ifstream input(path);
-
-    if (!input) {
-        throw std::runtime_error("Unable to read file: " + path.string());
-    }
-
-    std::ostringstream buffer;
-    buffer << input.rdbuf();
-
-    return buffer.str();
-}
-
-std::map<std::string, std::string> parseKeyValueLines(
-    const std::string& contents
-) {
-    std::map<std::string, std::string> fields;
-    std::istringstream input(contents);
-    std::string line;
-    bool first = true;
-
-    while (std::getline(input, line)) {
-        if (line.empty()) {
-            continue;
-        }
-
-        if (first &&
-            line.rfind("NODO_FINALIZED_BLOCK_", 0) == 0) {
-            fields.emplace("version", line);
-            first = false;
-            continue;
-        }
-
-        first = false;
-
-        const std::size_t separator =
-            line.find('=');
-
-        if (separator == std::string::npos ||
-            separator == 0 ||
-            separator + 1 >= line.size()) {
-            continue;
-        }
-
-        fields.emplace(
-            line.substr(0, separator),
-            line.substr(separator + 1)
-        );
-    }
-
-    return fields;
-}
-
-std::string requireField(
-    const std::map<std::string, std::string>& fields,
-    const std::string& key
-) {
-    const auto found =
-        fields.find(key);
-
-    if (found == fields.end()) {
-        throw std::invalid_argument("Missing finalized block field: " + key);
-    }
-
-    return found->second;
-}
-
-std::string extractSimpleField(
-    const std::string& serialized,
-    const std::string& key
-) {
-    const std::string prefix =
-        key + "=";
-
-    const std::size_t start =
-        serialized.find(prefix);
-
-    if (start == std::string::npos) {
-        throw std::invalid_argument("Missing serialized field: " + key);
-    }
-
-    const std::size_t valueStart =
-        start + prefix.size();
-
-    std::size_t valueEnd =
-        serialized.find(';', valueStart);
-
-    if (valueEnd == std::string::npos) {
-        valueEnd = serialized.find('}', valueStart);
-    }
-
-    if (valueEnd == std::string::npos ||
-        valueEnd <= valueStart) {
-        throw std::invalid_argument("Malformed serialized field: " + key);
-    }
-
-    return serialized.substr(
-        valueStart,
-        valueEnd - valueStart
-    );
-}
-
-std::string extractLedgerPayload(
-    const std::string& serializedLedgerRecord
-) {
-    const std::string marker =
-        ";payload=";
-
-    const std::size_t start =
-        serializedLedgerRecord.find(marker);
-
-    if (start == std::string::npos) {
-        throw std::invalid_argument("Serialized LedgerRecord missing payload.");
-    }
-
-    const std::size_t valueStart =
-        start + marker.size();
-
-    const std::size_t valueEnd =
-        serializedLedgerRecord.rfind('}');
-
-    if (valueEnd == std::string::npos ||
-        valueEnd <= valueStart) {
-        throw std::invalid_argument("Serialized LedgerRecord payload is malformed.");
-    }
-
-    return serializedLedgerRecord.substr(
-        valueStart,
-        valueEnd - valueStart
-    );
-}
-
-core::LedgerRecord decodeLedgerRecord(
-    const std::string& serializedLedgerRecord
-) {
-    if (serializedLedgerRecord.rfind("LedgerRecord{", 0) != 0) {
-        throw std::invalid_argument("Serialized data is not a LedgerRecord.");
-    }
-
-    return core::LedgerRecord::fromPersistedFields(
-        extractSimpleField(serializedLedgerRecord, "id"),
-        core::ledgerRecordTypeFromString(
-            extractSimpleField(serializedLedgerRecord, "type")
-        ),
-        extractSimpleField(serializedLedgerRecord, "sourceId"),
-        extractLedgerPayload(serializedLedgerRecord),
-        extractSimpleField(serializedLedgerRecord, "payloadHash"),
-        std::stoll(extractSimpleField(serializedLedgerRecord, "timestamp"))
-    );
-}
-
-std::vector<std::string> splitSerializedRecords(
-    const std::string& recordsPayload
-) {
-    std::vector<std::string> records;
-    std::size_t start = 0;
-    int braceDepth = 0;
-    int bracketDepth = 0;
-
-    for (std::size_t index = 0; index < recordsPayload.size(); ++index) {
-        const char current =
-            recordsPayload[index];
-
-        if (current == '{') {
-            ++braceDepth;
-        } else if (current == '}') {
-            --braceDepth;
-        } else if (current == '[') {
-            ++bracketDepth;
-        } else if (current == ']') {
-            --bracketDepth;
-        } else if (current == ',' &&
-                   braceDepth == 0 &&
-                   bracketDepth == 0) {
-            records.push_back(
-                recordsPayload.substr(
-                    start,
-                    index - start
-                )
-            );
-
-            start = index + 1;
-        }
-    }
-
-    if (start < recordsPayload.size()) {
-        records.push_back(
-            recordsPayload.substr(start)
-        );
-    }
-
-    return records;
-}
-
-std::vector<core::LedgerRecord> decodeRecordsFromBlockSerialization(
-    const std::string& serializedBlock
-) {
-    const std::string marker =
-        "records=[";
-
-    const std::size_t recordsStart =
-        serializedBlock.find(marker);
-
-    if (recordsStart == std::string::npos) {
-        throw std::invalid_argument("Serialized Block does not contain records.");
-    }
-
-    const std::size_t contentStart =
-        recordsStart + marker.size();
-
-    int bracketDepth = 1;
-    int braceDepth = 0;
-    std::size_t contentEnd = std::string::npos;
-
-    for (std::size_t index = contentStart; index < serializedBlock.size(); ++index) {
-        const char current =
-            serializedBlock[index];
-
-        if (current == '{') {
-            ++braceDepth;
-        } else if (current == '}') {
-            --braceDepth;
-        } else if (current == '[') {
-            ++bracketDepth;
-        } else if (current == ']') {
-            --bracketDepth;
-
-            if (bracketDepth == 0 &&
-                braceDepth == 0) {
-                contentEnd = index;
-                break;
-            }
-        }
-    }
-
-    if (contentEnd == std::string::npos ||
-        contentEnd <= contentStart) {
-        throw std::invalid_argument("Serialized Block record list is malformed.");
-    }
-
-    const std::string recordsPayload =
-        serializedBlock.substr(
-            contentStart,
-            contentEnd - contentStart
-        );
-
-    std::vector<core::LedgerRecord> records;
-
-    for (const std::string& serializedRecord : splitSerializedRecords(recordsPayload)) {
-        records.push_back(
-            decodeLedgerRecord(serializedRecord)
-        );
-    }
-
-    return records;
-}
-
-core::Block decodeSerializedBlock(
-    const std::string& serializedBlock
-) {
-    if (serializedBlock.rfind("Block{", 0) != 0) {
-        throw std::invalid_argument("Serialized data is not a Block.");
-    }
-
-    const std::uint64_t index =
-        static_cast<std::uint64_t>(
-            std::stoull(extractSimpleField(serializedBlock, "index"))
-        );
-
-    const std::string previousHash =
-        extractSimpleField(serializedBlock, "previousHash");
-
-    const std::string expectedHash =
-        extractSimpleField(serializedBlock, "hash");
-
-    const std::int64_t timestamp =
-        std::stoll(extractSimpleField(serializedBlock, "timestamp"));
-
-    core::Block block(
-        index,
-        previousHash,
-        decodeRecordsFromBlockSerialization(serializedBlock),
-        timestamp
-    );
-
-    if (block.hash() != expectedHash) {
-        throw std::invalid_argument("Persisted Block hash does not match reconstructed block.");
-    }
-
-    return block;
+    return storage::AtomicFile::readTextFile(path);
 }
 
 } // namespace
@@ -427,34 +144,73 @@ core::Block FinalizedBlockFileCodec::readBlockFile(
 core::Block FinalizedBlockFileCodec::decodeBlockFileContents(
     const std::string& contents
 ) {
-    const std::map<std::string, std::string> fields =
-        parseKeyValueLines(contents);
+    const serialization::KeyValueFileDocument document =
+        serialization::KeyValueFileCodec::parse(
+            contents,
+            FINALIZED_BLOCK_VERSION
+        );
+
+    const std::size_t recordCount =
+        static_cast<std::size_t>(
+            std::stoull(document.requireField("recordCount"))
+        );
+
+    std::set<std::string> allowedFields = {
+        "blockIndex",
+        "blockHash",
+        "previousHash",
+        "timestamp",
+        "recordCount",
+        "block",
+        "quorumCertificate",
+        "finalizedRecord"
+    };
+
+    for (std::size_t index = 0; index < recordCount; ++index) {
+        allowedFields.insert("record." + std::to_string(index));
+    }
+
+    document.requireOnlyFields(allowedFields);
 
     /*
      * V2 stores explicit block fields and record lines, but the canonical block
      * serialization is still kept as an integrity anchor.
      */
     const std::string serializedBlock =
-        requireField(fields, "block");
+        document.requireField("block");
 
     core::Block block =
-        decodeSerializedBlock(serializedBlock);
+        serialization::BlockCodec::deserialize(serializedBlock);
 
     const std::uint64_t index =
         static_cast<std::uint64_t>(
-            std::stoull(requireField(fields, "blockIndex"))
+            std::stoull(document.requireField("blockIndex"))
         );
 
     const std::string blockHash =
-        requireField(fields, "blockHash");
+        document.requireField("blockHash");
 
     const std::string previousHash =
-        requireField(fields, "previousHash");
+        document.requireField("previousHash");
+
+    const std::int64_t timestamp =
+        std::stoll(document.requireField("timestamp"));
 
     if (block.index() != index ||
         block.hash() != blockHash ||
-        block.previousHash() != previousHash) {
+        block.previousHash() != previousHash ||
+        block.timestamp() != timestamp ||
+        block.records().size() != recordCount) {
         throw std::invalid_argument("Finalized block file header does not match block payload.");
+    }
+
+    for (std::size_t recordIndex = 0; recordIndex < recordCount; ++recordIndex) {
+        const std::string key =
+            "record." + std::to_string(recordIndex);
+
+        if (block.records()[recordIndex].serialize() != document.requireField(key)) {
+            throw std::invalid_argument("Finalized block record line does not match block payload.");
+        }
     }
 
     return block;

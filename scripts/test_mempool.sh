@@ -9,8 +9,7 @@ if ! command -v cmake >/dev/null 2>&1; then
     exit 1
 fi
 
-cmake -S "$ROOT_DIR" -B "$CMAKE_BUILD_DIR" -DCMAKE_BUILD_TYPE=Debug
-cmake --build "$CMAKE_BUILD_DIR" --parallel
+"$ROOT_DIR/scripts/cmake_build.sh"
 ctest --test-dir "$CMAKE_BUILD_DIR" --output-on-failure -L mempool
 
 echo

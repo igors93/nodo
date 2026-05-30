@@ -30,7 +30,7 @@ target_compile_options(nodo_core
         $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>
 )
 
-file(GLOB_RECURSE NODO_CORE_CPP_SOURCES CONFIGURE_DEPENDS
+file(GLOB_RECURSE NODO_CORE_CPP_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
@@ -55,7 +55,7 @@ set_target_properties(nodo
 
 enable_testing()
 
-file(GLOB_RECURSE NODO_TEST_SOURCES CONFIGURE_DEPENDS
+file(GLOB_RECURSE NODO_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
 )
 

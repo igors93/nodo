@@ -209,6 +209,10 @@ CommandLineResult CommandLineInterface::execute(
             return executeInspect(options);
         }
 
+        if (options.command == "reload") {
+            return executeReload(options);
+        }
+
         if (options.command == "produce-demo-block") {
             return executeProduceDemoBlock(options);
         }
@@ -314,6 +318,7 @@ std::string CommandLineInterface::helpText() {
         "  nodo init [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo status [--data-dir PATH]\n"
         "  nodo inspect [--data-dir PATH]\n"
+        "  nodo reload [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo submit-demo-transaction [--data-dir PATH]\n"
         "  nodo produce-demo-block [--data-dir PATH]\n"
         "\n"
@@ -450,6 +455,37 @@ CommandLineResult CommandLineInterface::executeInspect(
            << "------------\n"
            << "Data directory: " << options.dataDirectory.string() << "\n"
            << result.manifest().serialize() << "\n";
+
+    return CommandLineResult::success(output.str());
+}
+
+CommandLineResult CommandLineInterface::executeReload(
+    const CommandLineOptions& options
+) {
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            developmentGenesisConfig(),
+            localPeerFromOptions(options)
+        );
+
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Failed to reload Nodo runtime: "
+            + load.reason()
+            + "\n"
+        );
+    }
+
+    std::ostringstream output;
+
+    output << "Nodo runtime reloaded.\n"
+           << "Data directory: " << options.dataDirectory.string() << "\n"
+           << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
+           << "Latest hash: " << load.manifest().latestBlockHash() << "\n"
+           << "Loaded finalized blocks: " << load.loadedBlockCount() << "\n"
+           << "Loaded mempool transactions: " << load.loadedMempoolTransactionCount() << "\n";
 
     return CommandLineResult::success(output.str());
 }

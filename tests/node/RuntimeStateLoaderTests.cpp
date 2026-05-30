@@ -34,6 +34,7 @@ using nodo::crypto::PublicKey;
 using nodo::crypto::SecurityContext;
 using nodo::crypto::SignatureBundle;
 using nodo::node::FinalizedBlockStore;
+using nodo::node::FinalizedBlockFileCodec;
 using nodo::node::NodeDataDirectory;
 using nodo::node::NodeDataDirectoryConfig;
 using nodo::node::NodeRuntime;
@@ -223,6 +224,20 @@ void testLoadsRuntimeWithPersistedFinalizedBlock() {
         pipeline.finalized(),
         "Pipeline should finalize a block."
     );
+
+    try {
+        (void)FinalizedBlockFileCodec::decodeBlockFileContents(
+            FinalizedBlockStore::finalizedBlockFileContents(pipeline)
+            + "unknownField=must-fail\n"
+        );
+
+        throw std::runtime_error("Finalized block codec accepted an unknown field.");
+    } catch (const std::invalid_argument& error) {
+        requireCondition(
+            std::string(error.what()).find("unknownField") != std::string::npos,
+            "Finalized block codec should name the unknown field."
+        );
+    }
 
     requireCondition(
         FinalizedBlockStore::persist(

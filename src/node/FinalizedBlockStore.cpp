@@ -1,10 +1,20 @@
 #include "node/FinalizedBlockStore.hpp"
 
-#include <fstream>
+#include "serialization/KeyValueFileCodec.hpp"
+#include "storage/AtomicFile.hpp"
+
 #include <sstream>
 #include <utility>
+#include <vector>
 
 namespace nodo::node {
+
+namespace {
+
+constexpr const char* FINALIZED_BLOCK_VERSION =
+    "NODO_FINALIZED_BLOCK_V2";
+
+} // namespace
 
 std::string finalizedBlockStoreStatusToString(
     FinalizedBlockStoreStatus status
@@ -248,62 +258,59 @@ std::filesystem::path FinalizedBlockStore::blockFilePath(
 std::string FinalizedBlockStore::finalizedBlockFileContents(
     const RuntimeBlockPipelineResult& pipelineResult
 ) {
-    std::ostringstream oss;
-
-    oss << "NODO_FINALIZED_BLOCK_V2\n"
-        << "blockIndex=" << pipelineResult.block().index() << "\n"
-        << "blockHash=" << pipelineResult.block().hash() << "\n"
-        << "previousHash=" << pipelineResult.block().previousHash() << "\n"
-        << "timestamp=" << pipelineResult.block().timestamp() << "\n"
-        << "recordCount=" << pipelineResult.block().records().size() << "\n";
+    std::vector<std::pair<std::string, std::string>> fields = {
+        {"blockIndex", std::to_string(pipelineResult.block().index())},
+        {"blockHash", pipelineResult.block().hash()},
+        {"previousHash", pipelineResult.block().previousHash()},
+        {"timestamp", std::to_string(pipelineResult.block().timestamp())},
+        {"recordCount", std::to_string(pipelineResult.block().records().size())}
+    };
 
     const auto& records =
         pipelineResult.block().records();
 
     for (std::size_t index = 0; index < records.size(); ++index) {
-        oss << "record." << index << "=" << records[index].serialize() << "\n";
+        fields.emplace_back(
+            "record." + std::to_string(index),
+            records[index].serialize()
+        );
     }
 
-    oss << "block=" << pipelineResult.block().serialize() << "\n"
-        << "quorumCertificate=" << pipelineResult.certificate().serialize() << "\n"
-        << "finalizedRecord=" << pipelineResult.finalizedRecord().serialize() << "\n";
+    fields.emplace_back(
+        "block",
+        pipelineResult.block().serialize()
+    );
 
-    return oss.str();
+    fields.emplace_back(
+        "quorumCertificate",
+        pipelineResult.certificate().serialize()
+    );
+
+    fields.emplace_back(
+        "finalizedRecord",
+        pipelineResult.finalizedRecord().serialize()
+    );
+
+    return serialization::KeyValueFileCodec::serialize(
+        FINALIZED_BLOCK_VERSION,
+        fields
+    );
 }
 
 void FinalizedBlockStore::writeTextFile(
     const std::filesystem::path& path,
     const std::string& contents
 ) {
-    std::ofstream output(
+    storage::AtomicFile::writeTextFile(
         path,
-        std::ios::out | std::ios::trunc
+        contents
     );
-
-    if (!output) {
-        throw std::runtime_error("Unable to open finalized block file for writing: " + path.string());
-    }
-
-    output << contents;
-
-    if (!output) {
-        throw std::runtime_error("Unable to write finalized block file: " + path.string());
-    }
 }
 
 std::string FinalizedBlockStore::readTextFile(
     const std::filesystem::path& path
 ) {
-    std::ifstream input(path);
-
-    if (!input) {
-        throw std::runtime_error("Unable to open finalized block file for reading: " + path.string());
-    }
-
-    std::ostringstream buffer;
-    buffer << input.rdbuf();
-
-    return buffer.str();
+    return storage::AtomicFile::readTextFile(path);
 }
 
 } // namespace nodo::node

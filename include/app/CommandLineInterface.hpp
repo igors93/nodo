@@ -90,6 +90,10 @@ private:
         const CommandLineOptions& options
     );
 
+    static CommandLineResult executeReload(
+        const CommandLineOptions& options
+    );
+
     static CommandLineResult executeProduceDemoBlock(
         const CommandLineOptions& options
     );

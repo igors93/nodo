@@ -11,7 +11,18 @@ if ! command -v cmake >/dev/null 2>&1; then
     exit 1
 fi
 
-cmake -S "$ROOT_DIR" -B "$CMAKE_BUILD_DIR" -DCMAKE_BUILD_TYPE=Debug
+cmake_args=(
+    -DCMAKE_BUILD_TYPE=Debug
+)
+
+if command -v make >/dev/null 2>&1; then
+    cmake_args+=(
+        -G "Unix Makefiles"
+        -DCMAKE_MAKE_PROGRAM="$(command -v make)"
+    )
+fi
+
+cmake -S "$ROOT_DIR" -B "$CMAKE_BUILD_DIR" "${cmake_args[@]}"
 cmake --build "$CMAKE_BUILD_DIR" --parallel
 
 echo

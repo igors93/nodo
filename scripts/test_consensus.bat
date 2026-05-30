@@ -10,10 +10,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-cmake -S "%ROOT_DIR%" -B "%CMAKE_BUILD_DIR%" -DCMAKE_BUILD_TYPE=Debug
-if errorlevel 1 exit /b 1
-
-cmake --build "%CMAKE_BUILD_DIR%" --parallel
+cmd /c "%ROOT_DIR%\scripts\cmake_build.bat"
 if errorlevel 1 exit /b 1
 
 ctest --test-dir "%CMAKE_BUILD_DIR%" --output-on-failure -L consensus
