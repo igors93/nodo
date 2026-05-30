@@ -1,37 +1,38 @@
-# Cycle 4 implementation
+# Cycle 5 implementation
 
-This phase implements Cycle 4 in two fronts.
+This phase implements Cycle 5 in two fronts.
 
-## Front A — block finalization with quorum certificate
-
-New components:
-
-```text
-FinalizedBlockRecord
-BlockFinalizationRegistry
-BlockFinalizationResult
-BlockFinalizer
-```
-
-A block can now be appended/finalized only after a valid `QuorumCertificate`
-proves enough registered validators approved that exact block.
-
-## Front B — block producer pipeline from mempool
+## Front A — fork choice and finalized checkpoint validation
 
 New components:
 
 ```text
-BlockProductionConfig
-BlockProductionPlan
-BlockProductionResult
-MempoolBlockProducer
+FinalizedCheckpoint
+ChainForkSummary
+ForkChoiceResult
+ForkChoicePolicy
 ```
 
-Nodo can now produce a candidate block from admitted mempool transactions without
-mutating the mempool.
+Nodo can now compare local and candidate chains without violating finalized
+checkpoints.
+
+## Front B — P2P message types and local node synchronization foundation
+
+New components:
+
+```text
+PeerInfo
+PeerMessage
+PeerMessageFactory
+LocalSyncPlan
+LocalNodeSynchronizer
+```
+
+Nodo can now create deterministic P2P message envelopes and plan block sync from
+a better peer summary.
 
 Recommended commit:
 
 ```bash
-git commit -m "Add block finalization and mempool block producer"
+git commit -m "Add fork choice and P2P sync foundation"
 ```
