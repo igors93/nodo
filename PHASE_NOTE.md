@@ -1,37 +1,41 @@
-# Cycle 6 implementation
+# Cycle 7 implementation
 
-This phase implements Cycle 6 in two fronts.
+This phase implements Cycle 7 in two fronts.
 
-## Front A — genesis config and network parameters
-
-New components:
-
-```text
-NetworkParameters
-BootstrapValidatorConfig
-GenesisConfig
-GenesisBuilder
-```
-
-Nodo now has deterministic configuration for creating the initial chain and
-bootstrap validator registry.
-
-## Front B — node runtime skeleton with local peer manager
+## Front A — CLI commands for init, status and inspect
 
 New components:
 
 ```text
-LocalPeerManager
-NodeRuntimeConfig
-NodeRuntime
-NodeRuntimeFactory
+CommandLineInterface
+CommandLineOptions
+CommandLineResult
 ```
 
-Nodo now has a local runtime object that binds chain state, validator registry,
-mempool, finalization registry and P2P sync planning.
+The executable now supports:
+
+```bash
+nodo init
+nodo status
+nodo inspect
+nodo demo
+nodo help
+```
+
+## Front B — persistent node data directory and runtime manifest
+
+New components:
+
+```text
+NodeDataDirectoryConfig
+NodeRuntimeManifest
+NodeDataDirectory
+```
+
+Nodo can now initialize a durable local data directory and inspect the manifest.
 
 Recommended commit:
 
 ```bash
-git commit -m "Add genesis config and node runtime skeleton"
+git commit -m "Add CLI commands and persistent node data directory"
 ```

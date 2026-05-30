@@ -1,11 +1,17 @@
-#include "app/DemoScenario.hpp"
+#include "app/CommandLineInterface.hpp"
 
 #include <exception>
 #include <iostream>
 
-int main() {
+int main(
+    int argc,
+    char** argv
+) {
     try {
-        return nodo::app::runBlockchainFoundationDemo();
+        return nodo::app::CommandLineInterface::run(
+            argc,
+            argv
+        );
     } catch (const std::exception& error) {
         std::cerr << "Fatal error: " << error.what() << "\n";
         return 1;
