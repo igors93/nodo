@@ -12,25 +12,20 @@ std::string ledgerRecordTypeToString(LedgerRecordType type) {
     switch (type) {
         case LedgerRecordType::MINT:
             return "MINT";
-
         case LedgerRecordType::TRANSACTION:
             return "TRANSACTION";
-
         case LedgerRecordType::PRIVATE_ACCOUNTING:
             return "PRIVATE_ACCOUNTING";
-
         case LedgerRecordType::VALIDATION_WORK:
             return "VALIDATION_WORK";
-
         case LedgerRecordType::VALIDATOR_SCORE:
             return "VALIDATOR_SCORE";
-
         case LedgerRecordType::PROTECTION_EPOCH:
             return "PROTECTION_EPOCH";
-
         case LedgerRecordType::GENESIS_REWARD:
             return "GENESIS_REWARD";
-
+        case LedgerRecordType::VALIDATOR_PENALTY:
+            return "VALIDATOR_PENALTY";
         default:
             return "UNKNOWN";
     }
@@ -284,6 +279,39 @@ LedgerRecord LedgerRecord::fromGenesisRewardRecord(
     );
 }
 
+LedgerRecord LedgerRecord::fromValidatorPenaltyRecord(
+    const economics::ValidatorPenaltyRecord& validatorPenaltyRecord,
+    std::int64_t timestamp
+) {
+    if (!validatorPenaltyRecord.isValid()) {
+        throw std::invalid_argument("Invalid ValidatorPenaltyRecord rejected by LedgerRecord.");
+    }
+
+    if (timestamp <= 0) {
+        throw std::invalid_argument("LedgerRecord timestamp must be positive.");
+    }
+
+    const std::string payload = validatorPenaltyRecord.serialize();
+    const std::string payloadHash = hashPayload(payload);
+    const std::string sourceId = validatorPenaltyRecord.deterministicId();
+
+    const std::string recordId = computeRecordId(
+        LedgerRecordType::VALIDATOR_PENALTY,
+        sourceId,
+        payloadHash,
+        timestamp
+    );
+
+    return LedgerRecord(
+        recordId,
+        LedgerRecordType::VALIDATOR_PENALTY,
+        sourceId,
+        payload,
+        payloadHash,
+        timestamp
+    );
+}
+
 const std::string& LedgerRecord::id() const {
     return m_id;
 }
@@ -309,19 +337,10 @@ std::int64_t LedgerRecord::timestamp() const {
 }
 
 bool LedgerRecord::isValid() const {
-    if (m_id.empty()) {
-        return false;
-    }
-
-    if (m_sourceId.empty()) {
-        return false;
-    }
-
-    if (m_payload.empty()) {
-        return false;
-    }
-
-    if (m_payloadHash.empty()) {
+    if (m_id.empty() ||
+        m_sourceId.empty() ||
+        m_payload.empty() ||
+        m_payloadHash.empty()) {
         return false;
     }
 
@@ -329,28 +348,16 @@ bool LedgerRecord::isValid() const {
         return false;
     }
 
-    if (m_type != LedgerRecordType::MINT &&
-        m_type != LedgerRecordType::TRANSACTION &&
-        m_type != LedgerRecordType::PRIVATE_ACCOUNTING &&
-        m_type != LedgerRecordType::VALIDATION_WORK &&
-        m_type != LedgerRecordType::VALIDATOR_SCORE &&
-        m_type != LedgerRecordType::PROTECTION_EPOCH &&
-        m_type != LedgerRecordType::GENESIS_REWARD) {
-        return false;
-    }
-
     if (m_payloadHash != hashPayload(m_payload)) {
         return false;
     }
 
-    const std::string expectedRecordId = computeRecordId(
-        m_type,
-        m_sourceId,
-        m_payloadHash,
-        m_timestamp
-    );
-
-    if (m_id != expectedRecordId) {
+    if (m_id != computeRecordId(
+            m_type,
+            m_sourceId,
+            m_payloadHash,
+            m_timestamp
+        )) {
         return false;
     }
 
@@ -372,10 +379,11 @@ std::string LedgerRecord::serialize() const {
     return oss.str();
 }
 
-std::string LedgerRecord::hashPayload(const std::string& payload) {
-    char output[65] = {0};
+std::string LedgerRecord::hashPayload(
+    const std::string& payload
+) {
+    char output[NODO_HASH_BUFFER_SIZE] = {0};
     nodo_hash_string(payload.c_str(), output, sizeof(output));
-
     return std::string(output);
 }
 

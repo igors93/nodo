@@ -1,18 +1,18 @@
-# Validator proposal registry and double-sign detection phase
+# Validator penalty records phase
 
-This phase adds a local registry for signed validator block proposals.
+This phase turns double-sign evidence into auditable ledger penalty records.
 
 New components:
 
 ```text
-ValidatorProposalRegistryEntry
-ValidatorDoubleSignEvidence
-ValidatorProposalRegistrationResult
-ValidatorProposalRegistry
+ValidatorPenaltyRecord
+ValidatorPenaltyPolicy
+ValidatorPenaltyLedgerBuildResult
+ValidatorPenaltyLedgerBuilder
 ```
 
 Recommended commit:
 
 ```bash
-git commit -m "Add validator proposal registry and double-sign detection"
+git commit -m "Add validator penalty records for double-sign evidence"
 ```

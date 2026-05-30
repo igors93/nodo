@@ -20,7 +20,8 @@ StateRebuildReport::StateRebuildReport()
       m_genesisRewardRecordCount(0),
       m_transactionRecordCount(0),
       m_privateAccountingRecordCount(0),
-      m_protectionMetadataRecordCount(0) {}
+      m_protectionMetadataRecordCount(0),
+      m_validatorPenaltyRecordCount(0) {}
 
 bool StateRebuildReport::success() const {
     return m_success;
@@ -58,6 +59,10 @@ std::size_t StateRebuildReport::protectionMetadataRecordCount() const {
     return m_protectionMetadataRecordCount;
 }
 
+std::size_t StateRebuildReport::validatorPenaltyRecordCount() const {
+    return m_validatorPenaltyRecordCount;
+}
+
 void StateRebuildReport::markFailure(std::string reason) {
     m_success = false;
     m_failureReason = std::move(reason);
@@ -91,6 +96,10 @@ void StateRebuildReport::incrementProtectionMetadataRecordCount() {
     ++m_protectionMetadataRecordCount;
 }
 
+void StateRebuildReport::incrementValidatorPenaltyRecordCount() {
+    ++m_validatorPenaltyRecordCount;
+}
+
 std::string StateRebuildReport::serialize() const {
     std::ostringstream oss;
 
@@ -104,6 +113,7 @@ std::string StateRebuildReport::serialize() const {
         << ";transactionRecordCount=" << m_transactionRecordCount
         << ";privateAccountingRecordCount=" << m_privateAccountingRecordCount
         << ";protectionMetadataRecordCount=" << m_protectionMetadataRecordCount
+        << ";validatorPenaltyRecordCount=" << m_validatorPenaltyRecordCount
         << "}";
 
     return oss.str();
@@ -148,6 +158,8 @@ StateRebuildReport ChainStateRebuilder::auditBlockchain(
                 report.incrementTransactionRecordCount();
             } else if (record.type() == LedgerRecordType::PRIVATE_ACCOUNTING) {
                 report.incrementPrivateAccountingRecordCount();
+            } else if (record.type() == LedgerRecordType::VALIDATOR_PENALTY) {
+                report.incrementValidatorPenaltyRecordCount();
             } else if (record.type() == LedgerRecordType::VALIDATION_WORK ||
                        record.type() == LedgerRecordType::VALIDATOR_SCORE ||
                        record.type() == LedgerRecordType::PROTECTION_EPOCH) {
@@ -289,7 +301,8 @@ State ChainStateRebuilder::rebuildStateFromLedgerRecords(
             if (record.type() == LedgerRecordType::PRIVATE_ACCOUNTING ||
                 record.type() == LedgerRecordType::VALIDATION_WORK ||
                 record.type() == LedgerRecordType::VALIDATOR_SCORE ||
-                record.type() == LedgerRecordType::PROTECTION_EPOCH) {
+                record.type() == LedgerRecordType::PROTECTION_EPOCH ||
+                record.type() == LedgerRecordType::VALIDATOR_PENALTY) {
                 /*
                  * These records are part of official ledger history but do not
                  * directly mutate public coin ownership State.

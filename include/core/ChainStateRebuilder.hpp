@@ -29,6 +29,7 @@ public:
     std::size_t transactionRecordCount() const;
     std::size_t privateAccountingRecordCount() const;
     std::size_t protectionMetadataRecordCount() const;
+    std::size_t validatorPenaltyRecordCount() const;
 
     void markFailure(std::string reason);
 
@@ -39,6 +40,7 @@ public:
     void incrementTransactionRecordCount();
     void incrementPrivateAccountingRecordCount();
     void incrementProtectionMetadataRecordCount();
+    void incrementValidatorPenaltyRecordCount();
 
     std::string serialize() const;
 
@@ -53,47 +55,17 @@ private:
     std::size_t m_transactionRecordCount;
     std::size_t m_privateAccountingRecordCount;
     std::size_t m_protectionMetadataRecordCount;
+    std::size_t m_validatorPenaltyRecordCount;
 };
 
-/*
- * ChainStateRebuilder scans the Blockchain from genesis to latest block.
- *
- * Security principle:
- * The current state must not be blindly trusted. A node should be able
- * to rebuild or audit the state from the accepted chain history.
- */
 class ChainStateRebuilder {
 public:
     static StateRebuildReport auditBlockchain(const Blockchain& blockchain);
 
-    /*
-     * Rebuilds State using only legacy MINT LedgerRecords.
-     *
-     * This remains useful for compatibility tests during the migration.
-     */
     static State rebuildStateFromMintRecords(const Blockchain& blockchain);
 
-    /*
-     * Rebuilds State using only GENESIS_REWARD LedgerRecords.
-     *
-     * This is the new production-oriented supply creation path.
-     */
     static State rebuildStateFromGenesisRewardRecords(const Blockchain& blockchain);
 
-    /*
-     * Rebuilds public State from supported LedgerRecords.
-     *
-     * Supported public mutations:
-     * - MINT as legacy development supply creation
-     * - GENESIS_REWARD as protection-economics supply creation
-     * - TRANSACTION as transfer movement
-     *
-     * Supported public no-ops:
-     * - PRIVATE_ACCOUNTING
-     * - VALIDATION_WORK
-     * - VALIDATOR_SCORE
-     * - PROTECTION_EPOCH
-     */
     static State rebuildStateFromLedgerRecords(const Blockchain& blockchain);
 };
 

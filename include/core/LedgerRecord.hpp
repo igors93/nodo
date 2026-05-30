@@ -7,6 +7,7 @@
 #include "economics/MintRecord.hpp"
 #include "economics/ProtectionEpoch.hpp"
 #include "economics/ValidationWorkRecord.hpp"
+#include "economics/ValidatorPenaltyRecord.hpp"
 #include "economics/ValidatorScoreRecord.hpp"
 #include "privacy/PrivateAccountingRecord.hpp"
 
@@ -33,7 +34,8 @@ enum class LedgerRecordType {
     VALIDATION_WORK,
     VALIDATOR_SCORE,
     PROTECTION_EPOCH,
-    GENESIS_REWARD
+    GENESIS_REWARD,
+    VALIDATOR_PENALTY
 };
 
 std::string ledgerRecordTypeToString(LedgerRecordType type);
@@ -59,24 +61,11 @@ public:
         std::int64_t timestamp
     );
 
-    /*
-     * Converts a valid private accounting operation into an official ledger record.
-     *
-     * Security rule:
-     * Private accounting must enter the chain through the same deterministic
-     * record pipeline as public mints and public transactions.
-     */
     static LedgerRecord fromPrivateAccountingRecord(
         const privacy::PrivateAccountingRecord& privateAccountingRecord,
         std::int64_t timestamp
     );
 
-    /*
-     * Protection economics records.
-     *
-     * These methods start integrating the new Proof of Protection model into
-     * the same auditable LedgerRecord pipeline used by blocks.
-     */
     static LedgerRecord fromValidationWorkRecord(
         const economics::ValidationWorkRecord& validationWorkRecord,
         std::int64_t timestamp
@@ -97,6 +86,11 @@ public:
         std::int64_t timestamp
     );
 
+    static LedgerRecord fromValidatorPenaltyRecord(
+        const economics::ValidatorPenaltyRecord& validatorPenaltyRecord,
+        std::int64_t timestamp
+    );
+
     const std::string& id() const;
     LedgerRecordType type() const;
     const std::string& sourceId() const;
@@ -106,21 +100,9 @@ public:
 
     bool isValid() const;
 
-    /*
-     * Deterministic serialization.
-     *
-     * This representation is used inside Block hashing.
-     */
     std::string serialize() const;
 
 private:
-    /*
-     * LedgerRecordCodec is the only serialization boundary allowed to rebuild
-     * a LedgerRecord from trusted serialized fields.
-     *
-     * Security rule:
-     * Any reconstructed record must still pass LedgerRecord::isValid().
-     */
     friend class nodo::serialization::LedgerRecordCodec;
 
     LedgerRecord(

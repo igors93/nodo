@@ -37,10 +37,6 @@ core::LedgerRecord LedgerRecordCodec::deserialize(
 
     assertSafePayloadPrefixForType(type, payload);
 
-    /*
-     * LedgerRecord constructor is private. LedgerRecordCodec is a friend
-     * because it is the controlled deserialization boundary.
-     */
     core::LedgerRecord record(
         id,
         type,
@@ -121,6 +117,10 @@ core::LedgerRecordType LedgerRecordCodec::parseLedgerRecordType(
 
     if (value == "GENESIS_REWARD") {
         return core::LedgerRecordType::GENESIS_REWARD;
+    }
+
+    if (value == "VALIDATOR_PENALTY") {
+        return core::LedgerRecordType::VALIDATOR_PENALTY;
     }
 
     throw std::invalid_argument("Unknown LedgerRecordType: " + value);
@@ -204,6 +204,12 @@ void LedgerRecordCodec::assertSafePayloadPrefixForType(
         case core::LedgerRecordType::GENESIS_REWARD:
             if (payload.rfind("GenesisRewardRecord{", 0) != 0) {
                 throw std::invalid_argument("GENESIS_REWARD LedgerRecord payload type mismatch.");
+            }
+            return;
+
+        case core::LedgerRecordType::VALIDATOR_PENALTY:
+            if (payload.rfind("ValidatorPenaltyRecord{", 0) != 0) {
+                throw std::invalid_argument("VALIDATOR_PENALTY LedgerRecord payload type mismatch.");
             }
             return;
 

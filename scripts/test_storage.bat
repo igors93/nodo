@@ -2,31 +2,12 @@
 setlocal enabledelayedexpansion
 
 REM Nodo Windows blockchain storage integration test script.
-REM Important linker rule:
-REM State.cpp now depends on CoinLotRegistry and CoinLotTransactionValidator.
-REM Keep each .cpp implementation listed only once per g++ command.
+REM LedgerRecord.cpp now depends on ValidatorPenaltyRecord.cpp.
 
 set "ROOT_DIR=%~dp0.."
 set "BUILD_DIR=%ROOT_DIR%\build\tests"
-
 set "CC=gcc"
 set "CXX=g++"
-
-where %CC% >nul 2>nul
-if errorlevel 1 (
-    echo Error: gcc was not found in PATH.
-    echo If using MSYS2 UCRT64, add this folder to PATH:
-    echo C:\msys64\ucrt64\bin
-    exit /b 1
-)
-
-where %CXX% >nul 2>nul
-if errorlevel 1 (
-    echo Error: g++ was not found in PATH.
-    echo If using MSYS2 UCRT64, add this folder to PATH:
-    echo C:\msys64\ucrt64\bin
-    exit /b 1
-)
 
 if not exist "%BUILD_DIR%" (
     mkdir "%BUILD_DIR%"
@@ -52,6 +33,7 @@ echo Building Nodo blockchain storage integration tests...
     "%ROOT_DIR%\src\economics\MintRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^

@@ -48,11 +48,13 @@ echo Building Nodo C++ application...
     "%ROOT_DIR%\src\economics\MintRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
     "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyLedgerBuilder.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEconomicsState.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEconomicsRebuilder.cpp" ^
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^

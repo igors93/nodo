@@ -1,20 +1,26 @@
 # Nodo Economics and Protection Guides
 
 Status: Project Guide Index  
-Version: NODO-ECONOMICS-GUIDES-V12
+Version: NODO-ECONOMICS-GUIDES-V13
 
-Newest guide:
+Current newest guide:
 
 ```text
-VALIDATOR_PROPOSAL_REGISTRY.md
+VALIDATOR_PENALTY_RECORDS.md
 ```
 
 Implemented foundations include:
 
 ```text
+EpochRewardDistributor
+EpochRewardLedgerBuilder
+ProtectionBlockProposal
+ProtectionBlockBuilder
 ValidatorBlockProposalSignature
 SignedProtectionBlockProposal
 ValidatorBlockProposalSigner
 ValidatorProposalRegistry
 ValidatorDoubleSignEvidence
+ValidatorPenaltyRecord
+ValidatorPenaltyLedgerBuilder
 ```

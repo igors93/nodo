@@ -1,30 +1,35 @@
 # Nodo
 
-## Implementation: Validator Proposal Registry and Double-Sign Detection
+## Implementation: Validator Penalty Records
 
-This phase adds a registry for signed validator block proposals.
+This phase turns double-sign evidence into ledger-backed validator penalties.
 
 New components:
 
 ```text
-ValidatorProposalRegistryEntry
-ValidatorDoubleSignEvidence
-ValidatorProposalRegistrationResult
-ValidatorProposalRegistry
+ValidatorPenaltyRecord
+ValidatorPenaltyPolicy
+ValidatorPenaltyLedgerBuildResult
+ValidatorPenaltyLedgerBuilder
 ```
 
-Security behavior:
+New behavior:
 
 ```text
-valid signed proposals are stored
-duplicate proposal broadcasts are ignored safely
-the same validator signing two block hashes for the same height is detected
-invalid signatures are rejected before conflict checks
-wrong-chain-tip proposals are rejected
+double-sign evidence becomes a penalty record
+penalty record creates a score reduction record
+both records can be written into the blockchain ledger
+ChainStateRebuilder audits validator penalty records
 ```
 
 New test:
 
 ```text
-tests/core/ValidatorProposalRegistryTests.cpp
+tests/economics/ValidatorPenaltyRecordTests.cpp
+```
+
+New documentation:
+
+```text
+docs/economics/VALIDATOR_PENALTY_RECORDS.md
 ```

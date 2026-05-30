@@ -3,8 +3,7 @@ set -euo pipefail
 
 # Nodo blockchain storage integration test script.
 # Important linker rule:
-# State.cpp now depends on CoinLotRegistry and CoinLotTransactionValidator.
-# Keep each .cpp implementation listed only once per g++ command.
+# LedgerRecord.cpp now depends on ValidatorPenaltyRecord.cpp.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build/tests"
@@ -26,6 +25,7 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/economics/MintRecord.cpp" \
     "$ROOT_DIR/src/economics/ValidationWorkRecord.cpp" \
     "$ROOT_DIR/src/economics/ValidatorScoreRecord.cpp" \
+    "$ROOT_DIR/src/economics/ValidatorPenaltyRecord.cpp" \
     "$ROOT_DIR/src/economics/EpochEmissionPolicy.cpp" \
     "$ROOT_DIR/src/economics/ProtectionEpoch.cpp" \
     "$ROOT_DIR/src/economics/GenesisRewardRecord.cpp" \

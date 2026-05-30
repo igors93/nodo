@@ -47,9 +47,20 @@ echo Building Nodo protection economics tests...
 %CXX% -std=c++20 -Wall -Wextra -I"%ROOT_DIR%\include" ^
     "%ROOT_DIR%\tests\economics\ProtectionEconomicsTests.cpp" ^
     "%ROOT_DIR%\src\utils\Amount.cpp" ^
+    "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\core\CoinLot.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorProposalRegistry.cpp" ^
+    "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoPolicy.cpp" ^
+    "%ROOT_DIR%\src\crypto\Signature.cpp" ^
+    "%ROOT_DIR%\src\crypto\PrivateKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorBlockProposalSignature.cpp" ^
+    "%ROOT_DIR%\src\core\ProtectionBlockProposal.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
@@ -72,6 +83,10 @@ echo Building Nodo protection ledger integration tests...
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorProposalRegistry.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorBlockProposalSignature.cpp" ^
+    "%ROOT_DIR%\src\core\ProtectionBlockProposal.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
@@ -110,6 +125,10 @@ echo Building Nodo protection state rebuilder tests...
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorProposalRegistry.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorBlockProposalSignature.cpp" ^
+    "%ROOT_DIR%\src\core\ProtectionBlockProposal.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
@@ -151,6 +170,10 @@ echo Building Nodo coin lot registry tests...
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorProposalRegistry.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorBlockProposalSignature.cpp" ^
+    "%ROOT_DIR%\src\core\ProtectionBlockProposal.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
@@ -267,6 +290,10 @@ echo Building Nodo GenesisReward state flow tests...
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorProposalRegistry.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorBlockProposalSignature.cpp" ^
+    "%ROOT_DIR%\src\core\ProtectionBlockProposal.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
@@ -309,8 +336,19 @@ echo Building Nodo epoch reward distributor tests...
 %CXX% -std=c++20 -Wall -Wextra -I"%ROOT_DIR%\include" ^
     "%ROOT_DIR%\tests\economics\EpochRewardDistributorTests.cpp" ^
     "%ROOT_DIR%\src\utils\Amount.cpp" ^
+    "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorProposalRegistry.cpp" ^
+    "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoPolicy.cpp" ^
+    "%ROOT_DIR%\src\crypto\Signature.cpp" ^
+    "%ROOT_DIR%\src\crypto\PrivateKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorBlockProposalSignature.cpp" ^
+    "%ROOT_DIR%\src\core\ProtectionBlockProposal.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
@@ -335,11 +373,15 @@ echo Building Nodo epoch reward block proposal tests...
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorProposalRegistry.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorBlockProposalSignature.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
     "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyLedgerBuilder.cpp" ^
     "%ROOT_DIR%\src\core\CoinLot.cpp" ^
     "%ROOT_DIR%\src\core\Transaction.cpp" ^
     "%ROOT_DIR%\src\core\LedgerRecord.cpp" ^
@@ -375,11 +417,13 @@ echo Building Nodo validator block proposal signature tests...
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
     "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyLedgerBuilder.cpp" ^
     "%ROOT_DIR%\src\core\CoinLot.cpp" ^
     "%ROOT_DIR%\src\core\Transaction.cpp" ^
     "%ROOT_DIR%\src\core\LedgerRecord.cpp" ^
@@ -387,6 +431,7 @@ echo Building Nodo validator block proposal signature tests...
     "%ROOT_DIR%\src\core\Blockchain.cpp" ^
     "%ROOT_DIR%\src\core\ProtectionBlockProposal.cpp" ^
     "%ROOT_DIR%\src\core\ValidatorBlockProposalSignature.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorProposalRegistry.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyCommitment.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivacyNullifier.cpp" ^
     "%ROOT_DIR%\src\privacy\PrivateAccountingRecord.cpp" ^
@@ -416,11 +461,13 @@ echo Building Nodo validator proposal registry tests...
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
     "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyLedgerBuilder.cpp" ^
     "%ROOT_DIR%\src\core\CoinLot.cpp" ^
     "%ROOT_DIR%\src\core\Transaction.cpp" ^
     "%ROOT_DIR%\src\core\LedgerRecord.cpp" ^
@@ -444,6 +491,59 @@ echo Building Nodo validator proposal registry tests...
 
 if errorlevel 1 (
     echo Failed to build Nodo validator proposal registry tests.
+    exit /b 1
+)
+
+
+echo Building Nodo validator penalty record tests...
+
+%CXX% -std=c++20 -Wall -Wextra -I"%ROOT_DIR%\include" ^
+    "%ROOT_DIR%\tests\economics\ValidatorPenaltyRecordTests.cpp" ^
+    "%ROOT_DIR%\src\utils\Amount.cpp" ^
+    "%ROOT_DIR%\src\economics\MintRecord.cpp" ^
+    "%ROOT_DIR%\src\serialization\MintRecordCodec.cpp" ^
+    "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
+    "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
+    "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\core\Account.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLot.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotVerificationResult.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotRegistry.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransactionValidationResult.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransferPlan.cpp" ^
+    "%ROOT_DIR%\src\core\CoinLotTransactionValidator.cpp" ^
+    "%ROOT_DIR%\src\core\State.cpp" ^
+    "%ROOT_DIR%\src\core\Transaction.cpp" ^
+    "%ROOT_DIR%\src\core\LedgerRecord.cpp" ^
+    "%ROOT_DIR%\src\core\Block.cpp" ^
+    "%ROOT_DIR%\src\core\Blockchain.cpp" ^
+    "%ROOT_DIR%\src\core\ChainStateRebuilder.cpp" ^
+    "%ROOT_DIR%\src\core\ProtectionBlockProposal.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorBlockProposalSignature.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorProposalRegistry.cpp" ^
+    "%ROOT_DIR%\src\staking\SecurityWeight.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivacyCommitment.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivacyNullifier.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivateAccountingRecord.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoAlgorithm.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoPolicy.cpp" ^
+    "%ROOT_DIR%\src\crypto\PublicKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\PrivateKey.cpp" ^
+    "%ROOT_DIR%\src\crypto\Signature.cpp" ^
+    "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
+    "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%BUILD_DIR%\hash_economics_test.o" ^
+    -o "%BUILD_DIR%\validator_penalty_record_tests.exe"
+
+if errorlevel 1 (
+    echo Failed to build Nodo validator penalty record tests.
     exit /b 1
 )
 
@@ -549,6 +649,16 @@ echo Running Nodo validator proposal registry tests...
 
 if errorlevel 1 (
     echo Validator proposal registry tests failed.
+    exit /b 1
+)
+
+
+echo.
+echo Running Nodo validator penalty record tests...
+"%BUILD_DIR%\validator_penalty_record_tests.exe"
+
+if errorlevel 1 (
+    echo Validator penalty record tests failed.
     exit /b 1
 )
 
