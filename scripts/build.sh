@@ -42,6 +42,7 @@ echo "Building Nodo C++ application..."
     "$ROOT_DIR/src/economics/ProtectionEpoch.cpp" \
     "$ROOT_DIR/src/economics/GenesisRewardRecord.cpp" \
     "$ROOT_DIR/src/economics/EpochRewardDistributor.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardLedgerBuilder.cpp" \
     "$ROOT_DIR/src/economics/ProtectionEconomicsState.cpp" \
     "$ROOT_DIR/src/economics/ProtectionEconomicsRebuilder.cpp" \
     "$ROOT_DIR/src/serialization/FieldCodec.cpp" \
@@ -79,6 +80,7 @@ echo "Building Nodo C++ application..."
     "$ROOT_DIR/src/core/LedgerRecord.cpp" \
     "$ROOT_DIR/src/core/Block.cpp" \
     "$ROOT_DIR/src/core/Blockchain.cpp" \
+    "$ROOT_DIR/src/core/ProtectionBlockProposal.cpp" \
     "$ROOT_DIR/src/core/ChainStateRebuilder.cpp" \
     "$ROOT_DIR/src/staking/SecurityWeight.cpp" \
     "$ROOT_DIR/src/crypto/CryptoAlgorithm.cpp" \

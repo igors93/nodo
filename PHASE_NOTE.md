@@ -1,19 +1,28 @@
-# GenesisReward main State flow phase
+# Epoch reward block proposal phase
 
-This phase starts replacing demo MintRecord as the main supply-creation path.
+This phase connects epoch reward distribution to deterministic block proposal.
 
-New behavior:
+New components:
 
 ```text
-State can apply GenesisRewardRecord directly
-ChainStateRebuilder can rebuild State from GENESIS_REWARD ledger records
-GenesisReward records create deterministic reward CoinLots
-State supply audit counts GenesisReward supply
-legacy MintRecord remains only for compatibility
+EpochRewardLedgerBuildResult
+EpochRewardLedgerBuilder
+ProtectionBlockProposal
+ProtectionBlockBuilder
+```
+
+What this means:
+
+```text
+reward distributions can now become official LedgerRecords
+reward LedgerRecords are ordered canonically
+a protection reward block can be proposed for the next chain index
+the proposal is bound to the current chain tip
+no-reward epochs still produce an auditable ProtectionEpoch block
 ```
 
 Recommended commit:
 
 ```bash
-git commit -m "Add GenesisReward main state flow"
+git commit -m "Connect epoch rewards to block proposal"
 ```
