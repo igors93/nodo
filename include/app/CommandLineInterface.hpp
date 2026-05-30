@@ -89,6 +89,10 @@ private:
     static CommandLineResult executeInspect(
         const CommandLineOptions& options
     );
+
+    static CommandLineResult executeProduceDemoBlock(
+        const CommandLineOptions& options
+    );
 };
 
 } // namespace nodo::app

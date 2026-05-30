@@ -1,9 +1,18 @@
 #include "app/CommandLineInterface.hpp"
 
 #include "app/DemoScenario.hpp"
+#include "core/Transaction.hpp"
+#include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/CryptoPolicy.hpp"
+#include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
+#include "crypto/SignatureBundle.hpp"
+#include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
+#include "node/NodeRuntime.hpp"
+#include "node/RuntimeBlockPipeline.hpp"
+#include "utils/Amount.hpp"
 
 #include <chrono>
 #include <iostream>
@@ -27,6 +36,45 @@ crypto::PublicKey developmentValidatorKey(
         crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
         "nodo-cli-bootstrap-validator-public-key-" + suffix
     );
+}
+
+crypto::PublicKey developmentTransactionPublicKey() {
+    return crypto::PublicKey(
+        crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
+        "nodo-cli-demo-transaction-public-key"
+    );
+}
+
+crypto::PrivateKey developmentTransactionPrivateKey() {
+    return crypto::PrivateKey(
+        crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
+        "nodo-cli-demo-transaction-private-key"
+    );
+}
+
+core::Transaction createDemoTransaction(
+    std::int64_t timestamp
+) {
+    core::Transaction transaction(
+        core::TransactionType::TRANSFER,
+        "nodo-cli-demo-sender",
+        "nodo-cli-demo-recipient",
+        utils::Amount::fromRawUnits(1000),
+        utils::Amount::fromRawUnits(100),
+        static_cast<std::uint64_t>(timestamp),
+        timestamp
+    );
+
+    transaction.attachSignatureBundle(
+        crypto::SignatureBundle::createDevelopmentSignature(
+            transaction.signingPayload(),
+            developmentTransactionPublicKey(),
+            developmentTransactionPrivateKey(),
+            timestamp
+        )
+    );
+
+    return transaction;
 }
 
 bool isOption(
@@ -159,6 +207,10 @@ CommandLineResult CommandLineInterface::execute(
             return executeInspect(options);
         }
 
+        if (options.command == "produce-demo-block") {
+            return executeProduceDemoBlock(options);
+        }
+
         return CommandLineResult::failure(
             CommandLineStatus::INVALID_ARGUMENTS,
             "Unknown command: " + options.command + "\n\n" + helpText()
@@ -256,12 +308,13 @@ std::string CommandLineInterface::helpText() {
         "  nodo init [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo status [--data-dir PATH]\n"
         "  nodo inspect [--data-dir PATH]\n"
+        "  nodo produce-demo-block [--data-dir PATH]\n"
         "\n"
         "Options:\n"
-        "  --data-dir PATH     Node data directory. Default: .nodo\n"
-        "  --peer-id ID        Local peer id for init. Default: local-node\n"
+        "  --data-dir PATH      Node data directory. Default: .nodo\n"
+        "  --peer-id ID         Local peer id for init. Default: local-node\n"
         "  --endpoint HOST:PORT Local endpoint for init. Default: 127.0.0.1:9000\n"
-        "  --timestamp SECONDS Deterministic timestamp override for tests.\n";
+        "  --timestamp SECONDS  Deterministic timestamp override for tests.\n";
 }
 
 config::GenesisConfig CommandLineInterface::developmentGenesisConfig() {
@@ -390,6 +443,117 @@ CommandLineResult CommandLineInterface::executeInspect(
            << "------------\n"
            << "Data directory: " << options.dataDirectory.string() << "\n"
            << result.manifest().serialize() << "\n";
+
+    return CommandLineResult::success(output.str());
+}
+
+CommandLineResult CommandLineInterface::executeProduceDemoBlock(
+    const CommandLineOptions& options
+) {
+    const node::NodeDataDirectoryConfig directoryConfig(
+        options.dataDirectory
+    );
+
+    const node::NodeDataDirectoryReadResult manifest =
+        node::NodeDataDirectory::loadManifest(directoryConfig);
+
+    if (!manifest.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot produce block before init: "
+            + manifest.reason()
+            + "\n"
+        );
+    }
+
+    const node::NodeRuntimeConfig runtimeConfig(
+        developmentGenesisConfig(),
+        localPeerFromOptions(options),
+        developmentGenesisConfig().networkParameters().maxPeerCount()
+    );
+
+    const node::NodeRuntimeStartResult start =
+        node::NodeRuntimeFactory::startFromGenesis(
+            runtimeConfig
+        );
+
+    if (!start.started()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Failed to start local runtime: "
+            + start.reason()
+            + "\n"
+        );
+    }
+
+    node::NodeRuntime runtime =
+        start.runtime();
+
+    core::Transaction transaction =
+        createDemoTransaction(options.timestamp + 10);
+
+    const auto mempoolAdmission =
+        runtime.mutableMempool().admitTransaction(
+            transaction,
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            options.timestamp + 11
+        );
+
+    if (!mempoolAdmission.success()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Failed to admit demo transaction: "
+            + mempoolAdmission.reason()
+            + "\n"
+        );
+    }
+
+    const node::RuntimeBlockPipelineResult pipeline =
+        node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            runtime,
+            node::RuntimeBlockPipelineConfig(
+                100,
+                1,
+                1,
+                options.timestamp + 20
+            )
+        );
+
+    if (!pipeline.finalized()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Failed to produce finalized demo block: "
+            + pipeline.reason()
+            + "\n"
+        );
+    }
+
+    const node::FinalizedBlockStoreResult persisted =
+        node::FinalizedBlockStore::persist(
+            directoryConfig,
+            runtime,
+            pipeline,
+            options.timestamp + 30
+        );
+
+    if (!persisted.success()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Failed to persist finalized demo block: "
+            + persisted.reason()
+            + "\n"
+        );
+    }
+
+    std::ostringstream output;
+
+    output << "Nodo demo block finalized and persisted.\n"
+           << "Block height: " << pipeline.block().index() << "\n"
+           << "Block hash: " << pipeline.block().hash() << "\n"
+           << "Transactions finalized: " << pipeline.finalizedTransactionIds().size() << "\n"
+           << "Block file: " << persisted.blockPath().string() << "\n"
+           << "Manifest latest height: " << persisted.manifest().latestBlockHeight() << "\n";
 
     return CommandLineResult::success(output.str());
 }

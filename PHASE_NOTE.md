@@ -1,41 +1,37 @@
-# Cycle 7 implementation
+# Cycle 8 implementation
 
-This phase implements Cycle 7 in two fronts.
+This phase implements Cycle 8 in two fronts.
 
-## Front A — CLI commands for init, status and inspect
+## Front A — runtime block production command using mempool + finalization pipeline
 
 New components:
 
 ```text
-CommandLineInterface
-CommandLineOptions
-CommandLineResult
+RuntimeBlockPipelineConfig
+RuntimeBlockPipelineResult
+RuntimeBlockPipeline
 ```
 
-The executable now supports:
+The CLI also adds:
 
 ```bash
-nodo init
-nodo status
-nodo inspect
-nodo demo
-nodo help
+nodo produce-demo-block
 ```
 
-## Front B — persistent node data directory and runtime manifest
+## Front B — persistent block/manifest update after finalized block
 
 New components:
 
 ```text
-NodeDataDirectoryConfig
-NodeRuntimeManifest
-NodeDataDirectory
+FinalizedBlockStore
+FinalizedBlockStoreResult
 ```
 
-Nodo can now initialize a durable local data directory and inspect the manifest.
+Nodo can now write finalized block artifacts under `.nodo/blocks/` and update
+the runtime manifest after a block is finalized.
 
 Recommended commit:
 
 ```bash
-git commit -m "Add CLI commands and persistent node data directory"
+git commit -m "Add runtime block pipeline and finalized block persistence"
 ```
