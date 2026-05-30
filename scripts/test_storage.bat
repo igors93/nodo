@@ -34,6 +34,11 @@ echo Building Nodo blockchain storage integration tests...
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorProposalRegistry.cpp" ^
+    "%ROOT_DIR%\src\core\ValidatorBlockProposalSignature.cpp" ^
+    "%ROOT_DIR%\src\core\ProtectionBlockProposal.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^

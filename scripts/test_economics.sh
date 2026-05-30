@@ -22,6 +22,7 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/tests/economics/ProtectionEconomicsTests.cpp" \
     "$ROOT_DIR/src/utils/Amount.cpp" \
     "$ROOT_DIR/src/serialization/FieldCodec.cpp" \
+    "$ROOT_DIR/src/serialization/LedgerRecordCodec.cpp" \
     "$ROOT_DIR/src/core/CoinLot.cpp" \
     "$ROOT_DIR/src/economics/ValidationWorkRecord.cpp" \
     "$ROOT_DIR/src/economics/ValidatorScoreRecord.cpp" \
@@ -38,6 +39,21 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/economics/EpochEmissionPolicy.cpp" \
     "$ROOT_DIR/src/economics/ProtectionEpoch.cpp" \
     "$ROOT_DIR/src/economics/GenesisRewardRecord.cpp" \
+    "$ROOT_DIR/src/utils/Time.cpp" \
+    "$ROOT_DIR/src/economics/MintRecord.cpp" \
+    "$ROOT_DIR/src/serialization/MintRecordCodec.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardDistributor.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardLedgerBuilder.cpp" \
+    "$ROOT_DIR/src/economics/ValidatorPenaltyLedgerBuilder.cpp" \
+    "$ROOT_DIR/src/core/Account.cpp" \
+    "$ROOT_DIR/src/core/Transaction.cpp" \
+    "$ROOT_DIR/src/core/LedgerRecord.cpp" \
+    "$ROOT_DIR/src/core/Block.cpp" \
+    "$ROOT_DIR/src/core/Blockchain.cpp" \
+    "$ROOT_DIR/src/privacy/PrivacyCommitment.cpp" \
+    "$ROOT_DIR/src/privacy/PrivacyNullifier.cpp" \
+    "$ROOT_DIR/src/privacy/PrivateAccountingRecord.cpp" \
+    "$ROOT_DIR/src/crypto/CryptoAlgorithm.cpp" \
     "$BUILD_DIR/hash_economics_test.o" \
     -o "$BUILD_DIR/protection_economics_tests"
 
@@ -75,6 +91,10 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/crypto/Signature.cpp" \
     "$ROOT_DIR/src/crypto/DevelopmentSignatureProvider.cpp" \
     "$ROOT_DIR/src/crypto/SignatureBundle.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardDistributor.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardLedgerBuilder.cpp" \
+    "$ROOT_DIR/src/economics/ValidatorPenaltyLedgerBuilder.cpp" \
+    "$ROOT_DIR/src/core/Blockchain.cpp" \
     "$BUILD_DIR/hash_economics_test.o" \
     -o "$BUILD_DIR/protection_ledger_integration_tests"
 
@@ -115,6 +135,9 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/crypto/Signature.cpp" \
     "$ROOT_DIR/src/crypto/DevelopmentSignatureProvider.cpp" \
     "$ROOT_DIR/src/crypto/SignatureBundle.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardDistributor.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardLedgerBuilder.cpp" \
+    "$ROOT_DIR/src/economics/ValidatorPenaltyLedgerBuilder.cpp" \
     "$BUILD_DIR/hash_economics_test.o" \
     -o "$BUILD_DIR/protection_state_rebuilder_tests"
 
@@ -158,6 +181,9 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/crypto/Signature.cpp" \
     "$ROOT_DIR/src/crypto/DevelopmentSignatureProvider.cpp" \
     "$ROOT_DIR/src/crypto/SignatureBundle.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardDistributor.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardLedgerBuilder.cpp" \
+    "$ROOT_DIR/src/economics/ValidatorPenaltyLedgerBuilder.cpp" \
     "$BUILD_DIR/hash_economics_test.o" \
     -o "$BUILD_DIR/coin_lot_registry_tests"
 
@@ -266,6 +292,9 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/crypto/Signature.cpp" \
     "$ROOT_DIR/src/crypto/DevelopmentSignatureProvider.cpp" \
     "$ROOT_DIR/src/crypto/SignatureBundle.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardDistributor.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardLedgerBuilder.cpp" \
+    "$ROOT_DIR/src/economics/ValidatorPenaltyLedgerBuilder.cpp" \
     "$BUILD_DIR/hash_economics_test.o" \
     -o "$BUILD_DIR/genesis_reward_state_flow_tests"
 
@@ -293,6 +322,20 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/economics/GenesisRewardRecord.cpp" \
     "$ROOT_DIR/src/economics/EpochRewardDistributor.cpp" \
     "$ROOT_DIR/src/core/CoinLot.cpp" \
+    "$ROOT_DIR/src/utils/Time.cpp" \
+    "$ROOT_DIR/src/economics/MintRecord.cpp" \
+    "$ROOT_DIR/src/serialization/MintRecordCodec.cpp" \
+    "$ROOT_DIR/src/economics/EpochRewardLedgerBuilder.cpp" \
+    "$ROOT_DIR/src/economics/ValidatorPenaltyLedgerBuilder.cpp" \
+    "$ROOT_DIR/src/core/Account.cpp" \
+    "$ROOT_DIR/src/core/Transaction.cpp" \
+    "$ROOT_DIR/src/core/LedgerRecord.cpp" \
+    "$ROOT_DIR/src/core/Block.cpp" \
+    "$ROOT_DIR/src/core/Blockchain.cpp" \
+    "$ROOT_DIR/src/privacy/PrivacyCommitment.cpp" \
+    "$ROOT_DIR/src/privacy/PrivacyNullifier.cpp" \
+    "$ROOT_DIR/src/privacy/PrivateAccountingRecord.cpp" \
+    "$ROOT_DIR/src/crypto/CryptoAlgorithm.cpp" \
     "$BUILD_DIR/hash_economics_test.o" \
     -o "$BUILD_DIR/epoch_reward_distributor_tests"
 
@@ -332,6 +375,8 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/crypto/Signature.cpp" \
     "$ROOT_DIR/src/crypto/DevelopmentSignatureProvider.cpp" \
     "$ROOT_DIR/src/crypto/SignatureBundle.cpp" \
+    "$ROOT_DIR/src/utils/Time.cpp" \
+    "$ROOT_DIR/src/core/Account.cpp" \
     "$BUILD_DIR/hash_economics_test.o" \
     -o "$BUILD_DIR/epoch_reward_block_proposal_tests"
 
@@ -371,6 +416,8 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/crypto/Signature.cpp" \
     "$ROOT_DIR/src/crypto/DevelopmentSignatureProvider.cpp" \
     "$ROOT_DIR/src/crypto/SignatureBundle.cpp" \
+    "$ROOT_DIR/src/utils/Time.cpp" \
+    "$ROOT_DIR/src/core/Account.cpp" \
     "$BUILD_DIR/hash_economics_test.o" \
     -o "$BUILD_DIR/validator_block_proposal_signature_tests"
 
@@ -410,6 +457,8 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/crypto/Signature.cpp" \
     "$ROOT_DIR/src/crypto/DevelopmentSignatureProvider.cpp" \
     "$ROOT_DIR/src/crypto/SignatureBundle.cpp" \
+    "$ROOT_DIR/src/utils/Time.cpp" \
+    "$ROOT_DIR/src/core/Account.cpp" \
     "$BUILD_DIR/hash_economics_test.o" \
     -o "$BUILD_DIR/validator_proposal_registry_tests"
 
@@ -422,6 +471,7 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/economics/MintRecord.cpp" \
     "$ROOT_DIR/src/serialization/MintRecordCodec.cpp" \
     "$ROOT_DIR/src/serialization/FieldCodec.cpp" \
+    "$ROOT_DIR/src/serialization/LedgerRecordCodec.cpp" \
     "$ROOT_DIR/src/economics/ValidationWorkRecord.cpp" \
     "$ROOT_DIR/src/economics/ValidatorScoreRecord.cpp" \
     "$ROOT_DIR/src/economics/ValidatorPenaltyRecord.cpp" \
@@ -458,6 +508,7 @@ g++ -std=c++20 -Wall -Wextra -I"$ROOT_DIR/include" \
     "$ROOT_DIR/src/crypto/Signature.cpp" \
     "$ROOT_DIR/src/crypto/DevelopmentSignatureProvider.cpp" \
     "$ROOT_DIR/src/crypto/SignatureBundle.cpp" \
+    "$ROOT_DIR/src/utils/Time.cpp" \
     "$BUILD_DIR/hash_economics_test.o" \
     -o "$BUILD_DIR/validator_penalty_record_tests"
 

@@ -64,6 +64,21 @@ echo Building Nodo protection economics tests...
     "%ROOT_DIR%\src\economics\EpochEmissionPolicy.cpp" ^
     "%ROOT_DIR%\src\economics\ProtectionEpoch.cpp" ^
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
+    "%ROOT_DIR%\src\utils\Time.cpp" ^
+    "%ROOT_DIR%\src\economics\MintRecord.cpp" ^
+    "%ROOT_DIR%\src\serialization\MintRecordCodec.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\core\Account.cpp" ^
+    "%ROOT_DIR%\src\core\Transaction.cpp" ^
+    "%ROOT_DIR%\src\core\LedgerRecord.cpp" ^
+    "%ROOT_DIR%\src\core\Block.cpp" ^
+    "%ROOT_DIR%\src\core\Blockchain.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivacyCommitment.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivacyNullifier.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivateAccountingRecord.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoAlgorithm.cpp" ^
     "%BUILD_DIR%\hash_economics_test.o" ^
     -o "%BUILD_DIR%\protection_economics_tests.exe"
 
@@ -106,6 +121,10 @@ echo Building Nodo protection ledger integration tests...
     "%ROOT_DIR%\src\crypto\Signature.cpp" ^
     "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
     "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\core\Blockchain.cpp" ^
     "%BUILD_DIR%\hash_economics_test.o" ^
     -o "%BUILD_DIR%\protection_ledger_integration_tests.exe"
 
@@ -151,6 +170,9 @@ echo Building Nodo protection state rebuilder tests...
     "%ROOT_DIR%\src\crypto\Signature.cpp" ^
     "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
     "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyLedgerBuilder.cpp" ^
     "%BUILD_DIR%\hash_economics_test.o" ^
     -o "%BUILD_DIR%\protection_state_rebuilder_tests.exe"
 
@@ -199,6 +221,9 @@ echo Building Nodo coin lot registry tests...
     "%ROOT_DIR%\src\crypto\Signature.cpp" ^
     "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
     "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyLedgerBuilder.cpp" ^
     "%BUILD_DIR%\hash_economics_test.o" ^
     -o "%BUILD_DIR%\coin_lot_registry_tests.exe"
 
@@ -322,6 +347,9 @@ echo Building Nodo GenesisReward state flow tests...
     "%ROOT_DIR%\src\crypto\Signature.cpp" ^
     "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
     "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyLedgerBuilder.cpp" ^
     "%BUILD_DIR%\hash_economics_test.o" ^
     -o "%BUILD_DIR%\genesis_reward_state_flow_tests.exe"
 
@@ -354,6 +382,20 @@ echo Building Nodo epoch reward distributor tests...
     "%ROOT_DIR%\src\economics\GenesisRewardRecord.cpp" ^
     "%ROOT_DIR%\src\economics\EpochRewardDistributor.cpp" ^
     "%ROOT_DIR%\src\core\CoinLot.cpp" ^
+    "%ROOT_DIR%\src\utils\Time.cpp" ^
+    "%ROOT_DIR%\src\economics\MintRecord.cpp" ^
+    "%ROOT_DIR%\src\serialization\MintRecordCodec.cpp" ^
+    "%ROOT_DIR%\src\economics\EpochRewardLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\economics\ValidatorPenaltyLedgerBuilder.cpp" ^
+    "%ROOT_DIR%\src\core\Account.cpp" ^
+    "%ROOT_DIR%\src\core\Transaction.cpp" ^
+    "%ROOT_DIR%\src\core\LedgerRecord.cpp" ^
+    "%ROOT_DIR%\src\core\Block.cpp" ^
+    "%ROOT_DIR%\src\core\Blockchain.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivacyCommitment.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivacyNullifier.cpp" ^
+    "%ROOT_DIR%\src\privacy\PrivateAccountingRecord.cpp" ^
+    "%ROOT_DIR%\src\crypto\CryptoAlgorithm.cpp" ^
     "%BUILD_DIR%\hash_economics_test.o" ^
     -o "%BUILD_DIR%\epoch_reward_distributor_tests.exe"
 
@@ -398,6 +440,8 @@ echo Building Nodo epoch reward block proposal tests...
     "%ROOT_DIR%\src\crypto\Signature.cpp" ^
     "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
     "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\utils\Time.cpp" ^
+    "%ROOT_DIR%\src\core\Account.cpp" ^
     "%BUILD_DIR%\hash_economics_test.o" ^
     -o "%BUILD_DIR%\epoch_reward_block_proposal_tests.exe"
 
@@ -442,6 +486,8 @@ echo Building Nodo validator block proposal signature tests...
     "%ROOT_DIR%\src\crypto\Signature.cpp" ^
     "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
     "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\utils\Time.cpp" ^
+    "%ROOT_DIR%\src\core\Account.cpp" ^
     "%BUILD_DIR%\hash_economics_test.o" ^
     -o "%BUILD_DIR%\validator_block_proposal_signature_tests.exe"
 
@@ -486,6 +532,8 @@ echo Building Nodo validator proposal registry tests...
     "%ROOT_DIR%\src\crypto\Signature.cpp" ^
     "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
     "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\utils\Time.cpp" ^
+    "%ROOT_DIR%\src\core\Account.cpp" ^
     "%BUILD_DIR%\hash_economics_test.o" ^
     -o "%BUILD_DIR%\validator_proposal_registry_tests.exe"
 
@@ -503,6 +551,7 @@ echo Building Nodo validator penalty record tests...
     "%ROOT_DIR%\src\economics\MintRecord.cpp" ^
     "%ROOT_DIR%\src\serialization\MintRecordCodec.cpp" ^
     "%ROOT_DIR%\src\serialization\FieldCodec.cpp" ^
+    "%ROOT_DIR%\src\serialization\LedgerRecordCodec.cpp" ^
     "%ROOT_DIR%\src\economics\ValidationWorkRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorScoreRecord.cpp" ^
     "%ROOT_DIR%\src\economics\ValidatorPenaltyRecord.cpp" ^
@@ -539,6 +588,7 @@ echo Building Nodo validator penalty record tests...
     "%ROOT_DIR%\src\crypto\Signature.cpp" ^
     "%ROOT_DIR%\src\crypto\DevelopmentSignatureProvider.cpp" ^
     "%ROOT_DIR%\src\crypto\SignatureBundle.cpp" ^
+    "%ROOT_DIR%\src\utils\Time.cpp" ^
     "%BUILD_DIR%\hash_economics_test.o" ^
     -o "%BUILD_DIR%\validator_penalty_record_tests.exe"
 
