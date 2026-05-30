@@ -1,34 +1,37 @@
-# Cycle 3 implementation
+# Cycle 4 implementation
 
-This phase implements Cycle 3 in two fronts.
+This phase implements Cycle 4 in two fronts.
 
-## Front A — validator vote records and quorum certificate
-
-New components:
-
-```text
-ValidatorVoteRecord
-QuorumCertificate
-QuorumCertificateBuilder
-```
-
-This gives Nodo the first consensus voting primitive.
-
-## Front B — mempool admission and transaction queue
+## Front A — block finalization with quorum certificate
 
 New components:
 
 ```text
-MempoolConfig
-MempoolEntry
-MempoolAdmissionResult
-Mempool
+FinalizedBlockRecord
+BlockFinalizationRegistry
+BlockFinalizationResult
+BlockFinalizer
 ```
 
-This gives Nodo a deterministic transaction queue before block production.
+A block can now be appended/finalized only after a valid `QuorumCertificate`
+proves enough registered validators approved that exact block.
+
+## Front B — block producer pipeline from mempool
+
+New components:
+
+```text
+BlockProductionConfig
+BlockProductionPlan
+BlockProductionResult
+MempoolBlockProducer
+```
+
+Nodo can now produce a candidate block from admitted mempool transactions without
+mutating the mempool.
 
 Recommended commit:
 
 ```bash
-git commit -m "Add validator votes quorum certificate and mempool"
+git commit -m "Add block finalization and mempool block producer"
 ```
