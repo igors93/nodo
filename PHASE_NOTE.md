@@ -1,38 +1,37 @@
-# Cycle 5 implementation
+# Cycle 6 implementation
 
-This phase implements Cycle 5 in two fronts.
+This phase implements Cycle 6 in two fronts.
 
-## Front A — fork choice and finalized checkpoint validation
-
-New components:
-
-```text
-FinalizedCheckpoint
-ChainForkSummary
-ForkChoiceResult
-ForkChoicePolicy
-```
-
-Nodo can now compare local and candidate chains without violating finalized
-checkpoints.
-
-## Front B — P2P message types and local node synchronization foundation
+## Front A — genesis config and network parameters
 
 New components:
 
 ```text
-PeerInfo
-PeerMessage
-PeerMessageFactory
-LocalSyncPlan
-LocalNodeSynchronizer
+NetworkParameters
+BootstrapValidatorConfig
+GenesisConfig
+GenesisBuilder
 ```
 
-Nodo can now create deterministic P2P message envelopes and plan block sync from
-a better peer summary.
+Nodo now has deterministic configuration for creating the initial chain and
+bootstrap validator registry.
+
+## Front B — node runtime skeleton with local peer manager
+
+New components:
+
+```text
+LocalPeerManager
+NodeRuntimeConfig
+NodeRuntime
+NodeRuntimeFactory
+```
+
+Nodo now has a local runtime object that binds chain state, validator registry,
+mempool, finalization registry and P2P sync planning.
 
 Recommended commit:
 
 ```bash
-git commit -m "Add fork choice and P2P sync foundation"
+git commit -m "Add genesis config and node runtime skeleton"
 ```
