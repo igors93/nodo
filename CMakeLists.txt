@@ -105,6 +105,14 @@ foreach(test_source ${NODO_TEST_SOURCES})
         set_tests_properties(${test_relative_dir}/${test_target}
             PROPERTIES LABELS "crypto"
         )
+    elseif(test_relative_dir STREQUAL "consensus")
+        set_tests_properties(${test_relative_dir}/${test_target}
+            PROPERTIES LABELS "consensus;protection"
+        )
+    elseif(test_relative_dir STREQUAL "mempool")
+        set_tests_properties(${test_relative_dir}/${test_target}
+            PROPERTIES LABELS "mempool"
+        )
     else()
         set_tests_properties(${test_relative_dir}/${test_target}
             PROPERTIES LABELS "${test_relative_dir}"
