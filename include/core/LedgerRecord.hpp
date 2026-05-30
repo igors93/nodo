@@ -40,6 +40,10 @@ enum class LedgerRecordType {
 
 std::string ledgerRecordTypeToString(LedgerRecordType type);
 
+LedgerRecordType ledgerRecordTypeFromString(
+    const std::string& value
+);
+
 /*
  * LedgerRecord represents an immutable record accepted by the Nodo ledger.
  *
@@ -88,6 +92,21 @@ public:
 
     static LedgerRecord fromValidatorPenaltyRecord(
         const economics::ValidatorPenaltyRecord& validatorPenaltyRecord,
+        std::int64_t timestamp
+    );
+
+    /*
+     * Rebuilds an already-accepted ledger record from durable block storage.
+     *
+     * This does not re-run the original event admission flow. It verifies that
+     * the stored id/payloadHash/timestamp still form a valid immutable record.
+     */
+    static LedgerRecord fromPersistedFields(
+        std::string id,
+        LedgerRecordType type,
+        std::string sourceId,
+        std::string payload,
+        std::string payloadHash,
         std::int64_t timestamp
     );
 

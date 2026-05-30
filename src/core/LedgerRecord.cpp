@@ -31,6 +31,44 @@ std::string ledgerRecordTypeToString(LedgerRecordType type) {
     }
 }
 
+LedgerRecordType ledgerRecordTypeFromString(
+    const std::string& value
+) {
+    if (value == "MINT") {
+        return LedgerRecordType::MINT;
+    }
+
+    if (value == "TRANSACTION") {
+        return LedgerRecordType::TRANSACTION;
+    }
+
+    if (value == "PRIVATE_ACCOUNTING") {
+        return LedgerRecordType::PRIVATE_ACCOUNTING;
+    }
+
+    if (value == "VALIDATION_WORK") {
+        return LedgerRecordType::VALIDATION_WORK;
+    }
+
+    if (value == "VALIDATOR_SCORE") {
+        return LedgerRecordType::VALIDATOR_SCORE;
+    }
+
+    if (value == "PROTECTION_EPOCH") {
+        return LedgerRecordType::PROTECTION_EPOCH;
+    }
+
+    if (value == "GENESIS_REWARD") {
+        return LedgerRecordType::GENESIS_REWARD;
+    }
+
+    if (value == "VALIDATOR_PENALTY") {
+        return LedgerRecordType::VALIDATOR_PENALTY;
+    }
+
+    throw std::invalid_argument("Unknown LedgerRecordType: " + value);
+}
+
 LedgerRecord::LedgerRecord(
     std::string id,
     LedgerRecordType type,
@@ -45,6 +83,30 @@ LedgerRecord::LedgerRecord(
       m_payload(std::move(payload)),
       m_payloadHash(std::move(payloadHash)),
       m_timestamp(timestamp) {}
+
+LedgerRecord LedgerRecord::fromPersistedFields(
+    std::string id,
+    LedgerRecordType type,
+    std::string sourceId,
+    std::string payload,
+    std::string payloadHash,
+    std::int64_t timestamp
+) {
+    LedgerRecord record(
+        std::move(id),
+        type,
+        std::move(sourceId),
+        std::move(payload),
+        std::move(payloadHash),
+        timestamp
+    );
+
+    if (!record.isValid()) {
+        throw std::invalid_argument("Invalid persisted LedgerRecord rejected.");
+    }
+
+    return record;
+}
 
 LedgerRecord LedgerRecord::fromMintRecord(
     const economics::MintRecord& mintRecord,

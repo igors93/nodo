@@ -11,7 +11,9 @@
 #include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
+#include "node/PersistentMempoolStore.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
+#include "node/RuntimeStateLoader.hpp"
 #include "utils/Amount.hpp"
 
 #include <chrono>
@@ -211,6 +213,10 @@ CommandLineResult CommandLineInterface::execute(
             return executeProduceDemoBlock(options);
         }
 
+        if (options.command == "submit-demo-transaction") {
+            return executeSubmitDemoTransaction(options);
+        }
+
         return CommandLineResult::failure(
             CommandLineStatus::INVALID_ARGUMENTS,
             "Unknown command: " + options.command + "\n\n" + helpText()
@@ -308,12 +314,13 @@ std::string CommandLineInterface::helpText() {
         "  nodo init [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo status [--data-dir PATH]\n"
         "  nodo inspect [--data-dir PATH]\n"
+        "  nodo submit-demo-transaction [--data-dir PATH]\n"
         "  nodo produce-demo-block [--data-dir PATH]\n"
         "\n"
         "Options:\n"
         "  --data-dir PATH      Node data directory. Default: .nodo\n"
-        "  --peer-id ID         Local peer id for init. Default: local-node\n"
-        "  --endpoint HOST:PORT Local endpoint for init. Default: 127.0.0.1:9000\n"
+        "  --peer-id ID         Local peer id for init/load. Default: local-node\n"
+        "  --endpoint HOST:PORT Local endpoint for init/load. Default: 127.0.0.1:9000\n"
         "  --timestamp SECONDS  Deterministic timestamp override for tests.\n";
 }
 
@@ -447,7 +454,7 @@ CommandLineResult CommandLineInterface::executeInspect(
     return CommandLineResult::success(output.str());
 }
 
-CommandLineResult CommandLineInterface::executeProduceDemoBlock(
+CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
     const CommandLineOptions& options
 ) {
     const node::NodeDataDirectoryConfig directoryConfig(
@@ -460,53 +467,109 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
     if (!manifest.loaded()) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
-            "Cannot produce block before init: "
+            "Cannot submit transaction before init: "
             + manifest.reason()
             + "\n"
         );
     }
 
-    const node::NodeRuntimeConfig runtimeConfig(
-        developmentGenesisConfig(),
-        localPeerFromOptions(options),
-        developmentGenesisConfig().networkParameters().maxPeerCount()
-    );
+    const core::Transaction transaction =
+        createDemoTransaction(options.timestamp + 10);
 
-    const node::NodeRuntimeStartResult start =
-        node::NodeRuntimeFactory::startFromGenesis(
-            runtimeConfig
+    const node::PersistentMempoolWriteResult persisted =
+        node::PersistentMempoolStore::persistTransaction(
+            directoryConfig,
+            transaction,
+            developmentTransactionPublicKey(),
+            options.timestamp + 11
         );
 
-    if (!start.started()) {
+    if (!persisted.success()) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
-            "Failed to start local runtime: "
-            + start.reason()
+            "Failed to persist demo transaction: "
+            + persisted.reason()
+            + "\n"
+        );
+    }
+
+    std::ostringstream output;
+
+    output << "Nodo demo transaction submitted.\n"
+           << "Transaction id: " << persisted.transactionId() << "\n"
+           << "Mempool file: " << persisted.path().string() << "\n";
+
+    return CommandLineResult::success(output.str());
+}
+
+CommandLineResult CommandLineInterface::executeProduceDemoBlock(
+    const CommandLineOptions& options
+) {
+    const node::NodeDataDirectoryConfig directoryConfig(
+        options.dataDirectory
+    );
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            developmentGenesisConfig(),
+            localPeerFromOptions(options)
+        );
+
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load runtime from data directory: "
+            + load.reason()
             + "\n"
         );
     }
 
     node::NodeRuntime runtime =
-        start.runtime();
+        load.runtime();
 
-    core::Transaction transaction =
-        createDemoTransaction(options.timestamp + 10);
+    /*
+     * Backward-compatible operator convenience:
+     * If no pending transaction was submitted yet, create one demo transaction
+     * and persist it before producing the demo block.
+     */
+    if (runtime.mempool().empty()) {
+        const core::Transaction transaction =
+            createDemoTransaction(options.timestamp + 10);
 
-    const auto mempoolAdmission =
-        runtime.mutableMempool().admitTransaction(
-            transaction,
-            crypto::CryptoPolicy::developmentPolicy(),
-            crypto::SecurityContext::USER_TRANSACTION,
-            options.timestamp + 11
-        );
+        const node::PersistentMempoolWriteResult persisted =
+            node::PersistentMempoolStore::persistTransaction(
+                directoryConfig,
+                transaction,
+                developmentTransactionPublicKey(),
+                options.timestamp + 11
+            );
 
-    if (!mempoolAdmission.success()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to admit demo transaction: "
-            + mempoolAdmission.reason()
-            + "\n"
-        );
+        if (!persisted.success()) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "Failed to create fallback demo transaction: "
+                + persisted.reason()
+                + "\n"
+            );
+        }
+
+        const auto admission =
+            runtime.mutableMempool().admitTransaction(
+                transaction,
+                crypto::CryptoPolicy::developmentPolicy(),
+                crypto::SecurityContext::USER_TRANSACTION,
+                options.timestamp + 11
+            );
+
+        if (!admission.success()) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "Failed to admit fallback demo transaction: "
+                + admission.reason()
+                + "\n"
+            );
+        }
     }
 
     const node::RuntimeBlockPipelineResult pipeline =
@@ -529,7 +592,7 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
         );
     }
 
-    const node::FinalizedBlockStoreResult persisted =
+    const node::FinalizedBlockStoreResult persistedBlock =
         node::FinalizedBlockStore::persist(
             directoryConfig,
             runtime,
@@ -537,14 +600,20 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
             options.timestamp + 30
         );
 
-    if (!persisted.success()) {
+    if (!persistedBlock.success()) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
             "Failed to persist finalized demo block: "
-            + persisted.reason()
+            + persistedBlock.reason()
             + "\n"
         );
     }
+
+    const std::size_t removedPendingTransactions =
+        node::PersistentMempoolStore::removeTransactions(
+            directoryConfig,
+            pipeline.finalizedTransactionIds()
+        );
 
     std::ostringstream output;
 
@@ -552,8 +621,9 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
            << "Block height: " << pipeline.block().index() << "\n"
            << "Block hash: " << pipeline.block().hash() << "\n"
            << "Transactions finalized: " << pipeline.finalizedTransactionIds().size() << "\n"
-           << "Block file: " << persisted.blockPath().string() << "\n"
-           << "Manifest latest height: " << persisted.manifest().latestBlockHeight() << "\n";
+           << "Pending transactions removed: " << removedPendingTransactions << "\n"
+           << "Block file: " << persistedBlock.blockPath().string() << "\n"
+           << "Manifest latest height: " << persistedBlock.manifest().latestBlockHeight() << "\n";
 
     return CommandLineResult::success(output.str());
 }

@@ -93,6 +93,10 @@ private:
     static CommandLineResult executeProduceDemoBlock(
         const CommandLineOptions& options
     );
+
+    static CommandLineResult executeSubmitDemoTransaction(
+        const CommandLineOptions& options
+    );
 };
 
 } // namespace nodo::app

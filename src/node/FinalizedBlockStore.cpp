@@ -250,12 +250,21 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
 ) {
     std::ostringstream oss;
 
-    oss << "NODO_FINALIZED_BLOCK_V1\n"
+    oss << "NODO_FINALIZED_BLOCK_V2\n"
         << "blockIndex=" << pipelineResult.block().index() << "\n"
         << "blockHash=" << pipelineResult.block().hash() << "\n"
         << "previousHash=" << pipelineResult.block().previousHash() << "\n"
-        << "transactionCount=" << pipelineResult.finalizedTransactionIds().size() << "\n"
-        << "block=" << pipelineResult.block().serialize() << "\n"
+        << "timestamp=" << pipelineResult.block().timestamp() << "\n"
+        << "recordCount=" << pipelineResult.block().records().size() << "\n";
+
+    const auto& records =
+        pipelineResult.block().records();
+
+    for (std::size_t index = 0; index < records.size(); ++index) {
+        oss << "record." << index << "=" << records[index].serialize() << "\n";
+    }
+
+    oss << "block=" << pipelineResult.block().serialize() << "\n"
         << "quorumCertificate=" << pipelineResult.certificate().serialize() << "\n"
         << "finalizedRecord=" << pipelineResult.finalizedRecord().serialize() << "\n";
 
