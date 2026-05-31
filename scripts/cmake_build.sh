@@ -23,7 +23,7 @@ if command -v make >/dev/null 2>&1; then
 fi
 
 cmake -S "$ROOT_DIR" -B "$CMAKE_BUILD_DIR" "${cmake_args[@]}"
-cmake --build "$CMAKE_BUILD_DIR" --parallel
+cmake --build "$CMAKE_BUILD_DIR" --parallel "${NODO_BUILD_JOBS:-1}"
 
 echo
 echo "CMake build completed successfully."
