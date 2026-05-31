@@ -6,6 +6,7 @@
 #include "consensus/QuorumCertificate.hpp"
 #include "core/Block.hpp"
 #include "node/LockedStakePosition.hpp"
+#include "node/MonetaryFirewall.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
@@ -92,6 +93,7 @@ public:
         std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
         std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
         std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+        MonetaryFirewallAudit monetaryFirewallAudit,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -106,6 +108,7 @@ public:
     const std::vector<ValidatorRiskAssessment>& validatorRiskAssessments() const;
     const std::vector<ValidatorContainmentDecision>& validatorContainmentDecisions() const;
     const std::vector<ValidatorNetworkPolicy>& validatorNetworkPolicies() const;
+    const MonetaryFirewallAudit& monetaryFirewallAudit() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -123,6 +126,7 @@ private:
     std::vector<ValidatorRiskAssessment> m_validatorRiskAssessments;
     std::vector<ValidatorContainmentDecision> m_validatorContainmentDecisions;
     std::vector<ValidatorNetworkPolicy> m_validatorNetworkPolicies;
+    MonetaryFirewallAudit m_monetaryFirewallAudit;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };

@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V10";
+    "NODO_FINALIZED_BLOCK_V11";
 
 } // namespace
 
@@ -151,6 +151,13 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
         );
     }
 
+    if (!pipelineResult.monetaryFirewallAudit().passed()) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::INVALID_PIPELINE_RESULT,
+            "Runtime block pipeline result failed monetary firewall audit."
+        );
+    }
+
     const NodeDataDirectoryReadResult existingManifest =
         NodeDataDirectory::loadManifest(directoryConfig);
 
@@ -285,6 +292,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"validatorRiskAssessmentCount", std::to_string(pipelineResult.validatorRiskAssessments().size())},
         {"validatorContainmentDecisionCount", std::to_string(pipelineResult.validatorContainmentDecisions().size())},
         {"validatorNetworkPolicyCount", std::to_string(pipelineResult.validatorNetworkPolicies().size())},
+        {"monetaryFirewallStatus", pipelineResult.monetaryFirewallAudit().status()},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -420,6 +428,21 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         fields.emplace_back(prefix + "reason", networkPolicies[index].reason());
         fields.emplace_back(prefix + "sourceContainmentDigest", networkPolicies[index].sourceContainmentDigest());
     }
+
+    const MonetaryFirewallAudit& monetaryAudit =
+        pipelineResult.monetaryFirewallAudit();
+
+    fields.emplace_back("monetary.blockHeight", std::to_string(monetaryAudit.supplyLedger().blockHeight()));
+    fields.emplace_back("monetary.supplyBeforeRawUnits", std::to_string(monetaryAudit.supplyLedger().supplyBefore().rawUnits()));
+    fields.emplace_back("monetary.mintedRawUnits", std::to_string(monetaryAudit.supplyLedger().minted().rawUnits()));
+    fields.emplace_back("monetary.burnedRawUnits", std::to_string(monetaryAudit.supplyLedger().burned().rawUnits()));
+    fields.emplace_back("monetary.treasuryDeltaRawUnits", std::to_string(monetaryAudit.supplyLedger().treasuryDelta().rawUnits()));
+    fields.emplace_back("monetary.supplyAfterRawUnits", std::to_string(monetaryAudit.supplyLedger().supplyAfter().rawUnits()));
+    fields.emplace_back("monetary.annualMintLimitRawUnits", std::to_string(monetaryAudit.annualMintLimit().rawUnits()));
+    fields.emplace_back("monetary.annualMintUsedBeforeRawUnits", std::to_string(monetaryAudit.annualMintUsedBefore().rawUnits()));
+    fields.emplace_back("monetary.annualMintUsedAfterRawUnits", std::to_string(monetaryAudit.annualMintUsedAfter().rawUnits()));
+    fields.emplace_back("monetary.policyId", monetaryAudit.policyId());
+    fields.emplace_back("monetary.reason", monetaryAudit.reason());
 
     fields.emplace_back(
         "block",

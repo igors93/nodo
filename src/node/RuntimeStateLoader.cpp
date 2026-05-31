@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V10";
+    "NODO_FINALIZED_BLOCK_V11";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -415,6 +415,66 @@ ValidatorNetworkPolicy parseValidatorNetworkPolicy(
     return policy;
 }
 
+
+MonetaryFirewallAudit parseMonetaryFirewallAudit(
+    const serialization::KeyValueFileDocument& document
+) {
+    const std::string status =
+        document.requireField("monetaryFirewallStatus");
+
+    const SupplyLedgerSnapshot ledger(
+        parseU64Strict(
+            document.requireField("monetary.blockHeight"),
+            "monetary.blockHeight"
+        ),
+        parseAmountStrict(
+            document.requireField("monetary.supplyBeforeRawUnits"),
+            "monetary.supplyBeforeRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("monetary.mintedRawUnits"),
+            "monetary.mintedRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("monetary.burnedRawUnits"),
+            "monetary.burnedRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("monetary.treasuryDeltaRawUnits"),
+            "monetary.treasuryDeltaRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("monetary.supplyAfterRawUnits"),
+            "monetary.supplyAfterRawUnits"
+        )
+    );
+
+    MonetaryFirewallAudit audit(
+        status,
+        ledger,
+        parseAmountStrict(
+            document.requireField("monetary.annualMintLimitRawUnits"),
+            "monetary.annualMintLimitRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("monetary.annualMintUsedBeforeRawUnits"),
+            "monetary.annualMintUsedBeforeRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("monetary.annualMintUsedAfterRawUnits"),
+            "monetary.annualMintUsedAfterRawUnits"
+        ),
+        document.requireField("monetary.policyId"),
+        document.requireField("monetary.reason")
+    );
+
+    if (!audit.isValid()) {
+        throw std::invalid_argument("Finalized block monetary firewall audit is invalid.");
+    }
+
+    return audit;
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -491,6 +551,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_validatorRiskAssessments(),
       m_validatorContainmentDecisions(),
       m_validatorNetworkPolicies(),
+      m_monetaryFirewallAudit(MonetaryFirewallAudit::notEvaluated()),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -505,6 +566,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
     std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
     std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+    MonetaryFirewallAudit monetaryFirewallAudit,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -518,6 +580,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_validatorRiskAssessments(std::move(validatorRiskAssessments)),
       m_validatorContainmentDecisions(std::move(validatorContainmentDecisions)),
       m_validatorNetworkPolicies(std::move(validatorNetworkPolicies)),
+      m_monetaryFirewallAudit(std::move(monetaryFirewallAudit)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -565,6 +628,10 @@ const std::vector<ValidatorNetworkPolicy>& FinalizedBlockArtifact::validatorNetw
     return m_validatorNetworkPolicies;
 }
 
+const MonetaryFirewallAudit& FinalizedBlockArtifact::monetaryFirewallAudit() const {
+    return m_monetaryFirewallAudit;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -591,7 +658,8 @@ bool FinalizedBlockArtifact::isValid() const {
                    m_securityCheckpoints.empty() &&
                    m_validatorRiskAssessments.empty() &&
                    m_validatorContainmentDecisions.empty() &&
-                   m_validatorNetworkPolicies.empty();
+                   m_validatorNetworkPolicies.empty() &&
+                   m_monetaryFirewallAudit.passed();
         }
 
         return RewardDistributionCalculator::totalReward(m_rewardDistributions) == m_totalFee &&
@@ -618,7 +686,8 @@ bool FinalizedBlockArtifact::isValid() const {
                ValidatorNetworkPolicyBuilder::samePolicies(
                    ValidatorNetworkPolicyBuilder::buildFromContainmentDecisions(m_validatorContainmentDecisions),
                    m_validatorNetworkPolicies
-               );
+               ) &&
+               m_monetaryFirewallAudit.passed();
     } catch (const std::exception&) {
         return false;
     }
@@ -638,6 +707,7 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";validatorRiskAssessmentCount=" << m_validatorRiskAssessments.size()
         << ";validatorContainmentDecisionCount=" << m_validatorContainmentDecisions.size()
         << ";validatorNetworkPolicyCount=" << m_validatorNetworkPolicies.size()
+        << ";monetaryFirewallStatus=" << m_monetaryFirewallAudit.status()
         << "}";
 
     return oss.str();
@@ -738,6 +808,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "validatorRiskAssessmentCount",
         "validatorContainmentDecisionCount",
         "validatorNetworkPolicyCount",
+        "monetaryFirewallStatus",
+        "monetary.blockHeight",
+        "monetary.supplyBeforeRawUnits",
+        "monetary.mintedRawUnits",
+        "monetary.burnedRawUnits",
+        "monetary.treasuryDeltaRawUnits",
+        "monetary.supplyAfterRawUnits",
+        "monetary.annualMintLimitRawUnits",
+        "monetary.annualMintUsedBeforeRawUnits",
+        "monetary.annualMintUsedAfterRawUnits",
+        "monetary.policyId",
+        "monetary.reason",
         "timestamp",
         "recordCount",
         "block",
@@ -839,9 +921,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V10 stores explicit block fields, fee accounting, locked stake,
-     * security score records, checkpoints, risk assessments, containment decisions
-     * and network policies. The canonical block serialization remains the
+     * V11 stores explicit block fields, fee accounting, locked stake,
+     * security score records, checkpoints, risk assessments, containment decisions,
+     * network policies and the monetary firewall audit. The canonical block serialization remains the
      * integrity anchor for the block payload itself.
      */
     const std::string serializedBlock = document.requireField("block");
@@ -894,6 +976,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     for (std::size_t policyIndex = 0; policyIndex < validatorNetworkPolicyCount; ++policyIndex) {
         validatorNetworkPolicies.push_back(parseValidatorNetworkPolicy(document, policyIndex));
     }
+
+    const MonetaryFirewallAudit monetaryFirewallAudit =
+        parseMonetaryFirewallAudit(document);
 
     const std::int64_t timestamp = parseI64Strict(document.requireField("timestamp"), "timestamp");
 
@@ -971,6 +1056,10 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block validator network policies do not match containment decisions.");
     }
 
+    if (!monetaryFirewallAudit.passed()) {
+        throw std::invalid_argument("Finalized block monetary firewall audit did not pass.");
+    }
+
     std::vector<std::pair<std::string, std::string>> canonicalFields = {
         {"blockIndex", document.requireField("blockIndex")},
         {"blockHash", document.requireField("blockHash")},
@@ -984,6 +1073,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"validatorRiskAssessmentCount", std::to_string(validatorRiskAssessments.size())},
         {"validatorContainmentDecisionCount", std::to_string(validatorContainmentDecisions.size())},
         {"validatorNetworkPolicyCount", std::to_string(validatorNetworkPolicies.size())},
+        {"monetaryFirewallStatus", monetaryFirewallAudit.status()},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -1080,6 +1170,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         canonicalFields.emplace_back(prefix + "sourceContainmentDigest", validatorNetworkPolicies[policyIndex].sourceContainmentDigest());
     }
 
+    canonicalFields.emplace_back("monetary.blockHeight", std::to_string(monetaryFirewallAudit.supplyLedger().blockHeight()));
+    canonicalFields.emplace_back("monetary.supplyBeforeRawUnits", std::to_string(monetaryFirewallAudit.supplyLedger().supplyBefore().rawUnits()));
+    canonicalFields.emplace_back("monetary.mintedRawUnits", std::to_string(monetaryFirewallAudit.supplyLedger().minted().rawUnits()));
+    canonicalFields.emplace_back("monetary.burnedRawUnits", std::to_string(monetaryFirewallAudit.supplyLedger().burned().rawUnits()));
+    canonicalFields.emplace_back("monetary.treasuryDeltaRawUnits", std::to_string(monetaryFirewallAudit.supplyLedger().treasuryDelta().rawUnits()));
+    canonicalFields.emplace_back("monetary.supplyAfterRawUnits", std::to_string(monetaryFirewallAudit.supplyLedger().supplyAfter().rawUnits()));
+    canonicalFields.emplace_back("monetary.annualMintLimitRawUnits", std::to_string(monetaryFirewallAudit.annualMintLimit().rawUnits()));
+    canonicalFields.emplace_back("monetary.annualMintUsedBeforeRawUnits", std::to_string(monetaryFirewallAudit.annualMintUsedBefore().rawUnits()));
+    canonicalFields.emplace_back("monetary.annualMintUsedAfterRawUnits", std::to_string(monetaryFirewallAudit.annualMintUsedAfter().rawUnits()));
+    canonicalFields.emplace_back("monetary.policyId", monetaryFirewallAudit.policyId());
+    canonicalFields.emplace_back("monetary.reason", monetaryFirewallAudit.reason());
+
     canonicalFields.emplace_back("block", serializedBlock);
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
@@ -1102,6 +1204,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         validatorRiskAssessments,
         validatorContainmentDecisions,
         validatorNetworkPolicies,
+        monetaryFirewallAudit,
         quorumCertificate,
         finalizedRecord
     );
@@ -1260,6 +1363,16 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
             if (!ValidatorNetworkPolicyBuilder::samePolicies(expectedNetworkPolicies, artifact.validatorNetworkPolicies())) {
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted validator network policies do not match rebuilt containment decisions.");
+            }
+
+            const MonetaryFirewallAudit expectedMonetaryAudit =
+                MonetaryFirewall::buildZeroMintAudit(
+                    genesisConfig,
+                    block.index()
+                );
+
+            if (!MonetaryFirewall::sameAudit(expectedMonetaryAudit, artifact.monetaryFirewallAudit())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted monetary firewall audit does not match rebuilt monetary policy.");
             }
 
             const consensus::BlockFinalizationResult finalization =

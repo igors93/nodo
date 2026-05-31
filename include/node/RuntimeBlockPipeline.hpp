@@ -7,6 +7,7 @@
 #include "core/MempoolBlockProducer.hpp"
 #include "crypto/Signer.hpp"
 #include "node/LockedStakePosition.hpp"
+#include "node/MonetaryFirewall.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
 #include "node/SecurityScore.hpp"
@@ -186,6 +187,23 @@ public:
         std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies
     );
 
+    static RuntimeBlockPipelineResult finalized(
+        core::Block block,
+        consensus::QuorumCertificate certificate,
+        consensus::FinalizedBlockRecord finalizedRecord,
+        std::vector<std::string> finalizedTransactionIds,
+        std::string postStateRoot,
+        utils::Amount totalFee,
+        std::vector<RewardDistribution> rewardDistributions,
+        std::vector<LockedStakePosition> lockedStakePositions,
+        std::vector<SecurityScoreRecord> securityScoreRecords,
+        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+        MonetaryFirewallAudit monetaryFirewallAudit
+    );
+
     static RuntimeBlockPipelineResult rejected(
         RuntimeBlockPipelineStatus status,
         std::string reason
@@ -208,6 +226,7 @@ public:
     const std::vector<ValidatorRiskAssessment>& validatorRiskAssessments() const;
     const std::vector<ValidatorContainmentDecision>& validatorContainmentDecisions() const;
     const std::vector<ValidatorNetworkPolicy>& validatorNetworkPolicies() const;
+    const MonetaryFirewallAudit& monetaryFirewallAudit() const;
 
     std::string serialize() const;
 
@@ -233,6 +252,7 @@ private:
     std::vector<ValidatorRiskAssessment> m_validatorRiskAssessments;
     std::vector<ValidatorContainmentDecision> m_validatorContainmentDecisions;
     std::vector<ValidatorNetworkPolicy> m_validatorNetworkPolicies;
+    MonetaryFirewallAudit m_monetaryFirewallAudit;
 };
 
 /*

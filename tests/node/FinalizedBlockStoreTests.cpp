@@ -282,6 +282,13 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should derive network policies from containment decisions."
     );
 
+    requireCondition(
+        pipeline.monetaryFirewallAudit().passed() &&
+        pipeline.monetaryFirewallAudit().supplyLedger().minted().rawUnits() == 0 &&
+        pipeline.monetaryFirewallAudit().supplyLedger().burned().rawUnits() == 0,
+        "Pipeline should pass the monetary firewall audit for zero-mint blocks."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -386,6 +393,14 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("validatorNetworkPolicy.0.requiresManualReview=true") != std::string::npos &&
         blockContents.find("validatorNetworkPolicy.0.reason=VALIDATOR_NETWORK_POLICY") != std::string::npos,
         "Finalized block file should persist validator network policies."
+    );
+
+    requireCondition(
+        blockContents.find("monetaryFirewallStatus=PASS") != std::string::npos &&
+        blockContents.find("monetary.mintedRawUnits=0") != std::string::npos &&
+        blockContents.find("monetary.burnedRawUnits=0") != std::string::npos &&
+        blockContents.find("monetary.reason=MONETARY_FIREWALL_ZERO_MINT") != std::string::npos,
+        "Finalized block file should persist monetary firewall audit."
     );
 
     const auto loaded =
