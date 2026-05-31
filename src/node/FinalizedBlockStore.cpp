@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V7";
+    "NODO_FINALIZED_BLOCK_V8";
 
 } // namespace
 
@@ -282,6 +282,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"lockedStakePositionCount", std::to_string(pipelineResult.lockedStakePositions().size())},
         {"securityScoreRecordCount", std::to_string(pipelineResult.securityScoreRecords().size())},
         {"securityCheckpointCount", std::to_string(pipelineResult.securityCheckpoints().size())},
+        {"validatorRiskAssessmentCount", std::to_string(pipelineResult.validatorRiskAssessments().size())},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -359,6 +360,25 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         fields.emplace_back(prefix + "securityScoreRecordCount", std::to_string(securityCheckpoints[index].securityScoreRecordCount()));
         fields.emplace_back(prefix + "reason", securityCheckpoints[index].reason());
         fields.emplace_back(prefix + "sourceDigest", securityCheckpoints[index].sourceDigest());
+    }
+
+    const std::vector<ValidatorRiskAssessment>& riskAssessments =
+        pipelineResult.validatorRiskAssessments();
+
+    for (std::size_t index = 0; index < riskAssessments.size(); ++index) {
+        const std::string prefix =
+            "validatorRisk." + std::to_string(index) + ".";
+
+        fields.emplace_back(prefix + "validatorAddress", riskAssessments[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(riskAssessments[index].blockHeight()));
+        fields.emplace_back(prefix + "score", std::to_string(riskAssessments[index].score()));
+        fields.emplace_back(prefix + "band", riskAssessments[index].band());
+        fields.emplace_back(prefix + "lockedStakeRawUnits", std::to_string(riskAssessments[index].lockedStake().rawUnits()));
+        fields.emplace_back(prefix + "riskScore", std::to_string(riskAssessments[index].riskScore()));
+        fields.emplace_back(prefix + "riskLevel", riskAssessments[index].riskLevel());
+        fields.emplace_back(prefix + "recommendedAction", riskAssessments[index].recommendedAction());
+        fields.emplace_back(prefix + "reason", riskAssessments[index].reason());
+        fields.emplace_back(prefix + "checkpointDigest", riskAssessments[index].checkpointDigest());
     }
 
     fields.emplace_back(

@@ -11,6 +11,7 @@
 #include "node/RewardDistribution.hpp"
 #include "node/SecurityScore.hpp"
 #include "node/SecurityCheckpoint.hpp"
+#include "node/ValidatorRiskAssessment.hpp"
 #include "p2p/PeerMessage.hpp"
 #include "utils/Amount.hpp"
 
@@ -86,6 +87,7 @@ public:
         std::vector<LockedStakePosition> lockedStakePositions,
         std::vector<SecurityScoreRecord> securityScoreRecords,
         std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -97,6 +99,7 @@ public:
     const std::vector<LockedStakePosition>& lockedStakePositions() const;
     const std::vector<SecurityScoreRecord>& securityScoreRecords() const;
     const std::vector<ValidatorSecurityCheckpoint>& securityCheckpoints() const;
+    const std::vector<ValidatorRiskAssessment>& validatorRiskAssessments() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -111,6 +114,7 @@ private:
     std::vector<LockedStakePosition> m_lockedStakePositions;
     std::vector<SecurityScoreRecord> m_securityScoreRecords;
     std::vector<ValidatorSecurityCheckpoint> m_securityCheckpoints;
+    std::vector<ValidatorRiskAssessment> m_validatorRiskAssessments;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };

@@ -257,6 +257,14 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should consolidate security score records into validator checkpoints."
     );
 
+    requireCondition(
+        pipeline.validatorRiskAssessments().size() == 1U &&
+        pipeline.validatorRiskAssessments().front().riskScore() == 996 &&
+        pipeline.validatorRiskAssessments().front().riskLevel() == "HIGH" &&
+        pipeline.validatorRiskAssessments().front().recommendedAction() == "QUARANTINE_REVIEW",
+        "Pipeline should derive validator risk assessments from security checkpoints."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -333,6 +341,15 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("securityCheckpoint.0.lockedStakeRawUnits=10") != std::string::npos &&
         blockContents.find("securityCheckpoint.0.reason=SECURITY_SCORE_CHECKPOINT") != std::string::npos,
         "Finalized block file should persist validator security checkpoints."
+    );
+
+    requireCondition(
+        blockContents.find("validatorRiskAssessmentCount=1") != std::string::npos &&
+        blockContents.find("validatorRisk.0.riskScore=996") != std::string::npos &&
+        blockContents.find("validatorRisk.0.riskLevel=HIGH") != std::string::npos &&
+        blockContents.find("validatorRisk.0.recommendedAction=QUARANTINE_REVIEW") != std::string::npos &&
+        blockContents.find("validatorRisk.0.reason=VALIDATOR_SECURITY_RISK_ASSESSMENT") != std::string::npos,
+        "Finalized block file should persist validator risk assessments."
     );
 
     const auto loaded =
