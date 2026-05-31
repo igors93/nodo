@@ -9,6 +9,7 @@
 #include "core/StateTransitionPreview.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
+#include "node/RuntimeAccountStateBuilder.hpp"
 
 #include <limits>
 #include <sstream>
@@ -18,27 +19,6 @@
 namespace nodo::node {
 
 namespace {
-
-core::AccountStateView genesisAccountStateView(
-    const config::GenesisConfig& genesisConfig
-) {
-    core::AccountStateView view;
-
-    for (const config::GenesisAccountConfig& account :
-         genesisConfig.genesisAccounts()) {
-        if (!view.putAccount(
-                core::AccountState(
-                    account.address(),
-                    account.balance(),
-                    account.nonce()
-                )
-            )) {
-            throw std::logic_error("Failed to seed genesis account state.");
-        }
-    }
-
-    return view;
-}
 
 std::int64_t minimumFeeRawUnitsForRuntime(
     const NodeRuntime& runtime
@@ -59,52 +39,10 @@ core::StateTransitionPreviewContext previewContextForRuntime(
     const std::int64_t minimumFee =
         minimumFeeRawUnitsForRuntime(runtime);
 
-    core::AccountStateView view =
-        genesisAccountStateView(
-            runtime.config().genesisConfig()
-        );
-
-    for (const core::Block& block : runtime.blockchain().blocks()) {
-        if (block.isGenesisBlock()) {
-            continue;
-        }
-
-        const core::StateTransitionPreviewContext replayContext(
-            minimumFee,
-            view,
-            false,
-            true
-        );
-
-        const core::StateTransitionPreviewResult replay =
-            core::StateTransitionPreview::previewBlock(
-                block,
-                replayContext
-            );
-
-        if (!replay.accepted()) {
-            throw std::logic_error(
-                "Cannot build preview account state from finalized chain: "
-                + replay.reason()
-            );
-        }
-
-        core::AccountStateView nextView;
-
-        for (const core::AccountState& account : replay.resultingAccounts()) {
-            if (!nextView.putAccount(account)) {
-                throw std::logic_error("Preview replay produced invalid account state.");
-            }
-        }
-
-        view = nextView;
-    }
-
-    return core::StateTransitionPreviewContext(
-        minimumFee,
-        view,
-        false,
-        true
+    return RuntimeAccountStateBuilder::previewContextAtTip(
+        runtime.config().genesisConfig(),
+        runtime.blockchain(),
+        minimumFee
     );
 }
 

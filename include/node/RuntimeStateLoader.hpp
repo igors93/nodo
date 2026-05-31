@@ -8,6 +8,7 @@
 #include "p2p/PeerMessage.hpp"
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -66,6 +67,26 @@ private:
     std::size_t m_loadedMempoolTransactionCount;
 };
 
+class FinalizedBlockArtifact {
+public:
+    FinalizedBlockArtifact();
+
+    FinalizedBlockArtifact(
+        core::Block block,
+        std::string postStateRoot
+    );
+
+    const core::Block& block() const;
+    const std::string& postStateRoot() const;
+
+    bool isValid() const;
+    std::string serialize() const;
+
+private:
+    std::optional<core::Block> m_block;
+    std::string m_postStateRoot;
+};
+
 class FinalizedBlockFileCodec {
 public:
     static core::Block readBlockFile(
@@ -73,6 +94,14 @@ public:
     );
 
     static core::Block decodeBlockFileContents(
+        const std::string& contents
+    );
+
+    static FinalizedBlockArtifact readBlockArtifactFile(
+        const std::filesystem::path& path
+    );
+
+    static FinalizedBlockArtifact decodeBlockArtifactFileContents(
         const std::string& contents
     );
 };

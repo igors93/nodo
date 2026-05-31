@@ -20,6 +20,7 @@
 #include "utils/Amount.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -81,6 +82,24 @@ void clean(
         path,
         error
     );
+}
+
+std::string readFile(
+    const std::filesystem::path& path
+) {
+    std::ifstream input(path);
+    return std::string(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>()
+    );
+}
+
+void writeFile(
+    const std::filesystem::path& path,
+    const std::string& contents
+) {
+    std::ofstream output(path, std::ios::trunc);
+    output << contents;
 }
 
 KeyPair localValidatorKeyPair() {
@@ -338,12 +357,123 @@ void testLoadsPersistentMempoolIntoRuntime() {
     clean(path);
 }
 
+void testRejectsFinalizedBlockWithTamperedPostStateRoot() {
+    const std::filesystem::path path =
+        tempPath("tampered-state-root");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig directoryConfig(path);
+
+    requireCondition(
+        NodeDataDirectory::initialize(
+            directoryConfig,
+            genesisConfig(),
+            localPeer(),
+            kTimestamp + 60
+        ).initialized(),
+        "Data directory should initialize."
+    );
+
+    NodeRuntime runtime =
+        startRuntime();
+
+    const Transaction transaction =
+        signedTransfer(
+            "tamper",
+            1,
+            kTimestamp + 70
+        );
+
+    requireCondition(
+        runtime.mutableMempool().admitTransaction(
+            transaction,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            kTimestamp + 71
+        ).accepted(),
+        "Transaction should enter mempool."
+    );
+
+    const auto pipeline =
+        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            runtime,
+            RuntimeBlockPipelineConfig(
+                100,
+                1,
+                1,
+                kTimestamp + 80
+            ),
+            localValidatorSigner()
+        );
+
+    requireCondition(
+        pipeline.finalized(),
+        "Pipeline should finalize a block."
+    );
+
+    const auto persisted =
+        FinalizedBlockStore::persist(
+            directoryConfig,
+            runtime,
+            pipeline,
+            kTimestamp + 90
+        );
+
+    requireCondition(
+        persisted.stored(),
+        "Finalized block should persist before tampering."
+    );
+
+    std::string contents =
+        readFile(persisted.blockPath());
+
+    const std::string expected =
+        "postStateRoot=" + pipeline.postStateRoot();
+
+    const std::size_t position =
+        contents.find(expected);
+
+    requireCondition(
+        position != std::string::npos,
+        "Persisted block should contain expected postStateRoot."
+    );
+
+    contents.replace(
+        position,
+        expected.size(),
+        "postStateRoot=bad-state-root"
+    );
+
+    writeFile(
+        persisted.blockPath(),
+        contents
+    );
+
+    const auto loaded =
+        RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig(),
+            localPeer()
+        );
+
+    requireCondition(
+        !loaded.loaded() &&
+        loaded.status() == nodo::node::RuntimeStateLoadStatus::BLOCK_FILE_INVALID &&
+        loaded.reason().find("postStateRoot") != std::string::npos,
+        "Runtime loader should reject finalized block with tampered postStateRoot."
+    );
+
+    clean(path);
+}
+
 } // namespace
 
 int main() {
     try {
         testLoadsRuntimeWithPersistedFinalizedBlock();
         testLoadsPersistentMempoolIntoRuntime();
+        testRejectsFinalizedBlockWithTamperedPostStateRoot();
 
         std::cout << "Nodo runtime state loader tests passed.\n";
         return 0;

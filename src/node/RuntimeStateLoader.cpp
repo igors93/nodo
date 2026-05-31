@@ -2,10 +2,13 @@
 
 #include "node/FinalizedBlockStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
+#include "node/RuntimeAccountStateBuilder.hpp"
+#include "core/StateTransitionPreview.hpp"
 #include "serialization/BlockCodec.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
+#include <limits>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -22,6 +25,19 @@ std::string readTextFile(
     const std::filesystem::path& path
 ) {
     return storage::AtomicFile::readTextFile(path);
+}
+
+std::int64_t minimumFeeRawUnits(
+    const config::GenesisConfig& genesisConfig
+) {
+    const std::uint64_t minimumFee =
+        genesisConfig.networkParameters().minimumFeeRawUnits();
+
+    if (minimumFee > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+
+    return static_cast<std::int64_t>(minimumFee);
 }
 
 } // namespace
@@ -89,6 +105,46 @@ RuntimeStateLoadResult RuntimeStateLoadResult::rejected(
     return result;
 }
 
+FinalizedBlockArtifact::FinalizedBlockArtifact()
+    : m_block(std::nullopt),
+      m_postStateRoot("") {}
+
+FinalizedBlockArtifact::FinalizedBlockArtifact(
+    core::Block block,
+    std::string postStateRoot
+)
+    : m_block(std::move(block)),
+      m_postStateRoot(std::move(postStateRoot)) {}
+
+const core::Block& FinalizedBlockArtifact::block() const {
+    if (!m_block.has_value()) {
+        throw std::logic_error("FinalizedBlockArtifact has no block.");
+    }
+
+    return m_block.value();
+}
+
+const std::string& FinalizedBlockArtifact::postStateRoot() const {
+    return m_postStateRoot;
+}
+
+bool FinalizedBlockArtifact::isValid() const {
+    return m_block.has_value() &&
+           m_block->isValid() &&
+           !m_postStateRoot.empty();
+}
+
+std::string FinalizedBlockArtifact::serialize() const {
+    std::ostringstream oss;
+
+    oss << "FinalizedBlockArtifact{"
+        << "blockHash=" << (m_block.has_value() && m_block->isValid() ? m_block->hash() : "INVALID")
+        << ";postStateRoot=" << m_postStateRoot
+        << "}";
+
+    return oss.str();
+}
+
 RuntimeStateLoadStatus RuntimeStateLoadResult::status() const {
     return m_status;
 }
@@ -136,12 +192,24 @@ std::string RuntimeStateLoadResult::serialize() const {
 core::Block FinalizedBlockFileCodec::readBlockFile(
     const std::filesystem::path& path
 ) {
-    return decodeBlockFileContents(
+    return readBlockArtifactFile(path).block();
+}
+
+core::Block FinalizedBlockFileCodec::decodeBlockFileContents(
+    const std::string& contents
+) {
+    return decodeBlockArtifactFileContents(contents).block();
+}
+
+FinalizedBlockArtifact FinalizedBlockFileCodec::readBlockArtifactFile(
+    const std::filesystem::path& path
+) {
+    return decodeBlockArtifactFileContents(
         readTextFile(path)
     );
 }
 
-core::Block FinalizedBlockFileCodec::decodeBlockFileContents(
+FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const std::string& contents
 ) {
     const serialization::KeyValueFileDocument document =
@@ -194,8 +262,15 @@ core::Block FinalizedBlockFileCodec::decodeBlockFileContents(
     const std::string previousHash =
         document.requireField("previousHash");
 
+    const std::string postStateRoot =
+        document.requireField("postStateRoot");
+
     const std::int64_t timestamp =
         std::stoll(document.requireField("timestamp"));
+
+    if (postStateRoot.empty()) {
+        throw std::invalid_argument("Finalized block file postStateRoot is empty.");
+    }
 
     if (block.index() != index ||
         block.hash() != blockHash ||
@@ -214,7 +289,10 @@ core::Block FinalizedBlockFileCodec::decodeBlockFileContents(
         }
     }
 
-    return block;
+    return FinalizedBlockArtifact(
+        block,
+        postStateRoot
+    );
 }
 
 RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
@@ -286,15 +364,10 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             );
         }
 
-        core::Block block(
-            0,
-            "GENESIS",
-            runtime.blockchain().genesisBlock().records(),
-            runtime.blockchain().genesisBlock().timestamp()
-        );
+        FinalizedBlockArtifact artifact;
 
         try {
-            block = FinalizedBlockFileCodec::readBlockFile(blockPath);
+            artifact = FinalizedBlockFileCodec::readBlockArtifactFile(blockPath);
         } catch (const std::exception& error) {
             return RuntimeStateLoadResult::rejected(
                 RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
@@ -302,10 +375,48 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             );
         }
 
+        const core::Block& block =
+            artifact.block();
+
         if (!runtime.mutableBlockchain().canAppendBlock(block)) {
             return RuntimeStateLoadResult::rejected(
                 RuntimeStateLoadStatus::BLOCK_APPEND_FAILED,
                 "Persisted block cannot append to rebuilt runtime chain."
+            );
+        }
+
+        try {
+            const core::StateTransitionPreviewContext previewContext =
+                RuntimeAccountStateBuilder::previewContextAtTip(
+                    genesisConfig,
+                    runtime.blockchain(),
+                    minimumFeeRawUnits(genesisConfig)
+                );
+
+            const core::StateTransitionPreviewResult preview =
+                core::StateTransitionPreview::previewBlock(
+                    block,
+                    previewContext
+                );
+
+            if (!preview.accepted()) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Persisted block failed state preview during reload: "
+                    + preview.reason()
+                );
+            }
+
+            if (preview.stateRoot() != artifact.postStateRoot()) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Persisted block postStateRoot does not match rebuilt account state."
+                );
+            }
+        } catch (const std::exception& error) {
+            return RuntimeStateLoadResult::rejected(
+                RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                error.what()
             );
         }
 

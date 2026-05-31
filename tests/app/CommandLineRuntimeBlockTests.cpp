@@ -1,9 +1,11 @@
 #include "app/CommandLineInterface.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -35,6 +37,24 @@ void clean(
         path,
         error
     );
+}
+
+std::string readFile(
+    const std::filesystem::path& path
+) {
+    std::ifstream input(path);
+    return std::string(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>()
+    );
+}
+
+void writeFile(
+    const std::filesystem::path& path,
+    const std::string& contents
+) {
+    std::ofstream output(path, std::ios::trunc);
+    output << contents;
 }
 
 void testProduceBlockRequiresMempoolTransaction() {
@@ -185,12 +205,142 @@ void testProduceDemoBlockBeforeInitFails() {
     clean(path);
 }
 
+void testChainAuditRejectsTamperedPostStateRoot() {
+    const std::filesystem::path path =
+        tempPath("audit-state-root");
+
+    clean(path);
+
+    const std::vector<std::string> peerOptions = {
+        "--peer-id",
+        "cli-audit-state-root-peer",
+        "--endpoint",
+        "127.0.0.1:9510"
+    };
+
+    requireCondition(
+        CommandLineInterface::execute(
+            {
+                "init",
+                "--data-dir",
+                path.string(),
+                peerOptions[0],
+                peerOptions[1],
+                peerOptions[2],
+                peerOptions[3],
+                "--timestamp",
+                std::to_string(kTimestamp)
+            }
+        ).success(),
+        "Init should succeed."
+    );
+
+    requireCondition(
+        CommandLineInterface::execute(
+            {
+                "keys",
+                "create",
+                "--data-dir",
+                path.string(),
+                "--timestamp",
+                std::to_string(kTimestamp + 10)
+            }
+        ).success(),
+        "Key creation should succeed."
+    );
+
+    requireCondition(
+        CommandLineInterface::execute(
+            {
+                "tx",
+                "submit",
+                "--data-dir",
+                path.string(),
+                "--timestamp",
+                std::to_string(kTimestamp + 20)
+            }
+        ).success(),
+        "Transaction submit should succeed."
+    );
+
+    requireCondition(
+        CommandLineInterface::execute(
+            {
+                "block",
+                "produce",
+                "--data-dir",
+                path.string(),
+                peerOptions[0],
+                peerOptions[1],
+                peerOptions[2],
+                peerOptions[3],
+                "--timestamp",
+                std::to_string(kTimestamp + 30)
+            }
+        ).success(),
+        "Block production should succeed before tampering."
+    );
+
+    const std::filesystem::path blockPath =
+        path / "blocks" / "block_1.nodo";
+
+    std::string contents =
+        readFile(blockPath);
+
+    const std::size_t fieldStart =
+        contents.find("postStateRoot=");
+
+    requireCondition(
+        fieldStart != std::string::npos,
+        "Finalized block file should contain postStateRoot."
+    );
+
+    const std::size_t fieldEnd =
+        contents.find('\n', fieldStart);
+
+    contents.replace(
+        fieldStart,
+        fieldEnd - fieldStart,
+        "postStateRoot=tampered-root"
+    );
+
+    writeFile(
+        blockPath,
+        contents
+    );
+
+    const auto audit =
+        CommandLineInterface::execute(
+            {
+                "chain",
+                "audit",
+                "--data-dir",
+                path.string(),
+                peerOptions[0],
+                peerOptions[1],
+                peerOptions[2],
+                peerOptions[3],
+                "--timestamp",
+                std::to_string(kTimestamp + 40)
+            }
+        );
+
+    requireCondition(
+        !audit.success() &&
+        audit.message().find("postStateRoot") != std::string::npos,
+        "Chain audit should reject tampered postStateRoot."
+    );
+
+    clean(path);
+}
+
 } // namespace
 
 int main() {
     try {
         testProduceBlockRequiresMempoolTransaction();
         testProduceDemoBlockBeforeInitFails();
+        testChainAuditRejectsTamperedPostStateRoot();
 
         std::cout << "Nodo command line runtime block tests passed.\n";
         return 0;
