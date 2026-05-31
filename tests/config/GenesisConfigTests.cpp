@@ -1,5 +1,5 @@
 #include "config/NetworkParameters.hpp"
-#include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PublicKey.hpp"
 #include "utils/Amount.hpp"
 
@@ -17,7 +17,7 @@ using nodo::config::GenesisBuilder;
 using nodo::config::GenesisBuildStatus;
 using nodo::config::GenesisConfig;
 using nodo::config::NetworkParameters;
-using nodo::crypto::CryptoAlgorithm;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PublicKey;
 using nodo::utils::Amount;
 
@@ -35,10 +35,9 @@ void requireCondition(
 PublicKey publicKey(
     const std::string& suffix
 ) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "genesis-config-public-key-" + suffix
-    );
+    return KeyPair::createDeterministicBls12381KeyPair(
+        "genesis-config-validator-key-" + suffix
+    ).publicKey();
 }
 
 BootstrapValidatorConfig validator(

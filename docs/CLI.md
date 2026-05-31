@@ -8,7 +8,7 @@ nodo init [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
 nodo status [--data-dir PATH]
 nodo inspect [--data-dir PATH]
 nodo node reload [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
-nodo keys create [--data-dir PATH] [--key-id ID]
+nodo keys create [--data-dir PATH] [--type user|validator|both] [--key-id ID]
 nodo keys list [--data-dir PATH]
 nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]
 nodo block produce [--data-dir PATH]
@@ -23,7 +23,8 @@ nodo validator list [--data-dir PATH]
 - `inspect`: prints the serialized manifest.
 - `node reload`: rebuilds runtime from manifest, finalized blocks and
   persistent mempool, then reports loaded counts.
-- `keys create`: creates a localnet key in `.nodo/keys`.
+- `keys create`: creates localnet keys in `.nodo/keys`. Without `--type`, it
+  creates both `local-user` Ed25519 and `local-validator` BLS12-381 keys.
 - `keys list`: lists public key metadata without printing private material.
 - `tx submit`: loads a key from `KeyStore`, builds a transaction through
   `TransactionBuilder`, signs it through `Signer`, validates it with
@@ -63,6 +64,6 @@ build/nodo status --data-dir .nodo
 ```
 
 Current localnet limits remain intentional: no production P2P, no mainnet
-startup path, no slashing, a deterministic development signature provider and no
+startup path, no slashing, unencrypted deterministic local keys and no
 per-account future-nonce queue. These limits are audited explicitly instead of
 being hidden behind demo-only code paths.

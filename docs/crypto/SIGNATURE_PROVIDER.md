@@ -1,78 +1,34 @@
 # Nodo Signature Provider Boundary
 
-Status: Implemented Foundation  
-Version: NODO-SIGNATURE-PROVIDER-BOUNDARY-V1
+Status: Implemented  
+Version: NODO-SIGNATURE-PROVIDER-BOUNDARY-V2
 
 ## Purpose
 
-This document describes the first official signature provider boundary in Nodo.
+Blockchain code signs and verifies through `SignatureProvider`; it does not
+implement algorithm internals inline.
 
-In simple terms:
+## Current Providers
 
-```text
-Before:
-blockchain code created development signatures directly
+- `Ed25519SignatureProvider`: OpenSSL Ed25519 for user transaction signatures.
+- `Bls12381SignatureProvider`: blst BLS12-381 for validator votes, quorum
+  certificates and block proposals.
 
-Now:
-blockchain code asks a provider to sign and verify
-```
+Every signature carries:
 
-## Current Components
+- crypto suite: `NODO_CRYPTO_SUITE_V1`;
+- signing domain, such as `NODO_TX_V1` or `NODO_VALIDATOR_VOTE_V1`;
+- algorithm;
+- public key fingerprint;
+- signature bytes as hex.
 
-This phase adds:
+## Policy
 
-```text
-SignatureProvider
-DevelopmentSignatureProvider
-SignatureVerificationResult
-```
+`CryptoPolicy` accepts:
 
-The current provider is still development-only. It is not real blockchain-grade cryptography.
+- Ed25519 only for `USER_TRANSACTION`;
+- BLS12-381 only for validator, mint and treasury operations.
 
-## Why This Matters
-
-Real signatures should not be hardcoded into the blockchain core.
-
-The blockchain should ask:
-
-```text
-provider.sign(message, publicKey, privateKey, timestamp)
-provider.verify(message, signature)
-```
-
-This prepares Nodo for future providers such as:
-
-- Ed25519;
-- ECDSA secp256k1;
-- ML-DSA;
-- SLH-DSA;
-- hybrid classic + post-quantum signature bundles.
-
-## Development Provider Warning
-
-`DevelopmentSignatureProvider` is deterministic and useful for tests, but it does not prove private-key ownership.
-
-It exists only to make the architecture real before adding audited cryptographic providers.
-
-## New SignatureBundle Behavior
-
-`SignatureBundle` now supports:
-
-```text
-createSignature(...)
-createDevelopmentSignature(...)
-verifyForPolicy(...)
-```
-
-This means a bundle can now be checked against:
-
-- the message;
-- the network crypto policy;
-- the security context;
-- the provider verification result.
-
-## Security Direction
-
-This phase does not make Nodo production-ready.
-
-It creates the doorway where real signature providers will later be connected.
+The legacy `DEVELOPMENT_FAKE_SIGNATURE` enum is retained only so old or
+malformed data can be rejected explicitly. No fake signature provider is
+compiled into the normal protocol path.

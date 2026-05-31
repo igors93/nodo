@@ -1,7 +1,5 @@
 #include "core/ValidatorBlockProposalSignature.hpp"
 
-#include "crypto/DevelopmentSignatureProvider.hpp"
-
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -284,7 +282,8 @@ ValidatorBlockProposalSignature ValidatorBlockProposalSignature::createSignature
             validatorPublicKey,
             validatorPrivateKey,
             proposedAt,
-            provider
+            provider,
+            crypto::SigningDomain::VALIDATOR_BLOCK_PROPOSAL
         );
 
     ValidatorBlockProposalSignature signature(
@@ -304,25 +303,6 @@ ValidatorBlockProposalSignature ValidatorBlockProposalSignature::createSignature
     }
 
     return signature;
-}
-
-ValidatorBlockProposalSignature ValidatorBlockProposalSignature::createDevelopmentSignature(
-    const ProtectionBlockProposal& proposal,
-    const std::string& validatorAddress,
-    const crypto::PublicKey& validatorPublicKey,
-    const crypto::PrivateKey& validatorPrivateKey,
-    std::int64_t proposedAt
-) {
-    const crypto::DevelopmentSignatureProvider provider;
-
-    return createSignature(
-        proposal,
-        validatorAddress,
-        validatorPublicKey,
-        validatorPrivateKey,
-        proposedAt,
-        provider
-    );
 }
 
 SignedProtectionBlockProposal::SignedProtectionBlockProposal(
@@ -400,25 +380,6 @@ SignedProtectionBlockProposal ValidatorBlockProposalSigner::signProposal(
     return SignedProtectionBlockProposal(
         proposal,
         signature
-    );
-}
-
-SignedProtectionBlockProposal ValidatorBlockProposalSigner::signProposalForDevelopment(
-    const ProtectionBlockProposal& proposal,
-    const std::string& validatorAddress,
-    const crypto::PublicKey& validatorPublicKey,
-    const crypto::PrivateKey& validatorPrivateKey,
-    std::int64_t proposedAt
-) {
-    const crypto::DevelopmentSignatureProvider provider;
-
-    return signProposal(
-        proposal,
-        validatorAddress,
-        validatorPublicKey,
-        validatorPrivateKey,
-        proposedAt,
-        provider
     );
 }
 

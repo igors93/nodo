@@ -28,6 +28,11 @@ enum class CryptoAlgorithm {
     CLASSIC_ECDSA_SECP256K1,
 
     /*
+     * Validator consensus signatures.
+     */
+    BLS12_381,
+
+    /*
      * Algoritmos pós-quânticos planejados para o futuro.
      */
     POST_QUANTUM_ML_DSA,
@@ -45,6 +50,7 @@ std::string cryptoAlgorithmToString(CryptoAlgorithm algorithm);
 CryptoAlgorithm cryptoAlgorithmFromString(const std::string& value);
 
 bool isClassicAlgorithm(CryptoAlgorithm algorithm);
+bool isValidatorAlgorithm(CryptoAlgorithm algorithm);
 bool isPostQuantumAlgorithm(CryptoAlgorithm algorithm);
 bool isDevelopmentOnlyAlgorithm(CryptoAlgorithm algorithm);
 

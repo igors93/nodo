@@ -1,11 +1,14 @@
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
+#include "crypto/CryptoSuiteId.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
 #include "crypto/SignatureBundle.hpp"
 #include "crypto/SignatureVerificationResult.hpp"
+#include "crypto/SigningDomain.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -16,13 +19,16 @@ namespace {
 
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
-using nodo::crypto::DevelopmentSignatureProvider;
+using nodo::crypto::CryptoSuiteId;
+using nodo::crypto::Ed25519SignatureProvider;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::SecurityContext;
 using nodo::crypto::Signature;
 using nodo::crypto::SignatureBundle;
 using nodo::crypto::SignatureVerificationResult;
+using nodo::crypto::SigningDomain;
 
 constexpr std::int64_t kTestTimestamp = 1900000000;
 
@@ -42,27 +48,33 @@ PublicKey developmentPublicKey() {
     );
 }
 
-PrivateKey developmentPrivateKey() {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "igor-signature-provider-private-key"
-    );
+KeyPair userKeyPair() {
+    return KeyPair::createDeterministicEd25519KeyPair("signature-provider-user");
 }
 
-void testDevelopmentProviderSignsAndVerifies() {
-    const DevelopmentSignatureProvider provider;
+PublicKey userPublicKey() {
+    return userKeyPair().publicKey();
+}
+
+PrivateKey userPrivateKey() {
+    return userKeyPair().privateKeyForSigningOnly();
+}
+
+void testEd25519ProviderSignsAndVerifies() {
+    const Ed25519SignatureProvider provider;
 
     const Signature signature =
         provider.sign(
             "nodo-signature-provider-message",
-            developmentPublicKey(),
-            developmentPrivateKey(),
-            kTestTimestamp
+            userPublicKey(),
+            userPrivateKey(),
+            kTestTimestamp,
+            SigningDomain::USER_TRANSACTION
         );
 
     requireCondition(
         signature.isValid(),
-        "DevelopmentSignatureProvider produced an invalid signature."
+        "Ed25519SignatureProvider produced an invalid signature."
     );
 
     const SignatureVerificationResult result =
@@ -73,19 +85,20 @@ void testDevelopmentProviderSignsAndVerifies() {
 
     requireCondition(
         result.success(),
-        "DevelopmentSignatureProvider failed to verify its own signature."
+        "Ed25519SignatureProvider failed to verify its own signature."
     );
 }
 
-void testDevelopmentProviderRejectsWrongMessage() {
-    const DevelopmentSignatureProvider provider;
+void testEd25519ProviderRejectsWrongMessage() {
+    const Ed25519SignatureProvider provider;
 
     const Signature signature =
         provider.sign(
             "nodo-original-message",
-            developmentPublicKey(),
-            developmentPrivateKey(),
-            kTestTimestamp
+            userPublicKey(),
+            userPrivateKey(),
+            kTestTimestamp,
+            SigningDomain::USER_TRANSACTION
         );
 
     const SignatureVerificationResult result =
@@ -96,19 +109,20 @@ void testDevelopmentProviderRejectsWrongMessage() {
 
     requireCondition(
         !result.success(),
-        "DevelopmentSignatureProvider accepted a signature for the wrong message."
+        "Ed25519SignatureProvider accepted a signature for the wrong message."
     );
 }
 
-void testDevelopmentProviderRejectsTamperedSignatureHex() {
-    const DevelopmentSignatureProvider provider;
+void testEd25519ProviderRejectsTamperedSignatureHex() {
+    const Ed25519SignatureProvider provider;
 
     const Signature signature =
         provider.sign(
             "nodo-message-for-tamper-test",
-            developmentPublicKey(),
-            developmentPrivateKey(),
-            kTestTimestamp
+            userPublicKey(),
+            userPrivateKey(),
+            kTestTimestamp,
+            SigningDomain::USER_TRANSACTION
         );
 
     const std::string originalHex = signature.signatureHex();
@@ -118,6 +132,8 @@ void testDevelopmentProviderRejectsTamperedSignatureHex() {
         originalHex.substr(1);
 
     const Signature tamperedSignature(
+        signature.suite(),
+        signature.domain(),
         signature.algorithm(),
         signature.publicKey(),
         tamperedHex,
@@ -132,21 +148,22 @@ void testDevelopmentProviderRejectsTamperedSignatureHex() {
 
     requireCondition(
         !result.success(),
-        "DevelopmentSignatureProvider accepted a tampered signature."
+        "Ed25519SignatureProvider accepted a tampered signature."
     );
 }
 
 void testSignatureBundleUsesProviderBoundary() {
-    const DevelopmentSignatureProvider provider;
+    const Ed25519SignatureProvider provider;
     const CryptoPolicy policy = CryptoPolicy::developmentPolicy();
 
     const SignatureBundle bundle =
         SignatureBundle::createSignature(
             "nodo-bundle-provider-message",
-            developmentPublicKey(),
-            developmentPrivateKey(),
+            userPublicKey(),
+            userPrivateKey(),
             kTestTimestamp,
-            provider
+            provider,
+            SigningDomain::USER_TRANSACTION
         );
 
     requireCondition(
@@ -169,15 +186,17 @@ void testSignatureBundleUsesProviderBoundary() {
 }
 
 void testSignatureBundleRejectsWrongMessage() {
-    const DevelopmentSignatureProvider provider;
+    const Ed25519SignatureProvider provider;
     const CryptoPolicy policy = CryptoPolicy::developmentPolicy();
 
     const SignatureBundle bundle =
-        SignatureBundle::createDevelopmentSignature(
+        SignatureBundle::createSignature(
             "nodo-correct-bundle-message",
-            developmentPublicKey(),
-            developmentPrivateKey(),
-            kTestTimestamp
+            userPublicKey(),
+            userPrivateKey(),
+            kTestTimestamp,
+            provider,
+            SigningDomain::USER_TRANSACTION
         );
 
     requireCondition(
@@ -191,34 +210,27 @@ void testSignatureBundleRejectsWrongMessage() {
     );
 }
 
-void testProductionPolicyRejectsDevelopmentSignature() {
-    const DevelopmentSignatureProvider provider;
+void testProductionPolicyRejectsLegacyFakeSignature() {
     const CryptoPolicy policy = CryptoPolicy::futureHybridPolicy();
 
-    const SignatureBundle bundle =
-        SignatureBundle::createDevelopmentSignature(
-            "nodo-production-policy-message",
+    SignatureBundle bundle;
+    bundle.addSignature(
+        Signature(
+            CryptoSuiteId::NODO_CRYPTO_SUITE_V1,
+            SigningDomain::USER_TRANSACTION,
+            CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
             developmentPublicKey(),
-            developmentPrivateKey(),
+            "0123456789abcdef",
             kTestTimestamp
-        );
+        )
+    );
 
     requireCondition(
         !bundle.isValidForPolicy(
             policy,
             SecurityContext::USER_TRANSACTION
         ),
-        "Production policy accepted a development-only signature."
-    );
-
-    requireCondition(
-        !bundle.verifyForPolicy(
-            "nodo-production-policy-message",
-            policy,
-            SecurityContext::USER_TRANSACTION,
-            provider
-        ),
-        "Production policy verified a development-only signature."
+        "Production policy accepted a legacy fake signature."
     );
 }
 
@@ -240,12 +252,12 @@ void testSignatureRejectsUnsafeHex() {
 
 int main() {
     try {
-        testDevelopmentProviderSignsAndVerifies();
-        testDevelopmentProviderRejectsWrongMessage();
-        testDevelopmentProviderRejectsTamperedSignatureHex();
+        testEd25519ProviderSignsAndVerifies();
+        testEd25519ProviderRejectsWrongMessage();
+        testEd25519ProviderRejectsTamperedSignatureHex();
         testSignatureBundleUsesProviderBoundary();
         testSignatureBundleRejectsWrongMessage();
-        testProductionPolicyRejectsDevelopmentSignature();
+        testProductionPolicyRejectsLegacyFakeSignature();
         testSignatureRejectsUnsafeHex();
 
         std::cout << "Nodo signature provider tests passed.\n";

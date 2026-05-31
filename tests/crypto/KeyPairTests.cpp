@@ -1,11 +1,13 @@
 #include "crypto/Address.hpp"
 #include "crypto/AddressDerivation.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "crypto/SigningDomain.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -16,12 +18,14 @@ namespace {
 
 using nodo::crypto::Address;
 using nodo::crypto::AddressDerivation;
+using nodo::crypto::Bls12381SignatureProvider;
 using nodo::crypto::CryptoAlgorithm;
-using nodo::crypto::DevelopmentSignatureProvider;
+using nodo::crypto::Ed25519SignatureProvider;
 using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::SignatureBundle;
+using nodo::crypto::SigningDomain;
 
 constexpr std::int64_t kTestTimestamp = 1900000000;
 
@@ -34,45 +38,45 @@ void requireCondition(
     }
 }
 
-void testDevelopmentKeyPairIsDeterministic() {
+void testEd25519KeyPairIsDeterministic() {
     const KeyPair first =
-        KeyPair::createDevelopmentKeyPair("igor");
+        KeyPair::createDeterministicEd25519KeyPair("igor");
 
     const KeyPair second =
-        KeyPair::createDevelopmentKeyPair("igor");
+        KeyPair::createDeterministicEd25519KeyPair("igor");
 
     requireCondition(
         first.isValid(),
-        "Development KeyPair is invalid."
+        "Ed25519 KeyPair is invalid."
     );
 
     requireCondition(
         first.publicKey().serialize() == second.publicKey().serialize(),
-        "Development KeyPair public key is not deterministic."
+        "Ed25519 KeyPair public key is not deterministic."
     );
 
     requireCondition(
         first.address().value() == second.address().value(),
-        "Development KeyPair address is not deterministic."
+        "Ed25519 KeyPair address is not deterministic."
     );
 }
 
 void testDifferentSeedsProduceDifferentAddresses() {
     const KeyPair first =
-        KeyPair::createDevelopmentKeyPair("igor");
+        KeyPair::createDeterministicEd25519KeyPair("igor");
 
     const KeyPair second =
-        KeyPair::createDevelopmentKeyPair("ana");
+        KeyPair::createDeterministicEd25519KeyPair("ana");
 
     requireCondition(
         first.address().value() != second.address().value(),
-        "Different development seeds produced the same address."
+        "Different Ed25519 seeds produced the same address."
     );
 }
 
 void testKeyPairAddressMatchesPublicKeyDerivation() {
     const KeyPair keyPair =
-        KeyPair::createDevelopmentKeyPair("address-match");
+        KeyPair::createDeterministicEd25519KeyPair("address-match");
 
     const Address derivedAddress =
         AddressDerivation::deriveFromPublicKey(
@@ -86,10 +90,10 @@ void testKeyPairAddressMatchesPublicKeyDerivation() {
 }
 
 void testKeyPairCanSignAndVerify() {
-    const DevelopmentSignatureProvider provider;
+    const Ed25519SignatureProvider provider;
 
     const KeyPair keyPair =
-        KeyPair::createDevelopmentKeyPair("signing-keypair");
+        KeyPair::createDeterministicEd25519KeyPair("signing-keypair");
 
     requireCondition(
         keyPair.canSignAndVerify(provider),
@@ -100,7 +104,8 @@ void testKeyPairCanSignAndVerify() {
         keyPair.sign(
             "nodo-keypair-message",
             kTestTimestamp,
-            provider
+            provider,
+            SigningDomain::USER_TRANSACTION
         );
 
     requireCondition(
@@ -127,7 +132,7 @@ void testKeyPairCanSignAndVerify() {
 
 void testPublicIdentityDoesNotExposePrivateKeyMaterial() {
     const KeyPair keyPair =
-        KeyPair::createDevelopmentKeyPair("public-identity-check");
+        KeyPair::createDeterministicEd25519KeyPair("public-identity-check");
 
     const std::string identity =
         keyPair.publicIdentity();
@@ -172,15 +177,14 @@ void testInvalidKeyPairIsRejected() {
 }
 
 void testMismatchedAlgorithmsAreRejected() {
+    const KeyPair ed25519 =
+        KeyPair::createDeterministicEd25519KeyPair("mismatch-ed25519");
+    const KeyPair bls =
+        KeyPair::createDeterministicBls12381KeyPair("mismatch-bls");
+
     const KeyPair mismatched(
-        PublicKey(
-            CryptoAlgorithm::CLASSIC_ED25519,
-            "future-ed25519-public-material"
-        ),
-        PrivateKey(
-            CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-            "development-private-material"
-        )
+        ed25519.publicKey(),
+        bls.privateKeyForSigningOnly()
     );
 
     requireCondition(
@@ -189,18 +193,18 @@ void testMismatchedAlgorithmsAreRejected() {
     );
 }
 
-void testEmptyDevelopmentSeedIsRejected() {
+void testEmptyDeterministicSeedIsRejected() {
     bool rejected = false;
 
     try {
-        (void)KeyPair::createDevelopmentKeyPair("");
+        (void)KeyPair::createDeterministicEd25519KeyPair("");
     } catch (const std::exception&) {
         rejected = true;
     }
 
     requireCondition(
         rejected,
-        "Development KeyPair accepted an empty seed."
+        "Ed25519 KeyPair accepted an empty seed."
     );
 }
 
@@ -208,14 +212,14 @@ void testEmptyDevelopmentSeedIsRejected() {
 
 int main() {
     try {
-        testDevelopmentKeyPairIsDeterministic();
+        testEd25519KeyPairIsDeterministic();
         testDifferentSeedsProduceDifferentAddresses();
         testKeyPairAddressMatchesPublicKeyDerivation();
         testKeyPairCanSignAndVerify();
         testPublicIdentityDoesNotExposePrivateKeyMaterial();
         testInvalidKeyPairIsRejected();
         testMismatchedAlgorithmsAreRejected();
-        testEmptyDevelopmentSeedIsRejected();
+        testEmptyDeterministicSeedIsRejected();
 
         std::cout << "Nodo key management tests passed.\n";
         return 0;

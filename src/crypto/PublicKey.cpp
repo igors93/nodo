@@ -1,4 +1,5 @@
 #include "crypto/PublicKey.hpp"
+#include "crypto/Hex.hpp"
 #include "crypto/hash.h"
 
 #include <sstream>
@@ -26,12 +27,18 @@ const std::string& PublicKey::keyMaterial() const {
 }
 
 bool PublicKey::isValid() const {
-    /*
-     * Nesta primeira versão, a validação é simples:
-     * a chave precisa ter conteúdo e algoritmo definido.
-     *
-     * No futuro, cada algoritmo terá validações próprias.
-     */
+    if (m_keyMaterial.empty()) {
+        return false;
+    }
+
+    if (m_algorithm == CryptoAlgorithm::CLASSIC_ED25519) {
+        return hasHexByteSize(m_keyMaterial, 32);
+    }
+
+    if (m_algorithm == CryptoAlgorithm::BLS12_381) {
+        return hasHexByteSize(m_keyMaterial, 48);
+    }
+
     return !m_keyMaterial.empty();
 }
 

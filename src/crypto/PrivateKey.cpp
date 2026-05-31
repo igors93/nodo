@@ -1,5 +1,7 @@
 #include "crypto/PrivateKey.hpp"
 
+#include "crypto/Hex.hpp"
+
 #include <utility>
 
 namespace nodo::crypto {
@@ -20,10 +22,18 @@ CryptoAlgorithm PrivateKey::algorithm() const {
 }
 
 bool PrivateKey::isValid() const {
-    /*
-     * Validação mínima inicial.
-     * No futuro, cada algoritmo terá tamanho e formato próprio de chave.
-     */
+    if (m_keyMaterial.empty()) {
+        return false;
+    }
+
+    if (m_algorithm == CryptoAlgorithm::CLASSIC_ED25519) {
+        return hasHexByteSize(m_keyMaterial, 32);
+    }
+
+    if (m_algorithm == CryptoAlgorithm::BLS12_381) {
+        return hasHexByteSize(m_keyMaterial, 32);
+    }
+
     return !m_keyMaterial.empty();
 }
 

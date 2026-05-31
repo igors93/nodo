@@ -1,6 +1,6 @@
 #include "node/NodeDataDirectory.hpp"
 #include "config/NetworkParameters.hpp"
-#include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PublicKey.hpp"
 
 #include <filesystem>
@@ -14,7 +14,7 @@ namespace {
 using nodo::config::BootstrapValidatorConfig;
 using nodo::config::GenesisConfig;
 using nodo::config::NetworkParameters;
-using nodo::crypto::CryptoAlgorithm;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PublicKey;
 using nodo::node::NodeDataDirectory;
 using nodo::node::NodeDataDirectoryConfig;
@@ -42,10 +42,9 @@ std::filesystem::path tempPath(
 PublicKey publicKey(
     const std::string& suffix
 ) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "node-data-directory-public-key-" + suffix
-    );
+    return KeyPair::createDeterministicBls12381KeyPair(
+        "node-data-directory-validator-key-" + suffix
+    ).publicKey();
 }
 
 BootstrapValidatorConfig validator(

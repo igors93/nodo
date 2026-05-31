@@ -13,6 +13,9 @@ std::string cryptoAlgorithmToString(CryptoAlgorithm algorithm) {
         case CryptoAlgorithm::CLASSIC_ECDSA_SECP256K1:
             return "CLASSIC_ECDSA_SECP256K1";
 
+        case CryptoAlgorithm::BLS12_381:
+            return "BLS12_381";
+
         case CryptoAlgorithm::POST_QUANTUM_ML_DSA:
             return "POST_QUANTUM_ML_DSA";
 
@@ -40,6 +43,10 @@ CryptoAlgorithm cryptoAlgorithmFromString(const std::string& value) {
         return CryptoAlgorithm::CLASSIC_ECDSA_SECP256K1;
     }
 
+    if (value == "BLS12_381") {
+        return CryptoAlgorithm::BLS12_381;
+    }
+
     if (value == "POST_QUANTUM_ML_DSA") {
         return CryptoAlgorithm::POST_QUANTUM_ML_DSA;
     }
@@ -58,6 +65,10 @@ CryptoAlgorithm cryptoAlgorithmFromString(const std::string& value) {
 bool isClassicAlgorithm(CryptoAlgorithm algorithm) {
     return algorithm == CryptoAlgorithm::CLASSIC_ED25519 ||
            algorithm == CryptoAlgorithm::CLASSIC_ECDSA_SECP256K1;
+}
+
+bool isValidatorAlgorithm(CryptoAlgorithm algorithm) {
+    return algorithm == CryptoAlgorithm::BLS12_381;
 }
 
 bool isPostQuantumAlgorithm(CryptoAlgorithm algorithm) {

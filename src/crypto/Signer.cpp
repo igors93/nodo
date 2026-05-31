@@ -37,7 +37,8 @@ core::Transaction Signer::signTransaction(
         m_keyPair.sign(
             transaction.signingPayload(),
             timestamp,
-            *m_provider
+            *m_provider,
+            SigningDomain::USER_TRANSACTION
         )
     );
 

@@ -2,7 +2,6 @@
 
 #include "crypto/Address.hpp"
 #include "crypto/AddressDerivation.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
 
 #include <map>
 #include <set>
@@ -328,6 +327,8 @@ crypto::Signature parseSignature(
     requireExactFields(
         fields,
         {
+            "suite",
+            "domain",
             "algorithm",
             "publicKeyFingerprint",
             "signatureHex",
@@ -346,6 +347,24 @@ crypto::Signature parseSignature(
         throw std::invalid_argument("Unknown serialized Signature algorithm.");
     }
 
+    const crypto::CryptoSuiteId suite =
+        crypto::cryptoSuiteIdFromString(
+            requireField(fields, "suite", "Signature")
+        );
+
+    if (!crypto::isSupportedCryptoSuite(suite)) {
+        throw std::invalid_argument("Unknown serialized Signature suite.");
+    }
+
+    const crypto::SigningDomain domain =
+        crypto::signingDomainFromString(
+            requireField(fields, "domain", "Signature")
+        );
+
+    if (domain == crypto::SigningDomain::UNKNOWN) {
+        throw std::invalid_argument("Unknown serialized Signature domain.");
+    }
+
     if (algorithm != expectedPublicKey.algorithm()) {
         throw std::invalid_argument("Serialized Signature algorithm does not match vote public key.");
     }
@@ -356,6 +375,8 @@ crypto::Signature parseSignature(
     }
 
     crypto::Signature signature(
+        suite,
+        domain,
         algorithm,
         expectedPublicKey,
         requireField(fields, "signatureHex", "Signature"),
@@ -705,7 +726,8 @@ ValidatorVoteRecord ValidatorVoteRecord::createVote(
             validatorPublicKey,
             validatorPrivateKey,
             createdAt,
-            provider
+            provider,
+            crypto::SigningDomain::VALIDATOR_VOTE
         );
 
     return ValidatorVoteRecord(
@@ -719,35 +741,6 @@ ValidatorVoteRecord ValidatorVoteRecord::createVote(
         reasonHash,
         createdAt,
         signatureBundle
-    );
-}
-
-ValidatorVoteRecord ValidatorVoteRecord::createDevelopmentVote(
-    const std::string& validatorAddress,
-    const crypto::PublicKey& validatorPublicKey,
-    const crypto::PrivateKey& validatorPrivateKey,
-    std::uint64_t blockIndex,
-    const std::string& blockHash,
-    const std::string& previousHash,
-    std::uint64_t round,
-    ValidatorVoteDecision decision,
-    const std::string& reasonHash,
-    std::int64_t createdAt
-) {
-    const crypto::DevelopmentSignatureProvider provider;
-
-    return createVote(
-        validatorAddress,
-        validatorPublicKey,
-        validatorPrivateKey,
-        blockIndex,
-        blockHash,
-        previousHash,
-        round,
-        decision,
-        reasonHash,
-        createdAt,
-        provider
     );
 }
 

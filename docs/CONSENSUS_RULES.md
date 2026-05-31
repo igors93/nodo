@@ -19,7 +19,7 @@ block or round invalidate the certificate. Finality means the block has a valid
 quorum certificate, has been accepted by the finalizer and has been persisted
 with an auditable finalized record.
 
-Current localnet signs deterministic local votes through `Signer` and
-`LocalSignatureProvider`. The provider is temporary and acceptable only for
-localnet. Future testnet and mainnet configs must refuse startup without a real
-signature provider and key store.
+Current localnet signs user transactions with Ed25519 through OpenSSL and
+validator votes/proposals with BLS12-381 through blst. Future testnet and
+mainnet configs must refuse startup unless the configured crypto suite and key
+store are production-safe for that network profile.

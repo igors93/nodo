@@ -1,8 +1,9 @@
 #ifndef NODO_CRYPTO_PROTOCOL_CRYPTO_CONTEXT_HPP
 #define NODO_CRYPTO_PROTOCOL_CRYPTO_CONTEXT_HPP
 
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoPolicy.hpp"
-#include "crypto/LocalSignatureProvider.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/SignatureProvider.hpp"
 
 #include <string>
@@ -41,8 +42,8 @@ public:
     /*
      * Current runnable profile.
      *
-     * localnet still uses the temporary LocalSignatureProvider, but this makes
-     * that choice explicit and isolated behind a protocol context.
+     * localnet uses deterministic test keys, but protocol signatures are real
+     * Ed25519 and BLS12-381 signatures.
      */
     static ProtocolCryptoContext localnet();
 
@@ -89,6 +90,10 @@ public:
 
     const SignatureProvider& signatureProvider() const;
 
+    const SignatureProvider& userSignatureProvider() const;
+
+    const SignatureProvider& validatorSignatureProvider() const;
+
     bool temporaryProviderAllowed() const;
 
     bool requiresProductionProvider() const;
@@ -117,7 +122,8 @@ private:
     bool m_temporaryProviderAllowed;
     bool m_requiresProductionProvider;
     std::string m_rejectionReason;
-    LocalSignatureProvider m_localProvider;
+    Ed25519SignatureProvider m_userProvider;
+    Bls12381SignatureProvider m_validatorProvider;
 };
 
 } // namespace nodo::crypto

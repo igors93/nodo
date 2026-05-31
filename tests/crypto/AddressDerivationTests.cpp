@@ -1,6 +1,6 @@
 #include "crypto/Address.hpp"
 #include "crypto/AddressDerivation.hpp"
-#include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PublicKey.hpp"
 
 #include <iostream>
@@ -11,7 +11,7 @@ namespace {
 
 using nodo::crypto::Address;
 using nodo::crypto::AddressDerivation;
-using nodo::crypto::CryptoAlgorithm;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PublicKey;
 
 void requireCondition(
@@ -24,17 +24,15 @@ void requireCondition(
 }
 
 PublicKey publicKeyA() {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "igor-address-derivation-public-key"
-    );
+    return KeyPair::createDeterministicEd25519KeyPair(
+        "igor-address-derivation-key"
+    ).publicKey();
 }
 
 PublicKey publicKeyB() {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "ana-address-derivation-public-key"
-    );
+    return KeyPair::createDeterministicEd25519KeyPair(
+        "ana-address-derivation-key"
+    ).publicKey();
 }
 
 void testAddressDerivationIsDeterministic() {

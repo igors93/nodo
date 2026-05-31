@@ -6,7 +6,9 @@
 namespace nodo::crypto {
 
 Signature::Signature()
-    : m_algorithm(CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE),
+    : m_suite(CryptoSuiteId::UNKNOWN),
+      m_domain(SigningDomain::UNKNOWN),
+      m_algorithm(CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE),
       m_publicKey(),
       m_signatureHex(""),
       m_createdAt(0) {}
@@ -17,10 +19,37 @@ Signature::Signature(
     std::string signatureHex,
     std::int64_t createdAt
 )
-    : m_algorithm(algorithm),
+    : Signature(
+          CryptoSuiteId::NODO_CRYPTO_SUITE_V1,
+          SigningDomain::USER_TRANSACTION,
+          algorithm,
+          std::move(publicKey),
+          std::move(signatureHex),
+          createdAt
+      ) {}
+
+Signature::Signature(
+    CryptoSuiteId suite,
+    SigningDomain domain,
+    CryptoAlgorithm algorithm,
+    PublicKey publicKey,
+    std::string signatureHex,
+    std::int64_t createdAt
+)
+    : m_suite(suite),
+      m_domain(domain),
+      m_algorithm(algorithm),
       m_publicKey(std::move(publicKey)),
       m_signatureHex(std::move(signatureHex)),
       m_createdAt(createdAt) {}
+
+CryptoSuiteId Signature::suite() const {
+    return m_suite;
+}
+
+SigningDomain Signature::domain() const {
+    return m_domain;
+}
 
 CryptoAlgorithm Signature::algorithm() const {
     return m_algorithm;
@@ -39,6 +68,14 @@ std::int64_t Signature::createdAt() const {
 }
 
 bool Signature::isValid() const {
+    if (!isSupportedCryptoSuite(m_suite)) {
+        return false;
+    }
+
+    if (m_domain == SigningDomain::UNKNOWN) {
+        return false;
+    }
+
     if (!m_publicKey.isValid()) {
         return false;
     }
@@ -66,7 +103,9 @@ std::string Signature::serialize() const {
     std::ostringstream oss;
 
     oss << "Signature{"
-        << "algorithm=" << cryptoAlgorithmToString(m_algorithm)
+        << "suite=" << cryptoSuiteIdToString(m_suite)
+        << ";domain=" << signingDomainToString(m_domain)
+        << ";algorithm=" << cryptoAlgorithmToString(m_algorithm)
         << ";publicKeyFingerprint=" << m_publicKey.fingerprint()
         << ";signatureHex=" << m_signatureHex
         << ";createdAt=" << m_createdAt

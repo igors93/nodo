@@ -32,8 +32,8 @@ enum class SecurityContext {
 class CryptoPolicy {
 public:
     /*
-     * Política usada agora, no começo do projeto.
-     * Permite assinatura fake apenas para desenvolvimento.
+     * Política localnet atual.
+     * Permite Ed25519 para usuários e BLS12-381 para validadores.
      */
     static CryptoPolicy developmentPolicy();
 

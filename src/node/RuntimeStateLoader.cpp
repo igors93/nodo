@@ -2909,7 +2909,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             crypto::SecurityContext::USER_TRANSACTION,
             RuntimeAccountStateBuilder::accountStateViewAtTip(genesisConfig, runtime.blockchain(), minimumFeeRawUnits(genesisConfig)),
             minimumFeeRawUnits(genesisConfig),
-            cryptoContext.signatureProvider()
+            cryptoContext.userSignatureProvider()
         );
 
     if (!mempoolLoad.loaded()) {

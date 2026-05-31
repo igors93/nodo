@@ -5,11 +5,12 @@
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
 #include "crypto/AddressDerivation.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/KeyPair.hpp"
 #include "crypto/KeyStore.hpp"
-#include "crypto/LocalSignatureProvider.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "crypto/PublicKey.hpp"
@@ -45,7 +46,21 @@ std::int64_t nowUnixSeconds() {
 crypto::PublicKey developmentValidatorKey(
     const std::string& seed
 ) {
-    return crypto::KeyPair::createDevelopmentKeyPair(seed).publicKey();
+    return crypto::KeyPair::createDeterministicBls12381KeyPair(seed).publicKey();
+}
+
+crypto::PublicKey developmentUserKey(
+    const std::string& seed
+) {
+    return crypto::KeyPair::createDeterministicEd25519KeyPair(seed).publicKey();
+}
+
+std::string defaultLocalnetUserKeyId() {
+    return "local-user";
+}
+
+std::string defaultLocalnetUserKeySeed() {
+    return "nodo-localnet-user-key-v1";
 }
 
 bool isOption(
@@ -73,12 +88,14 @@ CommandLineOptions::CommandLineOptions()
       peerId("local-node"),
       endpoint("127.0.0.1:9000"),
       keyId("local-validator"),
+      keyType("both"),
       toAddress("nodo-localnet-recipient"),
       amountRaw(1000),
       feeRaw(100),
       nonce(0),
       timestamp(nowUnixSeconds()),
-      showHelp(false) {}
+      showHelp(false),
+      keyIdProvided(false) {}
 
 std::string commandLineStatusToString(
     CommandLineStatus status
@@ -305,6 +322,24 @@ CommandLineOptions CommandLineInterface::parse(
             }
 
             options.keyId = args[index + 1];
+            options.keyIdProvided = true;
+            index += 2;
+            continue;
+        }
+
+        if (option == "--type") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--type requires a value.");
+            }
+
+            options.keyType = args[index + 1];
+
+            if (options.keyType != "user" &&
+                options.keyType != "validator" &&
+                options.keyType != "both") {
+                throw std::invalid_argument("--type must be user, validator, or both.");
+            }
+
             index += 2;
             continue;
         }
@@ -385,7 +420,7 @@ std::string CommandLineInterface::helpText() {
         "  nodo status [--data-dir PATH]\n"
         "  nodo inspect [--data-dir PATH]\n"
         "  nodo node reload [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
-        "  nodo keys create [--data-dir PATH] [--key-id ID]\n"
+        "  nodo keys create [--data-dir PATH] [--type user|validator|both] [--key-id ID]\n"
         "  nodo keys list [--data-dir PATH]\n"
         "  nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]\n"
         "  nodo block produce [--data-dir PATH]\n"
@@ -402,7 +437,8 @@ std::string CommandLineInterface::helpText() {
         "  --data-dir PATH      Node data directory. Default: .nodo\n"
         "  --peer-id ID         Local peer id for init/load. Default: local-node\n"
         "  --endpoint HOST:PORT Local endpoint for init/load. Default: 127.0.0.1:9000\n"
-        "  --key-id ID          Key id for keys create or signing. Default: local-validator\n"
+        "  --key-id ID          Key id for keys create or signing. Defaults depend on command.\n"
+        "  --type TYPE          Key type for keys create. Default: both\n"
         "  --from KEY_ID        Alias for --key-id in tx submit.\n"
         "  --to ADDRESS         Recipient address for tx submit.\n"
         "  --amount RAW_UNITS   Transfer amount for tx submit. Default: 1000\n"
@@ -426,7 +462,7 @@ config::GenesisConfig CommandLineInterface::developmentGenesisConfig() {
         {
             config::GenesisAccountConfig(
                 crypto::AddressDerivation::deriveFromPublicKey(
-                    developmentValidatorKey(defaultLocalnetKeySeed())
+                    developmentUserKey(defaultLocalnetUserKeySeed())
                 ).value(),
                 utils::Amount::fromRawUnits(1000000000000),
                 0
@@ -644,42 +680,90 @@ CommandLineResult CommandLineInterface::executeKeysCreate(
         );
     }
 
-    const std::string keyId =
-        options.keyId.empty()
-            ? defaultLocalnetKeyId()
-            : options.keyId;
+    if (options.keyType == "both" &&
+        options.keyIdProvided) {
+        throw std::invalid_argument("--key-id requires --type user or --type validator.");
+    }
 
-    const std::string seed =
-        keyId == defaultLocalnetKeyId()
-            ? defaultLocalnetKeySeed()
-            : manifest.manifest().genesisConfigId() + "#" + keyId;
+    const auto seedFor =
+        [&](const std::string& keyId, crypto::KeyStoreKeyType keyType) {
+            if (keyType == crypto::KeyStoreKeyType::VALIDATOR &&
+                keyId == defaultLocalnetKeyId()) {
+                return defaultLocalnetKeySeed();
+            }
 
-    const crypto::KeyStoreCreateResult created =
-        crypto::KeyStore::createLocalKey(
-            directoryConfig.keysDirectoryPath(),
-            keyId,
-            seed,
-            options.timestamp
+            if (keyType == crypto::KeyStoreKeyType::USER &&
+                keyId == defaultLocalnetUserKeyId()) {
+                return defaultLocalnetUserKeySeed();
+            }
+
+            return manifest.manifest().genesisConfigId()
+                + "#"
+                + crypto::keyStoreKeyTypeToString(keyType)
+                + "#"
+                + keyId;
+        };
+
+    const auto createKey =
+        [&](const std::string& keyId, crypto::KeyStoreKeyType keyType) {
+            return crypto::KeyStore::createLocalKey(
+                directoryConfig.keysDirectoryPath(),
+                keyId,
+                keyType,
+                seedFor(keyId, keyType),
+                options.timestamp
+            );
+        };
+
+    std::vector<crypto::KeyStoreCreateResult> createdKeys;
+
+    if (options.keyType == "both") {
+        createdKeys.push_back(
+            createKey(defaultLocalnetUserKeyId(), crypto::KeyStoreKeyType::USER)
         );
-
-    if (!created.success()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to create key: "
-            + created.reason()
-            + "\n"
+        createdKeys.push_back(
+            createKey(defaultLocalnetKeyId(), crypto::KeyStoreKeyType::VALIDATOR)
         );
+    } else {
+        const crypto::KeyStoreKeyType keyType =
+            crypto::keyStoreKeyTypeFromString(options.keyType);
+
+        const std::string keyId =
+            options.keyIdProvided
+                ? options.keyId
+                : (keyType == crypto::KeyStoreKeyType::USER
+                    ? defaultLocalnetUserKeyId()
+                    : defaultLocalnetKeyId());
+
+        createdKeys.push_back(
+            createKey(keyId, keyType)
+        );
+    }
+
+    for (const crypto::KeyStoreCreateResult& created : createdKeys) {
+        if (!created.success()) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "Failed to create key: "
+                + created.reason()
+                + "\n"
+            );
+        }
     }
 
     std::ostringstream output;
 
-    output << "Nodo key created.\n"
-           << "Key id: " << created.metadata().keyId() << "\n"
-           << "Address: " << created.metadata().address() << "\n"
-           << "Algorithm: " << crypto::cryptoAlgorithmToString(created.metadata().algorithm()) << "\n"
-           << "Provider: " << created.metadata().provider() << "\n"
-           << "Network profile: " << created.metadata().networkProfile() << "\n"
-           << "Key file: " << created.path().string() << "\n";
+    output << "Nodo key created.\n";
+
+    for (const crypto::KeyStoreCreateResult& created : createdKeys) {
+        output << "Key id: " << created.metadata().keyId() << "\n"
+               << "Key type: " << crypto::keyStoreKeyTypeToString(created.metadata().keyType()) << "\n"
+               << "Address: " << created.metadata().address() << "\n"
+               << "Algorithm: " << crypto::cryptoAlgorithmToString(created.metadata().algorithm()) << "\n"
+               << "Provider: " << created.metadata().provider() << "\n"
+               << "Network profile: " << created.metadata().networkProfile() << "\n"
+               << "Key file: " << created.path().string() << "\n";
+    }
 
     return CommandLineResult::success(output.str());
 }
@@ -725,6 +809,7 @@ CommandLineResult CommandLineInterface::executeKeysList(
 
     for (const crypto::StoredKeyMetadata& key : listed.keys()) {
         output << "Key id: " << key.keyId()
+               << " | Type: " << crypto::keyStoreKeyTypeToString(key.keyType())
                << " | Address: " << key.address()
                << " | Algorithm: " << crypto::cryptoAlgorithmToString(key.algorithm())
                << " | Provider: " << key.provider()
@@ -831,24 +916,29 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
         );
     }
 
+    const std::string signingKeyId =
+        options.keyIdProvided
+            ? options.keyId
+            : defaultLocalnetUserKeyId();
+
     const crypto::KeyStoreLoadResult key =
         crypto::KeyStore::loadKey(
             directoryConfig.keysDirectoryPath(),
-            options.keyId
+            signingKeyId
         );
 
     if (!key.loaded()) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
             "Cannot submit transaction without local key '"
-            + options.keyId
+            + signingKeyId
             + "': "
             + key.reason()
             + "\n"
         );
     }
 
-    const crypto::LocalSignatureProvider provider;
+    const crypto::Ed25519SignatureProvider provider;
     const crypto::Signer signer(
         key.keyPair(),
         provider
@@ -975,24 +1065,29 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
         );
     }
 
+    const std::string validatorKeyId =
+        options.keyIdProvided
+            ? options.keyId
+            : defaultLocalnetKeyId();
+
     const crypto::KeyStoreLoadResult key =
         crypto::KeyStore::loadKey(
             directoryConfig.keysDirectoryPath(),
-            options.keyId
+            validatorKeyId
         );
 
     if (!key.loaded()) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
             "Cannot sign validator vote without local key '"
-            + options.keyId
+            + validatorKeyId
             + "': "
             + key.reason()
             + "\n"
         );
     }
 
-    const crypto::LocalSignatureProvider provider;
+    const crypto::Bls12381SignatureProvider provider;
     const crypto::Signer signer(
         key.keyPair(),
         provider

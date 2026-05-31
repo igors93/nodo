@@ -2,9 +2,10 @@
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "crypto/AddressDerivation.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 
@@ -23,9 +24,10 @@ using nodo::consensus::ValidatorVoteRecord;
 using nodo::core::ValidatorRegistrationRecord;
 using nodo::core::ValidatorRegistry;
 using nodo::crypto::AddressDerivation;
+using nodo::crypto::Bls12381SignatureProvider;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
-using nodo::crypto::DevelopmentSignatureProvider;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 
@@ -40,22 +42,24 @@ void requireCondition(
     }
 }
 
+KeyPair keyPair(
+    const std::string& suffix
+) {
+    return KeyPair::createDeterministicBls12381KeyPair(
+        "consensus-validator-key-" + suffix
+    );
+}
+
 PublicKey publicKey(
     const std::string& suffix
 ) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "consensus-validator-public-key-" + suffix
-    );
+    return keyPair(suffix).publicKey();
 }
 
 PrivateKey privateKey(
     const std::string& suffix
 ) {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "consensus-validator-private-key-" + suffix
-    );
+    return keyPair(suffix).privateKeyForSigningOnly();
 }
 
 std::string validatorAddress(
@@ -89,7 +93,9 @@ ValidatorVoteRecord approveVote(
     const PublicKey key =
         publicKey(suffix);
 
-    return ValidatorVoteRecord::createDevelopmentVote(
+    const Bls12381SignatureProvider provider;
+
+    return ValidatorVoteRecord::createVote(
         validatorAddress(key),
         key,
         privateKey(suffix),
@@ -99,7 +105,8 @@ ValidatorVoteRecord approveVote(
         round,
         ValidatorVoteDecision::APPROVE,
         "NONE",
-        timestamp
+        timestamp,
+        provider
     );
 }
 
@@ -134,7 +141,7 @@ void testVoteSignsAndVerifies() {
     const ValidatorVoteRecord vote =
         approveVote("a");
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     requireCondition(
         vote.isStructurallyValid(CryptoPolicy::developmentPolicy()),
@@ -168,7 +175,7 @@ void testQuorumCertificateBuildsWithTwoOfThree() {
         approveVote("b", 7, "block-hash-consensus-qc", "previous-hash-consensus", 1, kTimestamp + 11)
     };
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const auto result =
         QuorumCertificateBuilder::buildFromVotes(
@@ -211,7 +218,7 @@ void testQuorumRejectsDuplicateVoter() {
         approveVote("a", 7, "block-hash-consensus-dup", "previous-hash-consensus", 1, kTimestamp + 21)
     };
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const auto result =
         QuorumCertificateBuilder::buildFromVotes(
@@ -253,7 +260,7 @@ void testQuorumRejectsUnregisteredVoter() {
         approveVote("x-unregistered", 7, "block-hash-consensus-unregistered", "previous-hash-consensus", 1, kTimestamp + 33)
     };
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const auto result =
         QuorumCertificateBuilder::buildFromVotes(
@@ -282,7 +289,7 @@ void testQuorumRejectsConflictingBlockVote() {
         approveVote("b", 7, "block-hash-consensus-other", "previous-hash-consensus", 1, kTimestamp + 41)
     };
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const auto result =
         QuorumCertificateBuilder::buildFromVotes(

@@ -7,9 +7,10 @@
 #include "core/LedgerRecord.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "crypto/AddressDerivation.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "economics/ValidationWorkRecord.hpp"
@@ -37,9 +38,10 @@ using nodo::core::LedgerRecord;
 using nodo::core::ValidatorRegistrationRecord;
 using nodo::core::ValidatorRegistry;
 using nodo::crypto::AddressDerivation;
+using nodo::crypto::Bls12381SignatureProvider;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
-using nodo::crypto::DevelopmentSignatureProvider;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::economics::ValidationWorkRecord;
@@ -57,18 +59,18 @@ void requireCondition(
     }
 }
 
-PublicKey publicKey(const std::string& suffix) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "fork-choice-public-key-" + suffix
+KeyPair keyPair(const std::string& suffix) {
+    return KeyPair::createDeterministicBls12381KeyPair(
+        "fork-choice-validator-key-" + suffix
     );
 }
 
+PublicKey publicKey(const std::string& suffix) {
+    return keyPair(suffix).publicKey();
+}
+
 PrivateKey privateKey(const std::string& suffix) {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "fork-choice-private-key-" + suffix
-    );
+    return keyPair(suffix).privateKeyForSigningOnly();
 }
 
 std::string addressFor(const PublicKey& key) {
@@ -153,7 +155,9 @@ ValidatorVoteRecord voteFor(
 ) {
     const PublicKey key = publicKey(suffix);
 
-    return ValidatorVoteRecord::createDevelopmentVote(
+    const Bls12381SignatureProvider provider;
+
+    return ValidatorVoteRecord::createVote(
         addressFor(key),
         key,
         privateKey(suffix),
@@ -163,7 +167,8 @@ ValidatorVoteRecord voteFor(
         1,
         ValidatorVoteDecision::APPROVE,
         "NONE",
-        timestamp
+        timestamp,
+        provider
     );
 }
 
@@ -176,7 +181,7 @@ QuorumCertificate certificateFor(
         voteFor("b", block, kTimestamp + 11)
     };
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const auto result =
         QuorumCertificateBuilder::buildFromVotes(
@@ -212,11 +217,13 @@ void finalizeInRegistryOnly(
         certificate
     );
 
+    const Bls12381SignatureProvider provider;
+
     requireCondition(
         record.verify(
             validatorRegistry,
             CryptoPolicy::developmentPolicy(),
-            DevelopmentSignatureProvider()
+            provider
         ),
         "Finalized record fixture should verify."
     );

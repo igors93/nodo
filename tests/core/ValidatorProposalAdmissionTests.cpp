@@ -8,9 +8,10 @@
 #include "core/ValidatorRegistry.hpp"
 #include "crypto/Address.hpp"
 #include "crypto/AddressDerivation.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "economics/EpochEmissionPolicy.hpp"
@@ -41,9 +42,10 @@ using nodo::core::ValidatorRegistrationRecord;
 using nodo::core::ValidatorBlockProposalSigner;
 using nodo::crypto::Address;
 using nodo::crypto::AddressDerivation;
+using nodo::crypto::Bls12381SignatureProvider;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
-using nodo::crypto::DevelopmentSignatureProvider;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::economics::EpochEmissionPolicy;
@@ -67,22 +69,24 @@ void requireCondition(
     }
 }
 
+KeyPair validatorKeyPair(
+    const std::string& suffix = "default"
+) {
+    return KeyPair::createDeterministicBls12381KeyPair(
+        "proposal-admission-validator-key-" + suffix
+    );
+}
+
 PublicKey validatorPublicKey(
     const std::string& suffix = "default"
 ) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "proposal-admission-validator-public-key-" + suffix
-    );
+    return validatorKeyPair(suffix).publicKey();
 }
 
 PrivateKey validatorPrivateKey(
     const std::string& suffix = "default"
 ) {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "proposal-admission-validator-private-key-" + suffix
-    );
+    return validatorKeyPair(suffix).privateKeyForSigningOnly();
 }
 
 ValidationWorkRecord work(
@@ -214,12 +218,13 @@ SignedProtectionBlockProposal signedProposalFor(
     const PrivateKey& privateKey,
     std::int64_t timestamp
 ) {
-    return ValidatorBlockProposalSigner::signProposalForDevelopment(
+    return ValidatorBlockProposalSigner::signProposal(
         proposal,
         addressFor(publicKey),
         publicKey,
         privateKey,
-        timestamp
+        timestamp,
+        Bls12381SignatureProvider()
     );
 }
 
@@ -251,7 +256,7 @@ void testRegisteredActiveValidatorIsAdmitted() {
             kTimestamp + 40
         );
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
     const ValidatorProposalAdmissionPolicy admissionPolicy;
 
     const auto admission =
@@ -296,7 +301,7 @@ void testUnregisteredValidatorIsRejected() {
 
     ValidatorRegistry validatorRegistry;
     ValidatorProposalRegistry proposalRegistry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
     const ValidatorProposalAdmissionPolicy admissionPolicy;
 
     const auto admission =
@@ -353,7 +358,7 @@ void testInactiveValidatorIsRejected() {
         );
 
     ValidatorProposalRegistry proposalRegistry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
     const ValidatorProposalAdmissionPolicy admissionPolicy;
 
     const auto admission =
@@ -404,7 +409,7 @@ void testRegisteredValidatorCannotUseDifferentProposalKey() {
         );
 
     ValidatorProposalRegistry proposalRegistry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
     const ValidatorProposalAdmissionPolicy admissionPolicy;
 
     const auto admission =
@@ -483,7 +488,7 @@ void testDoubleSignConflictIsDetectedAfterAdmission() {
         );
 
     ValidatorProposalRegistry proposalRegistry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
     const ValidatorProposalAdmissionPolicy admissionPolicy;
 
     const auto firstAdmission =
@@ -541,7 +546,7 @@ void testInvalidBlockchainIsRejectedBeforeRegistryMutation() {
     );
 
     ValidatorProposalRegistry proposalRegistry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
     const ValidatorProposalAdmissionPolicy admissionPolicy;
 
     /*

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(Nodo
     VERSION 0.1.0
-    LANGUAGES C CXX
+    LANGUAGES C CXX ASM
 )
 
 set(CMAKE_C_STANDARD 11)
@@ -13,6 +13,46 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+endif()
+
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+
+set(NODO_BLST_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blst")
+
+if(EXISTS "${NODO_BLST_SOURCE_DIR}/src/server.c" AND
+   EXISTS "${NODO_BLST_SOURCE_DIR}/bindings/blst.h")
+    add_library(blst STATIC
+        "${NODO_BLST_SOURCE_DIR}/src/server.c"
+        "${NODO_BLST_SOURCE_DIR}/build/assembly.S"
+    )
+
+    target_include_directories(blst
+        PUBLIC
+            "${NODO_BLST_SOURCE_DIR}/bindings"
+    )
+
+    target_compile_options(blst
+        PRIVATE
+            $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra>
+    )
+else()
+    find_path(BLST_INCLUDE_DIR blst.h)
+    find_library(BLST_LIBRARY blst)
+
+    if(NOT BLST_INCLUDE_DIR OR NOT BLST_LIBRARY)
+        message(FATAL_ERROR
+            "Nodo requires real BLS12-381 support through blst. "
+            "Install blst development headers/library or vendor blst at third_party/blst. "
+            "Fake or development BLS providers are not allowed."
+        )
+    endif()
+
+    add_library(blst STATIC IMPORTED)
+    set_target_properties(blst
+        PROPERTIES
+            IMPORTED_LOCATION "${BLST_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${BLST_INCLUDE_DIR}"
+    )
 endif()
 
 add_library(nodo_core STATIC
@@ -28,6 +68,12 @@ target_compile_options(nodo_core
     PRIVATE
         $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra>
         $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>
+)
+
+target_link_libraries(nodo_core
+    PUBLIC
+        OpenSSL::Crypto
+        blst
 )
 
 file(GLOB_RECURSE NODO_CORE_CPP_SOURCES

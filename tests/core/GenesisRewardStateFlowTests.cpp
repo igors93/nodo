@@ -10,9 +10,12 @@
 #include "economics/ValidatorScoreRecord.hpp"
 #include "utils/Amount.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "crypto/SigningDomain.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -135,22 +138,20 @@ Blockchain buildRewardBlockchain() {
         {rewardA.createRewardCoinLot(0).id()}
     );
 
-    const nodo::crypto::PublicKey publicKey(
-        nodo::crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "genesis-reward-state-flow-test-public-key"
-    );
-
-    const nodo::crypto::PrivateKey privateKey(
-        nodo::crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "genesis-reward-state-flow-test-private-key"
-    );
+    const nodo::crypto::KeyPair keyPair =
+        nodo::crypto::KeyPair::createDeterministicEd25519KeyPair(
+            "genesis-reward-state-flow-test"
+        );
+    const nodo::crypto::Ed25519SignatureProvider provider;
 
     transfer.attachSignatureBundle(
-        nodo::crypto::SignatureBundle::createDevelopmentSignature(
+        nodo::crypto::SignatureBundle::createSignature(
             transfer.signingPayload(),
-            publicKey,
-            privateKey,
-            kTimestamp + 6
+            keyPair.publicKey(),
+            keyPair.privateKeyForSigningOnly(),
+            kTimestamp + 6,
+            provider,
+            nodo::crypto::SigningDomain::USER_TRANSACTION
         )
     );
 
@@ -162,7 +163,7 @@ Blockchain buildRewardBlockchain() {
         LedgerRecord::fromTransaction(
             transfer,
             nodo::crypto::CryptoPolicy::developmentPolicy(),
-            nodo::crypto::SecurityContext::DEVELOPMENT_ONLY,
+            nodo::crypto::SecurityContext::USER_TRANSACTION,
             kTimestamp + 7
         )
     };

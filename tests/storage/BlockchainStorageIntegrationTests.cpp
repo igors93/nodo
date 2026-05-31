@@ -6,10 +6,14 @@
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
 
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "crypto/SigningDomain.hpp"
 
 #include "economics/MintRecord.hpp"
 
@@ -50,11 +54,15 @@ using nodo::core::Transaction;
 using nodo::core::TransactionType;
 
 using nodo::crypto::CryptoAlgorithm;
+using nodo::crypto::Bls12381SignatureProvider;
 using nodo::crypto::CryptoPolicy;
+using nodo::crypto::Ed25519SignatureProvider;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::SecurityContext;
 using nodo::crypto::SignatureBundle;
+using nodo::crypto::SigningDomain;
 
 using nodo::economics::MintReason;
 using nodo::economics::MintRecord;
@@ -142,15 +150,12 @@ Blockchain buildReferenceBlockchain() {
     Blockchain blockchain;
     CryptoPolicy cryptoPolicy = CryptoPolicy::developmentPolicy();
 
-    PublicKey igorPublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "igor-storage-integration-public-key"
-    );
-
-    PrivateKey igorPrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "igor-storage-integration-private-key"
-    );
+    const KeyPair mintKeyPair =
+        KeyPair::createDeterministicBls12381KeyPair("storage-integration-minter");
+    const Bls12381SignatureProvider mintProvider;
+    const KeyPair igorKeyPair =
+        KeyPair::createDeterministicEd25519KeyPair("storage-integration-igor");
+    const Ed25519SignatureProvider userProvider;
 
     MintRecord genesisMint(
         "mint_storage_integration_igor_001",
@@ -164,17 +169,19 @@ Blockchain buildReferenceBlockchain() {
     );
 
     SignatureBundle genesisSignatureBundle =
-        SignatureBundle::createDevelopmentSignature(
+        SignatureBundle::createSignature(
             genesisMint.serialize(),
-            igorPublicKey,
-            igorPrivateKey,
-            kBaseTimestamp + 1
+            mintKeyPair.publicKey(),
+            mintKeyPair.privateKeyForSigningOnly(),
+            kBaseTimestamp + 1,
+            mintProvider,
+            SigningDomain::MINT_AUTHORIZATION
         );
 
     requireCondition(
         genesisSignatureBundle.isValidForPolicy(
             cryptoPolicy,
-            SecurityContext::DEVELOPMENT_ONLY
+            SecurityContext::MINT_OPERATION
         ),
         "Genesis signature policy check failed."
     );
@@ -204,11 +211,13 @@ Blockchain buildReferenceBlockchain() {
     );
 
     SignatureBundle transferSignatureBundle =
-        SignatureBundle::createDevelopmentSignature(
+        SignatureBundle::createSignature(
             transferTransaction.signingPayload(),
-            igorPublicKey,
-            igorPrivateKey,
-            kBaseTimestamp + 5
+            igorKeyPair.publicKey(),
+            igorKeyPair.privateKeyForSigningOnly(),
+            kBaseTimestamp + 5,
+            userProvider,
+            SigningDomain::USER_TRANSACTION
         );
 
     transferTransaction.attachSignatureBundle(transferSignatureBundle);

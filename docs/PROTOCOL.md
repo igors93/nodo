@@ -23,9 +23,10 @@ data instead of guessing intent.
 
 Current limitations:
 
-- localnet uses `KeyStore`, `Signer` and `LocalSignatureProvider`, but the
-  provider is still a temporary deterministic local provider;
-- localnet key files are unencrypted and are not production-safe;
+- localnet uses real Ed25519 user signatures through OpenSSL and real
+  BLS12-381 validator signatures through blst;
+- localnet key files are deterministic and unencrypted, so they are not
+  production-safe key custody;
 - P2P networking is intentionally out of scope for this foundation step;
 - no slashing is implemented yet; invalid quorum/finalization evidence is
   rejected and reported only;
@@ -36,7 +37,7 @@ Current limitations:
   consolidated behind the state-transition validator.
 
 Localnet currently declares an explicit development account allocation in
-`GenesisConfig` for bootstrap validators so local block production can validate
+`GenesisConfig` for the default user key so local block production can validate
 balance and nonce. This allocation participates in the deterministic genesis id.
 It is not production monetary policy and must be replaced by a reviewed genesis
 supply configuration before testnet or mainnet.

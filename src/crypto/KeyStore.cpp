@@ -1,5 +1,7 @@
 #include "crypto/KeyStore.hpp"
 
+#include "crypto/Bls12381SignatureProvider.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
@@ -13,8 +15,8 @@ namespace nodo::crypto {
 
 namespace {
 
-constexpr const char* KEY_FILE_VERSION_V2 =
-    "NODO_KEY_FILE_V2";
+constexpr const char* KEY_FILE_VERSION_V3 =
+    "NODO_KEY_FILE_V3";
 
 constexpr const char* KEY_INDEX_VERSION =
     "NODO_KEY_INDEX_V1";
@@ -51,13 +53,15 @@ serialization::KeyValueFileDocument parseKeyFileDocument(
     serialization::KeyValueFileDocument document =
         serialization::KeyValueFileCodec::parse(
             contents,
-            KEY_FILE_VERSION_V2
+            KEY_FILE_VERSION_V3
         );
 
     document.requireOnlyFields(
         {
             "keyId",
             "algorithm",
+            "suite",
+            "keyType",
             "provider",
             "networkProfile",
             "publicKeyMaterial",
@@ -72,9 +76,34 @@ serialization::KeyValueFileDocument parseKeyFileDocument(
 
 } // namespace
 
+std::string keyStoreKeyTypeToString(
+    KeyStoreKeyType keyType
+) {
+    switch (keyType) {
+        case KeyStoreKeyType::USER:
+            return "user";
+        case KeyStoreKeyType::VALIDATOR:
+            return "validator";
+        default:
+            return "user";
+    }
+}
+
+KeyStoreKeyType keyStoreKeyTypeFromString(
+    const std::string& value
+) {
+    if (value == "validator") {
+        return KeyStoreKeyType::VALIDATOR;
+    }
+
+    return KeyStoreKeyType::USER;
+}
+
 StoredKeyMetadata::StoredKeyMetadata()
     : m_keyId(""),
       m_algorithm(CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE),
+      m_suite(CryptoSuiteId::UNKNOWN),
+      m_keyType(KeyStoreKeyType::USER),
       m_provider(""),
       m_publicKey(),
       m_address(""),
@@ -84,6 +113,8 @@ StoredKeyMetadata::StoredKeyMetadata()
 StoredKeyMetadata::StoredKeyMetadata(
     std::string keyId,
     CryptoAlgorithm algorithm,
+    CryptoSuiteId suite,
+    KeyStoreKeyType keyType,
     std::string provider,
     PublicKey publicKey,
     std::string address,
@@ -92,6 +123,8 @@ StoredKeyMetadata::StoredKeyMetadata(
 )
     : m_keyId(std::move(keyId)),
       m_algorithm(algorithm),
+      m_suite(suite),
+      m_keyType(keyType),
       m_provider(std::move(provider)),
       m_publicKey(std::move(publicKey)),
       m_address(std::move(address)),
@@ -104,6 +137,14 @@ const std::string& StoredKeyMetadata::keyId() const {
 
 CryptoAlgorithm StoredKeyMetadata::algorithm() const {
     return m_algorithm;
+}
+
+CryptoSuiteId StoredKeyMetadata::suite() const {
+    return m_suite;
+}
+
+KeyStoreKeyType StoredKeyMetadata::keyType() const {
+    return m_keyType;
 }
 
 const std::string& StoredKeyMetadata::provider() const {
@@ -127,15 +168,14 @@ const std::string& StoredKeyMetadata::networkProfile() const {
 }
 
 bool StoredKeyMetadata::isLocalnetOnly() const {
-    return m_networkProfile == KeyStore::LOCAL_NETWORK_PROFILE &&
-           m_provider == KeyStore::LOCAL_PROVIDER &&
-           isDevelopmentOnlyAlgorithm(m_algorithm);
+    return m_networkProfile == KeyStore::LOCAL_NETWORK_PROFILE;
 }
 
 bool StoredKeyMetadata::isValid() const {
     if (!KeyStore::isSafeKeyId(m_keyId) ||
         !isSafeScalar(m_provider) ||
         !isSafeScalar(m_networkProfile) ||
+        !isSupportedCryptoSuite(m_suite) ||
         !m_publicKey.isValid() ||
         !isSafeScalar(m_publicKey.keyMaterial()) ||
         !isSafeScalar(m_address) ||
@@ -147,7 +187,20 @@ bool StoredKeyMetadata::isValid() const {
         return false;
     }
 
-    if (!isLocalnetOnly()) {
+    if (m_keyType == KeyStoreKeyType::USER &&
+        (m_algorithm != CryptoAlgorithm::CLASSIC_ED25519 ||
+         m_provider != KeyStore::USER_PROVIDER)) {
+        return false;
+    }
+
+    if (m_keyType == KeyStoreKeyType::VALIDATOR &&
+        (m_algorithm != CryptoAlgorithm::BLS12_381 ||
+         m_provider != KeyStore::VALIDATOR_PROVIDER)) {
+        return false;
+    }
+
+    if (!isLocalnetOnly() ||
+        isDevelopmentOnlyAlgorithm(m_algorithm)) {
         return false;
     }
 
@@ -163,6 +216,8 @@ std::string StoredKeyMetadata::serializePublic() const {
 
     oss << "StoredKeyMetadata{"
         << "keyId=" << m_keyId
+        << ";keyType=" << keyStoreKeyTypeToString(m_keyType)
+        << ";suite=" << cryptoSuiteIdToString(m_suite)
         << ";algorithm=" << cryptoAlgorithmToString(m_algorithm)
         << ";provider=" << m_provider
         << ";networkProfile=" << m_networkProfile
@@ -346,6 +401,22 @@ KeyStoreCreateResult KeyStore::createLocalKey(
     const std::string& seed,
     std::int64_t createdAt
 ) {
+    return createLocalKey(
+        keysDirectory,
+        keyId,
+        KeyStoreKeyType::USER,
+        seed,
+        createdAt
+    );
+}
+
+KeyStoreCreateResult KeyStore::createLocalKey(
+    const std::filesystem::path& keysDirectory,
+    const std::string& keyId,
+    KeyStoreKeyType keyType,
+    const std::string& seed,
+    std::int64_t createdAt
+) {
     if (!isSafeKeyId(keyId) ||
         seed.empty() ||
         createdAt <= 0) {
@@ -369,12 +440,21 @@ KeyStoreCreateResult KeyStore::createLocalKey(
         }
 
         const KeyPair keyPair =
-            KeyPair::createDevelopmentKeyPair(seed);
+            keyType == KeyStoreKeyType::VALIDATOR
+                ? KeyPair::createDeterministicBls12381KeyPair(seed)
+                : KeyPair::createDeterministicEd25519KeyPair(seed);
+
+        const std::string provider =
+            keyType == KeyStoreKeyType::VALIDATOR
+                ? VALIDATOR_PROVIDER
+                : USER_PROVIDER;
 
         const StoredKeyMetadata metadata(
             keyId,
             keyPair.algorithm(),
-            LOCAL_PROVIDER,
+            CryptoSuiteId::NODO_CRYPTO_SUITE_V1,
+            keyType,
+            provider,
             keyPair.publicKey(),
             keyPair.address().value(),
             createdAt,
@@ -392,6 +472,7 @@ KeyStoreCreateResult KeyStore::createLocalKey(
             path,
             keyFileContents(
                 keyId,
+                keyType,
                 keyPair,
                 createdAt
             )
@@ -567,15 +648,23 @@ bool KeyStore::isSafeKeyId(
 
 std::string KeyStore::keyFileContents(
     const std::string& keyId,
+    KeyStoreKeyType keyType,
     const KeyPair& keyPair,
     std::int64_t createdAt
 ) {
+    const std::string provider =
+        keyType == KeyStoreKeyType::VALIDATOR
+            ? VALIDATOR_PROVIDER
+            : USER_PROVIDER;
+
     return serialization::KeyValueFileCodec::serialize(
-        KEY_FILE_VERSION_V2,
+        KEY_FILE_VERSION_V3,
         {
             {"keyId", keyId},
             {"algorithm", cryptoAlgorithmToString(keyPair.algorithm())},
-            {"provider", LOCAL_PROVIDER},
+            {"suite", cryptoSuiteIdToString(CryptoSuiteId::NODO_CRYPTO_SUITE_V1)},
+            {"keyType", keyStoreKeyTypeToString(keyType)},
+            {"provider", provider},
             {"networkProfile", LOCAL_NETWORK_PROFILE},
             {"publicKeyMaterial", keyPair.publicKey().keyMaterial()},
             {"privateKeyMaterial", keyPair.privateKeyForSigningOnly().keyMaterialForSigningOnly()},
@@ -611,6 +700,30 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
         );
     }
 
+    const CryptoSuiteId suite =
+        cryptoSuiteIdFromString(
+            document.requireField("suite")
+        );
+
+    if (!isSupportedCryptoSuite(suite)) {
+        return KeyStoreLoadResult::rejected(
+            KeyStoreStatus::INVALID_INPUT,
+            "Unknown key crypto suite."
+        );
+    }
+
+    const KeyStoreKeyType keyType =
+        keyStoreKeyTypeFromString(
+            document.requireField("keyType")
+        );
+
+    if (keyStoreKeyTypeToString(keyType) != document.requireField("keyType")) {
+        return KeyStoreLoadResult::rejected(
+            KeyStoreStatus::INVALID_INPUT,
+            "Unknown key type."
+        );
+    }
+
     const KeyPair keyPair(
         PublicKey(
             algorithm,
@@ -625,6 +738,8 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
     const StoredKeyMetadata metadata(
         keyId,
         algorithm,
+        suite,
+        keyType,
         document.requireField("provider"),
         keyPair.publicKey(),
         document.requireField("address"),
@@ -649,6 +764,7 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
 
     if (contents != keyFileContents(
             keyId,
+            metadata.keyType(),
             keyPair,
             metadata.createdAt()
         )) {

@@ -37,7 +37,7 @@ public:
         std::uint64_t minimumFeeRawUnits = 0,
         std::uint64_t targetBlockTimeSeconds = 60,
         std::uint64_t finalityDepth = 1,
-        std::string signatureAlgorithm = "DEVELOPMENT_FAKE_SIGNATURE",
+        std::string signatureAlgorithm = "NODO_CRYPTO_SUITE_V1",
         std::string storageFormatVersion = "NODO_STORAGE_V2"
     );
 

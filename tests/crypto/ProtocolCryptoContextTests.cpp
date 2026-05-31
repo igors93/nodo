@@ -36,8 +36,8 @@ void testLocalnetContextIsExplicitAndValid() {
     );
 
     requireCondition(
-        context.temporaryProviderAllowed(),
-        "Localnet should explicitly allow the temporary provider."
+        !context.temporaryProviderAllowed(),
+        "Localnet should not allow temporary providers in protocol crypto."
     );
 
     requireCondition(
@@ -47,7 +47,7 @@ void testLocalnetContextIsExplicitAndValid() {
 
     requireCondition(
         !context.productionSafe(),
-        "Localnet temporary crypto context must not be marked production-safe."
+        "Localnet development policy must not be marked production-safe."
     );
 
     requireCondition(
@@ -57,8 +57,14 @@ void testLocalnetContextIsExplicitAndValid() {
 
     requireCondition(
         context.signatureProvider().algorithm() ==
-            nodo::crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "Localnet crypto context should expose the temporary local signature provider."
+            nodo::crypto::CryptoAlgorithm::BLS12_381,
+        "Localnet validator crypto context should expose BLS12-381."
+    );
+
+    requireCondition(
+        context.userSignatureProvider().algorithm() ==
+            nodo::crypto::CryptoAlgorithm::CLASSIC_ED25519,
+        "Localnet user crypto context should expose Ed25519."
     );
 }
 

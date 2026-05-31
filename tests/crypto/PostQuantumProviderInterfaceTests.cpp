@@ -6,6 +6,7 @@
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
 #include "crypto/SignatureVerificationResult.hpp"
+#include "crypto/SigningDomain.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -23,6 +24,7 @@ using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::Signature;
 using nodo::crypto::SignatureVerificationResult;
+using nodo::crypto::SigningDomain;
 
 void requireCondition(
     bool condition,
@@ -77,7 +79,8 @@ public:
         const std::string&,
         const PublicKey&,
         const PrivateKey&,
-        std::int64_t
+        std::int64_t,
+        SigningDomain
     ) const override {
         throw std::logic_error("Interface-only ML-DSA provider cannot sign.");
     }

@@ -5,12 +5,15 @@
 #include "core/AccountStateView.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "crypto/SigningDomain.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "utils/Amount.hpp"
 
@@ -29,13 +32,16 @@ using nodo::core::AccountState;
 using nodo::core::AccountStateView;
 using nodo::core::Transaction;
 using nodo::core::TransactionType;
+using nodo::crypto::Bls12381SignatureProvider;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
-using nodo::crypto::DevelopmentSignatureProvider;
+using nodo::crypto::Ed25519SignatureProvider;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::SecurityContext;
 using nodo::crypto::SignatureBundle;
+using nodo::crypto::SigningDomain;
 using nodo::mempool::Mempool;
 using nodo::node::NodeDataDirectory;
 using nodo::node::NodeDataDirectoryConfig;
@@ -71,21 +77,25 @@ void clean(
     );
 }
 
-PublicKey publicKey(
+KeyPair validatorKeyPair(
     const std::string& suffix
 ) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "persistent-mempool-public-key-" + suffix
+    return KeyPair::createDeterministicBls12381KeyPair(
+        "persistent-mempool-validator-key-" + suffix
     );
 }
 
-PrivateKey privateKey(
+PublicKey validatorPublicKey(
     const std::string& suffix
 ) {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "persistent-mempool-private-key-" + suffix
+    return validatorKeyPair(suffix).publicKey();
+}
+
+KeyPair transactionKeyPair(
+    const std::string& suffix
+) {
+    return KeyPair::createDeterministicEd25519KeyPair(
+        "persistent-mempool-transaction-key-" + suffix
     );
 }
 
@@ -93,7 +103,7 @@ BootstrapValidatorConfig validator(
     const std::string& suffix
 ) {
     return BootstrapValidatorConfig(
-        publicKey("validator-" + suffix),
+        validatorPublicKey(suffix),
         1,
         1,
         "persistent-mempool-validator-" + suffix
@@ -136,12 +146,18 @@ Transaction signedTransfer(
         kTimestamp + static_cast<std::int64_t>(nonce)
     );
 
+    const KeyPair keyPair =
+        transactionKeyPair(suffix);
+    const Ed25519SignatureProvider provider;
+
     transaction.attachSignatureBundle(
-        SignatureBundle::createDevelopmentSignature(
+        SignatureBundle::createSignature(
             transaction.signingPayload(),
-            publicKey("tx-" + suffix),
-            privateKey("tx-" + suffix),
-            transaction.timestamp()
+            keyPair.publicKey(),
+            keyPair.privateKeyForSigningOnly(),
+            transaction.timestamp(),
+            provider,
+            SigningDomain::USER_TRANSACTION
         )
     );
 
@@ -197,7 +213,7 @@ void testPersistLoadAndRemoveTransaction() {
         PersistentMempoolStore::persistTransaction(
             directoryConfig,
             transaction,
-            publicKey("tx-a"),
+            transactionKeyPair("a").publicKey(),
             kTimestamp + 20
         );
 
@@ -262,7 +278,7 @@ void testPersistIsIdempotent() {
         PersistentMempoolStore::persistTransaction(
             directoryConfig,
             transaction,
-            publicKey("tx-b"),
+            transactionKeyPair("b").publicKey(),
             kTimestamp + 30
         ).stored(),
         "First persistent transaction write should store."
@@ -272,7 +288,7 @@ void testPersistIsIdempotent() {
         PersistentMempoolStore::persistTransaction(
             directoryConfig,
             transaction,
-            publicKey("tx-b"),
+            transactionKeyPair("b").publicKey(),
             kTimestamp + 30
         ).alreadyStored(),
         "Second identical persistent transaction write should be idempotent."
@@ -297,14 +313,14 @@ void testLoadWithAccountStateAcceptsSufficientBalance() {
         PersistentMempoolStore::persistTransaction(
             directoryConfig,
             transaction,
-            publicKey("tx-c"),
+            transactionKeyPair("c").publicKey(),
             kTimestamp + 40
         ).stored(),
         "Persistent transaction fixture should store before balance-aware load."
     );
 
     Mempool mempool;
-    const DevelopmentSignatureProvider provider;
+    const Ed25519SignatureProvider provider;
 
     const auto loaded =
         PersistentMempoolStore::loadIntoMempool(
@@ -343,14 +359,14 @@ void testLoadWithAccountStateRejectsInsufficientBalance() {
         PersistentMempoolStore::persistTransaction(
             directoryConfig,
             transaction,
-            publicKey("tx-d"),
+            transactionKeyPair("d").publicKey(),
             kTimestamp + 50
         ).stored(),
         "Persistent transaction fixture should store before insufficient-balance load."
     );
 
     Mempool mempool;
-    const DevelopmentSignatureProvider provider;
+    const Ed25519SignatureProvider provider;
 
     const auto loaded =
         PersistentMempoolStore::loadIntoMempool(

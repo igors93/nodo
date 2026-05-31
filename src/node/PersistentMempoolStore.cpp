@@ -1,7 +1,7 @@
 #include "node/PersistentMempoolStore.hpp"
 
 #include "crypto/CryptoAlgorithm.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
 #include "crypto/SignatureBundle.hpp"
@@ -38,6 +38,8 @@ serialization::KeyValueFileDocument parseTransactionDocument(
         {
             "transactionId",
             "acceptedAt",
+            "signatureSuite",
+            "signatureDomain",
             "publicKeyAlgorithm",
             "publicKeyMaterial",
             "signatureHex",
@@ -396,7 +398,7 @@ PersistentMempoolWriteResult PersistentMempoolStore::persistTransaction(
         );
     }
 
-    const crypto::DevelopmentSignatureProvider provider;
+    const crypto::Ed25519SignatureProvider provider;
 
     try {
         validatePersistentTransactionSignature(
@@ -515,7 +517,7 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
     std::size_t skippedCount = 0;
 
     try {
-        const crypto::DevelopmentSignatureProvider provider;
+        const crypto::Ed25519SignatureProvider provider;
 
         for (const std::filesystem::path& path :
              canonicalMempoolFiles(directoryConfig.mempoolDirectoryPath())) {
@@ -731,6 +733,8 @@ std::string PersistentMempoolStore::transactionFileContents(
         {
             {"transactionId", transaction.id()},
             {"acceptedAt", std::to_string(acceptedAt)},
+            {"signatureSuite", crypto::cryptoSuiteIdToString(signature.suite())},
+            {"signatureDomain", crypto::signingDomainToString(signature.domain())},
             {"publicKeyAlgorithm", crypto::cryptoAlgorithmToString(publicKey.algorithm())},
             {"publicKeyMaterial", publicKey.keyMaterial()},
             {"signatureHex", signature.signatureHex()},
@@ -768,8 +772,28 @@ core::Transaction PersistentMempoolStore::decodeTransactionFile(
 
     crypto::SignatureBundle signatureBundle;
 
+    const crypto::CryptoSuiteId suite =
+        crypto::cryptoSuiteIdFromString(
+            fields.requireField("signatureSuite")
+        );
+
+    if (!crypto::isSupportedCryptoSuite(suite)) {
+        throw std::invalid_argument("Persistent transaction signature suite is unknown.");
+    }
+
+    const crypto::SigningDomain domain =
+        crypto::signingDomainFromString(
+            fields.requireField("signatureDomain")
+        );
+
+    if (domain == crypto::SigningDomain::UNKNOWN) {
+        throw std::invalid_argument("Persistent transaction signature domain is unknown.");
+    }
+
     signatureBundle.addSignature(
         crypto::Signature(
+            suite,
+            domain,
             algorithm,
             publicKey,
             fields.requireField("signatureHex"),

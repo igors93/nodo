@@ -51,11 +51,12 @@ deprecation warnings and run the same localnet protocol path.
 
 Current limitations are explicit:
 
-- `localnet` uses a temporary deterministic local signature provider;
-- `localnet` keys are stored by `KeyStore` in an unencrypted local format that
-  is not production-safe yet;
+- `localnet` uses OpenSSL Ed25519 for user transactions and blst BLS12-381 for
+  validator operations;
+- `localnet` keys are stored by `KeyStore` in an unencrypted deterministic
+  local format that is not production-safe custody yet;
 - `localnet` uses explicit development account allocations in `GenesisConfig`
-  for bootstrap validators so balance and nonce checks can run locally;
+  for the default user key so balance and nonce checks can run locally;
 - no P2P validator networking is included in this phase;
 - no slashing or production mainnet path is included in this phase;
 - mempool future nonces are rejected until a full per-account queue exists;

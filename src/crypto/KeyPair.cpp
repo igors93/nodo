@@ -1,7 +1,8 @@
 #include "crypto/KeyPair.hpp"
 
 #include "crypto/AddressDerivation.hpp"
-#include "crypto/hash.h"
+#include "crypto/Bls12381SignatureProvider.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 
 #include <sstream>
 #include <stdexcept>
@@ -20,29 +21,24 @@ KeyPair::KeyPair(
     : m_publicKey(std::move(publicKey)),
       m_privateKey(std::move(privateKey)) {}
 
-KeyPair KeyPair::createDevelopmentKeyPair(
+KeyPair KeyPair::createEd25519KeyPair() {
+    return Ed25519SignatureProvider::generateKeyPair();
+}
+
+KeyPair KeyPair::createDeterministicEd25519KeyPair(
     const std::string& identitySeed
 ) {
-    if (identitySeed.empty()) {
-        throw std::invalid_argument("Development key pair seed cannot be empty.");
-    }
+    return Ed25519SignatureProvider::deriveKeyPairFromSeed(identitySeed);
+}
 
-    return KeyPair(
-        PublicKey(
-            CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-            deriveDevelopmentKeyMaterial(
-                "NODO_DEVELOPMENT_PUBLIC_KEY_V1",
-                identitySeed
-            )
-        ),
-        PrivateKey(
-            CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-            deriveDevelopmentKeyMaterial(
-                "NODO_DEVELOPMENT_PRIVATE_KEY_V1",
-                identitySeed
-            )
-        )
-    );
+KeyPair KeyPair::createBls12381KeyPair() {
+    return Bls12381SignatureProvider::generateKeyPair();
+}
+
+KeyPair KeyPair::createDeterministicBls12381KeyPair(
+    const std::string& identitySeed
+) {
+    return Bls12381SignatureProvider::deriveKeyPairFromSeed(identitySeed);
 }
 
 CryptoAlgorithm KeyPair::algorithm() const {
@@ -99,12 +95,18 @@ bool KeyPair::canSignAndVerify(
     const std::string challenge =
         signingChallenge(m_publicKey);
 
+    const SigningDomain domain =
+        provider.algorithm() == CryptoAlgorithm::BLS12_381
+            ? SigningDomain::VALIDATOR_VOTE
+            : SigningDomain::USER_TRANSACTION;
+
     try {
         const SignatureBundle bundle =
             sign(
                 challenge,
                 1900000000,
-                provider
+                provider,
+                domain
             );
 
         if (bundle.signatures().empty()) {
@@ -126,7 +128,8 @@ bool KeyPair::canSignAndVerify(
 SignatureBundle KeyPair::sign(
     const std::string& message,
     std::int64_t timestamp,
-    const SignatureProvider& provider
+    const SignatureProvider& provider,
+    SigningDomain domain
 ) const {
     if (!isValid()) {
         throw std::invalid_argument("Invalid KeyPair cannot sign.");
@@ -149,7 +152,8 @@ SignatureBundle KeyPair::sign(
         m_publicKey,
         m_privateKey,
         timestamp,
-        provider
+        provider,
+        domain
     );
 }
 
@@ -182,24 +186,6 @@ std::string KeyPair::serializePublic() const {
         << "}";
 
     return oss.str();
-}
-
-std::string KeyPair::deriveDevelopmentKeyMaterial(
-    const std::string& domain,
-    const std::string& identitySeed
-) {
-    char output[NODO_HASH_BUFFER_SIZE] = {0};
-
-    const std::string payload =
-        domain + "|" + identitySeed;
-
-    nodo_hash_string(
-        payload.c_str(),
-        output,
-        sizeof(output)
-    );
-
-    return std::string(output);
 }
 
 std::string KeyPair::signingChallenge(

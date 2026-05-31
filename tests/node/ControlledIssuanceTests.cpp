@@ -35,7 +35,7 @@ void requireCondition(
 }
 
 KeyPair validatorKeyPair() {
-    return KeyPair::createDevelopmentKeyPair(
+    return KeyPair::createDeterministicBls12381KeyPair(
         "controlled-issuance-validator"
     );
 }

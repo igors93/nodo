@@ -3,9 +3,10 @@
 #include "core/LedgerRecord.hpp"
 #include "core/ProtectionBlockProposal.hpp"
 #include "core/ValidatorBlockProposalSignature.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "economics/EpochEmissionPolicy.hpp"
@@ -30,9 +31,10 @@ using nodo::core::ProtectionBlockProposal;
 using nodo::core::SignedProtectionBlockProposal;
 using nodo::core::ValidatorBlockProposalSignature;
 using nodo::core::ValidatorBlockProposalSigner;
+using nodo::crypto::Bls12381SignatureProvider;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
-using nodo::crypto::DevelopmentSignatureProvider;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::economics::EpochEmissionPolicy;
@@ -146,22 +148,24 @@ EpochRewardDistribution rewardDistribution(
     );
 }
 
+KeyPair validatorKeyPair(
+    const std::string& suffix = "default"
+) {
+    return KeyPair::createDeterministicBls12381KeyPair(
+        "validator-proposal-key-" + suffix
+    );
+}
+
 PublicKey validatorPublicKey(
     const std::string& suffix = "default"
 ) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "validator-proposal-public-key-" + suffix
-    );
+    return validatorKeyPair(suffix).publicKey();
 }
 
 PrivateKey validatorPrivateKey(
     const std::string& suffix = "default"
 ) {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "validator-proposal-private-key-" + suffix
-    );
+    return validatorKeyPair(suffix).privateKeyForSigningOnly();
 }
 
 ProtectionBlockProposal proposalFor(
@@ -183,15 +187,16 @@ void testValidatorSignsAndVerifiesProposal() {
         proposalFor(blockchain);
 
     const SignedProtectionBlockProposal signedProposal =
-        ValidatorBlockProposalSigner::signProposalForDevelopment(
+        ValidatorBlockProposalSigner::signProposal(
             proposal,
             "nodo1validatorA",
             validatorPublicKey(),
             validatorPrivateKey(),
-            kTimestamp + 31
+            kTimestamp + 31,
+            Bls12381SignatureProvider()
         );
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     requireCondition(
         signedProposal.isValidForBlockchain(
@@ -246,12 +251,13 @@ void testSignatureCannotBeReusedOnDifferentProposal() {
         proposalFor(blockchain, kTimestamp + 41);
 
     const SignedProtectionBlockProposal signedOriginal =
-        ValidatorBlockProposalSigner::signProposalForDevelopment(
+        ValidatorBlockProposalSigner::signProposal(
             originalProposal,
             "nodo1validatorA",
             validatorPublicKey(),
             validatorPrivateKey(),
-            kTimestamp + 42
+            kTimestamp + 42,
+            Bls12381SignatureProvider()
         );
 
     SignedProtectionBlockProposal tampered(
@@ -259,7 +265,7 @@ void testSignatureCannotBeReusedOnDifferentProposal() {
         signedOriginal.proposalSignature()
     );
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     requireCondition(
         signedOriginal.isValidForBlockchain(
@@ -291,15 +297,16 @@ void testSignatureCannotBeReusedOnDifferentChainTip() {
         proposalFor(originalChain);
 
     const SignedProtectionBlockProposal signedProposal =
-        ValidatorBlockProposalSigner::signProposalForDevelopment(
+        ValidatorBlockProposalSigner::signProposal(
             proposal,
             "nodo1validatorA",
             validatorPublicKey(),
             validatorPrivateKey(),
-            kTimestamp + 50
+            kTimestamp + 50,
+            Bls12381SignatureProvider()
         );
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     requireCondition(
         signedProposal.isValidForBlockchain(
@@ -359,7 +366,7 @@ void testSignaturePayloadCommitsToValidatorAndBlock() {
     );
 }
 
-void testDevelopmentSignatureRejectedByProductionLikePolicy() {
+void testSingleBlsSignatureRejectedByFutureHybridPolicy() {
     Blockchain blockchain =
         baseBlockchain();
 
@@ -367,15 +374,16 @@ void testDevelopmentSignatureRejectedByProductionLikePolicy() {
         proposalFor(blockchain);
 
     const SignedProtectionBlockProposal signedProposal =
-        ValidatorBlockProposalSigner::signProposalForDevelopment(
+        ValidatorBlockProposalSigner::signProposal(
             proposal,
             "nodo1validatorA",
             validatorPublicKey(),
             validatorPrivateKey(),
-            kTimestamp + 70
+            kTimestamp + 70,
+            Bls12381SignatureProvider()
         );
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     requireCondition(
         !signedProposal.isValidForBlockchain(
@@ -383,7 +391,7 @@ void testDevelopmentSignatureRejectedByProductionLikePolicy() {
             CryptoPolicy::futureHybridPolicy(),
             provider
         ),
-        "Development-only signature must be rejected by future production-like policy."
+        "Future hybrid policy must reject a single BLS validator signature."
     );
 }
 
@@ -397,12 +405,13 @@ void testInvalidSignatureInputsAreRejected() {
     bool rejected = false;
 
     try {
-        (void)ValidatorBlockProposalSigner::signProposalForDevelopment(
+        (void)ValidatorBlockProposalSigner::signProposal(
             proposal,
             "",
             validatorPublicKey(),
             validatorPrivateKey(),
-            kTimestamp + 80
+            kTimestamp + 80,
+            Bls12381SignatureProvider()
         );
     } catch (const std::exception&) {
         rejected = true;
@@ -416,12 +425,13 @@ void testInvalidSignatureInputsAreRejected() {
     rejected = false;
 
     try {
-        (void)ValidatorBlockProposalSigner::signProposalForDevelopment(
+        (void)ValidatorBlockProposalSigner::signProposal(
             proposal,
             "nodo1validatorA",
             validatorPublicKey(),
             validatorPrivateKey(),
-            0
+            0,
+            Bls12381SignatureProvider()
         );
     } catch (const std::exception&) {
         rejected = true;
@@ -441,7 +451,7 @@ int main() {
         testSignatureCannotBeReusedOnDifferentProposal();
         testSignatureCannotBeReusedOnDifferentChainTip();
         testSignaturePayloadCommitsToValidatorAndBlock();
-        testDevelopmentSignatureRejectedByProductionLikePolicy();
+        testSingleBlsSignatureRejectedByFutureHybridPolicy();
         testInvalidSignatureInputsAreRejected();
 
         std::cout << "Nodo validator block proposal signature tests passed.\n";

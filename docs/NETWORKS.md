@@ -26,5 +26,5 @@ networks.
 `testnet` should use production-shaped keys, stricter validator onboarding and
 networked validator votes.
 
-`mainnet` must refuse development signatures, fake keys, non-canonical storage
-and incomplete security evidence handling.
+`mainnet` must refuse unencrypted local keys, non-canonical storage and
+incomplete security evidence handling.

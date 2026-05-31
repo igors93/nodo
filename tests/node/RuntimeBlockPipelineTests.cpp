@@ -3,9 +3,10 @@
 #include "core/Transaction.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "core/TransactionType.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/KeyPair.hpp"
-#include "crypto/LocalSignatureProvider.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signer.hpp"
@@ -26,10 +27,11 @@ using nodo::config::GenesisConfig;
 using nodo::config::NetworkParameters;
 using nodo::core::Transaction;
 using nodo::core::TransactionType;
+using nodo::crypto::Bls12381SignatureProvider;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
+using nodo::crypto::Ed25519SignatureProvider;
 using nodo::crypto::KeyPair;
-using nodo::crypto::LocalSignatureProvider;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::SecurityContext;
@@ -56,8 +58,14 @@ void requireCondition(
 }
 
 KeyPair localValidatorKeyPair() {
-    return KeyPair::createDevelopmentKeyPair(
+    return KeyPair::createDeterministicBls12381KeyPair(
         "runtime-block-pipeline-validator"
+    );
+}
+
+KeyPair localUserKeyPair() {
+    return KeyPair::createDeterministicEd25519KeyPair(
+        "runtime-block-pipeline-user"
     );
 }
 
@@ -84,7 +92,7 @@ GenesisConfig genesisConfig() {
         },
         {
             GenesisAccountConfig(
-                bootstrap.validatorAddress(),
+                localUserKeyPair().address().value(),
                 Amount::fromRawUnits(1000000000000),
                 0
             )
@@ -94,10 +102,19 @@ GenesisConfig genesisConfig() {
 }
 
 Signer localValidatorSigner() {
-    static const LocalSignatureProvider provider;
+    static const Bls12381SignatureProvider provider;
 
     return Signer(
         localValidatorKeyPair(),
+        provider
+    );
+}
+
+Signer localUserSigner() {
+    static const Ed25519SignatureProvider provider;
+
+    return Signer(
+        localUserKeyPair(),
         provider
     );
 }
@@ -146,7 +163,7 @@ Transaction signedTransfer(
             nonce,
             timestamp
         ),
-        localValidatorSigner()
+        localUserSigner()
     );
 }
 

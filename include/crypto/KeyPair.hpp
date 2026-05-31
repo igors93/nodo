@@ -34,13 +34,15 @@ public:
         PrivateKey privateKey
     );
 
-    /*
-     * Development-only helper.
-     *
-     * It creates deterministic key material from a seed so tests and demos can
-     * reproduce the same key pair. This is NOT secure key generation.
-     */
-    static KeyPair createDevelopmentKeyPair(
+    static KeyPair createEd25519KeyPair();
+
+    static KeyPair createDeterministicEd25519KeyPair(
+        const std::string& identitySeed
+    );
+
+    static KeyPair createBls12381KeyPair();
+
+    static KeyPair createDeterministicBls12381KeyPair(
         const std::string& identitySeed
     );
 
@@ -70,7 +72,8 @@ public:
     SignatureBundle sign(
         const std::string& message,
         std::int64_t timestamp,
-        const SignatureProvider& provider
+        const SignatureProvider& provider,
+        SigningDomain domain
     ) const;
 
     /*
@@ -88,11 +91,6 @@ public:
     std::string serializePublic() const;
 
 private:
-    static std::string deriveDevelopmentKeyMaterial(
-        const std::string& domain,
-        const std::string& identitySeed
-    );
-
     static std::string signingChallenge(
         const PublicKey& publicKey
     );

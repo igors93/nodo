@@ -1,11 +1,14 @@
 #include "crypto/AuditedSignatureProvider.hpp"
 #include "crypto/AuditedSignatureProviderProfile.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/CryptoSuiteId.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
 #include "crypto/SignatureProviderRegistry.hpp"
 #include "crypto/SignatureVerificationResult.hpp"
+#include "crypto/SigningDomain.hpp"
 #include "crypto/hash.h"
 
 #include <cstdint>
@@ -19,11 +22,14 @@ namespace {
 using nodo::crypto::AuditedSignatureProvider;
 using nodo::crypto::AuditedSignatureProviderProfile;
 using nodo::crypto::CryptoAlgorithm;
+using nodo::crypto::CryptoSuiteId;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::Signature;
 using nodo::crypto::SignatureProviderRegistry;
 using nodo::crypto::SignatureVerificationResult;
+using nodo::crypto::SigningDomain;
 
 constexpr std::int64_t kTestTimestamp = 1900000000;
 
@@ -38,12 +44,15 @@ void requireCondition(
 
 std::string testOnlySignatureHex(
     const std::string& message,
-    const PublicKey& publicKey
+    const PublicKey& publicKey,
+    SigningDomain domain
 ) {
     char output[NODO_HASH_BUFFER_SIZE] = {0};
 
     const std::string payload =
         "NODO_TEST_ONLY_AUDITED_PROVIDER_V1|" +
+        nodo::crypto::signingDomainToString(domain) +
+        "|" +
         message +
         "|" +
         publicKey.serialize();
@@ -89,7 +98,8 @@ public:
         const std::string& message,
         const PublicKey& publicKey,
         const PrivateKey& privateKey,
-        std::int64_t timestamp
+        std::int64_t timestamp,
+        SigningDomain domain
     ) const override {
         if (message.empty()) {
             throw std::invalid_argument("Test provider message cannot be empty.");
@@ -97,6 +107,10 @@ public:
 
         if (timestamp <= 0) {
             throw std::invalid_argument("Test provider timestamp must be positive.");
+        }
+
+        if (domain == SigningDomain::UNKNOWN) {
+            throw std::invalid_argument("Test provider signing domain must be known.");
         }
 
         if (publicKey.algorithm() != algorithm()) {
@@ -112,9 +126,11 @@ public:
         }
 
         return Signature(
+            CryptoSuiteId::NODO_CRYPTO_SUITE_V1,
+            domain,
             algorithm(),
             publicKey,
-            testOnlySignatureHex(message, publicKey),
+            testOnlySignatureHex(message, publicKey, domain),
             timestamp
         );
     }
@@ -138,7 +154,8 @@ public:
         const std::string expected =
             testOnlySignatureHex(
                 message,
-                signature.publicKey()
+                signature.publicKey(),
+                signature.domain()
             );
 
         if (signature.signatureHex() != expected) {
@@ -153,17 +170,13 @@ private:
 };
 
 PublicKey classicPublicKey() {
-    return PublicKey(
-        CryptoAlgorithm::CLASSIC_ED25519,
-        "test-classic-ed25519-public-key-material"
-    );
+    return KeyPair::createDeterministicEd25519KeyPair("audited-test-key").publicKey();
 }
 
 PrivateKey classicPrivateKey() {
-    return PrivateKey(
-        CryptoAlgorithm::CLASSIC_ED25519,
-        "test-classic-ed25519-private-key-material"
-    );
+    return KeyPair::createDeterministicEd25519KeyPair(
+        "audited-test-key"
+    ).privateKeyForSigningOnly();
 }
 
 void testAuditedProfileValidation() {
@@ -288,7 +301,8 @@ void testProviderSignsAndVerifies() {
             "nodo-audited-provider-message",
             classicPublicKey(),
             classicPrivateKey(),
-            kTestTimestamp
+            kTestTimestamp,
+            SigningDomain::USER_TRANSACTION
         );
 
     requireCondition(

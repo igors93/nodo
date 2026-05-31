@@ -1,6 +1,6 @@
 #include "node/NodeRuntime.hpp"
 #include "config/NetworkParameters.hpp"
-#include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PublicKey.hpp"
 
 #include <cstdint>
@@ -13,7 +13,7 @@ namespace {
 using nodo::config::BootstrapValidatorConfig;
 using nodo::config::GenesisConfig;
 using nodo::config::NetworkParameters;
-using nodo::crypto::CryptoAlgorithm;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PublicKey;
 using nodo::node::LocalPeerManager;
 using nodo::node::NodeRuntimeConfig;
@@ -37,10 +37,9 @@ void requireCondition(
 PublicKey publicKey(
     const std::string& suffix
 ) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "node-runtime-public-key-" + suffix
-    );
+    return KeyPair::createDeterministicBls12381KeyPair(
+        "node-runtime-validator-key-" + suffix
+    ).publicKey();
 }
 
 BootstrapValidatorConfig validator(

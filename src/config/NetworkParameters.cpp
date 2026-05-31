@@ -266,7 +266,7 @@ NetworkParameters NetworkParameters::developmentLocal() {
         0,
         60,
         1,
-        "LOCAL_DETERMINISTIC_PROVIDER_V1",
+        "NODO_CRYPTO_SUITE_V1",
         "NODO_STORAGE_V2"
     );
 }

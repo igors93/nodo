@@ -3,9 +3,12 @@
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "crypto/SigningDomain.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
@@ -20,10 +23,13 @@ using nodo::core::Transaction;
 using nodo::core::TransactionType;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
+using nodo::crypto::Ed25519SignatureProvider;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::SecurityContext;
 using nodo::crypto::SignatureBundle;
+using nodo::crypto::SigningDomain;
 using nodo::mempool::Mempool;
 using nodo::mempool::MempoolAdmissionStatus;
 using nodo::mempool::MempoolConfig;
@@ -40,21 +46,11 @@ void requireCondition(
     }
 }
 
-PublicKey publicKey(
+KeyPair keyPair(
     const std::string& suffix
 ) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "mempool-public-key-" + suffix
-    );
-}
-
-PrivateKey privateKey(
-    const std::string& suffix
-) {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "mempool-private-key-" + suffix
+    return KeyPair::createDeterministicEd25519KeyPair(
+        "mempool-key-" + suffix
     );
 }
 
@@ -77,12 +73,18 @@ Transaction signedTransfer(
         timestamp
     );
 
+    const KeyPair key =
+        keyPair(suffix);
+    const Ed25519SignatureProvider provider;
+
     transaction.attachSignatureBundle(
-        SignatureBundle::createDevelopmentSignature(
+        SignatureBundle::createSignature(
             transaction.signingPayload(),
-            publicKey(suffix),
-            privateKey(suffix),
-            timestamp
+            key.publicKey(),
+            key.privateKeyForSigningOnly(),
+            timestamp,
+            provider,
+            SigningDomain::USER_TRANSACTION
         )
     );
 

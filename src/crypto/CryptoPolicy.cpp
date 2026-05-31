@@ -29,15 +29,22 @@ bool CryptoPolicy::isAlgorithmAllowed(
 ) const {
     (void)context;
 
-    /*
-     * Development-only signatures are allowed only when the entire policy
-     * is explicitly running in development mode.
-     *
-     * This keeps tests easy now, but prevents fake signatures from being
-     * accepted by future production policies.
-     */
     if (isDevelopmentOnlyAlgorithm(algorithm)) {
-        return m_developmentMode;
+        return context == SecurityContext::DEVELOPMENT_ONLY &&
+               m_developmentMode;
+    }
+
+    if (context == SecurityContext::USER_TRANSACTION) {
+        return algorithm == CryptoAlgorithm::CLASSIC_ED25519;
+    }
+
+    if (context == SecurityContext::VALIDATOR_OPERATION) {
+        return algorithm == CryptoAlgorithm::BLS12_381;
+    }
+
+    if (context == SecurityContext::TREASURY_OPERATION ||
+        context == SecurityContext::MINT_OPERATION) {
+        return algorithm == CryptoAlgorithm::BLS12_381;
     }
 
     /*
@@ -45,6 +52,10 @@ bool CryptoPolicy::isAlgorithmAllowed(
      * Real mathematical verification will be implemented by crypto providers.
      */
     if (isClassicAlgorithm(algorithm)) {
+        return true;
+    }
+
+    if (isValidatorAlgorithm(algorithm)) {
         return true;
     }
 

@@ -2,8 +2,8 @@
 
 ## Near Term
 
-- Replace development signatures with an audited production provider.
-- Add durable validator key management.
+- Add audited production provider validation around the current OpenSSL/blst suite.
+- Add encrypted durable validator key management.
 - Move from development text serialization to a stricter canonical binary format.
 - Expand runtime reload validation to decode and audit quorum/finalization
   records, not only block payload integrity.

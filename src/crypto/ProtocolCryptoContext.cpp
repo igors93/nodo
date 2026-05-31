@@ -53,7 +53,7 @@ ProtocolCryptoContext ProtocolCryptoContext::localnet() {
         ProtocolNetworkProfile::LOCALNET,
         "localnet",
         CryptoPolicy::developmentPolicy(),
-        true,
+        false,
         false,
         ""
     );
@@ -120,7 +120,8 @@ ProtocolCryptoContext::ProtocolCryptoContext(
       m_temporaryProviderAllowed(temporaryProviderAllowed),
       m_requiresProductionProvider(requiresProductionProvider),
       m_rejectionReason(std::move(rejectionReason)),
-      m_localProvider() {}
+      m_userProvider(),
+      m_validatorProvider() {}
 
 ProtocolNetworkProfile ProtocolCryptoContext::profile() const {
     return m_profile;
@@ -135,7 +136,15 @@ const CryptoPolicy& ProtocolCryptoContext::policy() const {
 }
 
 const SignatureProvider& ProtocolCryptoContext::signatureProvider() const {
-    return m_localProvider;
+    return m_validatorProvider;
+}
+
+const SignatureProvider& ProtocolCryptoContext::userSignatureProvider() const {
+    return m_userProvider;
+}
+
+const SignatureProvider& ProtocolCryptoContext::validatorSignatureProvider() const {
+    return m_validatorProvider;
 }
 
 bool ProtocolCryptoContext::temporaryProviderAllowed() const {
@@ -148,14 +157,13 @@ bool ProtocolCryptoContext::requiresProductionProvider() const {
 
 bool ProtocolCryptoContext::productionSafe() const {
     return !hasTemporaryProvider() &&
-           m_requiresProductionProvider &&
+           !m_policy.developmentMode() &&
            m_rejectionReason.empty();
 }
 
 bool ProtocolCryptoContext::hasTemporaryProvider() const {
-    return isDevelopmentOnlyAlgorithm(
-        m_localProvider.algorithm()
-    );
+    return isDevelopmentOnlyAlgorithm(m_userProvider.algorithm()) ||
+           isDevelopmentOnlyAlgorithm(m_validatorProvider.algorithm());
 }
 
 bool ProtocolCryptoContext::isValid() const {

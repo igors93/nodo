@@ -26,10 +26,14 @@
 #include "storage/BlockStorageIndex.hpp"
 #include "storage/ChainManifest.hpp"
 
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "crypto/SigningDomain.hpp"
 #include "crypto/hash.h"
 
 #include <iostream>
@@ -77,12 +81,13 @@ int runBlockchainFoundationDemo() {
     using nodo::privacy::PrivateAccountingLedgerRebuildReport;
     using nodo::privacy::PrivateAccountingRecord;
 
-    using nodo::crypto::CryptoAlgorithm;
+    using nodo::crypto::Bls12381SignatureProvider;
     using nodo::crypto::CryptoPolicy;
-    using nodo::crypto::PrivateKey;
-    using nodo::crypto::PublicKey;
+    using nodo::crypto::Ed25519SignatureProvider;
+    using nodo::crypto::KeyPair;
     using nodo::crypto::SecurityContext;
     using nodo::crypto::SignatureBundle;
+    using nodo::crypto::SigningDomain;
 
     std::cout << "Nodo Blockchain - Transfer State Reconstruction\n";
     std::cout << "-----------------------------------------------\n\n";
@@ -90,21 +95,12 @@ int runBlockchainFoundationDemo() {
     Blockchain blockchain;
     CryptoPolicy cryptoPolicy = CryptoPolicy::developmentPolicy();
 
-    /*
-     * Development keys.
-     *
-     * Warning:
-     * These keys are not secure. They exist only to validate the architecture.
-     */
-    PublicKey igorPublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "igor-development-public-key"
-    );
-
-    PrivateKey igorPrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "igor-development-private-key"
-    );
+    const KeyPair minterKeyPair =
+        KeyPair::createDeterministicBls12381KeyPair("demo-minter-key");
+    const Bls12381SignatureProvider minterProvider;
+    const KeyPair igorKeyPair =
+        KeyPair::createDeterministicEd25519KeyPair("demo-igor-user-key");
+    const Ed25519SignatureProvider userProvider;
 
     /*
      * Simplified genesis mint.
@@ -124,17 +120,19 @@ int runBlockchainFoundationDemo() {
     );
 
     SignatureBundle genesisSignatureBundle =
-        SignatureBundle::createDevelopmentSignature(
+        SignatureBundle::createSignature(
             genesisMint.serialize(),
-            igorPublicKey,
-            igorPrivateKey,
-            currentUnixTimestamp()
+            minterKeyPair.publicKey(),
+            minterKeyPair.privateKeyForSigningOnly(),
+            currentUnixTimestamp(),
+            minterProvider,
+            SigningDomain::MINT_AUTHORIZATION
         );
 
     const bool genesisSignaturePolicyValid =
         genesisSignatureBundle.isValidForPolicy(
             cryptoPolicy,
-            SecurityContext::DEVELOPMENT_ONLY
+            SecurityContext::MINT_OPERATION
         );
 
     std::cout << "Genesis signature policy check: "
@@ -195,11 +193,13 @@ int runBlockchainFoundationDemo() {
     );
 
     SignatureBundle transferSignatureBundle =
-        SignatureBundle::createDevelopmentSignature(
+        SignatureBundle::createSignature(
             transferTransaction.signingPayload(),
-            igorPublicKey,
-            igorPrivateKey,
-            currentUnixTimestamp()
+            igorKeyPair.publicKey(),
+            igorKeyPair.privateKeyForSigningOnly(),
+            currentUnixTimestamp(),
+            userProvider,
+            SigningDomain::USER_TRANSACTION
         );
 
     transferTransaction.attachSignatureBundle(transferSignatureBundle);

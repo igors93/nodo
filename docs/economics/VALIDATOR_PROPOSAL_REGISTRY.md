@@ -60,7 +60,7 @@ The registry rejects:
 proposal invalid for the current chain tip
 signature that does not verify
 proposal signed for another chain tip
-development signature under production-like policy
+single non-hybrid validator signature under future hybrid policy
 unsafe validator address text
 invalid registry entries
 ```

@@ -6,9 +6,10 @@
 #include "core/LedgerRecord.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "crypto/AddressDerivation.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "economics/ValidationWorkRecord.hpp"
@@ -34,9 +35,10 @@ using nodo::core::LedgerRecord;
 using nodo::core::ValidatorRegistrationRecord;
 using nodo::core::ValidatorRegistry;
 using nodo::crypto::AddressDerivation;
+using nodo::crypto::Bls12381SignatureProvider;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
-using nodo::crypto::DevelopmentSignatureProvider;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::economics::ValidationWorkRecord;
@@ -54,22 +56,24 @@ void requireCondition(
     }
 }
 
+KeyPair keyPair(
+    const std::string& suffix
+) {
+    return KeyPair::createDeterministicBls12381KeyPair(
+        "block-finalizer-validator-key-" + suffix
+    );
+}
+
 PublicKey publicKey(
     const std::string& suffix
 ) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "block-finalizer-public-key-" + suffix
-    );
+    return keyPair(suffix).publicKey();
 }
 
 PrivateKey privateKey(
     const std::string& suffix
 ) {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "block-finalizer-private-key-" + suffix
-    );
+    return keyPair(suffix).privateKeyForSigningOnly();
 }
 
 std::string addressFor(
@@ -173,7 +177,9 @@ ValidatorVoteRecord approveVoteFor(
     const PublicKey key =
         publicKey(suffix);
 
-    return ValidatorVoteRecord::createDevelopmentVote(
+    const Bls12381SignatureProvider provider;
+
+    return ValidatorVoteRecord::createVote(
         addressFor(key),
         key,
         privateKey(suffix),
@@ -183,7 +189,8 @@ ValidatorVoteRecord approveVoteFor(
         round,
         ValidatorVoteDecision::APPROVE,
         "NONE",
-        timestamp
+        timestamp,
+        provider
     );
 }
 
@@ -197,7 +204,7 @@ QuorumCertificate certificateFor(
         approveVoteFor("b", block, round, kTimestamp + 21)
     };
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const auto result =
         QuorumCertificateBuilder::buildFromVotes(
@@ -241,7 +248,7 @@ void testFinalizesBlockWithValidCertificate() {
             registry
         );
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const auto result =
         BlockFinalizer::finalizeBlock(
@@ -303,7 +310,7 @@ void testRejectsCertificateForDifferentBlock() {
             registry
         );
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const auto result =
         BlockFinalizer::finalizeBlock(
@@ -351,7 +358,7 @@ void testRejectsConflictingFinalizationAtSameHeight() {
             registry
         );
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     requireCondition(
         BlockFinalizer::finalizeBlock(
@@ -441,7 +448,7 @@ void testRejectsBlockForWrongTip() {
         )
     );
 
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const auto result =
         BlockFinalizer::finalizeBlock(

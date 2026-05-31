@@ -2,7 +2,9 @@
 #define NODO_CRYPTO_SIGNATURE_HPP
 
 #include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/CryptoSuiteId.hpp"
 #include "crypto/PublicKey.hpp"
+#include "crypto/SigningDomain.hpp"
 
 #include <cstdint>
 #include <string>
@@ -28,6 +30,17 @@ public:
         std::int64_t createdAt
     );
 
+    Signature(
+        CryptoSuiteId suite,
+        SigningDomain domain,
+        CryptoAlgorithm algorithm,
+        PublicKey publicKey,
+        std::string signatureHex,
+        std::int64_t createdAt
+    );
+
+    CryptoSuiteId suite() const;
+    SigningDomain domain() const;
     CryptoAlgorithm algorithm() const;
     const PublicKey& publicKey() const;
     const std::string& signatureHex() const;
@@ -42,6 +55,8 @@ private:
         const std::string& value
     );
 
+    CryptoSuiteId m_suite;
+    SigningDomain m_domain;
     CryptoAlgorithm m_algorithm;
     PublicKey m_publicKey;
     std::string m_signatureHex;

@@ -1,7 +1,7 @@
 #include "core/ValidatorRegistry.hpp"
 #include "crypto/Address.hpp"
 #include "crypto/AddressDerivation.hpp"
-#include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PublicKey.hpp"
 
 #include <cstdint>
@@ -16,7 +16,7 @@ using nodo::core::ValidatorRegistry;
 using nodo::core::ValidatorRegistryUpdateStatus;
 using nodo::crypto::Address;
 using nodo::crypto::AddressDerivation;
-using nodo::crypto::CryptoAlgorithm;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PublicKey;
 
 constexpr std::int64_t kTimestamp = 1900000000;
@@ -33,10 +33,9 @@ void requireCondition(
 PublicKey publicKey(
     const std::string& suffix
 ) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "validator-registry-public-key-" + suffix
-    );
+    return KeyPair::createDeterministicBls12381KeyPair(
+        "validator-registry-key-" + suffix
+    ).publicKey();
 }
 
 ValidatorRegistrationRecord registrationFor(

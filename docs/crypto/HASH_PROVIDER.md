@@ -36,7 +36,7 @@ Hashes are used across Nodo for:
 - storage manifest hashes;
 - block index hashes;
 - privacy development commitments and nullifiers;
-- development signatures.
+- domain-separated Ed25519 and BLS signature payloads.
 
 Replacing the old placeholder hash improves the foundation before moving deeper into real signatures, addresses, and key management.
 

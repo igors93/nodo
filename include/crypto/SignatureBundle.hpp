@@ -6,6 +6,7 @@
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
 #include "crypto/SignatureProvider.hpp"
+#include "crypto/SigningDomain.hpp"
 
 #include <cstdint>
 #include <string>
@@ -16,7 +17,7 @@ namespace nodo::crypto {
 /*
  * SignatureBundle is a package of signatures.
  *
- * Today it usually carries one development signature. In future versions it can
+ * Today it usually carries one domain-separated signature. In future versions it can
  * carry:
  *
  * - one classic signature;
@@ -67,19 +68,8 @@ public:
         const PublicKey& publicKey,
         const PrivateKey& privateKey,
         std::int64_t timestamp,
-        const SignatureProvider& provider
-    );
-
-    /*
-     * Creates a development-only signature through DevelopmentSignatureProvider.
-     *
-     * NOT SECURE.
-     */
-    static SignatureBundle createDevelopmentSignature(
-        const std::string& message,
-        const PublicKey& publicKey,
-        const PrivateKey& privateKey,
-        std::int64_t timestamp
+        const SignatureProvider& provider,
+        SigningDomain domain
     );
 
 private:

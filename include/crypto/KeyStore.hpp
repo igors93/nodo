@@ -1,6 +1,7 @@
 #ifndef NODO_CRYPTO_KEY_STORE_HPP
 #define NODO_CRYPTO_KEY_STORE_HPP
 
+#include "crypto/CryptoSuiteId.hpp"
 #include "crypto/KeyPair.hpp"
 #include "crypto/LocalIdentity.hpp"
 
@@ -11,6 +12,19 @@
 
 namespace nodo::crypto {
 
+enum class KeyStoreKeyType {
+    USER,
+    VALIDATOR
+};
+
+std::string keyStoreKeyTypeToString(
+    KeyStoreKeyType keyType
+);
+
+KeyStoreKeyType keyStoreKeyTypeFromString(
+    const std::string& value
+);
+
 class StoredKeyMetadata {
 public:
     StoredKeyMetadata();
@@ -18,6 +32,8 @@ public:
     StoredKeyMetadata(
         std::string keyId,
         CryptoAlgorithm algorithm,
+        CryptoSuiteId suite,
+        KeyStoreKeyType keyType,
         std::string provider,
         PublicKey publicKey,
         std::string address,
@@ -27,6 +43,8 @@ public:
 
     const std::string& keyId() const;
     CryptoAlgorithm algorithm() const;
+    CryptoSuiteId suite() const;
+    KeyStoreKeyType keyType() const;
     const std::string& provider() const;
     const PublicKey& publicKey() const;
     const std::string& address() const;
@@ -40,6 +58,8 @@ public:
 private:
     std::string m_keyId;
     CryptoAlgorithm m_algorithm;
+    CryptoSuiteId m_suite;
+    KeyStoreKeyType m_keyType;
     std::string m_provider;
     PublicKey m_publicKey;
     std::string m_address;
@@ -142,8 +162,11 @@ private:
 
 class KeyStore {
 public:
-    static constexpr const char* LOCAL_PROVIDER =
-        "LOCAL_DETERMINISTIC_PROVIDER_V1";
+    static constexpr const char* USER_PROVIDER =
+        "OPENSSL_ED25519_PROVIDER_V1";
+
+    static constexpr const char* VALIDATOR_PROVIDER =
+        "BLST_BLS12_381_PROVIDER_V1";
 
     static constexpr const char* LOCAL_NETWORK_PROFILE =
         "localnet";
@@ -151,6 +174,14 @@ public:
     static KeyStoreCreateResult createLocalKey(
         const std::filesystem::path& keysDirectory,
         const std::string& keyId,
+        const std::string& seed,
+        std::int64_t createdAt
+    );
+
+    static KeyStoreCreateResult createLocalKey(
+        const std::filesystem::path& keysDirectory,
+        const std::string& keyId,
+        KeyStoreKeyType keyType,
         const std::string& seed,
         std::int64_t createdAt
     );
@@ -180,6 +211,7 @@ public:
 private:
     static std::string keyFileContents(
         const std::string& keyId,
+        KeyStoreKeyType keyType,
         const KeyPair& keyPair,
         std::int64_t createdAt
     );

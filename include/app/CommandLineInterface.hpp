@@ -20,12 +20,14 @@ public:
     std::string peerId;
     std::string endpoint;
     std::string keyId;
+    std::string keyType;
     std::string toAddress;
     std::int64_t amountRaw;
     std::int64_t feeRaw;
     std::uint64_t nonce;
     std::int64_t timestamp;
     bool showHelp;
+    bool keyIdProvided;
 };
 
 enum class CommandLineStatus {

@@ -6,6 +6,7 @@
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
 #include "crypto/SignatureVerificationResult.hpp"
+#include "crypto/SigningDomain.hpp"
 
 #include <cstdint>
 #include <string>
@@ -22,10 +23,9 @@ namespace nodo::crypto {
  * - sign this message;
  * - verify this signature.
  *
- * Current status:
- * The first concrete provider is DevelopmentSignatureProvider. It is not
- * production cryptography. It exists to make the boundary real before adding
- * audited algorithm providers.
+ * Current providers:
+ * - Ed25519 through OpenSSL for user transaction signatures.
+ * - BLS12-381 through blst for validator votes and block proposals.
  */
 class SignatureProvider {
 public:
@@ -37,7 +37,8 @@ public:
         const std::string& message,
         const PublicKey& publicKey,
         const PrivateKey& privateKey,
-        std::int64_t timestamp
+        std::int64_t timestamp,
+        SigningDomain domain
     ) const = 0;
 
     virtual SignatureVerificationResult verify(

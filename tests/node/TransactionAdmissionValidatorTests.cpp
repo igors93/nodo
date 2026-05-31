@@ -2,8 +2,9 @@
 #include "core/AccountState.hpp"
 #include "core/AccountStateView.hpp"
 #include "core/TransactionBuilder.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/KeyStore.hpp"
-#include "crypto/LocalSignatureProvider.hpp"
+#include "crypto/SignatureProvider.hpp"
 #include "crypto/Signer.hpp"
 #include "mempool/Mempool.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
@@ -61,7 +62,7 @@ config::NetworkParameters localnetWithMinimumFee(
         minimumFeeRawUnits,
         60,
         1,
-        "LOCAL_DETERMINISTIC_PROVIDER_V1",
+        "NODO_CRYPTO_SUITE_V1",
         "NODO_STORAGE_V2"
     );
 }
@@ -75,6 +76,7 @@ crypto::KeyStoreLoadResult createAndLoadKey(
         crypto::KeyStore::createLocalKey(
             path,
             keyId,
+            crypto::KeyStoreKeyType::USER,
             seed,
             kTimestamp
         );
@@ -98,7 +100,7 @@ crypto::KeyStoreLoadResult createAndLoadKey(
 
 core::Transaction buildTransaction(
     const crypto::KeyPair& keyPair,
-    const crypto::LocalSignatureProvider& provider,
+    const crypto::SignatureProvider& provider,
     std::int64_t feeRawUnits
 ) {
     const crypto::Signer signer(
@@ -148,11 +150,11 @@ void testAcceptsValidLocalSubmission() {
     const crypto::KeyStoreLoadResult key =
         createAndLoadKey(
             path,
-            "local-validator",
+            "local-user",
             "admission-test-seed"
         );
 
-    const crypto::LocalSignatureProvider provider;
+    const crypto::Ed25519SignatureProvider provider;
     const core::Transaction transaction =
         buildTransaction(
             key.keyPair(),
@@ -187,11 +189,11 @@ void testRejectsTransactionBelowMinimumFee() {
     const crypto::KeyStoreLoadResult key =
         createAndLoadKey(
             path,
-            "local-validator",
+            "local-user",
             "admission-test-seed"
         );
 
-    const crypto::LocalSignatureProvider provider;
+    const crypto::Ed25519SignatureProvider provider;
     const core::Transaction transaction =
         buildTransaction(
             key.keyPair(),
@@ -227,18 +229,18 @@ void testRejectsTransactionSignedByDifferentKey() {
     const crypto::KeyStoreLoadResult signerKey =
         createAndLoadKey(
             path,
-            "local-validator",
+            "local-user",
             "admission-test-seed"
         );
 
     const crypto::KeyStoreLoadResult differentKey =
         createAndLoadKey(
             path,
-            "other-validator",
+            "other-user",
             "admission-other-seed"
         );
 
-    const crypto::LocalSignatureProvider provider;
+    const crypto::Ed25519SignatureProvider provider;
     const core::Transaction transaction =
         buildTransaction(
             signerKey.keyPair(),
@@ -274,11 +276,11 @@ void testAcceptsRuntimeSubmissionWithSufficientBalance() {
     const crypto::KeyStoreLoadResult key =
         createAndLoadKey(
             path,
-            "local-validator",
+            "local-user",
             "admission-test-seed"
         );
 
-    const crypto::LocalSignatureProvider provider;
+    const crypto::Ed25519SignatureProvider provider;
     const core::Transaction transaction =
         buildTransaction(
             key.keyPair(),
@@ -319,11 +321,11 @@ void testRejectsRuntimeSubmissionWithInsufficientBalance() {
     const crypto::KeyStoreLoadResult key =
         createAndLoadKey(
             path,
-            "local-validator",
+            "local-user",
             "admission-test-seed"
         );
 
-    const crypto::LocalSignatureProvider provider;
+    const crypto::Ed25519SignatureProvider provider;
     const core::Transaction transaction =
         buildTransaction(
             key.keyPair(),

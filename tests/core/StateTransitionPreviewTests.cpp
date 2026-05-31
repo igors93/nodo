@@ -6,9 +6,12 @@
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "crypto/SigningDomain.hpp"
 #include "crypto/hash.h"
 #include "utils/Amount.hpp"
 
@@ -49,22 +52,18 @@ core::Transaction transaction(
         kTimestamp + static_cast<std::int64_t>(nonce)
     );
 
-    const crypto::PublicKey publicKey(
-        crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "preview-public-key"
-    );
-
-    const crypto::PrivateKey privateKey(
-        crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "preview-private-key"
-    );
+    const crypto::KeyPair keyPair =
+        crypto::KeyPair::createDeterministicEd25519KeyPair("preview-key");
+    const crypto::Ed25519SignatureProvider provider;
 
     tx.attachSignatureBundle(
-        crypto::SignatureBundle::createDevelopmentSignature(
+        crypto::SignatureBundle::createSignature(
             tx.signingPayload(),
-            publicKey,
-            privateKey,
-            kTimestamp
+            keyPair.publicKey(),
+            keyPair.privateKeyForSigningOnly(),
+            kTimestamp,
+            provider,
+            crypto::SigningDomain::USER_TRANSACTION
         )
     );
 

@@ -156,10 +156,11 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateLocalSubmissio
     }
 
     if (!signingKey.isValid() ||
-        !signingKey.isLocalnetOnly()) {
+        !signingKey.isLocalnetOnly() ||
+        signingKey.keyType() != crypto::KeyStoreKeyType::USER) {
         return TransactionAdmissionResult::rejected(
             TransactionAdmissionStatus::INVALID_KEY,
-            "Signing key metadata is invalid or not localnet-only."
+            "Signing key metadata is invalid, not localnet-only, or not a user key."
         );
     }
 

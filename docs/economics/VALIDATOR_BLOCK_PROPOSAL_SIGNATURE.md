@@ -67,16 +67,13 @@ empty signature bundle
 zero timestamp
 signature that does not match the proposal
 proposal signed for another chain tip
-development signature under production-like policy
+single non-hybrid validator signature under future hybrid policy
 ```
 
-## Development Mode
+## Localnet Mode
 
-The current test path uses `DevelopmentSignatureProvider`.
-
-That is not production cryptography.
-
-It is used only to keep the signing architecture testable while real audited providers are still evolving.
+The current localnet path signs validator block proposals with BLS12-381
+through blst and domain `NODO_VALIDATOR_BLOCK_PROPOSAL_V1`.
 
 ## Production Direction
 
@@ -104,6 +101,6 @@ signed proposal verifies and appends
 signature cannot be reused on another proposal
 signature cannot be reused on another chain tip
 payload commits to validator identity and block hash
-development signatures are rejected by future production-like policy
+single BLS signatures are rejected by future hybrid policy
 invalid signature inputs are rejected
 ```

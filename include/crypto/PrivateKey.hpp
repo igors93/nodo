@@ -30,7 +30,7 @@ public:
     bool isValid() const;
 
     /*
-     * Usado somente pela assinatura fake de desenvolvimento.
+     * Usado somente pela fronteira de assinatura.
      *
      * NÃO imprimir esse valor.
      * NÃO salvar em logs.

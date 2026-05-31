@@ -109,19 +109,6 @@ public:
         const crypto::SignatureProvider& provider
     );
 
-    static ValidatorVoteRecord createDevelopmentVote(
-        const std::string& validatorAddress,
-        const crypto::PublicKey& validatorPublicKey,
-        const crypto::PrivateKey& validatorPrivateKey,
-        std::uint64_t blockIndex,
-        const std::string& blockHash,
-        const std::string& previousHash,
-        std::uint64_t round,
-        ValidatorVoteDecision decision,
-        const std::string& reasonHash,
-        std::int64_t createdAt
-    );
-
     static ValidatorVoteRecord deserialize(
         const std::string& serialized
     );

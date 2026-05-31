@@ -4,9 +4,10 @@
 #include "core/ProtectionBlockProposal.hpp"
 #include "core/ValidatorBlockProposalSignature.hpp"
 #include "core/ValidatorProposalRegistry.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "economics/EpochEmissionPolicy.hpp"
@@ -32,9 +33,10 @@ using nodo::core::SignedProtectionBlockProposal;
 using nodo::core::ValidatorBlockProposalSigner;
 using nodo::core::ValidatorProposalRegistrationStatus;
 using nodo::core::ValidatorProposalRegistry;
+using nodo::crypto::Bls12381SignatureProvider;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
-using nodo::crypto::DevelopmentSignatureProvider;
+using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::economics::EpochEmissionPolicy;
@@ -143,18 +145,18 @@ EpochRewardDistribution rewardDistribution(
     );
 }
 
-PublicKey validatorPublicKey(const std::string& validator) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "registry-public-key-" + validator
+KeyPair validatorKeyPair(const std::string& validator) {
+    return KeyPair::createDeterministicBls12381KeyPair(
+        "registry-validator-key-" + validator
     );
 }
 
+PublicKey validatorPublicKey(const std::string& validator) {
+    return validatorKeyPair(validator).publicKey();
+}
+
 PrivateKey validatorPrivateKey(const std::string& validator) {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "registry-private-key-" + validator
-    );
+    return validatorKeyPair(validator).privateKeyForSigningOnly();
 }
 
 ProtectionBlockProposal proposalFor(
@@ -183,19 +185,20 @@ SignedProtectionBlockProposal signedProposalFor(
             blockTimestamp
         );
 
-    return ValidatorBlockProposalSigner::signProposalForDevelopment(
+    return ValidatorBlockProposalSigner::signProposal(
         proposal,
         validator,
         validatorPublicKey(validator),
         validatorPrivateKey(validator),
-        signatureTimestamp
+        signatureTimestamp,
+        Bls12381SignatureProvider()
     );
 }
 
 void testRegistryAcceptsValidSignedProposal() {
     Blockchain blockchain = baseBlockchain();
     ValidatorProposalRegistry registry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const SignedProtectionBlockProposal signedProposal =
         signedProposalFor(
@@ -223,7 +226,7 @@ void testRegistryAcceptsValidSignedProposal() {
 void testRegistryTreatsSameProposalAsDuplicate() {
     Blockchain blockchain = baseBlockchain();
     ValidatorProposalRegistry registry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const SignedProtectionBlockProposal signedProposal =
         signedProposalFor(
@@ -257,7 +260,7 @@ void testRegistryTreatsSameProposalAsDuplicate() {
 void testRegistryDetectsDoubleSignForSameValidatorAndHeight() {
     Blockchain blockchain = baseBlockchain();
     ValidatorProposalRegistry registry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const SignedProtectionBlockProposal firstProposal =
         signedProposalFor(
@@ -303,7 +306,7 @@ void testRegistryDetectsDoubleSignForSameValidatorAndHeight() {
 void testDifferentValidatorsCanRegisterCompetingProposals() {
     Blockchain blockchain = baseBlockchain();
     ValidatorProposalRegistry registry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const SignedProtectionBlockProposal firstProposal =
         signedProposalFor(
@@ -346,7 +349,7 @@ void testDifferentValidatorsCanRegisterCompetingProposals() {
 void testRegistryRejectsInvalidSignatureBeforeConflictCheck() {
     Blockchain blockchain = baseBlockchain();
     ValidatorProposalRegistry registry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const SignedProtectionBlockProposal original =
         signedProposalFor(
@@ -392,7 +395,7 @@ void testRegistryRejectsProposalForDifferentChainTip() {
     Blockchain originalChain = baseBlockchain(0);
     Blockchain otherChain = baseBlockchain(100);
     ValidatorProposalRegistry registry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const SignedProtectionBlockProposal signedProposal =
         signedProposalFor(
@@ -414,10 +417,10 @@ void testRegistryRejectsProposalForDifferentChainTip() {
     requireCondition(registry.entries().empty(), "Wrong-tip proposal should not be stored.");
 }
 
-void testRegistryRejectsDevelopmentSignatureUnderProductionLikePolicy() {
+void testRegistryRejectsSingleBlsSignatureUnderFutureHybridPolicy() {
     Blockchain blockchain = baseBlockchain();
     ValidatorProposalRegistry registry;
-    const DevelopmentSignatureProvider provider;
+    const Bls12381SignatureProvider provider;
 
     const SignedProtectionBlockProposal signedProposal =
         signedProposalFor(
@@ -435,7 +438,7 @@ void testRegistryRejectsDevelopmentSignatureUnderProductionLikePolicy() {
         provider
     );
 
-    requireCondition(result.status() == ValidatorProposalRegistrationStatus::INVALID_SIGNATURE, "Production-like policy should reject development signature.");
+    requireCondition(result.status() == ValidatorProposalRegistrationStatus::INVALID_SIGNATURE, "Future hybrid policy should reject single BLS signature.");
     requireCondition(registry.entries().empty(), "Rejected signature should not be stored.");
 }
 
@@ -449,7 +452,7 @@ int main() {
         testDifferentValidatorsCanRegisterCompetingProposals();
         testRegistryRejectsInvalidSignatureBeforeConflictCheck();
         testRegistryRejectsProposalForDifferentChainTip();
-        testRegistryRejectsDevelopmentSignatureUnderProductionLikePolicy();
+        testRegistryRejectsSingleBlsSignatureUnderFutureHybridPolicy();
 
         std::cout << "Nodo validator proposal registry tests passed.\n";
         return 0;

@@ -1,7 +1,5 @@
 #include "crypto/SignatureBundle.hpp"
 
-#include "crypto/DevelopmentSignatureProvider.hpp"
-
 #include <sstream>
 #include <stdexcept>
 
@@ -63,6 +61,10 @@ bool SignatureBundle::isValidForPolicy(
         }
 
         if (!policy.isAlgorithmAllowed(signature.algorithm(), context)) {
+            return false;
+        }
+
+        if (!isSigningDomainAllowedForContext(signature.domain(), context)) {
             return false;
         }
 
@@ -141,7 +143,8 @@ SignatureBundle SignatureBundle::createSignature(
     const PublicKey& publicKey,
     const PrivateKey& privateKey,
     std::int64_t timestamp,
-    const SignatureProvider& provider
+    const SignatureProvider& provider,
+    SigningDomain domain
 ) {
     SignatureBundle bundle;
 
@@ -150,28 +153,12 @@ SignatureBundle SignatureBundle::createSignature(
             message,
             publicKey,
             privateKey,
-            timestamp
+            timestamp,
+            domain
         )
     );
 
     return bundle;
-}
-
-SignatureBundle SignatureBundle::createDevelopmentSignature(
-    const std::string& message,
-    const PublicKey& publicKey,
-    const PrivateKey& privateKey,
-    std::int64_t timestamp
-) {
-    const DevelopmentSignatureProvider provider;
-
-    return createSignature(
-        message,
-        publicKey,
-        privateKey,
-        timestamp,
-        provider
-    );
 }
 
 } // namespace nodo::crypto

@@ -86,14 +86,6 @@ public:
         const crypto::SignatureProvider& provider
     );
 
-    static ValidatorBlockProposalSignature createDevelopmentSignature(
-        const ProtectionBlockProposal& proposal,
-        const std::string& validatorAddress,
-        const crypto::PublicKey& validatorPublicKey,
-        const crypto::PrivateKey& validatorPrivateKey,
-        std::int64_t proposedAt
-    );
-
 private:
     std::string m_validatorAddress;
     crypto::PublicKey m_validatorPublicKey;
@@ -156,13 +148,6 @@ public:
         const crypto::SignatureProvider& provider
     );
 
-    static SignedProtectionBlockProposal signProposalForDevelopment(
-        const ProtectionBlockProposal& proposal,
-        const std::string& validatorAddress,
-        const crypto::PublicKey& validatorPublicKey,
-        const crypto::PrivateKey& validatorPrivateKey,
-        std::int64_t proposedAt
-    );
 };
 
 } // namespace nodo::core

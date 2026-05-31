@@ -7,9 +7,12 @@
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "crypto/SigningDomain.hpp"
 #include "utils/Amount.hpp"
 
 #include <iostream>
@@ -46,22 +49,20 @@ core::Transaction transaction(
         kTimestamp
     );
 
-    const crypto::PublicKey publicKey(
-        crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "state-transition-validator-public-key"
-    );
-
-    const crypto::PrivateKey privateKey(
-        crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "state-transition-validator-private-key"
-    );
+    const crypto::KeyPair keyPair =
+        crypto::KeyPair::createDeterministicEd25519KeyPair(
+            "state-transition-validator-key"
+        );
+    const crypto::Ed25519SignatureProvider provider;
 
     tx.attachSignatureBundle(
-        crypto::SignatureBundle::createDevelopmentSignature(
+        crypto::SignatureBundle::createSignature(
             tx.signingPayload(),
-            publicKey,
-            privateKey,
-            kTimestamp
+            keyPair.publicKey(),
+            keyPair.privateKeyForSigningOnly(),
+            kTimestamp,
+            provider,
+            crypto::SigningDomain::USER_TRANSACTION
         )
     );
 

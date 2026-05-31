@@ -1,5 +1,5 @@
 #include "crypto/KeyStore.hpp"
-#include "crypto/LocalSignatureProvider.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/Signer.hpp"
 
 #include <filesystem>
@@ -11,7 +11,8 @@
 namespace {
 
 using nodo::crypto::KeyStore;
-using nodo::crypto::LocalSignatureProvider;
+using nodo::crypto::Ed25519SignatureProvider;
+using nodo::crypto::KeyStoreKeyType;
 using nodo::crypto::Signer;
 
 constexpr std::int64_t kTimestamp = 1900000000;
@@ -49,7 +50,8 @@ void testCreateLoadAndListKey() {
     const auto created =
         KeyStore::createLocalKey(
             path,
-            "local-validator",
+            "local-user",
+            KeyStoreKeyType::USER,
             "key-store-test-seed",
             kTimestamp
         );
@@ -76,7 +78,8 @@ void testCreateLoadAndListKey() {
     const auto duplicate =
         KeyStore::createLocalKey(
             path,
-            "local-validator",
+            "local-user",
+            KeyStoreKeyType::USER,
             "key-store-test-seed",
             kTimestamp + 1
         );
@@ -89,7 +92,7 @@ void testCreateLoadAndListKey() {
     const auto loaded =
         KeyStore::loadKey(
             path,
-            "local-validator"
+            "local-user"
         );
 
     requireCondition(
@@ -104,7 +107,7 @@ void testCreateLoadAndListKey() {
         "Loaded key should stay marked as localnet-only."
     );
 
-    const LocalSignatureProvider provider;
+    const Ed25519SignatureProvider provider;
     const Signer signer(
         loaded.keyPair(),
         provider
@@ -121,7 +124,8 @@ void testCreateLoadAndListKey() {
     requireCondition(
         listed.loaded() &&
         listed.keys().size() == 1U &&
-        listed.keys().front().keyId() == "local-validator" &&
+        listed.keys().front().keyId() == "local-user" &&
+        listed.keys().front().keyType() == KeyStoreKeyType::USER &&
         listed.keys().front().networkProfile() == KeyStore::LOCAL_NETWORK_PROFILE,
         "Key listing should be deterministic and public-only."
     );
@@ -153,7 +157,8 @@ void testRejectsMalformedKeyFile() {
     const auto created =
         KeyStore::createLocalKey(
             path,
-            "local-validator",
+            "local-user",
+            KeyStoreKeyType::USER,
             "key-store-test-seed",
             kTimestamp
         );
@@ -164,11 +169,13 @@ void testRejectsMalformedKeyFile() {
     );
 
     {
-        std::ofstream output(KeyStore::keyFilePath(path, "local-validator"), std::ios::trunc);
-        output << "NODO_KEY_FILE_V2\n"
-               << "keyId=local-validator\n"
-               << "algorithm=DEVELOPMENT_FAKE_SIGNATURE\n"
-               << "provider=LOCAL_DETERMINISTIC_PROVIDER_V1\n"
+        std::ofstream output(KeyStore::keyFilePath(path, "local-user"), std::ios::trunc);
+        output << "NODO_KEY_FILE_V3\n"
+               << "keyId=local-user\n"
+               << "algorithm=CLASSIC_ED25519\n"
+               << "suite=NODO_CRYPTO_SUITE_V1\n"
+               << "keyType=USER\n"
+               << "provider=OPENSSL_ED25519_PROVIDER_V1\n"
                << "networkProfile=localnet\n"
                << "publicKeyMaterial=broken\n"
                << "privateKeyMaterial=broken\n"
@@ -180,12 +187,12 @@ void testRejectsMalformedKeyFile() {
     const auto loaded =
         KeyStore::loadKey(
             path,
-            "local-validator"
+            "local-user"
         );
 
     requireCondition(
         !loaded.loaded() &&
-        loaded.reason().find("key_local-validator.nodo") != std::string::npos &&
+        loaded.reason().find("key_local-user.nodo") != std::string::npos &&
         loaded.reason().find("unknownField") != std::string::npos,
         "Malformed key file should be rejected with file path and reason."
     );
