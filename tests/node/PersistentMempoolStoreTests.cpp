@@ -270,7 +270,7 @@ void testMalformedPersistentMempoolFileIsRejected() {
 
     {
         std::ofstream output(malformedPath);
-        output << "NODO_MEMPOOL_TRANSACTION_V1\n"
+        output << "NODO_MEMPOOL_TRANSACTION_V2\n"
                << "transactionId=abc\n"
                << "acceptedAt=" << (kTimestamp + 40) << "\n"
                << "publicKeyMaterial=malformed-public-key\n"

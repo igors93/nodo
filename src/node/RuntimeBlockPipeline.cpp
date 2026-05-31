@@ -3,9 +3,7 @@
 #include "consensus/ValidatorVoteBuilder.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
-#include "crypto/CryptoAlgorithm.hpp"
-#include "crypto/CryptoPolicy.hpp"
-#include "crypto/LocalSignatureProvider.hpp"
+#include "crypto/ProtocolCryptoContext.hpp"
 
 #include <sstream>
 #include <stdexcept>
@@ -196,16 +194,21 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
-    const crypto::CryptoPolicy policy =
-        crypto::CryptoPolicy::developmentPolicy();
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::localnet();
 
-    const crypto::LocalSignatureProvider provider;
+    if (!cryptoContext.isValid()) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::INVALID_CONFIG,
+            "Protocol crypto context is invalid."
+        );
+    }
 
     const core::BlockProductionResult production =
         core::MempoolBlockProducer::produceCandidateBlock(
             runtime.blockchain(),
             runtime.mempool(),
-            policy,
+            cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             core::BlockProductionConfig(
                 config.maxTransactionsPerBlock(),
@@ -266,8 +269,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             config.consensusRound(),
             votes,
             runtime.validatorRegistry(),
-            policy,
-            provider,
+            cryptoContext.policy(),
+            cryptoContext.signatureProvider(),
             runtime.config().genesisConfig().networkParameters().quorumThresholdNumerator(),
             runtime.config().genesisConfig().networkParameters().quorumThresholdDenominator()
         );
@@ -286,8 +289,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             certificate.certificate(),
             runtime.validatorRegistry(),
             runtime.mutableFinalizationRegistry(),
-            policy,
-            provider,
+            cryptoContext.policy(),
+            cryptoContext.signatureProvider(),
             config.timestamp() + 2
         );
 
