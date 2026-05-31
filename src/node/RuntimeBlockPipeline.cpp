@@ -149,6 +149,22 @@ bool validatorContainmentDecisionsMatchRisk(
     }
 }
 
+bool validatorNetworkPoliciesMatchContainment(
+    const std::vector<ValidatorContainmentDecision>& validatorContainmentDecisions,
+    const std::vector<ValidatorNetworkPolicy>& validatorNetworkPolicies
+) {
+    try {
+        return ValidatorNetworkPolicyBuilder::samePolicies(
+            ValidatorNetworkPolicyBuilder::buildFromContainmentDecisions(
+                validatorContainmentDecisions
+            ),
+            validatorNetworkPolicies
+        );
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 } // namespace
 
 RuntimeBlockPipelineConfig::RuntimeBlockPipelineConfig()
@@ -246,7 +262,8 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_securityScoreRecords(),
       m_securityCheckpoints(),
       m_validatorRiskAssessments(),
-      m_validatorContainmentDecisions() {}
+      m_validatorContainmentDecisions(),
+      m_validatorNetworkPolicies() {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -256,7 +273,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     std::string postStateRoot
 ) {
     return finalized(std::move(block), std::move(certificate), std::move(finalizedRecord),
-        std::move(finalizedTransactionIds), std::move(postStateRoot), utils::Amount(), {}, {}, {}, {}, {}, {});
+        std::move(finalizedTransactionIds), std::move(postStateRoot), utils::Amount(), {}, {}, {}, {}, {}, {}, {});
 }
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
@@ -268,7 +285,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     utils::Amount totalFee
 ) {
     return finalized(std::move(block), std::move(certificate), std::move(finalizedRecord),
-        std::move(finalizedTransactionIds), std::move(postStateRoot), totalFee, {}, {}, {}, {}, {}, {});
+        std::move(finalizedTransactionIds), std::move(postStateRoot), totalFee, {}, {}, {}, {}, {}, {}, {});
 }
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
@@ -378,6 +395,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
 ) {
     std::vector<ValidatorRiskAssessment> validatorRiskAssessments;
     std::vector<ValidatorContainmentDecision> validatorContainmentDecisions;
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies;
 
     try {
         validatorRiskAssessments =
@@ -389,9 +407,15 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
             ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(
                 validatorRiskAssessments
             );
+
+        validatorNetworkPolicies =
+            ValidatorNetworkPolicyBuilder::buildFromContainmentDecisions(
+                validatorContainmentDecisions
+            );
     } catch (const std::exception&) {
         validatorRiskAssessments.clear();
         validatorContainmentDecisions.clear();
+        validatorNetworkPolicies.clear();
     }
 
     return finalized(
@@ -423,14 +447,21 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     std::vector<ValidatorRiskAssessment> validatorRiskAssessments
 ) {
     std::vector<ValidatorContainmentDecision> validatorContainmentDecisions;
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies;
 
     try {
         validatorContainmentDecisions =
             ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(
                 validatorRiskAssessments
             );
+
+        validatorNetworkPolicies =
+            ValidatorNetworkPolicyBuilder::buildFromContainmentDecisions(
+                validatorContainmentDecisions
+            );
     } catch (const std::exception&) {
         validatorContainmentDecisions.clear();
+        validatorNetworkPolicies.clear();
     }
 
     return finalized(
@@ -463,6 +494,49 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
     std::vector<ValidatorContainmentDecision> validatorContainmentDecisions
 ) {
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies;
+
+    try {
+        validatorNetworkPolicies =
+            ValidatorNetworkPolicyBuilder::buildFromContainmentDecisions(
+                validatorContainmentDecisions
+            );
+    } catch (const std::exception&) {
+        validatorNetworkPolicies.clear();
+    }
+
+    return finalized(
+        std::move(block),
+        std::move(certificate),
+        std::move(finalizedRecord),
+        std::move(finalizedTransactionIds),
+        std::move(postStateRoot),
+        totalFee,
+        std::move(rewardDistributions),
+        std::move(lockedStakePositions),
+        std::move(securityScoreRecords),
+        std::move(securityCheckpoints),
+        std::move(validatorRiskAssessments),
+        std::move(validatorContainmentDecisions),
+        std::move(validatorNetworkPolicies)
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions,
+    std::vector<LockedStakePosition> lockedStakePositions,
+    std::vector<SecurityScoreRecord> securityScoreRecords,
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+    std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies
+) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
     result.m_reason = "";
@@ -478,6 +552,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_securityCheckpoints = std::move(securityCheckpoints);
     result.m_validatorRiskAssessments = std::move(validatorRiskAssessments);
     result.m_validatorContainmentDecisions = std::move(validatorContainmentDecisions);
+    result.m_validatorNetworkPolicies = std::move(validatorNetworkPolicies);
     return result;
 }
 
@@ -512,7 +587,8 @@ bool RuntimeBlockPipelineResult::finalized() const {
            securityScoreRecordsMatchLockedStake(m_lockedStakePositions, m_securityScoreRecords, m_block->index()) &&
            securityCheckpointsMatchScores(m_securityScoreRecords, m_lockedStakePositions, m_securityCheckpoints, m_block->index()) &&
            validatorRiskAssessmentsMatchCheckpoints(m_securityCheckpoints, m_validatorRiskAssessments) &&
-           validatorContainmentDecisionsMatchRisk(m_validatorRiskAssessments, m_validatorContainmentDecisions);
+           validatorContainmentDecisionsMatchRisk(m_validatorRiskAssessments, m_validatorContainmentDecisions) &&
+           validatorNetworkPoliciesMatchContainment(m_validatorContainmentDecisions, m_validatorNetworkPolicies);
 }
 
 const core::Block& RuntimeBlockPipelineResult::block() const {
@@ -567,6 +643,10 @@ const std::vector<ValidatorContainmentDecision>& RuntimeBlockPipelineResult::val
     return m_validatorContainmentDecisions;
 }
 
+const std::vector<ValidatorNetworkPolicy>& RuntimeBlockPipelineResult::validatorNetworkPolicies() const {
+    return m_validatorNetworkPolicies;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -583,6 +663,7 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";securityCheckpointCount=" << m_securityCheckpoints.size()
         << ";validatorRiskAssessmentCount=" << m_validatorRiskAssessments.size()
         << ";validatorContainmentDecisionCount=" << m_validatorContainmentDecisions.size()
+        << ";validatorNetworkPolicyCount=" << m_validatorNetworkPolicies.size()
         << "}";
 
     return oss.str();
@@ -716,6 +797,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     std::vector<ValidatorSecurityCheckpoint> securityCheckpoints;
     std::vector<ValidatorRiskAssessment> validatorRiskAssessments;
     std::vector<ValidatorContainmentDecision> validatorContainmentDecisions;
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies;
 
     try {
         rewardDistributions =
@@ -751,6 +833,11 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         validatorContainmentDecisions =
             ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(
                 validatorRiskAssessments
+            );
+
+        validatorNetworkPolicies =
+            ValidatorNetworkPolicyBuilder::buildFromContainmentDecisions(
+                validatorContainmentDecisions
             );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(
@@ -799,7 +886,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         securityScoreRecords,
         securityCheckpoints,
         validatorRiskAssessments,
-        validatorContainmentDecisions
+        validatorContainmentDecisions,
+        validatorNetworkPolicies
     );
 }
 

@@ -13,6 +13,7 @@
 #include "node/SecurityCheckpoint.hpp"
 #include "node/ValidatorRiskAssessment.hpp"
 #include "node/ValidatorContainmentDecision.hpp"
+#include "node/ValidatorNetworkPolicy.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstddef>
@@ -169,6 +170,22 @@ public:
         std::vector<ValidatorContainmentDecision> validatorContainmentDecisions
     );
 
+    static RuntimeBlockPipelineResult finalized(
+        core::Block block,
+        consensus::QuorumCertificate certificate,
+        consensus::FinalizedBlockRecord finalizedRecord,
+        std::vector<std::string> finalizedTransactionIds,
+        std::string postStateRoot,
+        utils::Amount totalFee,
+        std::vector<RewardDistribution> rewardDistributions,
+        std::vector<LockedStakePosition> lockedStakePositions,
+        std::vector<SecurityScoreRecord> securityScoreRecords,
+        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies
+    );
+
     static RuntimeBlockPipelineResult rejected(
         RuntimeBlockPipelineStatus status,
         std::string reason
@@ -190,6 +207,7 @@ public:
     const std::vector<ValidatorSecurityCheckpoint>& securityCheckpoints() const;
     const std::vector<ValidatorRiskAssessment>& validatorRiskAssessments() const;
     const std::vector<ValidatorContainmentDecision>& validatorContainmentDecisions() const;
+    const std::vector<ValidatorNetworkPolicy>& validatorNetworkPolicies() const;
 
     std::string serialize() const;
 
@@ -214,6 +232,7 @@ private:
     std::vector<ValidatorSecurityCheckpoint> m_securityCheckpoints;
     std::vector<ValidatorRiskAssessment> m_validatorRiskAssessments;
     std::vector<ValidatorContainmentDecision> m_validatorContainmentDecisions;
+    std::vector<ValidatorNetworkPolicy> m_validatorNetworkPolicies;
 };
 
 /*

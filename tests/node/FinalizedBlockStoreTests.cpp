@@ -273,6 +273,15 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should derive containment decisions from validator risk assessments."
     );
 
+    requireCondition(
+        pipeline.validatorNetworkPolicies().size() == 1U &&
+        pipeline.validatorNetworkPolicies().front().connectionPolicy() == "MANUAL_REVIEW_ONLY" &&
+        pipeline.validatorNetworkPolicies().front().messagePolicy() == "BLOCK_UNTIL_REVIEW" &&
+        pipeline.validatorNetworkPolicies().front().consensusPolicy() == "HOLD_FOR_REVIEW" &&
+        pipeline.validatorNetworkPolicies().front().requiresManualReview(),
+        "Pipeline should derive network policies from containment decisions."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -367,6 +376,16 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("validatorContainment.0.networkAdmissionState=REQUIRE_REVIEW") != std::string::npos &&
         blockContents.find("validatorContainment.0.reason=VALIDATOR_CONTAINMENT_DECISION") != std::string::npos,
         "Finalized block file should persist validator containment decisions."
+    );
+
+    requireCondition(
+        blockContents.find("validatorNetworkPolicyCount=1") != std::string::npos &&
+        blockContents.find("validatorNetworkPolicy.0.connectionPolicy=MANUAL_REVIEW_ONLY") != std::string::npos &&
+        blockContents.find("validatorNetworkPolicy.0.messagePolicy=BLOCK_UNTIL_REVIEW") != std::string::npos &&
+        blockContents.find("validatorNetworkPolicy.0.consensusPolicy=HOLD_FOR_REVIEW") != std::string::npos &&
+        blockContents.find("validatorNetworkPolicy.0.requiresManualReview=true") != std::string::npos &&
+        blockContents.find("validatorNetworkPolicy.0.reason=VALIDATOR_NETWORK_POLICY") != std::string::npos,
+        "Finalized block file should persist validator network policies."
     );
 
     const auto loaded =

@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V9";
+    "NODO_FINALIZED_BLOCK_V10";
 
 } // namespace
 
@@ -284,6 +284,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"securityCheckpointCount", std::to_string(pipelineResult.securityCheckpoints().size())},
         {"validatorRiskAssessmentCount", std::to_string(pipelineResult.validatorRiskAssessments().size())},
         {"validatorContainmentDecisionCount", std::to_string(pipelineResult.validatorContainmentDecisions().size())},
+        {"validatorNetworkPolicyCount", std::to_string(pipelineResult.validatorNetworkPolicies().size())},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -398,6 +399,26 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         fields.emplace_back(prefix + "networkAdmissionState", containmentDecisions[index].networkAdmissionState());
         fields.emplace_back(prefix + "reason", containmentDecisions[index].reason());
         fields.emplace_back(prefix + "sourceRiskDigest", containmentDecisions[index].sourceRiskDigest());
+    }
+
+    const std::vector<ValidatorNetworkPolicy>& networkPolicies =
+        pipelineResult.validatorNetworkPolicies();
+
+    for (std::size_t index = 0; index < networkPolicies.size(); ++index) {
+        const std::string prefix =
+            "validatorNetworkPolicy." + std::to_string(index) + ".";
+
+        fields.emplace_back(prefix + "validatorAddress", networkPolicies[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(networkPolicies[index].blockHeight()));
+        fields.emplace_back(prefix + "containmentMode", networkPolicies[index].containmentMode());
+        fields.emplace_back(prefix + "peerTrustState", networkPolicies[index].peerTrustState());
+        fields.emplace_back(prefix + "networkAdmissionState", networkPolicies[index].networkAdmissionState());
+        fields.emplace_back(prefix + "connectionPolicy", networkPolicies[index].connectionPolicy());
+        fields.emplace_back(prefix + "messagePolicy", networkPolicies[index].messagePolicy());
+        fields.emplace_back(prefix + "consensusPolicy", networkPolicies[index].consensusPolicy());
+        fields.emplace_back(prefix + "requiresManualReview", networkPolicies[index].requiresManualReview() ? "true" : "false");
+        fields.emplace_back(prefix + "reason", networkPolicies[index].reason());
+        fields.emplace_back(prefix + "sourceContainmentDigest", networkPolicies[index].sourceContainmentDigest());
     }
 
     fields.emplace_back(

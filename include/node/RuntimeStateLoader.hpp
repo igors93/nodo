@@ -13,6 +13,7 @@
 #include "node/SecurityCheckpoint.hpp"
 #include "node/ValidatorRiskAssessment.hpp"
 #include "node/ValidatorContainmentDecision.hpp"
+#include "node/ValidatorNetworkPolicy.hpp"
 #include "p2p/PeerMessage.hpp"
 #include "utils/Amount.hpp"
 
@@ -90,6 +91,7 @@ public:
         std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
         std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
         std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -103,6 +105,7 @@ public:
     const std::vector<ValidatorSecurityCheckpoint>& securityCheckpoints() const;
     const std::vector<ValidatorRiskAssessment>& validatorRiskAssessments() const;
     const std::vector<ValidatorContainmentDecision>& validatorContainmentDecisions() const;
+    const std::vector<ValidatorNetworkPolicy>& validatorNetworkPolicies() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -119,6 +122,7 @@ private:
     std::vector<ValidatorSecurityCheckpoint> m_securityCheckpoints;
     std::vector<ValidatorRiskAssessment> m_validatorRiskAssessments;
     std::vector<ValidatorContainmentDecision> m_validatorContainmentDecisions;
+    std::vector<ValidatorNetworkPolicy> m_validatorNetworkPolicies;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };
