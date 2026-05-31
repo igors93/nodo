@@ -26,13 +26,15 @@ nodo validator list [--data-dir PATH]
 - `keys create`: creates a localnet key in `.nodo/keys`.
 - `keys list`: lists public key metadata without printing private material.
 - `tx submit`: loads a key from `KeyStore`, builds a transaction through
-  `TransactionBuilder`, signs it through `Signer` and writes it to the
-  persistent mempool.
+  `TransactionBuilder`, signs it through `Signer`, validates it with
+  `TransactionAdmissionValidator` and only then writes it to the persistent
+  mempool.
 - `block produce`: reloads runtime, produces and finalizes one local block,
   persists it and removes finalized transactions from persistent mempool. It
   does not create transactions automatically.
-- `chain audit`: reloads runtime and verifies manifest, finalized block
-  continuity, latest hash, mempool and validator count consistency.
+- `chain audit`: reloads runtime and runs `ChainAuditor` over manifest,
+  finalized block continuity, latest hash, crypto context, mempool and validator
+  count consistency.
 - `keys create`, `keys list`, `validator list`: protocol command names reserved
   for the key-store and validator registry boundary.
 

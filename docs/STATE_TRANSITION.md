@@ -13,13 +13,21 @@ Minimum validation rules:
 - duplicate ledger record source ids inside the same block are rejected;
 - transaction ledger payloads must decode to the same transaction id as their
   ledger source id;
+- transaction nonce zero, invalid amount, negative fee, empty sender/recipient
+  and sender-equals-recipient payloads are rejected;
+- transaction fee must be at least the configured network minimum;
 - duplicate transaction ids inside the same block are rejected;
 - selected transactions were already admitted by mempool policy;
 - no partial state mutation happens before validation succeeds.
 
-The implementation entry point is `BlockStateTransitionValidator`. It is the
-single pre-vote protocol gate and should grow to include signature, nonce,
-balance, coin-lot, fee and supply checks as those state models become canonical.
+The implementation entry point is `BlockStateTransitionValidator`. It calls
+`StateTransitionPreview` before accepting a candidate block. The preview returns
+an auditable summary of processed transactions, total fee, touched accounts and
+transaction ids without mutating runtime state.
+
+`BlockStateTransitionValidator` is the single pre-vote protocol gate and should
+grow to include signature, account nonce, balance, coin-lot, double-spend and
+supply checks as those state models become canonical.
 
 The correct failure behavior is rejection with a clear reason. A quorum
 certificate must never be built for a block that failed this gate.

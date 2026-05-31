@@ -22,6 +22,11 @@ files and mempool files through strict codecs. Additional evidence records and
 penalty state should be implemented as small protocol types instead of ad hoc
 runtime flags.
 
+`nodo chain audit` is a central local safety command. It reloads the runtime and
+delegates consistency checks to `ChainAuditor`, which verifies manifest identity,
+chain tip height/hash, crypto context, mempool validity and validator count
+consistency. It reports failures instead of silently repairing suspicious state.
+
 Local key files are written atomically and parsed strictly. The current
 localnet key format stores private material for the temporary provider and must
 not be used for production networks.

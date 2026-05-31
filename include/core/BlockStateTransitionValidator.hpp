@@ -16,7 +16,8 @@ enum class BlockValidationStatus {
     INVALID_PREVIOUS_HASH,
     INVALID_LEDGER_RECORD,
     INVALID_TRANSACTION,
-    DUPLICATE_LEDGER_SOURCE
+    DUPLICATE_LEDGER_SOURCE,
+    STATE_PREVIEW_FAILED
 };
 
 std::string blockValidationStatusToString(

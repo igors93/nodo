@@ -1,9 +1,7 @@
 #include "core/BlockStateTransitionValidator.hpp"
 
-#include "core/Transaction.hpp"
+#include "core/StateTransitionPreview.hpp"
 
-#include <exception>
-#include <set>
 #include <sstream>
 #include <utility>
 
@@ -27,6 +25,8 @@ std::string blockValidationStatusToString(
             return "INVALID_TRANSACTION";
         case BlockValidationStatus::DUPLICATE_LEDGER_SOURCE:
             return "DUPLICATE_LEDGER_SOURCE";
+        case BlockValidationStatus::STATE_PREVIEW_FAILED:
+            return "STATE_PREVIEW_FAILED";
         default:
             return "INVALID_BLOCK";
     }
@@ -121,9 +121,6 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
         );
     }
 
-    std::set<std::string> sourceIds;
-    std::set<std::string> transactionIds;
-
     for (const LedgerRecord& record : candidateBlock.records()) {
         if (!record.isValid()) {
             return BlockValidationResult::rejected(
@@ -131,54 +128,40 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
                 "Candidate block contains an invalid ledger record."
             );
         }
+    }
 
-        if (!sourceIds.insert(record.sourceId()).second) {
+    const StateTransitionPreviewResult preview =
+        StateTransitionPreview::previewBlock(
+            candidateBlock,
+            minimumFeeRawUnits
+        );
+
+    if (!preview.accepted()) {
+        if (preview.status() == StateTransitionPreviewStatus::DUPLICATE_TRANSACTION) {
             return BlockValidationResult::rejected(
                 BlockValidationStatus::DUPLICATE_LEDGER_SOURCE,
-                "Candidate block contains duplicate ledger record source ids."
+                preview.reason()
             );
         }
 
-        if (record.type() == LedgerRecordType::TRANSACTION) {
-            try {
-                const Transaction transaction =
-                    Transaction::deserializeForStateReplay(
-                        record.payload()
-                    );
-
-                if (transaction.id() != record.sourceId() ||
-                    transaction.nonce() == 0 ||
-                    !transaction.amount().isPositive() ||
-                    transaction.fee().isNegative() ||
-                    transaction.fromAddress().empty() ||
-                    transaction.toAddress().empty() ||
-                    transaction.fromAddress() == transaction.toAddress()) {
-                    return BlockValidationResult::rejected(
-                        BlockValidationStatus::INVALID_TRANSACTION,
-                        "Candidate block contains an invalid transaction ledger payload."
-                    );
-                }
-
-                if (transaction.fee().rawUnits() < minimumFeeRawUnits) {
-                    return BlockValidationResult::rejected(
-                        BlockValidationStatus::INVALID_TRANSACTION,
-                        "Candidate block contains a transaction below the network minimum fee."
-                    );
-                }
-
-                if (!transactionIds.insert(transaction.id()).second) {
-                    return BlockValidationResult::rejected(
-                        BlockValidationStatus::DUPLICATE_LEDGER_SOURCE,
-                        "Candidate block contains duplicate transaction ids."
-                    );
-                }
-            } catch (const std::exception& error) {
-                return BlockValidationResult::rejected(
-                    BlockValidationStatus::INVALID_TRANSACTION,
-                    error.what()
-                );
-            }
+        if (preview.status() == StateTransitionPreviewStatus::INVALID_LEDGER_RECORD) {
+            return BlockValidationResult::rejected(
+                BlockValidationStatus::INVALID_LEDGER_RECORD,
+                preview.reason()
+            );
         }
+
+        if (preview.status() == StateTransitionPreviewStatus::INVALID_TRANSACTION) {
+            return BlockValidationResult::rejected(
+                BlockValidationStatus::INVALID_TRANSACTION,
+                preview.reason()
+            );
+        }
+
+        return BlockValidationResult::rejected(
+            BlockValidationStatus::STATE_PREVIEW_FAILED,
+            preview.reason()
+        );
     }
 
     return BlockValidationResult::valid();

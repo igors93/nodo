@@ -10,15 +10,19 @@
 #include "crypto/KeyStore.hpp"
 #include "crypto/LocalSignatureProvider.hpp"
 #include "crypto/PrivateKey.hpp"
+#include "crypto/ProtocolCryptoContext.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signer.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "node/ChainAuditor.hpp"
+#include "node/ChainAuditResult.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeStateLoader.hpp"
+#include "node/TransactionAdmissionValidator.hpp"
 #include "utils/Amount.hpp"
 
 #include <chrono>
@@ -575,52 +579,34 @@ CommandLineResult CommandLineInterface::executeReload(
 CommandLineResult CommandLineInterface::executeChainAudit(
     const CommandLineOptions& options
 ) {
+    const node::NodeDataDirectoryConfig directoryConfig(
+        options.dataDirectory
+    );
+
     const node::RuntimeStateLoadResult load =
         node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
+            directoryConfig,
             developmentGenesisConfig(),
             localPeerFromOptions(options)
         );
 
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Nodo chain audit failed: "
-            + load.reason()
-            + "\n"
+    const node::ChainAuditResult audit =
+        node::ChainAuditor::auditLoadedRuntime(
+            load
         );
-    }
 
-    const node::NodeRuntime& runtime =
-        load.runtime();
-
-    if (!runtime.blockchain().isValid()) {
+    if (!audit.passed()) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
-            "Nodo chain audit failed: rebuilt blockchain is invalid.\n"
-        );
-    }
-
-    if (!runtime.mempool().isValid(
-            crypto::CryptoPolicy::developmentPolicy(),
-            crypto::SecurityContext::USER_TRANSACTION
-        )) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Nodo chain audit failed: rebuilt mempool is invalid.\n"
+            audit.toHumanReadableString()
         );
     }
 
     std::ostringstream output;
 
-    output << "Nodo chain audit passed.\n"
-           << "Data directory: " << options.dataDirectory.string() << "\n"
-           << "Genesis id: " << load.manifest().genesisConfigId() << "\n"
-           << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
-           << "Latest hash: " << load.manifest().latestBlockHash() << "\n"
-           << "Loaded finalized blocks: " << load.loadedBlockCount() << "\n"
-           << "Loaded mempool transactions: " << load.loadedMempoolTransactionCount() << "\n"
-           << "Validators: " << load.manifest().validatorCount() << "\n";
+    output << audit.toHumanReadableString()
+           << "Data directory: " << directoryConfig.rootPath().string() << "\n"
+           << "Genesis id: " << load.manifest().genesisConfigId() << "\n";
 
     return CommandLineResult::success(output.str());
 }
@@ -678,6 +664,7 @@ CommandLineResult CommandLineInterface::executeKeysCreate(
            << "Address: " << created.metadata().address() << "\n"
            << "Algorithm: " << crypto::cryptoAlgorithmToString(created.metadata().algorithm()) << "\n"
            << "Provider: " << created.metadata().provider() << "\n"
+           << "Network profile: " << created.metadata().networkProfile() << "\n"
            << "Key file: " << created.path().string() << "\n";
 
     return CommandLineResult::success(output.str());
@@ -727,6 +714,7 @@ CommandLineResult CommandLineInterface::executeKeysList(
                << " | Address: " << key.address()
                << " | Algorithm: " << crypto::cryptoAlgorithmToString(key.algorithm())
                << " | Provider: " << key.provider()
+               << " | Network profile: " << key.networkProfile()
                << "\n";
     }
 
@@ -787,6 +775,32 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
         );
     }
 
+    const config::NetworkParameters networkParameters =
+        developmentGenesisConfig().networkParameters();
+
+    if (manifest.manifest().networkName() != networkParameters.networkName()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit transaction: data directory network does not match localnet parameters.\n"
+        );
+    }
+
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::fromNetworkName(
+            networkParameters.networkName()
+        );
+
+    if (!cryptoContext.isValid()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit transaction: invalid crypto context for network "
+            + networkParameters.networkName()
+            + ": "
+            + cryptoContext.rejectionReason()
+            + "\n"
+        );
+    }
+
     const crypto::KeyStoreLoadResult key =
         crypto::KeyStore::loadKey(
             directoryConfig.keysDirectoryPath(),
@@ -826,6 +840,25 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
             ),
             signer
         );
+
+    const node::TransactionAdmissionResult admission =
+        node::TransactionAdmissionValidator::validateLocalSubmission(
+            transaction,
+            key.metadata(),
+            networkParameters,
+            cryptoContext.policy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            provider
+        );
+
+    if (!admission.accepted()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Transaction rejected before mempool persistence: "
+            + admission.reason()
+            + "\n"
+        );
+    }
 
     const node::PersistentMempoolWriteResult persisted =
         node::PersistentMempoolStore::persistTransaction(
