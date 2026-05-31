@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V6";
+    "NODO_FINALIZED_BLOCK_V7";
 
 } // namespace
 
@@ -281,6 +281,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"rewardDistributionCount", std::to_string(pipelineResult.rewardDistributions().size())},
         {"lockedStakePositionCount", std::to_string(pipelineResult.lockedStakePositions().size())},
         {"securityScoreRecordCount", std::to_string(pipelineResult.securityScoreRecords().size())},
+        {"securityCheckpointCount", std::to_string(pipelineResult.securityCheckpoints().size())},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -341,6 +342,23 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         fields.emplace_back(prefix + "penaltyScore", std::to_string(securityScoreRecords[index].penaltyScore()));
         fields.emplace_back(prefix + "reason", securityScoreRecords[index].reason());
         fields.emplace_back(prefix + "sourceLockedStakeId", securityScoreRecords[index].sourceLockedStakeId());
+    }
+
+    const std::vector<ValidatorSecurityCheckpoint>& securityCheckpoints =
+        pipelineResult.securityCheckpoints();
+
+    for (std::size_t index = 0; index < securityCheckpoints.size(); ++index) {
+        const std::string prefix =
+            "securityCheckpoint." + std::to_string(index) + ".";
+
+        fields.emplace_back(prefix + "validatorAddress", securityCheckpoints[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(securityCheckpoints[index].blockHeight()));
+        fields.emplace_back(prefix + "score", std::to_string(securityCheckpoints[index].score()));
+        fields.emplace_back(prefix + "band", securityCheckpoints[index].band());
+        fields.emplace_back(prefix + "lockedStakeRawUnits", std::to_string(securityCheckpoints[index].lockedStake().rawUnits()));
+        fields.emplace_back(prefix + "securityScoreRecordCount", std::to_string(securityCheckpoints[index].securityScoreRecordCount()));
+        fields.emplace_back(prefix + "reason", securityCheckpoints[index].reason());
+        fields.emplace_back(prefix + "sourceDigest", securityCheckpoints[index].sourceDigest());
     }
 
     fields.emplace_back(

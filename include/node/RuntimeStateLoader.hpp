@@ -10,6 +10,7 @@
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
 #include "node/SecurityScore.hpp"
+#include "node/SecurityCheckpoint.hpp"
 #include "p2p/PeerMessage.hpp"
 #include "utils/Amount.hpp"
 
@@ -84,6 +85,7 @@ public:
         std::vector<RewardDistribution> rewardDistributions,
         std::vector<LockedStakePosition> lockedStakePositions,
         std::vector<SecurityScoreRecord> securityScoreRecords,
+        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -94,6 +96,7 @@ public:
     const std::vector<RewardDistribution>& rewardDistributions() const;
     const std::vector<LockedStakePosition>& lockedStakePositions() const;
     const std::vector<SecurityScoreRecord>& securityScoreRecords() const;
+    const std::vector<ValidatorSecurityCheckpoint>& securityCheckpoints() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -107,6 +110,7 @@ private:
     std::vector<RewardDistribution> m_rewardDistributions;
     std::vector<LockedStakePosition> m_lockedStakePositions;
     std::vector<SecurityScoreRecord> m_securityScoreRecords;
+    std::vector<ValidatorSecurityCheckpoint> m_securityCheckpoints;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };

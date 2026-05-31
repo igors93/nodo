@@ -10,6 +10,7 @@
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
 #include "node/SecurityScore.hpp"
+#include "node/SecurityCheckpoint.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstddef>
@@ -124,6 +125,19 @@ public:
         std::vector<SecurityScoreRecord> securityScoreRecords
     );
 
+    static RuntimeBlockPipelineResult finalized(
+        core::Block block,
+        consensus::QuorumCertificate certificate,
+        consensus::FinalizedBlockRecord finalizedRecord,
+        std::vector<std::string> finalizedTransactionIds,
+        std::string postStateRoot,
+        utils::Amount totalFee,
+        std::vector<RewardDistribution> rewardDistributions,
+        std::vector<LockedStakePosition> lockedStakePositions,
+        std::vector<SecurityScoreRecord> securityScoreRecords,
+        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints
+    );
+
     static RuntimeBlockPipelineResult rejected(
         RuntimeBlockPipelineStatus status,
         std::string reason
@@ -142,6 +156,7 @@ public:
     const std::vector<RewardDistribution>& rewardDistributions() const;
     const std::vector<LockedStakePosition>& lockedStakePositions() const;
     const std::vector<SecurityScoreRecord>& securityScoreRecords() const;
+    const std::vector<ValidatorSecurityCheckpoint>& securityCheckpoints() const;
 
     std::string serialize() const;
 
@@ -163,6 +178,7 @@ private:
     std::vector<RewardDistribution> m_rewardDistributions;
     std::vector<LockedStakePosition> m_lockedStakePositions;
     std::vector<SecurityScoreRecord> m_securityScoreRecords;
+    std::vector<ValidatorSecurityCheckpoint> m_securityCheckpoints;
 };
 
 /*

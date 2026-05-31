@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V6";
+    "NODO_FINALIZED_BLOCK_V7";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -279,6 +279,42 @@ SecurityScoreRecord parseSecurityScoreRecord(
 
     return record;
 }
+ValidatorSecurityCheckpoint parseSecurityCheckpoint(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix =
+        "securityCheckpoint." + std::to_string(index) + ".";
+
+    ValidatorSecurityCheckpoint checkpoint(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(
+            document.requireField(prefix + "blockHeight"),
+            prefix + "blockHeight"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "score"),
+            prefix + "score"
+        ),
+        document.requireField(prefix + "band"),
+        parseAmountStrict(
+            document.requireField(prefix + "lockedStakeRawUnits"),
+            prefix + "lockedStakeRawUnits"
+        ),
+        parseU64Strict(
+            document.requireField(prefix + "securityScoreRecordCount"),
+            prefix + "securityScoreRecordCount"
+        ),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourceDigest")
+    );
+
+    if (!checkpoint.isValid()) {
+        throw std::invalid_argument("Finalized block security checkpoint is invalid.");
+    }
+
+    return checkpoint;
+}
 
 } // namespace
 
@@ -352,6 +388,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_rewardDistributions(),
       m_lockedStakePositions(),
       m_securityScoreRecords(),
+      m_securityCheckpoints(),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -362,6 +399,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     std::vector<RewardDistribution> rewardDistributions,
     std::vector<LockedStakePosition> lockedStakePositions,
     std::vector<SecurityScoreRecord> securityScoreRecords,
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -371,6 +409,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_rewardDistributions(std::move(rewardDistributions)),
       m_lockedStakePositions(std::move(lockedStakePositions)),
       m_securityScoreRecords(std::move(securityScoreRecords)),
+      m_securityCheckpoints(std::move(securityCheckpoints)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -402,6 +441,10 @@ const std::vector<SecurityScoreRecord>& FinalizedBlockArtifact::securityScoreRec
     return m_securityScoreRecords;
 }
 
+const std::vector<ValidatorSecurityCheckpoint>& FinalizedBlockArtifact::securityCheckpoints() const {
+    return m_securityCheckpoints;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -424,7 +467,8 @@ bool FinalizedBlockArtifact::isValid() const {
         if (m_totalFee.isZero()) {
             return m_rewardDistributions.empty() &&
                    m_lockedStakePositions.empty() &&
-                   m_securityScoreRecords.empty();
+                   m_securityScoreRecords.empty() &&
+                   m_securityCheckpoints.empty();
         }
 
         return RewardDistributionCalculator::totalReward(m_rewardDistributions) == m_totalFee &&
@@ -435,6 +479,10 @@ bool FinalizedBlockArtifact::isValid() const {
                SecurityScoreCalculator::sameRecords(
                    SecurityScoreCalculator::buildFromLockedStakePositions(m_lockedStakePositions, m_block->index()),
                    m_securityScoreRecords
+               ) &&
+               ValidatorSecurityCheckpointBuilder::sameCheckpoints(
+                   ValidatorSecurityCheckpointBuilder::buildFromSecurityScores(m_securityScoreRecords, m_lockedStakePositions, m_block->index()),
+                   m_securityCheckpoints
                );
     } catch (const std::exception&) {
         return false;
@@ -451,6 +499,7 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";rewardDistributionCount=" << m_rewardDistributions.size()
         << ";lockedStakePositionCount=" << m_lockedStakePositions.size()
         << ";securityScoreRecordCount=" << m_securityScoreRecords.size()
+        << ";securityCheckpointCount=" << m_securityCheckpoints.size()
         << "}";
 
     return oss.str();
@@ -533,6 +582,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const std::size_t rewardDistributionCount = static_cast<std::size_t>(parseU64Strict(document.requireField("rewardDistributionCount"), "rewardDistributionCount"));
     const std::size_t lockedStakePositionCount = static_cast<std::size_t>(parseU64Strict(document.requireField("lockedStakePositionCount"), "lockedStakePositionCount"));
     const std::size_t securityScoreRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("securityScoreRecordCount"), "securityScoreRecordCount"));
+    const std::size_t securityCheckpointCount = static_cast<std::size_t>(parseU64Strict(document.requireField("securityCheckpointCount"), "securityCheckpointCount"));
 
     std::set<std::string> allowedFields = {
         "blockIndex",
@@ -543,6 +593,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "rewardDistributionCount",
         "lockedStakePositionCount",
         "securityScoreRecordCount",
+        "securityCheckpointCount",
         "timestamp",
         "recordCount",
         "block",
@@ -587,11 +638,23 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         allowedFields.insert(prefix + "sourceLockedStakeId");
     }
 
+    for (std::size_t index = 0; index < securityCheckpointCount; ++index) {
+        const std::string prefix = "securityCheckpoint." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "score");
+        allowedFields.insert(prefix + "band");
+        allowedFields.insert(prefix + "lockedStakeRawUnits");
+        allowedFields.insert(prefix + "securityScoreRecordCount");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourceDigest");
+    }
+
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V6 stores explicit block fields, fee accounting, locked stake and
-     * security score records. The canonical block serialization remains the
+     * V7 stores explicit block fields, fee accounting, locked stake,
+     * security score records and validator security checkpoints. The canonical block serialization remains the
      * integrity anchor for the block payload itself.
      */
     const std::string serializedBlock = document.requireField("block");
@@ -619,6 +682,12 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     securityScoreRecords.reserve(securityScoreRecordCount);
     for (std::size_t scoreIndex = 0; scoreIndex < securityScoreRecordCount; ++scoreIndex) {
         securityScoreRecords.push_back(parseSecurityScoreRecord(document, scoreIndex));
+    }
+
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints;
+    securityCheckpoints.reserve(securityCheckpointCount);
+    for (std::size_t checkpointIndex = 0; checkpointIndex < securityCheckpointCount; ++checkpointIndex) {
+        securityCheckpoints.push_back(parseSecurityCheckpoint(document, checkpointIndex));
     }
 
     const std::int64_t timestamp = parseI64Strict(document.requireField("timestamp"), "timestamp");
@@ -673,6 +742,12 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block security score records do not match locked stake positions.");
     }
 
+    if (!ValidatorSecurityCheckpointBuilder::sameCheckpoints(
+            ValidatorSecurityCheckpointBuilder::buildFromSecurityScores(securityScoreRecords, lockedStakePositions, block.index()),
+            securityCheckpoints)) {
+        throw std::invalid_argument("Finalized block security checkpoints do not match security score records.");
+    }
+
     std::vector<std::pair<std::string, std::string>> canonicalFields = {
         {"blockIndex", document.requireField("blockIndex")},
         {"blockHash", document.requireField("blockHash")},
@@ -682,6 +757,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"rewardDistributionCount", std::to_string(rewardDistributions.size())},
         {"lockedStakePositionCount", std::to_string(lockedStakePositions.size())},
         {"securityScoreRecordCount", std::to_string(securityScoreRecords.size())},
+        {"securityCheckpointCount", std::to_string(securityCheckpoints.size())},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -724,6 +800,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         canonicalFields.emplace_back(prefix + "sourceLockedStakeId", securityScoreRecords[scoreIndex].sourceLockedStakeId());
     }
 
+    for (std::size_t checkpointIndex = 0; checkpointIndex < securityCheckpoints.size(); ++checkpointIndex) {
+        const std::string prefix = "securityCheckpoint." + std::to_string(checkpointIndex) + ".";
+        canonicalFields.emplace_back(prefix + "validatorAddress", securityCheckpoints[checkpointIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(securityCheckpoints[checkpointIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "score", std::to_string(securityCheckpoints[checkpointIndex].score()));
+        canonicalFields.emplace_back(prefix + "band", securityCheckpoints[checkpointIndex].band());
+        canonicalFields.emplace_back(prefix + "lockedStakeRawUnits", std::to_string(securityCheckpoints[checkpointIndex].lockedStake().rawUnits()));
+        canonicalFields.emplace_back(prefix + "securityScoreRecordCount", std::to_string(securityCheckpoints[checkpointIndex].securityScoreRecordCount()));
+        canonicalFields.emplace_back(prefix + "reason", securityCheckpoints[checkpointIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourceDigest", securityCheckpoints[checkpointIndex].sourceDigest());
+    }
+
     canonicalFields.emplace_back("block", serializedBlock);
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
@@ -742,6 +830,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         rewardDistributions,
         lockedStakePositions,
         securityScoreRecords,
+        securityCheckpoints,
         quorumCertificate,
         finalizedRecord
     );
@@ -872,6 +961,13 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
             if (!SecurityScoreCalculator::sameRecords(expectedScores, artifact.securityScoreRecords())) {
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted security score records do not match rebuilt locked stake positions.");
+            }
+
+            const std::vector<ValidatorSecurityCheckpoint> expectedCheckpoints =
+                ValidatorSecurityCheckpointBuilder::buildFromSecurityScores(expectedScores, expectedLockedStake, block.index());
+
+            if (!ValidatorSecurityCheckpointBuilder::sameCheckpoints(expectedCheckpoints, artifact.securityCheckpoints())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted security checkpoints do not match rebuilt security score records.");
             }
 
             const consensus::BlockFinalizationResult finalization =

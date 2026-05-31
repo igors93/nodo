@@ -249,6 +249,14 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should calculate security score records from locked stake positions."
     );
 
+    requireCondition(
+        pipeline.securityCheckpoints().size() == 1U &&
+        pipeline.securityCheckpoints().front().score() == 4 &&
+        pipeline.securityCheckpoints().front().band() == "BUILDING" &&
+        pipeline.securityCheckpoints().front().lockedStake().rawUnits() == 10,
+        "Pipeline should consolidate security score records into validator checkpoints."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -316,6 +324,15 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("securityScore.0.participationScore=2") != std::string::npos &&
         blockContents.find("securityScore.0.reason=LOCKED_STAKE_REWARD") != std::string::npos,
         "Finalized block file should persist security score records."
+    );
+
+    requireCondition(
+        blockContents.find("securityCheckpointCount=1") != std::string::npos &&
+        blockContents.find("securityCheckpoint.0.score=4") != std::string::npos &&
+        blockContents.find("securityCheckpoint.0.band=BUILDING") != std::string::npos &&
+        blockContents.find("securityCheckpoint.0.lockedStakeRawUnits=10") != std::string::npos &&
+        blockContents.find("securityCheckpoint.0.reason=SECURITY_SCORE_CHECKPOINT") != std::string::npos,
+        "Finalized block file should persist validator security checkpoints."
     );
 
     const auto loaded =
