@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V13";
+    "NODO_FINALIZED_BLOCK_V14";
 
 } // namespace
 
@@ -175,6 +175,15 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
         );
     }
 
+    if (!pipelineResult.feeEconomicBalance().active() ||
+        !pipelineResult.feeBurnRecord().active() ||
+        !pipelineResult.treasuryFeeRecord().active()) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::INVALID_PIPELINE_RESULT,
+            "Runtime block pipeline result failed fee economics audit."
+        );
+    }
+
     const NodeDataDirectoryReadResult existingManifest =
         NodeDataDirectory::loadManifest(directoryConfig);
 
@@ -316,6 +325,9 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"inflationEpochStatus", pipelineResult.inflationEpochSnapshot().status()},
         {"mintAuthorizationStatus", pipelineResult.mintAuthorizationRecord().status()},
         {"supplyExpansionStatus", pipelineResult.supplyExpansionRecord().status()},
+        {"feeEconomicBalanceStatus", pipelineResult.feeEconomicBalance().status()},
+        {"feeBurnStatus", pipelineResult.feeBurnRecord().status()},
+        {"treasuryFeeStatus", pipelineResult.treasuryFeeRecord().status()},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -543,6 +555,36 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
     fields.emplace_back("supplyExpansion.policyId", supplyExpansion.policyId());
     fields.emplace_back("supplyExpansion.reason", supplyExpansion.reason());
     fields.emplace_back("supplyExpansion.sourceAuthorizationDigest", supplyExpansion.sourceAuthorizationDigest());
+
+    const FeeEconomicBalance& feeBalance =
+        pipelineResult.feeEconomicBalance();
+
+    fields.emplace_back("feeBalance.blockHeight", std::to_string(feeBalance.blockHeight()));
+    fields.emplace_back("feeBalance.totalFeeRawUnits", std::to_string(feeBalance.totalFee().rawUnits()));
+    fields.emplace_back("feeBalance.validatorRewardRawUnits", std::to_string(feeBalance.validatorRewardAmount().rawUnits()));
+    fields.emplace_back("feeBalance.treasuryRawUnits", std::to_string(feeBalance.treasuryAmount().rawUnits()));
+    fields.emplace_back("feeBalance.burnRawUnits", std::to_string(feeBalance.burnAmount().rawUnits()));
+    fields.emplace_back("feeBalance.policyId", feeBalance.policyId());
+    fields.emplace_back("feeBalance.reason", feeBalance.reason());
+
+    const FeeBurnRecord& feeBurn =
+        pipelineResult.feeBurnRecord();
+
+    fields.emplace_back("feeBurn.blockHeight", std::to_string(feeBurn.blockHeight()));
+    fields.emplace_back("feeBurn.burnAmountRawUnits", std::to_string(feeBurn.burnAmount().rawUnits()));
+    fields.emplace_back("feeBurn.supplyBeforeRawUnits", std::to_string(feeBurn.supplyBefore().rawUnits()));
+    fields.emplace_back("feeBurn.supplyAfterRawUnits", std::to_string(feeBurn.supplyAfter().rawUnits()));
+    fields.emplace_back("feeBurn.reason", feeBurn.reason());
+    fields.emplace_back("feeBurn.sourceFeeBalanceDigest", feeBurn.sourceFeeBalanceDigest());
+
+    const TreasuryFeeRecord& treasuryFee =
+        pipelineResult.treasuryFeeRecord();
+
+    fields.emplace_back("treasuryFee.blockHeight", std::to_string(treasuryFee.blockHeight()));
+    fields.emplace_back("treasuryFee.treasuryAddress", treasuryFee.treasuryAddress());
+    fields.emplace_back("treasuryFee.treasuryAmountRawUnits", std::to_string(treasuryFee.treasuryAmount().rawUnits()));
+    fields.emplace_back("treasuryFee.reason", treasuryFee.reason());
+    fields.emplace_back("treasuryFee.sourceFeeBalanceDigest", treasuryFee.sourceFeeBalanceDigest());
 
     fields.emplace_back(
         "block",

@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V13";
+    "NODO_FINALIZED_BLOCK_V14";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -718,6 +718,100 @@ SupplyExpansionRecord parseSupplyExpansionRecord(
     return expansion;
 }
 
+
+FeeEconomicBalance parseFeeEconomicBalance(
+    const serialization::KeyValueFileDocument& document
+) {
+    FeeEconomicBalance balance(
+        document.requireField("feeEconomicBalanceStatus"),
+        parseU64Strict(
+            document.requireField("feeBalance.blockHeight"),
+            "feeBalance.blockHeight"
+        ),
+        parseAmountStrict(
+            document.requireField("feeBalance.totalFeeRawUnits"),
+            "feeBalance.totalFeeRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("feeBalance.validatorRewardRawUnits"),
+            "feeBalance.validatorRewardRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("feeBalance.treasuryRawUnits"),
+            "feeBalance.treasuryRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("feeBalance.burnRawUnits"),
+            "feeBalance.burnRawUnits"
+        ),
+        document.requireField("feeBalance.policyId"),
+        document.requireField("feeBalance.reason")
+    );
+
+    if (!balance.isValid()) {
+        throw std::invalid_argument("Finalized block fee economic balance is invalid.");
+    }
+
+    return balance;
+}
+
+FeeBurnRecord parseFeeBurnRecord(
+    const serialization::KeyValueFileDocument& document
+) {
+    FeeBurnRecord burn(
+        document.requireField("feeBurnStatus"),
+        parseU64Strict(
+            document.requireField("feeBurn.blockHeight"),
+            "feeBurn.blockHeight"
+        ),
+        parseAmountStrict(
+            document.requireField("feeBurn.burnAmountRawUnits"),
+            "feeBurn.burnAmountRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("feeBurn.supplyBeforeRawUnits"),
+            "feeBurn.supplyBeforeRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("feeBurn.supplyAfterRawUnits"),
+            "feeBurn.supplyAfterRawUnits"
+        ),
+        document.requireField("feeBurn.reason"),
+        document.requireField("feeBurn.sourceFeeBalanceDigest")
+    );
+
+    if (!burn.isValid()) {
+        throw std::invalid_argument("Finalized block fee burn record is invalid.");
+    }
+
+    return burn;
+}
+
+TreasuryFeeRecord parseTreasuryFeeRecord(
+    const serialization::KeyValueFileDocument& document
+) {
+    TreasuryFeeRecord treasuryFee(
+        document.requireField("treasuryFeeStatus"),
+        parseU64Strict(
+            document.requireField("treasuryFee.blockHeight"),
+            "treasuryFee.blockHeight"
+        ),
+        document.requireField("treasuryFee.treasuryAddress"),
+        parseAmountStrict(
+            document.requireField("treasuryFee.treasuryAmountRawUnits"),
+            "treasuryFee.treasuryAmountRawUnits"
+        ),
+        document.requireField("treasuryFee.reason"),
+        document.requireField("treasuryFee.sourceFeeBalanceDigest")
+    );
+
+    if (!treasuryFee.isValid()) {
+        throw std::invalid_argument("Finalized block treasury fee record is invalid.");
+    }
+
+    return treasuryFee;
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -801,6 +895,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_inflationEpochSnapshot(InflationEpochSnapshot::notEvaluated()),
       m_mintAuthorizationRecord(),
       m_supplyExpansionRecord(),
+      m_feeEconomicBalance(FeeEconomicBalance::notEvaluated()),
+      m_feeBurnRecord(FeeBurnRecord::notEvaluated()),
+      m_treasuryFeeRecord(TreasuryFeeRecord::notEvaluated()),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -822,6 +919,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     InflationEpochSnapshot inflationEpochSnapshot,
     MintAuthorizationRecord mintAuthorizationRecord,
     SupplyExpansionRecord supplyExpansionRecord,
+    FeeEconomicBalance feeEconomicBalance,
+    FeeBurnRecord feeBurnRecord,
+    TreasuryFeeRecord treasuryFeeRecord,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -842,6 +942,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_inflationEpochSnapshot(std::move(inflationEpochSnapshot)),
       m_mintAuthorizationRecord(std::move(mintAuthorizationRecord)),
       m_supplyExpansionRecord(std::move(supplyExpansionRecord)),
+      m_feeEconomicBalance(std::move(feeEconomicBalance)),
+      m_feeBurnRecord(std::move(feeBurnRecord)),
+      m_treasuryFeeRecord(std::move(treasuryFeeRecord)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -917,6 +1020,18 @@ const SupplyExpansionRecord& FinalizedBlockArtifact::supplyExpansionRecord() con
     return m_supplyExpansionRecord;
 }
 
+const FeeEconomicBalance& FinalizedBlockArtifact::feeEconomicBalance() const {
+    return m_feeEconomicBalance;
+}
+
+const FeeBurnRecord& FinalizedBlockArtifact::feeBurnRecord() const {
+    return m_feeBurnRecord;
+}
+
+const TreasuryFeeRecord& FinalizedBlockArtifact::treasuryFeeRecord() const {
+    return m_treasuryFeeRecord;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -950,10 +1065,35 @@ bool FinalizedBlockArtifact::isValid() const {
                    m_protectionRewardGrants.empty() &&
                    m_inflationEpochSnapshot.active() &&
                    m_mintAuthorizationRecord.isValid() &&
-                   m_supplyExpansionRecord.isValid();
+                   m_supplyExpansionRecord.isValid() &&
+                   FeeEconomics::sameBalance(
+                       FeeEconomics::buildFeeEconomicBalance(
+                           m_feeEconomicBalance.blockHeight(),
+                           m_totalFee
+                       ),
+                       m_feeEconomicBalance
+                   ) &&
+                   FeeEconomics::sameBurn(
+                       FeeEconomics::buildFeeBurnRecord(
+                           m_feeEconomicBalance,
+                           m_feeBurnRecord.supplyBefore()
+                       ),
+                       m_feeBurnRecord
+                   ) &&
+                   FeeEconomics::sameTreasuryFee(
+                       FeeEconomics::buildTreasuryFeeRecord(m_feeEconomicBalance),
+                       m_treasuryFeeRecord
+                   );
         }
 
-        return RewardDistributionCalculator::totalReward(m_rewardDistributions) == m_totalFee &&
+        return FeeEconomics::sameBalance(
+                   FeeEconomics::buildFeeEconomicBalance(
+                       m_feeEconomicBalance.blockHeight(),
+                       m_totalFee
+                   ),
+                   m_feeEconomicBalance
+               ) &&
+               RewardDistributionCalculator::totalReward(m_rewardDistributions) == m_feeEconomicBalance.validatorRewardAmount() &&
                LockedStakePositionBuilder::samePositions(
                    LockedStakePositionBuilder::buildFromRewardDistributions(m_rewardDistributions),
                    m_lockedStakePositions
@@ -1003,6 +1143,25 @@ bool FinalizedBlockArtifact::isValid() const {
                ControlledIssuance::sameExpansion(
                    ControlledIssuance::buildNoSupplyExpansion(m_mintAuthorizationRecord, m_inflationEpochSnapshot),
                    m_supplyExpansionRecord
+               ) &&
+               m_feeEconomicBalance.active() &&
+               FeeEconomics::sameBalance(
+                   FeeEconomics::buildFeeEconomicBalance(
+                       m_feeEconomicBalance.blockHeight(),
+                       m_totalFee
+                   ),
+                   m_feeEconomicBalance
+               ) &&
+               FeeEconomics::sameBurn(
+                   FeeEconomics::buildFeeBurnRecord(
+                       m_feeEconomicBalance,
+                       m_feeBurnRecord.supplyBefore()
+                   ),
+                   m_feeBurnRecord
+               ) &&
+               FeeEconomics::sameTreasuryFee(
+                   FeeEconomics::buildTreasuryFeeRecord(m_feeEconomicBalance),
+                   m_treasuryFeeRecord
                );
     } catch (const std::exception&) {
         return false;
@@ -1030,6 +1189,9 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";inflationEpochStatus=" << m_inflationEpochSnapshot.status()
         << ";mintAuthorizationStatus=" << m_mintAuthorizationRecord.status()
         << ";supplyExpansionStatus=" << m_supplyExpansionRecord.status()
+        << ";feeEconomicBalanceStatus=" << m_feeEconomicBalance.status()
+        << ";feeBurnStatus=" << m_feeBurnRecord.status()
+        << ";treasuryFeeStatus=" << m_treasuryFeeRecord.status()
         << "}";
 
     return oss.str();
@@ -1138,6 +1300,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "inflationEpochStatus",
         "mintAuthorizationStatus",
         "supplyExpansionStatus",
+        "feeEconomicBalanceStatus",
+        "feeBurnStatus",
+        "treasuryFeeStatus",
         "monetary.blockHeight",
         "monetary.supplyBeforeRawUnits",
         "monetary.mintedRawUnits",
@@ -1191,6 +1356,24 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "supplyExpansion.policyId",
         "supplyExpansion.reason",
         "supplyExpansion.sourceAuthorizationDigest",
+        "feeBalance.blockHeight",
+        "feeBalance.totalFeeRawUnits",
+        "feeBalance.validatorRewardRawUnits",
+        "feeBalance.treasuryRawUnits",
+        "feeBalance.burnRawUnits",
+        "feeBalance.policyId",
+        "feeBalance.reason",
+        "feeBurn.blockHeight",
+        "feeBurn.burnAmountRawUnits",
+        "feeBurn.supplyBeforeRawUnits",
+        "feeBurn.supplyAfterRawUnits",
+        "feeBurn.reason",
+        "feeBurn.sourceFeeBalanceDigest",
+        "treasuryFee.blockHeight",
+        "treasuryFee.treasuryAddress",
+        "treasuryFee.treasuryAmountRawUnits",
+        "treasuryFee.reason",
+        "treasuryFee.sourceFeeBalanceDigest",
         "timestamp",
         "recordCount",
         "block",
@@ -1302,10 +1485,11 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V13 stores explicit block fields, fee accounting, locked stake,
+     * V14 stores explicit block fields, fee accounting, locked stake,
      * security score records, checkpoints, risk assessments, containment decisions,
      * network policies, the monetary firewall audit, the initial protection
-     * treasury reward plan and controlled issuance authorization records. The canonical block serialization remains the
+     * treasury reward plan, controlled issuance authorization records and fee
+     * burn economics. The canonical block serialization remains the
      * integrity anchor for the block payload itself.
      */
     const std::string serializedBlock = document.requireField("block");
@@ -1383,6 +1567,15 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const SupplyExpansionRecord supplyExpansionRecord =
         parseSupplyExpansionRecord(document);
 
+    const FeeEconomicBalance feeEconomicBalance =
+        parseFeeEconomicBalance(document);
+
+    const FeeBurnRecord feeBurnRecord =
+        parseFeeBurnRecord(document);
+
+    const TreasuryFeeRecord treasuryFeeRecord =
+        parseTreasuryFeeRecord(document);
+
     const std::int64_t timestamp = parseI64Strict(document.requireField("timestamp"), "timestamp");
 
     const consensus::QuorumCertificate quorumCertificate =
@@ -1417,10 +1610,6 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     if (!finalizedRecord.matchesBlock(block) ||
         finalizedRecord.quorumCertificate().serialize() != quorumCertificate.serialize()) {
         throw std::invalid_argument("Finalized block record does not match block or quorum certificate.");
-    }
-
-    if (RewardDistributionCalculator::totalReward(rewardDistributions) != totalFee) {
-        throw std::invalid_argument("Finalized block reward distributions do not match total fees.");
     }
 
     if (!LockedStakePositionBuilder::samePositions(
@@ -1497,6 +1686,41 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block controlled issuance records are invalid.");
     }
 
+    if (!FeeEconomics::sameBalance(
+            FeeEconomics::buildFeeEconomicBalance(
+                feeEconomicBalance.blockHeight(),
+                totalFee
+            ),
+            feeEconomicBalance)) {
+        throw std::invalid_argument("Finalized block fee economic balance does not match total fee.");
+    }
+
+    if (RewardDistributionCalculator::totalReward(rewardDistributions) != feeEconomicBalance.validatorRewardAmount()) {
+        throw std::invalid_argument("Finalized block validator rewards do not match fee split.");
+    }
+
+    if (!FeeEconomics::sameBurn(
+            FeeEconomics::buildFeeBurnRecord(
+                feeEconomicBalance,
+                feeBurnRecord.supplyBefore()
+            ),
+            feeBurnRecord)) {
+        throw std::invalid_argument("Finalized block fee burn record does not match fee split.");
+    }
+
+    if (!FeeEconomics::sameTreasuryFee(
+            FeeEconomics::buildTreasuryFeeRecord(feeEconomicBalance),
+            treasuryFeeRecord)) {
+        throw std::invalid_argument("Finalized block treasury fee record does not match fee split.");
+    }
+
+    if (feeBurnRecord.burnAmount() != monetaryFirewallAudit.supplyLedger().burned() ||
+        feeBurnRecord.supplyBefore() != monetaryFirewallAudit.supplyLedger().supplyBefore() ||
+        feeBurnRecord.supplyAfter() != monetaryFirewallAudit.supplyLedger().supplyAfter() ||
+        treasuryFeeRecord.treasuryAmount() != monetaryFirewallAudit.supplyLedger().treasuryDelta()) {
+        throw std::invalid_argument("Finalized block fee records do not match monetary firewall audit.");
+    }
+
     std::vector<std::pair<std::string, std::string>> canonicalFields = {
         {"blockIndex", document.requireField("blockIndex")},
         {"blockHash", document.requireField("blockHash")},
@@ -1517,6 +1741,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"inflationEpochStatus", inflationEpochSnapshot.status()},
         {"mintAuthorizationStatus", mintAuthorizationRecord.status()},
         {"supplyExpansionStatus", supplyExpansionRecord.status()},
+        {"feeEconomicBalanceStatus", feeEconomicBalance.status()},
+        {"feeBurnStatus", feeBurnRecord.status()},
+        {"treasuryFeeStatus", treasuryFeeRecord.status()},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -1682,6 +1909,27 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     canonicalFields.emplace_back("supplyExpansion.reason", supplyExpansionRecord.reason());
     canonicalFields.emplace_back("supplyExpansion.sourceAuthorizationDigest", supplyExpansionRecord.sourceAuthorizationDigest());
 
+    canonicalFields.emplace_back("feeBalance.blockHeight", std::to_string(feeEconomicBalance.blockHeight()));
+    canonicalFields.emplace_back("feeBalance.totalFeeRawUnits", std::to_string(feeEconomicBalance.totalFee().rawUnits()));
+    canonicalFields.emplace_back("feeBalance.validatorRewardRawUnits", std::to_string(feeEconomicBalance.validatorRewardAmount().rawUnits()));
+    canonicalFields.emplace_back("feeBalance.treasuryRawUnits", std::to_string(feeEconomicBalance.treasuryAmount().rawUnits()));
+    canonicalFields.emplace_back("feeBalance.burnRawUnits", std::to_string(feeEconomicBalance.burnAmount().rawUnits()));
+    canonicalFields.emplace_back("feeBalance.policyId", feeEconomicBalance.policyId());
+    canonicalFields.emplace_back("feeBalance.reason", feeEconomicBalance.reason());
+
+    canonicalFields.emplace_back("feeBurn.blockHeight", std::to_string(feeBurnRecord.blockHeight()));
+    canonicalFields.emplace_back("feeBurn.burnAmountRawUnits", std::to_string(feeBurnRecord.burnAmount().rawUnits()));
+    canonicalFields.emplace_back("feeBurn.supplyBeforeRawUnits", std::to_string(feeBurnRecord.supplyBefore().rawUnits()));
+    canonicalFields.emplace_back("feeBurn.supplyAfterRawUnits", std::to_string(feeBurnRecord.supplyAfter().rawUnits()));
+    canonicalFields.emplace_back("feeBurn.reason", feeBurnRecord.reason());
+    canonicalFields.emplace_back("feeBurn.sourceFeeBalanceDigest", feeBurnRecord.sourceFeeBalanceDigest());
+
+    canonicalFields.emplace_back("treasuryFee.blockHeight", std::to_string(treasuryFeeRecord.blockHeight()));
+    canonicalFields.emplace_back("treasuryFee.treasuryAddress", treasuryFeeRecord.treasuryAddress());
+    canonicalFields.emplace_back("treasuryFee.treasuryAmountRawUnits", std::to_string(treasuryFeeRecord.treasuryAmount().rawUnits()));
+    canonicalFields.emplace_back("treasuryFee.reason", treasuryFeeRecord.reason());
+    canonicalFields.emplace_back("treasuryFee.sourceFeeBalanceDigest", treasuryFeeRecord.sourceFeeBalanceDigest());
+
     canonicalFields.emplace_back("block", serializedBlock);
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
@@ -1711,6 +1959,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         inflationEpochSnapshot,
         mintAuthorizationRecord,
         supplyExpansionRecord,
+        feeEconomicBalance,
+        feeBurnRecord,
+        treasuryFeeRecord,
         quorumCertificate,
         finalizedRecord
     );
@@ -1822,11 +2073,25 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted block totalFeeRawUnits does not match rebuilt transaction fees.");
             }
 
+            const FeeEconomicBalance expectedFeeBalance =
+                FeeEconomics::buildFeeEconomicBalance(
+                    block.index(),
+                    preview.totalFee()
+                );
+
+            if (!FeeEconomics::sameBalance(expectedFeeBalance, artifact.feeEconomicBalance())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted fee economic balance does not match rebuilt transaction fees.");
+            }
+
             const std::vector<RewardDistribution> expectedRewards =
-                RewardDistributionCalculator::buildFromQuorumCertificate(preview.totalFee(), artifact.quorumCertificate(), block.index());
+                RewardDistributionCalculator::buildFromQuorumCertificate(
+                    expectedFeeBalance.validatorRewardAmount(),
+                    artifact.quorumCertificate(),
+                    block.index()
+                );
 
             if (!RewardDistributionCalculator::sameDistributions(expectedRewards, artifact.rewardDistributions())) {
-                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted reward distributions do not match rebuilt validator fee rewards.");
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted reward distributions do not match rebuilt validator fee allocation.");
             }
 
             const std::vector<LockedStakePosition> expectedLockedStake =
@@ -1872,9 +2137,13 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             }
 
             const MonetaryFirewallAudit expectedMonetaryAudit =
-                MonetaryFirewall::buildZeroMintAudit(
+                MonetaryFirewall::buildAudit(
                     genesisConfig,
-                    block.index()
+                    block.index(),
+                    utils::Amount(),
+                    artifact.feeBurnRecord().burnAmount(),
+                    artifact.treasuryFeeRecord().treasuryAmount(),
+                    utils::Amount()
                 );
 
             if (!MonetaryFirewall::sameAudit(expectedMonetaryAudit, artifact.monetaryFirewallAudit())) {
@@ -1938,6 +2207,34 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
             if (!ControlledIssuance::sameExpansion(expectedSupplyExpansion, artifact.supplyExpansionRecord())) {
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted supply expansion does not match rebuilt controlled issuance policy.");
+            }
+
+            if (RewardDistributionCalculator::totalReward(artifact.rewardDistributions()) != expectedFeeBalance.validatorRewardAmount()) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted rewards do not match validator fee allocation.");
+            }
+
+            const FeeBurnRecord expectedFeeBurn =
+                FeeEconomics::buildFeeBurnRecord(
+                    expectedFeeBalance,
+                    artifact.feeBurnRecord().supplyBefore()
+                );
+
+            if (!FeeEconomics::sameBurn(expectedFeeBurn, artifact.feeBurnRecord())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted fee burn record does not match rebuilt fee split.");
+            }
+
+            const TreasuryFeeRecord expectedTreasuryFee =
+                FeeEconomics::buildTreasuryFeeRecord(expectedFeeBalance);
+
+            if (!FeeEconomics::sameTreasuryFee(expectedTreasuryFee, artifact.treasuryFeeRecord())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted treasury fee record does not match rebuilt fee split.");
+            }
+
+            if (artifact.feeBurnRecord().burnAmount() != artifact.monetaryFirewallAudit().supplyLedger().burned() ||
+                artifact.feeBurnRecord().supplyBefore() != artifact.monetaryFirewallAudit().supplyLedger().supplyBefore() ||
+                artifact.feeBurnRecord().supplyAfter() != artifact.monetaryFirewallAudit().supplyLedger().supplyAfter() ||
+                artifact.treasuryFeeRecord().treasuryAmount() != artifact.monetaryFirewallAudit().supplyLedger().treasuryDelta()) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted fee economics records do not match monetary firewall audit.");
             }
 
             const consensus::BlockFinalizationResult finalization =

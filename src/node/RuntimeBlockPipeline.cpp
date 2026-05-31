@@ -46,18 +46,18 @@ core::StateTransitionPreviewContext previewContextForRuntime(
     );
 }
 
-bool rewardDistributionsMatchTotalFee(
-    utils::Amount totalFee,
+bool rewardDistributionsMatchValidatorReward(
+    utils::Amount validatorReward,
     const std::vector<RewardDistribution>& rewardDistributions
 ) {
     try {
-        if (totalFee.isZero()) {
+        if (validatorReward.isZero()) {
             return rewardDistributions.empty();
         }
 
         return RewardDistributionCalculator::totalReward(
             rewardDistributions
-        ) == totalFee;
+        ) == validatorReward;
     } catch (const std::exception&) {
         return false;
     }
@@ -231,6 +231,41 @@ bool controlledIssuancePlanIsValid(
         return false;
     }
 }
+bool feeEconomicsPlanIsValid(
+    utils::Amount totalFee,
+    const FeeEconomicBalance& feeBalance,
+    const FeeBurnRecord& burnRecord,
+    const TreasuryFeeRecord& treasuryRecord
+) {
+    try {
+        return feeBalance.active() &&
+               burnRecord.active() &&
+               treasuryRecord.active() &&
+               feeBalance.totalFee() == totalFee &&
+               FeeEconomics::sameBalance(
+                   FeeEconomics::buildFeeEconomicBalance(
+                       feeBalance.blockHeight(),
+                       totalFee
+                   ),
+                   feeBalance
+               ) &&
+               FeeEconomics::sameBurn(
+                   FeeEconomics::buildFeeBurnRecord(
+                       feeBalance,
+                       burnRecord.supplyBefore()
+                   ),
+                   burnRecord
+               ) &&
+               FeeEconomics::sameTreasuryFee(
+                   FeeEconomics::buildTreasuryFeeRecord(
+                       feeBalance
+                   ),
+                   treasuryRecord
+               );
+    } catch (const std::exception&) {
+        return false;
+    }
+}
 
 } // namespace
 
@@ -337,7 +372,10 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_protectionRewardGrants(),
       m_inflationEpochSnapshot(InflationEpochSnapshot::notEvaluated()),
       m_mintAuthorizationRecord(),
-      m_supplyExpansionRecord() {}
+      m_supplyExpansionRecord(),
+      m_feeEconomicBalance(FeeEconomicBalance::notEvaluated()),
+      m_feeBurnRecord(FeeBurnRecord::notEvaluated()),
+      m_treasuryFeeRecord(TreasuryFeeRecord::notEvaluated()) {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -710,6 +748,58 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     MintAuthorizationRecord mintAuthorizationRecord,
     SupplyExpansionRecord supplyExpansionRecord
 ) {
+    return finalized(
+        std::move(block),
+        std::move(certificate),
+        std::move(finalizedRecord),
+        std::move(finalizedTransactionIds),
+        std::move(postStateRoot),
+        totalFee,
+        std::move(rewardDistributions),
+        std::move(lockedStakePositions),
+        std::move(securityScoreRecords),
+        std::move(securityCheckpoints),
+        std::move(validatorRiskAssessments),
+        std::move(validatorContainmentDecisions),
+        std::move(validatorNetworkPolicies),
+        std::move(monetaryFirewallAudit),
+        std::move(genesisTreasurySnapshot),
+        std::move(protectionRewardBudget),
+        std::move(protectionRewardGrants),
+        std::move(inflationEpochSnapshot),
+        std::move(mintAuthorizationRecord),
+        std::move(supplyExpansionRecord),
+        FeeEconomicBalance::notEvaluated(),
+        FeeBurnRecord::notEvaluated(),
+        TreasuryFeeRecord::notEvaluated()
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions,
+    std::vector<LockedStakePosition> lockedStakePositions,
+    std::vector<SecurityScoreRecord> securityScoreRecords,
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+    std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+    MonetaryFirewallAudit monetaryFirewallAudit,
+    GenesisTreasurySnapshot genesisTreasurySnapshot,
+    ProtectionRewardBudget protectionRewardBudget,
+    std::vector<ProtectionRewardGrant> protectionRewardGrants,
+    InflationEpochSnapshot inflationEpochSnapshot,
+    MintAuthorizationRecord mintAuthorizationRecord,
+    SupplyExpansionRecord supplyExpansionRecord,
+    FeeEconomicBalance feeEconomicBalance,
+    FeeBurnRecord feeBurnRecord,
+    TreasuryFeeRecord treasuryFeeRecord
+) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
     result.m_reason = "";
@@ -733,6 +823,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_inflationEpochSnapshot = std::move(inflationEpochSnapshot);
     result.m_mintAuthorizationRecord = std::move(mintAuthorizationRecord);
     result.m_supplyExpansionRecord = std::move(supplyExpansionRecord);
+    result.m_feeEconomicBalance = std::move(feeEconomicBalance);
+    result.m_feeBurnRecord = std::move(feeBurnRecord);
+    result.m_treasuryFeeRecord = std::move(treasuryFeeRecord);
     return result;
 }
 
@@ -762,7 +855,13 @@ bool RuntimeBlockPipelineResult::finalized() const {
            m_finalizedRecord.isStructurallyValid() &&
            !m_postStateRoot.empty() &&
            !m_totalFee.isNegative() &&
-           rewardDistributionsMatchTotalFee(m_totalFee, m_rewardDistributions) &&
+           feeEconomicsPlanIsValid(
+               m_totalFee,
+               m_feeEconomicBalance,
+               m_feeBurnRecord,
+               m_treasuryFeeRecord
+           ) &&
+           rewardDistributionsMatchValidatorReward(m_feeEconomicBalance.validatorRewardAmount(), m_rewardDistributions) &&
            lockedStakePositionsMatchRewards(m_rewardDistributions, m_lockedStakePositions) &&
            securityScoreRecordsMatchLockedStake(m_lockedStakePositions, m_securityScoreRecords, m_block->index()) &&
            securityCheckpointsMatchScores(m_securityScoreRecords, m_lockedStakePositions, m_securityCheckpoints, m_block->index()) &&
@@ -868,6 +967,18 @@ const SupplyExpansionRecord& RuntimeBlockPipelineResult::supplyExpansionRecord()
     return m_supplyExpansionRecord;
 }
 
+const FeeEconomicBalance& RuntimeBlockPipelineResult::feeEconomicBalance() const {
+    return m_feeEconomicBalance;
+}
+
+const FeeBurnRecord& RuntimeBlockPipelineResult::feeBurnRecord() const {
+    return m_feeBurnRecord;
+}
+
+const TreasuryFeeRecord& RuntimeBlockPipelineResult::treasuryFeeRecord() const {
+    return m_treasuryFeeRecord;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -892,6 +1003,9 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";inflationEpochStatus=" << m_inflationEpochSnapshot.status()
         << ";mintAuthorizationStatus=" << m_mintAuthorizationRecord.status()
         << ";supplyExpansionStatus=" << m_supplyExpansionRecord.status()
+        << ";feeEconomicBalanceStatus=" << m_feeEconomicBalance.status()
+        << ";feeBurnStatus=" << m_feeBurnRecord.status()
+        << ";treasuryFeeStatus=" << m_treasuryFeeRecord.status()
         << "}";
 
     return oss.str();
@@ -1033,11 +1147,20 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     InflationEpochSnapshot inflationEpochSnapshot;
     MintAuthorizationRecord mintAuthorizationRecord;
     SupplyExpansionRecord supplyExpansionRecord;
+    FeeEconomicBalance feeEconomicBalance;
+    FeeBurnRecord feeBurnRecord;
+    TreasuryFeeRecord treasuryFeeRecord;
 
     try {
+        feeEconomicBalance =
+            FeeEconomics::buildFeeEconomicBalance(
+                production.block().index(),
+                transitionValidation.totalFee()
+            );
+
         rewardDistributions =
             RewardDistributionCalculator::buildFromQuorumCertificate(
-                transitionValidation.totalFee(),
+                feeEconomicBalance.validatorRewardAmount(),
                 certificate.certificate(),
                 production.block().index()
             );
@@ -1075,10 +1198,25 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
                 validatorContainmentDecisions
             );
 
+        feeBurnRecord =
+            FeeEconomics::buildFeeBurnRecord(
+                feeEconomicBalance,
+                MonetaryFirewall::genesisSupply(runtime.config().genesisConfig())
+            );
+
+        treasuryFeeRecord =
+            FeeEconomics::buildTreasuryFeeRecord(
+                feeEconomicBalance
+            );
+
         monetaryFirewallAudit =
-            MonetaryFirewall::buildZeroMintAudit(
+            MonetaryFirewall::buildAudit(
                 runtime.config().genesisConfig(),
-                production.block().index()
+                production.block().index(),
+                utils::Amount(),
+                feeBurnRecord.burnAmount(),
+                treasuryFeeRecord.treasuryAmount(),
+                utils::Amount()
             );
 
         genesisTreasurySnapshot =
@@ -1172,7 +1310,10 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         protectionRewardGrants,
         inflationEpochSnapshot,
         mintAuthorizationRecord,
-        supplyExpansionRecord
+        supplyExpansionRecord,
+        feeEconomicBalance,
+        feeBurnRecord,
+        treasuryFeeRecord
     );
 }
 

@@ -9,6 +9,7 @@
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtectionTreasury.hpp"
 #include "node/ControlledIssuance.hpp"
+#include "node/FeeEconomics.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
@@ -102,6 +103,9 @@ public:
         InflationEpochSnapshot inflationEpochSnapshot,
         MintAuthorizationRecord mintAuthorizationRecord,
         SupplyExpansionRecord supplyExpansionRecord,
+        FeeEconomicBalance feeEconomicBalance,
+        FeeBurnRecord feeBurnRecord,
+        TreasuryFeeRecord treasuryFeeRecord,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -123,6 +127,9 @@ public:
     const InflationEpochSnapshot& inflationEpochSnapshot() const;
     const MintAuthorizationRecord& mintAuthorizationRecord() const;
     const SupplyExpansionRecord& supplyExpansionRecord() const;
+    const FeeEconomicBalance& feeEconomicBalance() const;
+    const FeeBurnRecord& feeBurnRecord() const;
+    const TreasuryFeeRecord& treasuryFeeRecord() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -147,6 +154,9 @@ private:
     InflationEpochSnapshot m_inflationEpochSnapshot;
     MintAuthorizationRecord m_mintAuthorizationRecord;
     SupplyExpansionRecord m_supplyExpansionRecord;
+    FeeEconomicBalance m_feeEconomicBalance;
+    FeeBurnRecord m_feeBurnRecord;
+    TreasuryFeeRecord m_treasuryFeeRecord;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };

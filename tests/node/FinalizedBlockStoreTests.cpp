@@ -225,16 +225,25 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
     );
 
     requireCondition(
+        pipeline.feeEconomicBalance().active() &&
+        pipeline.feeEconomicBalance().totalFee().rawUnits() == 100 &&
+        pipeline.feeEconomicBalance().validatorRewardAmount().rawUnits() == 50 &&
+        pipeline.feeEconomicBalance().treasuryAmount().rawUnits() == 30 &&
+        pipeline.feeEconomicBalance().burnAmount().rawUnits() == 20,
+        "Pipeline should split total block fees into validator reward, treasury and burn."
+    );
+
+    requireCondition(
         pipeline.rewardDistributions().size() == 1U &&
-        pipeline.rewardDistributions().front().totalReward().rawUnits() == 100 &&
-        pipeline.rewardDistributions().front().liquidReward().rawUnits() == 90 &&
-        pipeline.rewardDistributions().front().lockedReward().rawUnits() == 10,
-        "Pipeline should create validator reward distribution from block fees."
+        pipeline.rewardDistributions().front().totalReward().rawUnits() == 50 &&
+        pipeline.rewardDistributions().front().liquidReward().rawUnits() == 45 &&
+        pipeline.rewardDistributions().front().lockedReward().rawUnits() == 5,
+        "Pipeline should create validator reward distribution from the validator fee allocation."
     );
 
     requireCondition(
         pipeline.lockedStakePositions().size() == 1U &&
-        pipeline.lockedStakePositions().front().amount().rawUnits() == 10 &&
+        pipeline.lockedStakePositions().front().amount().rawUnits() == 5 &&
         pipeline.lockedStakePositions().front().createdAtHeight() == 1U &&
         pipeline.lockedStakePositions().front().unlockAtHeight() > 1U &&
         pipeline.lockedStakePositions().front().slashable(),
@@ -253,7 +262,7 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         pipeline.securityCheckpoints().size() == 1U &&
         pipeline.securityCheckpoints().front().score() == 4 &&
         pipeline.securityCheckpoints().front().band() == "BUILDING" &&
-        pipeline.securityCheckpoints().front().lockedStake().rawUnits() == 10,
+        pipeline.securityCheckpoints().front().lockedStake().rawUnits() == 5,
         "Pipeline should consolidate security score records into validator checkpoints."
     );
 
@@ -285,8 +294,10 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
     requireCondition(
         pipeline.monetaryFirewallAudit().passed() &&
         pipeline.monetaryFirewallAudit().supplyLedger().minted().rawUnits() == 0 &&
-        pipeline.monetaryFirewallAudit().supplyLedger().burned().rawUnits() == 0,
-        "Pipeline should pass the monetary firewall audit for zero-mint blocks."
+        pipeline.monetaryFirewallAudit().supplyLedger().burned().rawUnits() == 20 &&
+        pipeline.feeBurnRecord().active() &&
+        pipeline.treasuryFeeRecord().active(),
+        "Pipeline should pass the monetary firewall audit with partial fee burn."
     );
 
     requireCondition(
@@ -349,15 +360,15 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
 
     requireCondition(
         blockContents.find("rewardDistributionCount=1") != std::string::npos &&
-        blockContents.find("reward.0.totalRewardRawUnits=100") != std::string::npos &&
-        blockContents.find("reward.0.liquidRewardRawUnits=90") != std::string::npos &&
-        blockContents.find("reward.0.lockedRewardRawUnits=10") != std::string::npos,
+        blockContents.find("reward.0.totalRewardRawUnits=50") != std::string::npos &&
+        blockContents.find("reward.0.liquidRewardRawUnits=45") != std::string::npos &&
+        blockContents.find("reward.0.lockedRewardRawUnits=5") != std::string::npos,
         "Finalized block file should persist validator reward distribution."
     );
 
     requireCondition(
         blockContents.find("lockedStakePositionCount=1") != std::string::npos &&
-        blockContents.find("lockedStake.0.amountRawUnits=10") != std::string::npos &&
+        blockContents.find("lockedStake.0.amountRawUnits=5") != std::string::npos &&
         blockContents.find("lockedStake.0.createdAtHeight=1") != std::string::npos &&
         blockContents.find("lockedStake.0.slashable=true") != std::string::npos,
         "Finalized block file should persist locked stake position."
@@ -376,7 +387,7 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("securityCheckpointCount=1") != std::string::npos &&
         blockContents.find("securityCheckpoint.0.score=4") != std::string::npos &&
         blockContents.find("securityCheckpoint.0.band=BUILDING") != std::string::npos &&
-        blockContents.find("securityCheckpoint.0.lockedStakeRawUnits=10") != std::string::npos &&
+        blockContents.find("securityCheckpoint.0.lockedStakeRawUnits=5") != std::string::npos &&
         blockContents.find("securityCheckpoint.0.reason=SECURITY_SCORE_CHECKPOINT") != std::string::npos,
         "Finalized block file should persist validator security checkpoints."
     );
@@ -412,9 +423,23 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
     requireCondition(
         blockContents.find("monetaryFirewallStatus=PASS") != std::string::npos &&
         blockContents.find("monetary.mintedRawUnits=0") != std::string::npos &&
-        blockContents.find("monetary.burnedRawUnits=0") != std::string::npos &&
+        blockContents.find("monetary.burnedRawUnits=20") != std::string::npos &&
+        blockContents.find("monetary.treasuryDeltaRawUnits=30") != std::string::npos &&
         blockContents.find("monetary.reason=MONETARY_FIREWALL_ZERO_MINT") != std::string::npos,
-        "Finalized block file should persist monetary firewall audit."
+        "Finalized block file should persist monetary firewall audit with fee burn."
+    );
+
+    requireCondition(
+        blockContents.find("feeEconomicBalanceStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("feeBalance.totalFeeRawUnits=100") != std::string::npos &&
+        blockContents.find("feeBalance.validatorRewardRawUnits=50") != std::string::npos &&
+        blockContents.find("feeBalance.treasuryRawUnits=30") != std::string::npos &&
+        blockContents.find("feeBalance.burnRawUnits=20") != std::string::npos &&
+        blockContents.find("feeBurnStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("feeBurn.burnAmountRawUnits=20") != std::string::npos &&
+        blockContents.find("treasuryFeeStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("treasuryFee.treasuryAmountRawUnits=30") != std::string::npos,
+        "Finalized block file should persist fee economics records."
     );
 
     requireCondition(

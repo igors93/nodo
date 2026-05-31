@@ -10,6 +10,7 @@
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtectionTreasury.hpp"
 #include "node/ControlledIssuance.hpp"
+#include "node/FeeEconomics.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
 #include "node/SecurityScore.hpp"
@@ -249,6 +250,32 @@ public:
         SupplyExpansionRecord supplyExpansionRecord
     );
 
+    static RuntimeBlockPipelineResult finalized(
+        core::Block block,
+        consensus::QuorumCertificate certificate,
+        consensus::FinalizedBlockRecord finalizedRecord,
+        std::vector<std::string> finalizedTransactionIds,
+        std::string postStateRoot,
+        utils::Amount totalFee,
+        std::vector<RewardDistribution> rewardDistributions,
+        std::vector<LockedStakePosition> lockedStakePositions,
+        std::vector<SecurityScoreRecord> securityScoreRecords,
+        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+        MonetaryFirewallAudit monetaryFirewallAudit,
+        GenesisTreasurySnapshot genesisTreasurySnapshot,
+        ProtectionRewardBudget protectionRewardBudget,
+        std::vector<ProtectionRewardGrant> protectionRewardGrants,
+        InflationEpochSnapshot inflationEpochSnapshot,
+        MintAuthorizationRecord mintAuthorizationRecord,
+        SupplyExpansionRecord supplyExpansionRecord,
+        FeeEconomicBalance feeEconomicBalance,
+        FeeBurnRecord feeBurnRecord,
+        TreasuryFeeRecord treasuryFeeRecord
+    );
+
     static RuntimeBlockPipelineResult rejected(
         RuntimeBlockPipelineStatus status,
         std::string reason
@@ -278,6 +305,9 @@ public:
     const InflationEpochSnapshot& inflationEpochSnapshot() const;
     const MintAuthorizationRecord& mintAuthorizationRecord() const;
     const SupplyExpansionRecord& supplyExpansionRecord() const;
+    const FeeEconomicBalance& feeEconomicBalance() const;
+    const FeeBurnRecord& feeBurnRecord() const;
+    const TreasuryFeeRecord& treasuryFeeRecord() const;
 
     std::string serialize() const;
 
@@ -310,6 +340,9 @@ private:
     InflationEpochSnapshot m_inflationEpochSnapshot;
     MintAuthorizationRecord m_mintAuthorizationRecord;
     SupplyExpansionRecord m_supplyExpansionRecord;
+    FeeEconomicBalance m_feeEconomicBalance;
+    FeeBurnRecord m_feeBurnRecord;
+    TreasuryFeeRecord m_treasuryFeeRecord;
 };
 
 /*
