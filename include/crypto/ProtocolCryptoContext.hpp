@@ -10,6 +10,24 @@
 namespace nodo::crypto {
 
 /*
+ * ProtocolNetworkProfile classifies the network profile that is asking for
+ * protocol cryptography.
+ *
+ * The protocol path must stay the same for localnet, testnet and mainnet.
+ * What changes is the safety requirement enforced by this context.
+ */
+enum class ProtocolNetworkProfile {
+    LOCALNET,
+    TESTNET,
+    MAINNET,
+    UNKNOWN
+};
+
+std::string protocolNetworkProfileToString(
+    ProtocolNetworkProfile profile
+);
+
+/*
  * ProtocolCryptoContext defines the cryptographic boundary used by protocol
  * execution.
  *
@@ -28,26 +46,77 @@ public:
      */
     static ProtocolCryptoContext localnet();
 
+    /*
+     * Future public testing profile.
+     *
+     * This currently refuses to run because there is not yet a production-safe
+     * signature provider wired into Nodo.
+     */
+    static ProtocolCryptoContext testnet();
+
+    /*
+     * Future production profile.
+     *
+     * This must refuse temporary cryptography. Mainnet should only become valid
+     * after a production-safe provider is available.
+     */
+    static ProtocolCryptoContext mainnet();
+
+    /*
+     * Builds a crypto context from the network name stored in NetworkParameters.
+     *
+     * Accepted localnet names:
+     * - localnet
+     * - nodo-localnet
+     *
+     * Accepted testnet names:
+     * - testnet
+     * - nodo-testnet
+     *
+     * Accepted mainnet names:
+     * - mainnet
+     * - nodo-mainnet
+     */
+    static ProtocolCryptoContext fromNetworkName(
+        const std::string& networkName
+    );
+
+    ProtocolNetworkProfile profile() const;
+
     const std::string& networkProfile() const;
 
     const CryptoPolicy& policy() const;
 
     const SignatureProvider& signatureProvider() const;
 
+    bool temporaryProviderAllowed() const;
+
+    bool requiresProductionProvider() const;
+
     bool productionSafe() const;
+
+    bool hasTemporaryProvider() const;
 
     bool isValid() const;
 
+    const std::string& rejectionReason() const;
+
 private:
     ProtocolCryptoContext(
+        ProtocolNetworkProfile profile,
         std::string networkProfile,
         CryptoPolicy policy,
-        bool productionSafe
+        bool temporaryProviderAllowed,
+        bool requiresProductionProvider,
+        std::string rejectionReason
     );
 
+    ProtocolNetworkProfile m_profile;
     std::string m_networkProfile;
     CryptoPolicy m_policy;
-    bool m_productionSafe;
+    bool m_temporaryProviderAllowed;
+    bool m_requiresProductionProvider;
+    std::string m_rejectionReason;
     LocalSignatureProvider m_localProvider;
 };
 

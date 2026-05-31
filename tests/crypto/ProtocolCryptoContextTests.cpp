@@ -26,8 +26,23 @@ void testLocalnetContextIsExplicitAndValid() {
     );
 
     requireCondition(
+        context.profile() == nodo::crypto::ProtocolNetworkProfile::LOCALNET,
+        "Localnet crypto context should expose the localnet profile enum."
+    );
+
+    requireCondition(
         context.networkProfile() == "localnet",
-        "Localnet crypto context should expose the localnet profile."
+        "Localnet crypto context should expose the localnet profile name."
+    );
+
+    requireCondition(
+        context.temporaryProviderAllowed(),
+        "Localnet should explicitly allow the temporary provider."
+    );
+
+    requireCondition(
+        !context.requiresProductionProvider(),
+        "Localnet should not require a production provider yet."
     );
 
     requireCondition(
@@ -47,11 +62,110 @@ void testLocalnetContextIsExplicitAndValid() {
     );
 }
 
+void testNetworkNameMappingAcceptsNodoLocalnet() {
+    const nodo::crypto::ProtocolCryptoContext context =
+        nodo::crypto::ProtocolCryptoContext::fromNetworkName("nodo-localnet");
+
+    requireCondition(
+        context.isValid(),
+        "nodo-localnet should map to a valid localnet crypto context."
+    );
+
+    requireCondition(
+        context.profile() == nodo::crypto::ProtocolNetworkProfile::LOCALNET,
+        "nodo-localnet should map to the localnet profile."
+    );
+}
+
+void testTestnetRefusesTemporaryProvider() {
+    const nodo::crypto::ProtocolCryptoContext context =
+        nodo::crypto::ProtocolCryptoContext::testnet();
+
+    requireCondition(
+        !context.isValid(),
+        "Testnet must refuse temporary cryptography until a production provider exists."
+    );
+
+    requireCondition(
+        context.profile() == nodo::crypto::ProtocolNetworkProfile::TESTNET,
+        "Testnet crypto context should expose the testnet profile."
+    );
+
+    requireCondition(
+        context.requiresProductionProvider(),
+        "Testnet should require a production provider."
+    );
+
+    requireCondition(
+        !context.temporaryProviderAllowed(),
+        "Testnet should not allow temporary provider."
+    );
+
+    requireCondition(
+        context.rejectionReason().find("production-safe") != std::string::npos,
+        "Testnet rejection reason should explain production provider requirement."
+    );
+}
+
+void testMainnetRefusesTemporaryProvider() {
+    const nodo::crypto::ProtocolCryptoContext context =
+        nodo::crypto::ProtocolCryptoContext::mainnet();
+
+    requireCondition(
+        !context.isValid(),
+        "Mainnet must refuse temporary cryptography until a production provider exists."
+    );
+
+    requireCondition(
+        context.profile() == nodo::crypto::ProtocolNetworkProfile::MAINNET,
+        "Mainnet crypto context should expose the mainnet profile."
+    );
+
+    requireCondition(
+        context.requiresProductionProvider(),
+        "Mainnet should require a production provider."
+    );
+
+    requireCondition(
+        !context.temporaryProviderAllowed(),
+        "Mainnet should not allow temporary provider."
+    );
+
+    requireCondition(
+        context.rejectionReason().find("production-safe") != std::string::npos,
+        "Mainnet rejection reason should explain production provider requirement."
+    );
+}
+
+void testUnknownNetworkIsRejected() {
+    const nodo::crypto::ProtocolCryptoContext context =
+        nodo::crypto::ProtocolCryptoContext::fromNetworkName("unknown-network");
+
+    requireCondition(
+        !context.isValid(),
+        "Unknown network should be rejected."
+    );
+
+    requireCondition(
+        context.profile() == nodo::crypto::ProtocolNetworkProfile::UNKNOWN,
+        "Unknown network should map to the unknown profile."
+    );
+
+    requireCondition(
+        context.rejectionReason().find("Unknown network profile") != std::string::npos,
+        "Unknown network rejection should explain the mapping failure."
+    );
+}
+
 } // namespace
 
 int main() {
     try {
         testLocalnetContextIsExplicitAndValid();
+        testNetworkNameMappingAcceptsNodoLocalnet();
+        testTestnetRefusesTemporaryProvider();
+        testMainnetRefusesTemporaryProvider();
+        testUnknownNetworkIsRejected();
 
         std::cout << "Nodo protocol crypto context tests passed.\n";
         return 0;

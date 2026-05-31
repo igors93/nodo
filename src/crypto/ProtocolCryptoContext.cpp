@@ -1,26 +1,130 @@
 #include "crypto/ProtocolCryptoContext.hpp"
 
+#include "crypto/CryptoAlgorithm.hpp"
+
 #include <utility>
 
 namespace nodo::crypto {
 
+namespace {
+
+bool isLocalnetName(
+    const std::string& networkName
+) {
+    return networkName == "localnet" ||
+           networkName == "nodo-localnet";
+}
+
+bool isTestnetName(
+    const std::string& networkName
+) {
+    return networkName == "testnet" ||
+           networkName == "nodo-testnet";
+}
+
+bool isMainnetName(
+    const std::string& networkName
+) {
+    return networkName == "mainnet" ||
+           networkName == "nodo-mainnet";
+}
+
+} // namespace
+
+std::string protocolNetworkProfileToString(
+    ProtocolNetworkProfile profile
+) {
+    switch (profile) {
+        case ProtocolNetworkProfile::LOCALNET:
+            return "localnet";
+        case ProtocolNetworkProfile::TESTNET:
+            return "testnet";
+        case ProtocolNetworkProfile::MAINNET:
+            return "mainnet";
+        case ProtocolNetworkProfile::UNKNOWN:
+            return "unknown";
+        default:
+            return "unknown";
+    }
+}
+
 ProtocolCryptoContext ProtocolCryptoContext::localnet() {
     return ProtocolCryptoContext(
+        ProtocolNetworkProfile::LOCALNET,
         "localnet",
         CryptoPolicy::developmentPolicy(),
-        false
+        true,
+        false,
+        ""
+    );
+}
+
+ProtocolCryptoContext ProtocolCryptoContext::testnet() {
+    return ProtocolCryptoContext(
+        ProtocolNetworkProfile::TESTNET,
+        "testnet",
+        CryptoPolicy::futureHybridPolicy(),
+        false,
+        true,
+        "testnet requires a production-safe signature provider."
+    );
+}
+
+ProtocolCryptoContext ProtocolCryptoContext::mainnet() {
+    return ProtocolCryptoContext(
+        ProtocolNetworkProfile::MAINNET,
+        "mainnet",
+        CryptoPolicy::futureHybridPolicy(),
+        false,
+        true,
+        "mainnet requires a production-safe signature provider."
+    );
+}
+
+ProtocolCryptoContext ProtocolCryptoContext::fromNetworkName(
+    const std::string& networkName
+) {
+    if (isLocalnetName(networkName)) {
+        return localnet();
+    }
+
+    if (isTestnetName(networkName)) {
+        return testnet();
+    }
+
+    if (isMainnetName(networkName)) {
+        return mainnet();
+    }
+
+    return ProtocolCryptoContext(
+        ProtocolNetworkProfile::UNKNOWN,
+        networkName,
+        CryptoPolicy::developmentPolicy(),
+        false,
+        true,
+        "Unknown network profile for protocol crypto context: " + networkName
     );
 }
 
 ProtocolCryptoContext::ProtocolCryptoContext(
+    ProtocolNetworkProfile profile,
     std::string networkProfile,
     CryptoPolicy policy,
-    bool productionSafe
+    bool temporaryProviderAllowed,
+    bool requiresProductionProvider,
+    std::string rejectionReason
 )
-    : m_networkProfile(std::move(networkProfile)),
+    : m_profile(profile),
+      m_networkProfile(std::move(networkProfile)),
       m_policy(policy),
-      m_productionSafe(productionSafe),
+      m_temporaryProviderAllowed(temporaryProviderAllowed),
+      m_requiresProductionProvider(requiresProductionProvider),
+      m_rejectionReason(std::move(rejectionReason)),
       m_localProvider() {}
+
+ProtocolNetworkProfile ProtocolCryptoContext::profile() const {
+    return m_profile;
+}
 
 const std::string& ProtocolCryptoContext::networkProfile() const {
     return m_networkProfile;
@@ -34,14 +138,47 @@ const SignatureProvider& ProtocolCryptoContext::signatureProvider() const {
     return m_localProvider;
 }
 
+bool ProtocolCryptoContext::temporaryProviderAllowed() const {
+    return m_temporaryProviderAllowed;
+}
+
+bool ProtocolCryptoContext::requiresProductionProvider() const {
+    return m_requiresProductionProvider;
+}
+
 bool ProtocolCryptoContext::productionSafe() const {
-    return m_productionSafe;
+    return !hasTemporaryProvider() &&
+           m_requiresProductionProvider &&
+           m_rejectionReason.empty();
+}
+
+bool ProtocolCryptoContext::hasTemporaryProvider() const {
+    return isDevelopmentOnlyAlgorithm(
+        m_localProvider.algorithm()
+    );
 }
 
 bool ProtocolCryptoContext::isValid() const {
-    return !m_networkProfile.empty() &&
-           m_localProvider.algorithm() == CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE &&
-           !m_productionSafe;
+    if (m_networkProfile.empty() ||
+        m_profile == ProtocolNetworkProfile::UNKNOWN) {
+        return false;
+    }
+
+    if (hasTemporaryProvider() &&
+        !m_temporaryProviderAllowed) {
+        return false;
+    }
+
+    if (m_requiresProductionProvider &&
+        !productionSafe()) {
+        return false;
+    }
+
+    return m_rejectionReason.empty();
+}
+
+const std::string& ProtocolCryptoContext::rejectionReason() const {
+    return m_rejectionReason;
 }
 
 } // namespace nodo::crypto

@@ -195,12 +195,17 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     }
 
     const crypto::ProtocolCryptoContext cryptoContext =
-        crypto::ProtocolCryptoContext::localnet();
+        crypto::ProtocolCryptoContext::fromNetworkName(
+            runtime.config().genesisConfig().networkParameters().networkName()
+        );
 
     if (!cryptoContext.isValid()) {
         return RuntimeBlockPipelineResult::rejected(
             RuntimeBlockPipelineStatus::INVALID_CONFIG,
-            "Protocol crypto context is invalid."
+            "Protocol crypto context is invalid for network '"
+            + runtime.config().genesisConfig().networkParameters().networkName()
+            + "': "
+            + cryptoContext.rejectionReason()
         );
     }
 
