@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V15";
+    "NODO_FINALIZED_BLOCK_V16";
 
 } // namespace
 
@@ -193,6 +193,13 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
         );
     }
 
+    if (!pipelineResult.slashingEvidenceSummary().active()) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::INVALID_PIPELINE_RESULT,
+            "Runtime block pipeline result failed slashing evidence audit."
+        );
+    }
+
     const NodeDataDirectoryReadResult existingManifest =
         NodeDataDirectory::loadManifest(directoryConfig);
 
@@ -340,6 +347,9 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"feeEconomicBalanceStatus", pipelineResult.feeEconomicBalance().status()},
         {"feeBurnStatus", pipelineResult.feeBurnRecord().status()},
         {"treasuryFeeStatus", pipelineResult.treasuryFeeRecord().status()},
+        {"slashingEvidenceRecordCount", std::to_string(pipelineResult.slashingEvidenceRecords().size())},
+        {"slashingPreparationRecordCount", std::to_string(pipelineResult.slashingPreparationRecords().size())},
+        {"slashingEvidenceSummaryStatus", pipelineResult.slashingEvidenceSummary().status()},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -647,6 +657,48 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
     fields.emplace_back("treasuryFee.treasuryAmountRawUnits", std::to_string(treasuryFee.treasuryAmount().rawUnits()));
     fields.emplace_back("treasuryFee.reason", treasuryFee.reason());
     fields.emplace_back("treasuryFee.sourceFeeBalanceDigest", treasuryFee.sourceFeeBalanceDigest());
+
+    const std::vector<SlashingEvidenceRecord>& evidenceRecords =
+        pipelineResult.slashingEvidenceRecords();
+
+    for (std::size_t index = 0; index < evidenceRecords.size(); ++index) {
+        const std::string prefix = "slashingEvidence." + std::to_string(index) + ".";
+        fields.emplace_back(prefix + "validatorAddress", evidenceRecords[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(evidenceRecords[index].blockHeight()));
+        fields.emplace_back(prefix + "evidenceType", evidenceRecords[index].evidenceType());
+        fields.emplace_back(prefix + "severityScore", std::to_string(evidenceRecords[index].severityScore()));
+        fields.emplace_back(prefix + "slashable", evidenceRecords[index].slashable() ? "true" : "false");
+        fields.emplace_back(prefix + "recommendedAction", evidenceRecords[index].recommendedAction());
+        fields.emplace_back(prefix + "reason", evidenceRecords[index].reason());
+        fields.emplace_back(prefix + "sourceSecurityDigest", evidenceRecords[index].sourceSecurityDigest());
+    }
+
+    const std::vector<SlashingPreparationRecord>& preparationRecords =
+        pipelineResult.slashingPreparationRecords();
+
+    for (std::size_t index = 0; index < preparationRecords.size(); ++index) {
+        const std::string prefix = "slashingPreparation." + std::to_string(index) + ".";
+        fields.emplace_back(prefix + "validatorAddress", preparationRecords[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(preparationRecords[index].blockHeight()));
+        fields.emplace_back(prefix + "evidenceCount", std::to_string(preparationRecords[index].evidenceCount()));
+        fields.emplace_back(prefix + "slashableEvidenceCount", std::to_string(preparationRecords[index].slashableEvidenceCount()));
+        fields.emplace_back(prefix + "maxSeverityScore", std::to_string(preparationRecords[index].maxSeverityScore()));
+        fields.emplace_back(prefix + "preparedPenaltyRawUnits", std::to_string(preparationRecords[index].preparedPenaltyAmount().rawUnits()));
+        fields.emplace_back(prefix + "enforcementAction", preparationRecords[index].enforcementAction());
+        fields.emplace_back(prefix + "reason", preparationRecords[index].reason());
+        fields.emplace_back(prefix + "sourceEvidenceDigest", preparationRecords[index].sourceEvidenceDigest());
+    }
+
+    const SlashingEvidenceSummary& evidenceSummary =
+        pipelineResult.slashingEvidenceSummary();
+
+    fields.emplace_back("slashingSummary.blockHeight", std::to_string(evidenceSummary.blockHeight()));
+    fields.emplace_back("slashingSummary.evidenceCount", std::to_string(evidenceSummary.evidenceCount()));
+    fields.emplace_back("slashingSummary.slashableEvidenceCount", std::to_string(evidenceSummary.slashableEvidenceCount()));
+    fields.emplace_back("slashingSummary.maxSeverityScore", std::to_string(evidenceSummary.maxSeverityScore()));
+    fields.emplace_back("slashingSummary.preparedPenaltyTotalRawUnits", std::to_string(evidenceSummary.preparedPenaltyTotal().rawUnits()));
+    fields.emplace_back("slashingSummary.reason", evidenceSummary.reason());
+    fields.emplace_back("slashingSummary.sourcePreparationDigest", evidenceSummary.sourcePreparationDigest());
 
     fields.emplace_back(
         "block",

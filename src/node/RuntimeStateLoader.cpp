@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V15";
+    "NODO_FINALIZED_BLOCK_V16";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -946,6 +946,77 @@ ProtectionRewardSettlement parseProtectionRewardSettlement(
     return settlement;
 }
 
+
+SlashingEvidenceRecord parseSlashingEvidenceRecord(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix = "slashingEvidence." + std::to_string(index) + ".";
+
+    SlashingEvidenceRecord record(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(document.requireField(prefix + "blockHeight"), prefix + "blockHeight"),
+        document.requireField(prefix + "evidenceType"),
+        parseU16Strict(document.requireField(prefix + "severityScore"), prefix + "severityScore"),
+        parseBoolStrict(document.requireField(prefix + "slashable"), prefix + "slashable"),
+        document.requireField(prefix + "recommendedAction"),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourceSecurityDigest")
+    );
+
+    if (!record.isValid()) {
+        throw std::invalid_argument("Finalized block slashing evidence record is invalid.");
+    }
+
+    return record;
+}
+
+SlashingPreparationRecord parseSlashingPreparationRecord(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix = "slashingPreparation." + std::to_string(index) + ".";
+
+    SlashingPreparationRecord record(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(document.requireField(prefix + "blockHeight"), prefix + "blockHeight"),
+        parseU64Strict(document.requireField(prefix + "evidenceCount"), prefix + "evidenceCount"),
+        parseU64Strict(document.requireField(prefix + "slashableEvidenceCount"), prefix + "slashableEvidenceCount"),
+        parseU16Strict(document.requireField(prefix + "maxSeverityScore"), prefix + "maxSeverityScore"),
+        parseAmountStrict(document.requireField(prefix + "preparedPenaltyRawUnits"), prefix + "preparedPenaltyRawUnits"),
+        document.requireField(prefix + "enforcementAction"),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourceEvidenceDigest")
+    );
+
+    if (!record.isValid()) {
+        throw std::invalid_argument("Finalized block slashing preparation record is invalid.");
+    }
+
+    return record;
+}
+
+SlashingEvidenceSummary parseSlashingEvidenceSummary(
+    const serialization::KeyValueFileDocument& document
+) {
+    SlashingEvidenceSummary summary(
+        document.requireField("slashingEvidenceSummaryStatus"),
+        parseU64Strict(document.requireField("slashingSummary.blockHeight"), "slashingSummary.blockHeight"),
+        parseU64Strict(document.requireField("slashingSummary.evidenceCount"), "slashingSummary.evidenceCount"),
+        parseU64Strict(document.requireField("slashingSummary.slashableEvidenceCount"), "slashingSummary.slashableEvidenceCount"),
+        parseU16Strict(document.requireField("slashingSummary.maxSeverityScore"), "slashingSummary.maxSeverityScore"),
+        parseAmountStrict(document.requireField("slashingSummary.preparedPenaltyTotalRawUnits"), "slashingSummary.preparedPenaltyTotalRawUnits"),
+        document.requireField("slashingSummary.reason"),
+        document.requireField("slashingSummary.sourcePreparationDigest")
+    );
+
+    if (!summary.isValid()) {
+        throw std::invalid_argument("Finalized block slashing evidence summary is invalid.");
+    }
+
+    return summary;
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -1035,6 +1106,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_feeEconomicBalance(FeeEconomicBalance::notEvaluated()),
       m_feeBurnRecord(FeeBurnRecord::notEvaluated()),
       m_treasuryFeeRecord(TreasuryFeeRecord::notEvaluated()),
+      m_slashingEvidenceRecords(),
+      m_slashingPreparationRecords(),
+      m_slashingEvidenceSummary(SlashingEvidenceSummary::notEvaluated()),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -1062,6 +1136,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     FeeEconomicBalance feeEconomicBalance,
     FeeBurnRecord feeBurnRecord,
     TreasuryFeeRecord treasuryFeeRecord,
+    std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+    std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+    SlashingEvidenceSummary slashingEvidenceSummary,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -1088,6 +1165,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_feeEconomicBalance(std::move(feeEconomicBalance)),
       m_feeBurnRecord(std::move(feeBurnRecord)),
       m_treasuryFeeRecord(std::move(treasuryFeeRecord)),
+      m_slashingEvidenceRecords(std::move(slashingEvidenceRecords)),
+      m_slashingPreparationRecords(std::move(slashingPreparationRecords)),
+      m_slashingEvidenceSummary(std::move(slashingEvidenceSummary)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -1185,6 +1265,18 @@ const FeeBurnRecord& FinalizedBlockArtifact::feeBurnRecord() const {
 
 const TreasuryFeeRecord& FinalizedBlockArtifact::treasuryFeeRecord() const {
     return m_treasuryFeeRecord;
+}
+
+const std::vector<SlashingEvidenceRecord>& FinalizedBlockArtifact::slashingEvidenceRecords() const {
+    return m_slashingEvidenceRecords;
+}
+
+const std::vector<SlashingPreparationRecord>& FinalizedBlockArtifact::slashingPreparationRecords() const {
+    return m_slashingPreparationRecords;
+}
+
+const SlashingEvidenceSummary& FinalizedBlockArtifact::slashingEvidenceSummary() const {
+    return m_slashingEvidenceSummary;
 }
 
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
@@ -1343,6 +1435,29 @@ bool FinalizedBlockArtifact::isValid() const {
                FeeEconomics::sameTreasuryFee(
                    FeeEconomics::buildTreasuryFeeRecord(m_feeEconomicBalance),
                    m_treasuryFeeRecord
+               ) &&
+               SlashingEvidence::sameEvidenceRecords(
+                   SlashingEvidence::buildEvidenceRecords(
+                       m_validatorRiskAssessments,
+                       m_validatorNetworkPolicies,
+                       m_protectionWorkRecords
+                   ),
+                   m_slashingEvidenceRecords
+               ) &&
+               SlashingEvidence::samePreparationRecords(
+                   SlashingEvidence::buildPreparationRecords(
+                       m_slashingEvidenceRecords,
+                       m_lockedStakePositions
+                   ),
+                   m_slashingPreparationRecords
+               ) &&
+               SlashingEvidence::sameSummary(
+                   SlashingEvidence::buildSummary(
+                       m_block->index(),
+                       m_slashingEvidenceRecords,
+                       m_slashingPreparationRecords
+                   ),
+                   m_slashingEvidenceSummary
                );
     } catch (const std::exception&) {
         return false;
@@ -1376,6 +1491,9 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";feeEconomicBalanceStatus=" << m_feeEconomicBalance.status()
         << ";feeBurnStatus=" << m_feeBurnRecord.status()
         << ";treasuryFeeStatus=" << m_treasuryFeeRecord.status()
+        << ";slashingEvidenceRecordCount=" << m_slashingEvidenceRecords.size()
+        << ";slashingPreparationRecordCount=" << m_slashingPreparationRecords.size()
+        << ";slashingEvidenceSummaryStatus=" << m_slashingEvidenceSummary.status()
         << "}";
 
     return oss.str();
@@ -1465,6 +1583,8 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const std::size_t protectionRewardGrantCount = static_cast<std::size_t>(parseU64Strict(document.requireField("protectionRewardGrantCount"), "protectionRewardGrantCount"));
     const std::size_t protectionWorkRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("protectionWorkRecordCount"), "protectionWorkRecordCount"));
     const std::size_t protectionRewardSettlementCount = static_cast<std::size_t>(parseU64Strict(document.requireField("protectionRewardSettlementCount"), "protectionRewardSettlementCount"));
+    const std::size_t slashingEvidenceRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("slashingEvidenceRecordCount"), "slashingEvidenceRecordCount"));
+    const std::size_t slashingPreparationRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("slashingPreparationRecordCount"), "slashingPreparationRecordCount"));
 
     std::set<std::string> allowedFields = {
         "blockIndex",
@@ -1492,6 +1612,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "feeEconomicBalanceStatus",
         "feeBurnStatus",
         "treasuryFeeStatus",
+        "slashingEvidenceRecordCount",
+        "slashingPreparationRecordCount",
+        "slashingEvidenceSummaryStatus",
         "monetary.blockHeight",
         "monetary.supplyBeforeRawUnits",
         "monetary.mintedRawUnits",
@@ -1570,6 +1693,13 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "treasuryFee.treasuryAmountRawUnits",
         "treasuryFee.reason",
         "treasuryFee.sourceFeeBalanceDigest",
+        "slashingSummary.blockHeight",
+        "slashingSummary.evidenceCount",
+        "slashingSummary.slashableEvidenceCount",
+        "slashingSummary.maxSeverityScore",
+        "slashingSummary.preparedPenaltyTotalRawUnits",
+        "slashingSummary.reason",
+        "slashingSummary.sourcePreparationDigest",
         "timestamp",
         "recordCount",
         "block",
@@ -1707,14 +1837,40 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         allowedFields.insert(prefix + "sourceWorkDigest");
     }
 
+    for (std::size_t index = 0; index < slashingEvidenceRecordCount; ++index) {
+        const std::string prefix = "slashingEvidence." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "evidenceType");
+        allowedFields.insert(prefix + "severityScore");
+        allowedFields.insert(prefix + "slashable");
+        allowedFields.insert(prefix + "recommendedAction");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourceSecurityDigest");
+    }
+
+    for (std::size_t index = 0; index < slashingPreparationRecordCount; ++index) {
+        const std::string prefix = "slashingPreparation." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "evidenceCount");
+        allowedFields.insert(prefix + "slashableEvidenceCount");
+        allowedFields.insert(prefix + "maxSeverityScore");
+        allowedFields.insert(prefix + "preparedPenaltyRawUnits");
+        allowedFields.insert(prefix + "enforcementAction");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourceEvidenceDigest");
+    }
+
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V15 stores explicit block fields, fee accounting, locked stake,
+     * V16 stores explicit block fields, fee accounting, locked stake,
      * security score records, checkpoints, risk assessments, containment decisions,
      * network policies, the monetary firewall audit, the initial protection
      * treasury reward plan, real protection reward settlements, controlled
-     * issuance authorization records and fee burn economics. The canonical block serialization remains the
+     * issuance authorization records, fee burn economics and slashing evidence
+     * preparation records. The canonical block serialization remains the
      * integrity anchor for the block payload itself.
      */
     const std::string serializedBlock = document.requireField("block");
@@ -1815,6 +1971,21 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
 
     const TreasuryFeeRecord treasuryFeeRecord =
         parseTreasuryFeeRecord(document);
+
+    std::vector<SlashingEvidenceRecord> slashingEvidenceRecords;
+    slashingEvidenceRecords.reserve(slashingEvidenceRecordCount);
+    for (std::size_t evidenceIndex = 0; evidenceIndex < slashingEvidenceRecordCount; ++evidenceIndex) {
+        slashingEvidenceRecords.push_back(parseSlashingEvidenceRecord(document, evidenceIndex));
+    }
+
+    std::vector<SlashingPreparationRecord> slashingPreparationRecords;
+    slashingPreparationRecords.reserve(slashingPreparationRecordCount);
+    for (std::size_t preparationIndex = 0; preparationIndex < slashingPreparationRecordCount; ++preparationIndex) {
+        slashingPreparationRecords.push_back(parseSlashingPreparationRecord(document, preparationIndex));
+    }
+
+    const SlashingEvidenceSummary slashingEvidenceSummary =
+        parseSlashingEvidenceSummary(document);
 
     const std::int64_t timestamp = parseI64Strict(document.requireField("timestamp"), "timestamp");
 
@@ -1990,6 +2161,38 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block fee records do not match monetary firewall audit.");
     }
 
+    const std::vector<SlashingEvidenceRecord> expectedSlashingEvidence =
+        SlashingEvidence::buildEvidenceRecords(
+            validatorRiskAssessments,
+            validatorNetworkPolicies,
+            protectionWorkRecords
+        );
+
+    if (!SlashingEvidence::sameEvidenceRecords(expectedSlashingEvidence, slashingEvidenceRecords)) {
+        throw std::invalid_argument("Finalized block slashing evidence records do not match rebuilt security evidence.");
+    }
+
+    const std::vector<SlashingPreparationRecord> expectedSlashingPreparation =
+        SlashingEvidence::buildPreparationRecords(
+            expectedSlashingEvidence,
+            lockedStakePositions
+        );
+
+    if (!SlashingEvidence::samePreparationRecords(expectedSlashingPreparation, slashingPreparationRecords)) {
+        throw std::invalid_argument("Finalized block slashing preparation records do not match rebuilt evidence.");
+    }
+
+    const SlashingEvidenceSummary expectedSlashingSummary =
+        SlashingEvidence::buildSummary(
+            block.index(),
+            expectedSlashingEvidence,
+            expectedSlashingPreparation
+        );
+
+    if (!SlashingEvidence::sameSummary(expectedSlashingSummary, slashingEvidenceSummary)) {
+        throw std::invalid_argument("Finalized block slashing evidence summary does not match rebuilt evidence.");
+    }
+
     std::vector<std::pair<std::string, std::string>> canonicalFields = {
         {"blockIndex", document.requireField("blockIndex")},
         {"blockHash", document.requireField("blockHash")},
@@ -2016,6 +2219,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"feeEconomicBalanceStatus", feeEconomicBalance.status()},
         {"feeBurnStatus", feeBurnRecord.status()},
         {"treasuryFeeStatus", treasuryFeeRecord.status()},
+        {"slashingEvidenceRecordCount", std::to_string(slashingEvidenceRecords.size())},
+        {"slashingPreparationRecordCount", std::to_string(slashingPreparationRecords.size())},
+        {"slashingEvidenceSummaryStatus", slashingEvidenceSummary.status()},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -2239,6 +2445,39 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     canonicalFields.emplace_back("treasuryFee.reason", treasuryFeeRecord.reason());
     canonicalFields.emplace_back("treasuryFee.sourceFeeBalanceDigest", treasuryFeeRecord.sourceFeeBalanceDigest());
 
+    for (std::size_t evidenceIndex = 0; evidenceIndex < slashingEvidenceRecords.size(); ++evidenceIndex) {
+        const std::string prefix = "slashingEvidence." + std::to_string(evidenceIndex) + ".";
+        canonicalFields.emplace_back(prefix + "validatorAddress", slashingEvidenceRecords[evidenceIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(slashingEvidenceRecords[evidenceIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "evidenceType", slashingEvidenceRecords[evidenceIndex].evidenceType());
+        canonicalFields.emplace_back(prefix + "severityScore", std::to_string(slashingEvidenceRecords[evidenceIndex].severityScore()));
+        canonicalFields.emplace_back(prefix + "slashable", slashingEvidenceRecords[evidenceIndex].slashable() ? "true" : "false");
+        canonicalFields.emplace_back(prefix + "recommendedAction", slashingEvidenceRecords[evidenceIndex].recommendedAction());
+        canonicalFields.emplace_back(prefix + "reason", slashingEvidenceRecords[evidenceIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourceSecurityDigest", slashingEvidenceRecords[evidenceIndex].sourceSecurityDigest());
+    }
+
+    for (std::size_t preparationIndex = 0; preparationIndex < slashingPreparationRecords.size(); ++preparationIndex) {
+        const std::string prefix = "slashingPreparation." + std::to_string(preparationIndex) + ".";
+        canonicalFields.emplace_back(prefix + "validatorAddress", slashingPreparationRecords[preparationIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(slashingPreparationRecords[preparationIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "evidenceCount", std::to_string(slashingPreparationRecords[preparationIndex].evidenceCount()));
+        canonicalFields.emplace_back(prefix + "slashableEvidenceCount", std::to_string(slashingPreparationRecords[preparationIndex].slashableEvidenceCount()));
+        canonicalFields.emplace_back(prefix + "maxSeverityScore", std::to_string(slashingPreparationRecords[preparationIndex].maxSeverityScore()));
+        canonicalFields.emplace_back(prefix + "preparedPenaltyRawUnits", std::to_string(slashingPreparationRecords[preparationIndex].preparedPenaltyAmount().rawUnits()));
+        canonicalFields.emplace_back(prefix + "enforcementAction", slashingPreparationRecords[preparationIndex].enforcementAction());
+        canonicalFields.emplace_back(prefix + "reason", slashingPreparationRecords[preparationIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourceEvidenceDigest", slashingPreparationRecords[preparationIndex].sourceEvidenceDigest());
+    }
+
+    canonicalFields.emplace_back("slashingSummary.blockHeight", std::to_string(slashingEvidenceSummary.blockHeight()));
+    canonicalFields.emplace_back("slashingSummary.evidenceCount", std::to_string(slashingEvidenceSummary.evidenceCount()));
+    canonicalFields.emplace_back("slashingSummary.slashableEvidenceCount", std::to_string(slashingEvidenceSummary.slashableEvidenceCount()));
+    canonicalFields.emplace_back("slashingSummary.maxSeverityScore", std::to_string(slashingEvidenceSummary.maxSeverityScore()));
+    canonicalFields.emplace_back("slashingSummary.preparedPenaltyTotalRawUnits", std::to_string(slashingEvidenceSummary.preparedPenaltyTotal().rawUnits()));
+    canonicalFields.emplace_back("slashingSummary.reason", slashingEvidenceSummary.reason());
+    canonicalFields.emplace_back("slashingSummary.sourcePreparationDigest", slashingEvidenceSummary.sourcePreparationDigest());
+
     canonicalFields.emplace_back("block", serializedBlock);
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
@@ -2274,6 +2513,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         feeEconomicBalance,
         feeBurnRecord,
         treasuryFeeRecord,
+        slashingEvidenceRecords,
+        slashingPreparationRecords,
+        slashingEvidenceSummary,
         quorumCertificate,
         finalizedRecord
     );
@@ -2580,6 +2822,38 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
                 artifact.feeBurnRecord().supplyAfter() != artifact.monetaryFirewallAudit().supplyLedger().supplyAfter() ||
                 artifact.treasuryFeeRecord().treasuryAmount() != artifact.monetaryFirewallAudit().supplyLedger().treasuryDelta()) {
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted fee economics records do not match monetary firewall audit.");
+            }
+
+            const std::vector<SlashingEvidenceRecord> expectedSlashingEvidence =
+                SlashingEvidence::buildEvidenceRecords(
+                    artifact.validatorRiskAssessments(),
+                    artifact.validatorNetworkPolicies(),
+                    artifact.protectionWorkRecords()
+                );
+
+            if (!SlashingEvidence::sameEvidenceRecords(expectedSlashingEvidence, artifact.slashingEvidenceRecords())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted slashing evidence records do not match rebuilt security evidence.");
+            }
+
+            const std::vector<SlashingPreparationRecord> expectedSlashingPreparation =
+                SlashingEvidence::buildPreparationRecords(
+                    expectedSlashingEvidence,
+                    artifact.lockedStakePositions()
+                );
+
+            if (!SlashingEvidence::samePreparationRecords(expectedSlashingPreparation, artifact.slashingPreparationRecords())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted slashing preparation records do not match rebuilt evidence.");
+            }
+
+            const SlashingEvidenceSummary expectedSlashingSummary =
+                SlashingEvidence::buildSummary(
+                    block.index(),
+                    expectedSlashingEvidence,
+                    expectedSlashingPreparation
+                );
+
+            if (!SlashingEvidence::sameSummary(expectedSlashingSummary, artifact.slashingEvidenceSummary())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted slashing evidence summary does not match rebuilt evidence.");
             }
 
             const consensus::BlockFinalizationResult finalization =

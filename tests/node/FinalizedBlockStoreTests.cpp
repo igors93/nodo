@@ -321,6 +321,13 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should build controlled issuance records without executing mint."
     );
 
+    requireCondition(
+        pipeline.slashingEvidenceSummary().active() &&
+        pipeline.slashingEvidenceRecords().size() == pipeline.slashingPreparationRecords().size() &&
+        pipeline.slashingEvidenceSummary().evidenceCount() == pipeline.slashingEvidenceRecords().size(),
+        "Pipeline should build slashing evidence review records."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -474,6 +481,16 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("supplyExpansionStatus=NONE") != std::string::npos &&
         blockContents.find("supplyExpansion.mintedAmountRawUnits=0") != std::string::npos,
         "Finalized block file should persist controlled issuance records."
+    );
+
+    requireCondition(
+        blockContents.find("slashingEvidenceSummaryStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("slashingEvidenceRecordCount=1") != std::string::npos &&
+        blockContents.find("slashingPreparationRecordCount=1") != std::string::npos &&
+        blockContents.find("slashingEvidence.0.reason=RISK_CONTAINMENT_EVIDENCE") != std::string::npos &&
+        blockContents.find("slashingPreparation.0.reason=SLASHING_PREPARATION_REVIEW") != std::string::npos &&
+        blockContents.find("slashingSummary.reason=SLASHING_EVIDENCE_SUMMARY") != std::string::npos,
+        "Finalized block file should persist slashing evidence preparation records."
     );
 
     const auto loaded =

@@ -246,6 +246,45 @@ bool protectionRewardsPlanIsValid(
     }
 }
 
+bool slashingEvidencePlanIsValid(
+    std::uint64_t blockHeight,
+    const std::vector<ValidatorRiskAssessment>& riskAssessments,
+    const std::vector<ValidatorNetworkPolicy>& networkPolicies,
+    const std::vector<ProtectionWorkRecord>& protectionWorkRecords,
+    const std::vector<LockedStakePosition>& lockedStakePositions,
+    const std::vector<SlashingEvidenceRecord>& evidenceRecords,
+    const std::vector<SlashingPreparationRecord>& preparationRecords,
+    const SlashingEvidenceSummary& summary
+) {
+    try {
+        const std::vector<SlashingEvidenceRecord> expectedEvidence =
+            SlashingEvidence::buildEvidenceRecords(
+                riskAssessments,
+                networkPolicies,
+                protectionWorkRecords
+            );
+
+        const std::vector<SlashingPreparationRecord> expectedPreparations =
+            SlashingEvidence::buildPreparationRecords(
+                expectedEvidence,
+                lockedStakePositions
+            );
+
+        const SlashingEvidenceSummary expectedSummary =
+            SlashingEvidence::buildSummary(
+                blockHeight,
+                expectedEvidence,
+                expectedPreparations
+            );
+
+        return SlashingEvidence::sameEvidenceRecords(expectedEvidence, evidenceRecords) &&
+               SlashingEvidence::samePreparationRecords(expectedPreparations, preparationRecords) &&
+               SlashingEvidence::sameSummary(expectedSummary, summary);
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 bool controlledIssuancePlanIsValid(
     const InflationEpochSnapshot& epoch,
     const MintAuthorizationRecord& authorization,
@@ -418,7 +457,10 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_supplyExpansionRecord(),
       m_feeEconomicBalance(FeeEconomicBalance::notEvaluated()),
       m_feeBurnRecord(FeeBurnRecord::notEvaluated()),
-      m_treasuryFeeRecord(TreasuryFeeRecord::notEvaluated()) {}
+      m_treasuryFeeRecord(TreasuryFeeRecord::notEvaluated()),
+      m_slashingEvidenceRecords(),
+      m_slashingPreparationRecords(),
+      m_slashingEvidenceSummary(SlashingEvidenceSummary::notEvaluated()) {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -849,6 +891,70 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     FeeBurnRecord feeBurnRecord,
     TreasuryFeeRecord treasuryFeeRecord
 ) {
+    return finalized(
+        std::move(block),
+        std::move(certificate),
+        std::move(finalizedRecord),
+        std::move(finalizedTransactionIds),
+        std::move(postStateRoot),
+        totalFee,
+        std::move(rewardDistributions),
+        std::move(lockedStakePositions),
+        std::move(securityScoreRecords),
+        std::move(securityCheckpoints),
+        std::move(validatorRiskAssessments),
+        std::move(validatorContainmentDecisions),
+        std::move(validatorNetworkPolicies),
+        std::move(monetaryFirewallAudit),
+        std::move(genesisTreasurySnapshot),
+        std::move(protectionRewardBudget),
+        std::move(protectionRewardGrants),
+        std::move(protectionWorkRecords),
+        std::move(protectionRewardSummary),
+        std::move(protectionRewardSettlements),
+        std::move(inflationEpochSnapshot),
+        std::move(mintAuthorizationRecord),
+        std::move(supplyExpansionRecord),
+        std::move(feeEconomicBalance),
+        std::move(feeBurnRecord),
+        std::move(treasuryFeeRecord),
+        {},
+        {},
+        SlashingEvidenceSummary::notEvaluated()
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions,
+    std::vector<LockedStakePosition> lockedStakePositions,
+    std::vector<SecurityScoreRecord> securityScoreRecords,
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+    std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+    MonetaryFirewallAudit monetaryFirewallAudit,
+    GenesisTreasurySnapshot genesisTreasurySnapshot,
+    ProtectionRewardBudget protectionRewardBudget,
+    std::vector<ProtectionRewardGrant> protectionRewardGrants,
+    std::vector<ProtectionWorkRecord> protectionWorkRecords,
+    ProtectionRewardSummary protectionRewardSummary,
+    std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+    InflationEpochSnapshot inflationEpochSnapshot,
+    MintAuthorizationRecord mintAuthorizationRecord,
+    SupplyExpansionRecord supplyExpansionRecord,
+    FeeEconomicBalance feeEconomicBalance,
+    FeeBurnRecord feeBurnRecord,
+    TreasuryFeeRecord treasuryFeeRecord,
+    std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+    std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+    SlashingEvidenceSummary slashingEvidenceSummary
+) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
     result.m_reason = "";
@@ -878,6 +984,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_feeEconomicBalance = std::move(feeEconomicBalance);
     result.m_feeBurnRecord = std::move(feeBurnRecord);
     result.m_treasuryFeeRecord = std::move(treasuryFeeRecord);
+    result.m_slashingEvidenceRecords = std::move(slashingEvidenceRecords);
+    result.m_slashingPreparationRecords = std::move(slashingPreparationRecords);
+    result.m_slashingEvidenceSummary = std::move(slashingEvidenceSummary);
     return result;
 }
 
@@ -942,6 +1051,16 @@ bool RuntimeBlockPipelineResult::finalized() const {
                m_inflationEpochSnapshot,
                m_mintAuthorizationRecord,
                m_supplyExpansionRecord
+           ) &&
+           slashingEvidencePlanIsValid(
+               m_block->index(),
+               m_validatorRiskAssessments,
+               m_validatorNetworkPolicies,
+               m_protectionWorkRecords,
+               m_lockedStakePositions,
+               m_slashingEvidenceRecords,
+               m_slashingPreparationRecords,
+               m_slashingEvidenceSummary
            );
 }
 
@@ -1053,6 +1172,18 @@ const TreasuryFeeRecord& RuntimeBlockPipelineResult::treasuryFeeRecord() const {
     return m_treasuryFeeRecord;
 }
 
+const std::vector<SlashingEvidenceRecord>& RuntimeBlockPipelineResult::slashingEvidenceRecords() const {
+    return m_slashingEvidenceRecords;
+}
+
+const std::vector<SlashingPreparationRecord>& RuntimeBlockPipelineResult::slashingPreparationRecords() const {
+    return m_slashingPreparationRecords;
+}
+
+const SlashingEvidenceSummary& RuntimeBlockPipelineResult::slashingEvidenceSummary() const {
+    return m_slashingEvidenceSummary;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -1083,6 +1214,9 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";feeEconomicBalanceStatus=" << m_feeEconomicBalance.status()
         << ";feeBurnStatus=" << m_feeBurnRecord.status()
         << ";treasuryFeeStatus=" << m_treasuryFeeRecord.status()
+        << ";slashingEvidenceRecordCount=" << m_slashingEvidenceRecords.size()
+        << ";slashingPreparationRecordCount=" << m_slashingPreparationRecords.size()
+        << ";slashingEvidenceSummaryStatus=" << m_slashingEvidenceSummary.status()
         << "}";
 
     return oss.str();
@@ -1230,6 +1364,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     FeeEconomicBalance feeEconomicBalance;
     FeeBurnRecord feeBurnRecord;
     TreasuryFeeRecord treasuryFeeRecord;
+    std::vector<SlashingEvidenceRecord> slashingEvidenceRecords;
+    std::vector<SlashingPreparationRecord> slashingPreparationRecords;
+    SlashingEvidenceSummary slashingEvidenceSummary;
 
     try {
         feeEconomicBalance =
@@ -1356,6 +1493,26 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
                 mintAuthorizationRecord,
                 inflationEpochSnapshot
             );
+
+        slashingEvidenceRecords =
+            SlashingEvidence::buildEvidenceRecords(
+                validatorRiskAssessments,
+                validatorNetworkPolicies,
+                protectionWorkRecords
+            );
+
+        slashingPreparationRecords =
+            SlashingEvidence::buildPreparationRecords(
+                slashingEvidenceRecords,
+                lockedStakePositions
+            );
+
+        slashingEvidenceSummary =
+            SlashingEvidence::buildSummary(
+                production.block().index(),
+                slashingEvidenceRecords,
+                slashingPreparationRecords
+            );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(
             RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
@@ -1417,7 +1574,10 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         supplyExpansionRecord,
         feeEconomicBalance,
         feeBurnRecord,
-        treasuryFeeRecord
+        treasuryFeeRecord,
+        slashingEvidenceRecords,
+        slashingPreparationRecords,
+        slashingEvidenceSummary
     );
 }
 

@@ -11,6 +11,7 @@
 #include "node/ControlledIssuance.hpp"
 #include "node/FeeEconomics.hpp"
 #include "node/ProtectionRewards.hpp"
+#include "node/SlashingEvidence.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
@@ -110,6 +111,9 @@ public:
         FeeEconomicBalance feeEconomicBalance,
         FeeBurnRecord feeBurnRecord,
         TreasuryFeeRecord treasuryFeeRecord,
+        std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+        std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+        SlashingEvidenceSummary slashingEvidenceSummary,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -137,6 +141,9 @@ public:
     const FeeEconomicBalance& feeEconomicBalance() const;
     const FeeBurnRecord& feeBurnRecord() const;
     const TreasuryFeeRecord& treasuryFeeRecord() const;
+    const std::vector<SlashingEvidenceRecord>& slashingEvidenceRecords() const;
+    const std::vector<SlashingPreparationRecord>& slashingPreparationRecords() const;
+    const SlashingEvidenceSummary& slashingEvidenceSummary() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -167,6 +174,9 @@ private:
     FeeEconomicBalance m_feeEconomicBalance;
     FeeBurnRecord m_feeBurnRecord;
     TreasuryFeeRecord m_treasuryFeeRecord;
+    std::vector<SlashingEvidenceRecord> m_slashingEvidenceRecords;
+    std::vector<SlashingPreparationRecord> m_slashingPreparationRecords;
+    SlashingEvidenceSummary m_slashingEvidenceSummary;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };
