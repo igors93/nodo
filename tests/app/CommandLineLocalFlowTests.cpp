@@ -69,6 +69,24 @@ void testLocalRuntimeFlow() {
         "Init should succeed."
     );
 
+    const auto key =
+        CommandLineInterface::execute(
+            {
+                "keys",
+                "create",
+                "--data-dir",
+                path.string(),
+                "--timestamp",
+                std::to_string(kTimestamp + 50)
+            }
+        );
+
+    requireCondition(
+        key.success() &&
+        key.message().find("Key id: local-validator") != std::string::npos,
+        "Key creation should prepare the local validator signer."
+    );
+
     const auto submit =
         CommandLineInterface::execute(
             {

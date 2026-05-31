@@ -5,6 +5,7 @@
 #include "consensus/QuorumCertificate.hpp"
 #include "core/Block.hpp"
 #include "core/MempoolBlockProducer.hpp"
+#include "crypto/Signer.hpp"
 #include "node/NodeRuntime.hpp"
 
 #include <cstddef>
@@ -120,15 +121,17 @@ class RuntimeBlockPipeline {
 public:
     static RuntimeBlockPipelineResult produceAndFinalizeNextBlock(
         NodeRuntime& runtime,
-        const RuntimeBlockPipelineConfig& config
+        const RuntimeBlockPipelineConfig& config,
+        const crypto::Signer& localValidatorSigner
     );
 
 private:
-    static std::vector<consensus::ValidatorVoteRecord> buildDevelopmentVotes(
+    static std::vector<consensus::ValidatorVoteRecord> buildValidatorVotes(
         const NodeRuntime& runtime,
         const core::Block& block,
         std::uint64_t consensusRound,
-        std::int64_t timestamp
+        std::int64_t timestamp,
+        const crypto::Signer& localValidatorSigner
     );
 
     static void removeFinalizedTransactionsFromMempool(

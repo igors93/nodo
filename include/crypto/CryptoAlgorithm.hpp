@@ -42,6 +42,7 @@ enum class CryptoAlgorithm {
 };
 
 std::string cryptoAlgorithmToString(CryptoAlgorithm algorithm);
+CryptoAlgorithm cryptoAlgorithmFromString(const std::string& value);
 
 bool isClassicAlgorithm(CryptoAlgorithm algorithm);
 bool isPostQuantumAlgorithm(CryptoAlgorithm algorithm);

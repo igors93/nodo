@@ -1,12 +1,17 @@
 #include "app/CommandLineInterface.hpp"
 
 #include "app/DemoScenario.hpp"
+#include "core/TransactionBuilder.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "crypto/KeyPair.hpp"
+#include "crypto/KeyStore.hpp"
+#include "crypto/LocalSignatureProvider.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
+#include "crypto/Signer.hpp"
 #include "crypto/SignatureBundle.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
@@ -32,51 +37,9 @@ std::int64_t nowUnixSeconds() {
 }
 
 crypto::PublicKey developmentValidatorKey(
-    const std::string& suffix
+    const std::string& seed
 ) {
-    return crypto::PublicKey(
-        crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "nodo-cli-bootstrap-validator-public-key-" + suffix
-    );
-}
-
-crypto::PublicKey developmentTransactionPublicKey() {
-    return crypto::PublicKey(
-        crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "nodo-cli-demo-transaction-public-key"
-    );
-}
-
-crypto::PrivateKey developmentTransactionPrivateKey() {
-    return crypto::PrivateKey(
-        crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "nodo-cli-demo-transaction-private-key"
-    );
-}
-
-core::Transaction createDemoTransaction(
-    std::int64_t timestamp
-) {
-    core::Transaction transaction(
-        core::TransactionType::TRANSFER,
-        "nodo-cli-demo-sender",
-        "nodo-cli-demo-recipient",
-        utils::Amount::fromRawUnits(1000),
-        utils::Amount::fromRawUnits(100),
-        static_cast<std::uint64_t>(timestamp),
-        timestamp
-    );
-
-    transaction.attachSignatureBundle(
-        crypto::SignatureBundle::createDevelopmentSignature(
-            transaction.signingPayload(),
-            developmentTransactionPublicKey(),
-            developmentTransactionPrivateKey(),
-            timestamp
-        )
-    );
-
-    return transaction;
+    return crypto::KeyPair::createDevelopmentKeyPair(seed).publicKey();
 }
 
 bool isOption(
@@ -103,6 +66,11 @@ CommandLineOptions::CommandLineOptions()
       dataDirectory(".nodo"),
       peerId("local-node"),
       endpoint("127.0.0.1:9000"),
+      keyId("local-validator"),
+      toAddress("nodo-localnet-recipient"),
+      amountRaw(1000),
+      feeRaw(100),
+      nonce(0),
       timestamp(nowUnixSeconds()),
       showHelp(false) {}
 
@@ -239,19 +207,16 @@ CommandLineResult CommandLineInterface::execute(
             return executeSubmitDemoTransaction(options);
         }
 
-        if (options.command == "keys create" ||
-            options.command == "keys list") {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Key store commands are protocol commands but are not implemented yet.\n"
-            );
+        if (options.command == "keys create") {
+            return executeKeysCreate(options);
+        }
+
+        if (options.command == "keys list") {
+            return executeKeysList(options);
         }
 
         if (options.command == "validator list") {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Validator listing is not implemented yet.\n"
-            );
+            return executeValidatorList(options);
         }
 
         return CommandLineResult::failure(
@@ -327,6 +292,62 @@ CommandLineOptions CommandLineInterface::parse(
             continue;
         }
 
+        if (option == "--from" ||
+            option == "--key-id") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument(option + " requires a value.");
+            }
+
+            options.keyId = args[index + 1];
+            index += 2;
+            continue;
+        }
+
+        if (option == "--to") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--to requires a value.");
+            }
+
+            options.toAddress = args[index + 1];
+            index += 2;
+            continue;
+        }
+
+        if (option == "--amount") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--amount requires a value.");
+            }
+
+            options.amountRaw =
+                std::stoll(args[index + 1]);
+            index += 2;
+            continue;
+        }
+
+        if (option == "--fee") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--fee requires a value.");
+            }
+
+            options.feeRaw =
+                std::stoll(args[index + 1]);
+            index += 2;
+            continue;
+        }
+
+        if (option == "--nonce") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--nonce requires a value.");
+            }
+
+            options.nonce =
+                static_cast<std::uint64_t>(
+                    std::stoull(args[index + 1])
+                );
+            index += 2;
+            continue;
+        }
+
         if (option == "--timestamp") {
             if (index + 1 >= args.size()) {
                 throw std::invalid_argument("--timestamp requires a value.");
@@ -358,11 +379,12 @@ std::string CommandLineInterface::helpText() {
         "  nodo status [--data-dir PATH]\n"
         "  nodo inspect [--data-dir PATH]\n"
         "  nodo node reload [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
-        "  nodo tx submit [--data-dir PATH]\n"
+        "  nodo keys create [--data-dir PATH] [--key-id ID]\n"
+        "  nodo keys list [--data-dir PATH]\n"
+        "  nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]\n"
         "  nodo block produce [--data-dir PATH]\n"
         "  nodo chain audit [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
-        "  nodo keys create|list\n"
-        "  nodo validator list\n"
+        "  nodo validator list [--data-dir PATH]\n"
         "\n"
         "Compatibility commands:\n"
         "  nodo demo\n"
@@ -374,6 +396,12 @@ std::string CommandLineInterface::helpText() {
         "  --data-dir PATH      Node data directory. Default: .nodo\n"
         "  --peer-id ID         Local peer id for init/load. Default: local-node\n"
         "  --endpoint HOST:PORT Local endpoint for init/load. Default: 127.0.0.1:9000\n"
+        "  --key-id ID          Key id for keys create or signing. Default: local-validator\n"
+        "  --from KEY_ID        Alias for --key-id in tx submit.\n"
+        "  --to ADDRESS         Recipient address for tx submit.\n"
+        "  --amount RAW_UNITS   Transfer amount for tx submit. Default: 1000\n"
+        "  --fee RAW_UNITS      Transfer fee for tx submit. Default: 100\n"
+        "  --nonce VALUE        Transaction nonce for tx submit. Default: timestamp\n"
         "  --timestamp SECONDS  Deterministic timestamp override for tests.\n";
 }
 
@@ -383,20 +411,22 @@ config::GenesisConfig CommandLineInterface::developmentGenesisConfig() {
         1900000000,
         {
             config::BootstrapValidatorConfig(
-                developmentValidatorKey("a"),
+                developmentValidatorKey(defaultLocalnetKeySeed()),
                 1,
                 1,
-                "cli-bootstrap-validator-a"
-            ),
-            config::BootstrapValidatorConfig(
-                developmentValidatorKey("b"),
-                1,
-                1,
-                "cli-bootstrap-validator-b"
+                "cli-localnet-validator"
             )
         },
-        "nodo-cli-devnet-genesis"
+        "nodo-cli-localnet-genesis"
     );
+}
+
+std::string CommandLineInterface::defaultLocalnetKeyId() {
+    return "local-validator";
+}
+
+std::string CommandLineInterface::defaultLocalnetKeySeed() {
+    return "nodo-localnet-validator-key-v1";
 }
 
 p2p::PeerInfo CommandLineInterface::localPeerFromOptions(
@@ -528,6 +558,10 @@ CommandLineResult CommandLineInterface::executeReload(
 
     std::ostringstream output;
 
+    if (options.command == "reload") {
+        output << "Deprecated command: use nodo node reload.\n";
+    }
+
     output << "Nodo runtime reloaded.\n"
            << "Data directory: " << options.dataDirectory.string() << "\n"
            << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
@@ -591,6 +625,149 @@ CommandLineResult CommandLineInterface::executeChainAudit(
     return CommandLineResult::success(output.str());
 }
 
+CommandLineResult CommandLineInterface::executeKeysCreate(
+    const CommandLineOptions& options
+) {
+    const node::NodeDataDirectoryConfig directoryConfig(
+        options.dataDirectory
+    );
+
+    const node::NodeDataDirectoryReadResult manifest =
+        node::NodeDataDirectory::loadManifest(directoryConfig);
+
+    if (!manifest.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot create key before init: "
+            + manifest.reason()
+            + "\n"
+        );
+    }
+
+    const std::string keyId =
+        options.keyId.empty()
+            ? defaultLocalnetKeyId()
+            : options.keyId;
+
+    const std::string seed =
+        keyId == defaultLocalnetKeyId()
+            ? defaultLocalnetKeySeed()
+            : manifest.manifest().genesisConfigId() + "#" + keyId;
+
+    const crypto::KeyStoreCreateResult created =
+        crypto::KeyStore::createLocalKey(
+            directoryConfig.keysDirectoryPath(),
+            keyId,
+            seed,
+            options.timestamp
+        );
+
+    if (!created.success()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Failed to create key: "
+            + created.reason()
+            + "\n"
+        );
+    }
+
+    std::ostringstream output;
+
+    output << "Nodo key created.\n"
+           << "Key id: " << created.metadata().keyId() << "\n"
+           << "Address: " << created.metadata().address() << "\n"
+           << "Algorithm: " << crypto::cryptoAlgorithmToString(created.metadata().algorithm()) << "\n"
+           << "Provider: " << created.metadata().provider() << "\n"
+           << "Key file: " << created.path().string() << "\n";
+
+    return CommandLineResult::success(output.str());
+}
+
+CommandLineResult CommandLineInterface::executeKeysList(
+    const CommandLineOptions& options
+) {
+    const node::NodeDataDirectoryConfig directoryConfig(
+        options.dataDirectory
+    );
+
+    const node::NodeDataDirectoryReadResult manifest =
+        node::NodeDataDirectory::loadManifest(directoryConfig);
+
+    if (!manifest.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot list keys before init: "
+            + manifest.reason()
+            + "\n"
+        );
+    }
+
+    const crypto::KeyStoreListResult listed =
+        crypto::KeyStore::listKeys(
+            directoryConfig.keysDirectoryPath()
+        );
+
+    if (!listed.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Failed to list keys: "
+            + listed.reason()
+            + "\n"
+        );
+    }
+
+    std::ostringstream output;
+
+    output << "Nodo keys\n"
+           << "---------\n"
+           << "Key count: " << listed.keys().size() << "\n";
+
+    for (const crypto::StoredKeyMetadata& key : listed.keys()) {
+        output << "Key id: " << key.keyId()
+               << " | Address: " << key.address()
+               << " | Algorithm: " << crypto::cryptoAlgorithmToString(key.algorithm())
+               << " | Provider: " << key.provider()
+               << "\n";
+    }
+
+    return CommandLineResult::success(output.str());
+}
+
+CommandLineResult CommandLineInterface::executeValidatorList(
+    const CommandLineOptions& options
+) {
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            developmentGenesisConfig(),
+            localPeerFromOptions(options)
+        );
+
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot list validators: "
+            + load.reason()
+            + "\n"
+        );
+    }
+
+    const std::vector<std::string> validators =
+        load.runtime().validatorRegistry().activeValidatorAddresses();
+
+    std::ostringstream output;
+
+    output << "Nodo validators\n"
+           << "---------------\n"
+           << "Active validators: " << validators.size() << "\n";
+
+    for (const std::string& validator : validators) {
+        output << "Validator: " << validator << "\n";
+    }
+
+    return CommandLineResult::success(output.str());
+}
+
 CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
     const CommandLineOptions& options
 ) {
@@ -610,14 +787,51 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
         );
     }
 
+    const crypto::KeyStoreLoadResult key =
+        crypto::KeyStore::loadKey(
+            directoryConfig.keysDirectoryPath(),
+            options.keyId
+        );
+
+    if (!key.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit transaction without local key '"
+            + options.keyId
+            + "': "
+            + key.reason()
+            + "\n"
+        );
+    }
+
+    const crypto::LocalSignatureProvider provider;
+    const crypto::Signer signer(
+        key.keyPair(),
+        provider
+    );
+
+    const std::uint64_t nonce =
+        options.nonce == 0
+            ? static_cast<std::uint64_t>(options.timestamp)
+            : options.nonce;
+
     const core::Transaction transaction =
-        createDemoTransaction(options.timestamp + 10);
+        core::TransactionBuilder::buildSignedTransfer(
+            core::TransactionBuildRequest(
+                options.toAddress,
+                utils::Amount::fromRawUnits(options.amountRaw),
+                utils::Amount::fromRawUnits(options.feeRaw),
+                nonce,
+                options.timestamp + 10
+            ),
+            signer
+        );
 
     const node::PersistentMempoolWriteResult persisted =
         node::PersistentMempoolStore::persistTransaction(
             directoryConfig,
             transaction,
-            developmentTransactionPublicKey(),
+            key.metadata().publicKey(),
             options.timestamp + 11
         );
 
@@ -632,7 +846,14 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
 
     std::ostringstream output;
 
+    if (options.command == "submit-demo-transaction") {
+        output << "Deprecated command: use nodo tx submit.\n";
+    }
+
     output << "Nodo transaction submitted.\n"
+           << "Key id: " << key.keyId() << "\n"
+           << "From: " << transaction.fromAddress() << "\n"
+           << "To: " << transaction.toAddress() << "\n"
            << "Transaction id: " << persisted.transactionId() << "\n"
            << "Mempool file: " << persisted.path().string() << "\n";
 
@@ -665,49 +886,35 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
     node::NodeRuntime runtime =
         load.runtime();
 
-    /*
-     * Backward-compatible operator convenience:
-     * If no pending transaction was submitted yet, create one demo transaction
-     * and persist it before producing the demo block.
-     */
     if (runtime.mempool().empty()) {
-        const core::Transaction transaction =
-            createDemoTransaction(options.timestamp + 10);
-
-        const node::PersistentMempoolWriteResult persisted =
-            node::PersistentMempoolStore::persistTransaction(
-                directoryConfig,
-                transaction,
-                developmentTransactionPublicKey(),
-                options.timestamp + 11
-            );
-
-        if (!persisted.success()) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Failed to create fallback local transaction: "
-                + persisted.reason()
-                + "\n"
-            );
-        }
-
-        const auto admission =
-            runtime.mutableMempool().admitTransaction(
-                transaction,
-                crypto::CryptoPolicy::developmentPolicy(),
-                crypto::SecurityContext::USER_TRANSACTION,
-                options.timestamp + 11
-            );
-
-        if (!admission.success()) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Failed to admit fallback local transaction: "
-                + admission.reason()
-                + "\n"
-            );
-        }
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot produce block: mempool is empty and the current localnet rule requires at least one transaction.\n"
+        );
     }
+
+    const crypto::KeyStoreLoadResult key =
+        crypto::KeyStore::loadKey(
+            directoryConfig.keysDirectoryPath(),
+            options.keyId
+        );
+
+    if (!key.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot sign validator vote without local key '"
+            + options.keyId
+            + "': "
+            + key.reason()
+            + "\n"
+        );
+    }
+
+    const crypto::LocalSignatureProvider provider;
+    const crypto::Signer signer(
+        key.keyPair(),
+        provider
+    );
 
     const node::RuntimeBlockPipelineResult pipeline =
         node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
@@ -717,7 +924,8 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
                 1,
                 1,
                 options.timestamp + 20
-            )
+            ),
+            signer
         );
 
     if (!pipeline.finalized()) {
@@ -740,7 +948,7 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
     if (!persistedBlock.success()) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
-            "Failed to persist finalized demo block: "
+            "Failed to persist finalized block: "
             + persistedBlock.reason()
             + "\n"
         );
@@ -753,6 +961,10 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
         );
 
     std::ostringstream output;
+
+    if (options.command == "produce-demo-block") {
+        output << "Deprecated command: use nodo block produce.\n";
+    }
 
     output << "Nodo block finalized and persisted.\n"
            << "Block height: " << pipeline.block().index() << "\n"

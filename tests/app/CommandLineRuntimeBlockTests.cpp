@@ -37,7 +37,7 @@ void clean(
     );
 }
 
-void testProduceDemoBlockCommand() {
+void testProduceBlockRequiresMempoolTransaction() {
     const std::filesystem::path path =
         tempPath("produce-demo");
 
@@ -60,13 +60,14 @@ void testProduceDemoBlockCommand() {
 
     requireCondition(
         init.success(),
-        "Init should succeed before producing demo block."
+        "Init should succeed before producing a block."
     );
 
-    const auto produce =
+    const auto produceEmpty =
         CommandLineInterface::execute(
             {
-                "produce-demo-block",
+                "block",
+                "produce",
                 "--data-dir",
                 path.string(),
                 "--peer-id",
@@ -79,9 +80,65 @@ void testProduceDemoBlockCommand() {
         );
 
     requireCondition(
+        !produceEmpty.success() &&
+        produceEmpty.message().find("mempool is empty") != std::string::npos,
+        "block produce should fail clearly when mempool is empty."
+    );
+
+    const auto key =
+        CommandLineInterface::execute(
+            {
+                "keys",
+                "create",
+                "--data-dir",
+                path.string(),
+                "--timestamp",
+                std::to_string(kTimestamp + 120)
+            }
+        );
+
+    requireCondition(
+        key.success(),
+        "Key creation should succeed before submit."
+    );
+
+    const auto submit =
+        CommandLineInterface::execute(
+            {
+                "tx",
+                "submit",
+                "--data-dir",
+                path.string(),
+                "--timestamp",
+                std::to_string(kTimestamp + 130)
+            }
+        );
+
+    requireCondition(
+        submit.success(),
+        "tx submit should persist a transaction for block production."
+    );
+
+    const auto produce =
+        CommandLineInterface::execute(
+            {
+                "block",
+                "produce",
+                "--data-dir",
+                path.string(),
+                "--peer-id",
+                "cli-runtime-block-peer",
+                "--endpoint",
+                "127.0.0.1:9500",
+                "--timestamp",
+                std::to_string(kTimestamp + 200)
+            }
+        );
+
+    requireCondition(
         produce.success() &&
         produce.message().find("Block height: 1") != std::string::npos,
-        "produce-demo-block should finalize and persist block height 1."
+        "block produce should finalize and persist block height 1."
     );
 
     const auto status =
@@ -96,7 +153,7 @@ void testProduceDemoBlockCommand() {
     requireCondition(
         status.success() &&
         status.message().find("Latest height: 1") != std::string::npos,
-        "Status should show updated height after demo block."
+        "Status should show updated height after block production."
     );
 
     clean(path);
@@ -111,7 +168,8 @@ void testProduceDemoBlockBeforeInitFails() {
     const auto produce =
         CommandLineInterface::execute(
             {
-                "produce-demo-block",
+                "block",
+                "produce",
                 "--data-dir",
                 path.string(),
                 "--timestamp",
@@ -121,7 +179,7 @@ void testProduceDemoBlockBeforeInitFails() {
 
     requireCondition(
         !produce.success(),
-        "produce-demo-block should fail before init."
+        "block produce should fail before init."
     );
 
     clean(path);
@@ -131,7 +189,7 @@ void testProduceDemoBlockBeforeInitFails() {
 
 int main() {
     try {
-        testProduceDemoBlockCommand();
+        testProduceBlockRequiresMempoolTransaction();
         testProduceDemoBlockBeforeInitFails();
 
         std::cout << "Nodo command line runtime block tests passed.\n";

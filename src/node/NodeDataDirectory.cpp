@@ -142,6 +142,10 @@ std::filesystem::path NodeDataDirectoryConfig::blocksDirectoryPath() const {
     return m_rootPath / "blocks";
 }
 
+std::filesystem::path NodeDataDirectoryConfig::keysDirectoryPath() const {
+    return m_rootPath / "keys";
+}
+
 std::filesystem::path NodeDataDirectoryConfig::peersDirectoryPath() const {
     return m_rootPath / "peers";
 }
@@ -742,6 +746,7 @@ void NodeDataDirectory::ensureDirectoryTree(
 ) {
     std::filesystem::create_directories(directoryConfig.rootPath());
     std::filesystem::create_directories(directoryConfig.blocksDirectoryPath());
+    std::filesystem::create_directories(directoryConfig.keysDirectoryPath());
     std::filesystem::create_directories(directoryConfig.peersDirectoryPath());
     std::filesystem::create_directories(directoryConfig.mempoolDirectoryPath());
     std::filesystem::create_directories(directoryConfig.runtimeDirectoryPath());

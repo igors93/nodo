@@ -63,10 +63,28 @@ void testSubmitThenProduceFromPersistentMempool() {
         "Init should succeed."
     );
 
+    const auto key =
+        CommandLineInterface::execute(
+            {
+                "keys",
+                "create",
+                "--data-dir",
+                path.string(),
+                "--timestamp",
+                std::to_string(kTimestamp + 50)
+            }
+        );
+
+    requireCondition(
+        key.success(),
+        "Key creation should succeed."
+    );
+
     const auto submit =
         CommandLineInterface::execute(
             {
-                "submit-demo-transaction",
+                "tx",
+                "submit",
                 "--data-dir",
                 path.string(),
                 "--timestamp",
@@ -77,13 +95,14 @@ void testSubmitThenProduceFromPersistentMempool() {
     requireCondition(
         submit.success() &&
         submit.message().find("Transaction id:") != std::string::npos,
-        "Submit demo transaction should persist pending transaction."
+        "tx submit should persist pending transaction."
     );
 
     const auto produce =
         CommandLineInterface::execute(
             {
-                "produce-demo-block",
+                "block",
+                "produce",
                 "--data-dir",
                 path.string(),
                 "--peer-id",

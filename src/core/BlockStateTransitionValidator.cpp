@@ -1,5 +1,8 @@
 #include "core/BlockStateTransitionValidator.hpp"
 
+#include "core/Transaction.hpp"
+
+#include <exception>
 #include <set>
 #include <sstream>
 #include <utility>
@@ -20,6 +23,8 @@ std::string blockValidationStatusToString(
             return "INVALID_PREVIOUS_HASH";
         case BlockValidationStatus::INVALID_LEDGER_RECORD:
             return "INVALID_LEDGER_RECORD";
+        case BlockValidationStatus::INVALID_TRANSACTION:
+            return "INVALID_TRANSACTION";
         case BlockValidationStatus::DUPLICATE_LEDGER_SOURCE:
             return "DUPLICATE_LEDGER_SOURCE";
         default:
@@ -98,6 +103,7 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
     }
 
     std::set<std::string> sourceIds;
+    std::set<std::string> transactionIds;
 
     for (const LedgerRecord& record : candidateBlock.records()) {
         if (!record.isValid()) {
@@ -112,6 +118,40 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
                 BlockValidationStatus::DUPLICATE_LEDGER_SOURCE,
                 "Candidate block contains duplicate ledger record source ids."
             );
+        }
+
+        if (record.type() == LedgerRecordType::TRANSACTION) {
+            try {
+                const Transaction transaction =
+                    Transaction::deserializeForStateReplay(
+                        record.payload()
+                    );
+
+                if (transaction.id() != record.sourceId() ||
+                    transaction.nonce() == 0 ||
+                    !transaction.amount().isPositive() ||
+                    transaction.fee().isNegative() ||
+                    transaction.fromAddress().empty() ||
+                    transaction.toAddress().empty() ||
+                    transaction.fromAddress() == transaction.toAddress()) {
+                    return BlockValidationResult::rejected(
+                        BlockValidationStatus::INVALID_TRANSACTION,
+                        "Candidate block contains an invalid transaction ledger payload."
+                    );
+                }
+
+                if (!transactionIds.insert(transaction.id()).second) {
+                    return BlockValidationResult::rejected(
+                        BlockValidationStatus::DUPLICATE_LEDGER_SOURCE,
+                        "Candidate block contains duplicate transaction ids."
+                    );
+                }
+            } catch (const std::exception& error) {
+                return BlockValidationResult::rejected(
+                    BlockValidationStatus::INVALID_TRANSACTION,
+                    error.what()
+                );
+            }
         }
     }
 

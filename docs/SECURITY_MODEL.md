@@ -21,3 +21,7 @@ The current implementation already rejects corrupted manifests, finalized block
 files and mempool files through strict codecs. Additional evidence records and
 penalty state should be implemented as small protocol types instead of ad hoc
 runtime flags.
+
+Local key files are written atomically and parsed strictly. The current
+localnet key format stores private material for the temporary provider and must
+not be used for production networks.

@@ -102,7 +102,7 @@ public:
     static PersistentMempoolWriteResult persistTransaction(
         const NodeDataDirectoryConfig& directoryConfig,
         const core::Transaction& transaction,
-        const crypto::PublicKey& developmentPublicKey,
+        const crypto::PublicKey& publicKey,
         std::int64_t acceptedAt
     );
 
@@ -126,7 +126,7 @@ public:
 private:
     static std::string transactionFileContents(
         const core::Transaction& transaction,
-        const crypto::PublicKey& developmentPublicKey,
+        const crypto::PublicKey& publicKey,
         std::int64_t acceptedAt
     );
 

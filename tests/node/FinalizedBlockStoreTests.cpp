@@ -3,10 +3,14 @@
 #include "node/RuntimeBlockPipeline.hpp"
 #include "config/NetworkParameters.hpp"
 #include "core/Transaction.hpp"
+#include "core/TransactionBuilder.hpp"
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/KeyPair.hpp"
+#include "crypto/LocalSignatureProvider.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
+#include "crypto/Signer.hpp"
 #include "crypto/SignatureBundle.hpp"
 #include "node/NodeRuntime.hpp"
 #include "utils/Amount.hpp"
@@ -25,9 +29,12 @@ using nodo::core::Transaction;
 using nodo::core::TransactionType;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
+using nodo::crypto::KeyPair;
+using nodo::crypto::LocalSignatureProvider;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::SecurityContext;
+using nodo::crypto::Signer;
 using nodo::crypto::SignatureBundle;
 using nodo::node::FinalizedBlockStore;
 using nodo::node::NodeDataDirectory;
@@ -68,32 +75,20 @@ void clean(
     );
 }
 
-PublicKey publicKey(
-    const std::string& suffix
-) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "finalized-block-store-public-key-" + suffix
-    );
-}
-
-PrivateKey privateKey(
-    const std::string& suffix
-) {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "finalized-block-store-private-key-" + suffix
+KeyPair localValidatorKeyPair() {
+    return KeyPair::createDevelopmentKeyPair(
+        "finalized-block-store-validator"
     );
 }
 
 BootstrapValidatorConfig validator(
-    const std::string& suffix
+    const std::string& metadata
 ) {
     return BootstrapValidatorConfig(
-        publicKey("validator-" + suffix),
+        localValidatorKeyPair().publicKey(),
         1,
         1,
-        "finalized-block-store-validator-" + suffix
+        metadata
     );
 }
 
@@ -102,10 +97,18 @@ GenesisConfig genesisConfig() {
         NetworkParameters::developmentLocal(),
         kTimestamp,
         {
-            validator("a"),
-            validator("b")
+            validator("finalized-block-store-validator")
         },
         "finalized-block-store-genesis"
+    );
+}
+
+Signer localValidatorSigner() {
+    static const LocalSignatureProvider provider;
+
+    return Signer(
+        localValidatorKeyPair(),
+        provider
     );
 }
 
@@ -120,26 +123,16 @@ PeerInfo localPeer() {
 }
 
 Transaction signedTransfer() {
-    Transaction transaction(
-        TransactionType::TRANSFER,
-        "store-sender",
-        "store-recipient",
-        Amount::fromRawUnits(1000),
-        Amount::fromRawUnits(100),
-        1,
-        kTimestamp + 10
-    );
-
-    transaction.attachSignatureBundle(
-        SignatureBundle::createDevelopmentSignature(
-            transaction.signingPayload(),
-            publicKey("tx"),
-            privateKey("tx"),
+    return nodo::core::TransactionBuilder::buildSignedTransfer(
+        nodo::core::TransactionBuildRequest(
+            "store-recipient",
+            Amount::fromRawUnits(1000),
+            Amount::fromRawUnits(100),
+            1,
             kTimestamp + 10
-        )
+        ),
+        localValidatorSigner()
     );
-
-    return transaction;
 }
 
 NodeRuntime startRuntime() {
@@ -205,7 +198,8 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
                 1,
                 1,
                 kTimestamp + 20
-            )
+            ),
+            localValidatorSigner()
         );
 
     requireCondition(
@@ -279,7 +273,8 @@ void testPersistIsIdempotentForSameFinalizedBlock() {
                 1,
                 1,
                 kTimestamp + 50
-            )
+            ),
+            localValidatorSigner()
         );
 
     requireCondition(
@@ -329,7 +324,8 @@ void testRejectsPersistBeforeInit() {
                 1,
                 1,
                 kTimestamp + 70
-            )
+            ),
+            localValidatorSigner()
         );
 
     requireCondition(

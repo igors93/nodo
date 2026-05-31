@@ -2,11 +2,15 @@
 
 #include "config/NetworkParameters.hpp"
 #include "core/Transaction.hpp"
+#include "core/TransactionBuilder.hpp"
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "crypto/KeyPair.hpp"
+#include "crypto/LocalSignatureProvider.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
+#include "crypto/Signer.hpp"
 #include "crypto/SignatureBundle.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
@@ -29,9 +33,12 @@ using nodo::core::Transaction;
 using nodo::core::TransactionType;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
+using nodo::crypto::KeyPair;
+using nodo::crypto::LocalSignatureProvider;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::SecurityContext;
+using nodo::crypto::Signer;
 using nodo::crypto::SignatureBundle;
 using nodo::node::FinalizedBlockStore;
 using nodo::node::FinalizedBlockFileCodec;
@@ -75,32 +82,20 @@ void clean(
     );
 }
 
-PublicKey publicKey(
-    const std::string& suffix
-) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "runtime-state-loader-public-key-" + suffix
-    );
-}
-
-PrivateKey privateKey(
-    const std::string& suffix
-) {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "runtime-state-loader-private-key-" + suffix
+KeyPair localValidatorKeyPair() {
+    return KeyPair::createDevelopmentKeyPair(
+        "runtime-state-loader-validator"
     );
 }
 
 BootstrapValidatorConfig validator(
-    const std::string& suffix
+    const std::string& metadata
 ) {
     return BootstrapValidatorConfig(
-        publicKey("validator-" + suffix),
+        localValidatorKeyPair().publicKey(),
         1,
         1,
-        "runtime-state-loader-validator-" + suffix
+        metadata
     );
 }
 
@@ -109,10 +104,18 @@ GenesisConfig genesisConfig() {
         NetworkParameters::developmentLocal(),
         kTimestamp,
         {
-            validator("a"),
-            validator("b")
+            validator("runtime-state-loader-validator")
         },
         "runtime-state-loader-genesis"
+    );
+}
+
+Signer localValidatorSigner() {
+    static const LocalSignatureProvider provider;
+
+    return Signer(
+        localValidatorKeyPair(),
+        provider
     );
 }
 
@@ -131,26 +134,18 @@ Transaction signedTransfer(
     std::uint64_t nonce,
     std::int64_t timestamp
 ) {
-    Transaction transaction(
-        TransactionType::TRANSFER,
-        "runtime-state-loader-sender",
-        "runtime-state-loader-recipient",
-        Amount::fromRawUnits(1000),
-        Amount::fromRawUnits(100),
-        nonce,
-        timestamp
-    );
+    (void)suffix;
 
-    transaction.attachSignatureBundle(
-        SignatureBundle::createDevelopmentSignature(
-            transaction.signingPayload(),
-            publicKey("tx-" + suffix),
-            privateKey("tx-" + suffix),
+    return nodo::core::TransactionBuilder::buildSignedTransfer(
+        nodo::core::TransactionBuildRequest(
+            "runtime-state-loader-recipient",
+            Amount::fromRawUnits(1000),
+            Amount::fromRawUnits(100),
+            nonce,
             timestamp
-        )
+        ),
+        localValidatorSigner()
     );
-
-    return transaction;
 }
 
 NodeRuntime startRuntime() {
@@ -217,7 +212,8 @@ void testLoadsRuntimeWithPersistedFinalizedBlock() {
                 1,
                 1,
                 kTimestamp + 20
-            )
+            ),
+            localValidatorSigner()
         );
 
     requireCondition(
@@ -304,7 +300,7 @@ void testLoadsPersistentMempoolIntoRuntime() {
         PersistentMempoolStore::persistTransaction(
             directoryConfig,
             transaction,
-            publicKey("tx-b"),
+            localValidatorKeyPair().publicKey(),
             kTimestamp + 51
         ).stored(),
         "Persistent mempool transaction should store."

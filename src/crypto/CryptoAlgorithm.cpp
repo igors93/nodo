@@ -27,6 +27,34 @@ std::string cryptoAlgorithmToString(CryptoAlgorithm algorithm) {
     }
 }
 
+CryptoAlgorithm cryptoAlgorithmFromString(const std::string& value) {
+    if (value == "DEVELOPMENT_FAKE_SIGNATURE") {
+        return CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE;
+    }
+
+    if (value == "CLASSIC_ED25519") {
+        return CryptoAlgorithm::CLASSIC_ED25519;
+    }
+
+    if (value == "CLASSIC_ECDSA_SECP256K1") {
+        return CryptoAlgorithm::CLASSIC_ECDSA_SECP256K1;
+    }
+
+    if (value == "POST_QUANTUM_ML_DSA") {
+        return CryptoAlgorithm::POST_QUANTUM_ML_DSA;
+    }
+
+    if (value == "POST_QUANTUM_SLH_DSA") {
+        return CryptoAlgorithm::POST_QUANTUM_SLH_DSA;
+    }
+
+    if (value == "HYBRID_CLASSIC_AND_POST_QUANTUM") {
+        return CryptoAlgorithm::HYBRID_CLASSIC_AND_POST_QUANTUM;
+    }
+
+    return CryptoAlgorithm::HYBRID_CLASSIC_AND_POST_QUANTUM;
+}
+
 bool isClassicAlgorithm(CryptoAlgorithm algorithm) {
     return algorithm == CryptoAlgorithm::CLASSIC_ED25519 ||
            algorithm == CryptoAlgorithm::CLASSIC_ECDSA_SECP256K1;

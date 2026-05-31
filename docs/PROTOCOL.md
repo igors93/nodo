@@ -23,8 +23,12 @@ data instead of guessing intent.
 
 Current limitations:
 
-- localnet still uses a development signature provider;
-- key-store commands are declared but not implemented;
+- localnet uses `KeyStore`, `Signer` and `LocalSignatureProvider`, but the
+  provider is still a temporary deterministic local provider;
+- localnet key files are unencrypted and are not production-safe;
 - P2P networking is intentionally out of scope for this foundation step;
 - balance, nonce and coin-lot transition checks are still being consolidated
   behind the state-transition validator.
+
+`block produce` never creates transactions. Transactions enter the protocol via
+`tx submit`, then block production consumes the current mempool contents.

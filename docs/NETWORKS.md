@@ -19,8 +19,9 @@ Required network parameters:
 - storage format version.
 
 `localnet` is the only runnable network profile in this repository today. It
-uses the same runtime, mempool, block production, validation, consensus,
-finalization, persistence and reload path intended for future networks.
+uses the same runtime, key-store, signer, mempool, block production, validation,
+consensus, finalization, persistence and reload path intended for future
+networks.
 
 `testnet` should use production-shaped keys, stricter validator onboarding and
 networked validator votes.

@@ -253,8 +253,8 @@ std::string NetworkParameters::serialize() const {
 
 NetworkParameters NetworkParameters::developmentLocal() {
     return NetworkParameters(
-        "nodo-devnet-1",
-        "nodo-devnet",
+        "nodo-localnet-1",
+        "nodo-localnet",
         "nodo/0.1",
         60,
         1,
@@ -266,7 +266,7 @@ NetworkParameters NetworkParameters::developmentLocal() {
         0,
         60,
         1,
-        "DEVELOPMENT_FAKE_SIGNATURE",
+        "LOCAL_DETERMINISTIC_PROVIDER_V1",
         "NODO_STORAGE_V2"
     );
 }

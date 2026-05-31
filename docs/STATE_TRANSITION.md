@@ -11,6 +11,9 @@ Minimum validation rules:
 - block height equals tip height plus one;
 - every ledger record is valid;
 - duplicate ledger record source ids inside the same block are rejected;
+- transaction ledger payloads must decode to the same transaction id as their
+  ledger source id;
+- duplicate transaction ids inside the same block are rejected;
 - selected transactions were already admitted by mempool policy;
 - no partial state mutation happens before validation succeeds.
 

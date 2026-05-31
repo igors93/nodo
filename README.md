@@ -36,6 +36,7 @@ build/nodo
 
 ```bash
 build/nodo init --data-dir .nodo
+build/nodo keys create --data-dir .nodo
 build/nodo tx submit --data-dir .nodo
 build/nodo block produce --data-dir .nodo
 build/nodo node reload --data-dir .nodo
@@ -44,14 +45,15 @@ build/nodo status --data-dir .nodo
 build/nodo inspect --data-dir .nodo
 ```
 
-Compatibility commands such as `submit-demo-transaction` and
-`produce-demo-block` still exist while tests and operator muscle memory migrate,
-but the preferred CLI names are protocol-oriented.
+Compatibility commands such as `submit-demo-transaction`, `produce-demo-block`
+and `reload` still exist while operator muscle memory migrates. They print
+deprecation warnings and run the same localnet protocol path.
 
 Current limitations are explicit:
 
-- `localnet` still uses a development signature provider;
-- key-store commands are declared but not implemented;
+- `localnet` uses a temporary deterministic local signature provider;
+- `localnet` keys are stored by `KeyStore` in an unencrypted local format that
+  is not production-safe yet;
 - no P2P validator networking is included in this phase;
 - deeper balance, nonce, fee, coin-lot and supply checks must continue moving
   behind the state-transition validation gate.

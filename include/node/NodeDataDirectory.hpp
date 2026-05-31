@@ -35,6 +35,7 @@ public:
     std::filesystem::path localPeerPath() const;
     std::filesystem::path runtimeSnapshotPath() const;
     std::filesystem::path blocksDirectoryPath() const;
+    std::filesystem::path keysDirectoryPath() const;
     std::filesystem::path peersDirectoryPath() const;
     std::filesystem::path mempoolDirectoryPath() const;
     std::filesystem::path runtimeDirectoryPath() const;

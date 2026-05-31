@@ -19,6 +19,11 @@ public:
     std::filesystem::path dataDirectory;
     std::string peerId;
     std::string endpoint;
+    std::string keyId;
+    std::string toAddress;
+    std::int64_t amountRaw;
+    std::int64_t feeRaw;
+    std::uint64_t nonce;
     std::int64_t timestamp;
     bool showHelp;
 };
@@ -73,6 +78,8 @@ public:
     static std::string helpText();
 
     static config::GenesisConfig developmentGenesisConfig();
+    static std::string defaultLocalnetKeyId();
+    static std::string defaultLocalnetKeySeed();
     static p2p::PeerInfo localPeerFromOptions(
         const CommandLineOptions& options
     );
@@ -95,6 +102,18 @@ private:
     );
 
     static CommandLineResult executeChainAudit(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeKeysCreate(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeKeysList(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeValidatorList(
         const CommandLineOptions& options
     );
 

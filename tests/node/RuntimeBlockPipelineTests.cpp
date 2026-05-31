@@ -1,10 +1,14 @@
 #include "node/RuntimeBlockPipeline.hpp"
 #include "config/NetworkParameters.hpp"
 #include "core/Transaction.hpp"
+#include "core/TransactionBuilder.hpp"
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/KeyPair.hpp"
+#include "crypto/LocalSignatureProvider.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
+#include "crypto/Signer.hpp"
 #include "crypto/SignatureBundle.hpp"
 #include "node/NodeRuntime.hpp"
 #include "utils/Amount.hpp"
@@ -23,9 +27,12 @@ using nodo::core::Transaction;
 using nodo::core::TransactionType;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
+using nodo::crypto::KeyPair;
+using nodo::crypto::LocalSignatureProvider;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::SecurityContext;
+using nodo::crypto::Signer;
 using nodo::crypto::SignatureBundle;
 using nodo::node::NodeRuntime;
 using nodo::node::NodeRuntimeConfig;
@@ -47,32 +54,20 @@ void requireCondition(
     }
 }
 
-PublicKey publicKey(
-    const std::string& suffix
-) {
-    return PublicKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "runtime-block-pipeline-public-key-" + suffix
-    );
-}
-
-PrivateKey privateKey(
-    const std::string& suffix
-) {
-    return PrivateKey(
-        CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-        "runtime-block-pipeline-private-key-" + suffix
+KeyPair localValidatorKeyPair() {
+    return KeyPair::createDevelopmentKeyPair(
+        "runtime-block-pipeline-validator"
     );
 }
 
 BootstrapValidatorConfig validator(
-    const std::string& suffix
+    const std::string& metadata
 ) {
     return BootstrapValidatorConfig(
-        publicKey("validator-" + suffix),
+        localValidatorKeyPair().publicKey(),
         1,
         1,
-        "runtime-block-pipeline-validator-" + suffix
+        metadata
     );
 }
 
@@ -81,10 +76,18 @@ GenesisConfig genesisConfig() {
         NetworkParameters::developmentLocal(),
         kTimestamp,
         {
-            validator("a"),
-            validator("b")
+            validator("runtime-block-pipeline-validator")
         },
         "runtime-block-pipeline-genesis"
+    );
+}
+
+Signer localValidatorSigner() {
+    static const LocalSignatureProvider provider;
+
+    return Signer(
+        localValidatorKeyPair(),
+        provider
     );
 }
 
@@ -121,26 +124,18 @@ Transaction signedTransfer(
     std::uint64_t nonce,
     std::int64_t timestamp
 ) {
-    Transaction transaction(
-        TransactionType::TRANSFER,
-        "runtime-pipeline-sender",
-        "runtime-pipeline-recipient",
-        Amount::fromRawUnits(1000),
-        Amount::fromRawUnits(100),
-        nonce,
-        timestamp
-    );
+    (void)suffix;
 
-    transaction.attachSignatureBundle(
-        SignatureBundle::createDevelopmentSignature(
-            transaction.signingPayload(),
-            publicKey("tx-" + suffix),
-            privateKey("tx-" + suffix),
+    return nodo::core::TransactionBuilder::buildSignedTransfer(
+        nodo::core::TransactionBuildRequest(
+            "runtime-pipeline-recipient",
+            Amount::fromRawUnits(1000),
+            Amount::fromRawUnits(100),
+            nonce,
             timestamp
-        )
+        ),
+        localValidatorSigner()
     );
-
-    return transaction;
 }
 
 void admitTransaction(
@@ -178,7 +173,8 @@ void testProducesFinalizesAndCleansMempool() {
                 1,
                 1,
                 kTimestamp + 20
-            )
+            ),
+            localValidatorSigner()
         );
 
     requireCondition(
@@ -217,7 +213,8 @@ void testRejectsEmptyMempool() {
                 1,
                 1,
                 kTimestamp + 30
-            )
+            ),
+            localValidatorSigner()
         );
 
     requireCondition(
@@ -240,7 +237,8 @@ void testRejectsInvalidConfig() {
                 1,
                 1,
                 kTimestamp + 40
-            )
+            ),
+            localValidatorSigner()
         );
 
     requireCondition(

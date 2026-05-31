@@ -1,11 +1,11 @@
 #include "node/RuntimeBlockPipeline.hpp"
 
+#include "consensus/ValidatorVoteBuilder.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
-#include "crypto/DevelopmentSignatureProvider.hpp"
-#include "crypto/PrivateKey.hpp"
+#include "crypto/LocalSignatureProvider.hpp"
 
 #include <sstream>
 #include <stdexcept>
@@ -179,7 +179,8 @@ std::string RuntimeBlockPipelineResult::serialize() const {
 
 RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     NodeRuntime& runtime,
-    const RuntimeBlockPipelineConfig& config
+    const RuntimeBlockPipelineConfig& config,
+    const crypto::Signer& localValidatorSigner
 ) {
     if (!config.isValid()) {
         return RuntimeBlockPipelineResult::rejected(
@@ -198,7 +199,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     const crypto::CryptoPolicy policy =
         crypto::CryptoPolicy::developmentPolicy();
 
-    const crypto::DevelopmentSignatureProvider provider;
+    const crypto::LocalSignatureProvider provider;
 
     const core::BlockProductionResult production =
         core::MempoolBlockProducer::produceCandidateBlock(
@@ -236,11 +237,12 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     std::vector<consensus::ValidatorVoteRecord> votes;
 
     try {
-        votes = buildDevelopmentVotes(
+        votes = buildValidatorVotes(
             runtime,
             production.block(),
             config.consensusRound(),
-            config.timestamp() + 1
+            config.timestamp() + 1,
+            localValidatorSigner
         );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(
@@ -313,58 +315,24 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     );
 }
 
-std::vector<consensus::ValidatorVoteRecord> RuntimeBlockPipeline::buildDevelopmentVotes(
+std::vector<consensus::ValidatorVoteRecord> RuntimeBlockPipeline::buildValidatorVotes(
     const NodeRuntime& runtime,
     const core::Block& block,
     std::uint64_t consensusRound,
-    std::int64_t timestamp
+    std::int64_t timestamp,
+    const crypto::Signer& localValidatorSigner
 ) {
     std::vector<consensus::ValidatorVoteRecord> votes;
 
-    const std::vector<std::string> activeValidators =
-        runtime.validatorRegistry().activeValidatorAddresses();
-
-    for (std::size_t index = 0; index < activeValidators.size(); ++index) {
-        const std::string& validatorAddress =
-            activeValidators[index];
-
-        const core::ValidatorRegistryEntry* entry =
-            runtime.validatorRegistry().entryForAddress(validatorAddress);
-
-        if (entry == nullptr ||
-            !entry->active()) {
-            continue;
-        }
-
-        const crypto::PublicKey& publicKey =
-            entry->registrationRecord().validatorPublicKey();
-
-        /*
-         * Development-only signing:
-         * The current development provider is verifiable from public data. This
-         * placeholder private key keeps the architecture intact until real key
-         * storage is introduced.
-         */
-        const crypto::PrivateKey privateKey(
-            crypto::CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-            "runtime-development-private-key-" + publicKey.fingerprint()
-        );
-
-        votes.push_back(
-            consensus::ValidatorVoteRecord::createDevelopmentVote(
-                validatorAddress,
-                publicKey,
-                privateKey,
-                block.index(),
-                block.hash(),
-                block.previousHash(),
-                consensusRound,
-                consensus::ValidatorVoteDecision::APPROVE,
-                "runtime-block-pipeline-approval",
-                timestamp + static_cast<std::int64_t>(index)
-            )
-        );
-    }
+    votes.push_back(
+        consensus::ValidatorVoteBuilder::buildApprovalVote(
+            runtime.validatorRegistry(),
+            block,
+            consensusRound,
+            timestamp,
+            localValidatorSigner
+        )
+    );
 
     return votes;
 }

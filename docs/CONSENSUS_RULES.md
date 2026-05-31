@@ -14,7 +14,7 @@ the same block under the configured quorum threshold. Finality means the block
 has a valid quorum certificate, has been accepted by the finalizer and has been
 persisted with an auditable finalized record.
 
-Current localnet uses deterministic local votes through the development
-signature provider. That is acceptable only for localnet. Future testnet and
-mainnet configs must refuse startup without a real signature provider and key
-store.
+Current localnet signs deterministic local votes through `Signer` and
+`LocalSignatureProvider`. The provider is temporary and acceptable only for
+localnet. Future testnet and mainnet configs must refuse startup without a real
+signature provider and key store.
