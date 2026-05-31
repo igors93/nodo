@@ -82,6 +82,11 @@ add_executable(nodo
     apps/cli/main.cpp
 )
 
+set_target_properties(nodo
+    PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build"
+)
+
 target_link_libraries(nodo
     PRIVATE
         nodo_core
