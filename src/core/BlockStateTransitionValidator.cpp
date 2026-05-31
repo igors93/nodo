@@ -80,6 +80,25 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
     const Blockchain& blockchain,
     const Block& candidateBlock
 ) {
+    return validateCandidateBlock(
+        blockchain,
+        candidateBlock,
+        0
+    );
+}
+
+BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
+    const Blockchain& blockchain,
+    const Block& candidateBlock,
+    std::int64_t minimumFeeRawUnits
+) {
+    if (minimumFeeRawUnits < 0) {
+        return BlockValidationResult::rejected(
+            BlockValidationStatus::INVALID_TRANSACTION,
+            "Minimum fee cannot be negative."
+        );
+    }
+
     if (blockchain.empty() ||
         !blockchain.isValid()) {
         return BlockValidationResult::rejected(
@@ -137,6 +156,13 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
                     return BlockValidationResult::rejected(
                         BlockValidationStatus::INVALID_TRANSACTION,
                         "Candidate block contains an invalid transaction ledger payload."
+                    );
+                }
+
+                if (transaction.fee().rawUnits() < minimumFeeRawUnits) {
+                    return BlockValidationResult::rejected(
+                        BlockValidationStatus::INVALID_TRANSACTION,
+                        "Candidate block contains a transaction below the network minimum fee."
                     );
                 }
 

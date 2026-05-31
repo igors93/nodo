@@ -21,7 +21,8 @@ public:
         std::string provider,
         PublicKey publicKey,
         std::string address,
-        std::int64_t createdAt
+        std::int64_t createdAt,
+        std::string networkProfile = "localnet"
     );
 
     const std::string& keyId() const;
@@ -30,7 +31,9 @@ public:
     const PublicKey& publicKey() const;
     const std::string& address() const;
     std::int64_t createdAt() const;
+    const std::string& networkProfile() const;
 
+    bool isLocalnetOnly() const;
     bool isValid() const;
     std::string serializePublic() const;
 
@@ -41,6 +44,7 @@ private:
     PublicKey m_publicKey;
     std::string m_address;
     std::int64_t m_createdAt;
+    std::string m_networkProfile;
 };
 
 enum class KeyStoreStatus {
@@ -140,6 +144,9 @@ class KeyStore {
 public:
     static constexpr const char* LOCAL_PROVIDER =
         "LOCAL_DETERMINISTIC_PROVIDER_V1";
+
+    static constexpr const char* LOCAL_NETWORK_PROFILE =
+        "localnet";
 
     static KeyStoreCreateResult createLocalKey(
         const std::filesystem::path& keysDirectory,

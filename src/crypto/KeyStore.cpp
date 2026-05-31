@@ -13,8 +13,11 @@ namespace nodo::crypto {
 
 namespace {
 
-constexpr const char* KEY_FILE_VERSION =
+constexpr const char* KEY_FILE_VERSION_V1 =
     "NODO_KEY_FILE_V1";
+
+constexpr const char* KEY_FILE_VERSION_V2 =
+    "NODO_KEY_FILE_V2";
 
 constexpr const char* KEY_INDEX_VERSION =
     "NODO_KEY_INDEX_V1";
@@ -45,6 +48,53 @@ bool isSafeScalar(
     return true;
 }
 
+serialization::KeyValueFileDocument parseKeyFileDocument(
+    const std::string& contents
+) {
+    try {
+        serialization::KeyValueFileDocument document =
+            serialization::KeyValueFileCodec::parse(
+                contents,
+                KEY_FILE_VERSION_V2
+            );
+
+        document.requireOnlyFields(
+            {
+                "keyId",
+                "algorithm",
+                "provider",
+                "networkProfile",
+                "publicKeyMaterial",
+                "privateKeyMaterial",
+                "address",
+                "createdAt"
+            }
+        );
+
+        return document;
+    } catch (const std::exception&) {
+        serialization::KeyValueFileDocument document =
+            serialization::KeyValueFileCodec::parse(
+                contents,
+                KEY_FILE_VERSION_V1
+            );
+
+        document.requireOnlyFields(
+            {
+                "keyId",
+                "algorithm",
+                "provider",
+                "publicKeyMaterial",
+                "privateKeyMaterial",
+                "address",
+                "createdAt"
+            }
+        );
+
+        return document;
+    }
+}
+
 } // namespace
 
 StoredKeyMetadata::StoredKeyMetadata()
@@ -53,7 +103,8 @@ StoredKeyMetadata::StoredKeyMetadata()
       m_provider(""),
       m_publicKey(),
       m_address(""),
-      m_createdAt(0) {}
+      m_createdAt(0),
+      m_networkProfile("") {}
 
 StoredKeyMetadata::StoredKeyMetadata(
     std::string keyId,
@@ -61,14 +112,16 @@ StoredKeyMetadata::StoredKeyMetadata(
     std::string provider,
     PublicKey publicKey,
     std::string address,
-    std::int64_t createdAt
+    std::int64_t createdAt,
+    std::string networkProfile
 )
     : m_keyId(std::move(keyId)),
       m_algorithm(algorithm),
       m_provider(std::move(provider)),
       m_publicKey(std::move(publicKey)),
       m_address(std::move(address)),
-      m_createdAt(createdAt) {}
+      m_createdAt(createdAt),
+      m_networkProfile(std::move(networkProfile)) {}
 
 const std::string& StoredKeyMetadata::keyId() const {
     return m_keyId;
@@ -94,9 +147,20 @@ std::int64_t StoredKeyMetadata::createdAt() const {
     return m_createdAt;
 }
 
+const std::string& StoredKeyMetadata::networkProfile() const {
+    return m_networkProfile;
+}
+
+bool StoredKeyMetadata::isLocalnetOnly() const {
+    return m_networkProfile == KeyStore::LOCAL_NETWORK_PROFILE &&
+           m_provider == KeyStore::LOCAL_PROVIDER &&
+           isDevelopmentOnlyAlgorithm(m_algorithm);
+}
+
 bool StoredKeyMetadata::isValid() const {
     if (!KeyStore::isSafeKeyId(m_keyId) ||
         !isSafeScalar(m_provider) ||
+        !isSafeScalar(m_networkProfile) ||
         !m_publicKey.isValid() ||
         !isSafeScalar(m_publicKey.keyMaterial()) ||
         !isSafeScalar(m_address) ||
@@ -105,6 +169,10 @@ bool StoredKeyMetadata::isValid() const {
     }
 
     if (m_publicKey.algorithm() != m_algorithm) {
+        return false;
+    }
+
+    if (!isLocalnetOnly()) {
         return false;
     }
 
@@ -122,6 +190,7 @@ std::string StoredKeyMetadata::serializePublic() const {
         << "keyId=" << m_keyId
         << ";algorithm=" << cryptoAlgorithmToString(m_algorithm)
         << ";provider=" << m_provider
+        << ";networkProfile=" << m_networkProfile
         << ";publicKeyFingerprint=" << m_publicKey.fingerprint()
         << ";address=" << m_address
         << ";createdAt=" << m_createdAt
@@ -333,7 +402,8 @@ KeyStoreCreateResult KeyStore::createLocalKey(
             LOCAL_PROVIDER,
             keyPair.publicKey(),
             keyPair.address().value(),
-            createdAt
+            createdAt,
+            LOCAL_NETWORK_PROFILE
         );
 
         if (!metadata.isValid()) {
@@ -510,11 +580,12 @@ std::string KeyStore::keyFileContents(
     std::int64_t createdAt
 ) {
     return serialization::KeyValueFileCodec::serialize(
-        KEY_FILE_VERSION,
+        KEY_FILE_VERSION_V2,
         {
             {"keyId", keyId},
             {"algorithm", cryptoAlgorithmToString(keyPair.algorithm())},
             {"provider", LOCAL_PROVIDER},
+            {"networkProfile", LOCAL_NETWORK_PROFILE},
             {"publicKeyMaterial", keyPair.publicKey().keyMaterial()},
             {"privateKeyMaterial", keyPair.privateKeyForSigningOnly().keyMaterialForSigningOnly()},
             {"address", keyPair.address().value()},
@@ -528,22 +599,7 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
     const std::string& contents
 ) {
     const serialization::KeyValueFileDocument document =
-        serialization::KeyValueFileCodec::parse(
-            contents,
-            KEY_FILE_VERSION
-        );
-
-    document.requireOnlyFields(
-        {
-            "keyId",
-            "algorithm",
-            "provider",
-            "publicKeyMaterial",
-            "privateKeyMaterial",
-            "address",
-            "createdAt"
-        }
-    );
+        parseKeyFileDocument(contents);
 
     if (document.requireField("keyId") != keyId) {
         return KeyStoreLoadResult::rejected(
@@ -564,6 +620,11 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
         );
     }
 
+    const std::string networkProfile =
+        document.hasField("networkProfile")
+            ? document.requireField("networkProfile")
+            : LOCAL_NETWORK_PROFILE;
+
     const KeyPair keyPair(
         PublicKey(
             algorithm,
@@ -581,14 +642,15 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
         document.requireField("provider"),
         keyPair.publicKey(),
         document.requireField("address"),
-        std::stoll(document.requireField("createdAt"))
+        std::stoll(document.requireField("createdAt")),
+        networkProfile
     );
 
     if (!keyPair.isValid() ||
         !metadata.isValid()) {
         return KeyStoreLoadResult::rejected(
             KeyStoreStatus::INVALID_INPUT,
-            "Parsed key file is invalid."
+            "Parsed key file is invalid or not localnet-only."
         );
     }
 

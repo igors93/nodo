@@ -4,6 +4,7 @@
 #include "core/Block.hpp"
 #include "core/Blockchain.hpp"
 
+#include <cstdint>
 #include <string>
 
 namespace nodo::core {
@@ -47,16 +48,22 @@ private:
 /*
  * BlockStateTransitionValidator is the protocol gate before validator votes.
  *
- * This first implementation validates the deterministic chain transition that
- * can be audited from the current block and ledger model. It intentionally does
- * not mutate state; richer balance, nonce and coin-lot checks can be added here
- * without changing the consensus pipeline shape.
+ * The validator checks deterministic chain-transition rules that can be audited
+ * from the current block and ledger model. It does not mutate state; richer
+ * balance, nonce, supply and coin-lot checks can be added here without changing
+ * the consensus pipeline shape.
  */
 class BlockStateTransitionValidator {
 public:
     static BlockValidationResult validateCandidateBlock(
         const Blockchain& blockchain,
         const Block& candidateBlock
+    );
+
+    static BlockValidationResult validateCandidateBlock(
+        const Blockchain& blockchain,
+        const Block& candidateBlock,
+        std::int64_t minimumFeeRawUnits
     );
 };
 

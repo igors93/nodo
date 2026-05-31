@@ -5,11 +5,29 @@
 #include "core/BlockStateTransitionValidator.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
 
 namespace nodo::node {
+
+namespace {
+
+std::int64_t minimumFeeRawUnitsForRuntime(
+    const NodeRuntime& runtime
+) {
+    const std::uint64_t minimumFee =
+        runtime.config().genesisConfig().networkParameters().minimumFeeRawUnits();
+
+    if (minimumFee > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+
+    return static_cast<std::int64_t>(minimumFee);
+}
+
+} // namespace
 
 RuntimeBlockPipelineConfig::RuntimeBlockPipelineConfig()
     : m_maxTransactionsPerBlock(1000),
@@ -232,7 +250,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     const core::BlockValidationResult transitionValidation =
         core::BlockStateTransitionValidator::validateCandidateBlock(
             runtime.blockchain(),
-            production.block()
+            production.block(),
+            minimumFeeRawUnitsForRuntime(runtime)
         );
 
     if (!transitionValidation.accepted()) {

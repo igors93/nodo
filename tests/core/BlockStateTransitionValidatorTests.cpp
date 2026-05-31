@@ -32,14 +32,15 @@ void requireCondition(
 }
 
 core::Transaction transaction(
-    const std::string& nonce
+    const std::string& nonce,
+    std::int64_t feeRawUnits = 1
 ) {
     core::Transaction tx(
         core::TransactionType::TRANSFER,
         "validator-test-sender",
         "validator-test-recipient",
         utils::Amount::fromRawUnits(100),
-        utils::Amount::fromRawUnits(1),
+        utils::Amount::fromRawUnits(feeRawUnits),
         static_cast<std::uint64_t>(std::stoull(nonce)),
         kTimestamp
     );
@@ -175,6 +176,62 @@ void testRejectsDuplicateLedgerSource() {
     );
 }
 
+void testRejectsTransactionBelowMinimumFee() {
+    const core::Blockchain blockchain =
+        chain();
+
+    const core::Transaction tx =
+        transaction("2", 4);
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            5
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_TRANSACTION &&
+        result.reason().find("minimum fee") != std::string::npos,
+        "Candidate block with transaction below minimum fee should be rejected."
+    );
+}
+
+void testAcceptsTransactionAtMinimumFee() {
+    const core::Blockchain blockchain =
+        chain();
+
+    const core::Transaction tx =
+        transaction("2", 5);
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            5
+        );
+
+    requireCondition(
+        result.accepted(),
+        "Candidate block with transaction at minimum fee should be accepted."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -182,6 +239,8 @@ int main() {
         testAcceptsAppendableCandidate();
         testRejectsWrongPreviousHash();
         testRejectsDuplicateLedgerSource();
+        testRejectsTransactionBelowMinimumFee();
+        testAcceptsTransactionAtMinimumFee();
 
         std::cout << "Nodo block state transition validator tests passed.\n";
         return 0;

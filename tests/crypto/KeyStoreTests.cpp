@@ -58,6 +58,20 @@ void testCreateLoadAndListKey() {
         "Key creation should succeed."
     );
 
+    requireCondition(
+        created.metadata().networkProfile() == KeyStore::LOCAL_NETWORK_PROFILE &&
+        created.metadata().isLocalnetOnly(),
+        "Created key should be marked as localnet-only."
+    );
+
+    const std::string publicMetadata =
+        created.metadata().serializePublic();
+
+    requireCondition(
+        publicMetadata.find("privateKeyMaterial") == std::string::npos,
+        "Public key metadata must not expose private key material."
+    );
+
     const auto duplicate =
         KeyStore::createLocalKey(
             path,
@@ -83,6 +97,12 @@ void testCreateLoadAndListKey() {
         "Stored key should load with matching public metadata."
     );
 
+    requireCondition(
+        loaded.metadata().networkProfile() == KeyStore::LOCAL_NETWORK_PROFILE &&
+        loaded.metadata().isLocalnetOnly(),
+        "Loaded key should stay marked as localnet-only."
+    );
+
     const LocalSignatureProvider provider;
     const Signer signer(
         loaded.keyPair(),
@@ -100,7 +120,8 @@ void testCreateLoadAndListKey() {
     requireCondition(
         listed.loaded() &&
         listed.keys().size() == 1U &&
-        listed.keys().front().keyId() == "local-validator",
+        listed.keys().front().keyId() == "local-validator" &&
+        listed.keys().front().networkProfile() == KeyStore::LOCAL_NETWORK_PROFILE,
         "Key listing should be deterministic and public-only."
     );
 
