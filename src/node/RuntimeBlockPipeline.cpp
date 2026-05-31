@@ -285,6 +285,55 @@ bool slashingEvidencePlanIsValid(
     }
 }
 
+bool cryptographicSlashingPlanIsValid(
+    std::uint64_t blockHeight,
+    const consensus::QuorumCertificate& certificate,
+    const std::vector<LockedStakePosition>& lockedStakePositions,
+    const std::vector<CryptographicSlashingEvidenceRecord>& evidenceRecords,
+    const std::vector<StakePenaltyRecord>& penaltyRecords,
+    const CryptographicSlashingSummary& summary
+) {
+    try {
+        if (evidenceRecords.empty() && penaltyRecords.empty()) {
+            const CryptographicSlashingSummary expectedSummary =
+                CryptographicSlashing::buildSummary(
+                    blockHeight,
+                    {},
+                    {}
+                );
+
+            return CryptographicSlashing::sameSummary(
+                expectedSummary,
+                summary
+            );
+        }
+
+        const std::vector<CryptographicSlashingEvidenceRecord> expectedEvidence =
+            CryptographicSlashing::buildEvidenceRecordsFromCertifiedVotes(
+                certificate.votes()
+            );
+
+        const std::vector<StakePenaltyRecord> expectedPenalties =
+            CryptographicSlashing::buildStakePenaltyRecords(
+                expectedEvidence,
+                lockedStakePositions
+            );
+
+        const CryptographicSlashingSummary expectedSummary =
+            CryptographicSlashing::buildSummary(
+                blockHeight,
+                expectedEvidence,
+                expectedPenalties
+            );
+
+        return CryptographicSlashing::sameEvidenceRecords(expectedEvidence, evidenceRecords) &&
+               CryptographicSlashing::sameStakePenaltyRecords(expectedPenalties, penaltyRecords) &&
+               CryptographicSlashing::sameSummary(expectedSummary, summary);
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 bool controlledIssuancePlanIsValid(
     const InflationEpochSnapshot& epoch,
     const MintAuthorizationRecord& authorization,
@@ -460,7 +509,10 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_treasuryFeeRecord(TreasuryFeeRecord::notEvaluated()),
       m_slashingEvidenceRecords(),
       m_slashingPreparationRecords(),
-      m_slashingEvidenceSummary(SlashingEvidenceSummary::notEvaluated()) {}
+      m_slashingEvidenceSummary(SlashingEvidenceSummary::notEvaluated()),
+      m_cryptographicSlashingEvidenceRecords(),
+      m_stakePenaltyRecords(),
+      m_cryptographicSlashingSummary(CryptographicSlashingSummary::notEvaluated()) {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -955,6 +1007,76 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     std::vector<SlashingPreparationRecord> slashingPreparationRecords,
     SlashingEvidenceSummary slashingEvidenceSummary
 ) {
+    return finalized(
+        std::move(block),
+        std::move(certificate),
+        std::move(finalizedRecord),
+        std::move(finalizedTransactionIds),
+        std::move(postStateRoot),
+        totalFee,
+        std::move(rewardDistributions),
+        std::move(lockedStakePositions),
+        std::move(securityScoreRecords),
+        std::move(securityCheckpoints),
+        std::move(validatorRiskAssessments),
+        std::move(validatorContainmentDecisions),
+        std::move(validatorNetworkPolicies),
+        std::move(monetaryFirewallAudit),
+        std::move(genesisTreasurySnapshot),
+        std::move(protectionRewardBudget),
+        std::move(protectionRewardGrants),
+        std::move(protectionWorkRecords),
+        std::move(protectionRewardSummary),
+        std::move(protectionRewardSettlements),
+        std::move(inflationEpochSnapshot),
+        std::move(mintAuthorizationRecord),
+        std::move(supplyExpansionRecord),
+        std::move(feeEconomicBalance),
+        std::move(feeBurnRecord),
+        std::move(treasuryFeeRecord),
+        std::move(slashingEvidenceRecords),
+        std::move(slashingPreparationRecords),
+        std::move(slashingEvidenceSummary),
+        {},
+        {},
+        CryptographicSlashingSummary::notEvaluated()
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions,
+    std::vector<LockedStakePosition> lockedStakePositions,
+    std::vector<SecurityScoreRecord> securityScoreRecords,
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+    std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+    MonetaryFirewallAudit monetaryFirewallAudit,
+    GenesisTreasurySnapshot genesisTreasurySnapshot,
+    ProtectionRewardBudget protectionRewardBudget,
+    std::vector<ProtectionRewardGrant> protectionRewardGrants,
+    std::vector<ProtectionWorkRecord> protectionWorkRecords,
+    ProtectionRewardSummary protectionRewardSummary,
+    std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+    InflationEpochSnapshot inflationEpochSnapshot,
+    MintAuthorizationRecord mintAuthorizationRecord,
+    SupplyExpansionRecord supplyExpansionRecord,
+    FeeEconomicBalance feeEconomicBalance,
+    FeeBurnRecord feeBurnRecord,
+    TreasuryFeeRecord treasuryFeeRecord,
+    std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+    std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+    SlashingEvidenceSummary slashingEvidenceSummary,
+    std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
+    std::vector<StakePenaltyRecord> stakePenaltyRecords,
+    CryptographicSlashingSummary cryptographicSlashingSummary
+) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
     result.m_reason = "";
@@ -987,6 +1109,19 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_slashingEvidenceRecords = std::move(slashingEvidenceRecords);
     result.m_slashingPreparationRecords = std::move(slashingPreparationRecords);
     result.m_slashingEvidenceSummary = std::move(slashingEvidenceSummary);
+    result.m_cryptographicSlashingEvidenceRecords = std::move(cryptographicSlashingEvidenceRecords);
+    result.m_stakePenaltyRecords = std::move(stakePenaltyRecords);
+    result.m_cryptographicSlashingSummary = std::move(cryptographicSlashingSummary);
+
+    if (result.m_cryptographicSlashingSummary.status() == "NOT_EVALUATED") {
+        result.m_cryptographicSlashingSummary =
+            CryptographicSlashing::buildSummary(
+                result.m_block->index(),
+                result.m_cryptographicSlashingEvidenceRecords,
+                result.m_stakePenaltyRecords
+            );
+    }
+
     return result;
 }
 
@@ -1061,6 +1196,14 @@ bool RuntimeBlockPipelineResult::finalized() const {
                m_slashingEvidenceRecords,
                m_slashingPreparationRecords,
                m_slashingEvidenceSummary
+           ) &&
+           cryptographicSlashingPlanIsValid(
+               m_block->index(),
+               m_certificate,
+               m_lockedStakePositions,
+               m_cryptographicSlashingEvidenceRecords,
+               m_stakePenaltyRecords,
+               m_cryptographicSlashingSummary
            );
 }
 
@@ -1184,6 +1327,18 @@ const SlashingEvidenceSummary& RuntimeBlockPipelineResult::slashingEvidenceSumma
     return m_slashingEvidenceSummary;
 }
 
+const std::vector<CryptographicSlashingEvidenceRecord>& RuntimeBlockPipelineResult::cryptographicSlashingEvidenceRecords() const {
+    return m_cryptographicSlashingEvidenceRecords;
+}
+
+const std::vector<StakePenaltyRecord>& RuntimeBlockPipelineResult::stakePenaltyRecords() const {
+    return m_stakePenaltyRecords;
+}
+
+const CryptographicSlashingSummary& RuntimeBlockPipelineResult::cryptographicSlashingSummary() const {
+    return m_cryptographicSlashingSummary;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -1217,6 +1372,9 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";slashingEvidenceRecordCount=" << m_slashingEvidenceRecords.size()
         << ";slashingPreparationRecordCount=" << m_slashingPreparationRecords.size()
         << ";slashingEvidenceSummaryStatus=" << m_slashingEvidenceSummary.status()
+        << ";cryptographicSlashingEvidenceCount=" << m_cryptographicSlashingEvidenceRecords.size()
+        << ";stakePenaltyRecordCount=" << m_stakePenaltyRecords.size()
+        << ";cryptographicSlashingSummaryStatus=" << m_cryptographicSlashingSummary.status()
         << "}";
 
     return oss.str();
@@ -1367,6 +1525,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     std::vector<SlashingEvidenceRecord> slashingEvidenceRecords;
     std::vector<SlashingPreparationRecord> slashingPreparationRecords;
     SlashingEvidenceSummary slashingEvidenceSummary;
+    std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords;
+    std::vector<StakePenaltyRecord> stakePenaltyRecords;
+    CryptographicSlashingSummary cryptographicSlashingSummary;
 
     try {
         feeEconomicBalance =
@@ -1439,8 +1600,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         genesisTreasurySnapshot =
             ProtectionTreasury::buildGenesisTreasurySnapshot(
                 runtime.config().genesisConfig(),
-                production.block().index(),
-                treasuryFeeRecord.treasuryAmount()
+                production.block().index()
             );
 
         protectionRewardBudget =
@@ -1513,6 +1673,24 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
                 slashingEvidenceRecords,
                 slashingPreparationRecords
             );
+
+        cryptographicSlashingEvidenceRecords =
+            CryptographicSlashing::buildEvidenceRecordsFromCertifiedVotes(
+                certificate.certificate().votes()
+            );
+
+        stakePenaltyRecords =
+            CryptographicSlashing::buildStakePenaltyRecords(
+                cryptographicSlashingEvidenceRecords,
+                lockedStakePositions
+            );
+
+        cryptographicSlashingSummary =
+            CryptographicSlashing::buildSummary(
+                production.block().index(),
+                cryptographicSlashingEvidenceRecords,
+                stakePenaltyRecords
+            );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(
             RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
@@ -1577,7 +1755,10 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         treasuryFeeRecord,
         slashingEvidenceRecords,
         slashingPreparationRecords,
-        slashingEvidenceSummary
+        slashingEvidenceSummary,
+        cryptographicSlashingEvidenceRecords,
+        stakePenaltyRecords,
+        cryptographicSlashingSummary
     );
 }
 

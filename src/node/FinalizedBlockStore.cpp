@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V16";
+    "NODO_FINALIZED_BLOCK_V17";
 
 } // namespace
 
@@ -200,6 +200,13 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
         );
     }
 
+    if (!pipelineResult.cryptographicSlashingSummary().active()) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::INVALID_PIPELINE_RESULT,
+            "Runtime block pipeline result failed cryptographic slashing audit."
+        );
+    }
+
     const NodeDataDirectoryReadResult existingManifest =
         NodeDataDirectory::loadManifest(directoryConfig);
 
@@ -350,6 +357,9 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"slashingEvidenceRecordCount", std::to_string(pipelineResult.slashingEvidenceRecords().size())},
         {"slashingPreparationRecordCount", std::to_string(pipelineResult.slashingPreparationRecords().size())},
         {"slashingEvidenceSummaryStatus", pipelineResult.slashingEvidenceSummary().status()},
+        {"cryptographicSlashingEvidenceCount", std::to_string(pipelineResult.cryptographicSlashingEvidenceRecords().size())},
+        {"stakePenaltyRecordCount", std::to_string(pipelineResult.stakePenaltyRecords().size())},
+        {"cryptographicSlashingSummaryStatus", pipelineResult.cryptographicSlashingSummary().status()},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -699,6 +709,49 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
     fields.emplace_back("slashingSummary.preparedPenaltyTotalRawUnits", std::to_string(evidenceSummary.preparedPenaltyTotal().rawUnits()));
     fields.emplace_back("slashingSummary.reason", evidenceSummary.reason());
     fields.emplace_back("slashingSummary.sourcePreparationDigest", evidenceSummary.sourcePreparationDigest());
+
+    const std::vector<CryptographicSlashingEvidenceRecord>& cryptoEvidenceRecords =
+        pipelineResult.cryptographicSlashingEvidenceRecords();
+
+    for (std::size_t index = 0; index < cryptoEvidenceRecords.size(); ++index) {
+        const std::string prefix = "cryptographicSlashingEvidence." + std::to_string(index) + ".";
+        fields.emplace_back(prefix + "validatorAddress", cryptoEvidenceRecords[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(cryptoEvidenceRecords[index].blockHeight()));
+        fields.emplace_back(prefix + "round", std::to_string(cryptoEvidenceRecords[index].round()));
+        fields.emplace_back(prefix + "evidenceType", cryptoEvidenceRecords[index].evidenceType());
+        fields.emplace_back(prefix + "severityScore", std::to_string(cryptoEvidenceRecords[index].severityScore()));
+        fields.emplace_back(prefix + "penaltyBasisPoints", std::to_string(cryptoEvidenceRecords[index].penaltyBasisPoints()));
+        fields.emplace_back(prefix + "firstVoteDigest", cryptoEvidenceRecords[index].firstVoteDigest());
+        fields.emplace_back(prefix + "secondVoteDigest", cryptoEvidenceRecords[index].secondVoteDigest());
+        fields.emplace_back(prefix + "reason", cryptoEvidenceRecords[index].reason());
+        fields.emplace_back(prefix + "sourceEvidenceDigest", cryptoEvidenceRecords[index].sourceEvidenceDigest());
+    }
+
+    const std::vector<StakePenaltyRecord>& stakePenaltyRecords =
+        pipelineResult.stakePenaltyRecords();
+
+    for (std::size_t index = 0; index < stakePenaltyRecords.size(); ++index) {
+        const std::string prefix = "stakePenalty." + std::to_string(index) + ".";
+        fields.emplace_back(prefix + "validatorAddress", stakePenaltyRecords[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(stakePenaltyRecords[index].blockHeight()));
+        fields.emplace_back(prefix + "lockedStakeBeforeRawUnits", std::to_string(stakePenaltyRecords[index].lockedStakeBefore().rawUnits()));
+        fields.emplace_back(prefix + "penaltyAmountRawUnits", std::to_string(stakePenaltyRecords[index].penaltyAmount().rawUnits()));
+        fields.emplace_back(prefix + "lockedStakeAfterRawUnits", std::to_string(stakePenaltyRecords[index].lockedStakeAfter().rawUnits()));
+        fields.emplace_back(prefix + "evidenceCount", std::to_string(stakePenaltyRecords[index].evidenceCount()));
+        fields.emplace_back(prefix + "reason", stakePenaltyRecords[index].reason());
+        fields.emplace_back(prefix + "sourceEvidenceDigest", stakePenaltyRecords[index].sourceEvidenceDigest());
+    }
+
+    const CryptographicSlashingSummary& cryptoSlashingSummary =
+        pipelineResult.cryptographicSlashingSummary();
+
+    fields.emplace_back("cryptographicSlashingSummary.blockHeight", std::to_string(cryptoSlashingSummary.blockHeight()));
+    fields.emplace_back("cryptographicSlashingSummary.evidenceCount", std::to_string(cryptoSlashingSummary.evidenceCount()));
+    fields.emplace_back("cryptographicSlashingSummary.slashableEvidenceCount", std::to_string(cryptoSlashingSummary.slashableEvidenceCount()));
+    fields.emplace_back("cryptographicSlashingSummary.maxSeverityScore", std::to_string(cryptoSlashingSummary.maxSeverityScore()));
+    fields.emplace_back("cryptographicSlashingSummary.penaltyTotalRawUnits", std::to_string(cryptoSlashingSummary.penaltyTotal().rawUnits()));
+    fields.emplace_back("cryptographicSlashingSummary.reason", cryptoSlashingSummary.reason());
+    fields.emplace_back("cryptographicSlashingSummary.sourcePenaltyDigest", cryptoSlashingSummary.sourcePenaltyDigest());
 
     fields.emplace_back(
         "block",

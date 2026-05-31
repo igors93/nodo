@@ -5,10 +5,10 @@
 #include "core/Transaction.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "core/TransactionType.hpp"
-#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
-#include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/KeyPair.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signer.hpp"
@@ -30,11 +30,11 @@ using nodo::config::GenesisConfig;
 using nodo::config::NetworkParameters;
 using nodo::core::Transaction;
 using nodo::core::TransactionType;
-using nodo::crypto::Bls12381SignatureProvider;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
-using nodo::crypto::Ed25519SignatureProvider;
 using nodo::crypto::KeyPair;
+using nodo::crypto::Bls12381SignatureProvider;
+using nodo::crypto::Ed25519SignatureProvider;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::SecurityContext;
@@ -345,6 +345,13 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should build slashing evidence review records."
     );
 
+    requireCondition(
+        pipeline.cryptographicSlashingSummary().active() &&
+        pipeline.cryptographicSlashingEvidenceRecords().empty() &&
+        pipeline.stakePenaltyRecords().empty(),
+        "Pipeline should build an active cryptographic slashing summary without inventing penalties."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -508,6 +515,14 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("slashingPreparation.0.reason=SLASHING_PREPARATION_REVIEW") != std::string::npos &&
         blockContents.find("slashingSummary.reason=SLASHING_EVIDENCE_SUMMARY") != std::string::npos,
         "Finalized block file should persist slashing evidence preparation records."
+    );
+
+    requireCondition(
+        blockContents.find("cryptographicSlashingSummaryStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("cryptographicSlashingEvidenceCount=0") != std::string::npos &&
+        blockContents.find("stakePenaltyRecordCount=0") != std::string::npos &&
+        blockContents.find("cryptographicSlashingSummary.reason=CRYPTOGRAPHIC_SLASHING_SUMMARY") != std::string::npos,
+        "Finalized block file should persist cryptographic slashing accounting records."
     );
 
     const auto loaded =

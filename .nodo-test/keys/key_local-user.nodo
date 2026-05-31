@@ -1,0 +1,11 @@
+NODO_KEY_FILE_V3
+keyId=local-user
+algorithm=CLASSIC_ED25519
+suite=NODO_CRYPTO_SUITE_V1
+keyType=user
+provider=OPENSSL_ED25519_PROVIDER_V1
+networkProfile=localnet
+publicKeyMaterial=c669fe484cd4f274c484e2c2d25d582f43a756ad600cb2c785ad9485a35fd918
+privateKeyMaterial=62bc565da537fb7121dd8c4db6612296609b01ee239c1de172bb192442ac80cc
+address=nodo1797a3f13918829bd81f6ad402d0a1f67000a2fc602b1ba6c
+createdAt=1780253823

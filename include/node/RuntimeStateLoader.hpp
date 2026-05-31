@@ -12,6 +12,7 @@
 #include "node/FeeEconomics.hpp"
 #include "node/ProtectionRewards.hpp"
 #include "node/SlashingEvidence.hpp"
+#include "node/CryptographicSlashing.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
@@ -114,6 +115,9 @@ public:
         std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
         std::vector<SlashingPreparationRecord> slashingPreparationRecords,
         SlashingEvidenceSummary slashingEvidenceSummary,
+        std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
+        std::vector<StakePenaltyRecord> stakePenaltyRecords,
+        CryptographicSlashingSummary cryptographicSlashingSummary,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -144,6 +148,9 @@ public:
     const std::vector<SlashingEvidenceRecord>& slashingEvidenceRecords() const;
     const std::vector<SlashingPreparationRecord>& slashingPreparationRecords() const;
     const SlashingEvidenceSummary& slashingEvidenceSummary() const;
+    const std::vector<CryptographicSlashingEvidenceRecord>& cryptographicSlashingEvidenceRecords() const;
+    const std::vector<StakePenaltyRecord>& stakePenaltyRecords() const;
+    const CryptographicSlashingSummary& cryptographicSlashingSummary() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -177,6 +184,9 @@ private:
     std::vector<SlashingEvidenceRecord> m_slashingEvidenceRecords;
     std::vector<SlashingPreparationRecord> m_slashingPreparationRecords;
     SlashingEvidenceSummary m_slashingEvidenceSummary;
+    std::vector<CryptographicSlashingEvidenceRecord> m_cryptographicSlashingEvidenceRecords;
+    std::vector<StakePenaltyRecord> m_stakePenaltyRecords;
+    CryptographicSlashingSummary m_cryptographicSlashingSummary;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };

@@ -1,0 +1,12 @@
+NODO_RUNTIME_MANIFEST_V1
+chainId=nodo-localnet-1
+networkName=nodo-localnet
+protocolVersion=nodo/0.1
+genesisConfigId=696fe9d65fbf5f22a23ac1033373f203cd13dc76c58bd7e74c13b4fbbcb01f6e
+latestBlockHeight=1
+latestBlockHash=e0f29419e1a2fbab556ef95b0c73b260f30d3235c3793c8528a2704a2012ba11
+latestStateRoot=f591d6b66bae805044ab87d7b057e610e6d3c5814ee9d1abfea79aa25e6eb459
+validatorCount=1
+peerCount=0
+createdAt=1780253814
+updatedAt=1780253874

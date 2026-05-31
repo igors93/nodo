@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V16";
+    "NODO_FINALIZED_BLOCK_V17";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -1017,6 +1017,77 @@ SlashingEvidenceSummary parseSlashingEvidenceSummary(
     return summary;
 }
 
+CryptographicSlashingEvidenceRecord parseCryptographicSlashingEvidenceRecord(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix = "cryptographicSlashingEvidence." + std::to_string(index) + ".";
+
+    CryptographicSlashingEvidenceRecord record(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(document.requireField(prefix + "blockHeight"), prefix + "blockHeight"),
+        parseU64Strict(document.requireField(prefix + "round"), prefix + "round"),
+        document.requireField(prefix + "evidenceType"),
+        parseU16Strict(document.requireField(prefix + "severityScore"), prefix + "severityScore"),
+        parseU32Strict(document.requireField(prefix + "penaltyBasisPoints"), prefix + "penaltyBasisPoints"),
+        document.requireField(prefix + "firstVoteDigest"),
+        document.requireField(prefix + "secondVoteDigest"),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourceEvidenceDigest")
+    );
+
+    if (!record.isValid()) {
+        throw std::invalid_argument("Finalized block cryptographic slashing evidence is invalid.");
+    }
+
+    return record;
+}
+
+StakePenaltyRecord parseStakePenaltyRecord(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix = "stakePenalty." + std::to_string(index) + ".";
+
+    StakePenaltyRecord record(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(document.requireField(prefix + "blockHeight"), prefix + "blockHeight"),
+        parseAmountStrict(document.requireField(prefix + "lockedStakeBeforeRawUnits"), prefix + "lockedStakeBeforeRawUnits"),
+        parseAmountStrict(document.requireField(prefix + "penaltyAmountRawUnits"), prefix + "penaltyAmountRawUnits"),
+        parseAmountStrict(document.requireField(prefix + "lockedStakeAfterRawUnits"), prefix + "lockedStakeAfterRawUnits"),
+        parseU64Strict(document.requireField(prefix + "evidenceCount"), prefix + "evidenceCount"),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourceEvidenceDigest")
+    );
+
+    if (!record.isValid()) {
+        throw std::invalid_argument("Finalized block stake penalty record is invalid.");
+    }
+
+    return record;
+}
+
+CryptographicSlashingSummary parseCryptographicSlashingSummary(
+    const serialization::KeyValueFileDocument& document
+) {
+    CryptographicSlashingSummary summary(
+        document.requireField("cryptographicSlashingSummaryStatus"),
+        parseU64Strict(document.requireField("cryptographicSlashingSummary.blockHeight"), "cryptographicSlashingSummary.blockHeight"),
+        parseU64Strict(document.requireField("cryptographicSlashingSummary.evidenceCount"), "cryptographicSlashingSummary.evidenceCount"),
+        parseU64Strict(document.requireField("cryptographicSlashingSummary.slashableEvidenceCount"), "cryptographicSlashingSummary.slashableEvidenceCount"),
+        parseU16Strict(document.requireField("cryptographicSlashingSummary.maxSeverityScore"), "cryptographicSlashingSummary.maxSeverityScore"),
+        parseAmountStrict(document.requireField("cryptographicSlashingSummary.penaltyTotalRawUnits"), "cryptographicSlashingSummary.penaltyTotalRawUnits"),
+        document.requireField("cryptographicSlashingSummary.reason"),
+        document.requireField("cryptographicSlashingSummary.sourcePenaltyDigest")
+    );
+
+    if (!summary.isValid()) {
+        throw std::invalid_argument("Finalized block cryptographic slashing summary is invalid.");
+    }
+
+    return summary;
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -1109,6 +1180,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_slashingEvidenceRecords(),
       m_slashingPreparationRecords(),
       m_slashingEvidenceSummary(SlashingEvidenceSummary::notEvaluated()),
+      m_cryptographicSlashingEvidenceRecords(),
+      m_stakePenaltyRecords(),
+      m_cryptographicSlashingSummary(CryptographicSlashingSummary::notEvaluated()),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -1139,6 +1213,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
     std::vector<SlashingPreparationRecord> slashingPreparationRecords,
     SlashingEvidenceSummary slashingEvidenceSummary,
+    std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
+    std::vector<StakePenaltyRecord> stakePenaltyRecords,
+    CryptographicSlashingSummary cryptographicSlashingSummary,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -1168,6 +1245,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_slashingEvidenceRecords(std::move(slashingEvidenceRecords)),
       m_slashingPreparationRecords(std::move(slashingPreparationRecords)),
       m_slashingEvidenceSummary(std::move(slashingEvidenceSummary)),
+      m_cryptographicSlashingEvidenceRecords(std::move(cryptographicSlashingEvidenceRecords)),
+      m_stakePenaltyRecords(std::move(stakePenaltyRecords)),
+      m_cryptographicSlashingSummary(std::move(cryptographicSlashingSummary)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -1277,6 +1357,18 @@ const std::vector<SlashingPreparationRecord>& FinalizedBlockArtifact::slashingPr
 
 const SlashingEvidenceSummary& FinalizedBlockArtifact::slashingEvidenceSummary() const {
     return m_slashingEvidenceSummary;
+}
+
+const std::vector<CryptographicSlashingEvidenceRecord>& FinalizedBlockArtifact::cryptographicSlashingEvidenceRecords() const {
+    return m_cryptographicSlashingEvidenceRecords;
+}
+
+const std::vector<StakePenaltyRecord>& FinalizedBlockArtifact::stakePenaltyRecords() const {
+    return m_stakePenaltyRecords;
+}
+
+const CryptographicSlashingSummary& FinalizedBlockArtifact::cryptographicSlashingSummary() const {
+    return m_cryptographicSlashingSummary;
 }
 
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
@@ -1458,6 +1550,27 @@ bool FinalizedBlockArtifact::isValid() const {
                        m_slashingPreparationRecords
                    ),
                    m_slashingEvidenceSummary
+               ) &&
+               CryptographicSlashing::sameEvidenceRecords(
+                   CryptographicSlashing::buildEvidenceRecordsFromCertifiedVotes(
+                       m_quorumCertificate.votes()
+                   ),
+                   m_cryptographicSlashingEvidenceRecords
+               ) &&
+               CryptographicSlashing::sameStakePenaltyRecords(
+                   CryptographicSlashing::buildStakePenaltyRecords(
+                       m_cryptographicSlashingEvidenceRecords,
+                       m_lockedStakePositions
+                   ),
+                   m_stakePenaltyRecords
+               ) &&
+               CryptographicSlashing::sameSummary(
+                   CryptographicSlashing::buildSummary(
+                       m_block->index(),
+                       m_cryptographicSlashingEvidenceRecords,
+                       m_stakePenaltyRecords
+                   ),
+                   m_cryptographicSlashingSummary
                );
     } catch (const std::exception&) {
         return false;
@@ -1494,6 +1607,9 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";slashingEvidenceRecordCount=" << m_slashingEvidenceRecords.size()
         << ";slashingPreparationRecordCount=" << m_slashingPreparationRecords.size()
         << ";slashingEvidenceSummaryStatus=" << m_slashingEvidenceSummary.status()
+        << ";cryptographicSlashingEvidenceCount=" << m_cryptographicSlashingEvidenceRecords.size()
+        << ";stakePenaltyRecordCount=" << m_stakePenaltyRecords.size()
+        << ";cryptographicSlashingSummaryStatus=" << m_cryptographicSlashingSummary.status()
         << "}";
 
     return oss.str();
@@ -1585,6 +1701,8 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const std::size_t protectionRewardSettlementCount = static_cast<std::size_t>(parseU64Strict(document.requireField("protectionRewardSettlementCount"), "protectionRewardSettlementCount"));
     const std::size_t slashingEvidenceRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("slashingEvidenceRecordCount"), "slashingEvidenceRecordCount"));
     const std::size_t slashingPreparationRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("slashingPreparationRecordCount"), "slashingPreparationRecordCount"));
+    const std::size_t cryptographicSlashingEvidenceCount = static_cast<std::size_t>(parseU64Strict(document.requireField("cryptographicSlashingEvidenceCount"), "cryptographicSlashingEvidenceCount"));
+    const std::size_t stakePenaltyRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("stakePenaltyRecordCount"), "stakePenaltyRecordCount"));
 
     std::set<std::string> allowedFields = {
         "blockIndex",
@@ -1615,6 +1733,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "slashingEvidenceRecordCount",
         "slashingPreparationRecordCount",
         "slashingEvidenceSummaryStatus",
+        "cryptographicSlashingEvidenceCount",
+        "stakePenaltyRecordCount",
+        "cryptographicSlashingSummaryStatus",
         "monetary.blockHeight",
         "monetary.supplyBeforeRawUnits",
         "monetary.mintedRawUnits",
@@ -1700,6 +1821,13 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "slashingSummary.preparedPenaltyTotalRawUnits",
         "slashingSummary.reason",
         "slashingSummary.sourcePreparationDigest",
+        "cryptographicSlashingSummary.blockHeight",
+        "cryptographicSlashingSummary.evidenceCount",
+        "cryptographicSlashingSummary.slashableEvidenceCount",
+        "cryptographicSlashingSummary.maxSeverityScore",
+        "cryptographicSlashingSummary.penaltyTotalRawUnits",
+        "cryptographicSlashingSummary.reason",
+        "cryptographicSlashingSummary.sourcePenaltyDigest",
         "timestamp",
         "recordCount",
         "block",
@@ -1862,16 +1990,43 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         allowedFields.insert(prefix + "sourceEvidenceDigest");
     }
 
+    for (std::size_t index = 0; index < cryptographicSlashingEvidenceCount; ++index) {
+        const std::string prefix = "cryptographicSlashingEvidence." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "round");
+        allowedFields.insert(prefix + "evidenceType");
+        allowedFields.insert(prefix + "severityScore");
+        allowedFields.insert(prefix + "penaltyBasisPoints");
+        allowedFields.insert(prefix + "firstVoteDigest");
+        allowedFields.insert(prefix + "secondVoteDigest");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourceEvidenceDigest");
+    }
+
+    for (std::size_t index = 0; index < stakePenaltyRecordCount; ++index) {
+        const std::string prefix = "stakePenalty." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "lockedStakeBeforeRawUnits");
+        allowedFields.insert(prefix + "penaltyAmountRawUnits");
+        allowedFields.insert(prefix + "lockedStakeAfterRawUnits");
+        allowedFields.insert(prefix + "evidenceCount");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourceEvidenceDigest");
+    }
+
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V16 stores explicit block fields, fee accounting, locked stake,
+     * V17 stores explicit block fields, fee accounting, locked stake,
      * security score records, checkpoints, risk assessments, containment decisions,
      * network policies, the monetary firewall audit, the initial protection
      * treasury reward plan, real protection reward settlements, controlled
-     * issuance authorization records, fee burn economics and slashing evidence
-     * preparation records. The canonical block serialization remains the
-     * integrity anchor for the block payload itself.
+     * issuance authorization records, fee burn economics, risk-based slashing
+     * preparation records and cryptographic slashing penalty accounting. The
+     * canonical block serialization remains the integrity anchor for the block
+     * payload itself.
      */
     const std::string serializedBlock = document.requireField("block");
     core::Block block = serialization::BlockCodec::deserialize(serializedBlock);
@@ -1987,6 +2142,21 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const SlashingEvidenceSummary slashingEvidenceSummary =
         parseSlashingEvidenceSummary(document);
 
+    std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords;
+    cryptographicSlashingEvidenceRecords.reserve(cryptographicSlashingEvidenceCount);
+    for (std::size_t evidenceIndex = 0; evidenceIndex < cryptographicSlashingEvidenceCount; ++evidenceIndex) {
+        cryptographicSlashingEvidenceRecords.push_back(parseCryptographicSlashingEvidenceRecord(document, evidenceIndex));
+    }
+
+    std::vector<StakePenaltyRecord> stakePenaltyRecords;
+    stakePenaltyRecords.reserve(stakePenaltyRecordCount);
+    for (std::size_t penaltyIndex = 0; penaltyIndex < stakePenaltyRecordCount; ++penaltyIndex) {
+        stakePenaltyRecords.push_back(parseStakePenaltyRecord(document, penaltyIndex));
+    }
+
+    const CryptographicSlashingSummary cryptographicSlashingSummary =
+        parseCryptographicSlashingSummary(document);
+
     const std::int64_t timestamp = parseI64Strict(document.requireField("timestamp"), "timestamp");
 
     const consensus::QuorumCertificate quorumCertificate =
@@ -2021,6 +2191,10 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     if (!finalizedRecord.matchesBlock(block) ||
         finalizedRecord.quorumCertificate().serialize() != quorumCertificate.serialize()) {
         throw std::invalid_argument("Finalized block record does not match block or quorum certificate.");
+    }
+
+    if (RewardDistributionCalculator::totalReward(rewardDistributions) != totalFee) {
+        throw std::invalid_argument("Finalized block reward distributions do not match total fees.");
     }
 
     if (!LockedStakePositionBuilder::samePositions(
@@ -2193,6 +2367,36 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block slashing evidence summary does not match rebuilt evidence.");
     }
 
+    const std::vector<CryptographicSlashingEvidenceRecord> expectedCryptographicEvidence =
+        CryptographicSlashing::buildEvidenceRecordsFromCertifiedVotes(
+            quorumCertificate.votes()
+        );
+
+    if (!CryptographicSlashing::sameEvidenceRecords(expectedCryptographicEvidence, cryptographicSlashingEvidenceRecords)) {
+        throw std::invalid_argument("Finalized block cryptographic slashing evidence does not match rebuilt vote evidence.");
+    }
+
+    const std::vector<StakePenaltyRecord> expectedStakePenalties =
+        CryptographicSlashing::buildStakePenaltyRecords(
+            expectedCryptographicEvidence,
+            lockedStakePositions
+        );
+
+    if (!CryptographicSlashing::sameStakePenaltyRecords(expectedStakePenalties, stakePenaltyRecords)) {
+        throw std::invalid_argument("Finalized block stake penalty records do not match rebuilt cryptographic evidence.");
+    }
+
+    const CryptographicSlashingSummary expectedCryptographicSlashingSummary =
+        CryptographicSlashing::buildSummary(
+            block.index(),
+            expectedCryptographicEvidence,
+            expectedStakePenalties
+        );
+
+    if (!CryptographicSlashing::sameSummary(expectedCryptographicSlashingSummary, cryptographicSlashingSummary)) {
+        throw std::invalid_argument("Finalized block cryptographic slashing summary does not match rebuilt evidence.");
+    }
+
     std::vector<std::pair<std::string, std::string>> canonicalFields = {
         {"blockIndex", document.requireField("blockIndex")},
         {"blockHash", document.requireField("blockHash")},
@@ -2222,6 +2426,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"slashingEvidenceRecordCount", std::to_string(slashingEvidenceRecords.size())},
         {"slashingPreparationRecordCount", std::to_string(slashingPreparationRecords.size())},
         {"slashingEvidenceSummaryStatus", slashingEvidenceSummary.status()},
+        {"cryptographicSlashingEvidenceCount", std::to_string(cryptographicSlashingEvidenceRecords.size())},
+        {"stakePenaltyRecordCount", std::to_string(stakePenaltyRecords.size())},
+        {"cryptographicSlashingSummaryStatus", cryptographicSlashingSummary.status()},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -2478,6 +2685,40 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     canonicalFields.emplace_back("slashingSummary.reason", slashingEvidenceSummary.reason());
     canonicalFields.emplace_back("slashingSummary.sourcePreparationDigest", slashingEvidenceSummary.sourcePreparationDigest());
 
+    for (std::size_t evidenceIndex = 0; evidenceIndex < cryptographicSlashingEvidenceRecords.size(); ++evidenceIndex) {
+        const std::string prefix = "cryptographicSlashingEvidence." + std::to_string(evidenceIndex) + ".";
+        canonicalFields.emplace_back(prefix + "validatorAddress", cryptographicSlashingEvidenceRecords[evidenceIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(cryptographicSlashingEvidenceRecords[evidenceIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "round", std::to_string(cryptographicSlashingEvidenceRecords[evidenceIndex].round()));
+        canonicalFields.emplace_back(prefix + "evidenceType", cryptographicSlashingEvidenceRecords[evidenceIndex].evidenceType());
+        canonicalFields.emplace_back(prefix + "severityScore", std::to_string(cryptographicSlashingEvidenceRecords[evidenceIndex].severityScore()));
+        canonicalFields.emplace_back(prefix + "penaltyBasisPoints", std::to_string(cryptographicSlashingEvidenceRecords[evidenceIndex].penaltyBasisPoints()));
+        canonicalFields.emplace_back(prefix + "firstVoteDigest", cryptographicSlashingEvidenceRecords[evidenceIndex].firstVoteDigest());
+        canonicalFields.emplace_back(prefix + "secondVoteDigest", cryptographicSlashingEvidenceRecords[evidenceIndex].secondVoteDigest());
+        canonicalFields.emplace_back(prefix + "reason", cryptographicSlashingEvidenceRecords[evidenceIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourceEvidenceDigest", cryptographicSlashingEvidenceRecords[evidenceIndex].sourceEvidenceDigest());
+    }
+
+    for (std::size_t penaltyIndex = 0; penaltyIndex < stakePenaltyRecords.size(); ++penaltyIndex) {
+        const std::string prefix = "stakePenalty." + std::to_string(penaltyIndex) + ".";
+        canonicalFields.emplace_back(prefix + "validatorAddress", stakePenaltyRecords[penaltyIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(stakePenaltyRecords[penaltyIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "lockedStakeBeforeRawUnits", std::to_string(stakePenaltyRecords[penaltyIndex].lockedStakeBefore().rawUnits()));
+        canonicalFields.emplace_back(prefix + "penaltyAmountRawUnits", std::to_string(stakePenaltyRecords[penaltyIndex].penaltyAmount().rawUnits()));
+        canonicalFields.emplace_back(prefix + "lockedStakeAfterRawUnits", std::to_string(stakePenaltyRecords[penaltyIndex].lockedStakeAfter().rawUnits()));
+        canonicalFields.emplace_back(prefix + "evidenceCount", std::to_string(stakePenaltyRecords[penaltyIndex].evidenceCount()));
+        canonicalFields.emplace_back(prefix + "reason", stakePenaltyRecords[penaltyIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourceEvidenceDigest", stakePenaltyRecords[penaltyIndex].sourceEvidenceDigest());
+    }
+
+    canonicalFields.emplace_back("cryptographicSlashingSummary.blockHeight", std::to_string(cryptographicSlashingSummary.blockHeight()));
+    canonicalFields.emplace_back("cryptographicSlashingSummary.evidenceCount", std::to_string(cryptographicSlashingSummary.evidenceCount()));
+    canonicalFields.emplace_back("cryptographicSlashingSummary.slashableEvidenceCount", std::to_string(cryptographicSlashingSummary.slashableEvidenceCount()));
+    canonicalFields.emplace_back("cryptographicSlashingSummary.maxSeverityScore", std::to_string(cryptographicSlashingSummary.maxSeverityScore()));
+    canonicalFields.emplace_back("cryptographicSlashingSummary.penaltyTotalRawUnits", std::to_string(cryptographicSlashingSummary.penaltyTotal().rawUnits()));
+    canonicalFields.emplace_back("cryptographicSlashingSummary.reason", cryptographicSlashingSummary.reason());
+    canonicalFields.emplace_back("cryptographicSlashingSummary.sourcePenaltyDigest", cryptographicSlashingSummary.sourcePenaltyDigest());
+
     canonicalFields.emplace_back("block", serializedBlock);
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
@@ -2516,6 +2757,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         slashingEvidenceRecords,
         slashingPreparationRecords,
         slashingEvidenceSummary,
+        cryptographicSlashingEvidenceRecords,
+        stakePenaltyRecords,
+        cryptographicSlashingSummary,
         quorumCertificate,
         finalizedRecord
     );
@@ -2707,8 +2951,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             const GenesisTreasurySnapshot expectedTreasurySnapshot =
                 ProtectionTreasury::buildGenesisTreasurySnapshot(
                     genesisConfig,
-                    block.index(),
-                    artifact.treasuryFeeRecord().treasuryAmount()
+                    block.index()
                 );
 
             if (!ProtectionTreasury::sameTreasurySnapshot(expectedTreasurySnapshot, artifact.genesisTreasurySnapshot())) {
@@ -2856,6 +3099,38 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted slashing evidence summary does not match rebuilt evidence.");
             }
 
+            const std::vector<CryptographicSlashingEvidenceRecord> expectedCryptographicEvidence =
+                CryptographicSlashing::buildEvidenceRecords(
+                    artifact.quorumCertificate().votes(),
+                    cryptoContext.policy(),
+                    cryptoContext.signatureProvider()
+                );
+
+            if (!CryptographicSlashing::sameEvidenceRecords(expectedCryptographicEvidence, artifact.cryptographicSlashingEvidenceRecords())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted cryptographic slashing evidence does not match rebuilt vote evidence.");
+            }
+
+            const std::vector<StakePenaltyRecord> expectedStakePenalties =
+                CryptographicSlashing::buildStakePenaltyRecords(
+                    expectedCryptographicEvidence,
+                    artifact.lockedStakePositions()
+                );
+
+            if (!CryptographicSlashing::sameStakePenaltyRecords(expectedStakePenalties, artifact.stakePenaltyRecords())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted stake penalty records do not match rebuilt cryptographic evidence.");
+            }
+
+            const CryptographicSlashingSummary expectedCryptographicSummary =
+                CryptographicSlashing::buildSummary(
+                    block.index(),
+                    expectedCryptographicEvidence,
+                    expectedStakePenalties
+                );
+
+            if (!CryptographicSlashing::sameSummary(expectedCryptographicSummary, artifact.cryptographicSlashingSummary())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted cryptographic slashing summary does not match rebuilt evidence.");
+            }
+
             const consensus::BlockFinalizationResult finalization =
                 consensus::BlockFinalizer::finalizeBlock(
                     runtime.mutableBlockchain(),
@@ -2909,7 +3184,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             crypto::SecurityContext::USER_TRANSACTION,
             RuntimeAccountStateBuilder::accountStateViewAtTip(genesisConfig, runtime.blockchain(), minimumFeeRawUnits(genesisConfig)),
             minimumFeeRawUnits(genesisConfig),
-            cryptoContext.userSignatureProvider()
+            cryptoContext.signatureProvider()
         );
 
     if (!mempoolLoad.loaded()) {
