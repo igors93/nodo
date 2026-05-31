@@ -14,6 +14,7 @@
 #include "node/ProtectionRewards.hpp"
 #include "node/SlashingEvidence.hpp"
 #include "node/CryptographicSlashing.hpp"
+#include "node/Governance.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
 #include "node/SecurityScore.hpp"
@@ -349,6 +350,44 @@ public:
         CryptographicSlashingSummary cryptographicSlashingSummary
     );
 
+    static RuntimeBlockPipelineResult finalized(
+        core::Block block,
+        consensus::QuorumCertificate certificate,
+        consensus::FinalizedBlockRecord finalizedRecord,
+        std::vector<std::string> finalizedTransactionIds,
+        std::string postStateRoot,
+        utils::Amount totalFee,
+        std::vector<RewardDistribution> rewardDistributions,
+        std::vector<LockedStakePosition> lockedStakePositions,
+        std::vector<SecurityScoreRecord> securityScoreRecords,
+        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+        MonetaryFirewallAudit monetaryFirewallAudit,
+        GenesisTreasurySnapshot genesisTreasurySnapshot,
+        ProtectionRewardBudget protectionRewardBudget,
+        std::vector<ProtectionRewardGrant> protectionRewardGrants,
+        std::vector<ProtectionWorkRecord> protectionWorkRecords,
+        ProtectionRewardSummary protectionRewardSummary,
+        std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+        InflationEpochSnapshot inflationEpochSnapshot,
+        MintAuthorizationRecord mintAuthorizationRecord,
+        SupplyExpansionRecord supplyExpansionRecord,
+        FeeEconomicBalance feeEconomicBalance,
+        FeeBurnRecord feeBurnRecord,
+        TreasuryFeeRecord treasuryFeeRecord,
+        std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+        std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+        SlashingEvidenceSummary slashingEvidenceSummary,
+        std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
+        std::vector<StakePenaltyRecord> stakePenaltyRecords,
+        CryptographicSlashingSummary cryptographicSlashingSummary,
+        GovernancePolicySnapshot governancePolicySnapshot,
+        std::vector<GovernanceActionGuard> governanceActionGuards,
+        GovernanceSummary governanceSummary
+    );
+
     static RuntimeBlockPipelineResult rejected(
         RuntimeBlockPipelineStatus status,
         std::string reason
@@ -390,6 +429,9 @@ public:
     const std::vector<CryptographicSlashingEvidenceRecord>& cryptographicSlashingEvidenceRecords() const;
     const std::vector<StakePenaltyRecord>& stakePenaltyRecords() const;
     const CryptographicSlashingSummary& cryptographicSlashingSummary() const;
+    const GovernancePolicySnapshot& governancePolicySnapshot() const;
+    const std::vector<GovernanceActionGuard>& governanceActionGuards() const;
+    const GovernanceSummary& governanceSummary() const;
 
     std::string serialize() const;
 
@@ -434,6 +476,9 @@ private:
     std::vector<CryptographicSlashingEvidenceRecord> m_cryptographicSlashingEvidenceRecords;
     std::vector<StakePenaltyRecord> m_stakePenaltyRecords;
     CryptographicSlashingSummary m_cryptographicSlashingSummary;
+    GovernancePolicySnapshot m_governancePolicySnapshot;
+    std::vector<GovernanceActionGuard> m_governanceActionGuards;
+    GovernanceSummary m_governanceSummary;
 };
 
 /*

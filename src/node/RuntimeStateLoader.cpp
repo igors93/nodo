@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V17";
+    "NODO_FINALIZED_BLOCK_V18";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -1088,6 +1088,73 @@ CryptographicSlashingSummary parseCryptographicSlashingSummary(
     return summary;
 }
 
+
+GovernancePolicySnapshot parseGovernancePolicySnapshot(
+    const serialization::KeyValueFileDocument& document
+) {
+    GovernancePolicySnapshot policy(
+        document.requireField("governancePolicyStatus"),
+        parseU64Strict(document.requireField("governancePolicy.blockHeight"), "governancePolicy.blockHeight"),
+        parseU32Strict(document.requireField("governancePolicy.requiredApprovalBasisPoints"), "governancePolicy.requiredApprovalBasisPoints"),
+        parseU64Strict(document.requireField("governancePolicy.timelockBlocks"), "governancePolicy.timelockBlocks"),
+        parseU64Strict(document.requireField("governancePolicy.activationDelayBlocks"), "governancePolicy.activationDelayBlocks"),
+        document.requireField("governancePolicy.policyId"),
+        document.requireField("governancePolicy.reason")
+    );
+
+    if (!policy.isValid()) {
+        throw std::invalid_argument("Finalized block governance policy is invalid.");
+    }
+
+    return policy;
+}
+
+GovernanceActionGuard parseGovernanceActionGuard(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix = "governanceGuard." + std::to_string(index) + ".";
+
+    GovernanceActionGuard guard(
+        document.requireField(prefix + "actionType"),
+        document.requireField(prefix + "status"),
+        parseU64Strict(document.requireField(prefix + "blockHeight"), prefix + "blockHeight"),
+        document.requireField(prefix + "protectedResource"),
+        parseU32Strict(document.requireField(prefix + "requiredApprovalBasisPoints"), prefix + "requiredApprovalBasisPoints"),
+        parseU64Strict(document.requireField(prefix + "timelockBlocks"), prefix + "timelockBlocks"),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourcePolicyDigest")
+    );
+
+    if (!guard.isValid()) {
+        throw std::invalid_argument("Finalized block governance action guard is invalid.");
+    }
+
+    return guard;
+}
+
+GovernanceSummary parseGovernanceSummary(
+    const serialization::KeyValueFileDocument& document
+) {
+    GovernanceSummary summary(
+        document.requireField("governanceSummaryStatus"),
+        parseU64Strict(document.requireField("governanceSummary.blockHeight"), "governanceSummary.blockHeight"),
+        parseU64Strict(document.requireField("governanceSummary.guardCount"), "governanceSummary.guardCount"),
+        parseU64Strict(document.requireField("governanceSummary.activeProposalCount"), "governanceSummary.activeProposalCount"),
+        parseU64Strict(document.requireField("governanceSummary.approvedProposalCount"), "governanceSummary.approvedProposalCount"),
+        parseU64Strict(document.requireField("governanceSummary.executableProposalCount"), "governanceSummary.executableProposalCount"),
+        parseU64Strict(document.requireField("governanceSummary.executedProposalCount"), "governanceSummary.executedProposalCount"),
+        document.requireField("governanceSummary.reason"),
+        document.requireField("governanceSummary.sourceGuardDigest")
+    );
+
+    if (!summary.isValid()) {
+        throw std::invalid_argument("Finalized block governance summary is invalid.");
+    }
+
+    return summary;
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -1183,6 +1250,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_cryptographicSlashingEvidenceRecords(),
       m_stakePenaltyRecords(),
       m_cryptographicSlashingSummary(CryptographicSlashingSummary::notEvaluated()),
+      m_governancePolicySnapshot(GovernancePolicySnapshot::notEvaluated()),
+      m_governanceActionGuards(),
+      m_governanceSummary(GovernanceSummary::notEvaluated()),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -1216,6 +1286,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
     std::vector<StakePenaltyRecord> stakePenaltyRecords,
     CryptographicSlashingSummary cryptographicSlashingSummary,
+    GovernancePolicySnapshot governancePolicySnapshot,
+    std::vector<GovernanceActionGuard> governanceActionGuards,
+    GovernanceSummary governanceSummary,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -1248,6 +1321,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_cryptographicSlashingEvidenceRecords(std::move(cryptographicSlashingEvidenceRecords)),
       m_stakePenaltyRecords(std::move(stakePenaltyRecords)),
       m_cryptographicSlashingSummary(std::move(cryptographicSlashingSummary)),
+      m_governancePolicySnapshot(std::move(governancePolicySnapshot)),
+      m_governanceActionGuards(std::move(governanceActionGuards)),
+      m_governanceSummary(std::move(governanceSummary)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -1371,6 +1447,18 @@ const CryptographicSlashingSummary& FinalizedBlockArtifact::cryptographicSlashin
     return m_cryptographicSlashingSummary;
 }
 
+const GovernancePolicySnapshot& FinalizedBlockArtifact::governancePolicySnapshot() const {
+    return m_governancePolicySnapshot;
+}
+
+const std::vector<GovernanceActionGuard>& FinalizedBlockArtifact::governanceActionGuards() const {
+    return m_governanceActionGuards;
+}
+
+const GovernanceSummary& FinalizedBlockArtifact::governanceSummary() const {
+    return m_governanceSummary;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -1425,6 +1513,18 @@ bool FinalizedBlockArtifact::isValid() const {
                    FeeEconomics::sameTreasuryFee(
                        FeeEconomics::buildTreasuryFeeRecord(m_feeEconomicBalance),
                        m_treasuryFeeRecord
+                   ) &&
+                   Governance::samePolicy(
+                       Governance::buildPolicySnapshot(m_block->index()),
+                       m_governancePolicySnapshot
+                   ) &&
+                   Governance::sameActionGuards(
+                       Governance::buildActionGuards(m_governancePolicySnapshot),
+                       m_governanceActionGuards
+                   ) &&
+                   Governance::sameSummary(
+                       Governance::buildSummary(m_block->index(), m_governanceActionGuards),
+                       m_governanceSummary
                    );
         }
 
@@ -1571,6 +1671,18 @@ bool FinalizedBlockArtifact::isValid() const {
                        m_stakePenaltyRecords
                    ),
                    m_cryptographicSlashingSummary
+               ) &&
+               Governance::samePolicy(
+                   Governance::buildPolicySnapshot(m_block->index()),
+                   m_governancePolicySnapshot
+               ) &&
+               Governance::sameActionGuards(
+                   Governance::buildActionGuards(m_governancePolicySnapshot),
+                   m_governanceActionGuards
+               ) &&
+               Governance::sameSummary(
+                   Governance::buildSummary(m_block->index(), m_governanceActionGuards),
+                   m_governanceSummary
                );
     } catch (const std::exception&) {
         return false;
@@ -1610,6 +1722,9 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";cryptographicSlashingEvidenceCount=" << m_cryptographicSlashingEvidenceRecords.size()
         << ";stakePenaltyRecordCount=" << m_stakePenaltyRecords.size()
         << ";cryptographicSlashingSummaryStatus=" << m_cryptographicSlashingSummary.status()
+        << ";governancePolicyStatus=" << m_governancePolicySnapshot.status()
+        << ";governanceActionGuardCount=" << m_governanceActionGuards.size()
+        << ";governanceSummaryStatus=" << m_governanceSummary.status()
         << "}";
 
     return oss.str();
@@ -1703,6 +1818,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const std::size_t slashingPreparationRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("slashingPreparationRecordCount"), "slashingPreparationRecordCount"));
     const std::size_t cryptographicSlashingEvidenceCount = static_cast<std::size_t>(parseU64Strict(document.requireField("cryptographicSlashingEvidenceCount"), "cryptographicSlashingEvidenceCount"));
     const std::size_t stakePenaltyRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("stakePenaltyRecordCount"), "stakePenaltyRecordCount"));
+    const std::size_t governanceActionGuardCount = static_cast<std::size_t>(parseU64Strict(document.requireField("governanceActionGuardCount"), "governanceActionGuardCount"));
 
     std::set<std::string> allowedFields = {
         "blockIndex",
@@ -1736,6 +1852,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "cryptographicSlashingEvidenceCount",
         "stakePenaltyRecordCount",
         "cryptographicSlashingSummaryStatus",
+        "governancePolicyStatus",
+        "governanceActionGuardCount",
+        "governanceSummaryStatus",
         "monetary.blockHeight",
         "monetary.supplyBeforeRawUnits",
         "monetary.mintedRawUnits",
@@ -1828,6 +1947,20 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "cryptographicSlashingSummary.penaltyTotalRawUnits",
         "cryptographicSlashingSummary.reason",
         "cryptographicSlashingSummary.sourcePenaltyDigest",
+        "governancePolicy.blockHeight",
+        "governancePolicy.requiredApprovalBasisPoints",
+        "governancePolicy.timelockBlocks",
+        "governancePolicy.activationDelayBlocks",
+        "governancePolicy.policyId",
+        "governancePolicy.reason",
+        "governanceSummary.blockHeight",
+        "governanceSummary.guardCount",
+        "governanceSummary.activeProposalCount",
+        "governanceSummary.approvedProposalCount",
+        "governanceSummary.executableProposalCount",
+        "governanceSummary.executedProposalCount",
+        "governanceSummary.reason",
+        "governanceSummary.sourceGuardDigest",
         "timestamp",
         "recordCount",
         "block",
@@ -2016,6 +2149,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         allowedFields.insert(prefix + "sourceEvidenceDigest");
     }
 
+    for (std::size_t index = 0; index < governanceActionGuardCount; ++index) {
+        const std::string prefix = "governanceGuard." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "actionType");
+        allowedFields.insert(prefix + "status");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "protectedResource");
+        allowedFields.insert(prefix + "requiredApprovalBasisPoints");
+        allowedFields.insert(prefix + "timelockBlocks");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourcePolicyDigest");
+    }
+
     document.requireOnlyFields(allowedFields);
 
     /*
@@ -2156,6 +2301,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
 
     const CryptographicSlashingSummary cryptographicSlashingSummary =
         parseCryptographicSlashingSummary(document);
+
+    const GovernancePolicySnapshot governancePolicySnapshot =
+        parseGovernancePolicySnapshot(document);
+
+    std::vector<GovernanceActionGuard> governanceActionGuards;
+    governanceActionGuards.reserve(governanceActionGuardCount);
+    for (std::size_t guardIndex = 0; guardIndex < governanceActionGuardCount; ++guardIndex) {
+        governanceActionGuards.push_back(parseGovernanceActionGuard(document, guardIndex));
+    }
+
+    const GovernanceSummary governanceSummary =
+        parseGovernanceSummary(document);
 
     const std::int64_t timestamp = parseI64Strict(document.requireField("timestamp"), "timestamp");
 
@@ -2429,6 +2586,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"cryptographicSlashingEvidenceCount", std::to_string(cryptographicSlashingEvidenceRecords.size())},
         {"stakePenaltyRecordCount", std::to_string(stakePenaltyRecords.size())},
         {"cryptographicSlashingSummaryStatus", cryptographicSlashingSummary.status()},
+        {"governancePolicyStatus", governancePolicySnapshot.status()},
+        {"governanceActionGuardCount", std::to_string(governanceActionGuards.size())},
+        {"governanceSummaryStatus", governanceSummary.status()},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -2719,6 +2879,34 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     canonicalFields.emplace_back("cryptographicSlashingSummary.reason", cryptographicSlashingSummary.reason());
     canonicalFields.emplace_back("cryptographicSlashingSummary.sourcePenaltyDigest", cryptographicSlashingSummary.sourcePenaltyDigest());
 
+    canonicalFields.emplace_back("governancePolicy.blockHeight", std::to_string(governancePolicySnapshot.blockHeight()));
+    canonicalFields.emplace_back("governancePolicy.requiredApprovalBasisPoints", std::to_string(governancePolicySnapshot.requiredApprovalBasisPoints()));
+    canonicalFields.emplace_back("governancePolicy.timelockBlocks", std::to_string(governancePolicySnapshot.timelockBlocks()));
+    canonicalFields.emplace_back("governancePolicy.activationDelayBlocks", std::to_string(governancePolicySnapshot.activationDelayBlocks()));
+    canonicalFields.emplace_back("governancePolicy.policyId", governancePolicySnapshot.policyId());
+    canonicalFields.emplace_back("governancePolicy.reason", governancePolicySnapshot.reason());
+
+    for (std::size_t guardIndex = 0; guardIndex < governanceActionGuards.size(); ++guardIndex) {
+        const std::string prefix = "governanceGuard." + std::to_string(guardIndex) + ".";
+        canonicalFields.emplace_back(prefix + "actionType", governanceActionGuards[guardIndex].actionType());
+        canonicalFields.emplace_back(prefix + "status", governanceActionGuards[guardIndex].status());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(governanceActionGuards[guardIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "protectedResource", governanceActionGuards[guardIndex].protectedResource());
+        canonicalFields.emplace_back(prefix + "requiredApprovalBasisPoints", std::to_string(governanceActionGuards[guardIndex].requiredApprovalBasisPoints()));
+        canonicalFields.emplace_back(prefix + "timelockBlocks", std::to_string(governanceActionGuards[guardIndex].timelockBlocks()));
+        canonicalFields.emplace_back(prefix + "reason", governanceActionGuards[guardIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourcePolicyDigest", governanceActionGuards[guardIndex].sourcePolicyDigest());
+    }
+
+    canonicalFields.emplace_back("governanceSummary.blockHeight", std::to_string(governanceSummary.blockHeight()));
+    canonicalFields.emplace_back("governanceSummary.guardCount", std::to_string(governanceSummary.guardCount()));
+    canonicalFields.emplace_back("governanceSummary.activeProposalCount", std::to_string(governanceSummary.activeProposalCount()));
+    canonicalFields.emplace_back("governanceSummary.approvedProposalCount", std::to_string(governanceSummary.approvedProposalCount()));
+    canonicalFields.emplace_back("governanceSummary.executableProposalCount", std::to_string(governanceSummary.executableProposalCount()));
+    canonicalFields.emplace_back("governanceSummary.executedProposalCount", std::to_string(governanceSummary.executedProposalCount()));
+    canonicalFields.emplace_back("governanceSummary.reason", governanceSummary.reason());
+    canonicalFields.emplace_back("governanceSummary.sourceGuardDigest", governanceSummary.sourceGuardDigest());
+
     canonicalFields.emplace_back("block", serializedBlock);
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
@@ -2760,6 +2948,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         cryptographicSlashingEvidenceRecords,
         stakePenaltyRecords,
         cryptographicSlashingSummary,
+        governancePolicySnapshot,
+        governanceActionGuards,
+        governanceSummary,
         quorumCertificate,
         finalizedRecord
     );
@@ -2951,7 +3142,8 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             const GenesisTreasurySnapshot expectedTreasurySnapshot =
                 ProtectionTreasury::buildGenesisTreasurySnapshot(
                     genesisConfig,
-                    block.index()
+                    block.index(),
+                    artifact.treasuryFeeRecord().treasuryAmount()
                 );
 
             if (!ProtectionTreasury::sameTreasurySnapshot(expectedTreasurySnapshot, artifact.genesisTreasurySnapshot())) {
@@ -3100,10 +3292,8 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             }
 
             const std::vector<CryptographicSlashingEvidenceRecord> expectedCryptographicEvidence =
-                CryptographicSlashing::buildEvidenceRecords(
-                    artifact.quorumCertificate().votes(),
-                    cryptoContext.policy(),
-                    cryptoContext.signatureProvider()
+                CryptographicSlashing::buildEvidenceRecordsFromCertifiedVotes(
+                    artifact.quorumCertificate().votes()
                 );
 
             if (!CryptographicSlashing::sameEvidenceRecords(expectedCryptographicEvidence, artifact.cryptographicSlashingEvidenceRecords())) {
@@ -3129,6 +3319,27 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
             if (!CryptographicSlashing::sameSummary(expectedCryptographicSummary, artifact.cryptographicSlashingSummary())) {
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted cryptographic slashing summary does not match rebuilt evidence.");
+            }
+
+            const GovernancePolicySnapshot expectedGovernancePolicy =
+                Governance::buildPolicySnapshot(block.index());
+
+            if (!Governance::samePolicy(expectedGovernancePolicy, artifact.governancePolicySnapshot())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted governance policy does not match protocol policy.");
+            }
+
+            const std::vector<GovernanceActionGuard> expectedGovernanceGuards =
+                Governance::buildActionGuards(expectedGovernancePolicy);
+
+            if (!Governance::sameActionGuards(expectedGovernanceGuards, artifact.governanceActionGuards())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted governance guards do not match protocol policy.");
+            }
+
+            const GovernanceSummary expectedGovernanceSummary =
+                Governance::buildSummary(block.index(), expectedGovernanceGuards);
+
+            if (!Governance::sameSummary(expectedGovernanceSummary, artifact.governanceSummary())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted governance summary does not match governance guards.");
             }
 
             const consensus::BlockFinalizationResult finalization =

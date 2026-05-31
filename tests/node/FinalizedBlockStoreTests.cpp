@@ -525,6 +525,16 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Finalized block file should persist cryptographic slashing accounting records."
     );
 
+    requireCondition(
+        blockContents.find("governancePolicyStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("governanceActionGuardCount=2") != std::string::npos &&
+        blockContents.find("governanceGuard.0.actionType=TREASURY_SPEND") != std::string::npos &&
+        blockContents.find("governanceGuard.1.actionType=MINT_AUTHORIZATION") != std::string::npos &&
+        blockContents.find("governanceSummaryStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("governanceSummary.reason=GOVERNANCE_NO_ACTIVE_PROPOSALS") != std::string::npos,
+        "Finalized block file should persist governance guards for treasury and controlled issuance."
+    );
+
     const auto loaded =
         NodeDataDirectory::loadManifest(directoryConfig);
 

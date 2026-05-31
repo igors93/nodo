@@ -184,6 +184,24 @@ void testBuildsSummary() {
     );
 }
 
+void testBuildsSerializableSummaryWithoutEvidence() {
+    const CryptographicSlashingSummary summary =
+        CryptographicSlashing::buildSummary(
+            1,
+            {},
+            {}
+        );
+
+    requireCondition(
+        summary.active() &&
+        summary.evidenceCount() == 0U &&
+        summary.slashableEvidenceCount() == 0U &&
+        summary.penaltyTotal().rawUnits() == 0 &&
+        !summary.sourcePenaltyDigest().empty(),
+        "Zero-evidence cryptographic slashing summaries should remain serializable."
+    );
+}
+
 void testNoPenaltyWithoutLockedStake() {
     const Bls12381SignatureProvider provider;
     const KeyPair keyPair =
@@ -222,6 +240,7 @@ int main() {
         testBuildsDoubleVoteEvidence();
         testBuildsStakePenaltyFromCryptographicEvidence();
         testBuildsSummary();
+        testBuildsSerializableSummaryWithoutEvidence();
         testNoPenaltyWithoutLockedStake();
 
         std::cout << "Nodo cryptographic slashing tests passed.\n";

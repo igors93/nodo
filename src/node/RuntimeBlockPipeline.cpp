@@ -334,6 +334,30 @@ bool cryptographicSlashingPlanIsValid(
     }
 }
 
+bool governancePlanIsValid(
+    std::uint64_t blockHeight,
+    const GovernancePolicySnapshot& policy,
+    const std::vector<GovernanceActionGuard>& guards,
+    const GovernanceSummary& summary
+) {
+    try {
+        const GovernancePolicySnapshot expectedPolicy =
+            Governance::buildPolicySnapshot(blockHeight);
+
+        const std::vector<GovernanceActionGuard> expectedGuards =
+            Governance::buildActionGuards(expectedPolicy);
+
+        const GovernanceSummary expectedSummary =
+            Governance::buildSummary(blockHeight, expectedGuards);
+
+        return Governance::samePolicy(expectedPolicy, policy) &&
+               Governance::sameActionGuards(expectedGuards, guards) &&
+               Governance::sameSummary(expectedSummary, summary);
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 bool controlledIssuancePlanIsValid(
     const InflationEpochSnapshot& epoch,
     const MintAuthorizationRecord& authorization,
@@ -512,7 +536,10 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_slashingEvidenceSummary(SlashingEvidenceSummary::notEvaluated()),
       m_cryptographicSlashingEvidenceRecords(),
       m_stakePenaltyRecords(),
-      m_cryptographicSlashingSummary(CryptographicSlashingSummary::notEvaluated()) {}
+      m_cryptographicSlashingSummary(CryptographicSlashingSummary::notEvaluated()),
+      m_governancePolicySnapshot(GovernancePolicySnapshot::notEvaluated()),
+      m_governanceActionGuards(),
+      m_governanceSummary(GovernanceSummary::notEvaluated()) {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -1077,6 +1104,96 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     std::vector<StakePenaltyRecord> stakePenaltyRecords,
     CryptographicSlashingSummary cryptographicSlashingSummary
 ) {
+    GovernancePolicySnapshot governancePolicySnapshot;
+    std::vector<GovernanceActionGuard> governanceActionGuards;
+    GovernanceSummary governanceSummary;
+
+    try {
+        governancePolicySnapshot = Governance::buildPolicySnapshot(block.index());
+        governanceActionGuards = Governance::buildActionGuards(governancePolicySnapshot);
+        governanceSummary = Governance::buildSummary(block.index(), governanceActionGuards);
+    } catch (const std::exception&) {
+        governancePolicySnapshot = GovernancePolicySnapshot::notEvaluated();
+        governanceActionGuards.clear();
+        governanceSummary = GovernanceSummary::notEvaluated();
+    }
+
+    return finalized(
+        std::move(block),
+        std::move(certificate),
+        std::move(finalizedRecord),
+        std::move(finalizedTransactionIds),
+        std::move(postStateRoot),
+        totalFee,
+        std::move(rewardDistributions),
+        std::move(lockedStakePositions),
+        std::move(securityScoreRecords),
+        std::move(securityCheckpoints),
+        std::move(validatorRiskAssessments),
+        std::move(validatorContainmentDecisions),
+        std::move(validatorNetworkPolicies),
+        std::move(monetaryFirewallAudit),
+        std::move(genesisTreasurySnapshot),
+        std::move(protectionRewardBudget),
+        std::move(protectionRewardGrants),
+        std::move(protectionWorkRecords),
+        std::move(protectionRewardSummary),
+        std::move(protectionRewardSettlements),
+        std::move(inflationEpochSnapshot),
+        std::move(mintAuthorizationRecord),
+        std::move(supplyExpansionRecord),
+        std::move(feeEconomicBalance),
+        std::move(feeBurnRecord),
+        std::move(treasuryFeeRecord),
+        std::move(slashingEvidenceRecords),
+        std::move(slashingPreparationRecords),
+        std::move(slashingEvidenceSummary),
+        std::move(cryptographicSlashingEvidenceRecords),
+        std::move(stakePenaltyRecords),
+        std::move(cryptographicSlashingSummary),
+        std::move(governancePolicySnapshot),
+        std::move(governanceActionGuards),
+        std::move(governanceSummary)
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions,
+    std::vector<LockedStakePosition> lockedStakePositions,
+    std::vector<SecurityScoreRecord> securityScoreRecords,
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+    std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+    MonetaryFirewallAudit monetaryFirewallAudit,
+    GenesisTreasurySnapshot genesisTreasurySnapshot,
+    ProtectionRewardBudget protectionRewardBudget,
+    std::vector<ProtectionRewardGrant> protectionRewardGrants,
+    std::vector<ProtectionWorkRecord> protectionWorkRecords,
+    ProtectionRewardSummary protectionRewardSummary,
+    std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+    InflationEpochSnapshot inflationEpochSnapshot,
+    MintAuthorizationRecord mintAuthorizationRecord,
+    SupplyExpansionRecord supplyExpansionRecord,
+    FeeEconomicBalance feeEconomicBalance,
+    FeeBurnRecord feeBurnRecord,
+    TreasuryFeeRecord treasuryFeeRecord,
+    std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+    std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+    SlashingEvidenceSummary slashingEvidenceSummary,
+    std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
+    std::vector<StakePenaltyRecord> stakePenaltyRecords,
+    CryptographicSlashingSummary cryptographicSlashingSummary,
+    GovernancePolicySnapshot governancePolicySnapshot,
+    std::vector<GovernanceActionGuard> governanceActionGuards,
+    GovernanceSummary governanceSummary
+) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
     result.m_reason = "";
@@ -1112,6 +1229,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_cryptographicSlashingEvidenceRecords = std::move(cryptographicSlashingEvidenceRecords);
     result.m_stakePenaltyRecords = std::move(stakePenaltyRecords);
     result.m_cryptographicSlashingSummary = std::move(cryptographicSlashingSummary);
+    result.m_governancePolicySnapshot = std::move(governancePolicySnapshot);
+    result.m_governanceActionGuards = std::move(governanceActionGuards);
+    result.m_governanceSummary = std::move(governanceSummary);
 
     if (result.m_cryptographicSlashingSummary.status() == "NOT_EVALUATED") {
         result.m_cryptographicSlashingSummary =
@@ -1120,6 +1240,12 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
                 result.m_cryptographicSlashingEvidenceRecords,
                 result.m_stakePenaltyRecords
             );
+    }
+
+    if (result.m_governanceSummary.status() == "NOT_EVALUATED") {
+        result.m_governancePolicySnapshot = Governance::buildPolicySnapshot(result.m_block->index());
+        result.m_governanceActionGuards = Governance::buildActionGuards(result.m_governancePolicySnapshot);
+        result.m_governanceSummary = Governance::buildSummary(result.m_block->index(), result.m_governanceActionGuards);
     }
 
     return result;
@@ -1204,6 +1330,12 @@ bool RuntimeBlockPipelineResult::finalized() const {
                m_cryptographicSlashingEvidenceRecords,
                m_stakePenaltyRecords,
                m_cryptographicSlashingSummary
+           ) &&
+           governancePlanIsValid(
+               m_block->index(),
+               m_governancePolicySnapshot,
+               m_governanceActionGuards,
+               m_governanceSummary
            );
 }
 
@@ -1339,6 +1471,18 @@ const CryptographicSlashingSummary& RuntimeBlockPipelineResult::cryptographicSla
     return m_cryptographicSlashingSummary;
 }
 
+const GovernancePolicySnapshot& RuntimeBlockPipelineResult::governancePolicySnapshot() const {
+    return m_governancePolicySnapshot;
+}
+
+const std::vector<GovernanceActionGuard>& RuntimeBlockPipelineResult::governanceActionGuards() const {
+    return m_governanceActionGuards;
+}
+
+const GovernanceSummary& RuntimeBlockPipelineResult::governanceSummary() const {
+    return m_governanceSummary;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -1375,6 +1519,9 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";cryptographicSlashingEvidenceCount=" << m_cryptographicSlashingEvidenceRecords.size()
         << ";stakePenaltyRecordCount=" << m_stakePenaltyRecords.size()
         << ";cryptographicSlashingSummaryStatus=" << m_cryptographicSlashingSummary.status()
+        << ";governancePolicyStatus=" << m_governancePolicySnapshot.status()
+        << ";governanceActionGuardCount=" << m_governanceActionGuards.size()
+        << ";governanceSummaryStatus=" << m_governanceSummary.status()
         << "}";
 
     return oss.str();
@@ -1528,6 +1675,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords;
     std::vector<StakePenaltyRecord> stakePenaltyRecords;
     CryptographicSlashingSummary cryptographicSlashingSummary;
+    GovernancePolicySnapshot governancePolicySnapshot;
+    std::vector<GovernanceActionGuard> governanceActionGuards;
+    GovernanceSummary governanceSummary;
 
     try {
         feeEconomicBalance =
@@ -1600,7 +1750,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         genesisTreasurySnapshot =
             ProtectionTreasury::buildGenesisTreasurySnapshot(
                 runtime.config().genesisConfig(),
-                production.block().index()
+                production.block().index(),
+                treasuryFeeRecord.treasuryAmount()
             );
 
         protectionRewardBudget =
@@ -1691,6 +1842,22 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
                 cryptographicSlashingEvidenceRecords,
                 stakePenaltyRecords
             );
+
+        governancePolicySnapshot =
+            Governance::buildPolicySnapshot(
+                production.block().index()
+            );
+
+        governanceActionGuards =
+            Governance::buildActionGuards(
+                governancePolicySnapshot
+            );
+
+        governanceSummary =
+            Governance::buildSummary(
+                production.block().index(),
+                governanceActionGuards
+            );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(
             RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
@@ -1758,7 +1925,10 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         slashingEvidenceSummary,
         cryptographicSlashingEvidenceRecords,
         stakePenaltyRecords,
-        cryptographicSlashingSummary
+        cryptographicSlashingSummary,
+        governancePolicySnapshot,
+        governanceActionGuards,
+        governanceSummary
     );
 }
 

@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V17";
+    "NODO_FINALIZED_BLOCK_V18";
 
 } // namespace
 
@@ -207,6 +207,15 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
         );
     }
 
+    if (!pipelineResult.governancePolicySnapshot().active() ||
+        pipelineResult.governanceActionGuards().empty() ||
+        !pipelineResult.governanceSummary().active()) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::INVALID_PIPELINE_RESULT,
+            "Runtime block pipeline result failed governance audit."
+        );
+    }
+
     const NodeDataDirectoryReadResult existingManifest =
         NodeDataDirectory::loadManifest(directoryConfig);
 
@@ -360,6 +369,9 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"cryptographicSlashingEvidenceCount", std::to_string(pipelineResult.cryptographicSlashingEvidenceRecords().size())},
         {"stakePenaltyRecordCount", std::to_string(pipelineResult.stakePenaltyRecords().size())},
         {"cryptographicSlashingSummaryStatus", pipelineResult.cryptographicSlashingSummary().status()},
+        {"governancePolicyStatus", pipelineResult.governancePolicySnapshot().status()},
+        {"governanceActionGuardCount", std::to_string(pipelineResult.governanceActionGuards().size())},
+        {"governanceSummaryStatus", pipelineResult.governanceSummary().status()},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -752,6 +764,43 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
     fields.emplace_back("cryptographicSlashingSummary.penaltyTotalRawUnits", std::to_string(cryptoSlashingSummary.penaltyTotal().rawUnits()));
     fields.emplace_back("cryptographicSlashingSummary.reason", cryptoSlashingSummary.reason());
     fields.emplace_back("cryptographicSlashingSummary.sourcePenaltyDigest", cryptoSlashingSummary.sourcePenaltyDigest());
+
+    const GovernancePolicySnapshot& governancePolicy =
+        pipelineResult.governancePolicySnapshot();
+
+    fields.emplace_back("governancePolicy.blockHeight", std::to_string(governancePolicy.blockHeight()));
+    fields.emplace_back("governancePolicy.requiredApprovalBasisPoints", std::to_string(governancePolicy.requiredApprovalBasisPoints()));
+    fields.emplace_back("governancePolicy.timelockBlocks", std::to_string(governancePolicy.timelockBlocks()));
+    fields.emplace_back("governancePolicy.activationDelayBlocks", std::to_string(governancePolicy.activationDelayBlocks()));
+    fields.emplace_back("governancePolicy.policyId", governancePolicy.policyId());
+    fields.emplace_back("governancePolicy.reason", governancePolicy.reason());
+
+    const std::vector<GovernanceActionGuard>& governanceGuards =
+        pipelineResult.governanceActionGuards();
+
+    for (std::size_t index = 0; index < governanceGuards.size(); ++index) {
+        const std::string prefix = "governanceGuard." + std::to_string(index) + ".";
+        fields.emplace_back(prefix + "actionType", governanceGuards[index].actionType());
+        fields.emplace_back(prefix + "status", governanceGuards[index].status());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(governanceGuards[index].blockHeight()));
+        fields.emplace_back(prefix + "protectedResource", governanceGuards[index].protectedResource());
+        fields.emplace_back(prefix + "requiredApprovalBasisPoints", std::to_string(governanceGuards[index].requiredApprovalBasisPoints()));
+        fields.emplace_back(prefix + "timelockBlocks", std::to_string(governanceGuards[index].timelockBlocks()));
+        fields.emplace_back(prefix + "reason", governanceGuards[index].reason());
+        fields.emplace_back(prefix + "sourcePolicyDigest", governanceGuards[index].sourcePolicyDigest());
+    }
+
+    const GovernanceSummary& governanceSummary =
+        pipelineResult.governanceSummary();
+
+    fields.emplace_back("governanceSummary.blockHeight", std::to_string(governanceSummary.blockHeight()));
+    fields.emplace_back("governanceSummary.guardCount", std::to_string(governanceSummary.guardCount()));
+    fields.emplace_back("governanceSummary.activeProposalCount", std::to_string(governanceSummary.activeProposalCount()));
+    fields.emplace_back("governanceSummary.approvedProposalCount", std::to_string(governanceSummary.approvedProposalCount()));
+    fields.emplace_back("governanceSummary.executableProposalCount", std::to_string(governanceSummary.executableProposalCount()));
+    fields.emplace_back("governanceSummary.executedProposalCount", std::to_string(governanceSummary.executedProposalCount()));
+    fields.emplace_back("governanceSummary.reason", governanceSummary.reason());
+    fields.emplace_back("governanceSummary.sourceGuardDigest", governanceSummary.sourceGuardDigest());
 
     fields.emplace_back(
         "block",

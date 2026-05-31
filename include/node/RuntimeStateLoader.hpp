@@ -13,6 +13,7 @@
 #include "node/ProtectionRewards.hpp"
 #include "node/SlashingEvidence.hpp"
 #include "node/CryptographicSlashing.hpp"
+#include "node/Governance.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
@@ -118,6 +119,9 @@ public:
         std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
         std::vector<StakePenaltyRecord> stakePenaltyRecords,
         CryptographicSlashingSummary cryptographicSlashingSummary,
+        GovernancePolicySnapshot governancePolicySnapshot,
+        std::vector<GovernanceActionGuard> governanceActionGuards,
+        GovernanceSummary governanceSummary,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -151,6 +155,9 @@ public:
     const std::vector<CryptographicSlashingEvidenceRecord>& cryptographicSlashingEvidenceRecords() const;
     const std::vector<StakePenaltyRecord>& stakePenaltyRecords() const;
     const CryptographicSlashingSummary& cryptographicSlashingSummary() const;
+    const GovernancePolicySnapshot& governancePolicySnapshot() const;
+    const std::vector<GovernanceActionGuard>& governanceActionGuards() const;
+    const GovernanceSummary& governanceSummary() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -187,6 +194,9 @@ private:
     std::vector<CryptographicSlashingEvidenceRecord> m_cryptographicSlashingEvidenceRecords;
     std::vector<StakePenaltyRecord> m_stakePenaltyRecords;
     CryptographicSlashingSummary m_cryptographicSlashingSummary;
+    GovernancePolicySnapshot m_governancePolicySnapshot;
+    std::vector<GovernanceActionGuard> m_governanceActionGuards;
+    GovernanceSummary m_governanceSummary;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };

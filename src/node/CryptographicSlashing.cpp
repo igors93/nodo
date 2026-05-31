@@ -10,6 +10,10 @@ namespace nodo::node {
 
 namespace {
 
+const char* noCryptographicSlashingEvidenceDigest() {
+    return "NO_CRYPTOGRAPHIC_SLASHING_EVIDENCE";
+}
+
 bool votesConflict(
     const consensus::ValidatorVoteRecord& left,
     const consensus::ValidatorVoteRecord& right
@@ -329,9 +333,9 @@ bool CryptographicSlashingSummary::isValid() const {
 
     if (m_evidenceCount == 0) {
         return m_slashableEvidenceCount == 0 &&
-               m_maxSeverityScore == 0 &&
-               m_penaltyTotal.isZero() &&
-               m_sourcePenaltyDigest.empty();
+            m_maxSeverityScore == 0 &&
+            m_penaltyTotal.isZero() &&
+            m_sourcePenaltyDigest == noCryptographicSlashingEvidenceDigest();
     }
 
     return !m_sourcePenaltyDigest.empty();
@@ -471,6 +475,15 @@ CryptographicSlashingSummary CryptographicSlashing::buildSummary(
         }
     }
 
+    if (digest.str().empty()) {
+        digest << "NO_CRYPTOGRAPHIC_SLASHING_EVIDENCE";
+    }
+
+    const std::string sourcePenaltyDigest =
+        digest.str().empty()
+            ? noCryptographicSlashingEvidenceDigest()
+            : digest.str();
+
     return CryptographicSlashingSummary(
         "ACTIVE",
         blockHeight,
@@ -479,7 +492,7 @@ CryptographicSlashingSummary CryptographicSlashing::buildSummary(
         maxSeverity,
         penaltyTotal,
         SLASHING_SUMMARY_REASON,
-        digest.str()
+        sourcePenaltyDigest
     );
 }
 
