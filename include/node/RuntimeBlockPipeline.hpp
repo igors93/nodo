@@ -15,6 +15,7 @@
 #include "node/SlashingEvidence.hpp"
 #include "node/CryptographicSlashing.hpp"
 #include "node/Governance.hpp"
+#include "node/ValidatorLifecycle.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
 #include "node/SecurityScore.hpp"
@@ -432,6 +433,9 @@ public:
     const GovernancePolicySnapshot& governancePolicySnapshot() const;
     const std::vector<GovernanceActionGuard>& governanceActionGuards() const;
     const GovernanceSummary& governanceSummary() const;
+    const std::vector<ValidatorLifecycleRecord>& validatorLifecycleRecords() const;
+    const EpochAccountingRecord& epochAccountingRecord() const;
+    const ValidatorLifecycleSummary& validatorLifecycleSummary() const;
 
     std::string serialize() const;
 
@@ -479,6 +483,9 @@ private:
     GovernancePolicySnapshot m_governancePolicySnapshot;
     std::vector<GovernanceActionGuard> m_governanceActionGuards;
     GovernanceSummary m_governanceSummary;
+    std::vector<ValidatorLifecycleRecord> m_validatorLifecycleRecords;
+    EpochAccountingRecord m_epochAccountingRecord;
+    ValidatorLifecycleSummary m_validatorLifecycleSummary;
 };
 
 /*

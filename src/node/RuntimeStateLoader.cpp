@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V18";
+    "NODO_FINALIZED_BLOCK_V19";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -1155,6 +1155,81 @@ GovernanceSummary parseGovernanceSummary(
     return summary;
 }
 
+ValidatorLifecycleRecord parseValidatorLifecycleRecord(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix = "validatorLifecycle." + std::to_string(index) + ".";
+
+    ValidatorLifecycleRecord record(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(document.requireField(prefix + "blockHeight"), prefix + "blockHeight"),
+        parseU64Strict(document.requireField(prefix + "epochIndex"), prefix + "epochIndex"),
+        document.requireField(prefix + "lifecycleStatus"),
+        parseAmountStrict(document.requireField(prefix + "lockedStakeRawUnits"), prefix + "lockedStakeRawUnits"),
+        parseAmountStrict(document.requireField(prefix + "earnedRewardRawUnits"), prefix + "earnedRewardRawUnits"),
+        parseAmountStrict(document.requireField(prefix + "slashingPenaltyRawUnits"), prefix + "slashingPenaltyRawUnits"),
+        parseU16Strict(document.requireField(prefix + "securityScore"), prefix + "securityScore"),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourceDigest")
+    );
+
+    if (!record.isValid()) {
+        throw std::invalid_argument("Finalized block validator lifecycle record is invalid.");
+    }
+
+    return record;
+}
+
+EpochAccountingRecord parseEpochAccountingRecord(
+    const serialization::KeyValueFileDocument& document
+) {
+    EpochAccountingRecord record(
+        document.requireField("epochAccountingStatus"),
+        parseU64Strict(document.requireField("epochAccounting.blockHeight"), "epochAccounting.blockHeight"),
+        parseU64Strict(document.requireField("epochAccounting.epochIndex"), "epochAccounting.epochIndex"),
+        parseU64Strict(document.requireField("epochAccounting.epochStartBlock"), "epochAccounting.epochStartBlock"),
+        parseU64Strict(document.requireField("epochAccounting.epochEndBlock"), "epochAccounting.epochEndBlock"),
+        parseU64Strict(document.requireField("epochAccounting.validatorCount"), "epochAccounting.validatorCount"),
+        parseU64Strict(document.requireField("epochAccounting.activeValidatorCount"), "epochAccounting.activeValidatorCount"),
+        parseAmountStrict(document.requireField("epochAccounting.totalLockedStakeRawUnits"), "epochAccounting.totalLockedStakeRawUnits"),
+        parseAmountStrict(document.requireField("epochAccounting.totalEarnedRewardsRawUnits"), "epochAccounting.totalEarnedRewardsRawUnits"),
+        parseAmountStrict(document.requireField("epochAccounting.totalSlashingPenaltiesRawUnits"), "epochAccounting.totalSlashingPenaltiesRawUnits"),
+        document.requireField("epochAccounting.reason"),
+        document.requireField("epochAccounting.sourceLifecycleDigest")
+    );
+
+    if (!record.isValid()) {
+        throw std::invalid_argument("Finalized block epoch accounting record is invalid.");
+    }
+
+    return record;
+}
+
+ValidatorLifecycleSummary parseValidatorLifecycleSummary(
+    const serialization::KeyValueFileDocument& document
+) {
+    ValidatorLifecycleSummary summary(
+        document.requireField("validatorLifecycleSummaryStatus"),
+        parseU64Strict(document.requireField("validatorLifecycleSummary.blockHeight"), "validatorLifecycleSummary.blockHeight"),
+        parseU64Strict(document.requireField("validatorLifecycleSummary.epochIndex"), "validatorLifecycleSummary.epochIndex"),
+        parseU64Strict(document.requireField("validatorLifecycleSummary.activeValidatorCount"), "validatorLifecycleSummary.activeValidatorCount"),
+        parseU64Strict(document.requireField("validatorLifecycleSummary.jailedValidatorCount"), "validatorLifecycleSummary.jailedValidatorCount"),
+        parseU64Strict(document.requireField("validatorLifecycleSummary.slashedValidatorCount"), "validatorLifecycleSummary.slashedValidatorCount"),
+        parseAmountStrict(document.requireField("validatorLifecycleSummary.totalLockedStakeRawUnits"), "validatorLifecycleSummary.totalLockedStakeRawUnits"),
+        parseAmountStrict(document.requireField("validatorLifecycleSummary.totalEarnedRewardsRawUnits"), "validatorLifecycleSummary.totalEarnedRewardsRawUnits"),
+        parseAmountStrict(document.requireField("validatorLifecycleSummary.totalSlashingPenaltiesRawUnits"), "validatorLifecycleSummary.totalSlashingPenaltiesRawUnits"),
+        document.requireField("validatorLifecycleSummary.reason"),
+        document.requireField("validatorLifecycleSummary.sourceEpochDigest")
+    );
+
+    if (!summary.isValid()) {
+        throw std::invalid_argument("Finalized block validator lifecycle summary is invalid.");
+    }
+
+    return summary;
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -1253,6 +1328,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_governancePolicySnapshot(GovernancePolicySnapshot::notEvaluated()),
       m_governanceActionGuards(),
       m_governanceSummary(GovernanceSummary::notEvaluated()),
+      m_validatorLifecycleRecords(),
+      m_epochAccountingRecord(EpochAccountingRecord::notEvaluated()),
+      m_validatorLifecycleSummary(ValidatorLifecycleSummary::notEvaluated()),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -1289,6 +1367,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     GovernancePolicySnapshot governancePolicySnapshot,
     std::vector<GovernanceActionGuard> governanceActionGuards,
     GovernanceSummary governanceSummary,
+    std::vector<ValidatorLifecycleRecord> validatorLifecycleRecords,
+    EpochAccountingRecord epochAccountingRecord,
+    ValidatorLifecycleSummary validatorLifecycleSummary,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -1324,6 +1405,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_governancePolicySnapshot(std::move(governancePolicySnapshot)),
       m_governanceActionGuards(std::move(governanceActionGuards)),
       m_governanceSummary(std::move(governanceSummary)),
+      m_validatorLifecycleRecords(std::move(validatorLifecycleRecords)),
+      m_epochAccountingRecord(std::move(epochAccountingRecord)),
+      m_validatorLifecycleSummary(std::move(validatorLifecycleSummary)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -1459,6 +1543,18 @@ const GovernanceSummary& FinalizedBlockArtifact::governanceSummary() const {
     return m_governanceSummary;
 }
 
+const std::vector<ValidatorLifecycleRecord>& FinalizedBlockArtifact::validatorLifecycleRecords() const {
+    return m_validatorLifecycleRecords;
+}
+
+const EpochAccountingRecord& FinalizedBlockArtifact::epochAccountingRecord() const {
+    return m_epochAccountingRecord;
+}
+
+const ValidatorLifecycleSummary& FinalizedBlockArtifact::validatorLifecycleSummary() const {
+    return m_validatorLifecycleSummary;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -1525,6 +1621,25 @@ bool FinalizedBlockArtifact::isValid() const {
                    Governance::sameSummary(
                        Governance::buildSummary(m_block->index(), m_governanceActionGuards),
                        m_governanceSummary
+                   ) &&
+                   ValidatorLifecycle::sameLifecycleRecords(
+                       ValidatorLifecycle::buildLifecycleRecords(
+                           m_block->index(),
+                           m_rewardDistributions,
+                           m_lockedStakePositions,
+                           m_securityScoreRecords,
+                           m_protectionRewardSettlements,
+                           m_stakePenaltyRecords
+                       ),
+                       m_validatorLifecycleRecords
+                   ) &&
+                   ValidatorLifecycle::sameEpochAccounting(
+                       ValidatorLifecycle::buildEpochAccountingRecord(m_block->index(), m_validatorLifecycleRecords),
+                       m_epochAccountingRecord
+                   ) &&
+                   ValidatorLifecycle::sameSummary(
+                       ValidatorLifecycle::buildSummary(m_block->index(), m_validatorLifecycleRecords, m_epochAccountingRecord),
+                       m_validatorLifecycleSummary
                    );
         }
 
@@ -1683,6 +1798,25 @@ bool FinalizedBlockArtifact::isValid() const {
                Governance::sameSummary(
                    Governance::buildSummary(m_block->index(), m_governanceActionGuards),
                    m_governanceSummary
+               ) &&
+               ValidatorLifecycle::sameLifecycleRecords(
+                   ValidatorLifecycle::buildLifecycleRecords(
+                       m_block->index(),
+                       m_rewardDistributions,
+                       m_lockedStakePositions,
+                       m_securityScoreRecords,
+                       m_protectionRewardSettlements,
+                       m_stakePenaltyRecords
+                   ),
+                   m_validatorLifecycleRecords
+               ) &&
+               ValidatorLifecycle::sameEpochAccounting(
+                   ValidatorLifecycle::buildEpochAccountingRecord(m_block->index(), m_validatorLifecycleRecords),
+                   m_epochAccountingRecord
+               ) &&
+               ValidatorLifecycle::sameSummary(
+                   ValidatorLifecycle::buildSummary(m_block->index(), m_validatorLifecycleRecords, m_epochAccountingRecord),
+                   m_validatorLifecycleSummary
                );
     } catch (const std::exception&) {
         return false;
@@ -1725,6 +1859,9 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";governancePolicyStatus=" << m_governancePolicySnapshot.status()
         << ";governanceActionGuardCount=" << m_governanceActionGuards.size()
         << ";governanceSummaryStatus=" << m_governanceSummary.status()
+        << ";validatorLifecycleRecordCount=" << m_validatorLifecycleRecords.size()
+        << ";epochAccountingStatus=" << m_epochAccountingRecord.status()
+        << ";validatorLifecycleSummaryStatus=" << m_validatorLifecycleSummary.status()
         << "}";
 
     return oss.str();
@@ -1819,6 +1956,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const std::size_t cryptographicSlashingEvidenceCount = static_cast<std::size_t>(parseU64Strict(document.requireField("cryptographicSlashingEvidenceCount"), "cryptographicSlashingEvidenceCount"));
     const std::size_t stakePenaltyRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("stakePenaltyRecordCount"), "stakePenaltyRecordCount"));
     const std::size_t governanceActionGuardCount = static_cast<std::size_t>(parseU64Strict(document.requireField("governanceActionGuardCount"), "governanceActionGuardCount"));
+    const std::size_t validatorLifecycleRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorLifecycleRecordCount"), "validatorLifecycleRecordCount"));
 
     std::set<std::string> allowedFields = {
         "blockIndex",
@@ -1855,6 +1993,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "governancePolicyStatus",
         "governanceActionGuardCount",
         "governanceSummaryStatus",
+        "validatorLifecycleRecordCount",
+        "epochAccountingStatus",
+        "validatorLifecycleSummaryStatus",
         "monetary.blockHeight",
         "monetary.supplyBeforeRawUnits",
         "monetary.mintedRawUnits",
@@ -1961,6 +2102,27 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "governanceSummary.executedProposalCount",
         "governanceSummary.reason",
         "governanceSummary.sourceGuardDigest",
+        "epochAccounting.blockHeight",
+        "epochAccounting.epochIndex",
+        "epochAccounting.epochStartBlock",
+        "epochAccounting.epochEndBlock",
+        "epochAccounting.validatorCount",
+        "epochAccounting.activeValidatorCount",
+        "epochAccounting.totalLockedStakeRawUnits",
+        "epochAccounting.totalEarnedRewardsRawUnits",
+        "epochAccounting.totalSlashingPenaltiesRawUnits",
+        "epochAccounting.reason",
+        "epochAccounting.sourceLifecycleDigest",
+        "validatorLifecycleSummary.blockHeight",
+        "validatorLifecycleSummary.epochIndex",
+        "validatorLifecycleSummary.activeValidatorCount",
+        "validatorLifecycleSummary.jailedValidatorCount",
+        "validatorLifecycleSummary.slashedValidatorCount",
+        "validatorLifecycleSummary.totalLockedStakeRawUnits",
+        "validatorLifecycleSummary.totalEarnedRewardsRawUnits",
+        "validatorLifecycleSummary.totalSlashingPenaltiesRawUnits",
+        "validatorLifecycleSummary.reason",
+        "validatorLifecycleSummary.sourceEpochDigest",
         "timestamp",
         "recordCount",
         "block",
@@ -2161,6 +2323,20 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         allowedFields.insert(prefix + "sourcePolicyDigest");
     }
 
+    for (std::size_t index = 0; index < validatorLifecycleRecordCount; ++index) {
+        const std::string prefix = "validatorLifecycle." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "epochIndex");
+        allowedFields.insert(prefix + "lifecycleStatus");
+        allowedFields.insert(prefix + "lockedStakeRawUnits");
+        allowedFields.insert(prefix + "earnedRewardRawUnits");
+        allowedFields.insert(prefix + "slashingPenaltyRawUnits");
+        allowedFields.insert(prefix + "securityScore");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourceDigest");
+    }
+
     document.requireOnlyFields(allowedFields);
 
     /*
@@ -2314,6 +2490,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const GovernanceSummary governanceSummary =
         parseGovernanceSummary(document);
 
+    std::vector<ValidatorLifecycleRecord> validatorLifecycleRecords;
+    validatorLifecycleRecords.reserve(validatorLifecycleRecordCount);
+    for (std::size_t lifecycleIndex = 0; lifecycleIndex < validatorLifecycleRecordCount; ++lifecycleIndex) {
+        validatorLifecycleRecords.push_back(parseValidatorLifecycleRecord(document, lifecycleIndex));
+    }
+
+    const EpochAccountingRecord epochAccountingRecord =
+        parseEpochAccountingRecord(document);
+
+    const ValidatorLifecycleSummary validatorLifecycleSummary =
+        parseValidatorLifecycleSummary(document);
+
     const std::int64_t timestamp = parseI64Strict(document.requireField("timestamp"), "timestamp");
 
     const consensus::QuorumCertificate quorumCertificate =
@@ -2350,8 +2538,8 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block record does not match block or quorum certificate.");
     }
 
-    if (RewardDistributionCalculator::totalReward(rewardDistributions) != totalFee) {
-        throw std::invalid_argument("Finalized block reward distributions do not match total fees.");
+    if (RewardDistributionCalculator::totalReward(rewardDistributions) != feeEconomicBalance.validatorRewardAmount()) {
+        throw std::invalid_argument("Finalized block reward distributions do not match validator fee allocation.");
     }
 
     if (!LockedStakePositionBuilder::samePositions(
@@ -2589,6 +2777,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"governancePolicyStatus", governancePolicySnapshot.status()},
         {"governanceActionGuardCount", std::to_string(governanceActionGuards.size())},
         {"governanceSummaryStatus", governanceSummary.status()},
+        {"validatorLifecycleRecordCount", std::to_string(validatorLifecycleRecords.size())},
+        {"epochAccountingStatus", epochAccountingRecord.status()},
+        {"validatorLifecycleSummaryStatus", validatorLifecycleSummary.status()},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -2907,6 +3098,43 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     canonicalFields.emplace_back("governanceSummary.reason", governanceSummary.reason());
     canonicalFields.emplace_back("governanceSummary.sourceGuardDigest", governanceSummary.sourceGuardDigest());
 
+    for (std::size_t lifecycleIndex = 0; lifecycleIndex < validatorLifecycleRecords.size(); ++lifecycleIndex) {
+        const std::string prefix = "validatorLifecycle." + std::to_string(lifecycleIndex) + ".";
+        canonicalFields.emplace_back(prefix + "validatorAddress", validatorLifecycleRecords[lifecycleIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(validatorLifecycleRecords[lifecycleIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "epochIndex", std::to_string(validatorLifecycleRecords[lifecycleIndex].epochIndex()));
+        canonicalFields.emplace_back(prefix + "lifecycleStatus", validatorLifecycleRecords[lifecycleIndex].lifecycleStatus());
+        canonicalFields.emplace_back(prefix + "lockedStakeRawUnits", std::to_string(validatorLifecycleRecords[lifecycleIndex].lockedStake().rawUnits()));
+        canonicalFields.emplace_back(prefix + "earnedRewardRawUnits", std::to_string(validatorLifecycleRecords[lifecycleIndex].earnedReward().rawUnits()));
+        canonicalFields.emplace_back(prefix + "slashingPenaltyRawUnits", std::to_string(validatorLifecycleRecords[lifecycleIndex].slashingPenalty().rawUnits()));
+        canonicalFields.emplace_back(prefix + "securityScore", std::to_string(validatorLifecycleRecords[lifecycleIndex].securityScore()));
+        canonicalFields.emplace_back(prefix + "reason", validatorLifecycleRecords[lifecycleIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourceDigest", validatorLifecycleRecords[lifecycleIndex].sourceDigest());
+    }
+
+    canonicalFields.emplace_back("epochAccounting.blockHeight", std::to_string(epochAccountingRecord.blockHeight()));
+    canonicalFields.emplace_back("epochAccounting.epochIndex", std::to_string(epochAccountingRecord.epochIndex()));
+    canonicalFields.emplace_back("epochAccounting.epochStartBlock", std::to_string(epochAccountingRecord.epochStartBlock()));
+    canonicalFields.emplace_back("epochAccounting.epochEndBlock", std::to_string(epochAccountingRecord.epochEndBlock()));
+    canonicalFields.emplace_back("epochAccounting.validatorCount", std::to_string(epochAccountingRecord.validatorCount()));
+    canonicalFields.emplace_back("epochAccounting.activeValidatorCount", std::to_string(epochAccountingRecord.activeValidatorCount()));
+    canonicalFields.emplace_back("epochAccounting.totalLockedStakeRawUnits", std::to_string(epochAccountingRecord.totalLockedStake().rawUnits()));
+    canonicalFields.emplace_back("epochAccounting.totalEarnedRewardsRawUnits", std::to_string(epochAccountingRecord.totalEarnedRewards().rawUnits()));
+    canonicalFields.emplace_back("epochAccounting.totalSlashingPenaltiesRawUnits", std::to_string(epochAccountingRecord.totalSlashingPenalties().rawUnits()));
+    canonicalFields.emplace_back("epochAccounting.reason", epochAccountingRecord.reason());
+    canonicalFields.emplace_back("epochAccounting.sourceLifecycleDigest", epochAccountingRecord.sourceLifecycleDigest());
+
+    canonicalFields.emplace_back("validatorLifecycleSummary.blockHeight", std::to_string(validatorLifecycleSummary.blockHeight()));
+    canonicalFields.emplace_back("validatorLifecycleSummary.epochIndex", std::to_string(validatorLifecycleSummary.epochIndex()));
+    canonicalFields.emplace_back("validatorLifecycleSummary.activeValidatorCount", std::to_string(validatorLifecycleSummary.activeValidatorCount()));
+    canonicalFields.emplace_back("validatorLifecycleSummary.jailedValidatorCount", std::to_string(validatorLifecycleSummary.jailedValidatorCount()));
+    canonicalFields.emplace_back("validatorLifecycleSummary.slashedValidatorCount", std::to_string(validatorLifecycleSummary.slashedValidatorCount()));
+    canonicalFields.emplace_back("validatorLifecycleSummary.totalLockedStakeRawUnits", std::to_string(validatorLifecycleSummary.totalLockedStake().rawUnits()));
+    canonicalFields.emplace_back("validatorLifecycleSummary.totalEarnedRewardsRawUnits", std::to_string(validatorLifecycleSummary.totalEarnedRewards().rawUnits()));
+    canonicalFields.emplace_back("validatorLifecycleSummary.totalSlashingPenaltiesRawUnits", std::to_string(validatorLifecycleSummary.totalSlashingPenalties().rawUnits()));
+    canonicalFields.emplace_back("validatorLifecycleSummary.reason", validatorLifecycleSummary.reason());
+    canonicalFields.emplace_back("validatorLifecycleSummary.sourceEpochDigest", validatorLifecycleSummary.sourceEpochDigest());
+
     canonicalFields.emplace_back("block", serializedBlock);
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
@@ -2951,6 +3179,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         governancePolicySnapshot,
         governanceActionGuards,
         governanceSummary,
+        validatorLifecycleRecords,
+        epochAccountingRecord,
+        validatorLifecycleSummary,
         quorumCertificate,
         finalizedRecord
     );
@@ -3340,6 +3571,41 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
             if (!Governance::sameSummary(expectedGovernanceSummary, artifact.governanceSummary())) {
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted governance summary does not match governance guards.");
+            }
+
+            const std::vector<ValidatorLifecycleRecord> expectedLifecycleRecords =
+                ValidatorLifecycle::buildLifecycleRecords(
+                    block.index(),
+                    artifact.rewardDistributions(),
+                    artifact.lockedStakePositions(),
+                    artifact.securityScoreRecords(),
+                    artifact.protectionRewardSettlements(),
+                    artifact.stakePenaltyRecords()
+                );
+
+            if (!ValidatorLifecycle::sameLifecycleRecords(expectedLifecycleRecords, artifact.validatorLifecycleRecords())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted validator lifecycle records do not match rebuilt accounting.");
+            }
+
+            const EpochAccountingRecord expectedEpochAccounting =
+                ValidatorLifecycle::buildEpochAccountingRecord(
+                    block.index(),
+                    expectedLifecycleRecords
+                );
+
+            if (!ValidatorLifecycle::sameEpochAccounting(expectedEpochAccounting, artifact.epochAccountingRecord())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted epoch accounting does not match rebuilt validator lifecycle.");
+            }
+
+            const ValidatorLifecycleSummary expectedLifecycleSummary =
+                ValidatorLifecycle::buildSummary(
+                    block.index(),
+                    expectedLifecycleRecords,
+                    expectedEpochAccounting
+                );
+
+            if (!ValidatorLifecycle::sameSummary(expectedLifecycleSummary, artifact.validatorLifecycleSummary())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted validator lifecycle summary does not match rebuilt epoch accounting.");
             }
 
             const consensus::BlockFinalizationResult finalization =

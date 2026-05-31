@@ -535,6 +535,16 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Finalized block file should persist governance guards for treasury and controlled issuance."
     );
 
+    requireCondition(
+        blockContents.find("validatorLifecycleRecordCount=1") != std::string::npos &&
+        blockContents.find("validatorLifecycle.0.lifecycleStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("epochAccountingStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("epochAccounting.epochIndex=1") != std::string::npos &&
+        blockContents.find("validatorLifecycleSummaryStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("validatorLifecycleSummary.reason=VALIDATOR_LIFECYCLE_SUMMARY") != std::string::npos,
+        "Finalized block file should persist validator lifecycle and epoch accounting."
+    );
+
     const auto loaded =
         NodeDataDirectory::loadManifest(directoryConfig);
 

@@ -1,6 +1,6 @@
 # Nodo failing test diagnostics
 
-Generated at: `2026-05-31T20:44:09.422110+00:00`
+Generated at: `2026-05-31T21:04:03.831564+00:00`
 Repository root: `/home/igor/Documentos/Python/nodo`
 Build directory: `/home/igor/Documentos/Python/nodo/build/cmake`
 
@@ -89,7 +89,7 @@ Build directory: `/home/igor/Documentos/Python/nodo/build/cmake`
 ### `/usr/bin/ctest -R ^app_CommandLineLocalFlowTests$ --output-on-failure -VV`
 
 - Return code: `8`
-- Duration: `0.066s`
+- Duration: `0.055s`
 - Classifications: `cli_flow_failure`
 
 Failure windows:
@@ -186,7 +186,7 @@ Errors while running CTest
 ### `/usr/bin/ctest -R ^app_CommandLinePersistentMempoolTests$ --output-on-failure -VV`
 
 - Return code: `8`
-- Duration: `0.076s`
+- Duration: `0.033s`
 - Classifications: `cli_flow_failure`
 
 Failure windows:
@@ -201,13 +201,13 @@ test 3
 3: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake
 3: Test timeout computed to be: 10000000
 3: Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.
-1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.03 sec
+1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.02 sec
 Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.
 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.04 sec
+Total Test time (real) =   0.02 sec
 
 ```
 
@@ -220,13 +220,13 @@ test 3
 3: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake
 3: Test timeout computed to be: 10000000
 3: Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.
-1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.03 sec
+1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.02 sec
 Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.
 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.04 sec
+Total Test time (real) =   0.02 sec
 
 The following tests FAILED:
 ```
@@ -239,26 +239,26 @@ test 3
 3: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake
 3: Test timeout computed to be: 10000000
 3: Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.
-1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.03 sec
+1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.02 sec
 Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.
 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.04 sec
+Total Test time (real) =   0.02 sec
 
 The following tests FAILED:
 	  3 - app_CommandLinePersistentMempoolTests (Failed)
 ```
 
 ```text
-1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.03 sec
+1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.02 sec
 Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.
 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.04 sec
+Total Test time (real) =   0.02 sec
 
 The following tests FAILED:
 	  3 - app_CommandLinePersistentMempoolTests (Failed)
@@ -272,7 +272,7 @@ Nodo command line persistent mempool tests failed: Produce should finalize block
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.04 sec
+Total Test time (real) =   0.02 sec
 
 The following tests FAILED:
 	  3 - app_CommandLinePersistentMempoolTests (Failed)
@@ -283,7 +283,7 @@ Errors while running CTest
 ### `/usr/bin/ctest -R ^app_CommandLineRuntimeBlockTests$ --output-on-failure -VV`
 
 - Return code: `8`
-- Duration: `0.058s`
+- Duration: `0.03s`
 - Classifications: `cli_flow_failure`
 
 Failure windows:
@@ -304,7 +304,7 @@ Nodo command line runtime block tests failed: block produce should finalize and 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.03 sec
+Total Test time (real) =   0.02 sec
 
 ```
 
@@ -323,7 +323,7 @@ Nodo command line runtime block tests failed: block produce should finalize and 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.03 sec
+Total Test time (real) =   0.02 sec
 
 The following tests FAILED:
 ```
@@ -342,7 +342,7 @@ Nodo command line runtime block tests failed: block produce should finalize and 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.03 sec
+Total Test time (real) =   0.02 sec
 
 The following tests FAILED:
 	  4 - app_CommandLineRuntimeBlockTests (Failed)
@@ -355,7 +355,7 @@ Nodo command line runtime block tests failed: block produce should finalize and 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.03 sec
+Total Test time (real) =   0.02 sec
 
 The following tests FAILED:
 	  4 - app_CommandLineRuntimeBlockTests (Failed)
@@ -369,7 +369,7 @@ Nodo command line runtime block tests failed: block produce should finalize and 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.03 sec
+Total Test time (real) =   0.02 sec
 
 The following tests FAILED:
 	  4 - app_CommandLineRuntimeBlockTests (Failed)
@@ -379,105 +379,14 @@ Errors while running CTest
 
 ### `/usr/bin/ctest -R ^node_FinalizedBlockStoreTests$ --output-on-failure -VV`
 
-- Return code: `8`
-- Duration: `0.055s`
-- Classifications: `empty_key_value_field, slashing_mismatch`
-
-Failure windows:
-
-```text
-Checking test dependency graph...
-Checking test dependency graph end
-test 43
-    Start 43: node_FinalizedBlockStoreTests
-
-43: Test command: /home/igor/Documentos/Python/nodo/build/cmake/node_FinalizedBlockStoreTests
-43: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake
-43: Test timeout computed to be: 10000000
-43: Nodo finalized block store tests failed: Empty value for key-value field: cryptographicSlashingSummary.sourcePenaltyDigest
-1/1 Test #43: node_FinalizedBlockStoreTests ....***Failed    0.03 sec
-Nodo finalized block store tests failed: Empty value for key-value field: cryptographicSlashingSummary.sourcePenaltyDigest
-
-
-0% tests passed, 1 tests failed out of 1
-
-Total Test time (real) =   0.03 sec
-
-```
-
-```text
-Checking test dependency graph end
-test 43
-    Start 43: node_FinalizedBlockStoreTests
-
-43: Test command: /home/igor/Documentos/Python/nodo/build/cmake/node_FinalizedBlockStoreTests
-43: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake
-43: Test timeout computed to be: 10000000
-43: Nodo finalized block store tests failed: Empty value for key-value field: cryptographicSlashingSummary.sourcePenaltyDigest
-1/1 Test #43: node_FinalizedBlockStoreTests ....***Failed    0.03 sec
-Nodo finalized block store tests failed: Empty value for key-value field: cryptographicSlashingSummary.sourcePenaltyDigest
-
-
-0% tests passed, 1 tests failed out of 1
-
-Total Test time (real) =   0.03 sec
-
-The following tests FAILED:
-```
-
-```text
-test 43
-    Start 43: node_FinalizedBlockStoreTests
-
-43: Test command: /home/igor/Documentos/Python/nodo/build/cmake/node_FinalizedBlockStoreTests
-43: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake
-43: Test timeout computed to be: 10000000
-43: Nodo finalized block store tests failed: Empty value for key-value field: cryptographicSlashingSummary.sourcePenaltyDigest
-1/1 Test #43: node_FinalizedBlockStoreTests ....***Failed    0.03 sec
-Nodo finalized block store tests failed: Empty value for key-value field: cryptographicSlashingSummary.sourcePenaltyDigest
-
-
-0% tests passed, 1 tests failed out of 1
-
-Total Test time (real) =   0.03 sec
-
-The following tests FAILED:
-	 43 - node_FinalizedBlockStoreTests (Failed)
-```
-
-```text
-1/1 Test #43: node_FinalizedBlockStoreTests ....***Failed    0.03 sec
-Nodo finalized block store tests failed: Empty value for key-value field: cryptographicSlashingSummary.sourcePenaltyDigest
-
-
-0% tests passed, 1 tests failed out of 1
-
-Total Test time (real) =   0.03 sec
-
-The following tests FAILED:
-	 43 - node_FinalizedBlockStoreTests (Failed)
-
-Errors while running CTest
-```
-
-```text
-Nodo finalized block store tests failed: Empty value for key-value field: cryptographicSlashingSummary.sourcePenaltyDigest
-
-
-0% tests passed, 1 tests failed out of 1
-
-Total Test time (real) =   0.03 sec
-
-The following tests FAILED:
-	 43 - node_FinalizedBlockStoreTests (Failed)
-
-Errors while running CTest
-```
+- Return code: `0`
+- Duration: `0.066s`
+- Classifications: `none`
 
 ### `/usr/bin/ctest -R ^node_RuntimeStateLoaderTests$ --output-on-failure -VV`
 
 - Return code: `8`
-- Duration: `0.067s`
+- Duration: `0.058s`
 - Classifications: `none`
 
 Failure windows:
@@ -491,14 +400,14 @@ test 54
 54: Test command: /home/igor/Documentos/Python/nodo/build/cmake/node_RuntimeStateLoaderTests
 54: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake
 54: Test timeout computed to be: 10000000
-54: Nodo runtime state loader tests failed: Finalized block codec should name the unknown field.
+54: Nodo runtime state loader tests failed: Runtime should load from persisted data directory.
 1/1 Test #54: node_RuntimeStateLoaderTests .....***Failed    0.04 sec
-Nodo runtime state loader tests failed: Finalized block codec should name the unknown field.
+Nodo runtime state loader tests failed: Runtime should load from persisted data directory.
 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.05 sec
+Total Test time (real) =   0.04 sec
 
 ```
 
@@ -510,14 +419,14 @@ test 54
 54: Test command: /home/igor/Documentos/Python/nodo/build/cmake/node_RuntimeStateLoaderTests
 54: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake
 54: Test timeout computed to be: 10000000
-54: Nodo runtime state loader tests failed: Finalized block codec should name the unknown field.
+54: Nodo runtime state loader tests failed: Runtime should load from persisted data directory.
 1/1 Test #54: node_RuntimeStateLoaderTests .....***Failed    0.04 sec
-Nodo runtime state loader tests failed: Finalized block codec should name the unknown field.
+Nodo runtime state loader tests failed: Runtime should load from persisted data directory.
 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.05 sec
+Total Test time (real) =   0.04 sec
 
 The following tests FAILED:
 ```
@@ -529,14 +438,14 @@ test 54
 54: Test command: /home/igor/Documentos/Python/nodo/build/cmake/node_RuntimeStateLoaderTests
 54: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake
 54: Test timeout computed to be: 10000000
-54: Nodo runtime state loader tests failed: Finalized block codec should name the unknown field.
+54: Nodo runtime state loader tests failed: Runtime should load from persisted data directory.
 1/1 Test #54: node_RuntimeStateLoaderTests .....***Failed    0.04 sec
-Nodo runtime state loader tests failed: Finalized block codec should name the unknown field.
+Nodo runtime state loader tests failed: Runtime should load from persisted data directory.
 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.05 sec
+Total Test time (real) =   0.04 sec
 
 The following tests FAILED:
 	 54 - node_RuntimeStateLoaderTests (Failed)
@@ -544,12 +453,12 @@ The following tests FAILED:
 
 ```text
 1/1 Test #54: node_RuntimeStateLoaderTests .....***Failed    0.04 sec
-Nodo runtime state loader tests failed: Finalized block codec should name the unknown field.
+Nodo runtime state loader tests failed: Runtime should load from persisted data directory.
 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.05 sec
+Total Test time (real) =   0.04 sec
 
 The following tests FAILED:
 	 54 - node_RuntimeStateLoaderTests (Failed)
@@ -558,12 +467,12 @@ Errors while running CTest
 ```
 
 ```text
-Nodo runtime state loader tests failed: Finalized block codec should name the unknown field.
+Nodo runtime state loader tests failed: Runtime should load from persisted data directory.
 
 
 0% tests passed, 1 tests failed out of 1
 
-Total Test time (real) =   0.05 sec
+Total Test time (real) =   0.04 sec
 
 The following tests FAILED:
 	 54 - node_RuntimeStateLoaderTests (Failed)

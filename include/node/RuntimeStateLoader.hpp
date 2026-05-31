@@ -14,6 +14,7 @@
 #include "node/SlashingEvidence.hpp"
 #include "node/CryptographicSlashing.hpp"
 #include "node/Governance.hpp"
+#include "node/ValidatorLifecycle.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
@@ -122,6 +123,9 @@ public:
         GovernancePolicySnapshot governancePolicySnapshot,
         std::vector<GovernanceActionGuard> governanceActionGuards,
         GovernanceSummary governanceSummary,
+        std::vector<ValidatorLifecycleRecord> validatorLifecycleRecords,
+        EpochAccountingRecord epochAccountingRecord,
+        ValidatorLifecycleSummary validatorLifecycleSummary,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -158,6 +162,9 @@ public:
     const GovernancePolicySnapshot& governancePolicySnapshot() const;
     const std::vector<GovernanceActionGuard>& governanceActionGuards() const;
     const GovernanceSummary& governanceSummary() const;
+    const std::vector<ValidatorLifecycleRecord>& validatorLifecycleRecords() const;
+    const EpochAccountingRecord& epochAccountingRecord() const;
+    const ValidatorLifecycleSummary& validatorLifecycleSummary() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -197,6 +204,9 @@ private:
     GovernancePolicySnapshot m_governancePolicySnapshot;
     std::vector<GovernanceActionGuard> m_governanceActionGuards;
     GovernanceSummary m_governanceSummary;
+    std::vector<ValidatorLifecycleRecord> m_validatorLifecycleRecords;
+    EpochAccountingRecord m_epochAccountingRecord;
+    ValidatorLifecycleSummary m_validatorLifecycleSummary;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };

@@ -358,6 +358,49 @@ bool governancePlanIsValid(
     }
 }
 
+bool validatorLifecyclePlanIsValid(
+    std::uint64_t blockHeight,
+    const std::vector<RewardDistribution>& rewardDistributions,
+    const std::vector<LockedStakePosition>& lockedStakePositions,
+    const std::vector<SecurityScoreRecord>& securityScoreRecords,
+    const std::vector<ProtectionRewardSettlement>& protectionRewardSettlements,
+    const std::vector<StakePenaltyRecord>& stakePenaltyRecords,
+    const std::vector<ValidatorLifecycleRecord>& lifecycleRecords,
+    const EpochAccountingRecord& epochAccountingRecord,
+    const ValidatorLifecycleSummary& lifecycleSummary
+) {
+    try {
+        const std::vector<ValidatorLifecycleRecord> expectedLifecycleRecords =
+            ValidatorLifecycle::buildLifecycleRecords(
+                blockHeight,
+                rewardDistributions,
+                lockedStakePositions,
+                securityScoreRecords,
+                protectionRewardSettlements,
+                stakePenaltyRecords
+            );
+
+        const EpochAccountingRecord expectedEpochAccounting =
+            ValidatorLifecycle::buildEpochAccountingRecord(
+                blockHeight,
+                expectedLifecycleRecords
+            );
+
+        const ValidatorLifecycleSummary expectedSummary =
+            ValidatorLifecycle::buildSummary(
+                blockHeight,
+                expectedLifecycleRecords,
+                expectedEpochAccounting
+            );
+
+        return ValidatorLifecycle::sameLifecycleRecords(expectedLifecycleRecords, lifecycleRecords) &&
+               ValidatorLifecycle::sameEpochAccounting(expectedEpochAccounting, epochAccountingRecord) &&
+               ValidatorLifecycle::sameSummary(expectedSummary, lifecycleSummary);
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 bool controlledIssuancePlanIsValid(
     const InflationEpochSnapshot& epoch,
     const MintAuthorizationRecord& authorization,
@@ -539,7 +582,10 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_cryptographicSlashingSummary(CryptographicSlashingSummary::notEvaluated()),
       m_governancePolicySnapshot(GovernancePolicySnapshot::notEvaluated()),
       m_governanceActionGuards(),
-      m_governanceSummary(GovernanceSummary::notEvaluated()) {}
+      m_governanceSummary(GovernanceSummary::notEvaluated()),
+      m_validatorLifecycleRecords(),
+      m_epochAccountingRecord(EpochAccountingRecord::notEvaluated()),
+      m_validatorLifecycleSummary(ValidatorLifecycleSummary::notEvaluated()) {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -1107,6 +1153,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     GovernancePolicySnapshot governancePolicySnapshot;
     std::vector<GovernanceActionGuard> governanceActionGuards;
     GovernanceSummary governanceSummary;
+    std::vector<ValidatorLifecycleRecord> validatorLifecycleRecords;
+    EpochAccountingRecord epochAccountingRecord;
+    ValidatorLifecycleSummary validatorLifecycleSummary;
 
     try {
         governancePolicySnapshot = Governance::buildPolicySnapshot(block.index());
@@ -1248,6 +1297,29 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
         result.m_governanceSummary = Governance::buildSummary(result.m_block->index(), result.m_governanceActionGuards);
     }
 
+    result.m_validatorLifecycleRecords =
+        ValidatorLifecycle::buildLifecycleRecords(
+            result.m_block->index(),
+            result.m_rewardDistributions,
+            result.m_lockedStakePositions,
+            result.m_securityScoreRecords,
+            result.m_protectionRewardSettlements,
+            result.m_stakePenaltyRecords
+        );
+
+    result.m_epochAccountingRecord =
+        ValidatorLifecycle::buildEpochAccountingRecord(
+            result.m_block->index(),
+            result.m_validatorLifecycleRecords
+        );
+
+    result.m_validatorLifecycleSummary =
+        ValidatorLifecycle::buildSummary(
+            result.m_block->index(),
+            result.m_validatorLifecycleRecords,
+            result.m_epochAccountingRecord
+        );
+
     return result;
 }
 
@@ -1336,6 +1408,17 @@ bool RuntimeBlockPipelineResult::finalized() const {
                m_governancePolicySnapshot,
                m_governanceActionGuards,
                m_governanceSummary
+           ) &&
+           validatorLifecyclePlanIsValid(
+               m_block->index(),
+               m_rewardDistributions,
+               m_lockedStakePositions,
+               m_securityScoreRecords,
+               m_protectionRewardSettlements,
+               m_stakePenaltyRecords,
+               m_validatorLifecycleRecords,
+               m_epochAccountingRecord,
+               m_validatorLifecycleSummary
            );
 }
 
@@ -1483,6 +1566,18 @@ const GovernanceSummary& RuntimeBlockPipelineResult::governanceSummary() const {
     return m_governanceSummary;
 }
 
+const std::vector<ValidatorLifecycleRecord>& RuntimeBlockPipelineResult::validatorLifecycleRecords() const {
+    return m_validatorLifecycleRecords;
+}
+
+const EpochAccountingRecord& RuntimeBlockPipelineResult::epochAccountingRecord() const {
+    return m_epochAccountingRecord;
+}
+
+const ValidatorLifecycleSummary& RuntimeBlockPipelineResult::validatorLifecycleSummary() const {
+    return m_validatorLifecycleSummary;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -1522,6 +1617,9 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";governancePolicyStatus=" << m_governancePolicySnapshot.status()
         << ";governanceActionGuardCount=" << m_governanceActionGuards.size()
         << ";governanceSummaryStatus=" << m_governanceSummary.status()
+        << ";validatorLifecycleRecordCount=" << m_validatorLifecycleRecords.size()
+        << ";epochAccountingStatus=" << m_epochAccountingRecord.status()
+        << ";validatorLifecycleSummaryStatus=" << m_validatorLifecycleSummary.status()
         << "}";
 
     return oss.str();
@@ -1678,6 +1776,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     GovernancePolicySnapshot governancePolicySnapshot;
     std::vector<GovernanceActionGuard> governanceActionGuards;
     GovernanceSummary governanceSummary;
+    std::vector<ValidatorLifecycleRecord> validatorLifecycleRecords;
+    EpochAccountingRecord epochAccountingRecord;
+    ValidatorLifecycleSummary validatorLifecycleSummary;
 
     try {
         feeEconomicBalance =
@@ -1857,6 +1958,29 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             Governance::buildSummary(
                 production.block().index(),
                 governanceActionGuards
+            );
+
+        validatorLifecycleRecords =
+            ValidatorLifecycle::buildLifecycleRecords(
+                production.block().index(),
+                rewardDistributions,
+                lockedStakePositions,
+                securityScoreRecords,
+                protectionRewardSettlements,
+                stakePenaltyRecords
+            );
+
+        epochAccountingRecord =
+            ValidatorLifecycle::buildEpochAccountingRecord(
+                production.block().index(),
+                validatorLifecycleRecords
+            );
+
+        validatorLifecycleSummary =
+            ValidatorLifecycle::buildSummary(
+                production.block().index(),
+                validatorLifecycleRecords,
+                epochAccountingRecord
             );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(

@@ -320,7 +320,10 @@ void testLoadsRuntimeWithPersistedFinalizedBlock() {
 
     requireCondition(
         loaded.loaded(),
-        "Runtime should load from persisted data directory."
+        "Runtime should load from persisted data directory. Status=" +
+            nodo::node::runtimeStateLoadStatusToString(loaded.status()) +
+            " Reason=" +
+            loaded.reason()
     );
 
     requireCondition(

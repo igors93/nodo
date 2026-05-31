@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V18";
+    "NODO_FINALIZED_BLOCK_V19";
 
 } // namespace
 
@@ -216,6 +216,15 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
         );
     }
 
+    if (!pipelineResult.epochAccountingRecord().active() ||
+        !pipelineResult.validatorLifecycleSummary().active() ||
+        pipelineResult.validatorLifecycleRecords().size() != pipelineResult.rewardDistributions().size()) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::INVALID_PIPELINE_RESULT,
+            "Runtime block pipeline result failed validator lifecycle audit."
+        );
+    }
+
     const NodeDataDirectoryReadResult existingManifest =
         NodeDataDirectory::loadManifest(directoryConfig);
 
@@ -372,6 +381,9 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"governancePolicyStatus", pipelineResult.governancePolicySnapshot().status()},
         {"governanceActionGuardCount", std::to_string(pipelineResult.governanceActionGuards().size())},
         {"governanceSummaryStatus", pipelineResult.governanceSummary().status()},
+        {"validatorLifecycleRecordCount", std::to_string(pipelineResult.validatorLifecycleRecords().size())},
+        {"epochAccountingStatus", pipelineResult.epochAccountingRecord().status()},
+        {"validatorLifecycleSummaryStatus", pipelineResult.validatorLifecycleSummary().status()},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -801,6 +813,52 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
     fields.emplace_back("governanceSummary.executedProposalCount", std::to_string(governanceSummary.executedProposalCount()));
     fields.emplace_back("governanceSummary.reason", governanceSummary.reason());
     fields.emplace_back("governanceSummary.sourceGuardDigest", governanceSummary.sourceGuardDigest());
+
+    const std::vector<ValidatorLifecycleRecord>& lifecycleRecords =
+        pipelineResult.validatorLifecycleRecords();
+
+    for (std::size_t index = 0; index < lifecycleRecords.size(); ++index) {
+        const std::string prefix = "validatorLifecycle." + std::to_string(index) + ".";
+        fields.emplace_back(prefix + "validatorAddress", lifecycleRecords[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(lifecycleRecords[index].blockHeight()));
+        fields.emplace_back(prefix + "epochIndex", std::to_string(lifecycleRecords[index].epochIndex()));
+        fields.emplace_back(prefix + "lifecycleStatus", lifecycleRecords[index].lifecycleStatus());
+        fields.emplace_back(prefix + "lockedStakeRawUnits", std::to_string(lifecycleRecords[index].lockedStake().rawUnits()));
+        fields.emplace_back(prefix + "earnedRewardRawUnits", std::to_string(lifecycleRecords[index].earnedReward().rawUnits()));
+        fields.emplace_back(prefix + "slashingPenaltyRawUnits", std::to_string(lifecycleRecords[index].slashingPenalty().rawUnits()));
+        fields.emplace_back(prefix + "securityScore", std::to_string(lifecycleRecords[index].securityScore()));
+        fields.emplace_back(prefix + "reason", lifecycleRecords[index].reason());
+        fields.emplace_back(prefix + "sourceDigest", lifecycleRecords[index].sourceDigest());
+    }
+
+    const EpochAccountingRecord& epochAccounting =
+        pipelineResult.epochAccountingRecord();
+
+    fields.emplace_back("epochAccounting.blockHeight", std::to_string(epochAccounting.blockHeight()));
+    fields.emplace_back("epochAccounting.epochIndex", std::to_string(epochAccounting.epochIndex()));
+    fields.emplace_back("epochAccounting.epochStartBlock", std::to_string(epochAccounting.epochStartBlock()));
+    fields.emplace_back("epochAccounting.epochEndBlock", std::to_string(epochAccounting.epochEndBlock()));
+    fields.emplace_back("epochAccounting.validatorCount", std::to_string(epochAccounting.validatorCount()));
+    fields.emplace_back("epochAccounting.activeValidatorCount", std::to_string(epochAccounting.activeValidatorCount()));
+    fields.emplace_back("epochAccounting.totalLockedStakeRawUnits", std::to_string(epochAccounting.totalLockedStake().rawUnits()));
+    fields.emplace_back("epochAccounting.totalEarnedRewardsRawUnits", std::to_string(epochAccounting.totalEarnedRewards().rawUnits()));
+    fields.emplace_back("epochAccounting.totalSlashingPenaltiesRawUnits", std::to_string(epochAccounting.totalSlashingPenalties().rawUnits()));
+    fields.emplace_back("epochAccounting.reason", epochAccounting.reason());
+    fields.emplace_back("epochAccounting.sourceLifecycleDigest", epochAccounting.sourceLifecycleDigest());
+
+    const ValidatorLifecycleSummary& lifecycleSummary =
+        pipelineResult.validatorLifecycleSummary();
+
+    fields.emplace_back("validatorLifecycleSummary.blockHeight", std::to_string(lifecycleSummary.blockHeight()));
+    fields.emplace_back("validatorLifecycleSummary.epochIndex", std::to_string(lifecycleSummary.epochIndex()));
+    fields.emplace_back("validatorLifecycleSummary.activeValidatorCount", std::to_string(lifecycleSummary.activeValidatorCount()));
+    fields.emplace_back("validatorLifecycleSummary.jailedValidatorCount", std::to_string(lifecycleSummary.jailedValidatorCount()));
+    fields.emplace_back("validatorLifecycleSummary.slashedValidatorCount", std::to_string(lifecycleSummary.slashedValidatorCount()));
+    fields.emplace_back("validatorLifecycleSummary.totalLockedStakeRawUnits", std::to_string(lifecycleSummary.totalLockedStake().rawUnits()));
+    fields.emplace_back("validatorLifecycleSummary.totalEarnedRewardsRawUnits", std::to_string(lifecycleSummary.totalEarnedRewards().rawUnits()));
+    fields.emplace_back("validatorLifecycleSummary.totalSlashingPenaltiesRawUnits", std::to_string(lifecycleSummary.totalSlashingPenalties().rawUnits()));
+    fields.emplace_back("validatorLifecycleSummary.reason", lifecycleSummary.reason());
+    fields.emplace_back("validatorLifecycleSummary.sourceEpochDigest", lifecycleSummary.sourceEpochDigest());
 
     fields.emplace_back(
         "block",

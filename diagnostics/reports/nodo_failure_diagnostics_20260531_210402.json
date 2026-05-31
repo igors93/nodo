@@ -1,0 +1,481 @@
+{
+  "generated_at": "2026-05-31T21:04:03.831564+00:00",
+  "repo_root": "/home/igor/Documentos/Python/nodo",
+  "build_dir": "/home/igor/Documentos/Python/nodo/build/cmake",
+  "source_audit": {
+    "finalized_block_store_version": "NODO_FINALIZED_BLOCK_V18",
+    "runtime_state_loader_version": "NODO_FINALIZED_BLOCK_V18",
+    "persisted_fields_count": 217,
+    "allowed_fields_count": 216,
+    "canonical_fields_count": 216,
+    "persisted_not_allowed": [
+      "record."
+    ],
+    "persisted_not_canonical": [
+      "record."
+    ],
+    "governance_fields_present": true,
+    "protection_reward_fields_present": true,
+    "cryptographic_slashing_fields_present": true,
+    "fee_economics_fields_present": true,
+    "monetary_fields_present": true
+  },
+  "artifact_findings": [
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 14,
+      "key": "constexpr const char* FINALIZED_BLOCK_VERSION ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 219,
+      "key": "    const NodeDataDirectoryReadResult existingManifest ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 229,
+      "key": "    if (existingManifest.manifest().genesisConfigId() !",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 237,
+      "key": "    const std::filesystem::path path ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 243,
+      "key": "    const std::string contents ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 252,
+      "key": "            const std::string existingContents ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 262,
+      "key": "            const NodeDataDirectoryReadResult snapshot ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 294,
+      "key": "        const NodeDataDirectoryReadResult snapshot ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 379,
+      "key": "    const auto& records ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 389,
+      "key": "    const std::vector<RewardDistribution>& rewards ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 393,
+      "key": "        const std::string prefix ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 404,
+      "key": "    const std::vector<LockedStakePosition>& lockedStakePositions ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 408,
+      "key": "        const std::string prefix ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 419,
+      "key": "    const std::vector<SecurityScoreRecord>& securityScoreRecords ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 423,
+      "key": "        const std::string prefix ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 437,
+      "key": "    const std::vector<ValidatorSecurityCheckpoint>& securityCheckpoints ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 441,
+      "key": "        const std::string prefix ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 454,
+      "key": "    const std::vector<ValidatorRiskAssessment>& riskAssessments ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 458,
+      "key": "        const std::string prefix ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 473,
+      "key": "    const std::vector<ValidatorContainmentDecision>& containmentDecisions ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 477,
+      "key": "        const std::string prefix ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 491,
+      "key": "    const std::vector<ValidatorNetworkPolicy>& networkPolicies ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 495,
+      "key": "        const std::string prefix ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 511,
+      "key": "    const MonetaryFirewallAudit& monetaryAudit ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 526,
+      "key": "    const GenesisTreasurySnapshot& treasurySnapshot ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 537,
+      "key": "    const ProtectionRewardBudget& protectionBudget ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 549,
+      "key": "    const std::vector<ProtectionRewardGrant>& protectionGrants ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 553,
+      "key": "        const std::string prefix ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 564,
+      "key": "    const std::vector<ProtectionWorkRecord>& protectionWorkRecords ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 568,
+      "key": "        const std::string prefix ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 584,
+      "key": "    const ProtectionRewardSummary& protectionSummary ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 595,
+      "key": "    const std::vector<ProtectionRewardSettlement>& protectionSettlements ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 599,
+      "key": "        const std::string prefix ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 614,
+      "key": "    const InflationEpochSnapshot& inflationEpoch ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 628,
+      "key": "    const MintAuthorizationRecord& mintAuthorization ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 642,
+      "key": "    const SupplyExpansionRecord& supplyExpansion ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 653,
+      "key": "    const FeeEconomicBalance& feeBalance ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 664,
+      "key": "    const FeeBurnRecord& feeBurn ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 674,
+      "key": "    const TreasuryFeeRecord& treasuryFee ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 683,
+      "key": "    const std::vector<SlashingEvidenceRecord>& evidenceRecords ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 698,
+      "key": "    const std::vector<SlashingPreparationRecord>& preparationRecords ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 714,
+      "key": "    const SlashingEvidenceSummary& evidenceSummary ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 725,
+      "key": "    const std::vector<CryptographicSlashingEvidenceRecord>& cryptoEvidenceRecords ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 742,
+      "key": "    const std::vector<StakePenaltyRecord>& stakePenaltyRecords ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 757,
+      "key": "    const CryptographicSlashingSummary& cryptoSlashingSummary ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 768,
+      "key": "    const GovernancePolicySnapshot& governancePolicy ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 778,
+      "key": "    const std::vector<GovernanceActionGuard>& governanceGuards ",
+      "value": "",
+      "problem": "empty_value"
+    },
+    {
+      "path": "/home/igor/Documentos/Python/nodo/src/node/FinalizedBlockStore.cpp",
+      "line": 793,
+      "key": "    const GovernanceSummary& governanceSummary ",
+      "value": "",
+      "problem": "empty_value"
+    }
+  ],
+  "ctest_results": [
+    {
+      "command": [
+        "/usr/bin/ctest",
+        "-R",
+        "^app_CommandLineLocalFlowTests$",
+        "--output-on-failure",
+        "-VV"
+      ],
+      "cwd": "/home/igor/Documentos/Python/nodo/build/cmake",
+      "returncode": 8,
+      "duration_seconds": 0.055,
+      "stdout": "UpdateCTestConfiguration  from :/home/igor/Documentos/Python/nodo/build/cmake/DartConfiguration.tcl\nUpdateCTestConfiguration  from :/home/igor/Documentos/Python/nodo/build/cmake/DartConfiguration.tcl\nTest project /home/igor/Documentos/Python/nodo/build/cmake\nConstructing a list of tests\nDone constructing a list of tests\nUpdating test list for fixtures\nAdded 0 tests to meet fixture requirements\nChecking test dependency graph...\nChecking test dependency graph end\ntest 2\n    Start 2: app_CommandLineLocalFlowTests\n\n2: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLineLocalFlowTests\n2: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n2: Test timeout computed to be: 10000000\n2: Nodo command line local flow tests failed: Demo block should finalize the submitted transaction.\n1/1 Test #2: app_CommandLineLocalFlowTests ....***Failed    0.03 sec\nNodo command line local flow tests failed: Demo block should finalize the submitted transaction.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:\n\t  2 - app_CommandLineLocalFlowTests (Failed)\n",
+      "stderr": "Errors while running CTest\n",
+      "classifications": [
+        "cli_flow_failure"
+      ],
+      "failure_windows": [
+        "Checking test dependency graph...\nChecking test dependency graph end\ntest 2\n    Start 2: app_CommandLineLocalFlowTests\n\n2: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLineLocalFlowTests\n2: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n2: Test timeout computed to be: 10000000\n2: Nodo command line local flow tests failed: Demo block should finalize the submitted transaction.\n1/1 Test #2: app_CommandLineLocalFlowTests ....***Failed    0.03 sec\nNodo command line local flow tests failed: Demo block should finalize the submitted transaction.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n",
+        "Checking test dependency graph end\ntest 2\n    Start 2: app_CommandLineLocalFlowTests\n\n2: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLineLocalFlowTests\n2: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n2: Test timeout computed to be: 10000000\n2: Nodo command line local flow tests failed: Demo block should finalize the submitted transaction.\n1/1 Test #2: app_CommandLineLocalFlowTests ....***Failed    0.03 sec\nNodo command line local flow tests failed: Demo block should finalize the submitted transaction.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:",
+        "test 2\n    Start 2: app_CommandLineLocalFlowTests\n\n2: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLineLocalFlowTests\n2: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n2: Test timeout computed to be: 10000000\n2: Nodo command line local flow tests failed: Demo block should finalize the submitted transaction.\n1/1 Test #2: app_CommandLineLocalFlowTests ....***Failed    0.03 sec\nNodo command line local flow tests failed: Demo block should finalize the submitted transaction.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:\n\t  2 - app_CommandLineLocalFlowTests (Failed)",
+        "1/1 Test #2: app_CommandLineLocalFlowTests ....***Failed    0.03 sec\nNodo command line local flow tests failed: Demo block should finalize the submitted transaction.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:\n\t  2 - app_CommandLineLocalFlowTests (Failed)\n\nErrors while running CTest",
+        "Nodo command line local flow tests failed: Demo block should finalize the submitted transaction.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:\n\t  2 - app_CommandLineLocalFlowTests (Failed)\n\nErrors while running CTest",
+        "\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:\n\t  2 - app_CommandLineLocalFlowTests (Failed)\n\nErrors while running CTest"
+      ]
+    },
+    {
+      "command": [
+        "/usr/bin/ctest",
+        "-R",
+        "^app_CommandLinePersistentMempoolTests$",
+        "--output-on-failure",
+        "-VV"
+      ],
+      "cwd": "/home/igor/Documentos/Python/nodo/build/cmake",
+      "returncode": 8,
+      "duration_seconds": 0.033,
+      "stdout": "UpdateCTestConfiguration  from :/home/igor/Documentos/Python/nodo/build/cmake/DartConfiguration.tcl\nUpdateCTestConfiguration  from :/home/igor/Documentos/Python/nodo/build/cmake/DartConfiguration.tcl\nTest project /home/igor/Documentos/Python/nodo/build/cmake\nConstructing a list of tests\nDone constructing a list of tests\nUpdating test list for fixtures\nAdded 0 tests to meet fixture requirements\nChecking test dependency graph...\nChecking test dependency graph end\ntest 3\n    Start 3: app_CommandLinePersistentMempoolTests\n\n3: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLinePersistentMempoolTests\n3: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n3: Test timeout computed to be: 10000000\n3: Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.\n1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.02 sec\nNodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:\n\t  3 - app_CommandLinePersistentMempoolTests (Failed)\n",
+      "stderr": "Errors while running CTest\n",
+      "classifications": [
+        "cli_flow_failure"
+      ],
+      "failure_windows": [
+        "Checking test dependency graph...\nChecking test dependency graph end\ntest 3\n    Start 3: app_CommandLinePersistentMempoolTests\n\n3: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLinePersistentMempoolTests\n3: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n3: Test timeout computed to be: 10000000\n3: Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.\n1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.02 sec\nNodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n",
+        "Checking test dependency graph end\ntest 3\n    Start 3: app_CommandLinePersistentMempoolTests\n\n3: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLinePersistentMempoolTests\n3: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n3: Test timeout computed to be: 10000000\n3: Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.\n1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.02 sec\nNodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:",
+        "test 3\n    Start 3: app_CommandLinePersistentMempoolTests\n\n3: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLinePersistentMempoolTests\n3: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n3: Test timeout computed to be: 10000000\n3: Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.\n1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.02 sec\nNodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:\n\t  3 - app_CommandLinePersistentMempoolTests (Failed)",
+        "1/1 Test #3: app_CommandLinePersistentMempoolTests ...***Failed    0.02 sec\nNodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:\n\t  3 - app_CommandLinePersistentMempoolTests (Failed)\n\nErrors while running CTest",
+        "Nodo command line persistent mempool tests failed: Produce should finalize block from persistent mempool.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:\n\t  3 - app_CommandLinePersistentMempoolTests (Failed)\n\nErrors while running CTest",
+        "\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:\n\t  3 - app_CommandLinePersistentMempoolTests (Failed)\n\nErrors while running CTest"
+      ]
+    },
+    {
+      "command": [
+        "/usr/bin/ctest",
+        "-R",
+        "^app_CommandLineRuntimeBlockTests$",
+        "--output-on-failure",
+        "-VV"
+      ],
+      "cwd": "/home/igor/Documentos/Python/nodo/build/cmake",
+      "returncode": 8,
+      "duration_seconds": 0.03,
+      "stdout": "UpdateCTestConfiguration  from :/home/igor/Documentos/Python/nodo/build/cmake/DartConfiguration.tcl\nUpdateCTestConfiguration  from :/home/igor/Documentos/Python/nodo/build/cmake/DartConfiguration.tcl\nTest project /home/igor/Documentos/Python/nodo/build/cmake\nConstructing a list of tests\nDone constructing a list of tests\nUpdating test list for fixtures\nAdded 0 tests to meet fixture requirements\nChecking test dependency graph...\nChecking test dependency graph end\ntest 4\n    Start 4: app_CommandLineRuntimeBlockTests\n\n4: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLineRuntimeBlockTests\n4: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n4: Test timeout computed to be: 10000000\n4: Nodo command line runtime block tests failed: block produce should finalize and persist block height 1.\n1/1 Test #4: app_CommandLineRuntimeBlockTests ...***Failed    0.02 sec\nNodo command line runtime block tests failed: block produce should finalize and persist block height 1.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:\n\t  4 - app_CommandLineRuntimeBlockTests (Failed)\n",
+      "stderr": "Errors while running CTest\n",
+      "classifications": [
+        "cli_flow_failure"
+      ],
+      "failure_windows": [
+        "Checking test dependency graph...\nChecking test dependency graph end\ntest 4\n    Start 4: app_CommandLineRuntimeBlockTests\n\n4: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLineRuntimeBlockTests\n4: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n4: Test timeout computed to be: 10000000\n4: Nodo command line runtime block tests failed: block produce should finalize and persist block height 1.\n1/1 Test #4: app_CommandLineRuntimeBlockTests ...***Failed    0.02 sec\nNodo command line runtime block tests failed: block produce should finalize and persist block height 1.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n",
+        "Checking test dependency graph end\ntest 4\n    Start 4: app_CommandLineRuntimeBlockTests\n\n4: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLineRuntimeBlockTests\n4: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n4: Test timeout computed to be: 10000000\n4: Nodo command line runtime block tests failed: block produce should finalize and persist block height 1.\n1/1 Test #4: app_CommandLineRuntimeBlockTests ...***Failed    0.02 sec\nNodo command line runtime block tests failed: block produce should finalize and persist block height 1.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:",
+        "test 4\n    Start 4: app_CommandLineRuntimeBlockTests\n\n4: Test command: /home/igor/Documentos/Python/nodo/build/cmake/app_CommandLineRuntimeBlockTests\n4: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n4: Test timeout computed to be: 10000000\n4: Nodo command line runtime block tests failed: block produce should finalize and persist block height 1.\n1/1 Test #4: app_CommandLineRuntimeBlockTests ...***Failed    0.02 sec\nNodo command line runtime block tests failed: block produce should finalize and persist block height 1.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:\n\t  4 - app_CommandLineRuntimeBlockTests (Failed)",
+        "1/1 Test #4: app_CommandLineRuntimeBlockTests ...***Failed    0.02 sec\nNodo command line runtime block tests failed: block produce should finalize and persist block height 1.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:\n\t  4 - app_CommandLineRuntimeBlockTests (Failed)\n\nErrors while running CTest",
+        "Nodo command line runtime block tests failed: block produce should finalize and persist block height 1.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:\n\t  4 - app_CommandLineRuntimeBlockTests (Failed)\n\nErrors while running CTest",
+        "\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.02 sec\n\nThe following tests FAILED:\n\t  4 - app_CommandLineRuntimeBlockTests (Failed)\n\nErrors while running CTest"
+      ]
+    },
+    {
+      "command": [
+        "/usr/bin/ctest",
+        "-R",
+        "^node_FinalizedBlockStoreTests$",
+        "--output-on-failure",
+        "-VV"
+      ],
+      "cwd": "/home/igor/Documentos/Python/nodo/build/cmake",
+      "returncode": 0,
+      "duration_seconds": 0.066,
+      "stdout": "UpdateCTestConfiguration  from :/home/igor/Documentos/Python/nodo/build/cmake/DartConfiguration.tcl\nUpdateCTestConfiguration  from :/home/igor/Documentos/Python/nodo/build/cmake/DartConfiguration.tcl\nTest project /home/igor/Documentos/Python/nodo/build/cmake\nConstructing a list of tests\nDone constructing a list of tests\nUpdating test list for fixtures\nAdded 0 tests to meet fixture requirements\nChecking test dependency graph...\nChecking test dependency graph end\ntest 43\n    Start 43: node_FinalizedBlockStoreTests\n\n43: Test command: /home/igor/Documentos/Python/nodo/build/cmake/node_FinalizedBlockStoreTests\n43: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n43: Test timeout computed to be: 10000000\n43: Nodo finalized block store tests passed.\n1/1 Test #43: node_FinalizedBlockStoreTests ....   Passed    0.05 sec\n\nThe following tests passed:\n\tnode_FinalizedBlockStoreTests\n\n100% tests passed, 0 tests failed out of 1\n\nTotal Test time (real) =   0.06 sec\n",
+      "stderr": "",
+      "classifications": [],
+      "failure_windows": []
+    },
+    {
+      "command": [
+        "/usr/bin/ctest",
+        "-R",
+        "^node_RuntimeStateLoaderTests$",
+        "--output-on-failure",
+        "-VV"
+      ],
+      "cwd": "/home/igor/Documentos/Python/nodo/build/cmake",
+      "returncode": 8,
+      "duration_seconds": 0.058,
+      "stdout": "UpdateCTestConfiguration  from :/home/igor/Documentos/Python/nodo/build/cmake/DartConfiguration.tcl\nUpdateCTestConfiguration  from :/home/igor/Documentos/Python/nodo/build/cmake/DartConfiguration.tcl\nTest project /home/igor/Documentos/Python/nodo/build/cmake\nConstructing a list of tests\nDone constructing a list of tests\nUpdating test list for fixtures\nAdded 0 tests to meet fixture requirements\nChecking test dependency graph...\nChecking test dependency graph end\ntest 54\n    Start 54: node_RuntimeStateLoaderTests\n\n54: Test command: /home/igor/Documentos/Python/nodo/build/cmake/node_RuntimeStateLoaderTests\n54: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n54: Test timeout computed to be: 10000000\n54: Nodo runtime state loader tests failed: Runtime should load from persisted data directory.\n1/1 Test #54: node_RuntimeStateLoaderTests .....***Failed    0.04 sec\nNodo runtime state loader tests failed: Runtime should load from persisted data directory.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:\n\t 54 - node_RuntimeStateLoaderTests (Failed)\n",
+      "stderr": "Errors while running CTest\n",
+      "classifications": [],
+      "failure_windows": [
+        "Checking test dependency graph...\nChecking test dependency graph end\ntest 54\n    Start 54: node_RuntimeStateLoaderTests\n\n54: Test command: /home/igor/Documentos/Python/nodo/build/cmake/node_RuntimeStateLoaderTests\n54: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n54: Test timeout computed to be: 10000000\n54: Nodo runtime state loader tests failed: Runtime should load from persisted data directory.\n1/1 Test #54: node_RuntimeStateLoaderTests .....***Failed    0.04 sec\nNodo runtime state loader tests failed: Runtime should load from persisted data directory.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n",
+        "Checking test dependency graph end\ntest 54\n    Start 54: node_RuntimeStateLoaderTests\n\n54: Test command: /home/igor/Documentos/Python/nodo/build/cmake/node_RuntimeStateLoaderTests\n54: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n54: Test timeout computed to be: 10000000\n54: Nodo runtime state loader tests failed: Runtime should load from persisted data directory.\n1/1 Test #54: node_RuntimeStateLoaderTests .....***Failed    0.04 sec\nNodo runtime state loader tests failed: Runtime should load from persisted data directory.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:",
+        "test 54\n    Start 54: node_RuntimeStateLoaderTests\n\n54: Test command: /home/igor/Documentos/Python/nodo/build/cmake/node_RuntimeStateLoaderTests\n54: Working Directory: /home/igor/Documentos/Python/nodo/build/cmake\n54: Test timeout computed to be: 10000000\n54: Nodo runtime state loader tests failed: Runtime should load from persisted data directory.\n1/1 Test #54: node_RuntimeStateLoaderTests .....***Failed    0.04 sec\nNodo runtime state loader tests failed: Runtime should load from persisted data directory.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:\n\t 54 - node_RuntimeStateLoaderTests (Failed)",
+        "1/1 Test #54: node_RuntimeStateLoaderTests .....***Failed    0.04 sec\nNodo runtime state loader tests failed: Runtime should load from persisted data directory.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:\n\t 54 - node_RuntimeStateLoaderTests (Failed)\n\nErrors while running CTest",
+        "Nodo runtime state loader tests failed: Runtime should load from persisted data directory.\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:\n\t 54 - node_RuntimeStateLoaderTests (Failed)\n\nErrors while running CTest",
+        "\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   0.04 sec\n\nThe following tests FAILED:\n\t 54 - node_RuntimeStateLoaderTests (Failed)\n\nErrors while running CTest"
+      ]
+    }
+  ],
+  "ctest_logs": {
+    "LastTest.log": "Start testing: May 31 18:04 -03\n----------------------------------------------------------\n54/66 Testing: node_RuntimeStateLoaderTests\n54/66 Test: node_RuntimeStateLoaderTests\nCommand: \"/home/igor/Documentos/Python/nodo/build/cmake/node_RuntimeStateLoaderTests\"\nDirectory: /home/igor/Documentos/Python/nodo/build/cmake\n\"node_RuntimeStateLoaderTests\" start time: May 31 18:04 -03\nOutput:\n----------------------------------------------------------\nNodo runtime state loader tests failed: Runtime should load from persisted data directory.\n<end of output>\nTest time =   0.04 sec\n----------------------------------------------------------\nTest Failed.\n\"node_RuntimeStateLoaderTests\" end time: May 31 18:04 -03\n\"node_RuntimeStateLoaderTests\" time elapsed: 00:00:00\n----------------------------------------------------------\n\nEnd testing: May 31 18:04 -03\n",
+    "LastTestsFailed.log": "54:node_RuntimeStateLoaderTests\n"
+  }
+}
