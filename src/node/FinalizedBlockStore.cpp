@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V5";
+    "NODO_FINALIZED_BLOCK_V6";
 
 } // namespace
 
@@ -280,6 +280,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"totalFeeRawUnits", std::to_string(pipelineResult.totalFee().rawUnits())},
         {"rewardDistributionCount", std::to_string(pipelineResult.rewardDistributions().size())},
         {"lockedStakePositionCount", std::to_string(pipelineResult.lockedStakePositions().size())},
+        {"securityScoreRecordCount", std::to_string(pipelineResult.securityScoreRecords().size())},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -322,6 +323,24 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         fields.emplace_back(prefix + "unlockAtHeight", std::to_string(lockedStakePositions[index].unlockAtHeight()));
         fields.emplace_back(prefix + "slashable", lockedStakePositions[index].slashable() ? "true" : "false");
         fields.emplace_back(prefix + "sourceRewardId", lockedStakePositions[index].sourceRewardId());
+    }
+
+    const std::vector<SecurityScoreRecord>& securityScoreRecords =
+        pipelineResult.securityScoreRecords();
+
+    for (std::size_t index = 0; index < securityScoreRecords.size(); ++index) {
+        const std::string prefix =
+            "securityScore." + std::to_string(index) + ".";
+
+        fields.emplace_back(prefix + "validatorAddress", securityScoreRecords[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(securityScoreRecords[index].blockHeight()));
+        fields.emplace_back(prefix + "score", std::to_string(securityScoreRecords[index].score()));
+        fields.emplace_back(prefix + "lockedStakeScore", std::to_string(securityScoreRecords[index].lockedStakeScore()));
+        fields.emplace_back(prefix + "participationScore", std::to_string(securityScoreRecords[index].participationScore()));
+        fields.emplace_back(prefix + "maturityScore", std::to_string(securityScoreRecords[index].maturityScore()));
+        fields.emplace_back(prefix + "penaltyScore", std::to_string(securityScoreRecords[index].penaltyScore()));
+        fields.emplace_back(prefix + "reason", securityScoreRecords[index].reason());
+        fields.emplace_back(prefix + "sourceLockedStakeId", securityScoreRecords[index].sourceLockedStakeId());
     }
 
     fields.emplace_back(

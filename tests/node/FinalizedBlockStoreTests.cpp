@@ -241,6 +241,14 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should convert locked rewards into locked stake positions."
     );
 
+    requireCondition(
+        pipeline.securityScoreRecords().size() == 1U &&
+        pipeline.securityScoreRecords().front().score() == 4 &&
+        pipeline.securityScoreRecords().front().lockedStakeScore() == 1 &&
+        pipeline.securityScoreRecords().front().participationScore() == 2,
+        "Pipeline should calculate security score records from locked stake positions."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -299,6 +307,15 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("lockedStake.0.createdAtHeight=1") != std::string::npos &&
         blockContents.find("lockedStake.0.slashable=true") != std::string::npos,
         "Finalized block file should persist locked stake position."
+    );
+
+    requireCondition(
+        blockContents.find("securityScoreRecordCount=1") != std::string::npos &&
+        blockContents.find("securityScore.0.score=4") != std::string::npos &&
+        blockContents.find("securityScore.0.lockedStakeScore=1") != std::string::npos &&
+        blockContents.find("securityScore.0.participationScore=2") != std::string::npos &&
+        blockContents.find("securityScore.0.reason=LOCKED_STAKE_REWARD") != std::string::npos,
+        "Finalized block file should persist security score records."
     );
 
     const auto loaded =

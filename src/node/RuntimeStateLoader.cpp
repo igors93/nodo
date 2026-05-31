@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V5";
+    "NODO_FINALIZED_BLOCK_V6";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -83,6 +83,23 @@ std::uint64_t parseU64Strict(
     }
 
     return parsed;
+}
+
+std::uint16_t parseU16Strict(
+    const std::string& value,
+    const std::string& fieldName
+) {
+    const std::uint64_t parsed =
+        parseU64Strict(
+            value,
+            fieldName
+        );
+
+    if (parsed > std::numeric_limits<std::uint16_t>::max()) {
+        throw std::invalid_argument("Numeric field exceeds uint16 range: " + fieldName);
+    }
+
+    return static_cast<std::uint16_t>(parsed);
 }
 
 std::int64_t parseI64Strict(
@@ -219,6 +236,50 @@ LockedStakePosition parseLockedStakePosition(
     return position;
 }
 
+SecurityScoreRecord parseSecurityScoreRecord(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix =
+        "securityScore." + std::to_string(index) + ".";
+
+    SecurityScoreRecord record(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(
+            document.requireField(prefix + "blockHeight"),
+            prefix + "blockHeight"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "score"),
+            prefix + "score"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "lockedStakeScore"),
+            prefix + "lockedStakeScore"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "participationScore"),
+            prefix + "participationScore"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "maturityScore"),
+            prefix + "maturityScore"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "penaltyScore"),
+            prefix + "penaltyScore"
+        ),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourceLockedStakeId")
+    );
+
+    if (!record.isValid()) {
+        throw std::invalid_argument("Finalized block security score record is invalid.");
+    }
+
+    return record;
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -290,6 +351,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_totalFee(),
       m_rewardDistributions(),
       m_lockedStakePositions(),
+      m_securityScoreRecords(),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -299,6 +361,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     utils::Amount totalFee,
     std::vector<RewardDistribution> rewardDistributions,
     std::vector<LockedStakePosition> lockedStakePositions,
+    std::vector<SecurityScoreRecord> securityScoreRecords,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -307,6 +370,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_totalFee(totalFee),
       m_rewardDistributions(std::move(rewardDistributions)),
       m_lockedStakePositions(std::move(lockedStakePositions)),
+      m_securityScoreRecords(std::move(securityScoreRecords)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -334,6 +398,10 @@ const std::vector<LockedStakePosition>& FinalizedBlockArtifact::lockedStakePosit
     return m_lockedStakePositions;
 }
 
+const std::vector<SecurityScoreRecord>& FinalizedBlockArtifact::securityScoreRecords() const {
+    return m_securityScoreRecords;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -355,17 +423,18 @@ bool FinalizedBlockArtifact::isValid() const {
     try {
         if (m_totalFee.isZero()) {
             return m_rewardDistributions.empty() &&
-                   m_lockedStakePositions.empty();
+                   m_lockedStakePositions.empty() &&
+                   m_securityScoreRecords.empty();
         }
 
-        return RewardDistributionCalculator::totalReward(
-                   m_rewardDistributions
-               ) == m_totalFee &&
+        return RewardDistributionCalculator::totalReward(m_rewardDistributions) == m_totalFee &&
                LockedStakePositionBuilder::samePositions(
-                   LockedStakePositionBuilder::buildFromRewardDistributions(
-                       m_rewardDistributions
-                   ),
+                   LockedStakePositionBuilder::buildFromRewardDistributions(m_rewardDistributions),
                    m_lockedStakePositions
+               ) &&
+               SecurityScoreCalculator::sameRecords(
+                   SecurityScoreCalculator::buildFromLockedStakePositions(m_lockedStakePositions, m_block->index()),
+                   m_securityScoreRecords
                );
     } catch (const std::exception&) {
         return false;
@@ -381,6 +450,7 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";totalFeeRawUnits=" << m_totalFee.rawUnits()
         << ";rewardDistributionCount=" << m_rewardDistributions.size()
         << ";lockedStakePositionCount=" << m_lockedStakePositions.size()
+        << ";securityScoreRecordCount=" << m_securityScoreRecords.size()
         << "}";
 
     return oss.str();
@@ -459,29 +529,10 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
             FINALIZED_BLOCK_VERSION
         );
 
-    const std::size_t recordCount =
-        static_cast<std::size_t>(
-            parseU64Strict(
-                document.requireField("recordCount"),
-                "recordCount"
-            )
-        );
-
-    const std::size_t rewardDistributionCount =
-        static_cast<std::size_t>(
-            parseU64Strict(
-                document.requireField("rewardDistributionCount"),
-                "rewardDistributionCount"
-            )
-        );
-
-    const std::size_t lockedStakePositionCount =
-        static_cast<std::size_t>(
-            parseU64Strict(
-                document.requireField("lockedStakePositionCount"),
-                "lockedStakePositionCount"
-            )
-        );
+    const std::size_t recordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("recordCount"), "recordCount"));
+    const std::size_t rewardDistributionCount = static_cast<std::size_t>(parseU64Strict(document.requireField("rewardDistributionCount"), "rewardDistributionCount"));
+    const std::size_t lockedStakePositionCount = static_cast<std::size_t>(parseU64Strict(document.requireField("lockedStakePositionCount"), "lockedStakePositionCount"));
+    const std::size_t securityScoreRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("securityScoreRecordCount"), "securityScoreRecordCount"));
 
     std::set<std::string> allowedFields = {
         "blockIndex",
@@ -491,6 +542,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "totalFeeRawUnits",
         "rewardDistributionCount",
         "lockedStakePositionCount",
+        "securityScoreRecordCount",
         "timestamp",
         "recordCount",
         "block",
@@ -503,9 +555,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     }
 
     for (std::size_t index = 0; index < rewardDistributionCount; ++index) {
-        const std::string prefix =
-            "reward." + std::to_string(index) + ".";
-
+        const std::string prefix = "reward." + std::to_string(index) + ".";
         allowedFields.insert(prefix + "validatorAddress");
         allowedFields.insert(prefix + "blockHeight");
         allowedFields.insert(prefix + "totalRewardRawUnits");
@@ -515,9 +565,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     }
 
     for (std::size_t index = 0; index < lockedStakePositionCount; ++index) {
-        const std::string prefix =
-            "lockedStake." + std::to_string(index) + ".";
-
+        const std::string prefix = "lockedStake." + std::to_string(index) + ".";
         allowedFields.insert(prefix + "ownerAddress");
         allowedFields.insert(prefix + "amountRawUnits");
         allowedFields.insert(prefix + "createdAtHeight");
@@ -526,81 +574,60 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         allowedFields.insert(prefix + "sourceRewardId");
     }
 
+    for (std::size_t index = 0; index < securityScoreRecordCount; ++index) {
+        const std::string prefix = "securityScore." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "score");
+        allowedFields.insert(prefix + "lockedStakeScore");
+        allowedFields.insert(prefix + "participationScore");
+        allowedFields.insert(prefix + "maturityScore");
+        allowedFields.insert(prefix + "penaltyScore");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourceLockedStakeId");
+    }
+
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V5 stores explicit block fields, fee accounting, reward distributions
-     * and locked stake positions. The canonical block serialization remains the
+     * V6 stores explicit block fields, fee accounting, locked stake and
+     * security score records. The canonical block serialization remains the
      * integrity anchor for the block payload itself.
      */
-    const std::string serializedBlock =
-        document.requireField("block");
+    const std::string serializedBlock = document.requireField("block");
+    core::Block block = serialization::BlockCodec::deserialize(serializedBlock);
 
-    core::Block block =
-        serialization::BlockCodec::deserialize(serializedBlock);
-
-    const std::uint64_t index =
-        static_cast<std::uint64_t>(
-            parseU64Strict(
-                document.requireField("blockIndex"),
-                "blockIndex"
-            )
-        );
-
-    const std::string blockHash =
-        document.requireField("blockHash");
-
-    const std::string previousHash =
-        document.requireField("previousHash");
-
-    const std::string postStateRoot =
-        document.requireField("postStateRoot");
-
-    const utils::Amount totalFee =
-        parseAmountStrict(
-            document.requireField("totalFeeRawUnits"),
-            "totalFeeRawUnits"
-        );
+    const std::uint64_t index = static_cast<std::uint64_t>(parseU64Strict(document.requireField("blockIndex"), "blockIndex"));
+    const std::string blockHash = document.requireField("blockHash");
+    const std::string previousHash = document.requireField("previousHash");
+    const std::string postStateRoot = document.requireField("postStateRoot");
+    const utils::Amount totalFee = parseAmountStrict(document.requireField("totalFeeRawUnits"), "totalFeeRawUnits");
 
     std::vector<RewardDistribution> rewardDistributions;
     rewardDistributions.reserve(rewardDistributionCount);
-
     for (std::size_t rewardIndex = 0; rewardIndex < rewardDistributionCount; ++rewardIndex) {
-        rewardDistributions.push_back(
-            parseRewardDistribution(
-                document,
-                rewardIndex
-            )
-        );
+        rewardDistributions.push_back(parseRewardDistribution(document, rewardIndex));
     }
 
     std::vector<LockedStakePosition> lockedStakePositions;
     lockedStakePositions.reserve(lockedStakePositionCount);
-
     for (std::size_t positionIndex = 0; positionIndex < lockedStakePositionCount; ++positionIndex) {
-        lockedStakePositions.push_back(
-            parseLockedStakePosition(
-                document,
-                positionIndex
-            )
-        );
+        lockedStakePositions.push_back(parseLockedStakePosition(document, positionIndex));
     }
 
-    const std::int64_t timestamp =
-        parseI64Strict(
-            document.requireField("timestamp"),
-            "timestamp"
-        );
+    std::vector<SecurityScoreRecord> securityScoreRecords;
+    securityScoreRecords.reserve(securityScoreRecordCount);
+    for (std::size_t scoreIndex = 0; scoreIndex < securityScoreRecordCount; ++scoreIndex) {
+        securityScoreRecords.push_back(parseSecurityScoreRecord(document, scoreIndex));
+    }
+
+    const std::int64_t timestamp = parseI64Strict(document.requireField("timestamp"), "timestamp");
 
     const consensus::QuorumCertificate quorumCertificate =
-        consensus::QuorumCertificate::deserialize(
-            document.requireField("quorumCertificate")
-        );
+        consensus::QuorumCertificate::deserialize(document.requireField("quorumCertificate"));
 
     const consensus::FinalizedBlockRecord finalizedRecord =
-        consensus::FinalizedBlockRecord::deserialize(
-            document.requireField("finalizedRecord")
-        );
+        consensus::FinalizedBlockRecord::deserialize(document.requireField("finalizedRecord"));
 
     if (postStateRoot.empty()) {
         throw std::invalid_argument("Finalized block file postStateRoot is empty.");
@@ -615,18 +642,13 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     }
 
     for (std::size_t recordIndex = 0; recordIndex < recordCount; ++recordIndex) {
-        const std::string key =
-            "record." + std::to_string(recordIndex);
-
+        const std::string key = "record." + std::to_string(recordIndex);
         if (block.records()[recordIndex].serialize() != document.requireField(key)) {
             throw std::invalid_argument("Finalized block record line does not match block payload.");
         }
     }
 
-    if (!consensus::BlockFinalizer::certificateMatchesBlock(
-            block,
-            quorumCertificate
-        )) {
+    if (!consensus::BlockFinalizer::certificateMatchesBlock(block, quorumCertificate)) {
         throw std::invalid_argument("Finalized block quorum certificate does not match block payload.");
     }
 
@@ -640,12 +662,15 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     }
 
     if (!LockedStakePositionBuilder::samePositions(
-            LockedStakePositionBuilder::buildFromRewardDistributions(
-                rewardDistributions
-            ),
-            lockedStakePositions
-        )) {
+            LockedStakePositionBuilder::buildFromRewardDistributions(rewardDistributions),
+            lockedStakePositions)) {
         throw std::invalid_argument("Finalized block locked stake positions do not match reward distributions.");
+    }
+
+    if (!SecurityScoreCalculator::sameRecords(
+            SecurityScoreCalculator::buildFromLockedStakePositions(lockedStakePositions, block.index()),
+            securityScoreRecords)) {
+        throw std::invalid_argument("Finalized block security score records do not match locked stake positions.");
     }
 
     std::vector<std::pair<std::string, std::string>> canonicalFields = {
@@ -656,24 +681,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"totalFeeRawUnits", std::to_string(totalFee.rawUnits())},
         {"rewardDistributionCount", std::to_string(rewardDistributions.size())},
         {"lockedStakePositionCount", std::to_string(lockedStakePositions.size())},
+        {"securityScoreRecordCount", std::to_string(securityScoreRecords.size())},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
 
     for (std::size_t recordIndex = 0; recordIndex < recordCount; ++recordIndex) {
-        const std::string key =
-            "record." + std::to_string(recordIndex);
-
-        canonicalFields.emplace_back(
-            key,
-            document.requireField(key)
-        );
+        const std::string key = "record." + std::to_string(recordIndex);
+        canonicalFields.emplace_back(key, document.requireField(key));
     }
 
     for (std::size_t rewardIndex = 0; rewardIndex < rewardDistributions.size(); ++rewardIndex) {
-        const std::string prefix =
-            "reward." + std::to_string(rewardIndex) + ".";
-
+        const std::string prefix = "reward." + std::to_string(rewardIndex) + ".";
         canonicalFields.emplace_back(prefix + "validatorAddress", rewardDistributions[rewardIndex].validatorAddress());
         canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(rewardDistributions[rewardIndex].blockHeight()));
         canonicalFields.emplace_back(prefix + "totalRewardRawUnits", std::to_string(rewardDistributions[rewardIndex].totalReward().rawUnits()));
@@ -683,9 +702,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     }
 
     for (std::size_t positionIndex = 0; positionIndex < lockedStakePositions.size(); ++positionIndex) {
-        const std::string prefix =
-            "lockedStake." + std::to_string(positionIndex) + ".";
-
+        const std::string prefix = "lockedStake." + std::to_string(positionIndex) + ".";
         canonicalFields.emplace_back(prefix + "ownerAddress", lockedStakePositions[positionIndex].ownerAddress());
         canonicalFields.emplace_back(prefix + "amountRawUnits", std::to_string(lockedStakePositions[positionIndex].amount().rawUnits()));
         canonicalFields.emplace_back(prefix + "createdAtHeight", std::to_string(lockedStakePositions[positionIndex].createdAtHeight()));
@@ -694,26 +711,25 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         canonicalFields.emplace_back(prefix + "sourceRewardId", lockedStakePositions[positionIndex].sourceRewardId());
     }
 
-    canonicalFields.emplace_back(
-        "block",
-        serializedBlock
-    );
+    for (std::size_t scoreIndex = 0; scoreIndex < securityScoreRecords.size(); ++scoreIndex) {
+        const std::string prefix = "securityScore." + std::to_string(scoreIndex) + ".";
+        canonicalFields.emplace_back(prefix + "validatorAddress", securityScoreRecords[scoreIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(securityScoreRecords[scoreIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "score", std::to_string(securityScoreRecords[scoreIndex].score()));
+        canonicalFields.emplace_back(prefix + "lockedStakeScore", std::to_string(securityScoreRecords[scoreIndex].lockedStakeScore()));
+        canonicalFields.emplace_back(prefix + "participationScore", std::to_string(securityScoreRecords[scoreIndex].participationScore()));
+        canonicalFields.emplace_back(prefix + "maturityScore", std::to_string(securityScoreRecords[scoreIndex].maturityScore()));
+        canonicalFields.emplace_back(prefix + "penaltyScore", std::to_string(securityScoreRecords[scoreIndex].penaltyScore()));
+        canonicalFields.emplace_back(prefix + "reason", securityScoreRecords[scoreIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourceLockedStakeId", securityScoreRecords[scoreIndex].sourceLockedStakeId());
+    }
 
-    canonicalFields.emplace_back(
-        "quorumCertificate",
-        quorumCertificate.serialize()
-    );
-
-    canonicalFields.emplace_back(
-        "finalizedRecord",
-        finalizedRecord.serialize()
-    );
+    canonicalFields.emplace_back("block", serializedBlock);
+    canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
+    canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
 
     const std::string canonicalContents =
-        serialization::KeyValueFileCodec::serialize(
-            FINALIZED_BLOCK_VERSION,
-            canonicalFields
-        );
+        serialization::KeyValueFileCodec::serialize(FINALIZED_BLOCK_VERSION, canonicalFields);
 
     if (contents != canonicalContents) {
         throw std::invalid_argument("Finalized block file is not canonical.");
@@ -725,6 +741,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         totalFee,
         rewardDistributions,
         lockedStakePositions,
+        securityScoreRecords,
         quorumCertificate,
         finalizedRecord
     );
@@ -738,61 +755,38 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
     if (!directoryConfig.isValid() ||
         !genesisConfig.isValid() ||
         !localPeer.isValid()) {
-        return RuntimeStateLoadResult::rejected(
-            RuntimeStateLoadStatus::INVALID_CONFIG,
-            "Runtime loader config is invalid."
-        );
+        return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::INVALID_CONFIG, "Runtime loader config is invalid.");
     }
 
     const NodeDataDirectoryReadResult manifestResult =
         NodeDataDirectory::loadManifest(directoryConfig);
 
     if (!manifestResult.loaded()) {
-        return RuntimeStateLoadResult::rejected(
-            RuntimeStateLoadStatus::NOT_INITIALIZED,
-            manifestResult.reason()
-        );
+        return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::NOT_INITIALIZED, manifestResult.reason());
     }
 
-    const NodeRuntimeManifest manifest =
-        manifestResult.manifest();
+    const NodeRuntimeManifest manifest = manifestResult.manifest();
 
     if (manifest.genesisConfigId() != genesisConfig.deterministicId()) {
-        return RuntimeStateLoadResult::rejected(
-            RuntimeStateLoadStatus::GENESIS_MISMATCH,
-            "Data directory genesis does not match loader genesis config."
-        );
+        return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::GENESIS_MISMATCH, "Data directory genesis does not match loader genesis config.");
     }
 
-    const NodeRuntimeConfig runtimeConfig(
-        genesisConfig,
-        localPeer,
-        genesisConfig.networkParameters().maxPeerCount()
-    );
-
-    const NodeRuntimeStartResult start =
-        NodeRuntimeFactory::startFromGenesis(runtimeConfig);
+    const NodeRuntimeConfig runtimeConfig(genesisConfig, localPeer, genesisConfig.networkParameters().maxPeerCount());
+    const NodeRuntimeStartResult start = NodeRuntimeFactory::startFromGenesis(runtimeConfig);
 
     if (!start.started()) {
-        return RuntimeStateLoadResult::rejected(
-            RuntimeStateLoadStatus::RUNTIME_START_FAILED,
-            start.reason()
-        );
+        return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::RUNTIME_START_FAILED, start.reason());
     }
 
-    NodeRuntime runtime =
-        start.runtime();
+    NodeRuntime runtime = start.runtime();
 
     const crypto::ProtocolCryptoContext cryptoContext =
-        crypto::ProtocolCryptoContext::fromNetworkName(
-            manifest.networkName()
-        );
+        crypto::ProtocolCryptoContext::fromNetworkName(manifest.networkName());
 
     if (!cryptoContext.isValid()) {
         return RuntimeStateLoadResult::rejected(
             RuntimeStateLoadStatus::MANIFEST_MISMATCH,
-            "Manifest network has invalid crypto context: "
-            + cryptoContext.rejectionReason()
+            "Manifest network has invalid crypto context: " + cryptoContext.rejectionReason()
         );
     }
 
@@ -800,10 +794,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
     for (std::uint64_t height = 1; height <= manifest.latestBlockHeight(); ++height) {
         const std::filesystem::path blockPath =
-            FinalizedBlockStore::blockFilePath(
-                directoryConfig,
-                height
-            );
+            FinalizedBlockStore::blockFilePath(directoryConfig, height);
 
         if (!std::filesystem::exists(blockPath)) {
             return RuntimeStateLoadResult::rejected(
@@ -819,145 +810,68 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         } catch (const std::exception& error) {
             return RuntimeStateLoadResult::rejected(
                 RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                "Invalid finalized block file "
-                + blockPath.string()
-                + ": "
-                + error.what()
+                "Invalid finalized block file " + blockPath.string() + ": " + error.what()
             );
         }
 
-        const core::Block& block =
-            artifact.block();
+        const core::Block& block = artifact.block();
 
         if (!runtime.mutableBlockchain().canAppendBlock(block)) {
-            return RuntimeStateLoadResult::rejected(
-                RuntimeStateLoadStatus::BLOCK_APPEND_FAILED,
-                "Persisted block cannot append to rebuilt runtime chain."
-            );
+            return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_APPEND_FAILED, "Persisted block cannot append to rebuilt runtime chain.");
         }
 
         try {
-            const std::uint64_t requiredVoteCount =
-                expectedQuorumVoteCount(
-                    genesisConfig,
-                    runtime.validatorRegistry()
-                );
+            const std::uint64_t requiredVoteCount = expectedQuorumVoteCount(genesisConfig, runtime.validatorRegistry());
 
             if (artifact.quorumCertificate().requiredVoteCount() != requiredVoteCount) {
-                return RuntimeStateLoadResult::rejected(
-                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                    "Invalid finalized block file "
-                    + blockPath.string()
-                    + ": quorum certificate threshold does not match network parameters."
-                );
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": quorum certificate threshold does not match network parameters.");
             }
 
-            if (!artifact.quorumCertificate().verify(
-                    runtime.validatorRegistry(),
-                    cryptoContext.policy(),
-                    cryptoContext.signatureProvider()
-                )) {
-                return RuntimeStateLoadResult::rejected(
-                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                    "Invalid finalized block file "
-                    + blockPath.string()
-                    + ": quorum certificate failed validator vote audit."
-                );
+            if (!artifact.quorumCertificate().verify(runtime.validatorRegistry(), cryptoContext.policy(), cryptoContext.signatureProvider())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": quorum certificate failed validator vote audit.");
             }
 
-            if (!artifact.finalizedRecord().verify(
-                    runtime.validatorRegistry(),
-                    cryptoContext.policy(),
-                    cryptoContext.signatureProvider()
-                )) {
-                return RuntimeStateLoadResult::rejected(
-                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                    "Invalid finalized block file "
-                    + blockPath.string()
-                    + ": finalized block record failed audit."
-                );
+            if (!artifact.finalizedRecord().verify(runtime.validatorRegistry(), cryptoContext.policy(), cryptoContext.signatureProvider())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": finalized block record failed audit.");
             }
 
             const core::StateTransitionPreviewContext previewContext =
-                RuntimeAccountStateBuilder::previewContextAtTip(
-                    genesisConfig,
-                    runtime.blockchain(),
-                    minimumFeeRawUnits(genesisConfig)
-                );
+                RuntimeAccountStateBuilder::previewContextAtTip(genesisConfig, runtime.blockchain(), minimumFeeRawUnits(genesisConfig));
 
             const core::StateTransitionPreviewResult preview =
-                core::StateTransitionPreview::previewBlock(
-                    block,
-                    previewContext
-                );
+                core::StateTransitionPreview::previewBlock(block, previewContext);
 
             if (!preview.accepted()) {
-                return RuntimeStateLoadResult::rejected(
-                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                    "Invalid finalized block file "
-                    + blockPath.string()
-                    + ": "
-                    "Persisted block failed state preview during reload: "
-                    + preview.reason()
-                );
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted block failed state preview during reload: " + preview.reason());
             }
 
             if (preview.stateRoot() != artifact.postStateRoot()) {
-                return RuntimeStateLoadResult::rejected(
-                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                    "Invalid finalized block file "
-                    + blockPath.string()
-                    + ": "
-                    "Persisted block postStateRoot does not match rebuilt account state."
-                );
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted block postStateRoot does not match rebuilt account state.");
             }
 
             if (preview.totalFee() != artifact.totalFee()) {
-                return RuntimeStateLoadResult::rejected(
-                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                    "Invalid finalized block file "
-                    + blockPath.string()
-                    + ": "
-                    "Persisted block totalFeeRawUnits does not match rebuilt transaction fees."
-                );
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted block totalFeeRawUnits does not match rebuilt transaction fees.");
             }
 
             const std::vector<RewardDistribution> expectedRewards =
-                RewardDistributionCalculator::buildFromQuorumCertificate(
-                    preview.totalFee(),
-                    artifact.quorumCertificate(),
-                    block.index()
-                );
+                RewardDistributionCalculator::buildFromQuorumCertificate(preview.totalFee(), artifact.quorumCertificate(), block.index());
 
-            if (!RewardDistributionCalculator::sameDistributions(
-                    expectedRewards,
-                    artifact.rewardDistributions()
-                )) {
-                return RuntimeStateLoadResult::rejected(
-                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                    "Invalid finalized block file "
-                    + blockPath.string()
-                    + ": "
-                    "Persisted reward distributions do not match rebuilt validator fee rewards."
-                );
+            if (!RewardDistributionCalculator::sameDistributions(expectedRewards, artifact.rewardDistributions())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted reward distributions do not match rebuilt validator fee rewards.");
             }
 
             const std::vector<LockedStakePosition> expectedLockedStake =
-                LockedStakePositionBuilder::buildFromRewardDistributions(
-                    expectedRewards
-                );
+                LockedStakePositionBuilder::buildFromRewardDistributions(expectedRewards);
 
-            if (!LockedStakePositionBuilder::samePositions(
-                    expectedLockedStake,
-                    artifact.lockedStakePositions()
-                )) {
-                return RuntimeStateLoadResult::rejected(
-                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                    "Invalid finalized block file "
-                    + blockPath.string()
-                    + ": "
-                    "Persisted locked stake positions do not match rebuilt reward distributions."
-                );
+            if (!LockedStakePositionBuilder::samePositions(expectedLockedStake, artifact.lockedStakePositions())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted locked stake positions do not match rebuilt reward distributions.");
+            }
+
+            const std::vector<SecurityScoreRecord> expectedScores =
+                SecurityScoreCalculator::buildFromLockedStakePositions(expectedLockedStake, block.index());
+
+            if (!SecurityScoreCalculator::sameRecords(expectedScores, artifact.securityScoreRecords())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted security score records do not match rebuilt locked stake positions.");
             }
 
             const consensus::BlockFinalizationResult finalization =
@@ -972,34 +886,15 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
                     artifact.finalizedRecord().finalizedAt()
                 );
 
-            if (!finalization.finalized() &&
-                !finalization.duplicate()) {
-                return RuntimeStateLoadResult::rejected(
-                    RuntimeStateLoadStatus::BLOCK_APPEND_FAILED,
-                    "Invalid finalized block file "
-                    + blockPath.string()
-                    + ": "
-                    + finalization.reason()
-                );
+            if (!finalization.finalized() && !finalization.duplicate()) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_APPEND_FAILED, "Invalid finalized block file " + blockPath.string() + ": " + finalization.reason());
             }
 
-            if (finalization.record().serialize() !=
-                artifact.finalizedRecord().serialize()) {
-                return RuntimeStateLoadResult::rejected(
-                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                    "Invalid finalized block file "
-                    + blockPath.string()
-                    + ": stored finalized record does not match reconstructed finalization."
-                );
+            if (finalization.record().serialize() != artifact.finalizedRecord().serialize()) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": stored finalized record does not match reconstructed finalization.");
             }
         } catch (const std::exception& error) {
-            return RuntimeStateLoadResult::rejected(
-                RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                "Invalid finalized block file "
-                + blockPath.string()
-                + ": "
-                + error.what()
-            );
+            return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": " + error.what());
         }
 
         ++loadedBlockCount;
@@ -1007,36 +902,21 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
     if (runtime.blockchain().latestBlock().index() != manifest.latestBlockHeight() ||
         runtime.blockchain().latestBlock().hash() != manifest.latestBlockHash()) {
-        return RuntimeStateLoadResult::rejected(
-            RuntimeStateLoadStatus::MANIFEST_MISMATCH,
-            "Rebuilt chain latest block does not match manifest."
-        );
+        return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::MANIFEST_MISMATCH, "Rebuilt chain latest block does not match manifest.");
     }
 
     try {
         const core::AccountStateView accountState =
-            RuntimeAccountStateBuilder::accountStateViewAtTip(
-                genesisConfig,
-                runtime.blockchain(),
-                minimumFeeRawUnits(genesisConfig)
-            );
+            RuntimeAccountStateBuilder::accountStateViewAtTip(genesisConfig, runtime.blockchain(), minimumFeeRawUnits(genesisConfig));
 
         const std::string latestStateRoot =
-            core::StateRootCalculator::calculateAccountStateRoot(
-                accountState
-            );
+            core::StateRootCalculator::calculateAccountStateRoot(accountState);
 
         if (latestStateRoot != manifest.latestStateRoot()) {
-            return RuntimeStateLoadResult::rejected(
-                RuntimeStateLoadStatus::MANIFEST_MISMATCH,
-                "Manifest latestStateRoot does not match rebuilt account state."
-            );
+            return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::MANIFEST_MISMATCH, "Manifest latestStateRoot does not match rebuilt account state.");
         }
     } catch (const std::exception& error) {
-        return RuntimeStateLoadResult::rejected(
-            RuntimeStateLoadStatus::MANIFEST_MISMATCH,
-            error.what()
-        );
+        return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::MANIFEST_MISMATCH, error.what());
     }
 
     const PersistentMempoolLoadResult mempoolLoad =
@@ -1045,35 +925,20 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             runtime.mutableMempool(),
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
-            RuntimeAccountStateBuilder::accountStateViewAtTip(
-                genesisConfig,
-                runtime.blockchain(),
-                minimumFeeRawUnits(genesisConfig)
-            ),
+            RuntimeAccountStateBuilder::accountStateViewAtTip(genesisConfig, runtime.blockchain(), minimumFeeRawUnits(genesisConfig)),
             minimumFeeRawUnits(genesisConfig),
             cryptoContext.signatureProvider()
         );
 
     if (!mempoolLoad.loaded()) {
-        return RuntimeStateLoadResult::rejected(
-            RuntimeStateLoadStatus::MEMPOOL_LOAD_FAILED,
-            mempoolLoad.reason()
-        );
+        return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::MEMPOOL_LOAD_FAILED, mempoolLoad.reason());
     }
 
     if (!runtime.isValid()) {
-        return RuntimeStateLoadResult::rejected(
-            RuntimeStateLoadStatus::RUNTIME_START_FAILED,
-            "Rebuilt runtime failed final audit."
-        );
+        return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::RUNTIME_START_FAILED, "Rebuilt runtime failed final audit.");
     }
 
-    return RuntimeStateLoadResult::loaded(
-        runtime,
-        manifest,
-        loadedBlockCount,
-        mempoolLoad.loadedTransactionCount()
-    );
+    return RuntimeStateLoadResult::loaded(runtime, manifest, loadedBlockCount, mempoolLoad.loadedTransactionCount());
 }
 
 } // namespace nodo::node

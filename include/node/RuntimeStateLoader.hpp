@@ -9,6 +9,7 @@
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
+#include "node/SecurityScore.hpp"
 #include "p2p/PeerMessage.hpp"
 #include "utils/Amount.hpp"
 
@@ -82,6 +83,7 @@ public:
         utils::Amount totalFee,
         std::vector<RewardDistribution> rewardDistributions,
         std::vector<LockedStakePosition> lockedStakePositions,
+        std::vector<SecurityScoreRecord> securityScoreRecords,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -91,6 +93,7 @@ public:
     utils::Amount totalFee() const;
     const std::vector<RewardDistribution>& rewardDistributions() const;
     const std::vector<LockedStakePosition>& lockedStakePositions() const;
+    const std::vector<SecurityScoreRecord>& securityScoreRecords() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -103,6 +106,7 @@ private:
     utils::Amount m_totalFee;
     std::vector<RewardDistribution> m_rewardDistributions;
     std::vector<LockedStakePosition> m_lockedStakePositions;
+    std::vector<SecurityScoreRecord> m_securityScoreRecords;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };
