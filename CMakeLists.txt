@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(Nodo
     VERSION 0.1.0
-    LANGUAGES C CXX ASM
+    LANGUAGES C CXX
 )
 
 set(CMAKE_C_STANDARD 11)
@@ -17,43 +17,36 @@ endif()
 
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
-set(NODO_BLST_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blst")
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(BLST_PKG QUIET blst)
+endif()
 
-if(EXISTS "${NODO_BLST_SOURCE_DIR}/src/server.c" AND
-   EXISTS "${NODO_BLST_SOURCE_DIR}/bindings/blst.h")
-    add_library(blst STATIC
-        "${NODO_BLST_SOURCE_DIR}/src/server.c"
-        "${NODO_BLST_SOURCE_DIR}/build/assembly.S"
-    )
+find_path(BLST_INCLUDE_DIR
+    NAMES blst.h
+    HINTS ${BLST_PKG_INCLUDE_DIRS}
+    PATH_SUFFIXES blst
+)
 
-    target_include_directories(blst
-        PUBLIC
-            "${NODO_BLST_SOURCE_DIR}/bindings"
-    )
+find_library(BLST_LIBRARY
+    NAMES blst libblst
+    HINTS ${BLST_PKG_LIBRARY_DIRS}
+)
 
-    target_compile_options(blst
-        PRIVATE
-            $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra>
-    )
-else()
-    find_path(BLST_INCLUDE_DIR blst.h)
-    find_library(BLST_LIBRARY blst)
-
-    if(NOT BLST_INCLUDE_DIR OR NOT BLST_LIBRARY)
-        message(FATAL_ERROR
-            "Nodo requires real BLS12-381 support through blst. "
-            "Install blst development headers/library or vendor blst at third_party/blst. "
-            "Fake or development BLS providers are not allowed."
-        )
-    endif()
-
-    add_library(blst STATIC IMPORTED)
-    set_target_properties(blst
-        PROPERTIES
-            IMPORTED_LOCATION "${BLST_LIBRARY}"
-            INTERFACE_INCLUDE_DIRECTORIES "${BLST_INCLUDE_DIR}"
+if(NOT BLST_INCLUDE_DIR OR NOT BLST_LIBRARY)
+    message(FATAL_ERROR
+        "Nodo requires external blst for BLS12-381. "
+        "Install blst development headers/library so CMake can find blst.h and libblst. "
+        "The Nodo repository must not vendor third_party/blst, and fake BLS providers are not allowed."
     )
 endif()
+
+add_library(blst::blst UNKNOWN IMPORTED)
+set_target_properties(blst::blst
+    PROPERTIES
+        IMPORTED_LOCATION "${BLST_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${BLST_INCLUDE_DIR}"
+)
 
 add_library(nodo_core STATIC
     src/crypto/hash.c
@@ -73,7 +66,7 @@ target_compile_options(nodo_core
 target_link_libraries(nodo_core
     PUBLIC
         OpenSSL::Crypto
-        blst
+        blst::blst
 )
 
 file(GLOB_RECURSE NODO_CORE_CPP_SOURCES
@@ -94,74 +87,39 @@ target_link_libraries(nodo
         nodo_core
 )
 
-set_target_properties(nodo
-    PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build"
-)
-
 enable_testing()
+
+function(nodo_add_test test_name test_source)
+    add_executable(${test_name}
+        ${test_source}
+    )
+
+    target_link_libraries(${test_name}
+        PRIVATE
+            nodo_core
+    )
+
+    add_test(
+        NAME ${test_name}
+        COMMAND ${test_name}
+    )
+endfunction()
 
 file(GLOB_RECURSE NODO_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
 )
 
-foreach(test_source ${NODO_TEST_SOURCES})
-    get_filename_component(test_name ${test_source} NAME_WE)
-    get_filename_component(test_dir ${test_source} DIRECTORY)
-    file(RELATIVE_PATH test_relative_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${test_dir}")
-    string(REGEX REPLACE "[^A-Za-z0-9_]" "_" test_target "${test_name}")
+foreach(NODO_TEST_SOURCE ${NODO_TEST_SOURCES})
+    get_filename_component(NODO_TEST_NAME ${NODO_TEST_SOURCE} NAME_WE)
+    get_filename_component(NODO_TEST_DIR ${NODO_TEST_SOURCE} DIRECTORY)
+    file(RELATIVE_PATH NODO_TEST_REL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests" "${NODO_TEST_DIR}")
+    string(REPLACE "/" "_" NODO_TEST_PREFIX "${NODO_TEST_REL_DIR}")
 
-    add_executable(${test_target}
-        ${test_source}
-    )
-
-    target_link_libraries(${test_target}
-        PRIVATE
-            nodo_core
-    )
-
-    target_include_directories(${test_target}
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    set_target_properties(${test_target}
-        PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tests/${test_relative_dir}"
-    )
-
-    add_test(
-        NAME ${test_relative_dir}/${test_target}
-        COMMAND ${test_target}
-    )
-
-    if(test_relative_dir STREQUAL "economics")
-        set_tests_properties(${test_relative_dir}/${test_target}
-            PROPERTIES LABELS "economics;protection"
-        )
-    elseif(test_relative_dir STREQUAL "storage")
-        set_tests_properties(${test_relative_dir}/${test_target}
-            PROPERTIES LABELS "storage"
-        )
-    elseif(test_relative_dir STREQUAL "core")
-        set_tests_properties(${test_relative_dir}/${test_target}
-            PROPERTIES LABELS "core;protection"
-        )
-    elseif(test_relative_dir STREQUAL "crypto")
-        set_tests_properties(${test_relative_dir}/${test_target}
-            PROPERTIES LABELS "crypto"
-        )
-    elseif(test_relative_dir STREQUAL "consensus")
-        set_tests_properties(${test_relative_dir}/${test_target}
-            PROPERTIES LABELS "consensus;protection"
-        )
-    elseif(test_relative_dir STREQUAL "mempool")
-        set_tests_properties(${test_relative_dir}/${test_target}
-            PROPERTIES LABELS "mempool"
-        )
+    if(NODO_TEST_PREFIX STREQUAL "")
+        set(NODO_TEST_TARGET "${NODO_TEST_NAME}")
     else()
-        set_tests_properties(${test_relative_dir}/${test_target}
-            PROPERTIES LABELS "${test_relative_dir}"
-        )
+        set(NODO_TEST_TARGET "${NODO_TEST_PREFIX}_${NODO_TEST_NAME}")
     endif()
+
+    nodo_add_test(${NODO_TEST_TARGET} ${NODO_TEST_SOURCE})
 endforeach()

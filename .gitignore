@@ -10,3 +10,7 @@ build/
 
 data/*
 !data/.gitkeep
+
+# Do not vendor the full blst repository inside Nodo.
+# blst must be installed as an external system dependency.
+third_party/blst/
