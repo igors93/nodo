@@ -224,6 +224,14 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should report total transaction fees for the finalized block."
     );
 
+    requireCondition(
+        pipeline.rewardDistributions().size() == 1U &&
+        pipeline.rewardDistributions().front().totalReward().rawUnits() == 100 &&
+        pipeline.rewardDistributions().front().liquidReward().rawUnits() == 90 &&
+        pipeline.rewardDistributions().front().lockedReward().rawUnits() == 10,
+        "Pipeline should create validator reward distribution from block fees."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -266,6 +274,14 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
     requireCondition(
         blockContents.find("totalFeeRawUnits=100") != std::string::npos,
         "Finalized block file should persist total block fees."
+    );
+
+    requireCondition(
+        blockContents.find("rewardDistributionCount=1") != std::string::npos &&
+        blockContents.find("reward.0.totalRewardRawUnits=100") != std::string::npos &&
+        blockContents.find("reward.0.liquidRewardRawUnits=90") != std::string::npos &&
+        blockContents.find("reward.0.lockedRewardRawUnits=10") != std::string::npos,
+        "Finalized block file should persist validator reward distribution."
     );
 
     const auto loaded =

@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V3";
+    "NODO_FINALIZED_BLOCK_V4";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -134,6 +134,41 @@ utils::Amount parseAmountStrict(
     );
 }
 
+RewardDistribution parseRewardDistribution(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix =
+        "reward." + std::to_string(index) + ".";
+
+    RewardDistribution distribution(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(
+            document.requireField(prefix + "blockHeight"),
+            prefix + "blockHeight"
+        ),
+        parseAmountStrict(
+            document.requireField(prefix + "totalRewardRawUnits"),
+            prefix + "totalRewardRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField(prefix + "liquidRewardRawUnits"),
+            prefix + "liquidRewardRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField(prefix + "lockedRewardRawUnits"),
+            prefix + "lockedRewardRawUnits"
+        ),
+        document.requireField(prefix + "reason")
+    );
+
+    if (!distribution.isValid()) {
+        throw std::invalid_argument("Finalized block reward distribution is invalid.");
+    }
+
+    return distribution;
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -203,6 +238,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
     : m_block(std::nullopt),
       m_postStateRoot(""),
       m_totalFee(),
+      m_rewardDistributions(),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -210,12 +246,14 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     core::Block block,
     std::string postStateRoot,
     utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
     : m_block(std::move(block)),
       m_postStateRoot(std::move(postStateRoot)),
       m_totalFee(totalFee),
+      m_rewardDistributions(std::move(rewardDistributions)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -235,6 +273,10 @@ utils::Amount FinalizedBlockArtifact::totalFee() const {
     return m_totalFee;
 }
 
+const std::vector<RewardDistribution>& FinalizedBlockArtifact::rewardDistributions() const {
+    return m_rewardDistributions;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -244,12 +286,26 @@ const consensus::FinalizedBlockRecord& FinalizedBlockArtifact::finalizedRecord()
 }
 
 bool FinalizedBlockArtifact::isValid() const {
-    return m_block.has_value() &&
-           m_block->isValid() &&
-           !m_postStateRoot.empty() &&
-           !m_totalFee.isNegative() &&
-           m_quorumCertificate.isStructurallyValid() &&
-           m_finalizedRecord.isStructurallyValid();
+    if (!m_block.has_value() ||
+        !m_block->isValid() ||
+        m_postStateRoot.empty() ||
+        m_totalFee.isNegative() ||
+        !m_quorumCertificate.isStructurallyValid() ||
+        !m_finalizedRecord.isStructurallyValid()) {
+        return false;
+    }
+
+    try {
+        if (m_totalFee.isZero()) {
+            return m_rewardDistributions.empty();
+        }
+
+        return RewardDistributionCalculator::totalReward(
+            m_rewardDistributions
+        ) == m_totalFee;
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 std::string FinalizedBlockArtifact::serialize() const {
@@ -259,6 +315,7 @@ std::string FinalizedBlockArtifact::serialize() const {
         << "blockHash=" << (m_block.has_value() && m_block->isValid() ? m_block->hash() : "INVALID")
         << ";postStateRoot=" << m_postStateRoot
         << ";totalFeeRawUnits=" << m_totalFee.rawUnits()
+        << ";rewardDistributionCount=" << m_rewardDistributions.size()
         << "}";
 
     return oss.str();
@@ -345,12 +402,21 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
             )
         );
 
+    const std::size_t rewardDistributionCount =
+        static_cast<std::size_t>(
+            parseU64Strict(
+                document.requireField("rewardDistributionCount"),
+                "rewardDistributionCount"
+            )
+        );
+
     std::set<std::string> allowedFields = {
         "blockIndex",
         "blockHash",
         "previousHash",
         "postStateRoot",
         "totalFeeRawUnits",
+        "rewardDistributionCount",
         "timestamp",
         "recordCount",
         "block",
@@ -362,11 +428,24 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         allowedFields.insert("record." + std::to_string(index));
     }
 
+    for (std::size_t index = 0; index < rewardDistributionCount; ++index) {
+        const std::string prefix =
+            "reward." + std::to_string(index) + ".";
+
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "totalRewardRawUnits");
+        allowedFields.insert(prefix + "liquidRewardRawUnits");
+        allowedFields.insert(prefix + "lockedRewardRawUnits");
+        allowedFields.insert(prefix + "reason");
+    }
+
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V3 stores explicit block fields, economic fee accounting and record lines,
-     * while the canonical block serialization remains the integrity anchor.
+     * V4 stores explicit block fields, fee accounting and reward distribution
+     * records, while the canonical block serialization remains the integrity
+     * anchor.
      */
     const std::string serializedBlock =
         document.requireField("block");
@@ -396,6 +475,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
             document.requireField("totalFeeRawUnits"),
             "totalFeeRawUnits"
         );
+
+    std::vector<RewardDistribution> rewardDistributions;
+    rewardDistributions.reserve(rewardDistributionCount);
+
+    for (std::size_t rewardIndex = 0; rewardIndex < rewardDistributionCount; ++rewardIndex) {
+        rewardDistributions.push_back(
+            parseRewardDistribution(
+                document,
+                rewardIndex
+            )
+        );
+    }
 
     const std::int64_t timestamp =
         parseI64Strict(
@@ -446,12 +537,17 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block record does not match block or quorum certificate.");
     }
 
+    if (RewardDistributionCalculator::totalReward(rewardDistributions) != totalFee) {
+        throw std::invalid_argument("Finalized block reward distributions do not match total fees.");
+    }
+
     std::vector<std::pair<std::string, std::string>> canonicalFields = {
         {"blockIndex", document.requireField("blockIndex")},
         {"blockHash", document.requireField("blockHash")},
         {"previousHash", document.requireField("previousHash")},
         {"postStateRoot", postStateRoot},
         {"totalFeeRawUnits", std::to_string(totalFee.rawUnits())},
+        {"rewardDistributionCount", std::to_string(rewardDistributions.size())},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -464,6 +560,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
             key,
             document.requireField(key)
         );
+    }
+
+    for (std::size_t rewardIndex = 0; rewardIndex < rewardDistributions.size(); ++rewardIndex) {
+        const std::string prefix =
+            "reward." + std::to_string(rewardIndex) + ".";
+
+        canonicalFields.emplace_back(prefix + "validatorAddress", rewardDistributions[rewardIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(rewardDistributions[rewardIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "totalRewardRawUnits", std::to_string(rewardDistributions[rewardIndex].totalReward().rawUnits()));
+        canonicalFields.emplace_back(prefix + "liquidRewardRawUnits", std::to_string(rewardDistributions[rewardIndex].liquidReward().rawUnits()));
+        canonicalFields.emplace_back(prefix + "lockedRewardRawUnits", std::to_string(rewardDistributions[rewardIndex].lockedReward().rawUnits()));
+        canonicalFields.emplace_back(prefix + "reason", rewardDistributions[rewardIndex].reason());
     }
 
     canonicalFields.emplace_back(
@@ -495,6 +603,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         block,
         postStateRoot,
         totalFee,
+        rewardDistributions,
         quorumCertificate,
         finalizedRecord
     );
@@ -689,6 +798,26 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
                     + blockPath.string()
                     + ": "
                     "Persisted block totalFeeRawUnits does not match rebuilt transaction fees."
+                );
+            }
+
+            const std::vector<RewardDistribution> expectedRewards =
+                RewardDistributionCalculator::buildFromQuorumCertificate(
+                    preview.totalFee(),
+                    artifact.quorumCertificate(),
+                    block.index()
+                );
+
+            if (!RewardDistributionCalculator::sameDistributions(
+                    expectedRewards,
+                    artifact.rewardDistributions()
+                )) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Invalid finalized block file "
+                    + blockPath.string()
+                    + ": "
+                    "Persisted reward distributions do not match rebuilt validator fee rewards."
                 );
             }
 

@@ -46,6 +46,23 @@ core::StateTransitionPreviewContext previewContextForRuntime(
     );
 }
 
+bool rewardDistributionsMatchTotalFee(
+    utils::Amount totalFee,
+    const std::vector<RewardDistribution>& rewardDistributions
+) {
+    try {
+        if (totalFee.isZero()) {
+            return rewardDistributions.empty();
+        }
+
+        return RewardDistributionCalculator::totalReward(
+            rewardDistributions
+        ) == totalFee;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 } // namespace
 
 RuntimeBlockPipelineConfig::RuntimeBlockPipelineConfig()
@@ -137,7 +154,8 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_finalizedRecord(),
       m_finalizedTransactionIds(),
       m_postStateRoot(""),
-      m_totalFee() {}
+      m_totalFee(),
+      m_rewardDistributions() {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -152,7 +170,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
         std::move(finalizedRecord),
         std::move(finalizedTransactionIds),
         std::move(postStateRoot),
-        utils::Amount()
+        utils::Amount(),
+        {}
     );
 }
 
@@ -164,6 +183,26 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     std::string postStateRoot,
     utils::Amount totalFee
 ) {
+    return finalized(
+        std::move(block),
+        std::move(certificate),
+        std::move(finalizedRecord),
+        std::move(finalizedTransactionIds),
+        std::move(postStateRoot),
+        totalFee,
+        {}
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions
+) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
     result.m_reason = "";
@@ -173,6 +212,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_finalizedTransactionIds = std::move(finalizedTransactionIds);
     result.m_postStateRoot = std::move(postStateRoot);
     result.m_totalFee = totalFee;
+    result.m_rewardDistributions = std::move(rewardDistributions);
     return result;
 }
 
@@ -201,7 +241,11 @@ bool RuntimeBlockPipelineResult::finalized() const {
            m_certificate.isStructurallyValid() &&
            m_finalizedRecord.isStructurallyValid() &&
            !m_postStateRoot.empty() &&
-           !m_totalFee.isNegative();
+           !m_totalFee.isNegative() &&
+           rewardDistributionsMatchTotalFee(
+               m_totalFee,
+               m_rewardDistributions
+           );
 }
 
 const core::Block& RuntimeBlockPipelineResult::block() const {
@@ -232,6 +276,10 @@ utils::Amount RuntimeBlockPipelineResult::totalFee() const {
     return m_totalFee;
 }
 
+const std::vector<RewardDistribution>& RuntimeBlockPipelineResult::rewardDistributions() const {
+    return m_rewardDistributions;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -242,6 +290,7 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";finalizedTransactionCount=" << m_finalizedTransactionIds.size()
         << ";postStateRoot=" << m_postStateRoot
         << ";totalFeeRawUnits=" << m_totalFee.rawUnits()
+        << ";rewardDistributionCount=" << m_rewardDistributions.size()
         << "}";
 
     return oss.str();
@@ -369,6 +418,22 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
+    std::vector<RewardDistribution> rewardDistributions;
+
+    try {
+        rewardDistributions =
+            RewardDistributionCalculator::buildFromQuorumCertificate(
+                transitionValidation.totalFee(),
+                certificate.certificate(),
+                production.block().index()
+            );
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            std::string("Reward distribution failed: ") + error.what()
+        );
+    }
+
     const consensus::BlockFinalizationResult finalization =
         consensus::BlockFinalizer::finalizeBlock(
             runtime.mutableBlockchain(),
@@ -403,7 +468,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         finalization.record(),
         finalizedTransactionIds,
         transitionValidation.stateRoot(),
-        transitionValidation.totalFee()
+        transitionValidation.totalFee(),
+        rewardDistributions
     );
 }
 

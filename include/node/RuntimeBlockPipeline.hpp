@@ -7,6 +7,7 @@
 #include "core/MempoolBlockProducer.hpp"
 #include "crypto/Signer.hpp"
 #include "node/NodeRuntime.hpp"
+#include "node/RewardDistribution.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstddef>
@@ -88,6 +89,16 @@ public:
         utils::Amount totalFee
     );
 
+    static RuntimeBlockPipelineResult finalized(
+        core::Block block,
+        consensus::QuorumCertificate certificate,
+        consensus::FinalizedBlockRecord finalizedRecord,
+        std::vector<std::string> finalizedTransactionIds,
+        std::string postStateRoot,
+        utils::Amount totalFee,
+        std::vector<RewardDistribution> rewardDistributions
+    );
+
     static RuntimeBlockPipelineResult rejected(
         RuntimeBlockPipelineStatus status,
         std::string reason
@@ -103,6 +114,7 @@ public:
     const std::vector<std::string>& finalizedTransactionIds() const;
     const std::string& postStateRoot() const;
     utils::Amount totalFee() const;
+    const std::vector<RewardDistribution>& rewardDistributions() const;
 
     std::string serialize() const;
 
@@ -121,6 +133,7 @@ private:
     std::vector<std::string> m_finalizedTransactionIds;
     std::string m_postStateRoot;
     utils::Amount m_totalFee;
+    std::vector<RewardDistribution> m_rewardDistributions;
 };
 
 /*

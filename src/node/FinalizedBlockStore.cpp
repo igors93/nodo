@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V3";
+    "NODO_FINALIZED_BLOCK_V4";
 
 } // namespace
 
@@ -278,6 +278,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"previousHash", pipelineResult.block().previousHash()},
         {"postStateRoot", pipelineResult.postStateRoot()},
         {"totalFeeRawUnits", std::to_string(pipelineResult.totalFee().rawUnits())},
+        {"rewardDistributionCount", std::to_string(pipelineResult.rewardDistributions().size())},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -290,6 +291,21 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
             "record." + std::to_string(index),
             records[index].serialize()
         );
+    }
+
+    const std::vector<RewardDistribution>& rewards =
+        pipelineResult.rewardDistributions();
+
+    for (std::size_t index = 0; index < rewards.size(); ++index) {
+        const std::string prefix =
+            "reward." + std::to_string(index) + ".";
+
+        fields.emplace_back(prefix + "validatorAddress", rewards[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(rewards[index].blockHeight()));
+        fields.emplace_back(prefix + "totalRewardRawUnits", std::to_string(rewards[index].totalReward().rawUnits()));
+        fields.emplace_back(prefix + "liquidRewardRawUnits", std::to_string(rewards[index].liquidReward().rawUnits()));
+        fields.emplace_back(prefix + "lockedRewardRawUnits", std::to_string(rewards[index].lockedReward().rawUnits()));
+        fields.emplace_back(prefix + "reason", rewards[index].reason());
     }
 
     fields.emplace_back(
