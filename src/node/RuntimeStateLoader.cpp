@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V8";
+    "NODO_FINALIZED_BLOCK_V9";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -353,6 +353,34 @@ ValidatorRiskAssessment parseValidatorRiskAssessment(
 
     return assessment;
 }
+ValidatorContainmentDecision parseValidatorContainmentDecision(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix =
+        "validatorContainment." + std::to_string(index) + ".";
+
+    ValidatorContainmentDecision decision(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(
+            document.requireField(prefix + "blockHeight"),
+            prefix + "blockHeight"
+        ),
+        document.requireField(prefix + "riskLevel"),
+        document.requireField(prefix + "recommendedAction"),
+        document.requireField(prefix + "containmentMode"),
+        document.requireField(prefix + "peerTrustState"),
+        document.requireField(prefix + "networkAdmissionState"),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourceRiskDigest")
+    );
+
+    if (!decision.isValid()) {
+        throw std::invalid_argument("Finalized block validator containment decision is invalid.");
+    }
+
+    return decision;
+}
 
 } // namespace
 
@@ -428,6 +456,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_securityScoreRecords(),
       m_securityCheckpoints(),
       m_validatorRiskAssessments(),
+      m_validatorContainmentDecisions(),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -440,6 +469,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     std::vector<SecurityScoreRecord> securityScoreRecords,
     std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
     std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -451,6 +481,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_securityScoreRecords(std::move(securityScoreRecords)),
       m_securityCheckpoints(std::move(securityCheckpoints)),
       m_validatorRiskAssessments(std::move(validatorRiskAssessments)),
+      m_validatorContainmentDecisions(std::move(validatorContainmentDecisions)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -490,6 +521,10 @@ const std::vector<ValidatorRiskAssessment>& FinalizedBlockArtifact::validatorRis
     return m_validatorRiskAssessments;
 }
 
+const std::vector<ValidatorContainmentDecision>& FinalizedBlockArtifact::validatorContainmentDecisions() const {
+    return m_validatorContainmentDecisions;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -514,7 +549,8 @@ bool FinalizedBlockArtifact::isValid() const {
                    m_lockedStakePositions.empty() &&
                    m_securityScoreRecords.empty() &&
                    m_securityCheckpoints.empty() &&
-                   m_validatorRiskAssessments.empty();
+                   m_validatorRiskAssessments.empty() &&
+                   m_validatorContainmentDecisions.empty();
         }
 
         return RewardDistributionCalculator::totalReward(m_rewardDistributions) == m_totalFee &&
@@ -533,6 +569,10 @@ bool FinalizedBlockArtifact::isValid() const {
                ValidatorRiskAssessmentBuilder::sameAssessments(
                    ValidatorRiskAssessmentBuilder::buildFromCheckpoints(m_securityCheckpoints),
                    m_validatorRiskAssessments
+               ) &&
+               ValidatorContainmentDecisionBuilder::sameDecisions(
+                   ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(m_validatorRiskAssessments),
+                   m_validatorContainmentDecisions
                );
     } catch (const std::exception&) {
         return false;
@@ -551,6 +591,7 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";securityScoreRecordCount=" << m_securityScoreRecords.size()
         << ";securityCheckpointCount=" << m_securityCheckpoints.size()
         << ";validatorRiskAssessmentCount=" << m_validatorRiskAssessments.size()
+        << ";validatorContainmentDecisionCount=" << m_validatorContainmentDecisions.size()
         << "}";
 
     return oss.str();
@@ -635,6 +676,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const std::size_t securityScoreRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("securityScoreRecordCount"), "securityScoreRecordCount"));
     const std::size_t securityCheckpointCount = static_cast<std::size_t>(parseU64Strict(document.requireField("securityCheckpointCount"), "securityCheckpointCount"));
     const std::size_t validatorRiskAssessmentCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorRiskAssessmentCount"), "validatorRiskAssessmentCount"));
+    const std::size_t validatorContainmentDecisionCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorContainmentDecisionCount"), "validatorContainmentDecisionCount"));
 
     std::set<std::string> allowedFields = {
         "blockIndex",
@@ -647,6 +689,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "securityScoreRecordCount",
         "securityCheckpointCount",
         "validatorRiskAssessmentCount",
+        "validatorContainmentDecisionCount",
         "timestamp",
         "recordCount",
         "block",
@@ -717,11 +760,24 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         allowedFields.insert(prefix + "checkpointDigest");
     }
 
+    for (std::size_t index = 0; index < validatorContainmentDecisionCount; ++index) {
+        const std::string prefix = "validatorContainment." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "riskLevel");
+        allowedFields.insert(prefix + "recommendedAction");
+        allowedFields.insert(prefix + "containmentMode");
+        allowedFields.insert(prefix + "peerTrustState");
+        allowedFields.insert(prefix + "networkAdmissionState");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourceRiskDigest");
+    }
+
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V8 stores explicit block fields, fee accounting, locked stake,
-     * security score records, checkpoints and validator risk assessments. The canonical block serialization remains the
+     * V9 stores explicit block fields, fee accounting, locked stake,
+     * security score records, checkpoints, risk assessments and containment decisions. The canonical block serialization remains the
      * integrity anchor for the block payload itself.
      */
     const std::string serializedBlock = document.requireField("block");
@@ -761,6 +817,12 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     validatorRiskAssessments.reserve(validatorRiskAssessmentCount);
     for (std::size_t assessmentIndex = 0; assessmentIndex < validatorRiskAssessmentCount; ++assessmentIndex) {
         validatorRiskAssessments.push_back(parseValidatorRiskAssessment(document, assessmentIndex));
+    }
+
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions;
+    validatorContainmentDecisions.reserve(validatorContainmentDecisionCount);
+    for (std::size_t decisionIndex = 0; decisionIndex < validatorContainmentDecisionCount; ++decisionIndex) {
+        validatorContainmentDecisions.push_back(parseValidatorContainmentDecision(document, decisionIndex));
     }
 
     const std::int64_t timestamp = parseI64Strict(document.requireField("timestamp"), "timestamp");
@@ -827,6 +889,12 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block validator risk assessments do not match security checkpoints.");
     }
 
+    if (!ValidatorContainmentDecisionBuilder::sameDecisions(
+            ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(validatorRiskAssessments),
+            validatorContainmentDecisions)) {
+        throw std::invalid_argument("Finalized block validator containment decisions do not match risk assessments.");
+    }
+
     std::vector<std::pair<std::string, std::string>> canonicalFields = {
         {"blockIndex", document.requireField("blockIndex")},
         {"blockHash", document.requireField("blockHash")},
@@ -838,6 +906,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"securityScoreRecordCount", std::to_string(securityScoreRecords.size())},
         {"securityCheckpointCount", std::to_string(securityCheckpoints.size())},
         {"validatorRiskAssessmentCount", std::to_string(validatorRiskAssessments.size())},
+        {"validatorContainmentDecisionCount", std::to_string(validatorContainmentDecisions.size())},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -906,6 +975,19 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         canonicalFields.emplace_back(prefix + "checkpointDigest", validatorRiskAssessments[assessmentIndex].checkpointDigest());
     }
 
+    for (std::size_t decisionIndex = 0; decisionIndex < validatorContainmentDecisions.size(); ++decisionIndex) {
+        const std::string prefix = "validatorContainment." + std::to_string(decisionIndex) + ".";
+        canonicalFields.emplace_back(prefix + "validatorAddress", validatorContainmentDecisions[decisionIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(validatorContainmentDecisions[decisionIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "riskLevel", validatorContainmentDecisions[decisionIndex].riskLevel());
+        canonicalFields.emplace_back(prefix + "recommendedAction", validatorContainmentDecisions[decisionIndex].recommendedAction());
+        canonicalFields.emplace_back(prefix + "containmentMode", validatorContainmentDecisions[decisionIndex].containmentMode());
+        canonicalFields.emplace_back(prefix + "peerTrustState", validatorContainmentDecisions[decisionIndex].peerTrustState());
+        canonicalFields.emplace_back(prefix + "networkAdmissionState", validatorContainmentDecisions[decisionIndex].networkAdmissionState());
+        canonicalFields.emplace_back(prefix + "reason", validatorContainmentDecisions[decisionIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourceRiskDigest", validatorContainmentDecisions[decisionIndex].sourceRiskDigest());
+    }
+
     canonicalFields.emplace_back("block", serializedBlock);
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
@@ -926,6 +1008,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         securityScoreRecords,
         securityCheckpoints,
         validatorRiskAssessments,
+        validatorContainmentDecisions,
         quorumCertificate,
         finalizedRecord
     );
@@ -1070,6 +1153,13 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
             if (!ValidatorRiskAssessmentBuilder::sameAssessments(expectedRiskAssessments, artifact.validatorRiskAssessments())) {
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted validator risk assessments do not match rebuilt security checkpoints.");
+            }
+
+            const std::vector<ValidatorContainmentDecision> expectedContainmentDecisions =
+                ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(expectedRiskAssessments);
+
+            if (!ValidatorContainmentDecisionBuilder::sameDecisions(expectedContainmentDecisions, artifact.validatorContainmentDecisions())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted validator containment decisions do not match rebuilt risk assessments.");
             }
 
             const consensus::BlockFinalizationResult finalization =

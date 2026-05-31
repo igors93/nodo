@@ -133,6 +133,22 @@ bool validatorRiskAssessmentsMatchCheckpoints(
     }
 }
 
+bool validatorContainmentDecisionsMatchRisk(
+    const std::vector<ValidatorRiskAssessment>& validatorRiskAssessments,
+    const std::vector<ValidatorContainmentDecision>& validatorContainmentDecisions
+) {
+    try {
+        return ValidatorContainmentDecisionBuilder::sameDecisions(
+            ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(
+                validatorRiskAssessments
+            ),
+            validatorContainmentDecisions
+        );
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 } // namespace
 
 RuntimeBlockPipelineConfig::RuntimeBlockPipelineConfig()
@@ -229,7 +245,8 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_lockedStakePositions(),
       m_securityScoreRecords(),
       m_securityCheckpoints(),
-      m_validatorRiskAssessments() {}
+      m_validatorRiskAssessments(),
+      m_validatorContainmentDecisions() {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -239,7 +256,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     std::string postStateRoot
 ) {
     return finalized(std::move(block), std::move(certificate), std::move(finalizedRecord),
-        std::move(finalizedTransactionIds), std::move(postStateRoot), utils::Amount(), {}, {}, {}, {}, {});
+        std::move(finalizedTransactionIds), std::move(postStateRoot), utils::Amount(), {}, {}, {}, {}, {}, {});
 }
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
@@ -251,7 +268,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     utils::Amount totalFee
 ) {
     return finalized(std::move(block), std::move(certificate), std::move(finalizedRecord),
-        std::move(finalizedTransactionIds), std::move(postStateRoot), totalFee, {}, {}, {}, {}, {});
+        std::move(finalizedTransactionIds), std::move(postStateRoot), totalFee, {}, {}, {}, {}, {}, {});
 }
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
@@ -360,14 +377,21 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     std::vector<ValidatorSecurityCheckpoint> securityCheckpoints
 ) {
     std::vector<ValidatorRiskAssessment> validatorRiskAssessments;
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions;
 
     try {
         validatorRiskAssessments =
             ValidatorRiskAssessmentBuilder::buildFromCheckpoints(
                 securityCheckpoints
             );
+
+        validatorContainmentDecisions =
+            ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(
+                validatorRiskAssessments
+            );
     } catch (const std::exception&) {
         validatorRiskAssessments.clear();
+        validatorContainmentDecisions.clear();
     }
 
     return finalized(
@@ -398,6 +422,47 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
     std::vector<ValidatorRiskAssessment> validatorRiskAssessments
 ) {
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions;
+
+    try {
+        validatorContainmentDecisions =
+            ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(
+                validatorRiskAssessments
+            );
+    } catch (const std::exception&) {
+        validatorContainmentDecisions.clear();
+    }
+
+    return finalized(
+        std::move(block),
+        std::move(certificate),
+        std::move(finalizedRecord),
+        std::move(finalizedTransactionIds),
+        std::move(postStateRoot),
+        totalFee,
+        std::move(rewardDistributions),
+        std::move(lockedStakePositions),
+        std::move(securityScoreRecords),
+        std::move(securityCheckpoints),
+        std::move(validatorRiskAssessments),
+        std::move(validatorContainmentDecisions)
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions,
+    std::vector<LockedStakePosition> lockedStakePositions,
+    std::vector<SecurityScoreRecord> securityScoreRecords,
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+    std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions
+) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
     result.m_reason = "";
@@ -412,6 +477,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_securityScoreRecords = std::move(securityScoreRecords);
     result.m_securityCheckpoints = std::move(securityCheckpoints);
     result.m_validatorRiskAssessments = std::move(validatorRiskAssessments);
+    result.m_validatorContainmentDecisions = std::move(validatorContainmentDecisions);
     return result;
 }
 
@@ -445,7 +511,8 @@ bool RuntimeBlockPipelineResult::finalized() const {
            lockedStakePositionsMatchRewards(m_rewardDistributions, m_lockedStakePositions) &&
            securityScoreRecordsMatchLockedStake(m_lockedStakePositions, m_securityScoreRecords, m_block->index()) &&
            securityCheckpointsMatchScores(m_securityScoreRecords, m_lockedStakePositions, m_securityCheckpoints, m_block->index()) &&
-           validatorRiskAssessmentsMatchCheckpoints(m_securityCheckpoints, m_validatorRiskAssessments);
+           validatorRiskAssessmentsMatchCheckpoints(m_securityCheckpoints, m_validatorRiskAssessments) &&
+           validatorContainmentDecisionsMatchRisk(m_validatorRiskAssessments, m_validatorContainmentDecisions);
 }
 
 const core::Block& RuntimeBlockPipelineResult::block() const {
@@ -496,6 +563,10 @@ const std::vector<ValidatorRiskAssessment>& RuntimeBlockPipelineResult::validato
     return m_validatorRiskAssessments;
 }
 
+const std::vector<ValidatorContainmentDecision>& RuntimeBlockPipelineResult::validatorContainmentDecisions() const {
+    return m_validatorContainmentDecisions;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -511,6 +582,7 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";securityScoreRecordCount=" << m_securityScoreRecords.size()
         << ";securityCheckpointCount=" << m_securityCheckpoints.size()
         << ";validatorRiskAssessmentCount=" << m_validatorRiskAssessments.size()
+        << ";validatorContainmentDecisionCount=" << m_validatorContainmentDecisions.size()
         << "}";
 
     return oss.str();
@@ -643,6 +715,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     std::vector<SecurityScoreRecord> securityScoreRecords;
     std::vector<ValidatorSecurityCheckpoint> securityCheckpoints;
     std::vector<ValidatorRiskAssessment> validatorRiskAssessments;
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions;
 
     try {
         rewardDistributions =
@@ -673,6 +746,11 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         validatorRiskAssessments =
             ValidatorRiskAssessmentBuilder::buildFromCheckpoints(
                 securityCheckpoints
+            );
+
+        validatorContainmentDecisions =
+            ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(
+                validatorRiskAssessments
             );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(
@@ -720,7 +798,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         lockedStakePositions,
         securityScoreRecords,
         securityCheckpoints,
-        validatorRiskAssessments
+        validatorRiskAssessments,
+        validatorContainmentDecisions
     );
 }
 

@@ -265,6 +265,14 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should derive validator risk assessments from security checkpoints."
     );
 
+    requireCondition(
+        pipeline.validatorContainmentDecisions().size() == 1U &&
+        pipeline.validatorContainmentDecisions().front().containmentMode() == "REVIEW_QUARANTINE" &&
+        pipeline.validatorContainmentDecisions().front().peerTrustState() == "QUARANTINE_CANDIDATE" &&
+        pipeline.validatorContainmentDecisions().front().networkAdmissionState() == "REQUIRE_REVIEW",
+        "Pipeline should derive containment decisions from validator risk assessments."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -350,6 +358,15 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("validatorRisk.0.recommendedAction=QUARANTINE_REVIEW") != std::string::npos &&
         blockContents.find("validatorRisk.0.reason=VALIDATOR_SECURITY_RISK_ASSESSMENT") != std::string::npos,
         "Finalized block file should persist validator risk assessments."
+    );
+
+    requireCondition(
+        blockContents.find("validatorContainmentDecisionCount=1") != std::string::npos &&
+        blockContents.find("validatorContainment.0.containmentMode=REVIEW_QUARANTINE") != std::string::npos &&
+        blockContents.find("validatorContainment.0.peerTrustState=QUARANTINE_CANDIDATE") != std::string::npos &&
+        blockContents.find("validatorContainment.0.networkAdmissionState=REQUIRE_REVIEW") != std::string::npos &&
+        blockContents.find("validatorContainment.0.reason=VALIDATOR_CONTAINMENT_DECISION") != std::string::npos,
+        "Finalized block file should persist validator containment decisions."
     );
 
     const auto loaded =

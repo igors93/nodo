@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V8";
+    "NODO_FINALIZED_BLOCK_V9";
 
 } // namespace
 
@@ -283,6 +283,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"securityScoreRecordCount", std::to_string(pipelineResult.securityScoreRecords().size())},
         {"securityCheckpointCount", std::to_string(pipelineResult.securityCheckpoints().size())},
         {"validatorRiskAssessmentCount", std::to_string(pipelineResult.validatorRiskAssessments().size())},
+        {"validatorContainmentDecisionCount", std::to_string(pipelineResult.validatorContainmentDecisions().size())},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -379,6 +380,24 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         fields.emplace_back(prefix + "recommendedAction", riskAssessments[index].recommendedAction());
         fields.emplace_back(prefix + "reason", riskAssessments[index].reason());
         fields.emplace_back(prefix + "checkpointDigest", riskAssessments[index].checkpointDigest());
+    }
+
+    const std::vector<ValidatorContainmentDecision>& containmentDecisions =
+        pipelineResult.validatorContainmentDecisions();
+
+    for (std::size_t index = 0; index < containmentDecisions.size(); ++index) {
+        const std::string prefix =
+            "validatorContainment." + std::to_string(index) + ".";
+
+        fields.emplace_back(prefix + "validatorAddress", containmentDecisions[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(containmentDecisions[index].blockHeight()));
+        fields.emplace_back(prefix + "riskLevel", containmentDecisions[index].riskLevel());
+        fields.emplace_back(prefix + "recommendedAction", containmentDecisions[index].recommendedAction());
+        fields.emplace_back(prefix + "containmentMode", containmentDecisions[index].containmentMode());
+        fields.emplace_back(prefix + "peerTrustState", containmentDecisions[index].peerTrustState());
+        fields.emplace_back(prefix + "networkAdmissionState", containmentDecisions[index].networkAdmissionState());
+        fields.emplace_back(prefix + "reason", containmentDecisions[index].reason());
+        fields.emplace_back(prefix + "sourceRiskDigest", containmentDecisions[index].sourceRiskDigest());
     }
 
     fields.emplace_back(
