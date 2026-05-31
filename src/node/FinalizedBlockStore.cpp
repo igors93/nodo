@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V12";
+    "NODO_FINALIZED_BLOCK_V13";
 
 } // namespace
 
@@ -166,6 +166,15 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
         );
     }
 
+    if (!pipelineResult.inflationEpochSnapshot().active() ||
+        !pipelineResult.mintAuthorizationRecord().isValid() ||
+        !pipelineResult.supplyExpansionRecord().isValid()) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::INVALID_PIPELINE_RESULT,
+            "Runtime block pipeline result failed controlled issuance audit."
+        );
+    }
+
     const NodeDataDirectoryReadResult existingManifest =
         NodeDataDirectory::loadManifest(directoryConfig);
 
@@ -304,6 +313,9 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"genesisTreasuryStatus", pipelineResult.genesisTreasurySnapshot().status()},
         {"protectionRewardBudgetStatus", pipelineResult.protectionRewardBudget().status()},
         {"protectionRewardGrantCount", std::to_string(pipelineResult.protectionRewardGrants().size())},
+        {"inflationEpochStatus", pipelineResult.inflationEpochSnapshot().status()},
+        {"mintAuthorizationStatus", pipelineResult.mintAuthorizationRecord().status()},
+        {"supplyExpansionStatus", pipelineResult.supplyExpansionRecord().status()},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -492,6 +504,45 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         fields.emplace_back(prefix + "reason", protectionGrants[index].reason());
         fields.emplace_back(prefix + "sourceBudgetDigest", protectionGrants[index].sourceBudgetDigest());
     }
+
+    const InflationEpochSnapshot& inflationEpoch =
+        pipelineResult.inflationEpochSnapshot();
+
+    fields.emplace_back("inflationEpoch.blockHeight", std::to_string(inflationEpoch.blockHeight()));
+    fields.emplace_back("inflationEpoch.epochStartBlock", std::to_string(inflationEpoch.epochStartBlock()));
+    fields.emplace_back("inflationEpoch.epochEndBlock", std::to_string(inflationEpoch.epochEndBlock()));
+    fields.emplace_back("inflationEpoch.maxAnnualInflationBasisPoints", std::to_string(inflationEpoch.maxAnnualInflationBasisPoints()));
+    fields.emplace_back("inflationEpoch.baseSupplyRawUnits", std::to_string(inflationEpoch.baseSupply().rawUnits()));
+    fields.emplace_back("inflationEpoch.annualMintLimitRawUnits", std::to_string(inflationEpoch.annualMintLimit().rawUnits()));
+    fields.emplace_back("inflationEpoch.mintedThisEpochRawUnits", std::to_string(inflationEpoch.mintedThisEpoch().rawUnits()));
+    fields.emplace_back("inflationEpoch.remainingMintCapacityRawUnits", std::to_string(inflationEpoch.remainingMintCapacity().rawUnits()));
+    fields.emplace_back("inflationEpoch.policyId", inflationEpoch.policyId());
+    fields.emplace_back("inflationEpoch.reason", inflationEpoch.reason());
+
+    const MintAuthorizationRecord& mintAuthorization =
+        pipelineResult.mintAuthorizationRecord();
+
+    fields.emplace_back("mintAuthorization.blockHeight", std::to_string(mintAuthorization.blockHeight()));
+    fields.emplace_back("mintAuthorization.authorizationId", mintAuthorization.authorizationId());
+    fields.emplace_back("mintAuthorization.authorizedAmountRawUnits", std::to_string(mintAuthorization.authorizedAmount().rawUnits()));
+    fields.emplace_back("mintAuthorization.activationBlock", std::to_string(mintAuthorization.activationBlock()));
+    fields.emplace_back("mintAuthorization.expirationBlock", std::to_string(mintAuthorization.expirationBlock()));
+    fields.emplace_back("mintAuthorization.requiredApprovalBasisPoints", std::to_string(mintAuthorization.requiredApprovalBasisPoints()));
+    fields.emplace_back("mintAuthorization.timelockBlocks", std::to_string(mintAuthorization.timelockBlocks()));
+    fields.emplace_back("mintAuthorization.governanceDigest", mintAuthorization.governanceDigest());
+    fields.emplace_back("mintAuthorization.reason", mintAuthorization.reason());
+    fields.emplace_back("mintAuthorization.sourceEpochDigest", mintAuthorization.sourceEpochDigest());
+
+    const SupplyExpansionRecord& supplyExpansion =
+        pipelineResult.supplyExpansionRecord();
+
+    fields.emplace_back("supplyExpansion.blockHeight", std::to_string(supplyExpansion.blockHeight()));
+    fields.emplace_back("supplyExpansion.mintedAmountRawUnits", std::to_string(supplyExpansion.mintedAmount().rawUnits()));
+    fields.emplace_back("supplyExpansion.recipientAddress", supplyExpansion.recipientAddress());
+    fields.emplace_back("supplyExpansion.authorizationId", supplyExpansion.authorizationId());
+    fields.emplace_back("supplyExpansion.policyId", supplyExpansion.policyId());
+    fields.emplace_back("supplyExpansion.reason", supplyExpansion.reason());
+    fields.emplace_back("supplyExpansion.sourceAuthorizationDigest", supplyExpansion.sourceAuthorizationDigest());
 
     fields.emplace_back(
         "block",

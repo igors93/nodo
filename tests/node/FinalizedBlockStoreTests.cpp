@@ -295,6 +295,14 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should build an active genesis treasury and protection reward budget."
     );
 
+    requireCondition(
+        pipeline.inflationEpochSnapshot().active() &&
+        pipeline.mintAuthorizationRecord().isValid() &&
+        pipeline.supplyExpansionRecord().isValid() &&
+        pipeline.supplyExpansionRecord().mintedAmount().rawUnits() == 0,
+        "Pipeline should build controlled issuance records without executing mint."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -415,6 +423,16 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("protectionRewardBudgetStatus=ACTIVE") != std::string::npos &&
         blockContents.find("protectionBudget.reason=INITIAL_PROTECTION_REWARD_BUDGET") != std::string::npos,
         "Finalized block file should persist genesis treasury and protection reward budget."
+    );
+
+    requireCondition(
+        blockContents.find("inflationEpochStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("inflationEpoch.maxAnnualInflationBasisPoints=400") != std::string::npos &&
+        blockContents.find("mintAuthorizationStatus=NONE") != std::string::npos &&
+        blockContents.find("mintAuthorization.reason=NO_ACTIVE_MINT_AUTHORIZATION") != std::string::npos &&
+        blockContents.find("supplyExpansionStatus=NONE") != std::string::npos &&
+        blockContents.find("supplyExpansion.mintedAmountRawUnits=0") != std::string::npos,
+        "Finalized block file should persist controlled issuance records."
     );
 
     const auto loaded =

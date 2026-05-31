@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V12";
+    "NODO_FINALIZED_BLOCK_V13";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -100,6 +100,25 @@ std::uint16_t parseU16Strict(
     }
 
     return static_cast<std::uint16_t>(parsed);
+}
+
+
+
+std::uint32_t parseU32Strict(
+    const std::string& value,
+    const std::string& fieldName
+) {
+    const std::uint64_t parsed =
+        parseU64Strict(
+            value,
+            fieldName
+        );
+
+    if (parsed > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::invalid_argument("Numeric field exceeds uint32 range: " + fieldName);
+    }
+
+    return static_cast<std::uint32_t>(parsed);
 }
 
 std::int64_t parseI64Strict(
@@ -581,6 +600,124 @@ ProtectionRewardGrant parseProtectionRewardGrant(
     return grant;
 }
 
+
+InflationEpochSnapshot parseInflationEpochSnapshot(
+    const serialization::KeyValueFileDocument& document
+) {
+    InflationEpochSnapshot snapshot(
+        document.requireField("inflationEpochStatus"),
+        parseU64Strict(
+            document.requireField("inflationEpoch.blockHeight"),
+            "inflationEpoch.blockHeight"
+        ),
+        parseU64Strict(
+            document.requireField("inflationEpoch.epochStartBlock"),
+            "inflationEpoch.epochStartBlock"
+        ),
+        parseU64Strict(
+            document.requireField("inflationEpoch.epochEndBlock"),
+            "inflationEpoch.epochEndBlock"
+        ),
+        parseU32Strict(
+            document.requireField("inflationEpoch.maxAnnualInflationBasisPoints"),
+            "inflationEpoch.maxAnnualInflationBasisPoints"
+        ),
+        parseAmountStrict(
+            document.requireField("inflationEpoch.baseSupplyRawUnits"),
+            "inflationEpoch.baseSupplyRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("inflationEpoch.annualMintLimitRawUnits"),
+            "inflationEpoch.annualMintLimitRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("inflationEpoch.mintedThisEpochRawUnits"),
+            "inflationEpoch.mintedThisEpochRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("inflationEpoch.remainingMintCapacityRawUnits"),
+            "inflationEpoch.remainingMintCapacityRawUnits"
+        ),
+        document.requireField("inflationEpoch.policyId"),
+        document.requireField("inflationEpoch.reason")
+    );
+
+    if (!snapshot.isValid()) {
+        throw std::invalid_argument("Finalized block inflation epoch snapshot is invalid.");
+    }
+
+    return snapshot;
+}
+
+MintAuthorizationRecord parseMintAuthorizationRecord(
+    const serialization::KeyValueFileDocument& document
+) {
+    MintAuthorizationRecord authorization(
+        document.requireField("mintAuthorizationStatus"),
+        parseU64Strict(
+            document.requireField("mintAuthorization.blockHeight"),
+            "mintAuthorization.blockHeight"
+        ),
+        document.requireField("mintAuthorization.authorizationId"),
+        parseAmountStrict(
+            document.requireField("mintAuthorization.authorizedAmountRawUnits"),
+            "mintAuthorization.authorizedAmountRawUnits"
+        ),
+        parseU64Strict(
+            document.requireField("mintAuthorization.activationBlock"),
+            "mintAuthorization.activationBlock"
+        ),
+        parseU64Strict(
+            document.requireField("mintAuthorization.expirationBlock"),
+            "mintAuthorization.expirationBlock"
+        ),
+        parseU32Strict(
+            document.requireField("mintAuthorization.requiredApprovalBasisPoints"),
+            "mintAuthorization.requiredApprovalBasisPoints"
+        ),
+        parseU64Strict(
+            document.requireField("mintAuthorization.timelockBlocks"),
+            "mintAuthorization.timelockBlocks"
+        ),
+        document.requireField("mintAuthorization.governanceDigest"),
+        document.requireField("mintAuthorization.reason"),
+        document.requireField("mintAuthorization.sourceEpochDigest")
+    );
+
+    if (!authorization.isValid()) {
+        throw std::invalid_argument("Finalized block mint authorization record is invalid.");
+    }
+
+    return authorization;
+}
+
+SupplyExpansionRecord parseSupplyExpansionRecord(
+    const serialization::KeyValueFileDocument& document
+) {
+    SupplyExpansionRecord expansion(
+        document.requireField("supplyExpansionStatus"),
+        parseU64Strict(
+            document.requireField("supplyExpansion.blockHeight"),
+            "supplyExpansion.blockHeight"
+        ),
+        parseAmountStrict(
+            document.requireField("supplyExpansion.mintedAmountRawUnits"),
+            "supplyExpansion.mintedAmountRawUnits"
+        ),
+        document.requireField("supplyExpansion.recipientAddress"),
+        document.requireField("supplyExpansion.authorizationId"),
+        document.requireField("supplyExpansion.policyId"),
+        document.requireField("supplyExpansion.reason"),
+        document.requireField("supplyExpansion.sourceAuthorizationDigest")
+    );
+
+    if (!expansion.isValid()) {
+        throw std::invalid_argument("Finalized block supply expansion record is invalid.");
+    }
+
+    return expansion;
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -661,6 +798,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_genesisTreasurySnapshot(GenesisTreasurySnapshot::notEvaluated()),
       m_protectionRewardBudget(ProtectionRewardBudget::notEvaluated()),
       m_protectionRewardGrants(),
+      m_inflationEpochSnapshot(InflationEpochSnapshot::notEvaluated()),
+      m_mintAuthorizationRecord(),
+      m_supplyExpansionRecord(),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -679,6 +819,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     GenesisTreasurySnapshot genesisTreasurySnapshot,
     ProtectionRewardBudget protectionRewardBudget,
     std::vector<ProtectionRewardGrant> protectionRewardGrants,
+    InflationEpochSnapshot inflationEpochSnapshot,
+    MintAuthorizationRecord mintAuthorizationRecord,
+    SupplyExpansionRecord supplyExpansionRecord,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -696,6 +839,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_genesisTreasurySnapshot(std::move(genesisTreasurySnapshot)),
       m_protectionRewardBudget(std::move(protectionRewardBudget)),
       m_protectionRewardGrants(std::move(protectionRewardGrants)),
+      m_inflationEpochSnapshot(std::move(inflationEpochSnapshot)),
+      m_mintAuthorizationRecord(std::move(mintAuthorizationRecord)),
+      m_supplyExpansionRecord(std::move(supplyExpansionRecord)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -759,6 +905,18 @@ const std::vector<ProtectionRewardGrant>& FinalizedBlockArtifact::protectionRewa
     return m_protectionRewardGrants;
 }
 
+const InflationEpochSnapshot& FinalizedBlockArtifact::inflationEpochSnapshot() const {
+    return m_inflationEpochSnapshot;
+}
+
+const MintAuthorizationRecord& FinalizedBlockArtifact::mintAuthorizationRecord() const {
+    return m_mintAuthorizationRecord;
+}
+
+const SupplyExpansionRecord& FinalizedBlockArtifact::supplyExpansionRecord() const {
+    return m_supplyExpansionRecord;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -789,7 +947,10 @@ bool FinalizedBlockArtifact::isValid() const {
                    m_monetaryFirewallAudit.passed() &&
                    m_genesisTreasurySnapshot.active() &&
                    m_protectionRewardBudget.active() &&
-                   m_protectionRewardGrants.empty();
+                   m_protectionRewardGrants.empty() &&
+                   m_inflationEpochSnapshot.active() &&
+                   m_mintAuthorizationRecord.isValid() &&
+                   m_supplyExpansionRecord.isValid();
         }
 
         return RewardDistributionCalculator::totalReward(m_rewardDistributions) == m_totalFee &&
@@ -833,6 +994,15 @@ bool FinalizedBlockArtifact::isValid() const {
                        m_securityScoreRecords
                    ),
                    m_protectionRewardGrants
+               ) &&
+               m_inflationEpochSnapshot.active() &&
+               ControlledIssuance::sameAuthorization(
+                   ControlledIssuance::buildNoMintAuthorization(m_inflationEpochSnapshot),
+                   m_mintAuthorizationRecord
+               ) &&
+               ControlledIssuance::sameExpansion(
+                   ControlledIssuance::buildNoSupplyExpansion(m_mintAuthorizationRecord, m_inflationEpochSnapshot),
+                   m_supplyExpansionRecord
                );
     } catch (const std::exception&) {
         return false;
@@ -857,6 +1027,9 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";genesisTreasuryStatus=" << m_genesisTreasurySnapshot.status()
         << ";protectionRewardBudgetStatus=" << m_protectionRewardBudget.status()
         << ";protectionRewardGrantCount=" << m_protectionRewardGrants.size()
+        << ";inflationEpochStatus=" << m_inflationEpochSnapshot.status()
+        << ";mintAuthorizationStatus=" << m_mintAuthorizationRecord.status()
+        << ";supplyExpansionStatus=" << m_supplyExpansionRecord.status()
         << "}";
 
     return oss.str();
@@ -962,6 +1135,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "genesisTreasuryStatus",
         "protectionRewardBudgetStatus",
         "protectionRewardGrantCount",
+        "inflationEpochStatus",
+        "mintAuthorizationStatus",
+        "supplyExpansionStatus",
         "monetary.blockHeight",
         "monetary.supplyBeforeRawUnits",
         "monetary.mintedRawUnits",
@@ -988,6 +1164,33 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "protectionBudget.beneficiaryCount",
         "protectionBudget.reason",
         "protectionBudget.sourceTreasuryDigest",
+        "inflationEpoch.blockHeight",
+        "inflationEpoch.epochStartBlock",
+        "inflationEpoch.epochEndBlock",
+        "inflationEpoch.maxAnnualInflationBasisPoints",
+        "inflationEpoch.baseSupplyRawUnits",
+        "inflationEpoch.annualMintLimitRawUnits",
+        "inflationEpoch.mintedThisEpochRawUnits",
+        "inflationEpoch.remainingMintCapacityRawUnits",
+        "inflationEpoch.policyId",
+        "inflationEpoch.reason",
+        "mintAuthorization.blockHeight",
+        "mintAuthorization.authorizationId",
+        "mintAuthorization.authorizedAmountRawUnits",
+        "mintAuthorization.activationBlock",
+        "mintAuthorization.expirationBlock",
+        "mintAuthorization.requiredApprovalBasisPoints",
+        "mintAuthorization.timelockBlocks",
+        "mintAuthorization.governanceDigest",
+        "mintAuthorization.reason",
+        "mintAuthorization.sourceEpochDigest",
+        "supplyExpansion.blockHeight",
+        "supplyExpansion.mintedAmountRawUnits",
+        "supplyExpansion.recipientAddress",
+        "supplyExpansion.authorizationId",
+        "supplyExpansion.policyId",
+        "supplyExpansion.reason",
+        "supplyExpansion.sourceAuthorizationDigest",
         "timestamp",
         "recordCount",
         "block",
@@ -1099,10 +1302,10 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V12 stores explicit block fields, fee accounting, locked stake,
+     * V13 stores explicit block fields, fee accounting, locked stake,
      * security score records, checkpoints, risk assessments, containment decisions,
-     * network policies, the monetary firewall audit and the initial protection
-     * treasury reward plan. The canonical block serialization remains the
+     * network policies, the monetary firewall audit, the initial protection
+     * treasury reward plan and controlled issuance authorization records. The canonical block serialization remains the
      * integrity anchor for the block payload itself.
      */
     const std::string serializedBlock = document.requireField("block");
@@ -1170,6 +1373,15 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     for (std::size_t grantIndex = 0; grantIndex < protectionRewardGrantCount; ++grantIndex) {
         protectionRewardGrants.push_back(parseProtectionRewardGrant(document, grantIndex));
     }
+
+    const InflationEpochSnapshot inflationEpochSnapshot =
+        parseInflationEpochSnapshot(document);
+
+    const MintAuthorizationRecord mintAuthorizationRecord =
+        parseMintAuthorizationRecord(document);
+
+    const SupplyExpansionRecord supplyExpansionRecord =
+        parseSupplyExpansionRecord(document);
 
     const std::int64_t timestamp = parseI64Strict(document.requireField("timestamp"), "timestamp");
 
@@ -1275,6 +1487,16 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block protection reward grants do not match protection budget.");
     }
 
+    if (!inflationEpochSnapshot.active() ||
+        !ControlledIssuance::sameAuthorization(
+            ControlledIssuance::buildNoMintAuthorization(inflationEpochSnapshot),
+            mintAuthorizationRecord) ||
+        !ControlledIssuance::sameExpansion(
+            ControlledIssuance::buildNoSupplyExpansion(mintAuthorizationRecord, inflationEpochSnapshot),
+            supplyExpansionRecord)) {
+        throw std::invalid_argument("Finalized block controlled issuance records are invalid.");
+    }
+
     std::vector<std::pair<std::string, std::string>> canonicalFields = {
         {"blockIndex", document.requireField("blockIndex")},
         {"blockHash", document.requireField("blockHash")},
@@ -1292,6 +1514,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"genesisTreasuryStatus", genesisTreasurySnapshot.status()},
         {"protectionRewardBudgetStatus", protectionRewardBudget.status()},
         {"protectionRewardGrantCount", std::to_string(protectionRewardGrants.size())},
+        {"inflationEpochStatus", inflationEpochSnapshot.status()},
+        {"mintAuthorizationStatus", mintAuthorizationRecord.status()},
+        {"supplyExpansionStatus", supplyExpansionRecord.status()},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -1427,6 +1652,36 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         canonicalFields.emplace_back(prefix + "sourceBudgetDigest", protectionRewardGrants[grantIndex].sourceBudgetDigest());
     }
 
+    canonicalFields.emplace_back("inflationEpoch.blockHeight", std::to_string(inflationEpochSnapshot.blockHeight()));
+    canonicalFields.emplace_back("inflationEpoch.epochStartBlock", std::to_string(inflationEpochSnapshot.epochStartBlock()));
+    canonicalFields.emplace_back("inflationEpoch.epochEndBlock", std::to_string(inflationEpochSnapshot.epochEndBlock()));
+    canonicalFields.emplace_back("inflationEpoch.maxAnnualInflationBasisPoints", std::to_string(inflationEpochSnapshot.maxAnnualInflationBasisPoints()));
+    canonicalFields.emplace_back("inflationEpoch.baseSupplyRawUnits", std::to_string(inflationEpochSnapshot.baseSupply().rawUnits()));
+    canonicalFields.emplace_back("inflationEpoch.annualMintLimitRawUnits", std::to_string(inflationEpochSnapshot.annualMintLimit().rawUnits()));
+    canonicalFields.emplace_back("inflationEpoch.mintedThisEpochRawUnits", std::to_string(inflationEpochSnapshot.mintedThisEpoch().rawUnits()));
+    canonicalFields.emplace_back("inflationEpoch.remainingMintCapacityRawUnits", std::to_string(inflationEpochSnapshot.remainingMintCapacity().rawUnits()));
+    canonicalFields.emplace_back("inflationEpoch.policyId", inflationEpochSnapshot.policyId());
+    canonicalFields.emplace_back("inflationEpoch.reason", inflationEpochSnapshot.reason());
+
+    canonicalFields.emplace_back("mintAuthorization.blockHeight", std::to_string(mintAuthorizationRecord.blockHeight()));
+    canonicalFields.emplace_back("mintAuthorization.authorizationId", mintAuthorizationRecord.authorizationId());
+    canonicalFields.emplace_back("mintAuthorization.authorizedAmountRawUnits", std::to_string(mintAuthorizationRecord.authorizedAmount().rawUnits()));
+    canonicalFields.emplace_back("mintAuthorization.activationBlock", std::to_string(mintAuthorizationRecord.activationBlock()));
+    canonicalFields.emplace_back("mintAuthorization.expirationBlock", std::to_string(mintAuthorizationRecord.expirationBlock()));
+    canonicalFields.emplace_back("mintAuthorization.requiredApprovalBasisPoints", std::to_string(mintAuthorizationRecord.requiredApprovalBasisPoints()));
+    canonicalFields.emplace_back("mintAuthorization.timelockBlocks", std::to_string(mintAuthorizationRecord.timelockBlocks()));
+    canonicalFields.emplace_back("mintAuthorization.governanceDigest", mintAuthorizationRecord.governanceDigest());
+    canonicalFields.emplace_back("mintAuthorization.reason", mintAuthorizationRecord.reason());
+    canonicalFields.emplace_back("mintAuthorization.sourceEpochDigest", mintAuthorizationRecord.sourceEpochDigest());
+
+    canonicalFields.emplace_back("supplyExpansion.blockHeight", std::to_string(supplyExpansionRecord.blockHeight()));
+    canonicalFields.emplace_back("supplyExpansion.mintedAmountRawUnits", std::to_string(supplyExpansionRecord.mintedAmount().rawUnits()));
+    canonicalFields.emplace_back("supplyExpansion.recipientAddress", supplyExpansionRecord.recipientAddress());
+    canonicalFields.emplace_back("supplyExpansion.authorizationId", supplyExpansionRecord.authorizationId());
+    canonicalFields.emplace_back("supplyExpansion.policyId", supplyExpansionRecord.policyId());
+    canonicalFields.emplace_back("supplyExpansion.reason", supplyExpansionRecord.reason());
+    canonicalFields.emplace_back("supplyExpansion.sourceAuthorizationDigest", supplyExpansionRecord.sourceAuthorizationDigest());
+
     canonicalFields.emplace_back("block", serializedBlock);
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
@@ -1453,6 +1708,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         genesisTreasurySnapshot,
         protectionRewardBudget,
         protectionRewardGrants,
+        inflationEpochSnapshot,
+        mintAuthorizationRecord,
+        supplyExpansionRecord,
         quorumCertificate,
         finalizedRecord
     );
@@ -1652,6 +1910,34 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
             if (!ProtectionTreasury::sameGrants(expectedProtectionGrants, artifact.protectionRewardGrants())) {
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted protection reward grants do not match rebuilt reward plan.");
+            }
+
+            const InflationEpochSnapshot expectedInflationEpoch =
+                ControlledIssuance::buildInflationEpochSnapshot(
+                    genesisConfig,
+                    block.index(),
+                    artifact.monetaryFirewallAudit().annualMintUsedAfter()
+                );
+
+            if (!ControlledIssuance::sameEpoch(expectedInflationEpoch, artifact.inflationEpochSnapshot())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted inflation epoch does not match rebuilt controlled issuance policy.");
+            }
+
+            const MintAuthorizationRecord expectedMintAuthorization =
+                ControlledIssuance::buildNoMintAuthorization(expectedInflationEpoch);
+
+            if (!ControlledIssuance::sameAuthorization(expectedMintAuthorization, artifact.mintAuthorizationRecord())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted mint authorization does not match rebuilt controlled issuance policy.");
+            }
+
+            const SupplyExpansionRecord expectedSupplyExpansion =
+                ControlledIssuance::buildNoSupplyExpansion(
+                    expectedMintAuthorization,
+                    expectedInflationEpoch
+                );
+
+            if (!ControlledIssuance::sameExpansion(expectedSupplyExpansion, artifact.supplyExpansionRecord())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted supply expansion does not match rebuilt controlled issuance policy.");
             }
 
             const consensus::BlockFinalizationResult finalization =

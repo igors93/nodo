@@ -9,6 +9,7 @@
 #include "node/LockedStakePosition.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtectionTreasury.hpp"
+#include "node/ControlledIssuance.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
 #include "node/SecurityScore.hpp"
@@ -225,6 +226,29 @@ public:
         std::vector<ProtectionRewardGrant> protectionRewardGrants
     );
 
+    static RuntimeBlockPipelineResult finalized(
+        core::Block block,
+        consensus::QuorumCertificate certificate,
+        consensus::FinalizedBlockRecord finalizedRecord,
+        std::vector<std::string> finalizedTransactionIds,
+        std::string postStateRoot,
+        utils::Amount totalFee,
+        std::vector<RewardDistribution> rewardDistributions,
+        std::vector<LockedStakePosition> lockedStakePositions,
+        std::vector<SecurityScoreRecord> securityScoreRecords,
+        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+        MonetaryFirewallAudit monetaryFirewallAudit,
+        GenesisTreasurySnapshot genesisTreasurySnapshot,
+        ProtectionRewardBudget protectionRewardBudget,
+        std::vector<ProtectionRewardGrant> protectionRewardGrants,
+        InflationEpochSnapshot inflationEpochSnapshot,
+        MintAuthorizationRecord mintAuthorizationRecord,
+        SupplyExpansionRecord supplyExpansionRecord
+    );
+
     static RuntimeBlockPipelineResult rejected(
         RuntimeBlockPipelineStatus status,
         std::string reason
@@ -251,6 +275,9 @@ public:
     const GenesisTreasurySnapshot& genesisTreasurySnapshot() const;
     const ProtectionRewardBudget& protectionRewardBudget() const;
     const std::vector<ProtectionRewardGrant>& protectionRewardGrants() const;
+    const InflationEpochSnapshot& inflationEpochSnapshot() const;
+    const MintAuthorizationRecord& mintAuthorizationRecord() const;
+    const SupplyExpansionRecord& supplyExpansionRecord() const;
 
     std::string serialize() const;
 
@@ -280,6 +307,9 @@ private:
     GenesisTreasurySnapshot m_genesisTreasurySnapshot;
     ProtectionRewardBudget m_protectionRewardBudget;
     std::vector<ProtectionRewardGrant> m_protectionRewardGrants;
+    InflationEpochSnapshot m_inflationEpochSnapshot;
+    MintAuthorizationRecord m_mintAuthorizationRecord;
+    SupplyExpansionRecord m_supplyExpansionRecord;
 };
 
 /*

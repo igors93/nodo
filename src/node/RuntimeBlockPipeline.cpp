@@ -206,6 +206,31 @@ bool protectionTreasuryPlanIsValid(
         return false;
     }
 }
+bool controlledIssuancePlanIsValid(
+    const InflationEpochSnapshot& epoch,
+    const MintAuthorizationRecord& authorization,
+    const SupplyExpansionRecord& expansion
+) {
+    try {
+        if (epoch.status() == "NOT_EVALUATED") {
+            return false;
+        }
+
+        return epoch.active() &&
+               authorization.isValid() &&
+               expansion.isValid() &&
+               ControlledIssuance::sameAuthorization(
+                   ControlledIssuance::buildNoMintAuthorization(epoch),
+                   authorization
+               ) &&
+               ControlledIssuance::sameExpansion(
+                   ControlledIssuance::buildNoSupplyExpansion(authorization, epoch),
+                   expansion
+               );
+    } catch (const std::exception&) {
+        return false;
+    }
+}
 
 } // namespace
 
@@ -309,7 +334,10 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_monetaryFirewallAudit(MonetaryFirewallAudit::notEvaluated()),
       m_genesisTreasurySnapshot(GenesisTreasurySnapshot::notEvaluated()),
       m_protectionRewardBudget(ProtectionRewardBudget::notEvaluated()),
-      m_protectionRewardGrants() {}
+      m_protectionRewardGrants(),
+      m_inflationEpochSnapshot(InflationEpochSnapshot::notEvaluated()),
+      m_mintAuthorizationRecord(),
+      m_supplyExpansionRecord() {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -636,6 +664,52 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     ProtectionRewardBudget protectionRewardBudget,
     std::vector<ProtectionRewardGrant> protectionRewardGrants
 ) {
+    return finalized(
+        std::move(block),
+        std::move(certificate),
+        std::move(finalizedRecord),
+        std::move(finalizedTransactionIds),
+        std::move(postStateRoot),
+        totalFee,
+        std::move(rewardDistributions),
+        std::move(lockedStakePositions),
+        std::move(securityScoreRecords),
+        std::move(securityCheckpoints),
+        std::move(validatorRiskAssessments),
+        std::move(validatorContainmentDecisions),
+        std::move(validatorNetworkPolicies),
+        std::move(monetaryFirewallAudit),
+        std::move(genesisTreasurySnapshot),
+        std::move(protectionRewardBudget),
+        std::move(protectionRewardGrants),
+        InflationEpochSnapshot::notEvaluated(),
+        MintAuthorizationRecord(),
+        SupplyExpansionRecord()
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions,
+    std::vector<LockedStakePosition> lockedStakePositions,
+    std::vector<SecurityScoreRecord> securityScoreRecords,
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+    std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+    MonetaryFirewallAudit monetaryFirewallAudit,
+    GenesisTreasurySnapshot genesisTreasurySnapshot,
+    ProtectionRewardBudget protectionRewardBudget,
+    std::vector<ProtectionRewardGrant> protectionRewardGrants,
+    InflationEpochSnapshot inflationEpochSnapshot,
+    MintAuthorizationRecord mintAuthorizationRecord,
+    SupplyExpansionRecord supplyExpansionRecord
+) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
     result.m_reason = "";
@@ -656,6 +730,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_genesisTreasurySnapshot = std::move(genesisTreasurySnapshot);
     result.m_protectionRewardBudget = std::move(protectionRewardBudget);
     result.m_protectionRewardGrants = std::move(protectionRewardGrants);
+    result.m_inflationEpochSnapshot = std::move(inflationEpochSnapshot);
+    result.m_mintAuthorizationRecord = std::move(mintAuthorizationRecord);
+    result.m_supplyExpansionRecord = std::move(supplyExpansionRecord);
     return result;
 }
 
@@ -699,6 +776,11 @@ bool RuntimeBlockPipelineResult::finalized() const {
                m_protectionRewardGrants,
                m_rewardDistributions,
                m_securityScoreRecords
+           ) &&
+           controlledIssuancePlanIsValid(
+               m_inflationEpochSnapshot,
+               m_mintAuthorizationRecord,
+               m_supplyExpansionRecord
            );
 }
 
@@ -774,6 +856,18 @@ const std::vector<ProtectionRewardGrant>& RuntimeBlockPipelineResult::protection
     return m_protectionRewardGrants;
 }
 
+const InflationEpochSnapshot& RuntimeBlockPipelineResult::inflationEpochSnapshot() const {
+    return m_inflationEpochSnapshot;
+}
+
+const MintAuthorizationRecord& RuntimeBlockPipelineResult::mintAuthorizationRecord() const {
+    return m_mintAuthorizationRecord;
+}
+
+const SupplyExpansionRecord& RuntimeBlockPipelineResult::supplyExpansionRecord() const {
+    return m_supplyExpansionRecord;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -795,6 +889,9 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";genesisTreasuryStatus=" << m_genesisTreasurySnapshot.status()
         << ";protectionRewardBudgetStatus=" << m_protectionRewardBudget.status()
         << ";protectionRewardGrantCount=" << m_protectionRewardGrants.size()
+        << ";inflationEpochStatus=" << m_inflationEpochSnapshot.status()
+        << ";mintAuthorizationStatus=" << m_mintAuthorizationRecord.status()
+        << ";supplyExpansionStatus=" << m_supplyExpansionRecord.status()
         << "}";
 
     return oss.str();
@@ -933,6 +1030,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     GenesisTreasurySnapshot genesisTreasurySnapshot;
     ProtectionRewardBudget protectionRewardBudget;
     std::vector<ProtectionRewardGrant> protectionRewardGrants;
+    InflationEpochSnapshot inflationEpochSnapshot;
+    MintAuthorizationRecord mintAuthorizationRecord;
+    SupplyExpansionRecord supplyExpansionRecord;
 
     try {
         rewardDistributions =
@@ -999,6 +1099,24 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
                 rewardDistributions,
                 securityScoreRecords
             );
+
+        inflationEpochSnapshot =
+            ControlledIssuance::buildInflationEpochSnapshot(
+                runtime.config().genesisConfig(),
+                production.block().index(),
+                monetaryFirewallAudit.annualMintUsedAfter()
+            );
+
+        mintAuthorizationRecord =
+            ControlledIssuance::buildNoMintAuthorization(
+                inflationEpochSnapshot
+            );
+
+        supplyExpansionRecord =
+            ControlledIssuance::buildNoSupplyExpansion(
+                mintAuthorizationRecord,
+                inflationEpochSnapshot
+            );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(
             RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
@@ -1051,7 +1169,10 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         monetaryFirewallAudit,
         genesisTreasurySnapshot,
         protectionRewardBudget,
-        protectionRewardGrants
+        protectionRewardGrants,
+        inflationEpochSnapshot,
+        mintAuthorizationRecord,
+        supplyExpansionRecord
     );
 }
 

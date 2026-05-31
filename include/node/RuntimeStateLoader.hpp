@@ -8,6 +8,7 @@
 #include "node/LockedStakePosition.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtectionTreasury.hpp"
+#include "node/ControlledIssuance.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
@@ -98,6 +99,9 @@ public:
         GenesisTreasurySnapshot genesisTreasurySnapshot,
         ProtectionRewardBudget protectionRewardBudget,
         std::vector<ProtectionRewardGrant> protectionRewardGrants,
+        InflationEpochSnapshot inflationEpochSnapshot,
+        MintAuthorizationRecord mintAuthorizationRecord,
+        SupplyExpansionRecord supplyExpansionRecord,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -116,6 +120,9 @@ public:
     const GenesisTreasurySnapshot& genesisTreasurySnapshot() const;
     const ProtectionRewardBudget& protectionRewardBudget() const;
     const std::vector<ProtectionRewardGrant>& protectionRewardGrants() const;
+    const InflationEpochSnapshot& inflationEpochSnapshot() const;
+    const MintAuthorizationRecord& mintAuthorizationRecord() const;
+    const SupplyExpansionRecord& supplyExpansionRecord() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -137,6 +144,9 @@ private:
     GenesisTreasurySnapshot m_genesisTreasurySnapshot;
     ProtectionRewardBudget m_protectionRewardBudget;
     std::vector<ProtectionRewardGrant> m_protectionRewardGrants;
+    InflationEpochSnapshot m_inflationEpochSnapshot;
+    MintAuthorizationRecord m_mintAuthorizationRecord;
+    SupplyExpansionRecord m_supplyExpansionRecord;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };
