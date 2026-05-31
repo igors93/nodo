@@ -56,6 +56,10 @@ public:
 
     std::string serialize() const;
 
+    static FinalizedBlockRecord deserialize(
+        const std::string& serialized
+    );
+
 private:
     std::uint64_t m_blockIndex;
     std::string m_blockHash;

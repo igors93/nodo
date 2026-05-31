@@ -2,10 +2,12 @@
 #define NODO_NODE_TRANSACTION_ADMISSION_VALIDATOR_HPP
 
 #include "config/NetworkParameters.hpp"
+#include "core/AccountStateView.hpp"
 #include "core/Transaction.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/KeyStore.hpp"
 #include "crypto/SignatureProvider.hpp"
+#include "mempool/Mempool.hpp"
 
 #include <string>
 
@@ -17,6 +19,10 @@ enum class TransactionAdmissionStatus {
     INVALID_KEY,
     INVALID_TRANSACTION,
     BELOW_MINIMUM_FEE,
+    DUPLICATE_TRANSACTION,
+    CONFLICTING_NONCE,
+    OLD_NONCE,
+    FUTURE_NONCE,
     INVALID_SIGNATURE
 };
 
@@ -60,6 +66,17 @@ public:
         const core::Transaction& transaction,
         const crypto::StoredKeyMetadata& signingKey,
         const config::NetworkParameters& networkParameters,
+        const crypto::CryptoPolicy& policy,
+        crypto::SecurityContext context,
+        const crypto::SignatureProvider& provider
+    );
+
+    static TransactionAdmissionResult validateRuntimeSubmission(
+        const core::Transaction& transaction,
+        const crypto::StoredKeyMetadata& signingKey,
+        const config::NetworkParameters& networkParameters,
+        const core::AccountStateView& accountStateView,
+        const mempool::Mempool& mempool,
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context,
         const crypto::SignatureProvider& provider

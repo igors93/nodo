@@ -1,6 +1,9 @@
 #include "consensus/BlockFinalizer.hpp"
 
+#include <map>
+#include <set>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace nodo::consensus {
@@ -28,6 +31,208 @@ bool isSafeScalar(
     }
 
     return true;
+}
+
+std::vector<std::string> splitTopLevel(
+    const std::string& value,
+    char separator
+) {
+    std::vector<std::string> parts;
+    std::size_t start = 0;
+    int braceDepth = 0;
+    int bracketDepth = 0;
+
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        const char current =
+            value[index];
+
+        if (current == '{') {
+            ++braceDepth;
+        } else if (current == '}') {
+            --braceDepth;
+        } else if (current == '[') {
+            ++bracketDepth;
+        } else if (current == ']') {
+            --bracketDepth;
+        }
+
+        if (braceDepth < 0 || bracketDepth < 0) {
+            throw std::invalid_argument("Malformed nested serialized value.");
+        }
+
+        if (current == separator &&
+            braceDepth == 0 &&
+            bracketDepth == 0) {
+            if (index == start) {
+                throw std::invalid_argument("Empty serialized field.");
+            }
+
+            parts.push_back(value.substr(start, index - start));
+            start = index + 1;
+        }
+    }
+
+    if (braceDepth != 0 || bracketDepth != 0) {
+        throw std::invalid_argument("Unbalanced nested serialized value.");
+    }
+
+    if (start >= value.size()) {
+        throw std::invalid_argument("Serialized value has a trailing separator.");
+    }
+
+    parts.push_back(value.substr(start));
+    return parts;
+}
+
+std::map<std::string, std::string> parseObjectFields(
+    const std::string& serialized,
+    const std::string& typeName
+) {
+    const std::string prefix =
+        typeName + "{";
+
+    if (serialized.rfind(prefix, 0) != 0 ||
+        serialized.size() <= prefix.size() ||
+        serialized.back() != '}') {
+        throw std::invalid_argument("Serialized data is not a " + typeName + ".");
+    }
+
+    const std::string body =
+        serialized.substr(
+            prefix.size(),
+            serialized.size() - prefix.size() - 1
+        );
+
+    if (body.empty()) {
+        throw std::invalid_argument("Serialized " + typeName + " is empty.");
+    }
+
+    std::map<std::string, std::string> fields;
+
+    for (const std::string& part : splitTopLevel(body, ';')) {
+        const std::size_t separator =
+            part.find('=');
+
+        if (separator == std::string::npos ||
+            separator == 0 ||
+            separator + 1 >= part.size()) {
+            throw std::invalid_argument("Malformed serialized " + typeName + " field.");
+        }
+
+        const std::string key =
+            part.substr(0, separator);
+
+        const std::string value =
+            part.substr(separator + 1);
+
+        if (!fields.emplace(key, value).second) {
+            throw std::invalid_argument("Duplicate serialized " + typeName + " field: " + key);
+        }
+    }
+
+    return fields;
+}
+
+void requireExactFields(
+    const std::map<std::string, std::string>& fields,
+    const std::set<std::string>& expected,
+    const std::string& typeName
+) {
+    for (const std::string& key : expected) {
+        if (fields.find(key) == fields.end()) {
+            throw std::invalid_argument("Missing serialized " + typeName + " field: " + key);
+        }
+    }
+
+    for (const auto& [key, ignored] : fields) {
+        (void)ignored;
+
+        if (expected.find(key) == expected.end()) {
+            throw std::invalid_argument("Unknown serialized " + typeName + " field: " + key);
+        }
+    }
+}
+
+std::string requireField(
+    const std::map<std::string, std::string>& fields,
+    const std::string& key,
+    const std::string& typeName
+) {
+    const auto found =
+        fields.find(key);
+
+    if (found == fields.end()) {
+        throw std::invalid_argument("Missing serialized " + typeName + " field: " + key);
+    }
+
+    return found->second;
+}
+
+std::uint64_t parseU64Strict(
+    const std::string& value,
+    const std::string& fieldName
+) {
+    if (value.empty()) {
+        throw std::invalid_argument("Empty numeric field: " + fieldName);
+    }
+
+    for (const char current : value) {
+        if (current < '0' || current > '9') {
+            throw std::invalid_argument("Malformed numeric field: " + fieldName);
+        }
+    }
+
+    std::size_t parsedSize = 0;
+    const std::uint64_t parsed =
+        static_cast<std::uint64_t>(
+            std::stoull(
+                value,
+                &parsedSize
+            )
+        );
+
+    if (parsedSize != value.size()) {
+        throw std::invalid_argument("Malformed numeric field: " + fieldName);
+    }
+
+    return parsed;
+}
+
+std::int64_t parseI64Strict(
+    const std::string& value,
+    const std::string& fieldName
+) {
+    if (value.empty()) {
+        throw std::invalid_argument("Empty numeric field: " + fieldName);
+    }
+
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        const char current =
+            value[index];
+
+        if (current == '-' && index == 0 && value.size() > 1) {
+            continue;
+        }
+
+        if (current < '0' || current > '9') {
+            throw std::invalid_argument("Malformed numeric field: " + fieldName);
+        }
+    }
+
+    std::size_t parsedSize = 0;
+    const std::int64_t parsed =
+        static_cast<std::int64_t>(
+            std::stoll(
+                value,
+                &parsedSize
+            )
+        );
+
+    if (parsedSize != value.size()) {
+        throw std::invalid_argument("Malformed numeric field: " + fieldName);
+    }
+
+    return parsed;
 }
 
 } // namespace
@@ -142,6 +347,59 @@ std::string FinalizedBlockRecord::serialize() const {
         << "}";
 
     return oss.str();
+}
+
+FinalizedBlockRecord FinalizedBlockRecord::deserialize(
+    const std::string& serialized
+) {
+    const std::map<std::string, std::string> fields =
+        parseObjectFields(
+            serialized,
+            "FinalizedBlockRecord"
+        );
+
+    requireExactFields(
+        fields,
+        {
+            "blockIndex",
+            "blockHash",
+            "previousHash",
+            "round",
+            "finalizedAt",
+            "quorumCertificate"
+        },
+        "FinalizedBlockRecord"
+    );
+
+    FinalizedBlockRecord record(
+        parseU64Strict(
+            requireField(fields, "blockIndex", "FinalizedBlockRecord"),
+            "FinalizedBlockRecord.blockIndex"
+        ),
+        requireField(fields, "blockHash", "FinalizedBlockRecord"),
+        requireField(fields, "previousHash", "FinalizedBlockRecord"),
+        parseU64Strict(
+            requireField(fields, "round", "FinalizedBlockRecord"),
+            "FinalizedBlockRecord.round"
+        ),
+        parseI64Strict(
+            requireField(fields, "finalizedAt", "FinalizedBlockRecord"),
+            "FinalizedBlockRecord.finalizedAt"
+        ),
+        QuorumCertificate::deserialize(
+            requireField(fields, "quorumCertificate", "FinalizedBlockRecord")
+        )
+    );
+
+    if (!record.isStructurallyValid()) {
+        throw std::invalid_argument("Serialized FinalizedBlockRecord is structurally invalid.");
+    }
+
+    if (record.serialize() != serialized) {
+        throw std::invalid_argument("Serialized FinalizedBlockRecord is non-canonical.");
+    }
+
+    return record;
 }
 
 std::string blockFinalizationRegistryStatusToString(

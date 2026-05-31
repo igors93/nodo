@@ -29,8 +29,10 @@ snapshot and pending mempool transactions. Runtime reload is rebuild-first:
 manifest -> genesis runtime -> finalized blocks -> persistent mempool -> audit
 ```
 
-The manifest is accepted only when the rebuilt latest block height and hash
-match it.
+The manifest is accepted only when the rebuilt latest block height, hash and
+`latestStateRoot` match it. Finalized block files carry a `postStateRoot`,
+quorum certificate and finalized record; reload verifies all three before the
+runtime is considered auditable.
 
 ## Build
 

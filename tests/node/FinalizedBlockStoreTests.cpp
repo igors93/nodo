@@ -242,6 +242,11 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Manifest should update latest height."
     );
 
+    requireCondition(
+        persisted.manifest().latestStateRoot() == pipeline.postStateRoot(),
+        "Manifest should update latest state root from finalized block."
+    );
+
     std::ifstream blockFile(persisted.blockPath());
     const std::string blockContents(
         (std::istreambuf_iterator<char>(blockFile)),
@@ -258,8 +263,9 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
 
     requireCondition(
         loaded.loaded() &&
-        loaded.manifest().latestBlockHeight() == 1U,
-        "Updated manifest should reload."
+        loaded.manifest().latestBlockHeight() == 1U &&
+        loaded.manifest().latestStateRoot() == pipeline.postStateRoot(),
+        "Updated manifest should reload with latest state root."
     );
 
     clean(path);

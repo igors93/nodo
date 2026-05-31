@@ -27,6 +27,9 @@ Current limitations:
   provider is still a temporary deterministic local provider;
 - localnet key files are unencrypted and are not production-safe;
 - P2P networking is intentionally out of scope for this foundation step;
+- no slashing is implemented yet; invalid quorum/finalization evidence is
+  rejected and reported only;
+- the mempool does not yet implement a full per-account future-nonce queue;
 - balance, nonce and minimum fee checks now run inside the state-transition
   preview before votes;
 - coin-lot ownership, double-spend and complete supply audit are still being
@@ -41,6 +44,11 @@ supply configuration before testnet or mainnet.
 The economic preview calculates a deterministic account state root from
 canonical account state serialization. The root commits to account addresses,
 balances, nonces and the account-state-root format version.
+
+The runtime manifest stores `latestStateRoot`. At genesis it commits to the
+initial account allocation. After every finalized block, it must match the
+block's `postStateRoot`. Reload rebuilds state from genesis through finalized
+blocks and rejects any manifest, block file or audit result whose root diverges.
 
 `block produce` never creates transactions. Transactions enter the protocol via
 `tx submit`, then block production consumes the current mempool contents.

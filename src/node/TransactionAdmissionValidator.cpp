@@ -3,6 +3,7 @@
 #include <limits>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 namespace nodo::node {
 
@@ -52,6 +53,14 @@ std::string transactionAdmissionStatusToString(
             return "INVALID_TRANSACTION";
         case TransactionAdmissionStatus::BELOW_MINIMUM_FEE:
             return "BELOW_MINIMUM_FEE";
+        case TransactionAdmissionStatus::DUPLICATE_TRANSACTION:
+            return "DUPLICATE_TRANSACTION";
+        case TransactionAdmissionStatus::CONFLICTING_NONCE:
+            return "CONFLICTING_NONCE";
+        case TransactionAdmissionStatus::OLD_NONCE:
+            return "OLD_NONCE";
+        case TransactionAdmissionStatus::FUTURE_NONCE:
+            return "FUTURE_NONCE";
         case TransactionAdmissionStatus::INVALID_SIGNATURE:
             return "INVALID_SIGNATURE";
         default:
@@ -186,6 +195,103 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateLocalSubmissio
         return TransactionAdmissionResult::rejected(
             TransactionAdmissionStatus::INVALID_SIGNATURE,
             "Transaction signature verification failed."
+        );
+    }
+
+    return TransactionAdmissionResult::acceptedResult();
+}
+
+TransactionAdmissionResult TransactionAdmissionValidator::validateRuntimeSubmission(
+    const core::Transaction& transaction,
+    const crypto::StoredKeyMetadata& signingKey,
+    const config::NetworkParameters& networkParameters,
+    const core::AccountStateView& accountStateView,
+    const mempool::Mempool& mempool,
+    const crypto::CryptoPolicy& policy,
+    crypto::SecurityContext context,
+    const crypto::SignatureProvider& provider
+) {
+    const TransactionAdmissionResult local =
+        validateLocalSubmission(
+            transaction,
+            signingKey,
+            networkParameters,
+            policy,
+            context,
+            provider
+        );
+
+    if (!local.accepted()) {
+        return local;
+    }
+
+    if (!accountStateView.isValid()) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::INVALID_TRANSACTION,
+            "Current account state is invalid."
+        );
+    }
+
+    if (mempool.contains(transaction.id())) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::DUPLICATE_TRANSACTION,
+            "Transaction already exists in mempool."
+        );
+    }
+
+    const std::vector<core::Transaction> pendingTransactions =
+        mempool.transactionsForBlock(
+            mempool.size()
+        );
+
+    for (const core::Transaction& pending : pendingTransactions) {
+        if (pending.fromAddress() == transaction.fromAddress() &&
+            pending.nonce() == transaction.nonce()) {
+            return TransactionAdmissionResult::rejected(
+                TransactionAdmissionStatus::CONFLICTING_NONCE,
+                "A transaction with the same sender nonce is already pending."
+            );
+        }
+
+        if (pending.fromAddress() == transaction.fromAddress()) {
+            return TransactionAdmissionResult::rejected(
+                TransactionAdmissionStatus::FUTURE_NONCE,
+                "A pending transaction already exists for this sender; per-account nonce queues are not implemented."
+            );
+        }
+    }
+
+    if (!accountStateView.hasAccount(transaction.fromAddress())) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::INVALID_TRANSACTION,
+            "Transaction sender account does not exist in current state."
+        );
+    }
+
+    const core::AccountState sender =
+        accountStateView.accountOrDefault(transaction.fromAddress());
+
+    if (sender.nonce() == std::numeric_limits<std::uint64_t>::max()) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::OLD_NONCE,
+            "Current sender nonce cannot advance without overflow."
+        );
+    }
+
+    if (transaction.nonce() <= sender.nonce()) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::OLD_NONCE,
+            "Transaction nonce is older than current account state."
+        );
+    }
+
+    const std::uint64_t expectedNonce =
+        sender.nonce() + 1;
+
+    if (transaction.nonce() != expectedNonce) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::FUTURE_NONCE,
+            "Transaction nonce is in the future and no per-account queue is available."
         );
     }
 

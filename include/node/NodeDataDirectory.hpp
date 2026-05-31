@@ -65,6 +65,7 @@ public:
         std::string genesisConfigId,
         std::uint64_t latestBlockHeight,
         std::string latestBlockHash,
+        std::string latestStateRoot,
         std::size_t validatorCount,
         std::size_t peerCount,
         std::int64_t createdAt,
@@ -77,6 +78,7 @@ public:
     const std::string& genesisConfigId() const;
     std::uint64_t latestBlockHeight() const;
     const std::string& latestBlockHash() const;
+    const std::string& latestStateRoot() const;
     std::size_t validatorCount() const;
     std::size_t peerCount() const;
     std::int64_t createdAt() const;
@@ -104,6 +106,7 @@ private:
     std::string m_genesisConfigId;
     std::uint64_t m_latestBlockHeight;
     std::string m_latestBlockHash;
+    std::string m_latestStateRoot;
     std::size_t m_validatorCount;
     std::size_t m_peerCount;
     std::int64_t m_createdAt;

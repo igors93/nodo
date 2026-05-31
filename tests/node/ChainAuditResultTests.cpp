@@ -22,6 +22,7 @@ void testPassedAuditHasHumanReadableOutput() {
             "localnet",
             7,
             "latest-hash",
+            "latest-state-root",
             8,
             2,
             1
@@ -39,8 +40,9 @@ void testPassedAuditHasHumanReadableOutput() {
         output.find("Nodo chain audit passed.") != std::string::npos &&
         output.find("Network: nodo-localnet") != std::string::npos &&
         output.find("Crypto profile: localnet") != std::string::npos &&
-        output.find("Latest height: 7") != std::string::npos,
-        "Passed audit should contain readable network, crypto and height fields."
+        output.find("Latest height: 7") != std::string::npos &&
+        output.find("Latest state root: latest-state-root") != std::string::npos,
+        "Passed audit should contain readable network, crypto, height and state-root fields."
     );
 }
 

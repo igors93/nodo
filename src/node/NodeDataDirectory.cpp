@@ -1,8 +1,11 @@
 #include "node/NodeDataDirectory.hpp"
 
+#include "core/StateRootCalculator.hpp"
+#include "node/RuntimeAccountStateBuilder.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -73,9 +76,26 @@ std::uint64_t parseU64(
         throw std::invalid_argument("Manifest field missing: " + key);
     }
 
-    return static_cast<std::uint64_t>(
-        std::stoull(found->second)
-    );
+    for (const char current : found->second) {
+        if (current < '0' || current > '9') {
+            throw std::invalid_argument("Manifest numeric field is malformed: " + key);
+        }
+    }
+
+    std::size_t parsedSize = 0;
+    const std::uint64_t parsed =
+        static_cast<std::uint64_t>(
+            std::stoull(
+                found->second,
+                &parsedSize
+            )
+        );
+
+    if (parsedSize != found->second.size()) {
+        throw std::invalid_argument("Manifest numeric field is malformed: " + key);
+    }
+
+    return parsed;
 }
 
 std::int64_t parseI64(
@@ -89,9 +109,33 @@ std::int64_t parseI64(
         throw std::invalid_argument("Manifest field missing: " + key);
     }
 
-    return static_cast<std::int64_t>(
-        std::stoll(found->second)
-    );
+    for (std::size_t index = 0; index < found->second.size(); ++index) {
+        const char current =
+            found->second[index];
+
+        if (current == '-' && index == 0 && found->second.size() > 1) {
+            continue;
+        }
+
+        if (current < '0' || current > '9') {
+            throw std::invalid_argument("Manifest numeric field is malformed: " + key);
+        }
+    }
+
+    std::size_t parsedSize = 0;
+    const std::int64_t parsed =
+        static_cast<std::int64_t>(
+            std::stoll(
+                found->second,
+                &parsedSize
+            )
+        );
+
+    if (parsedSize != found->second.size()) {
+        throw std::invalid_argument("Manifest numeric field is malformed: " + key);
+    }
+
+    return parsed;
 }
 
 std::string parseString(
@@ -106,6 +150,39 @@ std::string parseString(
     }
 
     return found->second;
+}
+
+std::int64_t minimumFeeRawUnits(
+    const config::GenesisConfig& genesisConfig
+) {
+    const std::uint64_t minimumFee =
+        genesisConfig.networkParameters().minimumFeeRawUnits();
+
+    if (minimumFee > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        throw std::invalid_argument("Network minimum fee exceeds supported Amount range.");
+    }
+
+    return static_cast<std::int64_t>(minimumFee);
+}
+
+std::string latestStateRootForRuntime(
+    const NodeRuntime& runtime
+) {
+    const core::AccountStateView view =
+        RuntimeAccountStateBuilder::accountStateViewAtTip(
+            runtime.config().genesisConfig(),
+            runtime.blockchain(),
+            minimumFeeRawUnits(runtime.config().genesisConfig())
+        );
+
+    const std::string stateRoot =
+        core::StateRootCalculator::calculateAccountStateRoot(view);
+
+    if (stateRoot.empty()) {
+        throw std::invalid_argument("Runtime account state root is empty.");
+    }
+
+    return stateRoot;
 }
 
 } // namespace
@@ -179,6 +256,7 @@ NodeRuntimeManifest::NodeRuntimeManifest()
       m_genesisConfigId(""),
       m_latestBlockHeight(0),
       m_latestBlockHash(""),
+      m_latestStateRoot(""),
       m_validatorCount(0),
       m_peerCount(0),
       m_createdAt(0),
@@ -191,6 +269,7 @@ NodeRuntimeManifest::NodeRuntimeManifest(
     std::string genesisConfigId,
     std::uint64_t latestBlockHeight,
     std::string latestBlockHash,
+    std::string latestStateRoot,
     std::size_t validatorCount,
     std::size_t peerCount,
     std::int64_t createdAt,
@@ -202,6 +281,7 @@ NodeRuntimeManifest::NodeRuntimeManifest(
       m_genesisConfigId(std::move(genesisConfigId)),
       m_latestBlockHeight(latestBlockHeight),
       m_latestBlockHash(std::move(latestBlockHash)),
+      m_latestStateRoot(std::move(latestStateRoot)),
       m_validatorCount(validatorCount),
       m_peerCount(peerCount),
       m_createdAt(createdAt),
@@ -231,6 +311,10 @@ const std::string& NodeRuntimeManifest::latestBlockHash() const {
     return m_latestBlockHash;
 }
 
+const std::string& NodeRuntimeManifest::latestStateRoot() const {
+    return m_latestStateRoot;
+}
+
 std::size_t NodeRuntimeManifest::validatorCount() const {
     return m_validatorCount;
 }
@@ -253,6 +337,7 @@ bool NodeRuntimeManifest::isValid() const {
            isSafeScalar(m_protocolVersion) &&
            isSafeScalar(m_genesisConfigId) &&
            isSafeScalar(m_latestBlockHash) &&
+           isSafeScalar(m_latestStateRoot) &&
            m_validatorCount > 0 &&
            m_createdAt > 0 &&
            m_updatedAt >= m_createdAt;
@@ -268,6 +353,7 @@ std::string NodeRuntimeManifest::serialize() const {
         << ";genesisConfigId=" << m_genesisConfigId
         << ";latestBlockHeight=" << m_latestBlockHeight
         << ";latestBlockHash=" << m_latestBlockHash
+        << ";latestStateRoot=" << m_latestStateRoot
         << ";validatorCount=" << m_validatorCount
         << ";peerCount=" << m_peerCount
         << ";createdAt=" << m_createdAt
@@ -287,6 +373,7 @@ std::string NodeRuntimeManifest::toFileContents() const {
             {"genesisConfigId", m_genesisConfigId},
             {"latestBlockHeight", std::to_string(m_latestBlockHeight)},
             {"latestBlockHash", m_latestBlockHash},
+            {"latestStateRoot", m_latestStateRoot},
             {"validatorCount", std::to_string(m_validatorCount)},
             {"peerCount", std::to_string(m_peerCount)},
             {"createdAt", std::to_string(m_createdAt)},
@@ -312,6 +399,7 @@ NodeRuntimeManifest NodeRuntimeManifest::fromFileContents(
             "genesisConfigId",
             "latestBlockHeight",
             "latestBlockHash",
+            "latestStateRoot",
             "validatorCount",
             "peerCount",
             "createdAt",
@@ -329,6 +417,7 @@ NodeRuntimeManifest NodeRuntimeManifest::fromFileContents(
         parseString(fields, "genesisConfigId"),
         parseU64(fields, "latestBlockHeight"),
         parseString(fields, "latestBlockHash"),
+        parseString(fields, "latestStateRoot"),
         static_cast<std::size_t>(parseU64(fields, "validatorCount")),
         static_cast<std::size_t>(parseU64(fields, "peerCount")),
         parseI64(fields, "createdAt"),
@@ -337,6 +426,10 @@ NodeRuntimeManifest NodeRuntimeManifest::fromFileContents(
 
     if (!manifest.isValid()) {
         throw std::invalid_argument("Parsed manifest is invalid.");
+    }
+
+    if (contents != manifest.toFileContents()) {
+        throw std::invalid_argument("Manifest file is not canonical.");
     }
 
     return manifest;
@@ -357,6 +450,7 @@ NodeRuntimeManifest NodeRuntimeManifest::fromRuntime(
         genesisConfig.deterministicId(),
         runtime.blockchain().latestBlock().index(),
         runtime.blockchain().latestBlock().hash(),
+        latestStateRootForRuntime(runtime),
         runtime.validatorRegistry().activeCount(),
         runtime.peerManager().size(),
         createdAt,
@@ -684,7 +778,10 @@ NodeDataDirectoryReadResult NodeDataDirectory::loadManifest(
     } catch (const std::exception& error) {
         return NodeDataDirectoryReadResult::rejected(
             NodeDataDirectoryReadStatus::INVALID_MANIFEST,
-            error.what()
+            "Invalid manifest file "
+            + directoryConfig.manifestPath().string()
+            + ": "
+            + error.what()
         );
     }
 }

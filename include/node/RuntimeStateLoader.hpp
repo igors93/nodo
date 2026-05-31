@@ -2,6 +2,8 @@
 #define NODO_NODE_RUNTIME_STATE_LOADER_HPP
 
 #include "config/NetworkParameters.hpp"
+#include "consensus/BlockFinalizer.hpp"
+#include "consensus/QuorumCertificate.hpp"
 #include "core/Block.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
@@ -73,11 +75,15 @@ public:
 
     FinalizedBlockArtifact(
         core::Block block,
-        std::string postStateRoot
+        std::string postStateRoot,
+        consensus::QuorumCertificate quorumCertificate,
+        consensus::FinalizedBlockRecord finalizedRecord
     );
 
     const core::Block& block() const;
     const std::string& postStateRoot() const;
+    const consensus::QuorumCertificate& quorumCertificate() const;
+    const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
     bool isValid() const;
     std::string serialize() const;
@@ -85,6 +91,8 @@ public:
 private:
     std::optional<core::Block> m_block;
     std::string m_postStateRoot;
+    consensus::QuorumCertificate m_quorumCertificate;
+    consensus::FinalizedBlockRecord m_finalizedRecord;
 };
 
 class FinalizedBlockFileCodec {

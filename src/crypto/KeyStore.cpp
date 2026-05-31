@@ -13,9 +13,6 @@ namespace nodo::crypto {
 
 namespace {
 
-constexpr const char* KEY_FILE_VERSION_V1 =
-    "NODO_KEY_FILE_V1";
-
 constexpr const char* KEY_FILE_VERSION_V2 =
     "NODO_KEY_FILE_V2";
 
@@ -51,48 +48,26 @@ bool isSafeScalar(
 serialization::KeyValueFileDocument parseKeyFileDocument(
     const std::string& contents
 ) {
-    try {
-        serialization::KeyValueFileDocument document =
-            serialization::KeyValueFileCodec::parse(
-                contents,
-                KEY_FILE_VERSION_V2
-            );
-
-        document.requireOnlyFields(
-            {
-                "keyId",
-                "algorithm",
-                "provider",
-                "networkProfile",
-                "publicKeyMaterial",
-                "privateKeyMaterial",
-                "address",
-                "createdAt"
-            }
+    serialization::KeyValueFileDocument document =
+        serialization::KeyValueFileCodec::parse(
+            contents,
+            KEY_FILE_VERSION_V2
         );
 
-        return document;
-    } catch (const std::exception&) {
-        serialization::KeyValueFileDocument document =
-            serialization::KeyValueFileCodec::parse(
-                contents,
-                KEY_FILE_VERSION_V1
-            );
+    document.requireOnlyFields(
+        {
+            "keyId",
+            "algorithm",
+            "provider",
+            "networkProfile",
+            "publicKeyMaterial",
+            "privateKeyMaterial",
+            "address",
+            "createdAt"
+        }
+    );
 
-        document.requireOnlyFields(
-            {
-                "keyId",
-                "algorithm",
-                "provider",
-                "publicKeyMaterial",
-                "privateKeyMaterial",
-                "address",
-                "createdAt"
-            }
-        );
-
-        return document;
-    }
+    return document;
 }
 
 } // namespace
@@ -458,14 +433,30 @@ KeyStoreLoadResult KeyStore::loadKey(
     }
 
     try {
-        return decodeKeyFile(
-            keyId,
-            storage::AtomicFile::readTextFile(path)
-        );
+        const KeyStoreLoadResult loaded =
+            decodeKeyFile(
+                keyId,
+                storage::AtomicFile::readTextFile(path)
+            );
+
+        if (!loaded.loaded()) {
+            return KeyStoreLoadResult::rejected(
+                loaded.status(),
+                "Invalid key file "
+                + path.string()
+                + ": "
+                + loaded.reason()
+            );
+        }
+
+        return loaded;
     } catch (const std::exception& error) {
         return KeyStoreLoadResult::rejected(
             KeyStoreStatus::IO_ERROR,
-            error.what()
+            "Invalid key file "
+            + path.string()
+            + ": "
+            + error.what()
         );
     }
 }
@@ -620,11 +611,6 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
         );
     }
 
-    const std::string networkProfile =
-        document.hasField("networkProfile")
-            ? document.requireField("networkProfile")
-            : LOCAL_NETWORK_PROFILE;
-
     const KeyPair keyPair(
         PublicKey(
             algorithm,
@@ -643,7 +629,7 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
         keyPair.publicKey(),
         document.requireField("address"),
         std::stoll(document.requireField("createdAt")),
-        networkProfile
+        document.requireField("networkProfile")
     );
 
     if (!keyPair.isValid() ||
@@ -658,6 +644,17 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
         return KeyStoreLoadResult::rejected(
             KeyStoreStatus::INVALID_INPUT,
             "Key file address does not match public key."
+        );
+    }
+
+    if (contents != keyFileContents(
+            keyId,
+            keyPair,
+            metadata.createdAt()
+        )) {
+        return KeyStoreLoadResult::rejected(
+            KeyStoreStatus::INVALID_INPUT,
+            "Key file is not canonical."
         );
     }
 

@@ -24,6 +24,7 @@ public:
         std::string cryptoProfile,
         std::uint64_t latestHeight,
         std::string latestHash,
+        std::string latestStateRoot,
         std::size_t loadedBlockCount,
         std::size_t loadedMempoolTransactionCount,
         std::size_t validatorCount
@@ -41,6 +42,7 @@ public:
     const std::string& cryptoProfile() const;
     std::uint64_t latestHeight() const;
     const std::string& latestHash() const;
+    const std::string& latestStateRoot() const;
     std::size_t loadedBlockCount() const;
     std::size_t loadedMempoolTransactionCount() const;
     std::size_t validatorCount() const;
@@ -55,6 +57,7 @@ private:
     std::string m_cryptoProfile;
     std::uint64_t m_latestHeight;
     std::string m_latestHash;
+    std::string m_latestStateRoot;
     std::size_t m_loadedBlockCount;
     std::size_t m_loadedMempoolTransactionCount;
     std::size_t m_validatorCount;

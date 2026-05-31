@@ -4,6 +4,7 @@
 #include "crypto/PublicKey.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -135,6 +136,28 @@ void testInitializeCreatesDurableFiles() {
         NodeDataDirectory::loadManifest(config).loaded(),
         "Manifest should load after initialization."
     );
+
+    const auto loaded =
+        NodeDataDirectory::loadManifest(config);
+
+    requireCondition(
+        loaded.loaded() &&
+        !loaded.manifest().latestStateRoot().empty(),
+        "Initialized manifest should include a non-empty latestStateRoot."
+    );
+
+    {
+        std::ifstream manifestFile(config.manifestPath());
+        const std::string manifestContents(
+            (std::istreambuf_iterator<char>(manifestFile)),
+            std::istreambuf_iterator<char>()
+        );
+
+        requireCondition(
+            manifestContents.find("latestStateRoot=" + loaded.manifest().latestStateRoot()) != std::string::npos,
+            "Manifest file should persist latestStateRoot."
+        );
+    }
 
     clean(path);
 }

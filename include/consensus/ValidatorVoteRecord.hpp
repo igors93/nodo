@@ -122,6 +122,10 @@ public:
         std::int64_t createdAt
     );
 
+    static ValidatorVoteRecord deserialize(
+        const std::string& serialized
+    );
+
 private:
     std::string m_validatorAddress;
     crypto::PublicKey m_validatorPublicKey;

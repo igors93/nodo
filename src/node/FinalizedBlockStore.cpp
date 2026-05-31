@@ -208,6 +208,13 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
                 );
             }
 
+            if (snapshot.manifest().latestStateRoot() != pipelineResult.postStateRoot()) {
+                return FinalizedBlockStoreResult::rejected(
+                    FinalizedBlockStoreStatus::IO_ERROR,
+                    "Runtime snapshot latestStateRoot does not match finalized block postStateRoot."
+                );
+            }
+
             return FinalizedBlockStoreResult::alreadyStored(
                 snapshot.manifest(),
                 path
@@ -230,6 +237,13 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
             return FinalizedBlockStoreResult::rejected(
                 FinalizedBlockStoreStatus::IO_ERROR,
                 snapshot.reason()
+            );
+        }
+
+        if (snapshot.manifest().latestStateRoot() != pipelineResult.postStateRoot()) {
+            return FinalizedBlockStoreResult::rejected(
+                FinalizedBlockStoreStatus::IO_ERROR,
+                "Runtime snapshot latestStateRoot does not match finalized block postStateRoot."
             );
         }
 

@@ -21,6 +21,7 @@
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/PersistentMempoolStore.hpp"
+#include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeStateLoader.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
@@ -406,7 +407,7 @@ std::string CommandLineInterface::helpText() {
         "  --to ADDRESS         Recipient address for tx submit.\n"
         "  --amount RAW_UNITS   Transfer amount for tx submit. Default: 1000\n"
         "  --fee RAW_UNITS      Transfer fee for tx submit. Default: 100\n"
-        "  --nonce VALUE        Transaction nonce for tx submit. Default: 1\n"
+        "  --nonce VALUE        Transaction nonce for tx submit. Default: next account nonce\n"
         "  --timestamp SECONDS  Deterministic timestamp override for tests.\n";
 }
 
@@ -483,7 +484,8 @@ CommandLineResult CommandLineInterface::executeInit(
            << "Data directory: " << options.dataDirectory.string() << "\n"
            << "Chain id: " << result.manifest().chainId() << "\n"
            << "Genesis id: " << result.manifest().genesisConfigId() << "\n"
-           << "Latest height: " << result.manifest().latestBlockHeight() << "\n";
+           << "Latest height: " << result.manifest().latestBlockHeight() << "\n"
+           << "Latest state root: " << result.manifest().latestStateRoot() << "\n";
 
     return CommandLineResult::success(output.str());
 }
@@ -518,6 +520,7 @@ CommandLineResult CommandLineInterface::executeStatus(
            << "Protocol: " << manifest.protocolVersion() << "\n"
            << "Latest height: " << manifest.latestBlockHeight() << "\n"
            << "Latest hash: " << manifest.latestBlockHash() << "\n"
+           << "Latest state root: " << manifest.latestStateRoot() << "\n"
            << "Validators: " << manifest.validatorCount() << "\n"
            << "Peers: " << manifest.peerCount() << "\n";
 
@@ -580,6 +583,7 @@ CommandLineResult CommandLineInterface::executeReload(
            << "Data directory: " << options.dataDirectory.string() << "\n"
            << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
            << "Latest hash: " << load.manifest().latestBlockHash() << "\n"
+           << "Latest state root: " << load.manifest().latestStateRoot() << "\n"
            << "Loaded finalized blocks: " << load.loadedBlockCount() << "\n"
            << "Loaded mempool transactions: " << load.loadedMempoolTransactionCount() << "\n";
 
@@ -811,6 +815,22 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
         );
     }
 
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            developmentGenesisConfig(),
+            localPeerFromOptions(options)
+        );
+
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit transaction: runtime reload failed before mempool admission: "
+            + load.reason()
+            + "\n"
+        );
+    }
+
     const crypto::KeyStoreLoadResult key =
         crypto::KeyStore::loadKey(
             directoryConfig.keysDirectoryPath(),
@@ -834,9 +854,25 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
         provider
     );
 
+    const core::AccountStateView accountState =
+        node::RuntimeAccountStateBuilder::accountStateViewAtTip(
+            developmentGenesisConfig(),
+            load.runtime().blockchain(),
+            static_cast<std::int64_t>(
+                networkParameters.minimumFeeRawUnits()
+            )
+        );
+
+    if (!accountState.hasAccount(key.metadata().address())) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit transaction: signing account does not exist in current state.\n"
+        );
+    }
+
     const std::uint64_t nonce =
         options.nonce == 0
-            ? 1
+            ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
             : options.nonce;
 
     const core::Transaction transaction =
@@ -852,10 +888,12 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
         );
 
     const node::TransactionAdmissionResult admission =
-        node::TransactionAdmissionValidator::validateLocalSubmission(
+        node::TransactionAdmissionValidator::validateRuntimeSubmission(
             transaction,
             key.metadata(),
             networkParameters,
+            accountState,
+            load.runtime().mempool(),
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             provider
@@ -897,6 +935,7 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
            << "Key id: " << key.keyId() << "\n"
            << "From: " << transaction.fromAddress() << "\n"
            << "To: " << transaction.toAddress() << "\n"
+           << "Nonce: " << transaction.nonce() << "\n"
            << "Transaction id: " << persisted.transactionId() << "\n"
            << "Mempool file: " << persisted.path().string() << "\n";
 
@@ -1015,7 +1054,8 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
            << "Transactions finalized: " << pipeline.finalizedTransactionIds().size() << "\n"
            << "Pending transactions removed: " << removedPendingTransactions << "\n"
            << "Block file: " << persistedBlock.blockPath().string() << "\n"
-           << "Manifest latest height: " << persistedBlock.manifest().latestBlockHeight() << "\n";
+           << "Manifest latest height: " << persistedBlock.manifest().latestBlockHeight() << "\n"
+           << "Manifest latest state root: " << persistedBlock.manifest().latestStateRoot() << "\n";
 
     return CommandLineResult::success(output.str());
 }

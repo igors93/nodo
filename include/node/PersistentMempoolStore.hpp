@@ -2,8 +2,10 @@
 #define NODO_NODE_PERSISTENT_MEMPOOL_STORE_HPP
 
 #include "core/Transaction.hpp"
+#include "core/AccountStateView.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/PublicKey.hpp"
+#include "crypto/SignatureProvider.hpp"
 #include "mempool/Mempool.hpp"
 #include "node/NodeDataDirectory.hpp"
 
@@ -111,6 +113,16 @@ public:
         mempool::Mempool& mempool,
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context
+    );
+
+    static PersistentMempoolLoadResult loadIntoMempool(
+        const NodeDataDirectoryConfig& directoryConfig,
+        mempool::Mempool& mempool,
+        const crypto::CryptoPolicy& policy,
+        crypto::SecurityContext context,
+        const core::AccountStateView& accountStateView,
+        std::int64_t minimumFeeRawUnits,
+        const crypto::SignatureProvider& provider
     );
 
     static std::size_t removeTransactions(

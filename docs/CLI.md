@@ -28,15 +28,18 @@ nodo validator list [--data-dir PATH]
 - `tx submit`: loads a key from `KeyStore`, builds a transaction through
   `TransactionBuilder`, signs it through `Signer`, validates it with
   `TransactionAdmissionValidator` and only then writes it to the persistent
-  mempool. If `--nonce` is omitted, localnet uses nonce `1`.
+  mempool. If `--nonce` is omitted, localnet uses the next nonce from the
+  rebuilt account state. Duplicate transactions, duplicate sender/nonce,
+  old nonces, unsupported future nonces, low fees and invalid signatures are
+  rejected before persistence.
 - `block produce`: reloads runtime, produces and finalizes one local block,
   persists it and removes finalized transactions from persistent mempool. It
   does not create transactions automatically. Produced blocks must pass
   account-state preview checks for balance, nonce and fee before votes or
   finalization.
 - `chain audit`: reloads runtime and runs `ChainAuditor` over manifest,
-  finalized block continuity, latest hash, crypto context, mempool and validator
-  count consistency.
+  finalized block continuity, latest hash, `latestStateRoot`, crypto context,
+  mempool and validator count consistency.
 - `keys create`, `keys list`, `validator list`: protocol command names reserved
   for the key-store and validator registry boundary.
 
@@ -58,3 +61,8 @@ build/nodo node reload --data-dir .nodo
 build/nodo chain audit --data-dir .nodo
 build/nodo status --data-dir .nodo
 ```
+
+Current localnet limits remain intentional: no production P2P, no mainnet
+startup path, no slashing, a deterministic development signature provider and no
+per-account future-nonce queue. These limits are audited explicitly instead of
+being hidden behind demo-only code paths.

@@ -3,7 +3,11 @@
 #include "node/FinalizedBlockStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
+#include "consensus/BlockFinalizer.hpp"
+#include "consensus/QuorumCertificate.hpp"
+#include "core/StateRootCalculator.hpp"
 #include "core/StateTransitionPreview.hpp"
+#include "crypto/ProtocolCryptoContext.hpp"
 #include "serialization/BlockCodec.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
@@ -38,6 +42,84 @@ std::int64_t minimumFeeRawUnits(
     }
 
     return static_cast<std::int64_t>(minimumFee);
+}
+
+std::uint64_t expectedQuorumVoteCount(
+    const config::GenesisConfig& genesisConfig,
+    const core::ValidatorRegistry& validatorRegistry
+) {
+    return consensus::QuorumCertificateBuilder::requiredVoteCount(
+        validatorRegistry.activeCount(),
+        genesisConfig.networkParameters().quorumThresholdNumerator(),
+        genesisConfig.networkParameters().quorumThresholdDenominator()
+    );
+}
+
+std::uint64_t parseU64Strict(
+    const std::string& value,
+    const std::string& fieldName
+) {
+    if (value.empty()) {
+        throw std::invalid_argument("Empty numeric field: " + fieldName);
+    }
+
+    for (const char current : value) {
+        if (current < '0' || current > '9') {
+            throw std::invalid_argument("Malformed numeric field: " + fieldName);
+        }
+    }
+
+    std::size_t parsedSize = 0;
+    const std::uint64_t parsed =
+        static_cast<std::uint64_t>(
+            std::stoull(
+                value,
+                &parsedSize
+            )
+        );
+
+    if (parsedSize != value.size()) {
+        throw std::invalid_argument("Malformed numeric field: " + fieldName);
+    }
+
+    return parsed;
+}
+
+std::int64_t parseI64Strict(
+    const std::string& value,
+    const std::string& fieldName
+) {
+    if (value.empty()) {
+        throw std::invalid_argument("Empty numeric field: " + fieldName);
+    }
+
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        const char current =
+            value[index];
+
+        if (current == '-' && index == 0 && value.size() > 1) {
+            continue;
+        }
+
+        if (current < '0' || current > '9') {
+            throw std::invalid_argument("Malformed numeric field: " + fieldName);
+        }
+    }
+
+    std::size_t parsedSize = 0;
+    const std::int64_t parsed =
+        static_cast<std::int64_t>(
+            std::stoll(
+                value,
+                &parsedSize
+            )
+        );
+
+    if (parsedSize != value.size()) {
+        throw std::invalid_argument("Malformed numeric field: " + fieldName);
+    }
+
+    return parsed;
 }
 
 } // namespace
@@ -107,14 +189,20 @@ RuntimeStateLoadResult RuntimeStateLoadResult::rejected(
 
 FinalizedBlockArtifact::FinalizedBlockArtifact()
     : m_block(std::nullopt),
-      m_postStateRoot("") {}
+      m_postStateRoot(""),
+      m_quorumCertificate(),
+      m_finalizedRecord() {}
 
 FinalizedBlockArtifact::FinalizedBlockArtifact(
     core::Block block,
-    std::string postStateRoot
+    std::string postStateRoot,
+    consensus::QuorumCertificate quorumCertificate,
+    consensus::FinalizedBlockRecord finalizedRecord
 )
     : m_block(std::move(block)),
-      m_postStateRoot(std::move(postStateRoot)) {}
+      m_postStateRoot(std::move(postStateRoot)),
+      m_quorumCertificate(std::move(quorumCertificate)),
+      m_finalizedRecord(std::move(finalizedRecord)) {}
 
 const core::Block& FinalizedBlockArtifact::block() const {
     if (!m_block.has_value()) {
@@ -128,10 +216,20 @@ const std::string& FinalizedBlockArtifact::postStateRoot() const {
     return m_postStateRoot;
 }
 
+const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
+    return m_quorumCertificate;
+}
+
+const consensus::FinalizedBlockRecord& FinalizedBlockArtifact::finalizedRecord() const {
+    return m_finalizedRecord;
+}
+
 bool FinalizedBlockArtifact::isValid() const {
     return m_block.has_value() &&
            m_block->isValid() &&
-           !m_postStateRoot.empty();
+           !m_postStateRoot.empty() &&
+           m_quorumCertificate.isStructurallyValid() &&
+           m_finalizedRecord.isStructurallyValid();
 }
 
 std::string FinalizedBlockArtifact::serialize() const {
@@ -220,7 +318,10 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
 
     const std::size_t recordCount =
         static_cast<std::size_t>(
-            std::stoull(document.requireField("recordCount"))
+            parseU64Strict(
+                document.requireField("recordCount"),
+                "recordCount"
+            )
         );
 
     std::set<std::string> allowedFields = {
@@ -253,7 +354,10 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
 
     const std::uint64_t index =
         static_cast<std::uint64_t>(
-            std::stoull(document.requireField("blockIndex"))
+            parseU64Strict(
+                document.requireField("blockIndex"),
+                "blockIndex"
+            )
         );
 
     const std::string blockHash =
@@ -266,7 +370,20 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         document.requireField("postStateRoot");
 
     const std::int64_t timestamp =
-        std::stoll(document.requireField("timestamp"));
+        parseI64Strict(
+            document.requireField("timestamp"),
+            "timestamp"
+        );
+
+    const consensus::QuorumCertificate quorumCertificate =
+        consensus::QuorumCertificate::deserialize(
+            document.requireField("quorumCertificate")
+        );
+
+    const consensus::FinalizedBlockRecord finalizedRecord =
+        consensus::FinalizedBlockRecord::deserialize(
+            document.requireField("finalizedRecord")
+        );
 
     if (postStateRoot.empty()) {
         throw std::invalid_argument("Finalized block file postStateRoot is empty.");
@@ -289,9 +406,67 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         }
     }
 
+    if (!consensus::BlockFinalizer::certificateMatchesBlock(
+            block,
+            quorumCertificate
+        )) {
+        throw std::invalid_argument("Finalized block quorum certificate does not match block payload.");
+    }
+
+    if (!finalizedRecord.matchesBlock(block) ||
+        finalizedRecord.quorumCertificate().serialize() != quorumCertificate.serialize()) {
+        throw std::invalid_argument("Finalized block record does not match block or quorum certificate.");
+    }
+
+    std::vector<std::pair<std::string, std::string>> canonicalFields = {
+        {"blockIndex", document.requireField("blockIndex")},
+        {"blockHash", document.requireField("blockHash")},
+        {"previousHash", document.requireField("previousHash")},
+        {"postStateRoot", postStateRoot},
+        {"timestamp", document.requireField("timestamp")},
+        {"recordCount", document.requireField("recordCount")}
+    };
+
+    for (std::size_t recordIndex = 0; recordIndex < recordCount; ++recordIndex) {
+        const std::string key =
+            "record." + std::to_string(recordIndex);
+
+        canonicalFields.emplace_back(
+            key,
+            document.requireField(key)
+        );
+    }
+
+    canonicalFields.emplace_back(
+        "block",
+        serializedBlock
+    );
+
+    canonicalFields.emplace_back(
+        "quorumCertificate",
+        quorumCertificate.serialize()
+    );
+
+    canonicalFields.emplace_back(
+        "finalizedRecord",
+        finalizedRecord.serialize()
+    );
+
+    const std::string canonicalContents =
+        serialization::KeyValueFileCodec::serialize(
+            FINALIZED_BLOCK_VERSION,
+            canonicalFields
+        );
+
+    if (contents != canonicalContents) {
+        throw std::invalid_argument("Finalized block file is not canonical.");
+    }
+
     return FinalizedBlockArtifact(
         block,
-        postStateRoot
+        postStateRoot,
+        quorumCertificate,
+        finalizedRecord
     );
 }
 
@@ -348,6 +523,19 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
     NodeRuntime runtime =
         start.runtime();
 
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::fromNetworkName(
+            manifest.networkName()
+        );
+
+    if (!cryptoContext.isValid()) {
+        return RuntimeStateLoadResult::rejected(
+            RuntimeStateLoadStatus::MANIFEST_MISMATCH,
+            "Manifest network has invalid crypto context: "
+            + cryptoContext.rejectionReason()
+        );
+    }
+
     std::size_t loadedBlockCount = 0;
 
     for (std::uint64_t height = 1; height <= manifest.latestBlockHeight(); ++height) {
@@ -371,7 +559,10 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         } catch (const std::exception& error) {
             return RuntimeStateLoadResult::rejected(
                 RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                error.what()
+                "Invalid finalized block file "
+                + blockPath.string()
+                + ": "
+                + error.what()
             );
         }
 
@@ -386,6 +577,47 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         }
 
         try {
+            const std::uint64_t requiredVoteCount =
+                expectedQuorumVoteCount(
+                    genesisConfig,
+                    runtime.validatorRegistry()
+                );
+
+            if (artifact.quorumCertificate().requiredVoteCount() != requiredVoteCount) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Invalid finalized block file "
+                    + blockPath.string()
+                    + ": quorum certificate threshold does not match network parameters."
+                );
+            }
+
+            if (!artifact.quorumCertificate().verify(
+                    runtime.validatorRegistry(),
+                    cryptoContext.policy(),
+                    cryptoContext.signatureProvider()
+                )) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Invalid finalized block file "
+                    + blockPath.string()
+                    + ": quorum certificate failed validator vote audit."
+                );
+            }
+
+            if (!artifact.finalizedRecord().verify(
+                    runtime.validatorRegistry(),
+                    cryptoContext.policy(),
+                    cryptoContext.signatureProvider()
+                )) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Invalid finalized block file "
+                    + blockPath.string()
+                    + ": finalized block record failed audit."
+                );
+            }
+
             const core::StateTransitionPreviewContext previewContext =
                 RuntimeAccountStateBuilder::previewContextAtTip(
                     genesisConfig,
@@ -402,6 +634,9 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             if (!preview.accepted()) {
                 return RuntimeStateLoadResult::rejected(
                     RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Invalid finalized block file "
+                    + blockPath.string()
+                    + ": "
                     "Persisted block failed state preview during reload: "
                     + preview.reason()
                 );
@@ -410,17 +645,55 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             if (preview.stateRoot() != artifact.postStateRoot()) {
                 return RuntimeStateLoadResult::rejected(
                     RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Invalid finalized block file "
+                    + blockPath.string()
+                    + ": "
                     "Persisted block postStateRoot does not match rebuilt account state."
+                );
+            }
+
+            const consensus::BlockFinalizationResult finalization =
+                consensus::BlockFinalizer::finalizeBlock(
+                    runtime.mutableBlockchain(),
+                    block,
+                    artifact.quorumCertificate(),
+                    runtime.validatorRegistry(),
+                    runtime.mutableFinalizationRegistry(),
+                    cryptoContext.policy(),
+                    cryptoContext.signatureProvider(),
+                    artifact.finalizedRecord().finalizedAt()
+                );
+
+            if (!finalization.finalized() &&
+                !finalization.duplicate()) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_APPEND_FAILED,
+                    "Invalid finalized block file "
+                    + blockPath.string()
+                    + ": "
+                    + finalization.reason()
+                );
+            }
+
+            if (finalization.record().serialize() !=
+                artifact.finalizedRecord().serialize()) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Invalid finalized block file "
+                    + blockPath.string()
+                    + ": stored finalized record does not match reconstructed finalization."
                 );
             }
         } catch (const std::exception& error) {
             return RuntimeStateLoadResult::rejected(
                 RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
-                error.what()
+                "Invalid finalized block file "
+                + blockPath.string()
+                + ": "
+                + error.what()
             );
         }
 
-        runtime.mutableBlockchain().addBlock(block);
         ++loadedBlockCount;
     }
 
@@ -432,12 +705,45 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         );
     }
 
+    try {
+        const core::AccountStateView accountState =
+            RuntimeAccountStateBuilder::accountStateViewAtTip(
+                genesisConfig,
+                runtime.blockchain(),
+                minimumFeeRawUnits(genesisConfig)
+            );
+
+        const std::string latestStateRoot =
+            core::StateRootCalculator::calculateAccountStateRoot(
+                accountState
+            );
+
+        if (latestStateRoot != manifest.latestStateRoot()) {
+            return RuntimeStateLoadResult::rejected(
+                RuntimeStateLoadStatus::MANIFEST_MISMATCH,
+                "Manifest latestStateRoot does not match rebuilt account state."
+            );
+        }
+    } catch (const std::exception& error) {
+        return RuntimeStateLoadResult::rejected(
+            RuntimeStateLoadStatus::MANIFEST_MISMATCH,
+            error.what()
+        );
+    }
+
     const PersistentMempoolLoadResult mempoolLoad =
         PersistentMempoolStore::loadIntoMempool(
             directoryConfig,
             runtime.mutableMempool(),
-            crypto::CryptoPolicy::developmentPolicy(),
-            crypto::SecurityContext::USER_TRANSACTION
+            cryptoContext.policy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            RuntimeAccountStateBuilder::accountStateViewAtTip(
+                genesisConfig,
+                runtime.blockchain(),
+                minimumFeeRawUnits(genesisConfig)
+            ),
+            minimumFeeRawUnits(genesisConfig),
+            cryptoContext.signatureProvider()
         );
 
     if (!mempoolLoad.loaded()) {

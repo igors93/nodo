@@ -102,6 +102,25 @@ void writeFile(
     output << contents;
 }
 
+std::string replaceAll(
+    std::string value,
+    const std::string& needle,
+    const std::string& replacement
+) {
+    std::size_t position = 0;
+
+    while ((position = value.find(needle, position)) != std::string::npos) {
+        value.replace(
+            position,
+            needle.size(),
+            replacement
+        );
+        position += replacement.size();
+    }
+
+    return value;
+}
+
 KeyPair localValidatorKeyPair() {
     return KeyPair::createDevelopmentKeyPair(
         "runtime-state-loader-validator"
@@ -322,7 +341,7 @@ void testLoadsPersistentMempoolIntoRuntime() {
     const Transaction transaction =
         signedTransfer(
             "b",
-            2,
+            1,
             kTimestamp + 50
         );
 
@@ -467,6 +486,309 @@ void testRejectsFinalizedBlockWithTamperedPostStateRoot() {
     clean(path);
 }
 
+void testRejectsManifestWithTamperedLatestStateRoot() {
+    const std::filesystem::path path =
+        tempPath("tampered-manifest-state-root");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig directoryConfig(path);
+
+    const auto initialized =
+        NodeDataDirectory::initialize(
+            directoryConfig,
+            genesisConfig(),
+            localPeer(),
+            kTimestamp + 100
+        );
+
+    requireCondition(
+        initialized.initialized(),
+        "Data directory should initialize."
+    );
+
+    std::string manifestContents =
+        readFile(directoryConfig.manifestPath());
+
+    manifestContents = replaceAll(
+        manifestContents,
+        "latestStateRoot=" + initialized.manifest().latestStateRoot(),
+        "latestStateRoot=tampered-state-root"
+    );
+
+    writeFile(
+        directoryConfig.manifestPath(),
+        manifestContents
+    );
+
+    const auto loaded =
+        RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig(),
+            localPeer()
+        );
+
+    requireCondition(
+        !loaded.loaded() &&
+        loaded.status() == nodo::node::RuntimeStateLoadStatus::MANIFEST_MISMATCH &&
+        loaded.reason().find("latestStateRoot") != std::string::npos,
+        "Runtime loader should reject manifest with tampered latestStateRoot."
+    );
+
+    clean(path);
+}
+
+void testRejectsFinalizedBlockWithInvalidQuorumCertificate() {
+    const std::filesystem::path path =
+        tempPath("invalid-quorum");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig directoryConfig(path);
+
+    requireCondition(
+        NodeDataDirectory::initialize(
+            directoryConfig,
+            genesisConfig(),
+            localPeer(),
+            kTimestamp + 110
+        ).initialized(),
+        "Data directory should initialize."
+    );
+
+    NodeRuntime runtime =
+        startRuntime();
+
+    const Transaction transaction =
+        signedTransfer(
+            "invalid-quorum",
+            1,
+            kTimestamp + 111
+        );
+
+    requireCondition(
+        runtime.mutableMempool().admitTransaction(
+            transaction,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            kTimestamp + 112
+        ).accepted(),
+        "Transaction should enter mempool."
+    );
+
+    const auto pipeline =
+        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            runtime,
+            RuntimeBlockPipelineConfig(
+                100,
+                1,
+                1,
+                kTimestamp + 113
+            ),
+            localValidatorSigner()
+        );
+
+    requireCondition(
+        pipeline.finalized(),
+        "Pipeline should finalize a block."
+    );
+
+    const auto persisted =
+        FinalizedBlockStore::persist(
+            directoryConfig,
+            runtime,
+            pipeline,
+            kTimestamp + 114
+        );
+
+    requireCondition(
+        persisted.stored(),
+        "Finalized block should persist before quorum tampering."
+    );
+
+    std::string contents =
+        readFile(persisted.blockPath());
+
+    contents = replaceAll(
+        contents,
+        "requiredVoteCount=1",
+        "requiredVoteCount=2"
+    );
+
+    writeFile(
+        persisted.blockPath(),
+        contents
+    );
+
+    const auto loaded =
+        RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig(),
+            localPeer()
+        );
+
+    requireCondition(
+        !loaded.loaded() &&
+        loaded.status() == nodo::node::RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+        "Runtime loader should reject finalized block with invalid quorum certificate."
+    );
+
+    clean(path);
+}
+
+void testRejectsFinalizedBlockWithDuplicateVote() {
+    const std::filesystem::path path =
+        tempPath("duplicate-vote");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig directoryConfig(path);
+
+    requireCondition(
+        NodeDataDirectory::initialize(
+            directoryConfig,
+            genesisConfig(),
+            localPeer(),
+            kTimestamp + 120
+        ).initialized(),
+        "Data directory should initialize."
+    );
+
+    NodeRuntime runtime =
+        startRuntime();
+
+    const Transaction transaction =
+        signedTransfer(
+            "duplicate-vote",
+            1,
+            kTimestamp + 121
+        );
+
+    requireCondition(
+        runtime.mutableMempool().admitTransaction(
+            transaction,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            kTimestamp + 122
+        ).accepted(),
+        "Transaction should enter mempool."
+    );
+
+    const auto pipeline =
+        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            runtime,
+            RuntimeBlockPipelineConfig(
+                100,
+                1,
+                1,
+                kTimestamp + 123
+            ),
+            localValidatorSigner()
+        );
+
+    requireCondition(
+        pipeline.finalized(),
+        "Pipeline should finalize a block."
+    );
+
+    const auto persisted =
+        FinalizedBlockStore::persist(
+            directoryConfig,
+            runtime,
+            pipeline,
+            kTimestamp + 124
+        );
+
+    requireCondition(
+        persisted.stored(),
+        "Finalized block should persist before vote tampering."
+    );
+
+    const std::string serializedVote =
+        pipeline.certificate().votes().front().serialize();
+
+    std::string contents =
+        readFile(persisted.blockPath());
+
+    contents = replaceAll(
+        contents,
+        "votes=[" + serializedVote + "]",
+        "votes=[" + serializedVote + "," + serializedVote + "]"
+    );
+
+    writeFile(
+        persisted.blockPath(),
+        contents
+    );
+
+    const auto loaded =
+        RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig(),
+            localPeer()
+        );
+
+    requireCondition(
+        !loaded.loaded() &&
+        loaded.status() == nodo::node::RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+        "Runtime loader should reject finalized block with duplicate validator vote."
+    );
+
+    clean(path);
+}
+
+void testRejectsPersistentMempoolFutureNonce() {
+    const std::filesystem::path path =
+        tempPath("mempool-future-nonce");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig directoryConfig(path);
+
+    requireCondition(
+        NodeDataDirectory::initialize(
+            directoryConfig,
+            genesisConfig(),
+            localPeer(),
+            kTimestamp + 130
+        ).initialized(),
+        "Data directory should initialize."
+    );
+
+    const Transaction transaction =
+        signedTransfer(
+            "future",
+            2,
+            kTimestamp + 131
+        );
+
+    requireCondition(
+        PersistentMempoolStore::persistTransaction(
+            directoryConfig,
+            transaction,
+            localValidatorKeyPair().publicKey(),
+            kTimestamp + 132
+        ).stored(),
+        "Persistent mempool transaction should store before reload nonce audit."
+    );
+
+    const auto loaded =
+        RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig(),
+            localPeer()
+        );
+
+    requireCondition(
+        !loaded.loaded() &&
+        loaded.status() == nodo::node::RuntimeStateLoadStatus::MEMPOOL_LOAD_FAILED &&
+        loaded.reason().find("future") != std::string::npos,
+        "Runtime loader should reject persistent mempool transaction with future nonce."
+    );
+
+    clean(path);
+}
+
 } // namespace
 
 int main() {
@@ -474,6 +796,10 @@ int main() {
         testLoadsRuntimeWithPersistedFinalizedBlock();
         testLoadsPersistentMempoolIntoRuntime();
         testRejectsFinalizedBlockWithTamperedPostStateRoot();
+        testRejectsManifestWithTamperedLatestStateRoot();
+        testRejectsFinalizedBlockWithInvalidQuorumCertificate();
+        testRejectsFinalizedBlockWithDuplicateVote();
+        testRejectsPersistentMempoolFutureNonce();
 
         std::cout << "Nodo runtime state loader tests passed.\n";
         return 0;

@@ -220,7 +220,7 @@ void testLowFeeRejected() {
     );
 }
 
-void testHigherFeeReplacesSameSenderNonce() {
+void testSameSenderNonceIsRejected() {
     Mempool mempool(
         MempoolConfig(
             10,
@@ -262,7 +262,7 @@ void testHigherFeeReplacesSameSenderNonce() {
         "Low-fee transaction should be accepted first."
     );
 
-    const auto replacement =
+    const auto conflict =
         mempool.admitTransaction(
             highFee,
             CryptoPolicy::developmentPolicy(),
@@ -271,19 +271,19 @@ void testHigherFeeReplacesSameSenderNonce() {
         );
 
     requireCondition(
-        replacement.replaced(),
-        "Higher-fee transaction with same sender nonce should replace."
+        conflict.status() == MempoolAdmissionStatus::CONFLICTING_NONCE,
+        "Transaction with same sender nonce should be rejected."
     );
 
     requireCondition(
-        !mempool.contains(lowFee.id()) &&
-        mempool.contains(highFee.id()),
-        "Mempool should contain only replacement transaction."
+        mempool.contains(lowFee.id()) &&
+        !mempool.contains(highFee.id()),
+        "Mempool should keep the original transaction only."
     );
 
     requireCondition(
         mempool.size() == 1U,
-        "Replacement should keep mempool size stable."
+        "Rejected sender nonce conflict should keep mempool size stable."
     );
 }
 
@@ -454,7 +454,7 @@ int main() {
         testAdmitValidTransaction();
         testDuplicateTransactionIsSafeNoOp();
         testLowFeeRejected();
-        testHigherFeeReplacesSameSenderNonce();
+        testSameSenderNonceIsRejected();
         testCapacityLimit();
         testTransactionsForBlockAreFeeOrdered();
         testPruneExpiredTransactions();

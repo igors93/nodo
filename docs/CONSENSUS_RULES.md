@@ -13,9 +13,11 @@ A validator may vote for a candidate block only when:
   consensus round.
 
 A quorum certificate is valid only when enough active validator weight approves
-the same block under the configured quorum threshold. Finality means the block
-has a valid quorum certificate, has been accepted by the finalizer and has been
-persisted with an auditable finalized record.
+the same block under the configured quorum threshold. Duplicate votes,
+unregistered validators, invalid validator signatures and votes for a different
+block or round invalidate the certificate. Finality means the block has a valid
+quorum certificate, has been accepted by the finalizer and has been persisted
+with an auditable finalized record.
 
 Current localnet signs deterministic local votes through `Signer` and
 `LocalSignatureProvider`. The provider is temporary and acceptable only for

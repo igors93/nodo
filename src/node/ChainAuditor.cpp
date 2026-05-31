@@ -1,6 +1,10 @@
 #include "node/ChainAuditor.hpp"
 
+#include "core/StateRootCalculator.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
+#include "node/RuntimeAccountStateBuilder.hpp"
+
+#include <exception>
 
 namespace nodo::node {
 
@@ -59,6 +63,37 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
         return ChainAuditResult::failed("manifest latestBlockHash does not match rebuilt blockchain");
     }
 
+    std::string rebuiltStateRoot;
+
+    try {
+        const std::uint64_t minimumFee =
+            runtime.config().genesisConfig().networkParameters().minimumFeeRawUnits();
+
+        const core::AccountStateView accountState =
+            RuntimeAccountStateBuilder::accountStateViewAtTip(
+                runtime.config().genesisConfig(),
+                runtime.blockchain(),
+                static_cast<std::int64_t>(minimumFee)
+            );
+
+        rebuiltStateRoot =
+            core::StateRootCalculator::calculateAccountStateRoot(
+                accountState
+            );
+    } catch (const std::exception& error) {
+        return ChainAuditResult::failed(
+            std::string("rebuilt account state failed: ") + error.what()
+        );
+    }
+
+    if (rebuiltStateRoot.empty()) {
+        return ChainAuditResult::failed("rebuilt latestStateRoot is empty");
+    }
+
+    if (manifest.latestStateRoot() != rebuiltStateRoot) {
+        return ChainAuditResult::failed("manifest latestStateRoot does not match rebuilt account state");
+    }
+
     const crypto::ProtocolCryptoContext cryptoContext =
         crypto::ProtocolCryptoContext::fromNetworkName(
             manifest.networkName()
@@ -93,6 +128,7 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
         cryptoContext.networkProfile(),
         manifest.latestBlockHeight(),
         manifest.latestBlockHash(),
+        manifest.latestStateRoot(),
         load.loadedBlockCount(),
         load.loadedMempoolTransactionCount(),
         manifest.validatorCount()

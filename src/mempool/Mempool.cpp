@@ -270,49 +270,9 @@ MempoolAdmissionResult Mempool::admitTransaction(
         m_transactionIdBySenderNonce.find(senderNonce);
 
     if (existingByNonce != m_transactionIdBySenderNonce.end()) {
-        const std::string existingTransactionId =
-            existingByNonce->second;
-
-        const auto existingEntry =
-            m_entriesById.find(existingTransactionId);
-
-        if (existingEntry == m_entriesById.end()) {
-            return MempoolAdmissionResult::rejected(
-                MempoolAdmissionStatus::INVALID_CONFIG,
-                "Mempool nonce index is inconsistent."
-            );
-        }
-
-        if (!m_config.replaceByHigherFee() ||
-            transaction.fee().rawUnits() <=
-                existingEntry->second.transaction().fee().rawUnits()) {
-            return MempoolAdmissionResult::rejected(
-                MempoolAdmissionStatus::CONFLICTING_NONCE,
-                "Another transaction with the same sender nonce is already in mempool."
-            );
-        }
-
-        removeIndexesForEntry(existingEntry->second);
-        m_entriesById.erase(existingEntry);
-
-        MempoolEntry newEntry(
-            transaction,
-            acceptedAt
-        );
-
-        m_transactionIdBySenderNonce.emplace(
-            newEntry.senderNonceKey(),
-            transaction.id()
-        );
-
-        m_entriesById.emplace(
-            transaction.id(),
-            newEntry
-        );
-
-        return MempoolAdmissionResult::replaced(
-            transaction.id(),
-            existingTransactionId
+        return MempoolAdmissionResult::rejected(
+            MempoolAdmissionStatus::CONFLICTING_NONCE,
+            "Another transaction with the same sender nonce is already in mempool."
         );
     }
 

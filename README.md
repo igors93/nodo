@@ -57,8 +57,14 @@ Current limitations are explicit:
 - `localnet` uses explicit development account allocations in `GenesisConfig`
   for bootstrap validators so balance and nonce checks can run locally;
 - no P2P validator networking is included in this phase;
+- no slashing or production mainnet path is included in this phase;
+- mempool future nonces are rejected until a full per-account queue exists;
 - coin-lot ownership, double-spend and complete supply audit must continue
   moving behind the state-transition validation gate.
+
+The runtime manifest stores `latestStateRoot`, and reload rebuilds state from
+genesis through finalized blocks before accepting the manifest tip. Chain audit
+reports the same root together with finalized height and hash.
 
 ## Documentation
 

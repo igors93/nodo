@@ -18,14 +18,15 @@ default. Quarantine must be reversible or time-limited unless strong evidence
 proves severe validator behavior. Severe penalties require auditable evidence.
 
 The current implementation already rejects corrupted manifests, finalized block
-files and mempool files through strict codecs. Additional evidence records and
-penalty state should be implemented as small protocol types instead of ad hoc
-runtime flags.
+files, mempool files and local key files through strict codecs. Unknown fields,
+wrong versions, missing required fields, non-canonical content and `.tmp`
+artifacts are not treated as canonical state.
 
 `nodo chain audit` is a central local safety command. It reloads the runtime and
 delegates consistency checks to `ChainAuditor`, which verifies manifest identity,
-chain tip height/hash, crypto context, mempool validity and validator count
-consistency. It reports failures instead of silently repairing suspicious state.
+chain tip height/hash, `latestStateRoot`, crypto context, mempool validity and
+validator count consistency. It reports failures instead of silently repairing
+suspicious state.
 
 Before a block can receive votes, `StateTransitionPreview` applies transactions
 against a temporary account-state view. A failing balance, nonce, fee or payload
@@ -34,6 +35,12 @@ uses explicit bootstrap-validator account allocations in `GenesisConfig` only fo
 development; they are documented as a limitation, not a production supply model.
 Successful previews produce a deterministic state root so later persistence,
 reload and audit checks can commit to the resulting account state.
+
+Finalized block reload verifies the quorum certificate and finalized record
+before accepting the artifact: quorum threshold, duplicate validator votes,
+unknown validators, invalid vote signatures and certificate/block mismatch all
+reject reload. Slashing is intentionally not implemented yet; these failures are
+audit/reject events only.
 
 Local key files are written atomically and parsed strictly. The current
 localnet key format stores private material for the temporary provider and must

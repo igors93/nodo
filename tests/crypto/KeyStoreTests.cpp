@@ -3,6 +3,7 @@
 #include "crypto/Signer.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -143,12 +144,62 @@ void testRejectsUnsafeKeyId() {
     );
 }
 
+void testRejectsMalformedKeyFile() {
+    const std::filesystem::path path =
+        tempPath();
+
+    clean(path);
+
+    const auto created =
+        KeyStore::createLocalKey(
+            path,
+            "local-validator",
+            "key-store-test-seed",
+            kTimestamp
+        );
+
+    requireCondition(
+        created.success(),
+        "Key creation should succeed before malformed file test."
+    );
+
+    {
+        std::ofstream output(KeyStore::keyFilePath(path, "local-validator"), std::ios::trunc);
+        output << "NODO_KEY_FILE_V2\n"
+               << "keyId=local-validator\n"
+               << "algorithm=DEVELOPMENT_FAKE_SIGNATURE\n"
+               << "provider=LOCAL_DETERMINISTIC_PROVIDER_V1\n"
+               << "networkProfile=localnet\n"
+               << "publicKeyMaterial=broken\n"
+               << "privateKeyMaterial=broken\n"
+               << "address=broken\n"
+               << "createdAt=" << kTimestamp << "\n"
+               << "unknownField=must-fail\n";
+    }
+
+    const auto loaded =
+        KeyStore::loadKey(
+            path,
+            "local-validator"
+        );
+
+    requireCondition(
+        !loaded.loaded() &&
+        loaded.reason().find("key_local-validator.nodo") != std::string::npos &&
+        loaded.reason().find("unknownField") != std::string::npos,
+        "Malformed key file should be rejected with file path and reason."
+    );
+
+    clean(path);
+}
+
 } // namespace
 
 int main() {
     try {
         testCreateLoadAndListKey();
         testRejectsUnsafeKeyId();
+        testRejectsMalformedKeyFile();
 
         std::cout << "Nodo key store tests passed.\n";
         return 0;

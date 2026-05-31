@@ -1,12 +1,18 @@
 #include "node/PersistentMempoolStore.hpp"
 
 #include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/DevelopmentSignatureProvider.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
 #include "crypto/SignatureBundle.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
+#include <algorithm>
+#include <limits>
+#include <map>
+#include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -61,6 +67,121 @@ bool isSafeTransactionId(
     }
 
     return true;
+}
+
+bool samePublicKey(
+    const crypto::PublicKey& left,
+    const crypto::PublicKey& right
+) {
+    return left.algorithm() == right.algorithm() &&
+           left.keyMaterial() == right.keyMaterial();
+}
+
+bool allSignaturesUsePublicKey(
+    const core::Transaction& transaction,
+    const crypto::PublicKey& publicKey
+) {
+    if (!transaction.hasSignatureBundle()) {
+        return false;
+    }
+
+    for (const crypto::Signature& signature : transaction.signatureBundle().signatures()) {
+        if (!samePublicKey(
+                signature.publicKey(),
+                publicKey
+            )) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void validatePersistentTransactionSignature(
+    const core::Transaction& transaction,
+    const crypto::PublicKey& publicKey,
+    const crypto::CryptoPolicy& policy,
+    crypto::SecurityContext context,
+    const crypto::SignatureProvider& provider
+) {
+    if (!allSignaturesUsePublicKey(
+            transaction,
+            publicKey
+        )) {
+        throw std::invalid_argument("Persistent transaction signature does not use the declared public key.");
+    }
+
+    if (!transaction.signatureBundle().verifyForPolicy(
+            transaction.signingPayload(),
+            policy,
+            context,
+            provider
+        )) {
+        throw std::invalid_argument("Persistent transaction signature verification failed.");
+    }
+}
+
+std::vector<std::filesystem::path> canonicalMempoolFiles(
+    const std::filesystem::path& mempoolDirectory
+) {
+    std::vector<std::filesystem::path> files;
+
+    for (const auto& entry : std::filesystem::directory_iterator(mempoolDirectory)) {
+        if (!entry.is_regular_file() ||
+            entry.path().extension() != ".nodo") {
+            continue;
+        }
+
+        files.push_back(entry.path());
+    }
+
+    std::sort(
+        files.begin(),
+        files.end()
+    );
+
+    return files;
+}
+
+void validateTransactionAgainstAccountState(
+    const core::Transaction& transaction,
+    const core::AccountStateView& accountStateView,
+    std::int64_t minimumFeeRawUnits,
+    std::set<std::string>& pendingSenders
+) {
+    if (minimumFeeRawUnits < 0) {
+        throw std::invalid_argument("Persistent mempool minimum fee is negative.");
+    }
+
+    if (transaction.fee().rawUnits() < minimumFeeRawUnits) {
+        throw std::invalid_argument("Persistent transaction fee is below the network minimum.");
+    }
+
+    if (!accountStateView.hasAccount(transaction.fromAddress())) {
+        throw std::invalid_argument("Persistent transaction sender account is unknown.");
+    }
+
+    const core::AccountState sender =
+        accountStateView.accountOrDefault(transaction.fromAddress());
+
+    if (sender.nonce() == std::numeric_limits<std::uint64_t>::max()) {
+        throw std::invalid_argument("Persistent transaction sender nonce cannot advance without overflow.");
+    }
+
+    const std::uint64_t expectedNonce =
+        sender.nonce() + 1;
+
+    if (transaction.nonce() <= sender.nonce()) {
+        throw std::invalid_argument("Persistent transaction nonce is older than account state.");
+    }
+
+    if (transaction.nonce() != expectedNonce) {
+        throw std::invalid_argument("Persistent transaction nonce is in the future and no per-account queue is available.");
+    }
+
+    if (!pendingSenders.insert(transaction.fromAddress()).second) {
+        throw std::invalid_argument("Persistent mempool already has a pending transaction from this sender.");
+    }
 }
 
 } // namespace
@@ -257,6 +378,23 @@ PersistentMempoolWriteResult PersistentMempoolStore::persistTransaction(
         );
     }
 
+    const crypto::DevelopmentSignatureProvider provider;
+
+    try {
+        validatePersistentTransactionSignature(
+            transaction,
+            publicKey,
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            provider
+        );
+    } catch (const std::exception& error) {
+        return PersistentMempoolWriteResult::rejected(
+            PersistentMempoolWriteStatus::INVALID_TRANSACTION,
+            error.what()
+        );
+    }
+
     const std::filesystem::path path =
         transactionFilePath(
             directoryConfig,
@@ -274,6 +412,38 @@ PersistentMempoolWriteResult PersistentMempoolStore::persistTransaction(
         std::filesystem::create_directories(
             directoryConfig.mempoolDirectoryPath()
         );
+
+        for (const std::filesystem::path& existingPath :
+             canonicalMempoolFiles(directoryConfig.mempoolDirectoryPath())) {
+            if (existingPath == path) {
+                continue;
+            }
+
+            std::optional<core::Transaction> existingTransaction;
+
+            try {
+                existingTransaction =
+                    decodeTransactionFile(
+                        readTextFile(existingPath)
+                    );
+            } catch (const std::exception& error) {
+                return PersistentMempoolWriteResult::rejected(
+                    PersistentMempoolWriteStatus::INVALID_TRANSACTION,
+                    "Invalid persistent mempool file "
+                    + existingPath.string()
+                    + ": "
+                    + error.what()
+                );
+            }
+
+            if (existingTransaction->fromAddress() == transaction.fromAddress() &&
+                existingTransaction->nonce() == transaction.nonce()) {
+                return PersistentMempoolWriteResult::rejected(
+                    PersistentMempoolWriteStatus::INVALID_TRANSACTION,
+                    "Another persistent transaction with the same sender nonce already exists."
+                );
+            }
+        }
 
         if (std::filesystem::exists(path)) {
             if (readTextFile(path) == contents) {
@@ -327,14 +497,12 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
     std::size_t skippedCount = 0;
 
     try {
-        for (const auto& entry : std::filesystem::directory_iterator(directoryConfig.mempoolDirectoryPath())) {
-            if (!entry.is_regular_file() ||
-                entry.path().extension() != ".nodo") {
-                continue;
-            }
+        const crypto::DevelopmentSignatureProvider provider;
 
+        for (const std::filesystem::path& path :
+             canonicalMempoolFiles(directoryConfig.mempoolDirectoryPath())) {
             const std::string contents =
-                readTextFile(entry.path());
+                readTextFile(path);
 
             try {
                 core::Transaction transaction =
@@ -342,6 +510,14 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
 
                 const std::int64_t acceptedAt =
                     decodeAcceptedAt(contents);
+
+                validatePersistentTransactionSignature(
+                    transaction,
+                    transaction.signatureBundle().signatures().front().publicKey(),
+                    policy,
+                    context,
+                    provider
+                );
 
                 const auto admission =
                     mempool.admitTransaction(
@@ -354,13 +530,115 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
                 if (admission.success()) {
                     ++loadedCount;
                 } else {
-                    ++skippedCount;
+                    return PersistentMempoolLoadResult::rejected(
+                        PersistentMempoolLoadStatus::IO_ERROR,
+                        "Invalid persistent mempool file "
+                        + path.string()
+                        + ": "
+                        + admission.reason()
+                    );
                 }
             } catch (const std::exception& error) {
                 return PersistentMempoolLoadResult::rejected(
                     PersistentMempoolLoadStatus::IO_ERROR,
                     "Invalid persistent mempool file "
-                    + entry.path().string()
+                    + path.string()
+                    + ": "
+                    + error.what()
+                );
+            }
+        }
+    } catch (const std::exception& error) {
+        return PersistentMempoolLoadResult::rejected(
+            PersistentMempoolLoadStatus::IO_ERROR,
+            error.what()
+        );
+    }
+
+    return PersistentMempoolLoadResult::loaded(
+        loadedCount,
+        skippedCount
+    );
+}
+
+PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
+    const NodeDataDirectoryConfig& directoryConfig,
+    mempool::Mempool& mempool,
+    const crypto::CryptoPolicy& policy,
+    crypto::SecurityContext context,
+    const core::AccountStateView& accountStateView,
+    std::int64_t minimumFeeRawUnits,
+    const crypto::SignatureProvider& provider
+) {
+    if (!directoryConfig.isValid() ||
+        !accountStateView.isValid() ||
+        minimumFeeRawUnits < 0) {
+        return PersistentMempoolLoadResult::rejected(
+            PersistentMempoolLoadStatus::INVALID_CONFIG,
+            "Persistent mempool load config is invalid."
+        );
+    }
+
+    if (!std::filesystem::exists(directoryConfig.mempoolDirectoryPath())) {
+        return PersistentMempoolLoadResult::loaded(0, 0);
+    }
+
+    std::size_t loadedCount = 0;
+    std::size_t skippedCount = 0;
+    std::set<std::string> pendingSenders;
+
+    try {
+        for (const std::filesystem::path& path :
+             canonicalMempoolFiles(directoryConfig.mempoolDirectoryPath())) {
+            const std::string contents =
+                readTextFile(path);
+
+            try {
+                core::Transaction transaction =
+                    decodeTransactionFile(contents);
+
+                const std::int64_t acceptedAt =
+                    decodeAcceptedAt(contents);
+
+                validatePersistentTransactionSignature(
+                    transaction,
+                    transaction.signatureBundle().signatures().front().publicKey(),
+                    policy,
+                    context,
+                    provider
+                );
+
+                validateTransactionAgainstAccountState(
+                    transaction,
+                    accountStateView,
+                    minimumFeeRawUnits,
+                    pendingSenders
+                );
+
+                const auto admission =
+                    mempool.admitTransaction(
+                        transaction,
+                        policy,
+                        context,
+                        acceptedAt
+                    );
+
+                if (admission.success()) {
+                    ++loadedCount;
+                } else {
+                    return PersistentMempoolLoadResult::rejected(
+                        PersistentMempoolLoadStatus::IO_ERROR,
+                        "Invalid persistent mempool file "
+                        + path.string()
+                        + ": "
+                        + admission.reason()
+                    );
+                }
+            } catch (const std::exception& error) {
+                return PersistentMempoolLoadResult::rejected(
+                    PersistentMempoolLoadStatus::IO_ERROR,
+                    "Invalid persistent mempool file "
+                    + path.string()
                     + ": "
                     + error.what()
                 );
@@ -485,6 +763,17 @@ core::Transaction PersistentMempoolStore::decodeTransactionFile(
 
     if (transaction.id() != fields.requireField("transactionId")) {
         throw std::invalid_argument("Persistent transaction id does not match transaction payload.");
+    }
+
+    const std::int64_t acceptedAt =
+        std::stoll(fields.requireField("acceptedAt"));
+
+    if (transactionFileContents(
+            transaction,
+            publicKey,
+            acceptedAt
+        ) != contents) {
+        throw std::invalid_argument("Persistent mempool file is not canonical.");
     }
 
     return transaction;

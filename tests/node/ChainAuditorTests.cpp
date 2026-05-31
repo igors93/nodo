@@ -105,6 +105,7 @@ void testRejectsManifestRuntimeHeightMismatch() {
         validLoad.manifest().genesisConfigId(),
         validLoad.manifest().latestBlockHeight() + 1,
         validLoad.manifest().latestBlockHash(),
+        validLoad.manifest().latestStateRoot(),
         validLoad.manifest().validatorCount(),
         validLoad.manifest().peerCount(),
         validLoad.manifest().createdAt(),
@@ -129,6 +130,42 @@ void testRejectsManifestRuntimeHeightMismatch() {
     );
 }
 
+void testRejectsManifestStateRootMismatch() {
+    const node::RuntimeStateLoadResult validLoad =
+        loadedRuntime();
+
+    const node::NodeRuntimeManifest badManifest(
+        validLoad.manifest().chainId(),
+        validLoad.manifest().networkName(),
+        validLoad.manifest().protocolVersion(),
+        validLoad.manifest().genesisConfigId(),
+        validLoad.manifest().latestBlockHeight(),
+        validLoad.manifest().latestBlockHash(),
+        "tampered-state-root",
+        validLoad.manifest().validatorCount(),
+        validLoad.manifest().peerCount(),
+        validLoad.manifest().createdAt(),
+        validLoad.manifest().updatedAt()
+    );
+
+    const node::RuntimeStateLoadResult badLoad =
+        node::RuntimeStateLoadResult::loaded(
+            validLoad.runtime(),
+            badManifest,
+            validLoad.loadedBlockCount(),
+            validLoad.loadedMempoolTransactionCount()
+        );
+
+    const node::ChainAuditResult result =
+        node::ChainAuditor::auditLoadedRuntime(badLoad);
+
+    requireCondition(
+        !result.passed() &&
+        result.reason().find("latestStateRoot") != std::string::npos,
+        "Chain auditor should reject manifest/runtime state-root mismatch."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -136,6 +173,7 @@ int main() {
         testAuditsLoadedRuntime();
         testReportsLoaderFailure();
         testRejectsManifestRuntimeHeightMismatch();
+        testRejectsManifestStateRootMismatch();
 
         std::cout << "Nodo chain auditor tests passed.\n";
         return 0;
