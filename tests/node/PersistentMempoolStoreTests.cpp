@@ -1,10 +1,13 @@
 #include "node/PersistentMempoolStore.hpp"
 
 #include "config/NetworkParameters.hpp"
+#include "core/AccountState.hpp"
+#include "core/AccountStateView.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "crypto/DevelopmentSignatureProvider.hpp"
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/SignatureBundle.hpp"
@@ -22,10 +25,13 @@ namespace {
 using nodo::config::BootstrapValidatorConfig;
 using nodo::config::GenesisConfig;
 using nodo::config::NetworkParameters;
+using nodo::core::AccountState;
+using nodo::core::AccountStateView;
 using nodo::core::Transaction;
 using nodo::core::TransactionType;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
+using nodo::crypto::DevelopmentSignatureProvider;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::SecurityContext;
@@ -142,6 +148,25 @@ Transaction signedTransfer(
     return transaction;
 }
 
+AccountStateView accountStateWithSenderBalance(
+    std::int64_t balanceRawUnits
+) {
+    AccountStateView view;
+
+    requireCondition(
+        view.putAccount(
+            AccountState(
+                "persistent-mempool-sender",
+                Amount::fromRawUnits(balanceRawUnits),
+                0
+            )
+        ),
+        "Account state test fixture should accept sender account."
+    );
+
+    return view;
+}
+
 void initDirectory(
     const NodeDataDirectoryConfig& directoryConfig
 ) {
@@ -256,6 +281,98 @@ void testPersistIsIdempotent() {
     clean(path);
 }
 
+void testLoadWithAccountStateAcceptsSufficientBalance() {
+    const std::filesystem::path path =
+        tempPath("sufficient-balance");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig directoryConfig(path);
+    initDirectory(directoryConfig);
+
+    const Transaction transaction =
+        signedTransfer("c", 1);
+
+    requireCondition(
+        PersistentMempoolStore::persistTransaction(
+            directoryConfig,
+            transaction,
+            publicKey("tx-c"),
+            kTimestamp + 40
+        ).stored(),
+        "Persistent transaction fixture should store before balance-aware load."
+    );
+
+    Mempool mempool;
+    const DevelopmentSignatureProvider provider;
+
+    const auto loaded =
+        PersistentMempoolStore::loadIntoMempool(
+            directoryConfig,
+            mempool,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            accountStateWithSenderBalance(1100),
+            100,
+            provider
+        );
+
+    requireCondition(
+        loaded.loaded() &&
+        loaded.loadedTransactionCount() == 1U &&
+        mempool.size() == 1U,
+        "Balance-aware persistent mempool load should accept sufficient balance."
+    );
+
+    clean(path);
+}
+
+void testLoadWithAccountStateRejectsInsufficientBalance() {
+    const std::filesystem::path path =
+        tempPath("insufficient-balance");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig directoryConfig(path);
+    initDirectory(directoryConfig);
+
+    const Transaction transaction =
+        signedTransfer("d", 1);
+
+    requireCondition(
+        PersistentMempoolStore::persistTransaction(
+            directoryConfig,
+            transaction,
+            publicKey("tx-d"),
+            kTimestamp + 50
+        ).stored(),
+        "Persistent transaction fixture should store before insufficient-balance load."
+    );
+
+    Mempool mempool;
+    const DevelopmentSignatureProvider provider;
+
+    const auto loaded =
+        PersistentMempoolStore::loadIntoMempool(
+            directoryConfig,
+            mempool,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            accountStateWithSenderBalance(1099),
+            100,
+            provider
+        );
+
+    requireCondition(
+        !loaded.loaded() &&
+        loaded.reason().find("balance is insufficient") != std::string::npos &&
+        mempool.empty(),
+        "Balance-aware persistent mempool load should reject insufficient balance."
+    );
+
+    clean(path);
+}
+
 void testMalformedPersistentMempoolFileIsRejected() {
     const std::filesystem::path path =
         tempPath("malformed");
@@ -303,6 +420,8 @@ int main() {
     try {
         testPersistLoadAndRemoveTransaction();
         testPersistIsIdempotent();
+        testLoadWithAccountStateAcceptsSufficientBalance();
+        testLoadWithAccountStateRejectsInsufficientBalance();
         testMalformedPersistentMempoolFileIsRejected();
 
         std::cout << "Nodo persistent mempool store tests passed.\n";

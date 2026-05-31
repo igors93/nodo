@@ -1,5 +1,7 @@
 #include "node/TransactionAdmissionValidator.hpp"
 
+#include "utils/Amount.hpp"
+
 #include <limits>
 #include <sstream>
 #include <utility>
@@ -37,6 +39,30 @@ bool allSignaturesUseSigningKey(
     return true;
 }
 
+TransactionAdmissionResult rejectIfSenderCannotPay(
+    const core::Transaction& transaction,
+    const core::AccountState& sender
+) {
+    try {
+        const utils::Amount required =
+            transaction.amount() + transaction.fee();
+
+        if (sender.balance() < required) {
+            return TransactionAdmissionResult::rejected(
+                TransactionAdmissionStatus::INSUFFICIENT_BALANCE,
+                "Transaction sender balance is insufficient for amount plus fee."
+            );
+        }
+    } catch (const std::exception& error) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::INVALID_TRANSACTION,
+            std::string("Transaction amount plus fee is invalid: ") + error.what()
+        );
+    }
+
+    return TransactionAdmissionResult::acceptedResult();
+}
+
 } // namespace
 
 std::string transactionAdmissionStatusToString(
@@ -53,6 +79,8 @@ std::string transactionAdmissionStatusToString(
             return "INVALID_TRANSACTION";
         case TransactionAdmissionStatus::BELOW_MINIMUM_FEE:
             return "BELOW_MINIMUM_FEE";
+        case TransactionAdmissionStatus::INSUFFICIENT_BALANCE:
+            return "INSUFFICIENT_BALANCE";
         case TransactionAdmissionStatus::DUPLICATE_TRANSACTION:
             return "DUPLICATE_TRANSACTION";
         case TransactionAdmissionStatus::CONFLICTING_NONCE:
@@ -293,6 +321,16 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateRuntimeSubmiss
             TransactionAdmissionStatus::FUTURE_NONCE,
             "Transaction nonce is in the future and no per-account queue is available."
         );
+    }
+
+    const TransactionAdmissionResult balance =
+        rejectIfSenderCannotPay(
+            transaction,
+            sender
+        );
+
+    if (!balance.accepted()) {
+        return balance;
     }
 
     return TransactionAdmissionResult::acceptedResult();

@@ -19,6 +19,7 @@ enum class TransactionAdmissionStatus {
     INVALID_KEY,
     INVALID_TRANSACTION,
     BELOW_MINIMUM_FEE,
+    INSUFFICIENT_BALANCE,
     DUPLICATE_TRANSACTION,
     CONFLICTING_NONCE,
     OLD_NONCE,
@@ -58,7 +59,8 @@ private:
  *
  * It is intentionally stricter than simple structural parsing. A transaction
  * admitted here must match the local signing key, respect the network fee rule,
- * and verify through the configured signature provider.
+ * have the expected account nonce, have enough spendable balance, and verify
+ * through the configured signature provider.
  */
 class TransactionAdmissionValidator {
 public:

@@ -1,8 +1,11 @@
 #include "config/NetworkParameters.hpp"
+#include "core/AccountState.hpp"
+#include "core/AccountStateView.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "crypto/KeyStore.hpp"
 #include "crypto/LocalSignatureProvider.hpp"
 #include "crypto/Signer.hpp"
+#include "mempool/Mempool.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
 #include "utils/Amount.hpp"
 
@@ -113,6 +116,27 @@ core::Transaction buildTransaction(
         ),
         signer
     );
+}
+
+core::AccountStateView accountStateFor(
+    const std::string& address,
+    std::int64_t balanceRawUnits,
+    std::uint64_t nonce
+) {
+    core::AccountStateView view;
+
+    requireCondition(
+        view.putAccount(
+            core::AccountState(
+                address,
+                utils::Amount::fromRawUnits(balanceRawUnits),
+                nonce
+            )
+        ),
+        "Account state test fixture should accept valid account."
+    );
+
+    return view;
 }
 
 void testAcceptsValidLocalSubmission() {
@@ -241,6 +265,97 @@ void testRejectsTransactionSignedByDifferentKey() {
     clean(path);
 }
 
+void testAcceptsRuntimeSubmissionWithSufficientBalance() {
+    const std::filesystem::path path =
+        tempPath();
+
+    clean(path);
+
+    const crypto::KeyStoreLoadResult key =
+        createAndLoadKey(
+            path,
+            "local-validator",
+            "admission-test-seed"
+        );
+
+    const crypto::LocalSignatureProvider provider;
+    const core::Transaction transaction =
+        buildTransaction(
+            key.keyPair(),
+            provider,
+            100
+        );
+
+    const node::TransactionAdmissionResult result =
+        node::TransactionAdmissionValidator::validateRuntimeSubmission(
+            transaction,
+            key.metadata(),
+            localnetWithMinimumFee(100),
+            accountStateFor(
+                key.metadata().address(),
+                1100,
+                0
+            ),
+            mempool::Mempool(),
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            provider
+        );
+
+    requireCondition(
+        result.accepted(),
+        "Runtime admission should accept transaction when balance covers amount plus fee."
+    );
+
+    clean(path);
+}
+
+void testRejectsRuntimeSubmissionWithInsufficientBalance() {
+    const std::filesystem::path path =
+        tempPath();
+
+    clean(path);
+
+    const crypto::KeyStoreLoadResult key =
+        createAndLoadKey(
+            path,
+            "local-validator",
+            "admission-test-seed"
+        );
+
+    const crypto::LocalSignatureProvider provider;
+    const core::Transaction transaction =
+        buildTransaction(
+            key.keyPair(),
+            provider,
+            100
+        );
+
+    const node::TransactionAdmissionResult result =
+        node::TransactionAdmissionValidator::validateRuntimeSubmission(
+            transaction,
+            key.metadata(),
+            localnetWithMinimumFee(100),
+            accountStateFor(
+                key.metadata().address(),
+                1099,
+                0
+            ),
+            mempool::Mempool(),
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            provider
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == node::TransactionAdmissionStatus::INSUFFICIENT_BALANCE,
+        "Runtime admission should reject transaction when balance cannot cover amount plus fee."
+    );
+
+    clean(path);
+}
+
 } // namespace
 
 int main() {
@@ -248,6 +363,8 @@ int main() {
         testAcceptsValidLocalSubmission();
         testRejectsTransactionBelowMinimumFee();
         testRejectsTransactionSignedByDifferentKey();
+        testAcceptsRuntimeSubmissionWithSufficientBalance();
+        testRejectsRuntimeSubmissionWithInsufficientBalance();
 
         std::cout << "Nodo transaction admission validator tests passed.\n";
         return 0;

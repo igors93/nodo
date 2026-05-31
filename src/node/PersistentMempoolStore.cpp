@@ -7,6 +7,7 @@
 #include "crypto/SignatureBundle.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
+#include "utils/Amount.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -143,6 +144,19 @@ std::vector<std::filesystem::path> canonicalMempoolFiles(
     return files;
 }
 
+utils::Amount requiredTransactionBalance(
+    const core::Transaction& transaction
+) {
+    try {
+        return transaction.amount() + transaction.fee();
+    } catch (const std::exception& error) {
+        throw std::invalid_argument(
+            std::string("Persistent transaction amount plus fee is invalid: ")
+            + error.what()
+        );
+    }
+}
+
 void validateTransactionAgainstAccountState(
     const core::Transaction& transaction,
     const core::AccountStateView& accountStateView,
@@ -177,6 +191,10 @@ void validateTransactionAgainstAccountState(
 
     if (transaction.nonce() != expectedNonce) {
         throw std::invalid_argument("Persistent transaction nonce is in the future and no per-account queue is available.");
+    }
+
+    if (sender.balance() < requiredTransactionBalance(transaction)) {
+        throw std::invalid_argument("Persistent transaction sender balance is insufficient for amount plus fee.");
     }
 
     if (!pendingSenders.insert(transaction.fromAddress()).second) {
