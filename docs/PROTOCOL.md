@@ -27,8 +27,15 @@ Current limitations:
   provider is still a temporary deterministic local provider;
 - localnet key files are unencrypted and are not production-safe;
 - P2P networking is intentionally out of scope for this foundation step;
-- balance, nonce and coin-lot transition checks are still being consolidated
-  behind the state-transition validator.
+- balance, nonce and minimum fee checks now run inside the state-transition
+  preview before votes;
+- coin-lot ownership, double-spend and complete supply audit are still being
+  consolidated behind the state-transition validator.
+
+Localnet currently seeds an explicit development account-state preview for
+bootstrap validators so local block production can validate balance and nonce.
+This is not a production monetary policy and must be replaced by persisted
+genesis account/supply configuration before testnet or mainnet.
 
 `block produce` never creates transactions. Transactions enter the protocol via
 `tx submit`, then block production consumes the current mempool contents.

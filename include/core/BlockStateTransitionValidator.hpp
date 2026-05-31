@@ -3,6 +3,7 @@
 
 #include "core/Block.hpp"
 #include "core/Blockchain.hpp"
+#include "core/StateTransitionPreviewContext.hpp"
 
 #include <cstdint>
 #include <string>
@@ -65,6 +66,12 @@ public:
         const Blockchain& blockchain,
         const Block& candidateBlock,
         std::int64_t minimumFeeRawUnits
+    );
+
+    static BlockValidationResult validateCandidateBlock(
+        const Blockchain& blockchain,
+        const Block& candidateBlock,
+        const StateTransitionPreviewContext& context
     );
 };
 

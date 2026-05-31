@@ -122,14 +122,15 @@ NodeRuntime startRuntime() {
 Transaction signedTransfer(
     const std::string& suffix,
     std::uint64_t nonce,
-    std::int64_t timestamp
+    std::int64_t timestamp,
+    std::int64_t amountRawUnits = 1000
 ) {
     (void)suffix;
 
     return nodo::core::TransactionBuilder::buildSignedTransfer(
         nodo::core::TransactionBuildRequest(
             "runtime-pipeline-recipient",
-            Amount::fromRawUnits(1000),
+            Amount::fromRawUnits(amountRawUnits),
             Amount::fromRawUnits(100),
             nonce,
             timestamp
@@ -139,13 +140,16 @@ Transaction signedTransfer(
 }
 
 void admitTransaction(
-    NodeRuntime& runtime
+    NodeRuntime& runtime,
+    std::uint64_t nonce = 1,
+    std::int64_t amountRawUnits = 1000
 ) {
     const Transaction transaction =
         signedTransfer(
             "a",
-            1,
-            kTimestamp + 10
+            nonce,
+            kTimestamp + 10,
+            amountRawUnits
         );
 
     requireCondition(
@@ -156,6 +160,40 @@ void admitTransaction(
             kTimestamp + 11
         ).accepted(),
         "Transaction should be admitted to mempool."
+    );
+}
+
+void testRejectsEconomicallyInvalidTransactionBeforeFinalization() {
+    NodeRuntime runtime =
+        startRuntime();
+
+    admitTransaction(
+        runtime,
+        1,
+        1000000000001
+    );
+
+    const auto result =
+        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            runtime,
+            RuntimeBlockPipelineConfig(
+                100,
+                1,
+                1,
+                kTimestamp + 20
+            ),
+            localValidatorSigner()
+        );
+
+    requireCondition(
+        result.status() == RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+        "Pipeline should reject economically invalid transactions before voting/finalization."
+    );
+
+    requireCondition(
+        runtime.blockchain().size() == 1U &&
+        !runtime.mempool().empty(),
+        "Rejected economic transition should not append a block or remove mempool transactions."
     );
 }
 
@@ -252,6 +290,7 @@ void testRejectsInvalidConfig() {
 int main() {
     try {
         testProducesFinalizesAndCleansMempool();
+        testRejectsEconomicallyInvalidTransactionBeforeFinalization();
         testRejectsEmptyMempool();
         testRejectsInvalidConfig();
 

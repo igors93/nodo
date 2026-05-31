@@ -3,6 +3,7 @@
 #include "core/Transaction.hpp"
 
 #include <exception>
+#include <limits>
 #include <set>
 #include <sstream>
 #include <utility>
@@ -17,12 +18,18 @@ std::string stateTransitionPreviewStatusToString(
             return "VALID";
         case StateTransitionPreviewStatus::INVALID_BLOCK:
             return "INVALID_BLOCK";
+        case StateTransitionPreviewStatus::INVALID_CONTEXT:
+            return "INVALID_CONTEXT";
         case StateTransitionPreviewStatus::INVALID_LEDGER_RECORD:
             return "INVALID_LEDGER_RECORD";
         case StateTransitionPreviewStatus::INVALID_TRANSACTION:
             return "INVALID_TRANSACTION";
         case StateTransitionPreviewStatus::DUPLICATE_TRANSACTION:
             return "DUPLICATE_TRANSACTION";
+        case StateTransitionPreviewStatus::INSUFFICIENT_BALANCE:
+            return "INSUFFICIENT_BALANCE";
+        case StateTransitionPreviewStatus::INVALID_NONCE:
+            return "INVALID_NONCE";
         default:
             return "INVALID_TRANSACTION";
     }
@@ -34,13 +41,15 @@ StateTransitionPreviewResult::StateTransitionPreviewResult()
       m_processedTransactionCount(0),
       m_totalFee(),
       m_touchedAccounts(),
-      m_transactionIds() {}
+      m_transactionIds(),
+      m_resultingAccounts() {}
 
 StateTransitionPreviewResult StateTransitionPreviewResult::valid(
     std::size_t processedTransactionCount,
     utils::Amount totalFee,
     std::vector<std::string> touchedAccounts,
-    std::vector<std::string> transactionIds
+    std::vector<std::string> transactionIds,
+    std::vector<AccountState> resultingAccounts
 ) {
     StateTransitionPreviewResult result;
     result.m_status = StateTransitionPreviewStatus::VALID;
@@ -49,6 +58,7 @@ StateTransitionPreviewResult StateTransitionPreviewResult::valid(
     result.m_totalFee = totalFee;
     result.m_touchedAccounts = std::move(touchedAccounts);
     result.m_transactionIds = std::move(transactionIds);
+    result.m_resultingAccounts = std::move(resultingAccounts);
     return result;
 }
 
@@ -92,6 +102,10 @@ const std::vector<std::string>& StateTransitionPreviewResult::transactionIds() c
     return m_transactionIds;
 }
 
+const std::vector<AccountState>& StateTransitionPreviewResult::resultingAccounts() const {
+    return m_resultingAccounts;
+}
+
 std::string StateTransitionPreviewResult::serialize() const {
     std::ostringstream oss;
 
@@ -102,6 +116,7 @@ std::string StateTransitionPreviewResult::serialize() const {
         << ";totalFeeRaw=" << m_totalFee.rawUnits()
         << ";touchedAccountCount=" << m_touchedAccounts.size()
         << ";transactionCount=" << m_transactionIds.size()
+        << ";resultingAccountCount=" << m_resultingAccounts.size()
         << "}";
 
     return oss.str();
@@ -111,10 +126,22 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
     const Block& block,
     std::int64_t minimumFeeRawUnits
 ) {
-    if (minimumFeeRawUnits < 0) {
+    return previewBlock(
+        block,
+        StateTransitionPreviewContext::structuralOnly(
+            minimumFeeRawUnits
+        )
+    );
+}
+
+StateTransitionPreviewResult StateTransitionPreview::previewBlock(
+    const Block& block,
+    const StateTransitionPreviewContext& context
+) {
+    if (!context.isValid()) {
         return StateTransitionPreviewResult::rejected(
-            StateTransitionPreviewStatus::INVALID_TRANSACTION,
-            "Minimum fee cannot be negative.",
+            StateTransitionPreviewStatus::INVALID_CONTEXT,
+            "State transition preview context is invalid.",
             0
         );
     }
@@ -131,6 +158,8 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
     std::set<std::string> transactionIds;
     std::set<std::string> touchedAccountSet;
     std::vector<std::string> orderedTransactionIds;
+    AccountStateView workingAccountState =
+        context.accountStateView();
     utils::Amount totalFee;
     std::size_t processedTransactionCount = 0;
 
@@ -182,7 +211,7 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                 );
             }
 
-            if (transaction.fee().rawUnits() < minimumFeeRawUnits) {
+            if (transaction.fee().rawUnits() < context.minimumFeeRawUnits()) {
                 return StateTransitionPreviewResult::rejected(
                     StateTransitionPreviewStatus::INVALID_TRANSACTION,
                     "Block contains a transaction below the network minimum fee.",
@@ -196,6 +225,112 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                     "Block contains duplicate transaction ids.",
                     processedTransactionCount
                 );
+            }
+
+            if (context.enforceAccountState()) {
+                if (!workingAccountState.hasAccount(transaction.fromAddress()) &&
+                    !context.allowMissingAccounts()) {
+                    return StateTransitionPreviewResult::rejected(
+                        StateTransitionPreviewStatus::INVALID_TRANSACTION,
+                        "Sender account does not exist in preview state.",
+                        processedTransactionCount
+                    );
+                }
+
+                const AccountState sender =
+                    workingAccountState.accountOrDefault(transaction.fromAddress());
+
+                const AccountState recipient =
+                    workingAccountState.accountOrDefault(transaction.toAddress());
+
+                if (!sender.isValid() ||
+                    !recipient.isValid()) {
+                    return StateTransitionPreviewResult::rejected(
+                        StateTransitionPreviewStatus::INVALID_TRANSACTION,
+                        "Preview account state is invalid.",
+                        processedTransactionCount
+                    );
+                }
+
+                if (sender.nonce() == std::numeric_limits<std::uint64_t>::max()) {
+                    return StateTransitionPreviewResult::rejected(
+                        StateTransitionPreviewStatus::INVALID_NONCE,
+                        "Sender nonce cannot advance without overflow.",
+                        processedTransactionCount
+                    );
+                }
+
+                const std::uint64_t expectedNonce =
+                    sender.nonce() + 1;
+
+                if (transaction.nonce() != expectedNonce) {
+                    return StateTransitionPreviewResult::rejected(
+                        StateTransitionPreviewStatus::INVALID_NONCE,
+                        "Transaction nonce does not match expected sender nonce.",
+                        processedTransactionCount
+                    );
+                }
+
+                const utils::Amount required =
+                    transaction.amount() + transaction.fee();
+
+                if (sender.balance() < required) {
+                    return StateTransitionPreviewResult::rejected(
+                        StateTransitionPreviewStatus::INSUFFICIENT_BALANCE,
+                        "Sender balance is insufficient for amount plus fee.",
+                        processedTransactionCount
+                    );
+                }
+
+                const utils::Amount senderBalance =
+                    sender.balance() - required;
+
+                const utils::Amount recipientBalance =
+                    recipient.balance() + transaction.amount();
+
+                if (!workingAccountState.putAccount(
+                        AccountState(
+                            sender.address(),
+                            senderBalance,
+                            transaction.nonce()
+                        )
+                    ) ||
+                    !workingAccountState.putAccount(
+                        AccountState(
+                            recipient.address(),
+                            recipientBalance,
+                            recipient.nonce()
+                        )
+                    )) {
+                    return StateTransitionPreviewResult::rejected(
+                        StateTransitionPreviewStatus::INVALID_TRANSACTION,
+                        "Preview account state update failed.",
+                        processedTransactionCount
+                    );
+                }
+
+                if (!context.feeRecipientAddress().empty()) {
+                    const AccountState feeRecipient =
+                        workingAccountState.accountOrDefault(
+                            context.feeRecipientAddress()
+                        );
+
+                    if (!workingAccountState.putAccount(
+                            AccountState(
+                                feeRecipient.address(),
+                                feeRecipient.balance() + transaction.fee(),
+                                feeRecipient.nonce()
+                            )
+                        )) {
+                        return StateTransitionPreviewResult::rejected(
+                            StateTransitionPreviewStatus::INVALID_TRANSACTION,
+                            "Preview fee recipient update failed.",
+                            processedTransactionCount
+                        );
+                    }
+
+                    touchedAccountSet.insert(context.feeRecipientAddress());
+                }
             }
 
             totalFee = totalFee + transaction.fee();
@@ -219,7 +354,8 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
             touchedAccountSet.begin(),
             touchedAccountSet.end()
         ),
-        orderedTransactionIds
+        orderedTransactionIds,
+        workingAccountState.accounts()
     );
 }
 

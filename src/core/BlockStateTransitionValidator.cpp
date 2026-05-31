@@ -92,13 +92,20 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
     const Block& candidateBlock,
     std::int64_t minimumFeeRawUnits
 ) {
-    if (minimumFeeRawUnits < 0) {
-        return BlockValidationResult::rejected(
-            BlockValidationStatus::INVALID_TRANSACTION,
-            "Minimum fee cannot be negative."
-        );
-    }
+    return validateCandidateBlock(
+        blockchain,
+        candidateBlock,
+        StateTransitionPreviewContext::structuralOnly(
+            minimumFeeRawUnits
+        )
+    );
+}
 
+BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
+    const Blockchain& blockchain,
+    const Block& candidateBlock,
+    const StateTransitionPreviewContext& context
+) {
     if (blockchain.empty() ||
         !blockchain.isValid()) {
         return BlockValidationResult::rejected(
@@ -133,10 +140,17 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
     const StateTransitionPreviewResult preview =
         StateTransitionPreview::previewBlock(
             candidateBlock,
-            minimumFeeRawUnits
+            context
         );
 
     if (!preview.accepted()) {
+        if (preview.status() == StateTransitionPreviewStatus::INVALID_CONTEXT) {
+            return BlockValidationResult::rejected(
+                BlockValidationStatus::STATE_PREVIEW_FAILED,
+                preview.reason()
+            );
+        }
+
         if (preview.status() == StateTransitionPreviewStatus::DUPLICATE_TRANSACTION) {
             return BlockValidationResult::rejected(
                 BlockValidationStatus::DUPLICATE_LEDGER_SOURCE,
@@ -152,6 +166,14 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
         }
 
         if (preview.status() == StateTransitionPreviewStatus::INVALID_TRANSACTION) {
+            return BlockValidationResult::rejected(
+                BlockValidationStatus::INVALID_TRANSACTION,
+                preview.reason()
+            );
+        }
+
+        if (preview.status() == StateTransitionPreviewStatus::INSUFFICIENT_BALANCE ||
+            preview.status() == StateTransitionPreviewStatus::INVALID_NONCE) {
             return BlockValidationResult::rejected(
                 BlockValidationStatus::INVALID_TRANSACTION,
                 preview.reason()

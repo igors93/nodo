@@ -28,10 +28,12 @@ nodo validator list [--data-dir PATH]
 - `tx submit`: loads a key from `KeyStore`, builds a transaction through
   `TransactionBuilder`, signs it through `Signer`, validates it with
   `TransactionAdmissionValidator` and only then writes it to the persistent
-  mempool.
+  mempool. If `--nonce` is omitted, localnet uses nonce `1`.
 - `block produce`: reloads runtime, produces and finalizes one local block,
   persists it and removes finalized transactions from persistent mempool. It
-  does not create transactions automatically.
+  does not create transactions automatically. Produced blocks must pass
+  account-state preview checks for balance, nonce and fee before votes or
+  finalization.
 - `chain audit`: reloads runtime and runs `ChainAuditor` over manifest,
   finalized block continuity, latest hash, crypto context, mempool and validator
   count consistency.

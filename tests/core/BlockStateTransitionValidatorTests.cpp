@@ -2,6 +2,7 @@
 #include "core/BlockStateTransitionValidator.hpp"
 #include "core/Blockchain.hpp"
 #include "core/LedgerRecord.hpp"
+#include "core/StateTransitionPreviewContext.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
@@ -93,6 +94,31 @@ core::Blockchain chain() {
     return blockchain;
 }
 
+core::StateTransitionPreviewContext economicContext(
+    std::int64_t senderBalanceRawUnits = 1000,
+    std::uint64_t senderNonce = 0,
+    std::int64_t minimumFeeRawUnits = 1
+) {
+    core::AccountStateView view;
+
+    if (!view.putAccount(
+            core::AccountState(
+                "validator-test-sender",
+                utils::Amount::fromRawUnits(senderBalanceRawUnits),
+                senderNonce
+            )
+        )) {
+        throw std::runtime_error("Failed to create validator preview account state.");
+    }
+
+    return core::StateTransitionPreviewContext(
+        minimumFeeRawUnits,
+        view,
+        false,
+        true
+    );
+}
+
 void testAcceptsAppendableCandidate() {
     const core::Blockchain blockchain =
         chain();
@@ -116,6 +142,91 @@ void testAcceptsAppendableCandidate() {
     requireCondition(
         result.accepted(),
         "Appendable candidate block should pass state transition validation."
+    );
+}
+
+void testAcceptsCandidateWithValidEconomicState() {
+    const core::Blockchain blockchain =
+        chain();
+
+    const core::Transaction tx =
+        transaction("2", 5);
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            economicContext(1000, 1, 5)
+        );
+
+    requireCondition(
+        result.accepted(),
+        "Candidate block with valid balance and nonce should pass validation."
+    );
+}
+
+void testRejectsCandidateWithInsufficientBalance() {
+    const core::Blockchain blockchain =
+        chain();
+
+    const core::Transaction tx =
+        transaction("2", 5);
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            economicContext(104, 1, 5)
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_TRANSACTION &&
+        result.reason().find("insufficient") != std::string::npos,
+        "Candidate block with insufficient sender balance should be rejected."
+    );
+}
+
+void testRejectsCandidateWithInvalidNonce() {
+    const core::Blockchain blockchain =
+        chain();
+
+    const core::Transaction tx =
+        transaction("3", 5);
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            economicContext(1000, 1, 5)
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_TRANSACTION &&
+        result.reason().find("nonce") != std::string::npos,
+        "Candidate block with invalid sender nonce should be rejected."
     );
 }
 
@@ -237,6 +348,9 @@ void testAcceptsTransactionAtMinimumFee() {
 int main() {
     try {
         testAcceptsAppendableCandidate();
+        testAcceptsCandidateWithValidEconomicState();
+        testRejectsCandidateWithInsufficientBalance();
+        testRejectsCandidateWithInvalidNonce();
         testRejectsWrongPreviousHash();
         testRejectsDuplicateLedgerSource();
         testRejectsTransactionBelowMinimumFee();

@@ -7,6 +7,7 @@ A validator may vote for a candidate block only when:
 - the vote signature verifies under the configured crypto policy;
 - the block passed state-transition validation;
 - the state-transition preview accepted the block without partial mutation;
+- sender balances and nonces are valid in the preview context;
 - the vote references the expected block height, block hash, previous hash and
   consensus round.
 

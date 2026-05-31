@@ -2,7 +2,12 @@
 
 #include "consensus/ValidatorVoteBuilder.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
+#include "core/AccountState.hpp"
+#include "core/AccountStateView.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
+#include "core/State.hpp"
+#include "core/StateTransitionPreview.hpp"
+#include "core/StateTransitionPreviewContext.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 
 #include <limits>
@@ -13,6 +18,41 @@
 namespace nodo::node {
 
 namespace {
+
+constexpr std::int64_t LOCALNET_BOOTSTRAP_BALANCE_RAW_UNITS =
+    1000000000000;
+
+/*
+ * Localnet has no persisted genesis account allocation yet. This explicit
+ * development allocation lets the preview enforce balance and nonce rules
+ * without pretending it is a production supply model.
+ */
+core::AccountStateView localnetBootstrapAccountStateView(
+    const config::GenesisConfig& genesisConfig
+) {
+    core::AccountStateView view;
+
+    if (genesisConfig.networkParameters().networkName() != "nodo-localnet") {
+        return view;
+    }
+
+    for (const config::BootstrapValidatorConfig& validator :
+         genesisConfig.bootstrapValidators()) {
+        if (!view.putAccount(
+                core::AccountState(
+                    validator.validatorAddress(),
+                    utils::Amount::fromRawUnits(
+                        LOCALNET_BOOTSTRAP_BALANCE_RAW_UNITS
+                    ),
+                    0
+                )
+            )) {
+            throw std::logic_error("Failed to seed localnet bootstrap account state.");
+        }
+    }
+
+    return view;
+}
 
 std::int64_t minimumFeeRawUnitsForRuntime(
     const NodeRuntime& runtime
@@ -25,6 +65,61 @@ std::int64_t minimumFeeRawUnitsForRuntime(
     }
 
     return static_cast<std::int64_t>(minimumFee);
+}
+
+core::StateTransitionPreviewContext previewContextForRuntime(
+    const NodeRuntime& runtime
+) {
+    const std::int64_t minimumFee =
+        minimumFeeRawUnitsForRuntime(runtime);
+
+    core::AccountStateView view =
+        localnetBootstrapAccountStateView(
+            runtime.config().genesisConfig()
+        );
+
+    for (const core::Block& block : runtime.blockchain().blocks()) {
+        if (block.isGenesisBlock()) {
+            continue;
+        }
+
+        const core::StateTransitionPreviewContext replayContext(
+            minimumFee,
+            view,
+            false,
+            true
+        );
+
+        const core::StateTransitionPreviewResult replay =
+            core::StateTransitionPreview::previewBlock(
+                block,
+                replayContext
+            );
+
+        if (!replay.accepted()) {
+            throw std::logic_error(
+                "Cannot build preview account state from finalized chain: "
+                + replay.reason()
+            );
+        }
+
+        core::AccountStateView nextView;
+
+        for (const core::AccountState& account : replay.resultingAccounts()) {
+            if (!nextView.putAccount(account)) {
+                throw std::logic_error("Preview replay produced invalid account state.");
+            }
+        }
+
+        view = nextView;
+    }
+
+    return core::StateTransitionPreviewContext(
+        minimumFee,
+        view,
+        false,
+        true
+    );
 }
 
 } // namespace
@@ -247,12 +342,21 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
-    const core::BlockValidationResult transitionValidation =
-        core::BlockStateTransitionValidator::validateCandidateBlock(
-            runtime.blockchain(),
-            production.block(),
-            minimumFeeRawUnitsForRuntime(runtime)
+    core::BlockValidationResult transitionValidation;
+
+    try {
+        transitionValidation =
+            core::BlockStateTransitionValidator::validateCandidateBlock(
+                runtime.blockchain(),
+                production.block(),
+                previewContextForRuntime(runtime)
+            );
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            error.what()
         );
+    }
 
     if (!transitionValidation.accepted()) {
         return RuntimeBlockPipelineResult::rejected(

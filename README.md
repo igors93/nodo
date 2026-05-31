@@ -54,9 +54,11 @@ Current limitations are explicit:
 - `localnet` uses a temporary deterministic local signature provider;
 - `localnet` keys are stored by `KeyStore` in an unencrypted local format that
   is not production-safe yet;
+- `localnet` uses an explicit development account-state preview allocation for
+  bootstrap validators so balance and nonce checks can run locally;
 - no P2P validator networking is included in this phase;
-- deeper balance, nonce, fee, coin-lot and supply checks must continue moving
-  behind the state-transition validation gate.
+- coin-lot ownership, double-spend and complete supply audit must continue
+  moving behind the state-transition validation gate.
 
 ## Documentation
 

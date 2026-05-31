@@ -405,7 +405,7 @@ std::string CommandLineInterface::helpText() {
         "  --to ADDRESS         Recipient address for tx submit.\n"
         "  --amount RAW_UNITS   Transfer amount for tx submit. Default: 1000\n"
         "  --fee RAW_UNITS      Transfer fee for tx submit. Default: 100\n"
-        "  --nonce VALUE        Transaction nonce for tx submit. Default: timestamp\n"
+        "  --nonce VALUE        Transaction nonce for tx submit. Default: 1\n"
         "  --timestamp SECONDS  Deterministic timestamp override for tests.\n";
 }
 
@@ -826,7 +826,7 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
 
     const std::uint64_t nonce =
         options.nonce == 0
-            ? static_cast<std::uint64_t>(options.timestamp)
+            ? 1
             : options.nonce;
 
     const core::Transaction transaction =
