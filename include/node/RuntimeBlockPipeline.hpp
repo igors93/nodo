@@ -74,7 +74,8 @@ public:
         core::Block block,
         consensus::QuorumCertificate certificate,
         consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds
+        std::vector<std::string> finalizedTransactionIds,
+        std::string postStateRoot
     );
 
     static RuntimeBlockPipelineResult rejected(
@@ -90,6 +91,7 @@ public:
     const consensus::QuorumCertificate& certificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
     const std::vector<std::string>& finalizedTransactionIds() const;
+    const std::string& postStateRoot() const;
 
     std::string serialize() const;
 
@@ -106,6 +108,7 @@ private:
     consensus::QuorumCertificate m_certificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
     std::vector<std::string> m_finalizedTransactionIds;
+    std::string m_postStateRoot;
 };
 
 /*

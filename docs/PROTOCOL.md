@@ -32,10 +32,15 @@ Current limitations:
 - coin-lot ownership, double-spend and complete supply audit are still being
   consolidated behind the state-transition validator.
 
-Localnet currently seeds an explicit development account-state preview for
-bootstrap validators so local block production can validate balance and nonce.
-This is not a production monetary policy and must be replaced by persisted
-genesis account/supply configuration before testnet or mainnet.
+Localnet currently declares an explicit development account allocation in
+`GenesisConfig` for bootstrap validators so local block production can validate
+balance and nonce. This allocation participates in the deterministic genesis id.
+It is not production monetary policy and must be replaced by a reviewed genesis
+supply configuration before testnet or mainnet.
+
+The economic preview calculates a deterministic account state root from
+canonical account state serialization. The root commits to account addresses,
+balances, nonces and the account-state-root format version.
 
 `block produce` never creates transactions. Transactions enter the protocol via
 `tx submit`, then block production consumes the current mempool contents.

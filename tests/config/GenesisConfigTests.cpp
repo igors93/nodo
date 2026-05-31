@@ -1,6 +1,7 @@
 #include "config/NetworkParameters.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/PublicKey.hpp"
+#include "utils/Amount.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -11,12 +12,14 @@
 namespace {
 
 using nodo::config::BootstrapValidatorConfig;
+using nodo::config::GenesisAccountConfig;
 using nodo::config::GenesisBuilder;
 using nodo::config::GenesisBuildStatus;
 using nodo::config::GenesisConfig;
 using nodo::config::NetworkParameters;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::PublicKey;
+using nodo::utils::Amount;
 
 constexpr std::int64_t kTimestamp = 1900000000;
 
@@ -179,6 +182,55 @@ void testGenesisRejectsDuplicateBootstrapValidator() {
     );
 }
 
+void testGenesisAccountAllocationChangesDeterministicId() {
+    const GenesisConfig withoutAccount =
+        validGenesisConfig();
+
+    const GenesisConfig withAccount(
+        NetworkParameters::developmentLocal(),
+        kTimestamp,
+        {
+            validator("a"),
+            validator("b")
+        },
+        {
+            GenesisAccountConfig(
+                "genesis-account-a",
+                Amount::fromRawUnits(1000),
+                0
+            )
+        },
+        "nodo-devnet-genesis"
+    );
+
+    requireCondition(
+        withAccount.isValid() &&
+        withoutAccount.deterministicId() != withAccount.deterministicId(),
+        "Genesis account allocation should participate in deterministic genesis id."
+    );
+}
+
+void testGenesisRejectsDuplicateAccountAllocation() {
+    const GenesisConfig config(
+        NetworkParameters::developmentLocal(),
+        kTimestamp,
+        {
+            validator("a"),
+            validator("b")
+        },
+        {
+            GenesisAccountConfig("same-account", Amount::fromRawUnits(1000), 0),
+            GenesisAccountConfig("same-account", Amount::fromRawUnits(2000), 0)
+        },
+        "nodo-devnet-genesis"
+    );
+
+    requireCondition(
+        !config.isValid(),
+        "Genesis config should reject duplicate account allocations."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -187,6 +239,8 @@ int main() {
         testGenesisConfigBuildsBlockchainAndValidatorRegistry();
         testGenesisRejectsTooFewValidators();
         testGenesisRejectsDuplicateBootstrapValidator();
+        testGenesisAccountAllocationChangesDeterministicId();
+        testGenesisRejectsDuplicateAccountAllocation();
 
         std::cout << "Nodo genesis config tests passed.\n";
         return 0;

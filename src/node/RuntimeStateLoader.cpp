@@ -159,6 +159,7 @@ core::Block FinalizedBlockFileCodec::decodeBlockFileContents(
         "blockIndex",
         "blockHash",
         "previousHash",
+        "postStateRoot",
         "timestamp",
         "recordCount",
         "block",

@@ -4,6 +4,7 @@
 #include "core/TransactionBuilder.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
+#include "crypto/AddressDerivation.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/KeyPair.hpp"
@@ -419,6 +420,15 @@ config::GenesisConfig CommandLineInterface::developmentGenesisConfig() {
                 1,
                 1,
                 "cli-localnet-validator"
+            )
+        },
+        {
+            config::GenesisAccountConfig(
+                crypto::AddressDerivation::deriveFromPublicKey(
+                    developmentValidatorKey(defaultLocalnetKeySeed())
+                ).value(),
+                utils::Amount::fromRawUnits(1000000000000),
+                0
             )
         },
         "nodo-cli-localnet-genesis"

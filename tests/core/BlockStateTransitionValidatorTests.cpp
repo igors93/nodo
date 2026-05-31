@@ -167,7 +167,8 @@ void testAcceptsCandidateWithValidEconomicState() {
         );
 
     requireCondition(
-        result.accepted(),
+        result.accepted() &&
+        !result.stateRoot().empty(),
         "Candidate block with valid balance and nonce should pass validation."
     );
 }

@@ -37,7 +37,8 @@ public:
         utils::Amount totalFee,
         std::vector<std::string> touchedAccounts,
         std::vector<std::string> transactionIds,
-        std::vector<AccountState> resultingAccounts
+        std::vector<AccountState> resultingAccounts,
+        std::string stateRoot
     );
 
     static StateTransitionPreviewResult rejected(
@@ -54,6 +55,7 @@ public:
     const std::vector<std::string>& touchedAccounts() const;
     const std::vector<std::string>& transactionIds() const;
     const std::vector<AccountState>& resultingAccounts() const;
+    const std::string& stateRoot() const;
 
     std::string serialize() const;
 
@@ -65,6 +67,7 @@ private:
     std::vector<std::string> m_touchedAccounts;
     std::vector<std::string> m_transactionIds;
     std::vector<AccountState> m_resultingAccounts;
+    std::string m_stateRoot;
 };
 
 class StateTransitionPreview {

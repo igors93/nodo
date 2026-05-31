@@ -220,6 +220,7 @@ void testValidPreviewAppliesEconomicState() {
         result.accepted() &&
         result.processedTransactionCount() == 1 &&
         result.totalFee().rawUnits() == 10 &&
+        !result.stateRoot().empty() &&
         sender.balance().rawUnits() == 890 &&
         sender.nonce() == 1 &&
         recipient.balance().rawUnits() == 100 &&
@@ -308,6 +309,88 @@ void testAcceptsCorrectNonce() {
     requireCondition(
         result.accepted(),
         "Economic preview should accept the exact next sender nonce."
+    );
+}
+
+void testAcceptsSequentialTransactionsFromSameAccount() {
+    const core::Block block(
+        1,
+        "previous-hash",
+        {
+            record(transaction(1, 10)),
+            record(transaction(2, 10, "preview-sender", "second-recipient"))
+        },
+        kTimestamp + 10
+    );
+
+    const core::StateTransitionPreviewResult result =
+        core::StateTransitionPreview::previewBlock(
+            block,
+            economicContext(1000, 0)
+        );
+
+    const core::AccountState sender =
+        findAccount(
+            result.resultingAccounts(),
+            "preview-sender"
+        );
+
+    requireCondition(
+        result.accepted() &&
+        result.processedTransactionCount() == 2 &&
+        sender.balance().rawUnits() == 780 &&
+        sender.nonce() == 2,
+        "Economic preview should accept sequential nonces from the same sender."
+    );
+}
+
+void testRejectsDuplicateNonceFromSameAccount() {
+    const core::Block block(
+        1,
+        "previous-hash",
+        {
+            record(transaction(1, 10)),
+            record(transaction(1, 10, "preview-sender", "second-recipient"))
+        },
+        kTimestamp + 10
+    );
+
+    const core::StateTransitionPreviewResult result =
+        core::StateTransitionPreview::previewBlock(
+            block,
+            economicContext(1000, 0)
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::StateTransitionPreviewStatus::INVALID_NONCE &&
+        result.processedTransactionCount() == 1,
+        "Economic preview should reject duplicate sender nonce in one block."
+    );
+}
+
+void testRejectsTransactionsThatTogetherExceedBalance() {
+    const core::Block block(
+        1,
+        "previous-hash",
+        {
+            record(transaction(1, 10)),
+            record(transaction(2, 10, "preview-sender", "second-recipient"))
+        },
+        kTimestamp + 10
+    );
+
+    const core::StateTransitionPreviewResult result =
+        core::StateTransitionPreview::previewBlock(
+            block,
+            economicContext(210, 0)
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::StateTransitionPreviewStatus::INSUFFICIENT_BALANCE &&
+        result.processedTransactionCount() == 1,
+        "Economic preview should reject a block when cumulative spends exceed balance."
     );
 }
 
@@ -476,6 +559,9 @@ int main() {
         testRejectsLowerNonce();
         testRejectsHigherNonce();
         testAcceptsCorrectNonce();
+        testAcceptsSequentialTransactionsFromSameAccount();
+        testRejectsDuplicateNonceFromSameAccount();
+        testRejectsTransactionsThatTogetherExceedBalance();
         testRejectsDuplicateTransaction();
         testRejectsTransactionBelowMinimumFee();
         testRejectsSenderEqualsRecipient();

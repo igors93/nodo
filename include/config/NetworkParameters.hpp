@@ -4,6 +4,7 @@
 #include "core/Blockchain.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "crypto/PublicKey.hpp"
+#include "utils/Amount.hpp"
 
 #include <cstdint>
 #include <string>
@@ -115,6 +116,29 @@ private:
     std::string m_metadataHash;
 };
 
+class GenesisAccountConfig {
+public:
+    GenesisAccountConfig();
+
+    GenesisAccountConfig(
+        std::string address,
+        utils::Amount balance,
+        std::uint64_t nonce
+    );
+
+    const std::string& address() const;
+    utils::Amount balance() const;
+    std::uint64_t nonce() const;
+
+    bool isValid() const;
+    std::string serialize() const;
+
+private:
+    std::string m_address;
+    utils::Amount m_balance;
+    std::uint64_t m_nonce;
+};
+
 class GenesisConfig {
 public:
     GenesisConfig();
@@ -126,9 +150,18 @@ public:
         std::string genesisMemo
     );
 
+    GenesisConfig(
+        NetworkParameters networkParameters,
+        std::int64_t genesisTimestamp,
+        std::vector<BootstrapValidatorConfig> bootstrapValidators,
+        std::vector<GenesisAccountConfig> genesisAccounts,
+        std::string genesisMemo
+    );
+
     const NetworkParameters& networkParameters() const;
     std::int64_t genesisTimestamp() const;
     const std::vector<BootstrapValidatorConfig>& bootstrapValidators() const;
+    const std::vector<GenesisAccountConfig>& genesisAccounts() const;
     const std::string& genesisMemo() const;
 
     bool isValid() const;
@@ -140,6 +173,7 @@ private:
     NetworkParameters m_networkParameters;
     std::int64_t m_genesisTimestamp;
     std::vector<BootstrapValidatorConfig> m_bootstrapValidators;
+    std::vector<GenesisAccountConfig> m_genesisAccounts;
     std::string m_genesisMemo;
 };
 

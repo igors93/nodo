@@ -337,10 +337,54 @@ std::string BootstrapValidatorConfig::serialize() const {
     return oss.str();
 }
 
+GenesisAccountConfig::GenesisAccountConfig()
+    : m_address(""),
+      m_balance(),
+      m_nonce(0) {}
+
+GenesisAccountConfig::GenesisAccountConfig(
+    std::string address,
+    utils::Amount balance,
+    std::uint64_t nonce
+)
+    : m_address(std::move(address)),
+      m_balance(balance),
+      m_nonce(nonce) {}
+
+const std::string& GenesisAccountConfig::address() const {
+    return m_address;
+}
+
+utils::Amount GenesisAccountConfig::balance() const {
+    return m_balance;
+}
+
+std::uint64_t GenesisAccountConfig::nonce() const {
+    return m_nonce;
+}
+
+bool GenesisAccountConfig::isValid() const {
+    return isSafeScalar(m_address) &&
+           !m_balance.isNegative();
+}
+
+std::string GenesisAccountConfig::serialize() const {
+    std::ostringstream oss;
+
+    oss << "GenesisAccountConfig{"
+        << "address=" << m_address
+        << ";balanceRaw=" << m_balance.rawUnits()
+        << ";nonce=" << m_nonce
+        << "}";
+
+    return oss.str();
+}
+
 GenesisConfig::GenesisConfig()
     : m_networkParameters(),
       m_genesisTimestamp(0),
       m_bootstrapValidators(),
+      m_genesisAccounts(),
       m_genesisMemo("") {}
 
 GenesisConfig::GenesisConfig(
@@ -349,9 +393,25 @@ GenesisConfig::GenesisConfig(
     std::vector<BootstrapValidatorConfig> bootstrapValidators,
     std::string genesisMemo
 )
+    : GenesisConfig(
+          std::move(networkParameters),
+          genesisTimestamp,
+          std::move(bootstrapValidators),
+          {},
+          std::move(genesisMemo)
+      ) {}
+
+GenesisConfig::GenesisConfig(
+    NetworkParameters networkParameters,
+    std::int64_t genesisTimestamp,
+    std::vector<BootstrapValidatorConfig> bootstrapValidators,
+    std::vector<GenesisAccountConfig> genesisAccounts,
+    std::string genesisMemo
+)
     : m_networkParameters(std::move(networkParameters)),
       m_genesisTimestamp(genesisTimestamp),
       m_bootstrapValidators(std::move(bootstrapValidators)),
+      m_genesisAccounts(std::move(genesisAccounts)),
       m_genesisMemo(std::move(genesisMemo)) {}
 
 const NetworkParameters& GenesisConfig::networkParameters() const {
@@ -364,6 +424,10 @@ std::int64_t GenesisConfig::genesisTimestamp() const {
 
 const std::vector<BootstrapValidatorConfig>& GenesisConfig::bootstrapValidators() const {
     return m_bootstrapValidators;
+}
+
+const std::vector<GenesisAccountConfig>& GenesisConfig::genesisAccounts() const {
+    return m_genesisAccounts;
 }
 
 const std::string& GenesisConfig::genesisMemo() const {
@@ -394,6 +458,18 @@ bool GenesisConfig::isValid() const {
         }
     }
 
+    std::set<std::string> seenGenesisAccounts;
+
+    for (const auto& account : m_genesisAccounts) {
+        if (!account.isValid()) {
+            return false;
+        }
+
+        if (!seenGenesisAccounts.insert(account.address()).second) {
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -420,6 +496,16 @@ std::string GenesisConfig::serialize() const {
         }
 
         oss << m_bootstrapValidators[index].serialize();
+    }
+
+    oss << "];genesisAccounts=[";
+
+    for (std::size_t index = 0; index < m_genesisAccounts.size(); ++index) {
+        if (index != 0) {
+            oss << ",";
+        }
+
+        oss << m_genesisAccounts[index].serialize();
     }
 
     oss << "]}";

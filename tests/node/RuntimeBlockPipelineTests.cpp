@@ -21,6 +21,7 @@
 namespace {
 
 using nodo::config::BootstrapValidatorConfig;
+using nodo::config::GenesisAccountConfig;
 using nodo::config::GenesisConfig;
 using nodo::config::NetworkParameters;
 using nodo::core::Transaction;
@@ -72,11 +73,21 @@ BootstrapValidatorConfig validator(
 }
 
 GenesisConfig genesisConfig() {
+    const BootstrapValidatorConfig bootstrap =
+        validator("runtime-block-pipeline-validator");
+
     return GenesisConfig(
         NetworkParameters::developmentLocal(),
         kTimestamp,
         {
-            validator("runtime-block-pipeline-validator")
+            bootstrap
+        },
+        {
+            GenesisAccountConfig(
+                bootstrap.validatorAddress(),
+                Amount::fromRawUnits(1000000000000),
+                0
+            )
         },
         "runtime-block-pipeline-genesis"
     );

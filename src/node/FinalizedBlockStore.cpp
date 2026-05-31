@@ -262,6 +262,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"blockIndex", std::to_string(pipelineResult.block().index())},
         {"blockHash", pipelineResult.block().hash()},
         {"previousHash", pipelineResult.block().previousHash()},
+        {"postStateRoot", pipelineResult.postStateRoot()},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };

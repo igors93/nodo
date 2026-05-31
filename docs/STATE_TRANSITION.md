@@ -28,14 +28,16 @@ The implementation entry point is `BlockStateTransitionValidator`. It calls
 an auditable summary of processed transactions, total fee, touched accounts and
 transaction ids without mutating runtime state. With `StateTransitionPreviewContext`
 it also simulates sender debit, recipient credit, fee collection and sender
-nonce advancement on a temporary `AccountStateView`.
+nonce advancement on a temporary `AccountStateView`. Successful previews produce
+a deterministic account state root through `StateRootCalculator`; insertion order
+does not affect the root, while balance, nonce or account-set changes do.
 
 `BlockStateTransitionValidator` is the single pre-vote protocol gate and should
 grow to include signature, coin-lot ownership, double-spend and complete supply
 checks as those state models become canonical. The current preview records total
-fees, touched accounts and resulting account states as preparation for full
-supply audit. Coin lot preview and full supply reconciliation are explicit next
-steps.
+fees, touched accounts, resulting account states and state root as preparation
+for full supply audit. Coin lot preview and full supply reconciliation are
+explicit next steps.
 
 The correct failure behavior is rejection with a clear reason. A quorum
 certificate must never be built for a block that failed this gate.

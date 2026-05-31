@@ -1,5 +1,6 @@
 #include "core/StateTransitionPreview.hpp"
 
+#include "core/StateRootCalculator.hpp"
 #include "core/Transaction.hpp"
 
 #include <exception>
@@ -42,14 +43,16 @@ StateTransitionPreviewResult::StateTransitionPreviewResult()
       m_totalFee(),
       m_touchedAccounts(),
       m_transactionIds(),
-      m_resultingAccounts() {}
+      m_resultingAccounts(),
+      m_stateRoot("") {}
 
 StateTransitionPreviewResult StateTransitionPreviewResult::valid(
     std::size_t processedTransactionCount,
     utils::Amount totalFee,
     std::vector<std::string> touchedAccounts,
     std::vector<std::string> transactionIds,
-    std::vector<AccountState> resultingAccounts
+    std::vector<AccountState> resultingAccounts,
+    std::string stateRoot
 ) {
     StateTransitionPreviewResult result;
     result.m_status = StateTransitionPreviewStatus::VALID;
@@ -59,6 +62,7 @@ StateTransitionPreviewResult StateTransitionPreviewResult::valid(
     result.m_touchedAccounts = std::move(touchedAccounts);
     result.m_transactionIds = std::move(transactionIds);
     result.m_resultingAccounts = std::move(resultingAccounts);
+    result.m_stateRoot = std::move(stateRoot);
     return result;
 }
 
@@ -106,6 +110,10 @@ const std::vector<AccountState>& StateTransitionPreviewResult::resultingAccounts
     return m_resultingAccounts;
 }
 
+const std::string& StateTransitionPreviewResult::stateRoot() const {
+    return m_stateRoot;
+}
+
 std::string StateTransitionPreviewResult::serialize() const {
     std::ostringstream oss;
 
@@ -117,6 +125,7 @@ std::string StateTransitionPreviewResult::serialize() const {
         << ";touchedAccountCount=" << m_touchedAccounts.size()
         << ";transactionCount=" << m_transactionIds.size()
         << ";resultingAccountCount=" << m_resultingAccounts.size()
+        << ";stateRoot=" << m_stateRoot
         << "}";
 
     return oss.str();
@@ -355,7 +364,10 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
             touchedAccountSet.end()
         ),
         orderedTransactionIds,
-        workingAccountState.accounts()
+        workingAccountState.accounts(),
+        StateRootCalculator::calculateAccountStateRoot(
+            workingAccountState
+        )
     );
 }
 

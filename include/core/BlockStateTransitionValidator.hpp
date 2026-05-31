@@ -30,6 +30,9 @@ public:
     BlockValidationResult();
 
     static BlockValidationResult valid();
+    static BlockValidationResult valid(
+        std::string stateRoot
+    );
 
     static BlockValidationResult rejected(
         BlockValidationStatus status,
@@ -38,6 +41,7 @@ public:
 
     BlockValidationStatus status() const;
     const std::string& reason() const;
+    const std::string& stateRoot() const;
     bool accepted() const;
 
     std::string serialize() const;
@@ -45,6 +49,7 @@ public:
 private:
     BlockValidationStatus m_status;
     std::string m_reason;
+    std::string m_stateRoot;
 };
 
 /*

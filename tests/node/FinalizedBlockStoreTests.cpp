@@ -16,6 +16,7 @@
 #include "utils/Amount.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -23,6 +24,7 @@
 namespace {
 
 using nodo::config::BootstrapValidatorConfig;
+using nodo::config::GenesisAccountConfig;
 using nodo::config::GenesisConfig;
 using nodo::config::NetworkParameters;
 using nodo::core::Transaction;
@@ -93,11 +95,21 @@ BootstrapValidatorConfig validator(
 }
 
 GenesisConfig genesisConfig() {
+    const BootstrapValidatorConfig bootstrap =
+        validator("finalized-block-store-validator");
+
     return GenesisConfig(
         NetworkParameters::developmentLocal(),
         kTimestamp,
         {
-            validator("finalized-block-store-validator")
+            bootstrap
+        },
+        {
+            GenesisAccountConfig(
+                bootstrap.validatorAddress(),
+                Amount::fromRawUnits(1000000000000),
+                0
+            )
         },
         "finalized-block-store-genesis"
     );
@@ -228,6 +240,17 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
     requireCondition(
         persisted.manifest().latestBlockHeight() == 1U,
         "Manifest should update latest height."
+    );
+
+    std::ifstream blockFile(persisted.blockPath());
+    const std::string blockContents(
+        (std::istreambuf_iterator<char>(blockFile)),
+        std::istreambuf_iterator<char>()
+    );
+
+    requireCondition(
+        blockContents.find("postStateRoot=" + pipeline.postStateRoot()) != std::string::npos,
+        "Finalized block file should persist post-state root."
     );
 
     const auto loaded =

@@ -34,12 +34,20 @@ std::string blockValidationStatusToString(
 
 BlockValidationResult::BlockValidationResult()
     : m_status(BlockValidationStatus::INVALID_BLOCK),
-      m_reason("Uninitialized block validation result.") {}
+      m_reason("Uninitialized block validation result."),
+      m_stateRoot("") {}
 
 BlockValidationResult BlockValidationResult::valid() {
+    return valid("");
+}
+
+BlockValidationResult BlockValidationResult::valid(
+    std::string stateRoot
+) {
     BlockValidationResult result;
     result.m_status = BlockValidationStatus::VALID;
     result.m_reason = "";
+    result.m_stateRoot = std::move(stateRoot);
     return result;
 }
 
@@ -61,6 +69,10 @@ const std::string& BlockValidationResult::reason() const {
     return m_reason;
 }
 
+const std::string& BlockValidationResult::stateRoot() const {
+    return m_stateRoot;
+}
+
 bool BlockValidationResult::accepted() const {
     return m_status == BlockValidationStatus::VALID;
 }
@@ -71,6 +83,7 @@ std::string BlockValidationResult::serialize() const {
     oss << "BlockValidationResult{"
         << "status=" << blockValidationStatusToString(m_status)
         << ";reason=" << m_reason
+        << ";stateRoot=" << m_stateRoot
         << "}";
 
     return oss.str();
@@ -186,7 +199,9 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
         );
     }
 
-    return BlockValidationResult::valid();
+    return BlockValidationResult::valid(
+        preview.stateRoot()
+    );
 }
 
 } // namespace nodo::core

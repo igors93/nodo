@@ -19,35 +19,21 @@ namespace nodo::node {
 
 namespace {
 
-constexpr std::int64_t LOCALNET_BOOTSTRAP_BALANCE_RAW_UNITS =
-    1000000000000;
-
-/*
- * Localnet has no persisted genesis account allocation yet. This explicit
- * development allocation lets the preview enforce balance and nonce rules
- * without pretending it is a production supply model.
- */
-core::AccountStateView localnetBootstrapAccountStateView(
+core::AccountStateView genesisAccountStateView(
     const config::GenesisConfig& genesisConfig
 ) {
     core::AccountStateView view;
 
-    if (genesisConfig.networkParameters().networkName() != "nodo-localnet") {
-        return view;
-    }
-
-    for (const config::BootstrapValidatorConfig& validator :
-         genesisConfig.bootstrapValidators()) {
+    for (const config::GenesisAccountConfig& account :
+         genesisConfig.genesisAccounts()) {
         if (!view.putAccount(
                 core::AccountState(
-                    validator.validatorAddress(),
-                    utils::Amount::fromRawUnits(
-                        LOCALNET_BOOTSTRAP_BALANCE_RAW_UNITS
-                    ),
-                    0
+                    account.address(),
+                    account.balance(),
+                    account.nonce()
                 )
             )) {
-            throw std::logic_error("Failed to seed localnet bootstrap account state.");
+            throw std::logic_error("Failed to seed genesis account state.");
         }
     }
 
@@ -74,7 +60,7 @@ core::StateTransitionPreviewContext previewContextForRuntime(
         minimumFeeRawUnitsForRuntime(runtime);
 
     core::AccountStateView view =
-        localnetBootstrapAccountStateView(
+        genesisAccountStateView(
             runtime.config().genesisConfig()
         );
 
@@ -211,13 +197,15 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_block(std::nullopt),
       m_certificate(),
       m_finalizedRecord(),
-      m_finalizedTransactionIds() {}
+      m_finalizedTransactionIds(),
+      m_postStateRoot("") {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
     consensus::QuorumCertificate certificate,
     consensus::FinalizedBlockRecord finalizedRecord,
-    std::vector<std::string> finalizedTransactionIds
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot
 ) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
@@ -226,6 +214,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_certificate = std::move(certificate);
     result.m_finalizedRecord = std::move(finalizedRecord);
     result.m_finalizedTransactionIds = std::move(finalizedTransactionIds);
+    result.m_postStateRoot = std::move(postStateRoot);
     return result;
 }
 
@@ -252,7 +241,8 @@ bool RuntimeBlockPipelineResult::finalized() const {
            m_block.has_value() &&
            m_block->isValid() &&
            m_certificate.isStructurallyValid() &&
-           m_finalizedRecord.isStructurallyValid();
+           m_finalizedRecord.isStructurallyValid() &&
+           !m_postStateRoot.empty();
 }
 
 const core::Block& RuntimeBlockPipelineResult::block() const {
@@ -275,6 +265,10 @@ const std::vector<std::string>& RuntimeBlockPipelineResult::finalizedTransaction
     return m_finalizedTransactionIds;
 }
 
+const std::string& RuntimeBlockPipelineResult::postStateRoot() const {
+    return m_postStateRoot;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -283,6 +277,7 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";reason=" << m_reason
         << ";blockHash=" << (m_block.has_value() && m_block->isValid() ? m_block->hash() : "NONE")
         << ";finalizedTransactionCount=" << m_finalizedTransactionIds.size()
+        << ";postStateRoot=" << m_postStateRoot
         << "}";
 
     return oss.str();
@@ -442,7 +437,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         production.block(),
         certificate.certificate(),
         finalization.record(),
-        finalizedTransactionIds
+        finalizedTransactionIds,
+        transitionValidation.stateRoot()
     );
 }
 

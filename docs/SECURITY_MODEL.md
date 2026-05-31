@@ -30,8 +30,10 @@ consistency. It reports failures instead of silently repairing suspicious state.
 Before a block can receive votes, `StateTransitionPreview` applies transactions
 against a temporary account-state view. A failing balance, nonce, fee or payload
 check rejects the block and leaves the original runtime state unchanged. Localnet
-uses an explicit bootstrap-validator preview allocation only for development;
-it is documented as a limitation, not a production supply model.
+uses explicit bootstrap-validator account allocations in `GenesisConfig` only for
+development; they are documented as a limitation, not a production supply model.
+Successful previews produce a deterministic state root so later persistence,
+reload and audit checks can commit to the resulting account state.
 
 Local key files are written atomically and parsed strictly. The current
 localnet key format stores private material for the temporary provider and must
