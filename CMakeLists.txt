@@ -15,25 +15,71 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
 endif()
 
-find_package(OpenSSL REQUIRED COMPONENTS Crypto)
-
 find_package(PkgConfig QUIET)
+
+find_package(OpenSSL QUIET COMPONENTS Crypto)
+if(OpenSSL_FOUND AND TARGET OpenSSL::Crypto)
+    set(NODO_CRYPTO_TARGET OpenSSL::Crypto)
+elseif(PkgConfig_FOUND)
+    pkg_check_modules(NODO_LIBCRYPTO REQUIRED IMPORTED_TARGET libcrypto)
+    set(NODO_CRYPTO_TARGET PkgConfig::NODO_LIBCRYPTO)
+else()
+    message(FATAL_ERROR
+        "Nodo requires OpenSSL libcrypto for SHA-256 and Ed25519. "
+        "Install OpenSSL development files or provide libcrypto through pkg-config."
+    )
+endif()
+
 if(PkgConfig_FOUND)
     pkg_check_modules(BLST_PKG QUIET blst)
 endif()
 
+set(BLST_ROOT "" CACHE PATH "Root directory for an external blst installation")
+set(NODO_BLST_HINTS)
+
+if(BLST_ROOT)
+    list(APPEND NODO_BLST_HINTS "${BLST_ROOT}")
+endif()
+
+if(DEFINED ENV{BLST_ROOT})
+    list(APPEND NODO_BLST_HINTS "$ENV{BLST_ROOT}")
+endif()
+
+if(DEFINED ENV{HOME})
+    list(APPEND NODO_BLST_HINTS "$ENV{HOME}/.local")
+endif()
+
+if(BLST_INCLUDE_DIR AND NOT EXISTS "${BLST_INCLUDE_DIR}/blst.h")
+    unset(BLST_INCLUDE_DIR CACHE)
+endif()
+
+if(BLST_LIBRARY AND NOT EXISTS "${BLST_LIBRARY}")
+    unset(BLST_LIBRARY CACHE)
+endif()
+
 find_path(BLST_INCLUDE_DIR
     NAMES blst.h
-    HINTS ${BLST_PKG_INCLUDE_DIRS}
-    PATH_SUFFIXES blst
+    HINTS
+        ${BLST_PKG_INCLUDE_DIRS}
+        ${NODO_BLST_HINTS}
+    PATH_SUFFIXES
+        include
+        include/blst
+        bindings
 )
 
 find_library(BLST_LIBRARY
     NAMES blst libblst
-    HINTS ${BLST_PKG_LIBRARY_DIRS}
+    HINTS
+        ${BLST_PKG_LIBRARY_DIRS}
+        ${NODO_BLST_HINTS}
+    PATH_SUFFIXES
+        lib
+        lib64
 )
 
-if(NOT BLST_INCLUDE_DIR OR NOT BLST_LIBRARY)
+if(NOT BLST_INCLUDE_DIR OR NOT EXISTS "${BLST_INCLUDE_DIR}/blst.h"
+        OR NOT BLST_LIBRARY OR NOT EXISTS "${BLST_LIBRARY}")
     message(FATAL_ERROR
         "Nodo requires external blst for BLS12-381. "
         "Install blst development headers/library so CMake can find blst.h and libblst. "
@@ -65,7 +111,7 @@ target_compile_options(nodo_core
 
 target_link_libraries(nodo_core
     PUBLIC
-        OpenSSL::Crypto
+        ${NODO_CRYPTO_TARGET}
         blst::blst
 )
 

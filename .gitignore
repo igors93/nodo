@@ -7,6 +7,9 @@ build/
 *.ilk
 .vscode/
 .DS_Store
+__pycache__/
+*.pyc
+diagnostics/reports/
 
 data/*
 !data/.gitkeep

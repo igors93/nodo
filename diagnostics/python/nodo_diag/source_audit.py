@@ -7,8 +7,8 @@ import re
 
 @dataclass
 class SourceAudit:
-    finalized_block_store_version: str | None
-    runtime_state_loader_version: str | None
+    finalized_block_store_schema_id: str | None
+    runtime_state_loader_schema_id: str | None
     persisted_fields_count: int
     allowed_fields_count: int
     canonical_fields_count: int
@@ -30,9 +30,13 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
-def extract_version(text: str) -> str | None:
+def extract_schema_id(text: str) -> str | None:
     match = re.search(r'NODO_FINALIZED_BLOCK_V\d+', text)
     return match.group(0) if match else None
+
+
+def dynamic_prefix_key(prefix: str) -> str:
+    return prefix + "*" if prefix.endswith(".") else prefix
 
 
 def extract_persisted_fields(finalized_store_text: str) -> set[str]:
@@ -42,7 +46,7 @@ def extract_persisted_fields(finalized_store_text: str) -> set[str]:
         fields.add(match.group(1))
 
     for match in re.finditer(r'fields\.emplace_back\(\s*"([^"]+)"', finalized_store_text):
-        fields.add(match.group(1))
+        fields.add(dynamic_prefix_key(match.group(1)))
 
     for match in re.finditer(r'fields\.emplace_back\(\s*prefix\s*\+\s*"([^"]+)"', finalized_store_text):
         fields.add("*." + match.group(1))
@@ -68,6 +72,9 @@ def extract_allowed_fields(runtime_loader_text: str) -> set[str]:
     for match in re.finditer(r'allowedFields\.insert\(\s*prefix\s*\+\s*"([^"]+)"', runtime_loader_text):
         fields.add("*." + match.group(1))
 
+    for match in re.finditer(r'allowedFields\.insert\(\s*"([^"]+\.)"\s*\+', runtime_loader_text):
+        fields.add(match.group(1) + "*")
+
     return fields
 
 
@@ -79,6 +86,9 @@ def extract_canonical_fields(runtime_loader_text: str) -> set[str]:
 
     for match in re.finditer(r'canonicalFields\.emplace_back\(\s*prefix\s*\+\s*"([^"]+)"', runtime_loader_text):
         fields.add("*." + match.group(1))
+
+    for match in re.finditer(r'const std::string key\s*=\s*"([^"]+\.)"\s*\+', runtime_loader_text):
+        fields.add(match.group(1) + "*")
 
     for match in re.finditer(r'\{\s*"([^"]+)"\s*,', runtime_loader_text):
         fields.add(match.group(1))
@@ -115,8 +125,8 @@ def audit_sources(repo_root: Path) -> SourceAudit:
     all_source = finalized_store + "\n" + runtime_loader
 
     return SourceAudit(
-        finalized_block_store_version=extract_version(finalized_store),
-        runtime_state_loader_version=extract_version(runtime_loader),
+        finalized_block_store_schema_id=extract_schema_id(finalized_store),
+        runtime_state_loader_schema_id=extract_schema_id(runtime_loader),
         persisted_fields_count=len(persisted),
         allowed_fields_count=len(allowed),
         canonical_fields_count=len(canonical),

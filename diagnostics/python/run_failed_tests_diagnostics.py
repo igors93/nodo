@@ -8,9 +8,9 @@ import sys
 
 from nodo_diag.artifact_audit import audit_artifacts
 from nodo_diag.ctest_runner import (
-    FAILED_TESTS,
     classify_output,
     extract_failure_windows,
+    focused_ctests,
     find_ctest_build_dir,
     find_repo_root,
     read_last_test_logs,
@@ -22,16 +22,16 @@ from nodo_diag.source_audit import audit_sources
 def make_markdown_report(report: dict) -> str:
     lines: list[str] = []
 
-    lines.append("# Nodo failing test diagnostics")
+    lines.append("# Nodo test diagnostics")
     lines.append("")
     lines.append(f"Generated at: `{report['generated_at']}`")
     lines.append(f"Repository root: `{report['repo_root']}`")
     lines.append(f"Build directory: `{report['build_dir']}`")
     lines.append("")
 
-    lines.append("## Failed test focus")
+    lines.append("## Focused test set")
     lines.append("")
-    for test in FAILED_TESTS:
+    for test in report["focused_tests"]:
         lines.append(f"- `{test}`")
     lines.append("")
 
@@ -39,8 +39,8 @@ def make_markdown_report(report: dict) -> str:
 
     lines.append("## Source audit")
     lines.append("")
-    lines.append(f"- FinalizedBlockStore version: `{source['finalized_block_store_version']}`")
-    lines.append(f"- RuntimeStateLoader version: `{source['runtime_state_loader_version']}`")
+    lines.append(f"- FinalizedBlockStore schema id: `{source['finalized_block_store_schema_id']}`")
+    lines.append(f"- RuntimeStateLoader schema id: `{source['runtime_state_loader_schema_id']}`")
     lines.append(f"- Persisted fields: `{source['persisted_fields_count']}`")
     lines.append(f"- Loader allowed fields: `{source['allowed_fields_count']}`")
     lines.append(f"- Loader canonical fields: `{source['canonical_fields_count']}`")
@@ -120,14 +120,15 @@ def main() -> int:
 
     source_audit = audit_sources(repo_root)
     artifact_findings = audit_artifacts(repo_root)
+    focused_tests = focused_ctests(build_dir)
 
     ctest_results = []
 
-    for result in run_failed_ctests(build_dir):
+    for result in run_failed_ctests(build_dir, focused_tests):
         combined = result.stdout + "\n" + result.stderr
         data = result.to_dict()
-        data["classifications"] = classify_output(combined)
-        data["failure_windows"] = extract_failure_windows(combined)
+        data["classifications"] = classify_output(combined) if result.returncode != 0 else []
+        data["failure_windows"] = extract_failure_windows(combined) if result.returncode != 0 else []
         ctest_results.append(data)
 
     logs = read_last_test_logs(build_dir)
@@ -136,6 +137,7 @@ def main() -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repo_root": str(repo_root),
         "build_dir": str(build_dir),
+        "focused_tests": focused_tests,
         "source_audit": source_audit.to_dict(),
         "artifact_findings": [finding.to_dict() for finding in artifact_findings],
         "ctest_results": ctest_results,

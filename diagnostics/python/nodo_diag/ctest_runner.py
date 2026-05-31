@@ -10,7 +10,7 @@ import time
 from typing import Iterable
 
 
-FAILED_TESTS = [
+DEFAULT_FOCUSED_TESTS = [
     "app_CommandLineLocalFlowTests",
     "app_CommandLinePersistentMempoolTests",
     "app_CommandLineRuntimeBlockTests",
@@ -81,6 +81,41 @@ def find_ctest_build_dir(repo_root: Path) -> Path:
     )
 
 
+def read_failed_tests_from_ctest_log(build_dir: Path) -> list[str]:
+    path = build_dir / "Testing" / "Temporary" / "LastTestsFailed.log"
+
+    if not path.is_file():
+        return []
+
+    last_test_log = build_dir / "Testing" / "Temporary" / "LastTest.log"
+    if last_test_log.is_file() and last_test_log.stat().st_mtime > path.stat().st_mtime:
+        last_test_text = last_test_log.read_text(encoding="utf-8", errors="replace")
+        if "***Failed" not in last_test_text:
+            return []
+
+    tests: list[str] = []
+
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if ":" in stripped:
+            _, test_name = stripped.split(":", 1)
+            test_name = test_name.strip()
+        else:
+            test_name = stripped
+
+        if test_name and test_name not in tests:
+            tests.append(test_name)
+
+    return tests
+
+
+def focused_ctests(build_dir: Path) -> list[str]:
+    return read_failed_tests_from_ctest_log(build_dir) or list(DEFAULT_FOCUSED_TESTS)
+
+
 def run_command(
     command: list[str],
     cwd: Path,
@@ -129,14 +164,15 @@ def run_command(
         )
 
 
-def run_failed_ctests(build_dir: Path, tests: Iterable[str] = FAILED_TESTS) -> list[CommandResult]:
+def run_failed_ctests(build_dir: Path, tests: Iterable[str] | None = None) -> list[CommandResult]:
     ctest = shutil.which("ctest")
     if not ctest:
         raise RuntimeError("ctest was not found in PATH.")
 
     results: list[CommandResult] = []
+    selected_tests = list(tests) if tests is not None else focused_ctests(build_dir)
 
-    for test_name in tests:
+    for test_name in selected_tests:
         results.append(
             run_command(
                 [
@@ -180,7 +216,7 @@ def classify_output(text: str) -> list[str]:
         "governance_mismatch": r"governance|Governance",
         "monetary_firewall_mismatch": r"monetary firewall|MonetaryFirewall|supply ledger",
         "slashing_mismatch": r"slashing|CryptographicSlashing|sourcePenaltyDigest",
-        "version_mismatch": r"NODO_FINALIZED_BLOCK_V\\d+|Unsupported finalized block",
+        "schema_id_mismatch": r"NODO_FINALIZED_BLOCK_V\\d+|Unsupported finalized block",
         "cli_flow_failure": r"CommandLine|command line|CLI",
     }
 

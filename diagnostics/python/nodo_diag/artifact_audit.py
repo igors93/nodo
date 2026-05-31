@@ -35,13 +35,13 @@ def parse_key_value_file(path: Path) -> dict[str, str]:
 
 def find_candidate_artifacts(repo_root: Path) -> list[Path]:
     candidates: list[Path] = []
+    artifact_suffixes = {".nodo", ".kv", ".block"}
 
     for path in repo_root.rglob("*"):
         if not path.is_file():
             continue
 
-        name = path.name.lower()
-        if "block" not in name and path.suffix not in {".kv", ".txt", ".block"}:
+        if path.suffix not in artifact_suffixes:
             continue
 
         try:

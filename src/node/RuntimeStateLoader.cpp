@@ -22,7 +22,7 @@ namespace nodo::node {
 
 namespace {
 
-constexpr const char* FINALIZED_BLOCK_VERSION =
+constexpr const char* FINALIZED_BLOCK_SCHEMA_ID =
     "NODO_FINALIZED_BLOCK_V19";
 
 std::string readTextFile(
@@ -1937,7 +1937,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const serialization::KeyValueFileDocument document =
         serialization::KeyValueFileCodec::parse(
             contents,
-            FINALIZED_BLOCK_VERSION
+            FINALIZED_BLOCK_SCHEMA_ID
         );
 
     const std::size_t recordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("recordCount"), "recordCount"));
@@ -2340,14 +2340,12 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V17 stores explicit block fields, fee accounting, locked stake,
-     * security score records, checkpoints, risk assessments, containment decisions,
-     * network policies, the monetary firewall audit, the initial protection
-     * treasury reward plan, real protection reward settlements, controlled
-     * issuance authorization records, fee burn economics, risk-based slashing
-     * preparation records and cryptographic slashing penalty accounting. The
-     * canonical block serialization remains the integrity anchor for the block
-     * payload itself.
+     * The finalized block artifact stores explicit block fields, fee accounting,
+     * locked stake, security score records, checkpoints, risk assessments,
+     * containment decisions, network policies, monetary firewall audit,
+     * protection rewards, controlled issuance, governance, slashing evidence and
+     * validator lifecycle accounting. The canonical block serialization remains
+     * the integrity anchor for the block payload itself.
      */
     const std::string serializedBlock = document.requireField("block");
     core::Block block = serialization::BlockCodec::deserialize(serializedBlock);
@@ -3140,7 +3138,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
 
     const std::string canonicalContents =
-        serialization::KeyValueFileCodec::serialize(FINALIZED_BLOCK_VERSION, canonicalFields);
+        serialization::KeyValueFileCodec::serialize(FINALIZED_BLOCK_SCHEMA_ID, canonicalFields);
 
     if (contents != canonicalContents) {
         throw std::invalid_argument("Finalized block file is not canonical.");
@@ -3661,7 +3659,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             crypto::SecurityContext::USER_TRANSACTION,
             RuntimeAccountStateBuilder::accountStateViewAtTip(genesisConfig, runtime.blockchain(), minimumFeeRawUnits(genesisConfig)),
             minimumFeeRawUnits(genesisConfig),
-            cryptoContext.signatureProvider()
+            cryptoContext.userSignatureProvider()
         );
 
     if (!mempoolLoad.loaded()) {

@@ -537,10 +537,13 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
 
     requireCondition(
         blockContents.find("validatorLifecycleRecordCount=1") != std::string::npos &&
-        blockContents.find("validatorLifecycle.0.lifecycleStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("validatorLifecycle.0.lifecycleStatus=JAILED") != std::string::npos &&
         blockContents.find("epochAccountingStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("epochAccounting.activeValidatorCount=0") != std::string::npos &&
         blockContents.find("epochAccounting.epochIndex=1") != std::string::npos &&
         blockContents.find("validatorLifecycleSummaryStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("validatorLifecycleSummary.activeValidatorCount=0") != std::string::npos &&
+        blockContents.find("validatorLifecycleSummary.jailedValidatorCount=1") != std::string::npos &&
         blockContents.find("validatorLifecycleSummary.reason=VALIDATOR_LIFECYCLE_SUMMARY") != std::string::npos,
         "Finalized block file should persist validator lifecycle and epoch accounting."
     );

@@ -7,18 +7,18 @@ from nodo_diag.ctest_runner import find_repo_root
 
 
 class SourcePersistenceAuditTests(unittest.TestCase):
-    def test_finalized_store_and_loader_versions_match(self) -> None:
+    def test_finalized_store_and_loader_schema_ids_match(self) -> None:
         repo_root = find_repo_root()
         audit = audit_sources(repo_root)
 
-        self.assertIsNotNone(audit.finalized_block_store_version)
-        self.assertIsNotNone(audit.runtime_state_loader_version)
+        self.assertIsNotNone(audit.finalized_block_store_schema_id)
+        self.assertIsNotNone(audit.runtime_state_loader_schema_id)
         self.assertEqual(
-            audit.finalized_block_store_version,
-            audit.runtime_state_loader_version,
+            audit.finalized_block_store_schema_id,
+            audit.runtime_state_loader_schema_id,
             msg=(
                 "FinalizedBlockStore and RuntimeStateLoader must agree on the "
-                "finalized block version."
+                "finalized block schema id."
             ),
         )
 

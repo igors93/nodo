@@ -22,7 +22,7 @@ namespace nodo::node {
 
 namespace {
 
-constexpr const char* MEMPOOL_TRANSACTION_VERSION =
+constexpr const char* MEMPOOL_TRANSACTION_SCHEMA_ID =
     "NODO_MEMPOOL_TRANSACTION_V2";
 
 serialization::KeyValueFileDocument parseTransactionDocument(
@@ -31,7 +31,7 @@ serialization::KeyValueFileDocument parseTransactionDocument(
     serialization::KeyValueFileDocument document =
         serialization::KeyValueFileCodec::parse(
             contents,
-            MEMPOOL_TRANSACTION_VERSION
+            MEMPOOL_TRANSACTION_SCHEMA_ID
         );
 
     document.requireOnlyFields(
@@ -729,7 +729,7 @@ std::string PersistentMempoolStore::transactionFileContents(
         transaction.signatureBundle().signatures().front();
 
     return serialization::KeyValueFileCodec::serialize(
-        MEMPOOL_TRANSACTION_VERSION,
+        MEMPOOL_TRANSACTION_SCHEMA_ID,
         {
             {"transactionId", transaction.id()},
             {"acceptedAt", std::to_string(acceptedAt)},

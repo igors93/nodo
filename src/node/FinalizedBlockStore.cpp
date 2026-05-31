@@ -11,7 +11,7 @@ namespace nodo::node {
 
 namespace {
 
-constexpr const char* FINALIZED_BLOCK_VERSION =
+constexpr const char* FINALIZED_BLOCK_SCHEMA_ID =
     "NODO_FINALIZED_BLOCK_V19";
 
 } // namespace
@@ -876,7 +876,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
     );
 
     return serialization::KeyValueFileCodec::serialize(
-        FINALIZED_BLOCK_VERSION,
+        FINALIZED_BLOCK_SCHEMA_ID,
         fields
     );
 }
