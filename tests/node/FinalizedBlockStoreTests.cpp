@@ -219,6 +219,11 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should finalize block."
     );
 
+    requireCondition(
+        pipeline.totalFee().rawUnits() == 100,
+        "Pipeline should report total transaction fees for the finalized block."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -256,6 +261,11 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
     requireCondition(
         blockContents.find("postStateRoot=" + pipeline.postStateRoot()) != std::string::npos,
         "Finalized block file should persist post-state root."
+    );
+
+    requireCondition(
+        blockContents.find("totalFeeRawUnits=100") != std::string::npos,
+        "Finalized block file should persist total block fees."
     );
 
     const auto loaded =

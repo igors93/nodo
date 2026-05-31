@@ -35,19 +35,34 @@ std::string blockValidationStatusToString(
 BlockValidationResult::BlockValidationResult()
     : m_status(BlockValidationStatus::INVALID_BLOCK),
       m_reason("Uninitialized block validation result."),
-      m_stateRoot("") {}
+      m_stateRoot(""),
+      m_totalFee() {}
 
 BlockValidationResult BlockValidationResult::valid() {
-    return valid("");
+    return valid(
+        "",
+        utils::Amount()
+    );
 }
 
 BlockValidationResult BlockValidationResult::valid(
     std::string stateRoot
 ) {
+    return valid(
+        std::move(stateRoot),
+        utils::Amount()
+    );
+}
+
+BlockValidationResult BlockValidationResult::valid(
+    std::string stateRoot,
+    utils::Amount totalFee
+) {
     BlockValidationResult result;
     result.m_status = BlockValidationStatus::VALID;
     result.m_reason = "";
     result.m_stateRoot = std::move(stateRoot);
+    result.m_totalFee = totalFee;
     return result;
 }
 
@@ -73,6 +88,10 @@ const std::string& BlockValidationResult::stateRoot() const {
     return m_stateRoot;
 }
 
+utils::Amount BlockValidationResult::totalFee() const {
+    return m_totalFee;
+}
+
 bool BlockValidationResult::accepted() const {
     return m_status == BlockValidationStatus::VALID;
 }
@@ -84,6 +103,7 @@ std::string BlockValidationResult::serialize() const {
         << "status=" << blockValidationStatusToString(m_status)
         << ";reason=" << m_reason
         << ";stateRoot=" << m_stateRoot
+        << ";totalFeeRawUnits=" << m_totalFee.rawUnits()
         << "}";
 
     return oss.str();
@@ -200,7 +220,8 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
     }
 
     return BlockValidationResult::valid(
-        preview.stateRoot()
+        preview.stateRoot(),
+        preview.totalFee()
     );
 }
 

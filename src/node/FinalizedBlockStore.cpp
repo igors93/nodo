@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V2";
+    "NODO_FINALIZED_BLOCK_V3";
 
 } // namespace
 
@@ -277,6 +277,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"blockHash", pipelineResult.block().hash()},
         {"previousHash", pipelineResult.block().previousHash()},
         {"postStateRoot", pipelineResult.postStateRoot()},
+        {"totalFeeRawUnits", std::to_string(pipelineResult.totalFee().rawUnits())},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };

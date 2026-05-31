@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V2";
+    "NODO_FINALIZED_BLOCK_V3";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -122,6 +122,18 @@ std::int64_t parseI64Strict(
     return parsed;
 }
 
+utils::Amount parseAmountStrict(
+    const std::string& value,
+    const std::string& fieldName
+) {
+    return utils::Amount::fromRawUnits(
+        parseI64Strict(
+            value,
+            fieldName
+        )
+    );
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -190,17 +202,20 @@ RuntimeStateLoadResult RuntimeStateLoadResult::rejected(
 FinalizedBlockArtifact::FinalizedBlockArtifact()
     : m_block(std::nullopt),
       m_postStateRoot(""),
+      m_totalFee(),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
 FinalizedBlockArtifact::FinalizedBlockArtifact(
     core::Block block,
     std::string postStateRoot,
+    utils::Amount totalFee,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
     : m_block(std::move(block)),
       m_postStateRoot(std::move(postStateRoot)),
+      m_totalFee(totalFee),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -216,6 +231,10 @@ const std::string& FinalizedBlockArtifact::postStateRoot() const {
     return m_postStateRoot;
 }
 
+utils::Amount FinalizedBlockArtifact::totalFee() const {
+    return m_totalFee;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -228,6 +247,7 @@ bool FinalizedBlockArtifact::isValid() const {
     return m_block.has_value() &&
            m_block->isValid() &&
            !m_postStateRoot.empty() &&
+           !m_totalFee.isNegative() &&
            m_quorumCertificate.isStructurallyValid() &&
            m_finalizedRecord.isStructurallyValid();
 }
@@ -238,6 +258,7 @@ std::string FinalizedBlockArtifact::serialize() const {
     oss << "FinalizedBlockArtifact{"
         << "blockHash=" << (m_block.has_value() && m_block->isValid() ? m_block->hash() : "INVALID")
         << ";postStateRoot=" << m_postStateRoot
+        << ";totalFeeRawUnits=" << m_totalFee.rawUnits()
         << "}";
 
     return oss.str();
@@ -329,6 +350,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "blockHash",
         "previousHash",
         "postStateRoot",
+        "totalFeeRawUnits",
         "timestamp",
         "recordCount",
         "block",
@@ -343,8 +365,8 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V2 stores explicit block fields and record lines, but the canonical block
-     * serialization is still kept as an integrity anchor.
+     * V3 stores explicit block fields, economic fee accounting and record lines,
+     * while the canonical block serialization remains the integrity anchor.
      */
     const std::string serializedBlock =
         document.requireField("block");
@@ -368,6 +390,12 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
 
     const std::string postStateRoot =
         document.requireField("postStateRoot");
+
+    const utils::Amount totalFee =
+        parseAmountStrict(
+            document.requireField("totalFeeRawUnits"),
+            "totalFeeRawUnits"
+        );
 
     const std::int64_t timestamp =
         parseI64Strict(
@@ -423,6 +451,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"blockHash", document.requireField("blockHash")},
         {"previousHash", document.requireField("previousHash")},
         {"postStateRoot", postStateRoot},
+        {"totalFeeRawUnits", std::to_string(totalFee.rawUnits())},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -465,6 +494,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     return FinalizedBlockArtifact(
         block,
         postStateRoot,
+        totalFee,
         quorumCertificate,
         finalizedRecord
     );
@@ -649,6 +679,16 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
                     + blockPath.string()
                     + ": "
                     "Persisted block postStateRoot does not match rebuilt account state."
+                );
+            }
+
+            if (preview.totalFee() != artifact.totalFee()) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Invalid finalized block file "
+                    + blockPath.string()
+                    + ": "
+                    "Persisted block totalFeeRawUnits does not match rebuilt transaction fees."
                 );
             }
 

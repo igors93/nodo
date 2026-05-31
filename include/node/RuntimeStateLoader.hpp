@@ -8,6 +8,7 @@
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "p2p/PeerMessage.hpp"
+#include "utils/Amount.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -76,12 +77,14 @@ public:
     FinalizedBlockArtifact(
         core::Block block,
         std::string postStateRoot,
+        utils::Amount totalFee,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
 
     const core::Block& block() const;
     const std::string& postStateRoot() const;
+    utils::Amount totalFee() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -91,6 +94,7 @@ public:
 private:
     std::optional<core::Block> m_block;
     std::string m_postStateRoot;
+    utils::Amount m_totalFee;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };

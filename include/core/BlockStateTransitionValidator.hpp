@@ -4,6 +4,7 @@
 #include "core/Block.hpp"
 #include "core/Blockchain.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
+#include "utils/Amount.hpp"
 
 #include <cstdint>
 #include <string>
@@ -30,8 +31,14 @@ public:
     BlockValidationResult();
 
     static BlockValidationResult valid();
+
     static BlockValidationResult valid(
         std::string stateRoot
+    );
+
+    static BlockValidationResult valid(
+        std::string stateRoot,
+        utils::Amount totalFee
     );
 
     static BlockValidationResult rejected(
@@ -42,6 +49,7 @@ public:
     BlockValidationStatus status() const;
     const std::string& reason() const;
     const std::string& stateRoot() const;
+    utils::Amount totalFee() const;
     bool accepted() const;
 
     std::string serialize() const;
@@ -50,6 +58,7 @@ private:
     BlockValidationStatus m_status;
     std::string m_reason;
     std::string m_stateRoot;
+    utils::Amount m_totalFee;
 };
 
 /*

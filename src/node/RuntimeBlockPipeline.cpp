@@ -136,7 +136,8 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_certificate(),
       m_finalizedRecord(),
       m_finalizedTransactionIds(),
-      m_postStateRoot("") {}
+      m_postStateRoot(""),
+      m_totalFee() {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -144,6 +145,24 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     consensus::FinalizedBlockRecord finalizedRecord,
     std::vector<std::string> finalizedTransactionIds,
     std::string postStateRoot
+) {
+    return finalized(
+        std::move(block),
+        std::move(certificate),
+        std::move(finalizedRecord),
+        std::move(finalizedTransactionIds),
+        std::move(postStateRoot),
+        utils::Amount()
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee
 ) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
@@ -153,6 +172,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_finalizedRecord = std::move(finalizedRecord);
     result.m_finalizedTransactionIds = std::move(finalizedTransactionIds);
     result.m_postStateRoot = std::move(postStateRoot);
+    result.m_totalFee = totalFee;
     return result;
 }
 
@@ -180,7 +200,8 @@ bool RuntimeBlockPipelineResult::finalized() const {
            m_block->isValid() &&
            m_certificate.isStructurallyValid() &&
            m_finalizedRecord.isStructurallyValid() &&
-           !m_postStateRoot.empty();
+           !m_postStateRoot.empty() &&
+           !m_totalFee.isNegative();
 }
 
 const core::Block& RuntimeBlockPipelineResult::block() const {
@@ -207,6 +228,10 @@ const std::string& RuntimeBlockPipelineResult::postStateRoot() const {
     return m_postStateRoot;
 }
 
+utils::Amount RuntimeBlockPipelineResult::totalFee() const {
+    return m_totalFee;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -216,6 +241,7 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";blockHash=" << (m_block.has_value() && m_block->isValid() ? m_block->hash() : "NONE")
         << ";finalizedTransactionCount=" << m_finalizedTransactionIds.size()
         << ";postStateRoot=" << m_postStateRoot
+        << ";totalFeeRawUnits=" << m_totalFee.rawUnits()
         << "}";
 
     return oss.str();
@@ -376,7 +402,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         certificate.certificate(),
         finalization.record(),
         finalizedTransactionIds,
-        transitionValidation.stateRoot()
+        transitionValidation.stateRoot(),
+        transitionValidation.totalFee()
     );
 }
 
