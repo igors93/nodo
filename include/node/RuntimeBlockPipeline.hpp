@@ -6,6 +6,7 @@
 #include "core/Block.hpp"
 #include "core/MempoolBlockProducer.hpp"
 #include "crypto/Signer.hpp"
+#include "node/LockedStakePosition.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
 #include "utils/Amount.hpp"
@@ -99,6 +100,17 @@ public:
         std::vector<RewardDistribution> rewardDistributions
     );
 
+    static RuntimeBlockPipelineResult finalized(
+        core::Block block,
+        consensus::QuorumCertificate certificate,
+        consensus::FinalizedBlockRecord finalizedRecord,
+        std::vector<std::string> finalizedTransactionIds,
+        std::string postStateRoot,
+        utils::Amount totalFee,
+        std::vector<RewardDistribution> rewardDistributions,
+        std::vector<LockedStakePosition> lockedStakePositions
+    );
+
     static RuntimeBlockPipelineResult rejected(
         RuntimeBlockPipelineStatus status,
         std::string reason
@@ -115,6 +127,7 @@ public:
     const std::string& postStateRoot() const;
     utils::Amount totalFee() const;
     const std::vector<RewardDistribution>& rewardDistributions() const;
+    const std::vector<LockedStakePosition>& lockedStakePositions() const;
 
     std::string serialize() const;
 
@@ -134,6 +147,7 @@ private:
     std::string m_postStateRoot;
     utils::Amount m_totalFee;
     std::vector<RewardDistribution> m_rewardDistributions;
+    std::vector<LockedStakePosition> m_lockedStakePositions;
 };
 
 /*

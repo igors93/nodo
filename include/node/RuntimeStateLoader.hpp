@@ -5,6 +5,7 @@
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/QuorumCertificate.hpp"
 #include "core/Block.hpp"
+#include "node/LockedStakePosition.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
@@ -80,6 +81,7 @@ public:
         std::string postStateRoot,
         utils::Amount totalFee,
         std::vector<RewardDistribution> rewardDistributions,
+        std::vector<LockedStakePosition> lockedStakePositions,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -88,6 +90,7 @@ public:
     const std::string& postStateRoot() const;
     utils::Amount totalFee() const;
     const std::vector<RewardDistribution>& rewardDistributions() const;
+    const std::vector<LockedStakePosition>& lockedStakePositions() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -99,6 +102,7 @@ private:
     std::string m_postStateRoot;
     utils::Amount m_totalFee;
     std::vector<RewardDistribution> m_rewardDistributions;
+    std::vector<LockedStakePosition> m_lockedStakePositions;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };

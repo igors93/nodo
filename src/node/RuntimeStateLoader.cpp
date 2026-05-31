@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V4";
+    "NODO_FINALIZED_BLOCK_V5";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -134,6 +134,21 @@ utils::Amount parseAmountStrict(
     );
 }
 
+bool parseBoolStrict(
+    const std::string& value,
+    const std::string& fieldName
+) {
+    if (value == "true") {
+        return true;
+    }
+
+    if (value == "false") {
+        return false;
+    }
+
+    throw std::invalid_argument("Malformed boolean field: " + fieldName);
+}
+
 RewardDistribution parseRewardDistribution(
     const serialization::KeyValueFileDocument& document,
     std::size_t index
@@ -167,6 +182,41 @@ RewardDistribution parseRewardDistribution(
     }
 
     return distribution;
+}
+
+LockedStakePosition parseLockedStakePosition(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix =
+        "lockedStake." + std::to_string(index) + ".";
+
+    LockedStakePosition position(
+        document.requireField(prefix + "ownerAddress"),
+        parseAmountStrict(
+            document.requireField(prefix + "amountRawUnits"),
+            prefix + "amountRawUnits"
+        ),
+        parseU64Strict(
+            document.requireField(prefix + "createdAtHeight"),
+            prefix + "createdAtHeight"
+        ),
+        parseU64Strict(
+            document.requireField(prefix + "unlockAtHeight"),
+            prefix + "unlockAtHeight"
+        ),
+        parseBoolStrict(
+            document.requireField(prefix + "slashable"),
+            prefix + "slashable"
+        ),
+        document.requireField(prefix + "sourceRewardId")
+    );
+
+    if (!position.isValid()) {
+        throw std::invalid_argument("Finalized block locked stake position is invalid.");
+    }
+
+    return position;
 }
 
 } // namespace
@@ -239,6 +289,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_postStateRoot(""),
       m_totalFee(),
       m_rewardDistributions(),
+      m_lockedStakePositions(),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -247,6 +298,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     std::string postStateRoot,
     utils::Amount totalFee,
     std::vector<RewardDistribution> rewardDistributions,
+    std::vector<LockedStakePosition> lockedStakePositions,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -254,6 +306,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_postStateRoot(std::move(postStateRoot)),
       m_totalFee(totalFee),
       m_rewardDistributions(std::move(rewardDistributions)),
+      m_lockedStakePositions(std::move(lockedStakePositions)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -277,6 +330,10 @@ const std::vector<RewardDistribution>& FinalizedBlockArtifact::rewardDistributio
     return m_rewardDistributions;
 }
 
+const std::vector<LockedStakePosition>& FinalizedBlockArtifact::lockedStakePositions() const {
+    return m_lockedStakePositions;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -297,12 +354,19 @@ bool FinalizedBlockArtifact::isValid() const {
 
     try {
         if (m_totalFee.isZero()) {
-            return m_rewardDistributions.empty();
+            return m_rewardDistributions.empty() &&
+                   m_lockedStakePositions.empty();
         }
 
         return RewardDistributionCalculator::totalReward(
-            m_rewardDistributions
-        ) == m_totalFee;
+                   m_rewardDistributions
+               ) == m_totalFee &&
+               LockedStakePositionBuilder::samePositions(
+                   LockedStakePositionBuilder::buildFromRewardDistributions(
+                       m_rewardDistributions
+                   ),
+                   m_lockedStakePositions
+               );
     } catch (const std::exception&) {
         return false;
     }
@@ -316,6 +380,7 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";postStateRoot=" << m_postStateRoot
         << ";totalFeeRawUnits=" << m_totalFee.rawUnits()
         << ";rewardDistributionCount=" << m_rewardDistributions.size()
+        << ";lockedStakePositionCount=" << m_lockedStakePositions.size()
         << "}";
 
     return oss.str();
@@ -410,6 +475,14 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
             )
         );
 
+    const std::size_t lockedStakePositionCount =
+        static_cast<std::size_t>(
+            parseU64Strict(
+                document.requireField("lockedStakePositionCount"),
+                "lockedStakePositionCount"
+            )
+        );
+
     std::set<std::string> allowedFields = {
         "blockIndex",
         "blockHash",
@@ -417,6 +490,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "postStateRoot",
         "totalFeeRawUnits",
         "rewardDistributionCount",
+        "lockedStakePositionCount",
         "timestamp",
         "recordCount",
         "block",
@@ -440,12 +514,24 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         allowedFields.insert(prefix + "reason");
     }
 
+    for (std::size_t index = 0; index < lockedStakePositionCount; ++index) {
+        const std::string prefix =
+            "lockedStake." + std::to_string(index) + ".";
+
+        allowedFields.insert(prefix + "ownerAddress");
+        allowedFields.insert(prefix + "amountRawUnits");
+        allowedFields.insert(prefix + "createdAtHeight");
+        allowedFields.insert(prefix + "unlockAtHeight");
+        allowedFields.insert(prefix + "slashable");
+        allowedFields.insert(prefix + "sourceRewardId");
+    }
+
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V4 stores explicit block fields, fee accounting and reward distribution
-     * records, while the canonical block serialization remains the integrity
-     * anchor.
+     * V5 stores explicit block fields, fee accounting, reward distributions
+     * and locked stake positions. The canonical block serialization remains the
+     * integrity anchor for the block payload itself.
      */
     const std::string serializedBlock =
         document.requireField("block");
@@ -484,6 +570,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
             parseRewardDistribution(
                 document,
                 rewardIndex
+            )
+        );
+    }
+
+    std::vector<LockedStakePosition> lockedStakePositions;
+    lockedStakePositions.reserve(lockedStakePositionCount);
+
+    for (std::size_t positionIndex = 0; positionIndex < lockedStakePositionCount; ++positionIndex) {
+        lockedStakePositions.push_back(
+            parseLockedStakePosition(
+                document,
+                positionIndex
             )
         );
     }
@@ -541,6 +639,15 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block reward distributions do not match total fees.");
     }
 
+    if (!LockedStakePositionBuilder::samePositions(
+            LockedStakePositionBuilder::buildFromRewardDistributions(
+                rewardDistributions
+            ),
+            lockedStakePositions
+        )) {
+        throw std::invalid_argument("Finalized block locked stake positions do not match reward distributions.");
+    }
+
     std::vector<std::pair<std::string, std::string>> canonicalFields = {
         {"blockIndex", document.requireField("blockIndex")},
         {"blockHash", document.requireField("blockHash")},
@@ -548,6 +655,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"postStateRoot", postStateRoot},
         {"totalFeeRawUnits", std::to_string(totalFee.rawUnits())},
         {"rewardDistributionCount", std::to_string(rewardDistributions.size())},
+        {"lockedStakePositionCount", std::to_string(lockedStakePositions.size())},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -572,6 +680,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         canonicalFields.emplace_back(prefix + "liquidRewardRawUnits", std::to_string(rewardDistributions[rewardIndex].liquidReward().rawUnits()));
         canonicalFields.emplace_back(prefix + "lockedRewardRawUnits", std::to_string(rewardDistributions[rewardIndex].lockedReward().rawUnits()));
         canonicalFields.emplace_back(prefix + "reason", rewardDistributions[rewardIndex].reason());
+    }
+
+    for (std::size_t positionIndex = 0; positionIndex < lockedStakePositions.size(); ++positionIndex) {
+        const std::string prefix =
+            "lockedStake." + std::to_string(positionIndex) + ".";
+
+        canonicalFields.emplace_back(prefix + "ownerAddress", lockedStakePositions[positionIndex].ownerAddress());
+        canonicalFields.emplace_back(prefix + "amountRawUnits", std::to_string(lockedStakePositions[positionIndex].amount().rawUnits()));
+        canonicalFields.emplace_back(prefix + "createdAtHeight", std::to_string(lockedStakePositions[positionIndex].createdAtHeight()));
+        canonicalFields.emplace_back(prefix + "unlockAtHeight", std::to_string(lockedStakePositions[positionIndex].unlockAtHeight()));
+        canonicalFields.emplace_back(prefix + "slashable", lockedStakePositions[positionIndex].slashable() ? "true" : "false");
+        canonicalFields.emplace_back(prefix + "sourceRewardId", lockedStakePositions[positionIndex].sourceRewardId());
     }
 
     canonicalFields.emplace_back(
@@ -604,6 +724,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         postStateRoot,
         totalFee,
         rewardDistributions,
+        lockedStakePositions,
         quorumCertificate,
         finalizedRecord
     );
@@ -818,6 +939,24 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
                     + blockPath.string()
                     + ": "
                     "Persisted reward distributions do not match rebuilt validator fee rewards."
+                );
+            }
+
+            const std::vector<LockedStakePosition> expectedLockedStake =
+                LockedStakePositionBuilder::buildFromRewardDistributions(
+                    expectedRewards
+                );
+
+            if (!LockedStakePositionBuilder::samePositions(
+                    expectedLockedStake,
+                    artifact.lockedStakePositions()
+                )) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Invalid finalized block file "
+                    + blockPath.string()
+                    + ": "
+                    "Persisted locked stake positions do not match rebuilt reward distributions."
                 );
             }
 

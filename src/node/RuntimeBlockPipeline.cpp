@@ -63,6 +63,22 @@ bool rewardDistributionsMatchTotalFee(
     }
 }
 
+bool lockedStakePositionsMatchRewards(
+    const std::vector<RewardDistribution>& rewardDistributions,
+    const std::vector<LockedStakePosition>& lockedStakePositions
+) {
+    try {
+        return LockedStakePositionBuilder::samePositions(
+            LockedStakePositionBuilder::buildFromRewardDistributions(
+                rewardDistributions
+            ),
+            lockedStakePositions
+        );
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 } // namespace
 
 RuntimeBlockPipelineConfig::RuntimeBlockPipelineConfig()
@@ -155,7 +171,8 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_finalizedTransactionIds(),
       m_postStateRoot(""),
       m_totalFee(),
-      m_rewardDistributions() {}
+      m_rewardDistributions(),
+      m_lockedStakePositions() {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -171,6 +188,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
         std::move(finalizedTransactionIds),
         std::move(postStateRoot),
         utils::Amount(),
+        {},
         {}
     );
 }
@@ -190,6 +208,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
         std::move(finalizedTransactionIds),
         std::move(postStateRoot),
         totalFee,
+        {},
         {}
     );
 }
@@ -203,6 +222,39 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     utils::Amount totalFee,
     std::vector<RewardDistribution> rewardDistributions
 ) {
+    std::vector<LockedStakePosition> lockedStakePositions;
+
+    try {
+        lockedStakePositions =
+            LockedStakePositionBuilder::buildFromRewardDistributions(
+                rewardDistributions
+            );
+    } catch (const std::exception&) {
+        lockedStakePositions.clear();
+    }
+
+    return finalized(
+        std::move(block),
+        std::move(certificate),
+        std::move(finalizedRecord),
+        std::move(finalizedTransactionIds),
+        std::move(postStateRoot),
+        totalFee,
+        std::move(rewardDistributions),
+        std::move(lockedStakePositions)
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions,
+    std::vector<LockedStakePosition> lockedStakePositions
+) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
     result.m_reason = "";
@@ -213,6 +265,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_postStateRoot = std::move(postStateRoot);
     result.m_totalFee = totalFee;
     result.m_rewardDistributions = std::move(rewardDistributions);
+    result.m_lockedStakePositions = std::move(lockedStakePositions);
     return result;
 }
 
@@ -245,6 +298,10 @@ bool RuntimeBlockPipelineResult::finalized() const {
            rewardDistributionsMatchTotalFee(
                m_totalFee,
                m_rewardDistributions
+           ) &&
+           lockedStakePositionsMatchRewards(
+               m_rewardDistributions,
+               m_lockedStakePositions
            );
 }
 
@@ -280,6 +337,10 @@ const std::vector<RewardDistribution>& RuntimeBlockPipelineResult::rewardDistrib
     return m_rewardDistributions;
 }
 
+const std::vector<LockedStakePosition>& RuntimeBlockPipelineResult::lockedStakePositions() const {
+    return m_lockedStakePositions;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -291,6 +352,7 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";postStateRoot=" << m_postStateRoot
         << ";totalFeeRawUnits=" << m_totalFee.rawUnits()
         << ";rewardDistributionCount=" << m_rewardDistributions.size()
+        << ";lockedStakePositionCount=" << m_lockedStakePositions.size()
         << "}";
 
     return oss.str();
@@ -434,6 +496,20 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
+    std::vector<LockedStakePosition> lockedStakePositions;
+
+    try {
+        lockedStakePositions =
+            LockedStakePositionBuilder::buildFromRewardDistributions(
+                rewardDistributions
+            );
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            std::string("Locked stake position creation failed: ") + error.what()
+        );
+    }
+
     const consensus::BlockFinalizationResult finalization =
         consensus::BlockFinalizer::finalizeBlock(
             runtime.mutableBlockchain(),
@@ -469,7 +545,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         finalizedTransactionIds,
         transitionValidation.stateRoot(),
         transitionValidation.totalFee(),
-        rewardDistributions
+        rewardDistributions,
+        lockedStakePositions
     );
 }
 

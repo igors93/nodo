@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V4";
+    "NODO_FINALIZED_BLOCK_V5";
 
 } // namespace
 
@@ -279,6 +279,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"postStateRoot", pipelineResult.postStateRoot()},
         {"totalFeeRawUnits", std::to_string(pipelineResult.totalFee().rawUnits())},
         {"rewardDistributionCount", std::to_string(pipelineResult.rewardDistributions().size())},
+        {"lockedStakePositionCount", std::to_string(pipelineResult.lockedStakePositions().size())},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -306,6 +307,21 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         fields.emplace_back(prefix + "liquidRewardRawUnits", std::to_string(rewards[index].liquidReward().rawUnits()));
         fields.emplace_back(prefix + "lockedRewardRawUnits", std::to_string(rewards[index].lockedReward().rawUnits()));
         fields.emplace_back(prefix + "reason", rewards[index].reason());
+    }
+
+    const std::vector<LockedStakePosition>& lockedStakePositions =
+        pipelineResult.lockedStakePositions();
+
+    for (std::size_t index = 0; index < lockedStakePositions.size(); ++index) {
+        const std::string prefix =
+            "lockedStake." + std::to_string(index) + ".";
+
+        fields.emplace_back(prefix + "ownerAddress", lockedStakePositions[index].ownerAddress());
+        fields.emplace_back(prefix + "amountRawUnits", std::to_string(lockedStakePositions[index].amount().rawUnits()));
+        fields.emplace_back(prefix + "createdAtHeight", std::to_string(lockedStakePositions[index].createdAtHeight()));
+        fields.emplace_back(prefix + "unlockAtHeight", std::to_string(lockedStakePositions[index].unlockAtHeight()));
+        fields.emplace_back(prefix + "slashable", lockedStakePositions[index].slashable() ? "true" : "false");
+        fields.emplace_back(prefix + "sourceRewardId", lockedStakePositions[index].sourceRewardId());
     }
 
     fields.emplace_back(

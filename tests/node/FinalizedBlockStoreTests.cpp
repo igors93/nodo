@@ -232,6 +232,15 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should create validator reward distribution from block fees."
     );
 
+    requireCondition(
+        pipeline.lockedStakePositions().size() == 1U &&
+        pipeline.lockedStakePositions().front().amount().rawUnits() == 10 &&
+        pipeline.lockedStakePositions().front().createdAtHeight() == 1U &&
+        pipeline.lockedStakePositions().front().unlockAtHeight() > 1U &&
+        pipeline.lockedStakePositions().front().slashable(),
+        "Pipeline should convert locked rewards into locked stake positions."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -282,6 +291,14 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("reward.0.liquidRewardRawUnits=90") != std::string::npos &&
         blockContents.find("reward.0.lockedRewardRawUnits=10") != std::string::npos,
         "Finalized block file should persist validator reward distribution."
+    );
+
+    requireCondition(
+        blockContents.find("lockedStakePositionCount=1") != std::string::npos &&
+        blockContents.find("lockedStake.0.amountRawUnits=10") != std::string::npos &&
+        blockContents.find("lockedStake.0.createdAtHeight=1") != std::string::npos &&
+        blockContents.find("lockedStake.0.slashable=true") != std::string::npos,
+        "Finalized block file should persist locked stake position."
     );
 
     const auto loaded =
