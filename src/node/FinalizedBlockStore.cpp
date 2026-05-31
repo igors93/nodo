@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V14";
+    "NODO_FINALIZED_BLOCK_V15";
 
 } // namespace
 
@@ -184,6 +184,15 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
         );
     }
 
+    if (!pipelineResult.protectionRewardSummary().active() ||
+        pipelineResult.protectionWorkRecords().size() != pipelineResult.protectionRewardGrants().size() ||
+        pipelineResult.protectionRewardSettlements().size() != pipelineResult.protectionRewardGrants().size()) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::INVALID_PIPELINE_RESULT,
+            "Runtime block pipeline result failed real protection reward audit."
+        );
+    }
+
     const NodeDataDirectoryReadResult existingManifest =
         NodeDataDirectory::loadManifest(directoryConfig);
 
@@ -322,6 +331,9 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"genesisTreasuryStatus", pipelineResult.genesisTreasurySnapshot().status()},
         {"protectionRewardBudgetStatus", pipelineResult.protectionRewardBudget().status()},
         {"protectionRewardGrantCount", std::to_string(pipelineResult.protectionRewardGrants().size())},
+        {"protectionWorkRecordCount", std::to_string(pipelineResult.protectionWorkRecords().size())},
+        {"protectionRewardSummaryStatus", pipelineResult.protectionRewardSummary().status()},
+        {"protectionRewardSettlementCount", std::to_string(pipelineResult.protectionRewardSettlements().size())},
         {"inflationEpochStatus", pipelineResult.inflationEpochSnapshot().status()},
         {"mintAuthorizationStatus", pipelineResult.mintAuthorizationRecord().status()},
         {"supplyExpansionStatus", pipelineResult.supplyExpansionRecord().status()},
@@ -515,6 +527,56 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         fields.emplace_back(prefix + "securityScore", std::to_string(protectionGrants[index].securityScore()));
         fields.emplace_back(prefix + "reason", protectionGrants[index].reason());
         fields.emplace_back(prefix + "sourceBudgetDigest", protectionGrants[index].sourceBudgetDigest());
+    }
+
+    const std::vector<ProtectionWorkRecord>& protectionWorkRecords =
+        pipelineResult.protectionWorkRecords();
+
+    for (std::size_t index = 0; index < protectionWorkRecords.size(); ++index) {
+        const std::string prefix =
+            "protectionWork." + std::to_string(index) + ".";
+
+        fields.emplace_back(prefix + "validatorAddress", protectionWorkRecords[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(protectionWorkRecords[index].blockHeight()));
+        fields.emplace_back(prefix + "uptimeScore", std::to_string(protectionWorkRecords[index].uptimeScore()));
+        fields.emplace_back(prefix + "correctVoteScore", std::to_string(protectionWorkRecords[index].correctVoteScore()));
+        fields.emplace_back(prefix + "attackDetectionScore", std::to_string(protectionWorkRecords[index].attackDetectionScore()));
+        fields.emplace_back(prefix + "auditContributionScore", std::to_string(protectionWorkRecords[index].auditContributionScore()));
+        fields.emplace_back(prefix + "securityScore", std::to_string(protectionWorkRecords[index].securityScore()));
+        fields.emplace_back(prefix + "riskPenaltyScore", std::to_string(protectionWorkRecords[index].riskPenaltyScore()));
+        fields.emplace_back(prefix + "totalWorkScore", std::to_string(protectionWorkRecords[index].totalWorkScore()));
+        fields.emplace_back(prefix + "reason", protectionWorkRecords[index].reason());
+        fields.emplace_back(prefix + "sourceSecurityDigest", protectionWorkRecords[index].sourceSecurityDigest());
+    }
+
+    const ProtectionRewardSummary& protectionSummary =
+        pipelineResult.protectionRewardSummary();
+
+    fields.emplace_back("protectionSummary.blockHeight", std::to_string(protectionSummary.blockHeight()));
+    fields.emplace_back("protectionSummary.plannedTotalRawUnits", std::to_string(protectionSummary.plannedTotal().rawUnits()));
+    fields.emplace_back("protectionSummary.earnedTotalRawUnits", std::to_string(protectionSummary.earnedTotal().rawUnits()));
+    fields.emplace_back("protectionSummary.deferredTotalRawUnits", std::to_string(protectionSummary.deferredTotal().rawUnits()));
+    fields.emplace_back("protectionSummary.beneficiaryCount", std::to_string(protectionSummary.beneficiaryCount()));
+    fields.emplace_back("protectionSummary.reason", protectionSummary.reason());
+    fields.emplace_back("protectionSummary.sourceBudgetDigest", protectionSummary.sourceBudgetDigest());
+
+    const std::vector<ProtectionRewardSettlement>& protectionSettlements =
+        pipelineResult.protectionRewardSettlements();
+
+    for (std::size_t index = 0; index < protectionSettlements.size(); ++index) {
+        const std::string prefix =
+            "protectionSettlement." + std::to_string(index) + ".";
+
+        fields.emplace_back(prefix + "validatorAddress", protectionSettlements[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(protectionSettlements[index].blockHeight()));
+        fields.emplace_back(prefix + "plannedRewardRawUnits", std::to_string(protectionSettlements[index].plannedReward().rawUnits()));
+        fields.emplace_back(prefix + "earnedRewardRawUnits", std::to_string(protectionSettlements[index].earnedReward().rawUnits()));
+        fields.emplace_back(prefix + "deferredRewardRawUnits", std::to_string(protectionSettlements[index].deferredReward().rawUnits()));
+        fields.emplace_back(prefix + "workScore", std::to_string(protectionSettlements[index].workScore()));
+        fields.emplace_back(prefix + "securityScore", std::to_string(protectionSettlements[index].securityScore()));
+        fields.emplace_back(prefix + "reason", protectionSettlements[index].reason());
+        fields.emplace_back(prefix + "sourceGrantDigest", protectionSettlements[index].sourceGrantDigest());
+        fields.emplace_back(prefix + "sourceWorkDigest", protectionSettlements[index].sourceWorkDigest());
     }
 
     const InflationEpochSnapshot& inflationEpoch =

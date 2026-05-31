@@ -387,12 +387,28 @@ GenesisTreasurySnapshot ProtectionTreasury::buildGenesisTreasurySnapshot(
     const config::GenesisConfig& genesisConfig,
     std::uint64_t blockHeight
 ) {
+    return buildGenesisTreasurySnapshot(
+        genesisConfig,
+        blockHeight,
+        utils::Amount()
+    );
+}
+
+GenesisTreasurySnapshot ProtectionTreasury::buildGenesisTreasurySnapshot(
+    const config::GenesisConfig& genesisConfig,
+    std::uint64_t blockHeight,
+    utils::Amount treasuryDelta
+) {
     if (blockHeight == 0) {
         throw std::invalid_argument("Cannot build genesis treasury snapshot at genesis height.");
     }
 
+    if (treasuryDelta.isNegative()) {
+        throw std::invalid_argument("Cannot build genesis treasury snapshot with negative treasury delta.");
+    }
+
     const utils::Amount balance =
-        treasuryBalanceFromGenesis(genesisConfig);
+        treasuryBalanceFromGenesis(genesisConfig) + treasuryDelta;
 
     const utils::Amount protectionBudget =
         utils::Amount::fromRawUnits(

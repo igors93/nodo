@@ -157,6 +157,12 @@ public:
         std::uint64_t blockHeight
     );
 
+    static GenesisTreasurySnapshot buildGenesisTreasurySnapshot(
+        const config::GenesisConfig& genesisConfig,
+        std::uint64_t blockHeight,
+        utils::Amount treasuryDelta
+    );
+
     static ProtectionRewardBudget buildProtectionRewardBudget(
         const GenesisTreasurySnapshot& treasurySnapshot,
         const std::vector<RewardDistribution>& rewardDistributions

@@ -307,6 +307,13 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
     );
 
     requireCondition(
+        pipeline.protectionRewardSummary().active() &&
+        pipeline.protectionWorkRecords().size() == pipeline.protectionRewardGrants().size() &&
+        pipeline.protectionRewardSettlements().size() == pipeline.protectionRewardGrants().size(),
+        "Pipeline should build real protection reward records."
+    );
+
+    requireCondition(
         pipeline.inflationEpochSnapshot().active() &&
         pipeline.mintAuthorizationRecord().isValid() &&
         pipeline.supplyExpansionRecord().isValid() &&
@@ -448,6 +455,15 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("protectionRewardBudgetStatus=ACTIVE") != std::string::npos &&
         blockContents.find("protectionBudget.reason=INITIAL_PROTECTION_REWARD_BUDGET") != std::string::npos,
         "Finalized block file should persist genesis treasury and protection reward budget."
+    );
+
+    requireCondition(
+        blockContents.find("protectionWorkRecordCount=1") != std::string::npos &&
+        blockContents.find("protectionRewardSummaryStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("protectionRewardSettlementCount=1") != std::string::npos &&
+        blockContents.find("protectionSummary.reason=REAL_PROTECTION_REWARD_SUMMARY") != std::string::npos &&
+        blockContents.find("protectionSettlement.0.reason=PROTECTION_REWARD_SETTLEMENT") != std::string::npos,
+        "Finalized block file should persist real protection reward records."
     );
 
     requireCondition(

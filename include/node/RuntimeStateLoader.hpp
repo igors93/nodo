@@ -10,6 +10,7 @@
 #include "node/ProtectionTreasury.hpp"
 #include "node/ControlledIssuance.hpp"
 #include "node/FeeEconomics.hpp"
+#include "node/ProtectionRewards.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
@@ -100,6 +101,9 @@ public:
         GenesisTreasurySnapshot genesisTreasurySnapshot,
         ProtectionRewardBudget protectionRewardBudget,
         std::vector<ProtectionRewardGrant> protectionRewardGrants,
+        std::vector<ProtectionWorkRecord> protectionWorkRecords,
+        ProtectionRewardSummary protectionRewardSummary,
+        std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
         InflationEpochSnapshot inflationEpochSnapshot,
         MintAuthorizationRecord mintAuthorizationRecord,
         SupplyExpansionRecord supplyExpansionRecord,
@@ -124,6 +128,9 @@ public:
     const GenesisTreasurySnapshot& genesisTreasurySnapshot() const;
     const ProtectionRewardBudget& protectionRewardBudget() const;
     const std::vector<ProtectionRewardGrant>& protectionRewardGrants() const;
+    const std::vector<ProtectionWorkRecord>& protectionWorkRecords() const;
+    const ProtectionRewardSummary& protectionRewardSummary() const;
+    const std::vector<ProtectionRewardSettlement>& protectionRewardSettlements() const;
     const InflationEpochSnapshot& inflationEpochSnapshot() const;
     const MintAuthorizationRecord& mintAuthorizationRecord() const;
     const SupplyExpansionRecord& supplyExpansionRecord() const;
@@ -151,6 +158,9 @@ private:
     GenesisTreasurySnapshot m_genesisTreasurySnapshot;
     ProtectionRewardBudget m_protectionRewardBudget;
     std::vector<ProtectionRewardGrant> m_protectionRewardGrants;
+    std::vector<ProtectionWorkRecord> m_protectionWorkRecords;
+    ProtectionRewardSummary m_protectionRewardSummary;
+    std::vector<ProtectionRewardSettlement> m_protectionRewardSettlements;
     InflationEpochSnapshot m_inflationEpochSnapshot;
     MintAuthorizationRecord m_mintAuthorizationRecord;
     SupplyExpansionRecord m_supplyExpansionRecord;

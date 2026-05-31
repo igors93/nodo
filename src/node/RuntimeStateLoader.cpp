@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V14";
+    "NODO_FINALIZED_BLOCK_V15";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -812,6 +812,140 @@ TreasuryFeeRecord parseTreasuryFeeRecord(
     return treasuryFee;
 }
 
+
+ProtectionWorkRecord parseProtectionWorkRecord(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix =
+        "protectionWork." + std::to_string(index) + ".";
+
+    ProtectionWorkRecord record(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(
+            document.requireField(prefix + "blockHeight"),
+            prefix + "blockHeight"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "uptimeScore"),
+            prefix + "uptimeScore"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "correctVoteScore"),
+            prefix + "correctVoteScore"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "attackDetectionScore"),
+            prefix + "attackDetectionScore"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "auditContributionScore"),
+            prefix + "auditContributionScore"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "securityScore"),
+            prefix + "securityScore"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "riskPenaltyScore"),
+            prefix + "riskPenaltyScore"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "totalWorkScore"),
+            prefix + "totalWorkScore"
+        ),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourceSecurityDigest")
+    );
+
+    if (!record.isValid()) {
+        throw std::invalid_argument("Finalized block protection work record is invalid.");
+    }
+
+    return record;
+}
+
+ProtectionRewardSummary parseProtectionRewardSummary(
+    const serialization::KeyValueFileDocument& document
+) {
+    ProtectionRewardSummary summary(
+        document.requireField("protectionRewardSummaryStatus"),
+        parseU64Strict(
+            document.requireField("protectionSummary.blockHeight"),
+            "protectionSummary.blockHeight"
+        ),
+        parseAmountStrict(
+            document.requireField("protectionSummary.plannedTotalRawUnits"),
+            "protectionSummary.plannedTotalRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("protectionSummary.earnedTotalRawUnits"),
+            "protectionSummary.earnedTotalRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("protectionSummary.deferredTotalRawUnits"),
+            "protectionSummary.deferredTotalRawUnits"
+        ),
+        parseU64Strict(
+            document.requireField("protectionSummary.beneficiaryCount"),
+            "protectionSummary.beneficiaryCount"
+        ),
+        document.requireField("protectionSummary.reason"),
+        document.requireField("protectionSummary.sourceBudgetDigest")
+    );
+
+    if (!summary.isValid()) {
+        throw std::invalid_argument("Finalized block protection reward summary is invalid.");
+    }
+
+    return summary;
+}
+
+ProtectionRewardSettlement parseProtectionRewardSettlement(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix =
+        "protectionSettlement." + std::to_string(index) + ".";
+
+    ProtectionRewardSettlement settlement(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(
+            document.requireField(prefix + "blockHeight"),
+            prefix + "blockHeight"
+        ),
+        parseAmountStrict(
+            document.requireField(prefix + "plannedRewardRawUnits"),
+            prefix + "plannedRewardRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField(prefix + "earnedRewardRawUnits"),
+            prefix + "earnedRewardRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField(prefix + "deferredRewardRawUnits"),
+            prefix + "deferredRewardRawUnits"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "workScore"),
+            prefix + "workScore"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "securityScore"),
+            prefix + "securityScore"
+        ),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourceGrantDigest"),
+        document.requireField(prefix + "sourceWorkDigest")
+    );
+
+    if (!settlement.isValid()) {
+        throw std::invalid_argument("Finalized block protection reward settlement is invalid.");
+    }
+
+    return settlement;
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -892,6 +1026,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_genesisTreasurySnapshot(GenesisTreasurySnapshot::notEvaluated()),
       m_protectionRewardBudget(ProtectionRewardBudget::notEvaluated()),
       m_protectionRewardGrants(),
+      m_protectionWorkRecords(),
+      m_protectionRewardSummary(ProtectionRewardSummary::notEvaluated()),
+      m_protectionRewardSettlements(),
       m_inflationEpochSnapshot(InflationEpochSnapshot::notEvaluated()),
       m_mintAuthorizationRecord(),
       m_supplyExpansionRecord(),
@@ -916,6 +1053,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     GenesisTreasurySnapshot genesisTreasurySnapshot,
     ProtectionRewardBudget protectionRewardBudget,
     std::vector<ProtectionRewardGrant> protectionRewardGrants,
+    std::vector<ProtectionWorkRecord> protectionWorkRecords,
+    ProtectionRewardSummary protectionRewardSummary,
+    std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
     InflationEpochSnapshot inflationEpochSnapshot,
     MintAuthorizationRecord mintAuthorizationRecord,
     SupplyExpansionRecord supplyExpansionRecord,
@@ -939,6 +1079,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_genesisTreasurySnapshot(std::move(genesisTreasurySnapshot)),
       m_protectionRewardBudget(std::move(protectionRewardBudget)),
       m_protectionRewardGrants(std::move(protectionRewardGrants)),
+      m_protectionWorkRecords(std::move(protectionWorkRecords)),
+      m_protectionRewardSummary(std::move(protectionRewardSummary)),
+      m_protectionRewardSettlements(std::move(protectionRewardSettlements)),
       m_inflationEpochSnapshot(std::move(inflationEpochSnapshot)),
       m_mintAuthorizationRecord(std::move(mintAuthorizationRecord)),
       m_supplyExpansionRecord(std::move(supplyExpansionRecord)),
@@ -1008,6 +1151,18 @@ const std::vector<ProtectionRewardGrant>& FinalizedBlockArtifact::protectionRewa
     return m_protectionRewardGrants;
 }
 
+const std::vector<ProtectionWorkRecord>& FinalizedBlockArtifact::protectionWorkRecords() const {
+    return m_protectionWorkRecords;
+}
+
+const ProtectionRewardSummary& FinalizedBlockArtifact::protectionRewardSummary() const {
+    return m_protectionRewardSummary;
+}
+
+const std::vector<ProtectionRewardSettlement>& FinalizedBlockArtifact::protectionRewardSettlements() const {
+    return m_protectionRewardSettlements;
+}
+
 const InflationEpochSnapshot& FinalizedBlockArtifact::inflationEpochSnapshot() const {
     return m_inflationEpochSnapshot;
 }
@@ -1063,6 +1218,9 @@ bool FinalizedBlockArtifact::isValid() const {
                    m_genesisTreasurySnapshot.active() &&
                    m_protectionRewardBudget.active() &&
                    m_protectionRewardGrants.empty() &&
+                   m_protectionWorkRecords.empty() &&
+                   m_protectionRewardSummary.active() &&
+                   m_protectionRewardSettlements.empty() &&
                    m_inflationEpochSnapshot.active() &&
                    m_mintAuthorizationRecord.isValid() &&
                    m_supplyExpansionRecord.isValid() &&
@@ -1135,6 +1293,29 @@ bool FinalizedBlockArtifact::isValid() const {
                    ),
                    m_protectionRewardGrants
                ) &&
+               ProtectionRewards::sameWorkRecords(
+                   ProtectionRewards::buildWorkRecords(
+                       m_protectionRewardGrants,
+                       m_securityScoreRecords,
+                       m_validatorRiskAssessments,
+                       m_validatorNetworkPolicies
+                   ),
+                   m_protectionWorkRecords
+               ) &&
+               ProtectionRewards::sameSettlements(
+                   ProtectionRewards::buildSettlements(
+                       m_protectionRewardGrants,
+                       m_protectionWorkRecords
+                   ),
+                   m_protectionRewardSettlements
+               ) &&
+               ProtectionRewards::sameSummary(
+                   ProtectionRewards::buildSummary(
+                       m_protectionRewardBudget,
+                       m_protectionRewardSettlements
+                   ),
+                   m_protectionRewardSummary
+               ) &&
                m_inflationEpochSnapshot.active() &&
                ControlledIssuance::sameAuthorization(
                    ControlledIssuance::buildNoMintAuthorization(m_inflationEpochSnapshot),
@@ -1186,6 +1367,9 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";genesisTreasuryStatus=" << m_genesisTreasurySnapshot.status()
         << ";protectionRewardBudgetStatus=" << m_protectionRewardBudget.status()
         << ";protectionRewardGrantCount=" << m_protectionRewardGrants.size()
+        << ";protectionWorkRecordCount=" << m_protectionWorkRecords.size()
+        << ";protectionRewardSummaryStatus=" << m_protectionRewardSummary.status()
+        << ";protectionRewardSettlementCount=" << m_protectionRewardSettlements.size()
         << ";inflationEpochStatus=" << m_inflationEpochSnapshot.status()
         << ";mintAuthorizationStatus=" << m_mintAuthorizationRecord.status()
         << ";supplyExpansionStatus=" << m_supplyExpansionRecord.status()
@@ -1279,6 +1463,8 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const std::size_t validatorContainmentDecisionCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorContainmentDecisionCount"), "validatorContainmentDecisionCount"));
     const std::size_t validatorNetworkPolicyCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorNetworkPolicyCount"), "validatorNetworkPolicyCount"));
     const std::size_t protectionRewardGrantCount = static_cast<std::size_t>(parseU64Strict(document.requireField("protectionRewardGrantCount"), "protectionRewardGrantCount"));
+    const std::size_t protectionWorkRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("protectionWorkRecordCount"), "protectionWorkRecordCount"));
+    const std::size_t protectionRewardSettlementCount = static_cast<std::size_t>(parseU64Strict(document.requireField("protectionRewardSettlementCount"), "protectionRewardSettlementCount"));
 
     std::set<std::string> allowedFields = {
         "blockIndex",
@@ -1297,6 +1483,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "genesisTreasuryStatus",
         "protectionRewardBudgetStatus",
         "protectionRewardGrantCount",
+        "protectionWorkRecordCount",
+        "protectionRewardSummaryStatus",
+        "protectionRewardSettlementCount",
         "inflationEpochStatus",
         "mintAuthorizationStatus",
         "supplyExpansionStatus",
@@ -1329,6 +1518,13 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "protectionBudget.beneficiaryCount",
         "protectionBudget.reason",
         "protectionBudget.sourceTreasuryDigest",
+        "protectionSummary.blockHeight",
+        "protectionSummary.plannedTotalRawUnits",
+        "protectionSummary.earnedTotalRawUnits",
+        "protectionSummary.deferredTotalRawUnits",
+        "protectionSummary.beneficiaryCount",
+        "protectionSummary.reason",
+        "protectionSummary.sourceBudgetDigest",
         "inflationEpoch.blockHeight",
         "inflationEpoch.epochStartBlock",
         "inflationEpoch.epochEndBlock",
@@ -1482,14 +1678,43 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         allowedFields.insert(prefix + "sourceBudgetDigest");
     }
 
+    for (std::size_t index = 0; index < protectionWorkRecordCount; ++index) {
+        const std::string prefix = "protectionWork." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "uptimeScore");
+        allowedFields.insert(prefix + "correctVoteScore");
+        allowedFields.insert(prefix + "attackDetectionScore");
+        allowedFields.insert(prefix + "auditContributionScore");
+        allowedFields.insert(prefix + "securityScore");
+        allowedFields.insert(prefix + "riskPenaltyScore");
+        allowedFields.insert(prefix + "totalWorkScore");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourceSecurityDigest");
+    }
+
+    for (std::size_t index = 0; index < protectionRewardSettlementCount; ++index) {
+        const std::string prefix = "protectionSettlement." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "plannedRewardRawUnits");
+        allowedFields.insert(prefix + "earnedRewardRawUnits");
+        allowedFields.insert(prefix + "deferredRewardRawUnits");
+        allowedFields.insert(prefix + "workScore");
+        allowedFields.insert(prefix + "securityScore");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourceGrantDigest");
+        allowedFields.insert(prefix + "sourceWorkDigest");
+    }
+
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V14 stores explicit block fields, fee accounting, locked stake,
+     * V15 stores explicit block fields, fee accounting, locked stake,
      * security score records, checkpoints, risk assessments, containment decisions,
      * network policies, the monetary firewall audit, the initial protection
-     * treasury reward plan, controlled issuance authorization records and fee
-     * burn economics. The canonical block serialization remains the
+     * treasury reward plan, real protection reward settlements, controlled
+     * issuance authorization records and fee burn economics. The canonical block serialization remains the
      * integrity anchor for the block payload itself.
      */
     const std::string serializedBlock = document.requireField("block");
@@ -1556,6 +1781,21 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     protectionRewardGrants.reserve(protectionRewardGrantCount);
     for (std::size_t grantIndex = 0; grantIndex < protectionRewardGrantCount; ++grantIndex) {
         protectionRewardGrants.push_back(parseProtectionRewardGrant(document, grantIndex));
+    }
+
+    std::vector<ProtectionWorkRecord> protectionWorkRecords;
+    protectionWorkRecords.reserve(protectionWorkRecordCount);
+    for (std::size_t workIndex = 0; workIndex < protectionWorkRecordCount; ++workIndex) {
+        protectionWorkRecords.push_back(parseProtectionWorkRecord(document, workIndex));
+    }
+
+    const ProtectionRewardSummary protectionRewardSummary =
+        parseProtectionRewardSummary(document);
+
+    std::vector<ProtectionRewardSettlement> protectionRewardSettlements;
+    protectionRewardSettlements.reserve(protectionRewardSettlementCount);
+    for (std::size_t settlementIndex = 0; settlementIndex < protectionRewardSettlementCount; ++settlementIndex) {
+        protectionRewardSettlements.push_back(parseProtectionRewardSettlement(document, settlementIndex));
     }
 
     const InflationEpochSnapshot inflationEpochSnapshot =
@@ -1676,6 +1916,35 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block protection reward grants do not match protection budget.");
     }
 
+    if (!ProtectionRewards::sameWorkRecords(
+            ProtectionRewards::buildWorkRecords(
+                protectionRewardGrants,
+                securityScoreRecords,
+                validatorRiskAssessments,
+                validatorNetworkPolicies
+            ),
+            protectionWorkRecords)) {
+        throw std::invalid_argument("Finalized block protection work records do not match security context.");
+    }
+
+    if (!ProtectionRewards::sameSettlements(
+            ProtectionRewards::buildSettlements(
+                protectionRewardGrants,
+                protectionWorkRecords
+            ),
+            protectionRewardSettlements)) {
+        throw std::invalid_argument("Finalized block protection reward settlements do not match work records.");
+    }
+
+    if (!ProtectionRewards::sameSummary(
+            ProtectionRewards::buildSummary(
+                protectionRewardBudget,
+                protectionRewardSettlements
+            ),
+            protectionRewardSummary)) {
+        throw std::invalid_argument("Finalized block protection reward summary does not match settlements.");
+    }
+
     if (!inflationEpochSnapshot.active() ||
         !ControlledIssuance::sameAuthorization(
             ControlledIssuance::buildNoMintAuthorization(inflationEpochSnapshot),
@@ -1738,6 +2007,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"genesisTreasuryStatus", genesisTreasurySnapshot.status()},
         {"protectionRewardBudgetStatus", protectionRewardBudget.status()},
         {"protectionRewardGrantCount", std::to_string(protectionRewardGrants.size())},
+        {"protectionWorkRecordCount", std::to_string(protectionWorkRecords.size())},
+        {"protectionRewardSummaryStatus", protectionRewardSummary.status()},
+        {"protectionRewardSettlementCount", std::to_string(protectionRewardSettlements.size())},
         {"inflationEpochStatus", inflationEpochSnapshot.status()},
         {"mintAuthorizationStatus", mintAuthorizationRecord.status()},
         {"supplyExpansionStatus", supplyExpansionRecord.status()},
@@ -1879,6 +2151,43 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         canonicalFields.emplace_back(prefix + "sourceBudgetDigest", protectionRewardGrants[grantIndex].sourceBudgetDigest());
     }
 
+    for (std::size_t workIndex = 0; workIndex < protectionWorkRecords.size(); ++workIndex) {
+        const std::string prefix = "protectionWork." + std::to_string(workIndex) + ".";
+        canonicalFields.emplace_back(prefix + "validatorAddress", protectionWorkRecords[workIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(protectionWorkRecords[workIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "uptimeScore", std::to_string(protectionWorkRecords[workIndex].uptimeScore()));
+        canonicalFields.emplace_back(prefix + "correctVoteScore", std::to_string(protectionWorkRecords[workIndex].correctVoteScore()));
+        canonicalFields.emplace_back(prefix + "attackDetectionScore", std::to_string(protectionWorkRecords[workIndex].attackDetectionScore()));
+        canonicalFields.emplace_back(prefix + "auditContributionScore", std::to_string(protectionWorkRecords[workIndex].auditContributionScore()));
+        canonicalFields.emplace_back(prefix + "securityScore", std::to_string(protectionWorkRecords[workIndex].securityScore()));
+        canonicalFields.emplace_back(prefix + "riskPenaltyScore", std::to_string(protectionWorkRecords[workIndex].riskPenaltyScore()));
+        canonicalFields.emplace_back(prefix + "totalWorkScore", std::to_string(protectionWorkRecords[workIndex].totalWorkScore()));
+        canonicalFields.emplace_back(prefix + "reason", protectionWorkRecords[workIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourceSecurityDigest", protectionWorkRecords[workIndex].sourceSecurityDigest());
+    }
+
+    canonicalFields.emplace_back("protectionSummary.blockHeight", std::to_string(protectionRewardSummary.blockHeight()));
+    canonicalFields.emplace_back("protectionSummary.plannedTotalRawUnits", std::to_string(protectionRewardSummary.plannedTotal().rawUnits()));
+    canonicalFields.emplace_back("protectionSummary.earnedTotalRawUnits", std::to_string(protectionRewardSummary.earnedTotal().rawUnits()));
+    canonicalFields.emplace_back("protectionSummary.deferredTotalRawUnits", std::to_string(protectionRewardSummary.deferredTotal().rawUnits()));
+    canonicalFields.emplace_back("protectionSummary.beneficiaryCount", std::to_string(protectionRewardSummary.beneficiaryCount()));
+    canonicalFields.emplace_back("protectionSummary.reason", protectionRewardSummary.reason());
+    canonicalFields.emplace_back("protectionSummary.sourceBudgetDigest", protectionRewardSummary.sourceBudgetDigest());
+
+    for (std::size_t settlementIndex = 0; settlementIndex < protectionRewardSettlements.size(); ++settlementIndex) {
+        const std::string prefix = "protectionSettlement." + std::to_string(settlementIndex) + ".";
+        canonicalFields.emplace_back(prefix + "validatorAddress", protectionRewardSettlements[settlementIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(protectionRewardSettlements[settlementIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "plannedRewardRawUnits", std::to_string(protectionRewardSettlements[settlementIndex].plannedReward().rawUnits()));
+        canonicalFields.emplace_back(prefix + "earnedRewardRawUnits", std::to_string(protectionRewardSettlements[settlementIndex].earnedReward().rawUnits()));
+        canonicalFields.emplace_back(prefix + "deferredRewardRawUnits", std::to_string(protectionRewardSettlements[settlementIndex].deferredReward().rawUnits()));
+        canonicalFields.emplace_back(prefix + "workScore", std::to_string(protectionRewardSettlements[settlementIndex].workScore()));
+        canonicalFields.emplace_back(prefix + "securityScore", std::to_string(protectionRewardSettlements[settlementIndex].securityScore()));
+        canonicalFields.emplace_back(prefix + "reason", protectionRewardSettlements[settlementIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourceGrantDigest", protectionRewardSettlements[settlementIndex].sourceGrantDigest());
+        canonicalFields.emplace_back(prefix + "sourceWorkDigest", protectionRewardSettlements[settlementIndex].sourceWorkDigest());
+    }
+
     canonicalFields.emplace_back("inflationEpoch.blockHeight", std::to_string(inflationEpochSnapshot.blockHeight()));
     canonicalFields.emplace_back("inflationEpoch.epochStartBlock", std::to_string(inflationEpochSnapshot.epochStartBlock()));
     canonicalFields.emplace_back("inflationEpoch.epochEndBlock", std::to_string(inflationEpochSnapshot.epochEndBlock()));
@@ -1956,6 +2265,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         genesisTreasurySnapshot,
         protectionRewardBudget,
         protectionRewardGrants,
+        protectionWorkRecords,
+        protectionRewardSummary,
+        protectionRewardSettlements,
         inflationEpochSnapshot,
         mintAuthorizationRecord,
         supplyExpansionRecord,
@@ -2153,7 +2465,8 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             const GenesisTreasurySnapshot expectedTreasurySnapshot =
                 ProtectionTreasury::buildGenesisTreasurySnapshot(
                     genesisConfig,
-                    block.index()
+                    block.index(),
+                    artifact.treasuryFeeRecord().treasuryAmount()
                 );
 
             if (!ProtectionTreasury::sameTreasurySnapshot(expectedTreasurySnapshot, artifact.genesisTreasurySnapshot())) {
@@ -2179,6 +2492,38 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
             if (!ProtectionTreasury::sameGrants(expectedProtectionGrants, artifact.protectionRewardGrants())) {
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted protection reward grants do not match rebuilt reward plan.");
+            }
+
+            const std::vector<ProtectionWorkRecord> expectedProtectionWorkRecords =
+                ProtectionRewards::buildWorkRecords(
+                    expectedProtectionGrants,
+                    expectedScores,
+                    expectedRiskAssessments,
+                    expectedNetworkPolicies
+                );
+
+            if (!ProtectionRewards::sameWorkRecords(expectedProtectionWorkRecords, artifact.protectionWorkRecords())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted protection work records do not match rebuilt security context.");
+            }
+
+            const std::vector<ProtectionRewardSettlement> expectedProtectionSettlements =
+                ProtectionRewards::buildSettlements(
+                    expectedProtectionGrants,
+                    expectedProtectionWorkRecords
+                );
+
+            if (!ProtectionRewards::sameSettlements(expectedProtectionSettlements, artifact.protectionRewardSettlements())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted protection reward settlements do not match rebuilt work records.");
+            }
+
+            const ProtectionRewardSummary expectedProtectionSummary =
+                ProtectionRewards::buildSummary(
+                    expectedProtectionBudget,
+                    expectedProtectionSettlements
+                );
+
+            if (!ProtectionRewards::sameSummary(expectedProtectionSummary, artifact.protectionRewardSummary())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted protection reward summary does not match rebuilt settlements.");
             }
 
             const InflationEpochSnapshot expectedInflationEpoch =
