@@ -7,6 +7,7 @@
 #include "core/Block.hpp"
 #include "node/LockedStakePosition.hpp"
 #include "node/MonetaryFirewall.hpp"
+#include "node/ProtectionTreasury.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
@@ -94,6 +95,9 @@ public:
         std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
         std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
         MonetaryFirewallAudit monetaryFirewallAudit,
+        GenesisTreasurySnapshot genesisTreasurySnapshot,
+        ProtectionRewardBudget protectionRewardBudget,
+        std::vector<ProtectionRewardGrant> protectionRewardGrants,
         consensus::QuorumCertificate quorumCertificate,
         consensus::FinalizedBlockRecord finalizedRecord
     );
@@ -109,6 +113,9 @@ public:
     const std::vector<ValidatorContainmentDecision>& validatorContainmentDecisions() const;
     const std::vector<ValidatorNetworkPolicy>& validatorNetworkPolicies() const;
     const MonetaryFirewallAudit& monetaryFirewallAudit() const;
+    const GenesisTreasurySnapshot& genesisTreasurySnapshot() const;
+    const ProtectionRewardBudget& protectionRewardBudget() const;
+    const std::vector<ProtectionRewardGrant>& protectionRewardGrants() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
 
@@ -127,6 +134,9 @@ private:
     std::vector<ValidatorContainmentDecision> m_validatorContainmentDecisions;
     std::vector<ValidatorNetworkPolicy> m_validatorNetworkPolicies;
     MonetaryFirewallAudit m_monetaryFirewallAudit;
+    GenesisTreasurySnapshot m_genesisTreasurySnapshot;
+    ProtectionRewardBudget m_protectionRewardBudget;
+    std::vector<ProtectionRewardGrant> m_protectionRewardGrants;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
 };

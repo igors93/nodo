@@ -171,6 +171,42 @@ bool monetaryFirewallAuditIsStructurallyValid(
     return audit.isValid();
 }
 
+bool protectionTreasuryPlanIsValid(
+    const GenesisTreasurySnapshot& treasurySnapshot,
+    const ProtectionRewardBudget& budget,
+    const std::vector<ProtectionRewardGrant>& grants,
+    const std::vector<RewardDistribution>& rewardDistributions,
+    const std::vector<SecurityScoreRecord>& securityScoreRecords
+) {
+    try {
+        if (treasurySnapshot.status() == "NOT_EVALUATED" &&
+            budget.status() == "NOT_EVALUATED" &&
+            grants.empty()) {
+            return treasurySnapshot.isValid() && budget.isValid();
+        }
+
+        return treasurySnapshot.active() &&
+               budget.active() &&
+               ProtectionTreasury::sameBudget(
+                   ProtectionTreasury::buildProtectionRewardBudget(
+                       treasurySnapshot,
+                       rewardDistributions
+                   ),
+                   budget
+               ) &&
+               ProtectionTreasury::sameGrants(
+                   ProtectionTreasury::buildProtectionRewardGrants(
+                       budget,
+                       rewardDistributions,
+                       securityScoreRecords
+                   ),
+                   grants
+               );
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 } // namespace
 
 RuntimeBlockPipelineConfig::RuntimeBlockPipelineConfig()
@@ -270,7 +306,10 @@ RuntimeBlockPipelineResult::RuntimeBlockPipelineResult()
       m_validatorRiskAssessments(),
       m_validatorContainmentDecisions(),
       m_validatorNetworkPolicies(),
-      m_monetaryFirewallAudit(MonetaryFirewallAudit::notEvaluated()) {}
+      m_monetaryFirewallAudit(MonetaryFirewallAudit::notEvaluated()),
+      m_genesisTreasurySnapshot(GenesisTreasurySnapshot::notEvaluated()),
+      m_protectionRewardBudget(ProtectionRewardBudget::notEvaluated()),
+      m_protectionRewardGrants() {}
 
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
@@ -557,6 +596,46 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
     MonetaryFirewallAudit monetaryFirewallAudit
 ) {
+    return finalized(
+        std::move(block),
+        std::move(certificate),
+        std::move(finalizedRecord),
+        std::move(finalizedTransactionIds),
+        std::move(postStateRoot),
+        totalFee,
+        std::move(rewardDistributions),
+        std::move(lockedStakePositions),
+        std::move(securityScoreRecords),
+        std::move(securityCheckpoints),
+        std::move(validatorRiskAssessments),
+        std::move(validatorContainmentDecisions),
+        std::move(validatorNetworkPolicies),
+        std::move(monetaryFirewallAudit),
+        GenesisTreasurySnapshot::notEvaluated(),
+        ProtectionRewardBudget::notEvaluated(),
+        {}
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions,
+    std::vector<LockedStakePosition> lockedStakePositions,
+    std::vector<SecurityScoreRecord> securityScoreRecords,
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+    std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+    MonetaryFirewallAudit monetaryFirewallAudit,
+    GenesisTreasurySnapshot genesisTreasurySnapshot,
+    ProtectionRewardBudget protectionRewardBudget,
+    std::vector<ProtectionRewardGrant> protectionRewardGrants
+) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
     result.m_reason = "";
@@ -574,6 +653,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_validatorContainmentDecisions = std::move(validatorContainmentDecisions);
     result.m_validatorNetworkPolicies = std::move(validatorNetworkPolicies);
     result.m_monetaryFirewallAudit = std::move(monetaryFirewallAudit);
+    result.m_genesisTreasurySnapshot = std::move(genesisTreasurySnapshot);
+    result.m_protectionRewardBudget = std::move(protectionRewardBudget);
+    result.m_protectionRewardGrants = std::move(protectionRewardGrants);
     return result;
 }
 
@@ -610,7 +692,14 @@ bool RuntimeBlockPipelineResult::finalized() const {
            validatorRiskAssessmentsMatchCheckpoints(m_securityCheckpoints, m_validatorRiskAssessments) &&
            validatorContainmentDecisionsMatchRisk(m_validatorRiskAssessments, m_validatorContainmentDecisions) &&
            validatorNetworkPoliciesMatchContainment(m_validatorContainmentDecisions, m_validatorNetworkPolicies) &&
-           monetaryFirewallAuditIsStructurallyValid(m_monetaryFirewallAudit);
+           monetaryFirewallAuditIsStructurallyValid(m_monetaryFirewallAudit) &&
+           protectionTreasuryPlanIsValid(
+               m_genesisTreasurySnapshot,
+               m_protectionRewardBudget,
+               m_protectionRewardGrants,
+               m_rewardDistributions,
+               m_securityScoreRecords
+           );
 }
 
 const core::Block& RuntimeBlockPipelineResult::block() const {
@@ -673,6 +762,18 @@ const MonetaryFirewallAudit& RuntimeBlockPipelineResult::monetaryFirewallAudit()
     return m_monetaryFirewallAudit;
 }
 
+const GenesisTreasurySnapshot& RuntimeBlockPipelineResult::genesisTreasurySnapshot() const {
+    return m_genesisTreasurySnapshot;
+}
+
+const ProtectionRewardBudget& RuntimeBlockPipelineResult::protectionRewardBudget() const {
+    return m_protectionRewardBudget;
+}
+
+const std::vector<ProtectionRewardGrant>& RuntimeBlockPipelineResult::protectionRewardGrants() const {
+    return m_protectionRewardGrants;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -691,6 +792,9 @@ std::string RuntimeBlockPipelineResult::serialize() const {
         << ";validatorContainmentDecisionCount=" << m_validatorContainmentDecisions.size()
         << ";validatorNetworkPolicyCount=" << m_validatorNetworkPolicies.size()
         << ";monetaryFirewallStatus=" << m_monetaryFirewallAudit.status()
+        << ";genesisTreasuryStatus=" << m_genesisTreasurySnapshot.status()
+        << ";protectionRewardBudgetStatus=" << m_protectionRewardBudget.status()
+        << ";protectionRewardGrantCount=" << m_protectionRewardGrants.size()
         << "}";
 
     return oss.str();
@@ -826,6 +930,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     std::vector<ValidatorContainmentDecision> validatorContainmentDecisions;
     std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies;
     MonetaryFirewallAudit monetaryFirewallAudit;
+    GenesisTreasurySnapshot genesisTreasurySnapshot;
+    ProtectionRewardBudget protectionRewardBudget;
+    std::vector<ProtectionRewardGrant> protectionRewardGrants;
 
     try {
         rewardDistributions =
@@ -872,6 +979,25 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             MonetaryFirewall::buildZeroMintAudit(
                 runtime.config().genesisConfig(),
                 production.block().index()
+            );
+
+        genesisTreasurySnapshot =
+            ProtectionTreasury::buildGenesisTreasurySnapshot(
+                runtime.config().genesisConfig(),
+                production.block().index()
+            );
+
+        protectionRewardBudget =
+            ProtectionTreasury::buildProtectionRewardBudget(
+                genesisTreasurySnapshot,
+                rewardDistributions
+            );
+
+        protectionRewardGrants =
+            ProtectionTreasury::buildProtectionRewardGrants(
+                protectionRewardBudget,
+                rewardDistributions,
+                securityScoreRecords
             );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(
@@ -922,7 +1048,10 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         validatorRiskAssessments,
         validatorContainmentDecisions,
         validatorNetworkPolicies,
-        monetaryFirewallAudit
+        monetaryFirewallAudit,
+        genesisTreasurySnapshot,
+        protectionRewardBudget,
+        protectionRewardGrants
     );
 }
 

@@ -12,7 +12,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V11";
+    "NODO_FINALIZED_BLOCK_V12";
 
 } // namespace
 
@@ -158,6 +158,14 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
         );
     }
 
+    if (!pipelineResult.genesisTreasurySnapshot().active() ||
+        !pipelineResult.protectionRewardBudget().active()) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::INVALID_PIPELINE_RESULT,
+            "Runtime block pipeline result failed protection treasury audit."
+        );
+    }
+
     const NodeDataDirectoryReadResult existingManifest =
         NodeDataDirectory::loadManifest(directoryConfig);
 
@@ -293,6 +301,9 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         {"validatorContainmentDecisionCount", std::to_string(pipelineResult.validatorContainmentDecisions().size())},
         {"validatorNetworkPolicyCount", std::to_string(pipelineResult.validatorNetworkPolicies().size())},
         {"monetaryFirewallStatus", pipelineResult.monetaryFirewallAudit().status()},
+        {"genesisTreasuryStatus", pipelineResult.genesisTreasurySnapshot().status()},
+        {"protectionRewardBudgetStatus", pipelineResult.protectionRewardBudget().status()},
+        {"protectionRewardGrantCount", std::to_string(pipelineResult.protectionRewardGrants().size())},
         {"timestamp", std::to_string(pipelineResult.block().timestamp())},
         {"recordCount", std::to_string(pipelineResult.block().records().size())}
     };
@@ -443,6 +454,44 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
     fields.emplace_back("monetary.annualMintUsedAfterRawUnits", std::to_string(monetaryAudit.annualMintUsedAfter().rawUnits()));
     fields.emplace_back("monetary.policyId", monetaryAudit.policyId());
     fields.emplace_back("monetary.reason", monetaryAudit.reason());
+
+    const GenesisTreasurySnapshot& treasurySnapshot =
+        pipelineResult.genesisTreasurySnapshot();
+
+    fields.emplace_back("treasury.treasuryAddress", treasurySnapshot.treasuryAddress());
+    fields.emplace_back("treasury.blockHeight", std::to_string(treasurySnapshot.blockHeight()));
+    fields.emplace_back("treasury.genesisTreasuryBalanceRawUnits", std::to_string(treasurySnapshot.genesisTreasuryBalance().rawUnits()));
+    fields.emplace_back("treasury.protectedReserveRawUnits", std::to_string(treasurySnapshot.protectedReserve().rawUnits()));
+    fields.emplace_back("treasury.protectionBudgetRawUnits", std::to_string(treasurySnapshot.protectionBudget().rawUnits()));
+    fields.emplace_back("treasury.availableBalanceRawUnits", std::to_string(treasurySnapshot.availableBalance().rawUnits()));
+    fields.emplace_back("treasury.reason", treasurySnapshot.reason());
+
+    const ProtectionRewardBudget& protectionBudget =
+        pipelineResult.protectionRewardBudget();
+
+    fields.emplace_back("protectionBudget.blockHeight", std::to_string(protectionBudget.blockHeight()));
+    fields.emplace_back("protectionBudget.treasuryAddress", protectionBudget.treasuryAddress());
+    fields.emplace_back("protectionBudget.availableBudgetRawUnits", std::to_string(protectionBudget.availableBudget().rawUnits()));
+    fields.emplace_back("protectionBudget.plannedTotalRawUnits", std::to_string(protectionBudget.plannedTotal().rawUnits()));
+    fields.emplace_back("protectionBudget.remainingBudgetRawUnits", std::to_string(protectionBudget.remainingBudget().rawUnits()));
+    fields.emplace_back("protectionBudget.beneficiaryCount", std::to_string(protectionBudget.beneficiaryCount()));
+    fields.emplace_back("protectionBudget.reason", protectionBudget.reason());
+    fields.emplace_back("protectionBudget.sourceTreasuryDigest", protectionBudget.sourceTreasuryDigest());
+
+    const std::vector<ProtectionRewardGrant>& protectionGrants =
+        pipelineResult.protectionRewardGrants();
+
+    for (std::size_t index = 0; index < protectionGrants.size(); ++index) {
+        const std::string prefix =
+            "protectionGrant." + std::to_string(index) + ".";
+
+        fields.emplace_back(prefix + "validatorAddress", protectionGrants[index].validatorAddress());
+        fields.emplace_back(prefix + "blockHeight", std::to_string(protectionGrants[index].blockHeight()));
+        fields.emplace_back(prefix + "plannedRewardRawUnits", std::to_string(protectionGrants[index].plannedReward().rawUnits()));
+        fields.emplace_back(prefix + "securityScore", std::to_string(protectionGrants[index].securityScore()));
+        fields.emplace_back(prefix + "reason", protectionGrants[index].reason());
+        fields.emplace_back(prefix + "sourceBudgetDigest", protectionGrants[index].sourceBudgetDigest());
+    }
 
     fields.emplace_back(
         "block",

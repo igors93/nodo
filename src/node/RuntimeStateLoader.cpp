@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_VERSION =
-    "NODO_FINALIZED_BLOCK_V11";
+    "NODO_FINALIZED_BLOCK_V12";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -475,6 +475,112 @@ MonetaryFirewallAudit parseMonetaryFirewallAudit(
     return audit;
 }
 
+
+GenesisTreasurySnapshot parseGenesisTreasurySnapshot(
+    const serialization::KeyValueFileDocument& document
+) {
+    GenesisTreasurySnapshot snapshot(
+        document.requireField("genesisTreasuryStatus"),
+        document.requireField("treasury.treasuryAddress"),
+        parseU64Strict(
+            document.requireField("treasury.blockHeight"),
+            "treasury.blockHeight"
+        ),
+        parseAmountStrict(
+            document.requireField("treasury.genesisTreasuryBalanceRawUnits"),
+            "treasury.genesisTreasuryBalanceRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("treasury.protectedReserveRawUnits"),
+            "treasury.protectedReserveRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("treasury.protectionBudgetRawUnits"),
+            "treasury.protectionBudgetRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("treasury.availableBalanceRawUnits"),
+            "treasury.availableBalanceRawUnits"
+        ),
+        document.requireField("treasury.reason")
+    );
+
+    if (!snapshot.isValid()) {
+        throw std::invalid_argument("Finalized block genesis treasury snapshot is invalid.");
+    }
+
+    return snapshot;
+}
+
+ProtectionRewardBudget parseProtectionRewardBudget(
+    const serialization::KeyValueFileDocument& document
+) {
+    ProtectionRewardBudget budget(
+        document.requireField("protectionRewardBudgetStatus"),
+        parseU64Strict(
+            document.requireField("protectionBudget.blockHeight"),
+            "protectionBudget.blockHeight"
+        ),
+        document.requireField("protectionBudget.treasuryAddress"),
+        parseAmountStrict(
+            document.requireField("protectionBudget.availableBudgetRawUnits"),
+            "protectionBudget.availableBudgetRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("protectionBudget.plannedTotalRawUnits"),
+            "protectionBudget.plannedTotalRawUnits"
+        ),
+        parseAmountStrict(
+            document.requireField("protectionBudget.remainingBudgetRawUnits"),
+            "protectionBudget.remainingBudgetRawUnits"
+        ),
+        parseU64Strict(
+            document.requireField("protectionBudget.beneficiaryCount"),
+            "protectionBudget.beneficiaryCount"
+        ),
+        document.requireField("protectionBudget.reason"),
+        document.requireField("protectionBudget.sourceTreasuryDigest")
+    );
+
+    if (!budget.isValid()) {
+        throw std::invalid_argument("Finalized block protection reward budget is invalid.");
+    }
+
+    return budget;
+}
+
+ProtectionRewardGrant parseProtectionRewardGrant(
+    const serialization::KeyValueFileDocument& document,
+    std::size_t index
+) {
+    const std::string prefix =
+        "protectionGrant." + std::to_string(index) + ".";
+
+    ProtectionRewardGrant grant(
+        document.requireField(prefix + "validatorAddress"),
+        parseU64Strict(
+            document.requireField(prefix + "blockHeight"),
+            prefix + "blockHeight"
+        ),
+        parseAmountStrict(
+            document.requireField(prefix + "plannedRewardRawUnits"),
+            prefix + "plannedRewardRawUnits"
+        ),
+        parseU16Strict(
+            document.requireField(prefix + "securityScore"),
+            prefix + "securityScore"
+        ),
+        document.requireField(prefix + "reason"),
+        document.requireField(prefix + "sourceBudgetDigest")
+    );
+
+    if (!grant.isValid()) {
+        throw std::invalid_argument("Finalized block protection reward grant is invalid.");
+    }
+
+    return grant;
+}
+
 } // namespace
 
 std::string runtimeStateLoadStatusToString(
@@ -552,6 +658,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_validatorContainmentDecisions(),
       m_validatorNetworkPolicies(),
       m_monetaryFirewallAudit(MonetaryFirewallAudit::notEvaluated()),
+      m_genesisTreasurySnapshot(GenesisTreasurySnapshot::notEvaluated()),
+      m_protectionRewardBudget(ProtectionRewardBudget::notEvaluated()),
+      m_protectionRewardGrants(),
       m_quorumCertificate(),
       m_finalizedRecord() {}
 
@@ -567,6 +676,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
     std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
     MonetaryFirewallAudit monetaryFirewallAudit,
+    GenesisTreasurySnapshot genesisTreasurySnapshot,
+    ProtectionRewardBudget protectionRewardBudget,
+    std::vector<ProtectionRewardGrant> protectionRewardGrants,
     consensus::QuorumCertificate quorumCertificate,
     consensus::FinalizedBlockRecord finalizedRecord
 )
@@ -581,6 +693,9 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_validatorContainmentDecisions(std::move(validatorContainmentDecisions)),
       m_validatorNetworkPolicies(std::move(validatorNetworkPolicies)),
       m_monetaryFirewallAudit(std::move(monetaryFirewallAudit)),
+      m_genesisTreasurySnapshot(std::move(genesisTreasurySnapshot)),
+      m_protectionRewardBudget(std::move(protectionRewardBudget)),
+      m_protectionRewardGrants(std::move(protectionRewardGrants)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)) {}
 
@@ -632,6 +747,18 @@ const MonetaryFirewallAudit& FinalizedBlockArtifact::monetaryFirewallAudit() con
     return m_monetaryFirewallAudit;
 }
 
+const GenesisTreasurySnapshot& FinalizedBlockArtifact::genesisTreasurySnapshot() const {
+    return m_genesisTreasurySnapshot;
+}
+
+const ProtectionRewardBudget& FinalizedBlockArtifact::protectionRewardBudget() const {
+    return m_protectionRewardBudget;
+}
+
+const std::vector<ProtectionRewardGrant>& FinalizedBlockArtifact::protectionRewardGrants() const {
+    return m_protectionRewardGrants;
+}
+
 const consensus::QuorumCertificate& FinalizedBlockArtifact::quorumCertificate() const {
     return m_quorumCertificate;
 }
@@ -659,7 +786,10 @@ bool FinalizedBlockArtifact::isValid() const {
                    m_validatorRiskAssessments.empty() &&
                    m_validatorContainmentDecisions.empty() &&
                    m_validatorNetworkPolicies.empty() &&
-                   m_monetaryFirewallAudit.passed();
+                   m_monetaryFirewallAudit.passed() &&
+                   m_genesisTreasurySnapshot.active() &&
+                   m_protectionRewardBudget.active() &&
+                   m_protectionRewardGrants.empty();
         }
 
         return RewardDistributionCalculator::totalReward(m_rewardDistributions) == m_totalFee &&
@@ -687,7 +817,23 @@ bool FinalizedBlockArtifact::isValid() const {
                    ValidatorNetworkPolicyBuilder::buildFromContainmentDecisions(m_validatorContainmentDecisions),
                    m_validatorNetworkPolicies
                ) &&
-               m_monetaryFirewallAudit.passed();
+               m_monetaryFirewallAudit.passed() &&
+               m_genesisTreasurySnapshot.active() &&
+               ProtectionTreasury::sameBudget(
+                   ProtectionTreasury::buildProtectionRewardBudget(
+                       m_genesisTreasurySnapshot,
+                       m_rewardDistributions
+                   ),
+                   m_protectionRewardBudget
+               ) &&
+               ProtectionTreasury::sameGrants(
+                   ProtectionTreasury::buildProtectionRewardGrants(
+                       m_protectionRewardBudget,
+                       m_rewardDistributions,
+                       m_securityScoreRecords
+                   ),
+                   m_protectionRewardGrants
+               );
     } catch (const std::exception&) {
         return false;
     }
@@ -708,6 +854,9 @@ std::string FinalizedBlockArtifact::serialize() const {
         << ";validatorContainmentDecisionCount=" << m_validatorContainmentDecisions.size()
         << ";validatorNetworkPolicyCount=" << m_validatorNetworkPolicies.size()
         << ";monetaryFirewallStatus=" << m_monetaryFirewallAudit.status()
+        << ";genesisTreasuryStatus=" << m_genesisTreasurySnapshot.status()
+        << ";protectionRewardBudgetStatus=" << m_protectionRewardBudget.status()
+        << ";protectionRewardGrantCount=" << m_protectionRewardGrants.size()
         << "}";
 
     return oss.str();
@@ -794,6 +943,7 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     const std::size_t validatorRiskAssessmentCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorRiskAssessmentCount"), "validatorRiskAssessmentCount"));
     const std::size_t validatorContainmentDecisionCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorContainmentDecisionCount"), "validatorContainmentDecisionCount"));
     const std::size_t validatorNetworkPolicyCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorNetworkPolicyCount"), "validatorNetworkPolicyCount"));
+    const std::size_t protectionRewardGrantCount = static_cast<std::size_t>(parseU64Strict(document.requireField("protectionRewardGrantCount"), "protectionRewardGrantCount"));
 
     std::set<std::string> allowedFields = {
         "blockIndex",
@@ -809,6 +959,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "validatorContainmentDecisionCount",
         "validatorNetworkPolicyCount",
         "monetaryFirewallStatus",
+        "genesisTreasuryStatus",
+        "protectionRewardBudgetStatus",
+        "protectionRewardGrantCount",
         "monetary.blockHeight",
         "monetary.supplyBeforeRawUnits",
         "monetary.mintedRawUnits",
@@ -820,6 +973,21 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         "monetary.annualMintUsedAfterRawUnits",
         "monetary.policyId",
         "monetary.reason",
+        "treasury.treasuryAddress",
+        "treasury.blockHeight",
+        "treasury.genesisTreasuryBalanceRawUnits",
+        "treasury.protectedReserveRawUnits",
+        "treasury.protectionBudgetRawUnits",
+        "treasury.availableBalanceRawUnits",
+        "treasury.reason",
+        "protectionBudget.blockHeight",
+        "protectionBudget.treasuryAddress",
+        "protectionBudget.availableBudgetRawUnits",
+        "protectionBudget.plannedTotalRawUnits",
+        "protectionBudget.remainingBudgetRawUnits",
+        "protectionBudget.beneficiaryCount",
+        "protectionBudget.reason",
+        "protectionBudget.sourceTreasuryDigest",
         "timestamp",
         "recordCount",
         "block",
@@ -918,12 +1086,23 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         allowedFields.insert(prefix + "sourceContainmentDigest");
     }
 
+    for (std::size_t index = 0; index < protectionRewardGrantCount; ++index) {
+        const std::string prefix = "protectionGrant." + std::to_string(index) + ".";
+        allowedFields.insert(prefix + "validatorAddress");
+        allowedFields.insert(prefix + "blockHeight");
+        allowedFields.insert(prefix + "plannedRewardRawUnits");
+        allowedFields.insert(prefix + "securityScore");
+        allowedFields.insert(prefix + "reason");
+        allowedFields.insert(prefix + "sourceBudgetDigest");
+    }
+
     document.requireOnlyFields(allowedFields);
 
     /*
-     * V11 stores explicit block fields, fee accounting, locked stake,
+     * V12 stores explicit block fields, fee accounting, locked stake,
      * security score records, checkpoints, risk assessments, containment decisions,
-     * network policies and the monetary firewall audit. The canonical block serialization remains the
+     * network policies, the monetary firewall audit and the initial protection
+     * treasury reward plan. The canonical block serialization remains the
      * integrity anchor for the block payload itself.
      */
     const std::string serializedBlock = document.requireField("block");
@@ -979,6 +1158,18 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
 
     const MonetaryFirewallAudit monetaryFirewallAudit =
         parseMonetaryFirewallAudit(document);
+
+    const GenesisTreasurySnapshot genesisTreasurySnapshot =
+        parseGenesisTreasurySnapshot(document);
+
+    const ProtectionRewardBudget protectionRewardBudget =
+        parseProtectionRewardBudget(document);
+
+    std::vector<ProtectionRewardGrant> protectionRewardGrants;
+    protectionRewardGrants.reserve(protectionRewardGrantCount);
+    for (std::size_t grantIndex = 0; grantIndex < protectionRewardGrantCount; ++grantIndex) {
+        protectionRewardGrants.push_back(parseProtectionRewardGrant(document, grantIndex));
+    }
 
     const std::int64_t timestamp = parseI64Strict(document.requireField("timestamp"), "timestamp");
 
@@ -1060,6 +1251,30 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         throw std::invalid_argument("Finalized block monetary firewall audit did not pass.");
     }
 
+    if (!genesisTreasurySnapshot.active() ||
+        !protectionRewardBudget.active()) {
+        throw std::invalid_argument("Finalized block protection treasury plan is inactive.");
+    }
+
+    if (!ProtectionTreasury::sameBudget(
+            ProtectionTreasury::buildProtectionRewardBudget(
+                genesisTreasurySnapshot,
+                rewardDistributions
+            ),
+            protectionRewardBudget)) {
+        throw std::invalid_argument("Finalized block protection reward budget does not match treasury snapshot.");
+    }
+
+    if (!ProtectionTreasury::sameGrants(
+            ProtectionTreasury::buildProtectionRewardGrants(
+                protectionRewardBudget,
+                rewardDistributions,
+                securityScoreRecords
+            ),
+            protectionRewardGrants)) {
+        throw std::invalid_argument("Finalized block protection reward grants do not match protection budget.");
+    }
+
     std::vector<std::pair<std::string, std::string>> canonicalFields = {
         {"blockIndex", document.requireField("blockIndex")},
         {"blockHash", document.requireField("blockHash")},
@@ -1074,6 +1289,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         {"validatorContainmentDecisionCount", std::to_string(validatorContainmentDecisions.size())},
         {"validatorNetworkPolicyCount", std::to_string(validatorNetworkPolicies.size())},
         {"monetaryFirewallStatus", monetaryFirewallAudit.status()},
+        {"genesisTreasuryStatus", genesisTreasurySnapshot.status()},
+        {"protectionRewardBudgetStatus", protectionRewardBudget.status()},
+        {"protectionRewardGrantCount", std::to_string(protectionRewardGrants.size())},
         {"timestamp", document.requireField("timestamp")},
         {"recordCount", document.requireField("recordCount")}
     };
@@ -1182,6 +1400,33 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
     canonicalFields.emplace_back("monetary.policyId", monetaryFirewallAudit.policyId());
     canonicalFields.emplace_back("monetary.reason", monetaryFirewallAudit.reason());
 
+    canonicalFields.emplace_back("treasury.treasuryAddress", genesisTreasurySnapshot.treasuryAddress());
+    canonicalFields.emplace_back("treasury.blockHeight", std::to_string(genesisTreasurySnapshot.blockHeight()));
+    canonicalFields.emplace_back("treasury.genesisTreasuryBalanceRawUnits", std::to_string(genesisTreasurySnapshot.genesisTreasuryBalance().rawUnits()));
+    canonicalFields.emplace_back("treasury.protectedReserveRawUnits", std::to_string(genesisTreasurySnapshot.protectedReserve().rawUnits()));
+    canonicalFields.emplace_back("treasury.protectionBudgetRawUnits", std::to_string(genesisTreasurySnapshot.protectionBudget().rawUnits()));
+    canonicalFields.emplace_back("treasury.availableBalanceRawUnits", std::to_string(genesisTreasurySnapshot.availableBalance().rawUnits()));
+    canonicalFields.emplace_back("treasury.reason", genesisTreasurySnapshot.reason());
+
+    canonicalFields.emplace_back("protectionBudget.blockHeight", std::to_string(protectionRewardBudget.blockHeight()));
+    canonicalFields.emplace_back("protectionBudget.treasuryAddress", protectionRewardBudget.treasuryAddress());
+    canonicalFields.emplace_back("protectionBudget.availableBudgetRawUnits", std::to_string(protectionRewardBudget.availableBudget().rawUnits()));
+    canonicalFields.emplace_back("protectionBudget.plannedTotalRawUnits", std::to_string(protectionRewardBudget.plannedTotal().rawUnits()));
+    canonicalFields.emplace_back("protectionBudget.remainingBudgetRawUnits", std::to_string(protectionRewardBudget.remainingBudget().rawUnits()));
+    canonicalFields.emplace_back("protectionBudget.beneficiaryCount", std::to_string(protectionRewardBudget.beneficiaryCount()));
+    canonicalFields.emplace_back("protectionBudget.reason", protectionRewardBudget.reason());
+    canonicalFields.emplace_back("protectionBudget.sourceTreasuryDigest", protectionRewardBudget.sourceTreasuryDigest());
+
+    for (std::size_t grantIndex = 0; grantIndex < protectionRewardGrants.size(); ++grantIndex) {
+        const std::string prefix = "protectionGrant." + std::to_string(grantIndex) + ".";
+        canonicalFields.emplace_back(prefix + "validatorAddress", protectionRewardGrants[grantIndex].validatorAddress());
+        canonicalFields.emplace_back(prefix + "blockHeight", std::to_string(protectionRewardGrants[grantIndex].blockHeight()));
+        canonicalFields.emplace_back(prefix + "plannedRewardRawUnits", std::to_string(protectionRewardGrants[grantIndex].plannedReward().rawUnits()));
+        canonicalFields.emplace_back(prefix + "securityScore", std::to_string(protectionRewardGrants[grantIndex].securityScore()));
+        canonicalFields.emplace_back(prefix + "reason", protectionRewardGrants[grantIndex].reason());
+        canonicalFields.emplace_back(prefix + "sourceBudgetDigest", protectionRewardGrants[grantIndex].sourceBudgetDigest());
+    }
+
     canonicalFields.emplace_back("block", serializedBlock);
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
@@ -1205,6 +1450,9 @@ FinalizedBlockArtifact FinalizedBlockFileCodec::decodeBlockArtifactFileContents(
         validatorContainmentDecisions,
         validatorNetworkPolicies,
         monetaryFirewallAudit,
+        genesisTreasurySnapshot,
+        protectionRewardBudget,
+        protectionRewardGrants,
         quorumCertificate,
         finalizedRecord
     );
@@ -1373,6 +1621,37 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
             if (!MonetaryFirewall::sameAudit(expectedMonetaryAudit, artifact.monetaryFirewallAudit())) {
                 return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted monetary firewall audit does not match rebuilt monetary policy.");
+            }
+
+            const GenesisTreasurySnapshot expectedTreasurySnapshot =
+                ProtectionTreasury::buildGenesisTreasurySnapshot(
+                    genesisConfig,
+                    block.index()
+                );
+
+            if (!ProtectionTreasury::sameTreasurySnapshot(expectedTreasurySnapshot, artifact.genesisTreasurySnapshot())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted genesis treasury snapshot does not match rebuilt genesis treasury.");
+            }
+
+            const ProtectionRewardBudget expectedProtectionBudget =
+                ProtectionTreasury::buildProtectionRewardBudget(
+                    expectedTreasurySnapshot,
+                    artifact.rewardDistributions()
+                );
+
+            if (!ProtectionTreasury::sameBudget(expectedProtectionBudget, artifact.protectionRewardBudget())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted protection reward budget does not match rebuilt treasury budget.");
+            }
+
+            const std::vector<ProtectionRewardGrant> expectedProtectionGrants =
+                ProtectionTreasury::buildProtectionRewardGrants(
+                    expectedProtectionBudget,
+                    artifact.rewardDistributions(),
+                    artifact.securityScoreRecords()
+                );
+
+            if (!ProtectionTreasury::sameGrants(expectedProtectionGrants, artifact.protectionRewardGrants())) {
+                return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::BLOCK_FILE_INVALID, "Invalid finalized block file " + blockPath.string() + ": Persisted protection reward grants do not match rebuilt reward plan.");
             }
 
             const consensus::BlockFinalizationResult finalization =

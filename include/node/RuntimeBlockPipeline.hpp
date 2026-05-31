@@ -8,6 +8,7 @@
 #include "crypto/Signer.hpp"
 #include "node/LockedStakePosition.hpp"
 #include "node/MonetaryFirewall.hpp"
+#include "node/ProtectionTreasury.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RewardDistribution.hpp"
 #include "node/SecurityScore.hpp"
@@ -204,6 +205,26 @@ public:
         MonetaryFirewallAudit monetaryFirewallAudit
     );
 
+    static RuntimeBlockPipelineResult finalized(
+        core::Block block,
+        consensus::QuorumCertificate certificate,
+        consensus::FinalizedBlockRecord finalizedRecord,
+        std::vector<std::string> finalizedTransactionIds,
+        std::string postStateRoot,
+        utils::Amount totalFee,
+        std::vector<RewardDistribution> rewardDistributions,
+        std::vector<LockedStakePosition> lockedStakePositions,
+        std::vector<SecurityScoreRecord> securityScoreRecords,
+        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+        MonetaryFirewallAudit monetaryFirewallAudit,
+        GenesisTreasurySnapshot genesisTreasurySnapshot,
+        ProtectionRewardBudget protectionRewardBudget,
+        std::vector<ProtectionRewardGrant> protectionRewardGrants
+    );
+
     static RuntimeBlockPipelineResult rejected(
         RuntimeBlockPipelineStatus status,
         std::string reason
@@ -227,6 +248,9 @@ public:
     const std::vector<ValidatorContainmentDecision>& validatorContainmentDecisions() const;
     const std::vector<ValidatorNetworkPolicy>& validatorNetworkPolicies() const;
     const MonetaryFirewallAudit& monetaryFirewallAudit() const;
+    const GenesisTreasurySnapshot& genesisTreasurySnapshot() const;
+    const ProtectionRewardBudget& protectionRewardBudget() const;
+    const std::vector<ProtectionRewardGrant>& protectionRewardGrants() const;
 
     std::string serialize() const;
 
@@ -253,6 +277,9 @@ private:
     std::vector<ValidatorContainmentDecision> m_validatorContainmentDecisions;
     std::vector<ValidatorNetworkPolicy> m_validatorNetworkPolicies;
     MonetaryFirewallAudit m_monetaryFirewallAudit;
+    GenesisTreasurySnapshot m_genesisTreasurySnapshot;
+    ProtectionRewardBudget m_protectionRewardBudget;
+    std::vector<ProtectionRewardGrant> m_protectionRewardGrants;
 };
 
 /*

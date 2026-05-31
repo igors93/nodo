@@ -289,6 +289,12 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         "Pipeline should pass the monetary firewall audit for zero-mint blocks."
     );
 
+    requireCondition(
+        pipeline.genesisTreasurySnapshot().active() &&
+        pipeline.protectionRewardBudget().active(),
+        "Pipeline should build an active genesis treasury and protection reward budget."
+    );
+
     const auto persisted =
         FinalizedBlockStore::persist(
             directoryConfig,
@@ -401,6 +407,14 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("monetary.burnedRawUnits=0") != std::string::npos &&
         blockContents.find("monetary.reason=MONETARY_FIREWALL_ZERO_MINT") != std::string::npos,
         "Finalized block file should persist monetary firewall audit."
+    );
+
+    requireCondition(
+        blockContents.find("genesisTreasuryStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("treasury.treasuryAddress=treasury-protocol-account") != std::string::npos &&
+        blockContents.find("protectionRewardBudgetStatus=ACTIVE") != std::string::npos &&
+        blockContents.find("protectionBudget.reason=INITIAL_PROTECTION_REWARD_BUDGET") != std::string::npos,
+        "Finalized block file should persist genesis treasury and protection reward budget."
     );
 
     const auto loaded =
