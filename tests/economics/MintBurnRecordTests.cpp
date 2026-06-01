@@ -12,6 +12,7 @@ namespace {
 nodo::economics::MintRecord validMint() {
     return nodo::economics::MintRecord(
         "mint-001",
+        "auth-genesis-001",
         "nodo1recipient001",
         nodo::utils::Amount::fromRawUnits(500),
         nodo::economics::MintReason::GENESIS_ALLOCATION,
@@ -25,7 +26,9 @@ nodo::economics::MintRecord validMint() {
 void testValidMintRecordIsValid() {
     const auto mint = validMint();
     assert(mint.isValid());
+    assert(mint.rejectionReason().empty());
     assert(mint.id() == "mint-001");
+    assert(mint.authorizationId() == "auth-genesis-001");
     assert(mint.recipientAddress() == "nodo1recipient001");
     assert(mint.amount() == nodo::utils::Amount::fromRawUnits(500));
     assert(mint.reason() == nodo::economics::MintReason::GENESIS_ALLOCATION);
@@ -34,17 +37,20 @@ void testValidMintRecordIsValid() {
 void testMintWithZeroAmountIsInvalid() {
     const nodo::economics::MintRecord mint(
         "mint-zero",
+        "auth-001",
         "nodo1recipient001",
         nodo::utils::Amount::fromRawUnits(0),
         nodo::economics::MintReason::GENESIS_ALLOCATION,
         1, 10, "block-hash", 1900000001
     );
     assert(!mint.isValid());
+    assert(!mint.rejectionReason().empty());
 }
 
 void testMintWithEmptyIdIsInvalid() {
     const nodo::economics::MintRecord mint(
         "",
+        "auth-001",
         "nodo1recipient001",
         nodo::utils::Amount::fromRawUnits(100),
         nodo::economics::MintReason::GENESIS_ALLOCATION,
@@ -53,9 +59,23 @@ void testMintWithEmptyIdIsInvalid() {
     assert(!mint.isValid());
 }
 
+void testMintWithEmptyAuthorizationIdIsInvalid() {
+    const nodo::economics::MintRecord mint(
+        "mint-no-auth",
+        "",
+        "nodo1recipient001",
+        nodo::utils::Amount::fromRawUnits(100),
+        nodo::economics::MintReason::GENESIS_ALLOCATION,
+        1, 10, "block-hash", 1900000001
+    );
+    assert(!mint.isValid());
+    assert(mint.rejectionReason().find("authorizationId") != std::string::npos);
+}
+
 void testMintWithEmptyRecipientIsInvalid() {
     const nodo::economics::MintRecord mint(
         "mint-002",
+        "auth-002",
         "",
         nodo::utils::Amount::fromRawUnits(100),
         nodo::economics::MintReason::GENESIS_ALLOCATION,
@@ -67,12 +87,22 @@ void testMintWithEmptyRecipientIsInvalid() {
 void testMintWithEmptySourceBlockHashIsInvalid() {
     const nodo::economics::MintRecord mint(
         "mint-003",
+        "auth-003",
         "nodo1recipient001",
         nodo::utils::Amount::fromRawUnits(100),
         nodo::economics::MintReason::GENESIS_ALLOCATION,
         1, 10, "", 1900000001
     );
     assert(!mint.isValid());
+}
+
+void testMintSerializationIncludesAuthorizationId() {
+    const auto mint = validMint();
+    const std::string s = mint.serialize();
+    assert(!s.empty());
+    assert(s.find("authorizationId=auth-genesis-001") != std::string::npos);
+    assert(s.find("mint-001") != std::string::npos);
+    assert(s.find("nodo1recipient001") != std::string::npos);
 }
 
 void testMintReasonRoundtrip() {
@@ -176,8 +206,10 @@ int main() {
     testValidMintRecordIsValid();
     testMintWithZeroAmountIsInvalid();
     testMintWithEmptyIdIsInvalid();
+    testMintWithEmptyAuthorizationIdIsInvalid();
     testMintWithEmptyRecipientIsInvalid();
     testMintWithEmptySourceBlockHashIsInvalid();
+    testMintSerializationIncludesAuthorizationId();
     testMintReasonRoundtrip();
 
     testValidBurnRecordIsValid();

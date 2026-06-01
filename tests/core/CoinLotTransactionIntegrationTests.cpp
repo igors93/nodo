@@ -81,6 +81,7 @@ MintRecord makeMint(
 ) {
     return MintRecord(
         id,
+        "auth_coinlot_test_001",
         recipient,
         Amount::fromNodo(amount),
         MintReason::GENESIS_ALLOCATION,

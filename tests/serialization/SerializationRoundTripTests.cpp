@@ -167,6 +167,7 @@ void testFieldCodecTopLevelObjectSplit() {
 void testMintRecordCodecRoundTrip() {
     MintRecord original(
         "mint_test_codec_001",
+        "auth_test_001",
         "igor",
         Amount::fromNodo(1000),
         MintReason::GENESIS_ALLOCATION,
@@ -195,6 +196,7 @@ void testMintRecordCodecRoundTrip() {
 void testMintRecordLegacyDeserializeDelegatesToCodec() {
     MintRecord original(
         "mint_test_legacy_delegate_001",
+        "auth_test_legacy_001",
         "ana",
         Amount::fromNodo(25),
         MintReason::NETWORK_DEFENSE_REWARD,
@@ -692,6 +694,7 @@ void testPrivateAccountingRecordCodecRejectsInvalidShape() {
 void testCanonicalSerializationRejectsMintRecordFieldReordering() {
     MintRecord original(
         "mint_test_canonical_order_001",
+        "auth_canonical_order_001",
         "igor",
         Amount::fromNodo(1000),
         MintReason::GENESIS_ALLOCATION,
@@ -717,6 +720,7 @@ void testCanonicalSerializationRejectsMintRecordFieldReordering() {
 void testCanonicalSerializationRejectsMintRecordUnknownField() {
     MintRecord original(
         "mint_test_canonical_unknown_001",
+        "auth_canonical_unknown_001",
         "igor",
         Amount::fromNodo(1000),
         MintReason::GENESIS_ALLOCATION,
@@ -743,6 +747,7 @@ void testCanonicalSerializationRejectsMintRecordUnknownField() {
 void testCanonicalSerializationRejectsMintRecordLeadingZeroAmount() {
     MintRecord original(
         "mint_test_canonical_leading_zero_001",
+        "auth_canonical_leading_zero_001",
         "igor",
         Amount::fromNodo(1000),
         MintReason::GENESIS_ALLOCATION,

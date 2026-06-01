@@ -15,6 +15,7 @@ economics::MintRecord MintRecordCodec::deserialize(
 
     economics::MintRecord record(
         FieldCodec::extractField(serialized, "id"),
+        FieldCodec::extractField(serialized, "authorizationId"),
         FieldCodec::extractField(serialized, "recipient"),
         utils::Amount::fromRawUnits(
             parseSigned64(
@@ -41,7 +42,9 @@ economics::MintRecord MintRecordCodec::deserialize(
     );
 
     if (!record.isValid()) {
-        throw std::invalid_argument("Deserialized MintRecord is invalid.");
+        throw std::invalid_argument(
+            "Deserialized MintRecord is invalid: " + record.rejectionReason()
+        );
     }
 
     if (record.serialize() != serialized) {

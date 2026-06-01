@@ -8,10 +8,12 @@ namespace {
 
 nodo::economics::MintRecord makeMint(
     const std::string& id,
-    std::int64_t rawUnits
+    std::int64_t rawUnits,
+    const std::string& authorizationId = "auth-delta-test-001"
 ) {
     return nodo::economics::MintRecord(
         id,
+        authorizationId,
         "nodo1recipient001",
         nodo::utils::Amount::fromRawUnits(rawUnits),
         nodo::economics::MintReason::GENESIS_ALLOCATION,
@@ -147,7 +149,7 @@ void testUnderflowBurnedExceedsAvailableSupply() {
 void testInvalidMintRecordCausesDeltaRejection() {
     // Mint record with empty id is invalid
     const nodo::economics::MintRecord badMint(
-        "", "nodo1r", nodo::utils::Amount::fromRawUnits(100),
+        "", "auth-bad-001", "nodo1r", nodo::utils::Amount::fromRawUnits(100),
         nodo::economics::MintReason::GENESIS_ALLOCATION,
         1, 5, "block-hash", 1900000001
     );
@@ -179,6 +181,21 @@ void testInvalidBurnRecordCausesDeltaRejection() {
     assert(!delta.isValid());
 }
 
+void testMintRecordWithEmptyAuthorizationIdCausesDeltaRejection() {
+    // Delta with a mint record that has empty authorizationId must be rejected.
+    const nodo::economics::SupplyDelta delta(
+        14, "block-hash-J", 1,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(100),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(1100),
+        {makeMint("mint-no-auth", 100, "")},  // empty authorizationId
+        {}
+    );
+    assert(!delta.isValid());
+    assert(delta.rejectionReason().find("MintRecord") != std::string::npos);
+}
+
 void testDeltaSerializationContainsKeyFields() {
     const auto delta = nodo::economics::SupplyDelta::noOp(
         100, "block-xyz", 5, nodo::utils::Amount::fromRawUnits(2500)
@@ -203,6 +220,7 @@ int main() {
     testUnderflowBurnedExceedsAvailableSupply();
     testInvalidMintRecordCausesDeltaRejection();
     testInvalidBurnRecordCausesDeltaRejection();
+    testMintRecordWithEmptyAuthorizationIdCausesDeltaRejection();
     testDeltaSerializationContainsKeyFields();
     return 0;
 }

@@ -28,12 +28,25 @@ MintReason mintReasonFromString(const std::string& value);
  * MintRecord records the origin of newly created coins.
  *
  * Core principle:
- * Every NODO coin must be born from a MintRecord.
+ * Every NODO coin must be born from a MintRecord with:
+ *   - an explicit mint id;
+ *   - an explicit authorizationId that links to a MintAuthorization;
+ *   - a recipient;
+ *   - a positive amount;
+ *   - a valid reason;
+ *   - source/origin metadata.
+ *
+ * Security principle:
+ * sourceBlockHash is origin metadata, not authorization.
+ * authorizationId is the authorization reference that must be matched to a
+ * MintAuthorization when the record is validated by the MonetaryFirewall.
+ * A mint without authorizationId is unconditionally invalid.
  */
 class MintRecord {
 public:
     MintRecord(
         std::string id,
+        std::string authorizationId,
         std::string recipientAddress,
         utils::Amount amount,
         MintReason reason,
@@ -44,6 +57,7 @@ public:
     );
 
     const std::string& id() const;
+    const std::string& authorizationId() const;
     const std::string& recipientAddress() const;
     utils::Amount amount() const;
     MintReason reason() const;
@@ -53,6 +67,7 @@ public:
     std::int64_t timestamp() const;
 
     bool isValid() const;
+    std::string rejectionReason() const;
 
     /*
      * Deterministic serialization.
@@ -73,6 +88,7 @@ public:
 
 private:
     std::string m_id;
+    std::string m_authorizationId;
     std::string m_recipientAddress;
     utils::Amount m_amount;
     MintReason m_reason;

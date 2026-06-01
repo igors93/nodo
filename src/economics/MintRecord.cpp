@@ -49,6 +49,7 @@ MintReason mintReasonFromString(const std::string& value) {
 
 MintRecord::MintRecord(
     std::string id,
+    std::string authorizationId,
     std::string recipientAddress,
     utils::Amount amount,
     MintReason reason,
@@ -58,6 +59,7 @@ MintRecord::MintRecord(
     std::int64_t timestamp
 )
     : m_id(std::move(id)),
+      m_authorizationId(std::move(authorizationId)),
       m_recipientAddress(std::move(recipientAddress)),
       m_amount(amount),
       m_reason(reason),
@@ -66,60 +68,42 @@ MintRecord::MintRecord(
       m_sourceBlockHash(std::move(sourceBlockHash)),
       m_timestamp(timestamp) {}
 
-const std::string& MintRecord::id() const {
-    return m_id;
-}
-
-const std::string& MintRecord::recipientAddress() const {
-    return m_recipientAddress;
-}
-
-utils::Amount MintRecord::amount() const {
-    return m_amount;
-}
-
-MintReason MintRecord::reason() const {
-    return m_reason;
-}
-
-std::uint64_t MintRecord::epoch() const {
-    return m_epoch;
-}
-
-std::uint64_t MintRecord::sourceBlockIndex() const {
-    return m_sourceBlockIndex;
-}
-
-const std::string& MintRecord::sourceBlockHash() const {
-    return m_sourceBlockHash;
-}
-
-std::int64_t MintRecord::timestamp() const {
-    return m_timestamp;
-}
+const std::string& MintRecord::id() const { return m_id; }
+const std::string& MintRecord::authorizationId() const { return m_authorizationId; }
+const std::string& MintRecord::recipientAddress() const { return m_recipientAddress; }
+utils::Amount MintRecord::amount() const { return m_amount; }
+MintReason MintRecord::reason() const { return m_reason; }
+std::uint64_t MintRecord::epoch() const { return m_epoch; }
+std::uint64_t MintRecord::sourceBlockIndex() const { return m_sourceBlockIndex; }
+const std::string& MintRecord::sourceBlockHash() const { return m_sourceBlockHash; }
+std::int64_t MintRecord::timestamp() const { return m_timestamp; }
 
 bool MintRecord::isValid() const {
+    return rejectionReason().empty();
+}
+
+std::string MintRecord::rejectionReason() const {
     if (m_id.empty()) {
-        return false;
+        return "MintRecord rejected: id is empty.";
     }
-
+    if (m_authorizationId.empty()) {
+        return "MintRecord rejected: authorizationId is empty. "
+               "Every mint must be linked to a MintAuthorization.";
+    }
     if (m_recipientAddress.empty()) {
-        return false;
+        return "MintRecord rejected: recipientAddress is empty.";
     }
-
     if (!m_amount.isPositive()) {
-        return false;
+        return "MintRecord rejected: amount must be positive, got " +
+               std::to_string(m_amount.rawUnits()) + ".";
     }
-
-    if (m_timestamp <= 0) {
-        return false;
-    }
-
     if (m_sourceBlockHash.empty()) {
-        return false;
+        return "MintRecord rejected: sourceBlockHash is empty.";
     }
-
-    return true;
+    if (m_timestamp <= 0) {
+        return "MintRecord rejected: timestamp must be positive.";
+    }
+    return "";
 }
 
 std::string MintRecord::serialize() const {
@@ -127,6 +111,7 @@ std::string MintRecord::serialize() const {
 
     oss << "MintRecord{"
         << "id=" << m_id
+        << ";authorizationId=" << m_authorizationId
         << ";recipient=" << m_recipientAddress
         << ";amountRaw=" << m_amount.rawUnits()
         << ";reason=" << mintReasonToString(m_reason)

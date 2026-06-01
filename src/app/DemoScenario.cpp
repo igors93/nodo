@@ -110,6 +110,7 @@ int runBlockchainFoundationDemo() {
      */
     MintRecord genesisMint(
         "mint_genesis_igor_001",
+        "auth_genesis_nodo_001",
         "igor",
         Amount::fromNodo(1000),
         MintReason::GENESIS_ALLOCATION,

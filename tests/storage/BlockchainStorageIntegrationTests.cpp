@@ -159,6 +159,7 @@ Blockchain buildReferenceBlockchain() {
 
     MintRecord genesisMint(
         "mint_storage_integration_igor_001",
+        "auth_storage_integration_001",
         "igor",
         Amount::fromNodo(1000),
         MintReason::GENESIS_ALLOCATION,
