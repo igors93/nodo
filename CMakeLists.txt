@@ -38,6 +38,13 @@ target_link_libraries(nodo_core
         blst::blst
 )
 
+if(WIN32)
+    target_link_libraries(nodo_core
+        PUBLIC
+            ws2_32
+    )
+endif()
+
 file(GLOB_RECURSE NODO_CORE_CPP_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )

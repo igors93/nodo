@@ -79,26 +79,33 @@ public:
 
     void closeAll();
 
+#ifdef _WIN32
+    using SocketHandle = std::uintptr_t;
+#else
+    using SocketHandle = int;
+#endif
+
 private:
-    int m_listenFd;
+    SocketHandle m_listenFd;
+    bool m_socketRuntimeReady;
     std::string m_localNodeId;
     PeerEndpoint m_localEndpoint;
     std::map<std::string, PeerEndpoint> m_peerEndpoints;
-    std::map<std::string, int> m_connectionsByPeer;
-    std::vector<int> m_unidentifiedInboundFds;
+    std::map<std::string, SocketHandle> m_connectionsByPeer;
+    std::vector<SocketHandle> m_unidentifiedInboundFds;
 
     TransportResult acceptAvailableConnections();
     std::optional<TransportMessage> pollFd(
-        int fd,
+        SocketHandle fd,
         bool unidentified
     );
 
     void rememberConnection(
         const std::string& remoteNodeId,
-        int fd
+        SocketHandle fd
     );
 
-    void closeFd(int fd);
+    void closeFd(SocketHandle fd);
     void closePeerConnection(const std::string& remoteNodeId);
 
     static bool isSafeNodeId(const std::string& nodeId);

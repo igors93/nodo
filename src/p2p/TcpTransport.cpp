@@ -10,6 +10,13 @@
 #include <stdexcept>
 #include <utility>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -17,17 +24,97 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 namespace nodo::p2p {
 
 namespace {
 
-constexpr int INVALID_FD = -1;
+using SocketHandle = TcpTransport::SocketHandle;
+
+#ifdef _WIN32
+constexpr SocketHandle INVALID_FD = static_cast<SocketHandle>(INVALID_SOCKET);
+constexpr int SEND_FLAGS = 0;
+using NativeSocket = SOCKET;
+using SocketLength = int;
+using IoctlAvailableBytes = u_long;
+#else
+constexpr SocketHandle INVALID_FD = -1;
+#ifdef MSG_NOSIGNAL
+constexpr int SEND_FLAGS = MSG_NOSIGNAL;
+#else
+constexpr int SEND_FLAGS = 0;
+#endif
+using NativeSocket = int;
+using SocketLength = socklen_t;
+using IoctlAvailableBytes = int;
+#endif
+
 constexpr int LISTEN_BACKLOG = 16;
 constexpr std::uint32_t MAX_WIRE_FRAME_BYTES =
     static_cast<std::uint32_t>(TcpTransportFrameCodec::MAX_TCP_FRAME_BYTES);
 
-bool setNonBlocking(int fd) {
+#ifdef _WIN32
+bool startupSocketRuntime() {
+    WSADATA data;
+    return WSAStartup(MAKEWORD(2, 2), &data) == 0;
+}
+
+void cleanupSocketRuntime() {
+    WSACleanup();
+}
+
+bool isInterruptedSocketError() {
+    return WSAGetLastError() == WSAEINTR;
+}
+
+bool isWouldBlockSocketError() {
+    return WSAGetLastError() == WSAEWOULDBLOCK;
+}
+
+std::string lastSocketErrorMessage(const std::string& prefix) {
+    std::ostringstream output;
+    output << prefix << ": Winsock error " << WSAGetLastError();
+    return output.str();
+}
+
+bool setNonBlocking(SocketHandle fd) {
+    u_long mode = 1;
+    return ioctlsocket(static_cast<SOCKET>(fd), FIONBIO, &mode) == 0;
+}
+
+void closeSocket(SocketHandle& fd) {
+    if (fd != INVALID_FD) {
+        closesocket(static_cast<SOCKET>(fd));
+        fd = INVALID_FD;
+    }
+}
+
+int socketAvailableBytes(SocketHandle fd, IoctlAvailableBytes& availableBytes) {
+    return ioctlsocket(static_cast<SOCKET>(fd), FIONREAD, &availableBytes);
+}
+#else
+bool startupSocketRuntime() {
+    return true;
+}
+
+void cleanupSocketRuntime() {}
+
+bool isInterruptedSocketError() {
+    return errno == EINTR;
+}
+
+bool isWouldBlockSocketError() {
+    return errno == EAGAIN || errno == EWOULDBLOCK;
+}
+
+std::string lastSocketErrorMessage(const std::string& prefix) {
+    std::ostringstream output;
+    output << prefix << ": " << std::strerror(errno);
+    return output.str();
+}
+
+bool setNonBlocking(SocketHandle fd) {
     const int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) {
         return false;
@@ -36,12 +123,17 @@ bool setNonBlocking(int fd) {
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
-void closeSocket(int& fd) {
+void closeSocket(SocketHandle& fd) {
     if (fd != INVALID_FD) {
         ::close(fd);
         fd = INVALID_FD;
     }
 }
+
+int socketAvailableBytes(SocketHandle fd, IoctlAvailableBytes& availableBytes) {
+    return ::ioctl(fd, FIONREAD, &availableBytes);
+}
+#endif
 
 std::uint32_t decodeU32BigEndian(const unsigned char* data) {
     return (static_cast<std::uint32_t>(data[0]) << 24) |
@@ -59,19 +151,19 @@ std::array<unsigned char, 4> encodeU32BigEndian(std::uint32_t value) {
     };
 }
 
-bool writeAll(int fd, const unsigned char* data, std::size_t size) {
+bool writeAll(SocketHandle fd, const unsigned char* data, std::size_t size) {
     std::size_t written = 0;
 
     while (written < size) {
-        const ssize_t result = ::send(
-            fd,
-            data + written,
-            size - written,
-            MSG_NOSIGNAL
+        const int result = ::send(
+            static_cast<NativeSocket>(fd),
+            reinterpret_cast<const char*>(data + written),
+            static_cast<int>(size - written),
+            SEND_FLAGS
         );
 
         if (result < 0) {
-            if (errno == EINTR) {
+            if (isInterruptedSocketError()) {
                 continue;
             }
             return false;
@@ -87,19 +179,19 @@ bool writeAll(int fd, const unsigned char* data, std::size_t size) {
     return true;
 }
 
-bool readAll(int fd, unsigned char* data, std::size_t size) {
+bool readAll(SocketHandle fd, unsigned char* data, std::size_t size) {
     std::size_t read = 0;
 
     while (read < size) {
-        const ssize_t result = ::recv(
-            fd,
-            data + read,
-            size - read,
+        const int result = ::recv(
+            static_cast<NativeSocket>(fd),
+            reinterpret_cast<char*>(data + read),
+            static_cast<int>(size - read),
             0
         );
 
         if (result < 0) {
-            if (errno == EINTR) {
+            if (isInterruptedSocketError()) {
                 continue;
             }
             return false;
@@ -115,36 +207,35 @@ bool readAll(int fd, unsigned char* data, std::size_t size) {
     return true;
 }
 
-bool socketHasReadableData(int fd) {
+bool socketHasReadableData(SocketHandle fd) {
     fd_set readSet;
     FD_ZERO(&readSet);
-    FD_SET(fd, &readSet);
+    FD_SET(static_cast<NativeSocket>(fd), &readSet);
 
     timeval timeout;
     timeout.tv_sec = 0;
     timeout.tv_usec = 0;
 
     const int result = select(
+#ifdef _WIN32
+        0,
+#else
         fd + 1,
+#endif
         &readSet,
         nullptr,
         nullptr,
         &timeout
     );
 
-    return result > 0 && FD_ISSET(fd, &readSet);
-}
-
-std::string errnoMessage(const std::string& prefix) {
-    std::ostringstream output;
-    output << prefix << ": " << std::strerror(errno);
-    return output.str();
+    return result > 0 && FD_ISSET(static_cast<NativeSocket>(fd), &readSet);
 }
 
 } // namespace
 
 TcpTransport::TcpTransport()
     : m_listenFd(INVALID_FD),
+      m_socketRuntimeReady(startupSocketRuntime()),
       m_localNodeId(),
       m_localEndpoint(),
       m_peerEndpoints(),
@@ -153,6 +244,9 @@ TcpTransport::TcpTransport()
 
 TcpTransport::~TcpTransport() {
     closeAll();
+    if (m_socketRuntimeReady) {
+        cleanupSocketRuntime();
+    }
 }
 
 TransportResult TcpTransport::bind(
@@ -180,21 +274,29 @@ TransportResult TcpTransport::bind(
         );
     }
 
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (!m_socketRuntimeReady) {
+        return TransportResult(
+            TransportStatus::REJECTED,
+            "Unable to initialize TCP socket runtime."
+        );
+    }
+
+    const SocketHandle fd =
+        static_cast<SocketHandle>(::socket(AF_INET, SOCK_STREAM, 0));
     if (fd == INVALID_FD) {
         return TransportResult(
             TransportStatus::REJECTED,
-            errnoMessage("Unable to create TCP socket")
+            lastSocketErrorMessage("Unable to create TCP socket")
         );
     }
 
     int reuse = 1;
     (void)::setsockopt(
-        fd,
+        static_cast<NativeSocket>(fd),
         SOL_SOCKET,
         SO_REUSEADDR,
-        &reuse,
-        sizeof(reuse)
+        reinterpret_cast<const char*>(&reuse),
+        static_cast<SocketLength>(sizeof(reuse))
     );
 
     sockaddr_in address;
@@ -203,7 +305,7 @@ TransportResult TcpTransport::bind(
     address.sin_port = htons(endpoint.port());
 
     if (::inet_pton(AF_INET, endpoint.host().c_str(), &address.sin_addr) != 1) {
-        int closeFd = fd;
+        SocketHandle closeFd = fd;
         closeSocket(closeFd);
         return TransportResult(
             TransportStatus::REJECTED,
@@ -211,46 +313,50 @@ TransportResult TcpTransport::bind(
         );
     }
 
-    if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
-        int closeFd = fd;
+    if (::bind(
+            static_cast<NativeSocket>(fd),
+            reinterpret_cast<sockaddr*>(&address),
+            static_cast<SocketLength>(sizeof(address))
+        ) != 0) {
+        SocketHandle closeFd = fd;
         closeSocket(closeFd);
         return TransportResult(
             TransportStatus::REJECTED,
-            errnoMessage("Unable to bind TCP socket")
+            lastSocketErrorMessage("Unable to bind TCP socket")
         );
     }
 
-    if (::listen(fd, LISTEN_BACKLOG) != 0) {
-        int closeFd = fd;
+    if (::listen(static_cast<NativeSocket>(fd), LISTEN_BACKLOG) != 0) {
+        SocketHandle closeFd = fd;
         closeSocket(closeFd);
         return TransportResult(
             TransportStatus::REJECTED,
-            errnoMessage("Unable to listen on TCP socket")
+            lastSocketErrorMessage("Unable to listen on TCP socket")
         );
     }
 
     if (!setNonBlocking(fd)) {
-        int closeFd = fd;
+        SocketHandle closeFd = fd;
         closeSocket(closeFd);
         return TransportResult(
             TransportStatus::REJECTED,
-            errnoMessage("Unable to set TCP socket nonblocking")
+            lastSocketErrorMessage("Unable to set TCP socket nonblocking")
         );
     }
 
     sockaddr_in boundAddress;
     std::memset(&boundAddress, 0, sizeof(boundAddress));
-    socklen_t boundLength = sizeof(boundAddress);
+    SocketLength boundLength = static_cast<SocketLength>(sizeof(boundAddress));
     if (::getsockname(
-            fd,
+            static_cast<NativeSocket>(fd),
             reinterpret_cast<sockaddr*>(&boundAddress),
             &boundLength
         ) != 0) {
-        int closeFd = fd;
+        SocketHandle closeFd = fd;
         closeSocket(closeFd);
         return TransportResult(
             TransportStatus::REJECTED,
-            errnoMessage("Unable to read bound TCP endpoint")
+            lastSocketErrorMessage("Unable to read bound TCP endpoint")
         );
     }
 
@@ -351,11 +457,19 @@ TransportResult TcpTransport::connect(
         );
     }
 
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (!m_socketRuntimeReady) {
+        return TransportResult(
+            TransportStatus::REJECTED,
+            "Unable to initialize TCP socket runtime."
+        );
+    }
+
+    const SocketHandle fd =
+        static_cast<SocketHandle>(::socket(AF_INET, SOCK_STREAM, 0));
     if (fd == INVALID_FD) {
         return TransportResult(
             TransportStatus::REJECTED,
-            errnoMessage("Unable to create outbound TCP socket")
+            lastSocketErrorMessage("Unable to create outbound TCP socket")
         );
     }
 
@@ -365,7 +479,7 @@ TransportResult TcpTransport::connect(
     address.sin_port = htons(endpoint->second.port());
 
     if (::inet_pton(AF_INET, endpoint->second.host().c_str(), &address.sin_addr) != 1) {
-        int closeFd = fd;
+        SocketHandle closeFd = fd;
         closeSocket(closeFd);
         return TransportResult(
             TransportStatus::REJECTED,
@@ -373,12 +487,16 @@ TransportResult TcpTransport::connect(
         );
     }
 
-    if (::connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
-        int closeFd = fd;
+    if (::connect(
+            static_cast<NativeSocket>(fd),
+            reinterpret_cast<sockaddr*>(&address),
+            static_cast<SocketLength>(sizeof(address))
+        ) != 0) {
+        SocketHandle closeFd = fd;
         closeSocket(closeFd);
         return TransportResult(
             TransportStatus::NOT_CONNECTED,
-            errnoMessage("Unable to connect TCP peer")
+            lastSocketErrorMessage("Unable to connect TCP peer")
         );
     }
 
@@ -491,7 +609,7 @@ std::optional<TransportMessage> TcpTransport::poll(
 
     for (auto iterator = m_connectionsByPeer.begin();
          iterator != m_connectionsByPeer.end();) {
-        const int fd = iterator->second;
+        const SocketHandle fd = iterator->second;
         auto message = pollFd(fd, false);
 
         if (message.has_value()) {
@@ -503,7 +621,7 @@ std::optional<TransportMessage> TcpTransport::poll(
 
     for (auto iterator = m_unidentifiedInboundFds.begin();
          iterator != m_unidentifiedInboundFds.end();) {
-        const int fd = *iterator;
+        const SocketHandle fd = *iterator;
         auto message = pollFd(fd, true);
 
         if (message.has_value()) {
@@ -525,7 +643,7 @@ void TcpTransport::closeAll() {
     }
     m_connectionsByPeer.clear();
 
-    for (int& fd : m_unidentifiedInboundFds) {
+    for (SocketHandle& fd : m_unidentifiedInboundFds) {
         closeSocket(fd);
     }
     m_unidentifiedInboundFds.clear();
@@ -544,22 +662,22 @@ TransportResult TcpTransport::acceptAvailableConnections() {
     while (true) {
         sockaddr_in remoteAddress;
         std::memset(&remoteAddress, 0, sizeof(remoteAddress));
-        socklen_t remoteLength = sizeof(remoteAddress);
+        SocketLength remoteLength = static_cast<SocketLength>(sizeof(remoteAddress));
 
-        const int fd = ::accept(
-            m_listenFd,
+        const SocketHandle fd = static_cast<SocketHandle>(::accept(
+            static_cast<NativeSocket>(m_listenFd),
             reinterpret_cast<sockaddr*>(&remoteAddress),
             &remoteLength
-        );
+        ));
 
         if (fd == INVALID_FD) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            if (isWouldBlockSocketError()) {
                 break;
             }
 
             return TransportResult(
                 TransportStatus::REJECTED,
-                errnoMessage("Unable to accept TCP peer")
+                lastSocketErrorMessage("Unable to accept TCP peer")
             );
         }
 
@@ -574,7 +692,7 @@ TransportResult TcpTransport::acceptAvailableConnections() {
 }
 
 std::optional<TransportMessage> TcpTransport::pollFd(
-    int fd,
+    SocketHandle fd,
     bool unidentified
 ) {
     (void)unidentified;
@@ -583,18 +701,23 @@ std::optional<TransportMessage> TcpTransport::pollFd(
         return std::nullopt;
     }
 
-    int availableBytes = 0;
-    if (::ioctl(fd, FIONREAD, &availableBytes) != 0 || availableBytes < 4) {
+    IoctlAvailableBytes availableBytes = 0;
+    if (socketAvailableBytes(fd, availableBytes) != 0 || availableBytes < 4) {
         return std::nullopt;
     }
 
     unsigned char header[4] = {0, 0, 0, 0};
-    const ssize_t peeked = ::recv(fd, header, sizeof(header), MSG_PEEK);
+    const int peeked = ::recv(
+        static_cast<NativeSocket>(fd),
+        reinterpret_cast<char*>(header),
+        static_cast<int>(sizeof(header)),
+        MSG_PEEK
+    );
     if (peeked <= 0) {
         return std::nullopt;
     }
 
-    if (peeked < static_cast<ssize_t>(sizeof(header))) {
+    if (peeked < static_cast<int>(sizeof(header))) {
         return std::nullopt;
     }
 
@@ -604,7 +727,7 @@ std::optional<TransportMessage> TcpTransport::pollFd(
         return std::nullopt;
     }
 
-    if (availableBytes < static_cast<int>(sizeof(header) + frameSize)) {
+    if (availableBytes < static_cast<IoctlAvailableBytes>(sizeof(header) + frameSize)) {
         return std::nullopt;
     }
 
@@ -637,7 +760,7 @@ std::optional<TransportMessage> TcpTransport::pollFd(
 
 void TcpTransport::rememberConnection(
     const std::string& remoteNodeId,
-    int fd
+    SocketHandle fd
 ) {
     if (!isSafeNodeId(remoteNodeId) || fd == INVALID_FD) {
         return;
@@ -645,14 +768,14 @@ void TcpTransport::rememberConnection(
 
     const auto existing = m_connectionsByPeer.find(remoteNodeId);
     if (existing != m_connectionsByPeer.end() && existing->second != fd) {
-        int oldFd = existing->second;
+        SocketHandle oldFd = existing->second;
         closeSocket(oldFd);
     }
 
     m_connectionsByPeer[remoteNodeId] = fd;
 }
 
-void TcpTransport::closeFd(int fd) {
+void TcpTransport::closeFd(SocketHandle fd) {
     if (fd == INVALID_FD) {
         return;
     }
@@ -660,7 +783,7 @@ void TcpTransport::closeFd(int fd) {
     for (auto iterator = m_connectionsByPeer.begin();
          iterator != m_connectionsByPeer.end();) {
         if (iterator->second == fd) {
-            int socketFd = iterator->second;
+            SocketHandle socketFd = iterator->second;
             closeSocket(socketFd);
             iterator = m_connectionsByPeer.erase(iterator);
         } else {
@@ -671,7 +794,7 @@ void TcpTransport::closeFd(int fd) {
     for (auto iterator = m_unidentifiedInboundFds.begin();
          iterator != m_unidentifiedInboundFds.end();) {
         if (*iterator == fd) {
-            int socketFd = *iterator;
+            SocketHandle socketFd = *iterator;
             closeSocket(socketFd);
             iterator = m_unidentifiedInboundFds.erase(iterator);
         } else {
@@ -688,7 +811,7 @@ void TcpTransport::closePeerConnection(
         return;
     }
 
-    int fd = found->second;
+    SocketHandle fd = found->second;
     closeSocket(fd);
     m_connectionsByPeer.erase(found);
 }
