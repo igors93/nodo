@@ -39,8 +39,10 @@ reload and audit checks can commit to the resulting account state.
 Finalized block reload verifies the quorum certificate and finalized record
 before accepting the artifact: quorum threshold, duplicate validator votes,
 unknown validators, invalid vote signatures and certificate/block mismatch all
-reject reload. Slashing is intentionally not implemented yet; these failures are
-audit/reject events only.
+reject reload. Slashing evidence and validator penalty decisions are now
+separate auditable records: evidence must be verified first, and each evidence
+id can produce only one deterministic penalty decision. Production stake
+slashing remains outside the current localnet activation path.
 
 Local key files are written atomically and parsed strictly. The current
 localnet key format stores private material for the temporary provider and must

@@ -2,6 +2,7 @@
 
 #include "crypto/hash.h"
 #include "serialization/ChainManifestCodec.hpp"
+#include "storage/AtomicFile.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -230,34 +231,7 @@ void ChainManifest::writeToStorageRoot(
     }
 
     const std::filesystem::path finalPath = manifestFilePath(rootDirectory);
-    const std::filesystem::path temporaryPath = finalPath.string() + ".tmp";
-
-    {
-        std::ofstream output(
-            temporaryPath,
-            std::ios::out | std::ios::binary | std::ios::trunc
-        );
-
-        if (!output.is_open()) {
-            throw std::runtime_error("Failed to open temporary ChainManifest for writing.");
-        }
-
-        output << serialize();
-
-        if (!output.good()) {
-            throw std::runtime_error("Failed while writing ChainManifest.");
-        }
-    }
-
-    std::filesystem::rename(temporaryPath, finalPath, errorCode);
-
-    if (errorCode) {
-        std::filesystem::remove(temporaryPath);
-        throw std::runtime_error(
-            "Failed to finalize ChainManifest file: " +
-            errorCode.message()
-        );
-    }
+    AtomicFile::writeTextFile(finalPath, serialize());
 
     const ChainManifest storedManifest = readFromStorageRoot(rootDirectory);
 

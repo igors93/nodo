@@ -12,13 +12,14 @@ Nodo is organized by runtime responsibility rather than implementation phase.
 - `node`: local runtime, data directory, runtime loader, finalized block store,
   persistent mempool and local block pipeline.
 - `storage`: generic chain/block storage helpers and atomic file IO.
-- `serialization`: deterministic text codecs used by current development
-  persistence and state rebuilds.
+- `serialization`: strict canonical binary codecs for protocol boundaries plus
+  deterministic text codecs for legacy development persistence.
 - `crypto`: hash, key, signature-provider and development-signature boundaries.
 - `economics`: protection work, emissions, rewards, validator scores and
   penalties.
 - `privacy`: experimental private accounting records and nullifier tracking.
-- `p2p`: local peer messages and sync planning; no socket server yet.
+- `p2p`: peer messages, sync planning, gossip mesh, loopback/TCP transports and
+  encrypted peer-channel framing for testnet development.
 
 ## Persistence Flow
 

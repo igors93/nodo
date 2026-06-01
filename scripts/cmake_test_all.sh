@@ -11,8 +11,11 @@ if ! command -v cmake >/dev/null 2>&1; then
     exit 1
 fi
 
+: "${CTEST_PARALLEL_LEVEL:=1}"
+export CTEST_PARALLEL_LEVEL
+
 "$ROOT_DIR/scripts/cmake_build.sh"
-ctest --test-dir "$CMAKE_BUILD_DIR" --output-on-failure
+ctest --test-dir "$CMAKE_BUILD_DIR" --output-on-failure -j "$CTEST_PARALLEL_LEVEL"
 
 echo
 echo "CMake tests completed successfully."

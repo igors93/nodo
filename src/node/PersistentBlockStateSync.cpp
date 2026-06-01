@@ -3,9 +3,9 @@
 #include "serialization/CanonicalHash.hpp"
 #include "serialization/CanonicalReader.hpp"
 #include "serialization/CanonicalWriter.hpp"
+#include "storage/AtomicFile.hpp"
 
 #include <algorithm>
-#include <fstream>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -288,14 +288,9 @@ std::optional<PersistentSyncCheckpoint> PersistentSyncCheckpointStore::load() co
         return std::nullopt;
     }
 
-    std::ifstream input(path);
-    if (!input) {
-        throw std::runtime_error("Unable to open persistent sync checkpoint.");
-    }
-
-    std::ostringstream buffer;
-    buffer << input.rdbuf();
-    return PersistentSyncCheckpoint::deserialize(buffer.str());
+    return PersistentSyncCheckpoint::deserialize(
+        storage::AtomicFile::readTextFile(path)
+    );
 }
 
 void PersistentSyncCheckpointStore::save(
@@ -307,26 +302,7 @@ void PersistentSyncCheckpointStore::save(
 
     const auto path = checkpointFilePath();
     std::filesystem::create_directories(path.parent_path());
-
-    const auto temporaryPath = path.string() + ".tmp";
-    {
-        std::ofstream output(temporaryPath, std::ios::trunc);
-        if (!output) {
-            throw std::runtime_error("Unable to write temporary persistent sync checkpoint.");
-        }
-        output << checkpoint.serialize();
-        output.flush();
-        if (!output) {
-            throw std::runtime_error("Unable to flush temporary persistent sync checkpoint.");
-        }
-    }
-
-    std::error_code ignored;
-    std::filesystem::rename(temporaryPath, path, ignored);
-    if (ignored) {
-        std::filesystem::remove(path, ignored);
-        std::filesystem::rename(temporaryPath, path);
-    }
+    storage::AtomicFile::writeTextFile(path, checkpoint.serialize());
 }
 
 PersistentBlockSyncItem::PersistentBlockSyncItem()
@@ -836,14 +812,22 @@ PersistentSyncCheckpoint PersistentBlockStateSyncCodec::decodeCheckpoint(
     serialization::CanonicalReader reader(bytes, MAX_SYNC_CODEC_FIELD_BYTES);
     readHeader(reader, "PersistentSyncCheckpoint");
 
+    const std::string schemaVersion = reader.readString();
+    const std::uint64_t finalizedHeight = reader.readUInt64();
+    const std::string finalizedBlockHash = reader.readString();
+    const std::string finalizedStateRoot = reader.readString();
+    const PersistentSyncStatus status = decodeStatus(reader.readUInt32());
+    const std::string sourcePeerId = reader.readString();
+    const std::int64_t updatedAt = reader.readInt64();
+
     PersistentSyncCheckpoint checkpoint(
-        reader.readString(),
-        reader.readUInt64(),
-        reader.readString(),
-        reader.readString(),
-        decodeStatus(reader.readUInt32()),
-        reader.readString(),
-        reader.readInt64()
+        schemaVersion,
+        finalizedHeight,
+        finalizedBlockHash,
+        finalizedStateRoot,
+        status,
+        sourcePeerId,
+        updatedAt
     );
 
     reader.requireFullyConsumed();
@@ -882,13 +866,20 @@ PersistentBlockSyncItem PersistentBlockStateSyncCodec::decodeBlockSyncItem(
     serialization::CanonicalReader reader(bytes, MAX_SYNC_CODEC_FIELD_BYTES);
     readHeader(reader, "PersistentBlockSyncItem");
 
+    const std::uint64_t height = reader.readUInt64();
+    const std::string blockHash = reader.readString();
+    const std::string previousBlockHash = reader.readString();
+    const std::string serializedBlock = reader.readString();
+    const std::string finalizedStateRoot = reader.readString();
+    const std::int64_t createdAt = reader.readInt64();
+
     PersistentBlockSyncItem item(
-        reader.readUInt64(),
-        reader.readString(),
-        reader.readString(),
-        reader.readString(),
-        reader.readString(),
-        reader.readInt64()
+        height,
+        blockHash,
+        previousBlockHash,
+        serializedBlock,
+        finalizedStateRoot,
+        createdAt
     );
 
     reader.requireFullyConsumed();
@@ -935,12 +926,14 @@ PersistentBlockSyncBatch PersistentBlockStateSyncCodec::decodeBlockSyncBatch(
         items.push_back(decodeBlockSyncItem(reader.readBytes()));
     }
 
+    const std::int64_t createdAt = reader.readInt64();
+
     PersistentBlockSyncBatch batch(
         sourcePeerId,
         fromHeight,
         toHeight,
         items,
-        reader.readInt64()
+        createdAt
     );
 
     reader.requireFullyConsumed();
@@ -979,13 +972,20 @@ PersistentSnapshotSyncManifest PersistentBlockStateSyncCodec::decodeSnapshotMani
     serialization::CanonicalReader reader(bytes, MAX_SYNC_CODEC_FIELD_BYTES);
     readHeader(reader, "PersistentSnapshotSyncManifest");
 
+    const std::string sourcePeerId = reader.readString();
+    const std::uint64_t snapshotHeight = reader.readUInt64();
+    const std::string snapshotBlockHash = reader.readString();
+    const std::string snapshotStateRoot = reader.readString();
+    const std::string snapshotDigest = reader.readString();
+    const std::int64_t createdAt = reader.readInt64();
+
     PersistentSnapshotSyncManifest manifest(
-        reader.readString(),
-        reader.readUInt64(),
-        reader.readString(),
-        reader.readString(),
-        reader.readString(),
-        reader.readInt64()
+        sourcePeerId,
+        snapshotHeight,
+        snapshotBlockHash,
+        snapshotStateRoot,
+        snapshotDigest,
+        createdAt
     );
 
     reader.requireFullyConsumed();

@@ -27,9 +27,11 @@ Current limitations:
   BLS12-381 validator signatures through blst;
 - localnet key files are deterministic and unencrypted, so they are not
   production-safe key custody;
-- P2P networking is intentionally out of scope for this foundation step;
-- no slashing is implemented yet; invalid quorum/finalization evidence is
-  rejected and reported only;
+- P2P, TCP transport, gossip and encrypted peer-channel foundations are present
+  for testnet development, but are not production networking yet;
+- slashing evidence and validator penalty decisions are implemented as
+  auditable, idempotent protocol records; automatic production stake-slashing is
+  still out of scope;
 - the mempool does not yet implement a full per-account future-nonce queue;
 - balance, nonce and minimum fee checks now run inside the state-transition
   preview before votes;

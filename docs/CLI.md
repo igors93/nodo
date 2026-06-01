@@ -64,6 +64,6 @@ build/nodo status --data-dir .nodo
 ```
 
 Current localnet limits remain intentional: no production P2P, no mainnet
-startup path, no slashing, unencrypted deterministic local keys and no
-per-account future-nonce queue. These limits are audited explicitly instead of
-being hidden behind demo-only code paths.
+startup path, no automatic production stake-slashing, unencrypted deterministic
+local keys and no per-account future-nonce queue. These limits are audited
+explicitly instead of being hidden behind demo-only code paths.

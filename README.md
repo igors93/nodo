@@ -57,8 +57,11 @@ Current limitations are explicit:
   local format that is not production-safe custody yet;
 - `localnet` uses explicit development account allocations in `GenesisConfig`
   for the default user key so balance and nonce checks can run locally;
-- no P2P validator networking is included in this phase;
-- no slashing or production mainnet path is included in this phase;
+- P2P, TCP transport, gossip and encrypted peer-channel foundations exist for
+  testnet development, but they are not a production networking stack yet;
+- slashing evidence and validator penalty decisions are auditable and
+  idempotent, but production stake-slashing and mainnet activation are still
+  intentionally out of scope;
 - mempool future nonces are rejected until a full per-account queue exists;
 - coin-lot ownership, double-spend and complete supply audit must continue
   moving behind the state-transition validation gate.

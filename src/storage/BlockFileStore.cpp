@@ -1,5 +1,7 @@
 #include "storage/BlockFileStore.hpp"
 
+#include "storage/AtomicFile.hpp"
+
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -81,36 +83,7 @@ void BlockFileStore::writeBlock(const core::Block& block) const {
         return;
     }
 
-    const std::filesystem::path temporaryPath =
-        finalPath.string() + ".tmp";
-
-    {
-        std::ofstream output(
-            temporaryPath,
-            std::ios::out | std::ios::binary | std::ios::trunc
-        );
-
-        if (!output.is_open()) {
-            throw std::runtime_error("Failed to open temporary block file for writing.");
-        }
-
-        output << serializedBlock;
-
-        if (!output.good()) {
-            throw std::runtime_error("Failed while writing block snapshot.");
-        }
-    }
-
-    std::error_code errorCode;
-
-    std::filesystem::rename(temporaryPath, finalPath, errorCode);
-
-    if (errorCode) {
-        std::filesystem::remove(temporaryPath);
-        throw std::runtime_error(
-            "Failed to finalize block snapshot file: " + errorCode.message()
-        );
-    }
+    AtomicFile::writeTextFile(finalPath, serializedBlock);
 
     if (!verifyStoredBlock(block)) {
         throw std::runtime_error("Stored block snapshot verification failed.");

@@ -53,9 +53,18 @@ consensus::SlashingEvidenceRecord SlashingEvidenceStore::load(
         throw std::invalid_argument("Slashing evidence record was not found.");
     }
 
-    return consensus::SlashingEvidenceRecord::deserialize(
-        AtomicFile::readTextFile(pathForEvidenceId(evidenceId))
-    );
+    consensus::SlashingEvidenceRecord record =
+        consensus::SlashingEvidenceRecord::deserialize(
+            AtomicFile::readTextFile(pathForEvidenceId(evidenceId))
+        );
+
+    if (record.evidenceId() != evidenceId) {
+        throw std::runtime_error(
+            "Slashing evidence file name does not match stored evidence id."
+        );
+    }
+
+    return record;
 }
 
 std::vector<consensus::SlashingEvidenceRecord> SlashingEvidenceStore::loadAll() const {
@@ -71,11 +80,7 @@ std::vector<consensus::SlashingEvidenceRecord> SlashingEvidenceStore::loadAll() 
             continue;
         }
 
-        records.push_back(
-            consensus::SlashingEvidenceRecord::deserialize(
-                AtomicFile::readTextFile(entry.path())
-            )
-        );
+        records.push_back(load(entry.path().stem().string()));
     }
 
     std::sort(

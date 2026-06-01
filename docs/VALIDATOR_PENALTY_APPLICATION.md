@@ -1,0 +1,47 @@
+# Validator Penalty Application
+
+This phase connects accepted slashing evidence to deterministic validator penalty decisions.
+
+It intentionally does not mutate balances directly inside consensus helpers. Instead it creates a conservative, auditable boundary:
+
+1. slashing evidence is already verified and durable;
+2. a penalty policy maps evidence to consequences;
+3. a deterministic penalty decision is created;
+4. the decision is applied once to an in-memory ledger;
+5. the decision can be persisted and announced to peers.
+
+## Added modules
+
+- `consensus::ValidatorPenaltyPolicy`
+- `consensus::ValidatorPenaltyDecision`
+- `consensus::ValidatorPenaltyLedger`
+- `storage::ValidatorPenaltyStore`
+- `node::ValidatorPenaltyAnnouncement`
+- `node::ValidatorPenaltyRequest`
+
+## Current conservative testnet policy
+
+- warning evidence becomes a warning only;
+- slashable double-vote evidence creates a slash decision and jail window;
+- slashable invalid-signature evidence creates a jail decision;
+- slashable equivocation evidence creates a tombstone decision when policy enables it.
+
+## Security rules
+
+- invalid evidence is rejected;
+- invalid policy is rejected;
+- each evidence id can produce only one applied penalty decision;
+- penalty ids are deterministic from evidence id, validator, action and penalty amount;
+- duplicate penalty application is idempotent;
+- stored decisions must deserialize back into valid decisions.
+
+## Not included yet
+
+- direct account balance mutation;
+- stake locking or stake accounting integration;
+- automatic validator registry deactivation;
+- governance appeals;
+- penalty inclusion into finalized block execution;
+- production-grade validator economics.
+
+Those should be added after this decision boundary is stable and after staking state is explicit.

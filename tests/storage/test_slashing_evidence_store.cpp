@@ -53,10 +53,12 @@ nodo::consensus::ValidatorVoteRecord makeVote(
 } // namespace
 
 #include "storage/SlashingEvidenceStore.hpp"
+#include "storage/AtomicFile.hpp"
 
 #include <cassert>
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
 
 int main() {
     const std::filesystem::path directory =
@@ -93,6 +95,20 @@ int main() {
 
     const auto all = store.loadAll();
     assert(all.size() == 1);
+
+    const std::string wrongEvidenceId = std::string(64, 'f');
+    nodo::storage::AtomicFile::writeTextFile(
+        directory / (wrongEvidenceId + ".evidence"),
+        record.serialize()
+    );
+
+    bool rejectedMismatchedFile = false;
+    try {
+        (void)store.load(wrongEvidenceId);
+    } catch (const std::runtime_error&) {
+        rejectedMismatchedFile = true;
+    }
+    assert(rejectedMismatchedFile);
 
     std::filesystem::remove_all(directory);
 

@@ -1,6 +1,7 @@
 #include "node/TcpTestnetNodeRuntime.hpp"
 
-#include <fstream>
+#include "storage/AtomicFile.hpp"
+
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -177,10 +178,7 @@ std::vector<TcpTestnetPeerFileEntry> TcpTestnetPeerStore::load(
         return peers;
     }
 
-    std::ifstream input(peersFile);
-    if (!input) {
-        throw std::runtime_error("Unable to open peers file for reading.");
-    }
+    std::istringstream input(storage::AtomicFile::readTextFile(peersFile));
 
     std::string line;
     while (std::getline(input, line)) {
@@ -200,11 +198,7 @@ void TcpTestnetPeerStore::save(
 ) {
     std::filesystem::create_directories(peersFile.parent_path());
 
-    std::ofstream output(peersFile, std::ios::out | std::ios::trunc);
-    if (!output) {
-        throw std::runtime_error("Unable to open peers file for writing.");
-    }
-
+    std::ostringstream output;
     output << "# nodeId host port publicKeyFingerprint\n";
 
     for (const auto& peer : peers) {
@@ -212,6 +206,8 @@ void TcpTestnetPeerStore::save(
             output << peer.serialize() << "\n";
         }
     }
+
+    storage::AtomicFile::writeTextFile(peersFile, output.str());
 }
 
 TcpTestnetNodeRuntime::TcpTestnetNodeRuntime(
