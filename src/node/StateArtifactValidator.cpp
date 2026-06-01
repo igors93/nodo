@@ -1,0 +1,63 @@
+#include "node/StateArtifactValidator.hpp"
+
+#include "core/StateTransitionPreview.hpp"
+#include "node/RuntimeAccountStateBuilder.hpp"
+
+#include <exception>
+#include <utility>
+
+namespace nodo::node {
+
+ArtifactValidationResult StateArtifactValidator::validate(
+    FinalizedArtifactValidationContext& context,
+    const FinalizedBlockArtifact& artifact
+) {
+    const std::string prefix =
+        context.rejectionPrefix();
+
+    try {
+        core::StateTransitionPreviewContext previewContext =
+            RuntimeAccountStateBuilder::previewContextAtTip(
+                context.genesisConfig(),
+                context.runtime().blockchain(),
+                context.minimumFeeRawUnits()
+            );
+
+        core::StateTransitionPreviewResult preview =
+            core::StateTransitionPreview::previewBlock(
+                artifact.block(),
+                previewContext
+            );
+
+        if (!preview.accepted()) {
+            return ArtifactValidationResult::rejected(
+                prefix + "Persisted block failed state preview during reload: " + preview.reason()
+            );
+        }
+
+        if (preview.stateRoot() != artifact.postStateRoot()) {
+            return ArtifactValidationResult::rejected(
+                prefix + "Persisted block postStateRoot does not match rebuilt account state."
+            );
+        }
+
+        if (preview.totalFee() != artifact.totalFee()) {
+            return ArtifactValidationResult::rejected(
+                prefix + "Persisted block totalFeeRawUnits does not match rebuilt transaction fees."
+            );
+        }
+
+        context.setStatePreview(
+            std::move(previewContext),
+            std::move(preview)
+        );
+    } catch (const std::exception& error) {
+        return ArtifactValidationResult::rejected(
+            prefix + error.what()
+        );
+    }
+
+    return ArtifactValidationResult::acceptedResult();
+}
+
+} // namespace nodo::node

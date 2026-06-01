@@ -38,10 +38,13 @@ runtime is considered auditable.
 
 Reload responsibilities are intentionally split. `RuntimeStateLoader`
 coordinates durable reads and runtime replay. `FinalizedBlockArtifactCodec`
-owns finalized artifact parsing/serialization shape. `RuntimeStateVerifier`
-centralizes manifest-to-runtime checks and deterministic `latestStateRoot`
-recalculation. `ChainAuditor` adds the final operational checks for crypto
-context, mempool admission policy and validator registry consistency.
+owns finalized artifact parsing/serialization shape. `FinalizedArtifactValidator`
+coordinates domain validators for finality, state transition preview, economic
+records, monetary and treasury records, slashing evidence, governance records
+and validator lifecycle accounting. `RuntimeStateVerifier` centralizes
+manifest-to-runtime checks and deterministic `latestStateRoot` recalculation.
+`ChainAuditor` adds the final operational checks for crypto context, mempool
+admission policy and validator registry consistency.
 
 ## Build
 
