@@ -143,6 +143,9 @@ void testTwoBlocksSupplyChainsCorrectly() {
 
     // supplyBefore for block 2 must equal supplyAfter of block 1.
     assert(result2.supplyDelta().supplyBefore() == supplyAfterBlock1);
+    assert(result2.feeBurnRecord().supplyBefore() == supplyAfterBlock1);
+    assert(result2.monetaryFirewallAudit().supplyLedger().supplyBefore() == supplyAfterBlock1);
+    assert(result2.monetaryFirewallAudit().supplyLedger().supplyAfter() == result2.supplyDelta().supplyAfter());
 }
 
 // 4. NodeRuntime supply state tracks latest supply after finalization.

@@ -346,11 +346,30 @@ MonetaryFirewallAudit MonetaryFirewall::buildAudit(
     utils::Amount treasuryDelta,
     utils::Amount annualMintUsedBefore
 ) {
+    return buildAuditWithSupplyBefore(
+        blockHeight,
+        genesisSupply(genesisConfig),
+        minted,
+        burned,
+        treasuryDelta,
+        annualMintUsedBefore
+    );
+}
+
+MonetaryFirewallAudit MonetaryFirewall::buildAuditWithSupplyBefore(
+    std::uint64_t blockHeight,
+    utils::Amount supplyBefore,
+    utils::Amount minted,
+    utils::Amount burned,
+    utils::Amount treasuryDelta,
+    utils::Amount annualMintUsedBefore
+) {
     if (blockHeight == 0) {
         throw std::invalid_argument("Cannot build monetary firewall audit at genesis height.");
     }
 
-    if (minted.isNegative() ||
+    if (supplyBefore.isNegative() ||
+        minted.isNegative() ||
         burned.isNegative() ||
         annualMintUsedBefore.isNegative()) {
         throw std::invalid_argument("Cannot build monetary firewall audit with negative monetary values.");
@@ -362,9 +381,6 @@ MonetaryFirewallAudit MonetaryFirewall::buildAudit(
 
     const MonetaryPolicy policy =
         MonetaryPolicy::protocolDefault();
-
-    const utils::Amount supplyBefore =
-        genesisSupply(genesisConfig);
 
     const utils::Amount supplyAfter =
         calculateSupplyAfter(

@@ -1,4 +1,6 @@
 #include "node/FinalizedBlockStore.hpp"
+#include "node/FinalizedArtifactSchema.hpp"
+#include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "config/NetworkParameters.hpp"
@@ -21,6 +23,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 
 namespace {
 
@@ -41,6 +44,8 @@ using nodo::crypto::SecurityContext;
 using nodo::crypto::Signer;
 using nodo::crypto::SignatureBundle;
 using nodo::node::FinalizedBlockStore;
+using nodo::node::FinalizedArtifactSchema;
+using nodo::node::FinalizedBlockArtifactCodec;
 using nodo::node::NodeDataDirectory;
 using nodo::node::NodeDataDirectoryConfig;
 using nodo::node::NodeRuntime;
@@ -76,6 +81,73 @@ void clean(
     std::filesystem::remove_all(
         path,
         error
+    );
+}
+
+std::string replaceFirst(
+    std::string contents,
+    const std::string& from,
+    const std::string& to
+) {
+    const std::size_t position =
+        contents.find(from);
+
+    requireCondition(
+        position != std::string::npos,
+        "Expected substring should be present before replacement."
+    );
+
+    contents.replace(
+        position,
+        from.size(),
+        to
+    );
+
+    return contents;
+}
+
+std::string removeLineContaining(
+    const std::string& contents,
+    const std::string& needle
+) {
+    std::istringstream input(contents);
+    std::ostringstream output;
+    std::string line;
+    bool removed = false;
+
+    while (std::getline(input, line)) {
+        if (!removed &&
+            line.find(needle) != std::string::npos) {
+            removed = true;
+            continue;
+        }
+
+        output << line << "\n";
+    }
+
+    requireCondition(
+        removed,
+        "Expected line should be present before removal."
+    );
+
+    return output.str();
+}
+
+void expectDecodeRejected(
+    const std::string& contents,
+    const std::string& message
+) {
+    bool rejected = false;
+
+    try {
+        (void)FinalizedBlockArtifactCodec::decodeBlockArtifactFileContents(contents);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+
+    requireCondition(
+        rejected,
+        message
     );
 }
 
@@ -387,6 +459,16 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
     );
 
     requireCondition(
+        blockContents.rfind(FinalizedArtifactSchema::currentSchemaId() + "\n", 0) == 0,
+        "Finalized block file should use the versionless finalized artifact schema id."
+    );
+
+    requireCondition(
+        !FinalizedArtifactSchema::hasVersionSuffix(FinalizedArtifactSchema::currentSchemaId()),
+        "Current finalized artifact schema id should not have a version suffix."
+    );
+
+    requireCondition(
         blockContents.find("postStateRoot=" + pipeline.postStateRoot()) != std::string::npos,
         "Finalized block file should persist post-state root."
     );
@@ -465,6 +547,55 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("monetary.treasuryDeltaRawUnits=30") != std::string::npos &&
         blockContents.find("monetary.reason=MONETARY_FIREWALL_ZERO_MINT") != std::string::npos,
         "Finalized block file should persist monetary firewall audit with fee burn."
+    );
+
+    requireCondition(
+        blockContents.find("supplyDelta.blockHeight=1") != std::string::npos &&
+        blockContents.find("supplyDelta.blockHash=" + pipeline.block().hash()) != std::string::npos &&
+        blockContents.find("supplyDelta.supplyBeforeRawUnits=1000000000000") != std::string::npos &&
+        blockContents.find("supplyDelta.mintedAmountRawUnits=0") != std::string::npos &&
+        blockContents.find("supplyDelta.burnedAmountRawUnits=20") != std::string::npos &&
+        blockContents.find("supplyDelta.supplyAfterRawUnits=999999999980") != std::string::npos &&
+        blockContents.find("supplyDelta.mintRecordCount=0") != std::string::npos &&
+        blockContents.find("supplyDelta.burnRecordCount=1") != std::string::npos &&
+        blockContents.find("supplyDelta.burn.0.amountRawUnits=20") != std::string::npos &&
+        blockContents.find("supplyDelta.burn.0.burnType=FEE_BURN") != std::string::npos,
+        "Finalized block file should persist canonical SupplyDelta fields."
+    );
+
+    const auto decodedArtifact =
+        FinalizedBlockArtifactCodec::decodeBlockArtifactFileContents(blockContents);
+
+    requireCondition(
+        decodedArtifact.supplyDelta().blockHeight() == pipeline.supplyDelta().blockHeight() &&
+        decodedArtifact.supplyDelta().blockHash() == pipeline.supplyDelta().blockHash() &&
+        decodedArtifact.supplyDelta().supplyBefore() == pipeline.supplyDelta().supplyBefore() &&
+        decodedArtifact.supplyDelta().burnedAmount() == pipeline.supplyDelta().burnedAmount() &&
+        decodedArtifact.supplyDelta().supplyAfter() == pipeline.supplyDelta().supplyAfter(),
+        "Finalized block codec should round-trip the persisted SupplyDelta."
+    );
+
+    expectDecodeRejected(
+        removeLineContaining(blockContents, "supplyDelta.supplyAfterRawUnits="),
+        "Finalized block codec should reject artifacts missing SupplyDelta fields."
+    );
+
+    expectDecodeRejected(
+        replaceFirst(
+            blockContents,
+            FinalizedArtifactSchema::currentSchemaId(),
+            "NODO_FINALIZED_BLOCK_V19"
+        ),
+        "Finalized block codec should reject the legacy V19 schema id."
+    );
+
+    expectDecodeRejected(
+        replaceFirst(
+            blockContents,
+            FinalizedArtifactSchema::currentSchemaId(),
+            "NODO_FINALIZED_BLOCK_V20"
+        ),
+        "Finalized block codec should reject the legacy V20 schema id."
     );
 
     requireCondition(

@@ -37,11 +37,7 @@ public:
     );
 
     /*
-     * Check that SupplyDelta.burnedAmount >= FeeBurnRecord.burnAmount.
-     *
-     * The legacy FeeBurnRecord represents only the fee burn portion. The
-     * SupplyDelta may include additional burns (e.g., slash burns) so it
-     * must be >= the fee burn, not necessarily equal.
+     * Check that the current fee burn model matches SupplyDelta exactly.
      */
     static ArtifactValidationResult validateSupplyDeltaConsistencyWithFeeBurn(
         const economics::SupplyDelta& delta,
@@ -58,6 +54,15 @@ public:
     static ArtifactValidationResult validateSupplyDeltaConsistencyWithSupplyExpansion(
         const economics::SupplyDelta& delta,
         const SupplyExpansionRecord& supplyExpansionRecord
+    );
+
+    /*
+     * Check that the legacy monetary firewall ledger mirrors the canonical
+     * SupplyDelta supply transition.
+     */
+    static ArtifactValidationResult validateSupplyDeltaConsistencyWithMonetaryFirewallAudit(
+        const economics::SupplyDelta& delta,
+        const MonetaryFirewallAudit& monetaryFirewallAudit
     );
 };
 

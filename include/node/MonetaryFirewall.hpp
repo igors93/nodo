@@ -138,6 +138,15 @@ public:
         utils::Amount annualMintUsedBefore
     );
 
+    static MonetaryFirewallAudit buildAuditWithSupplyBefore(
+        std::uint64_t blockHeight,
+        utils::Amount supplyBefore,
+        utils::Amount minted,
+        utils::Amount burned,
+        utils::Amount treasuryDelta,
+        utils::Amount annualMintUsedBefore
+    );
+
     static bool sameAudit(
         const MonetaryFirewallAudit& left,
         const MonetaryFirewallAudit& right

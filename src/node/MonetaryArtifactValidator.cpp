@@ -31,12 +31,48 @@ ArtifactValidationResult MonetaryArtifactValidator::validate(
         const FeeEconomicBalance& expectedFeeBalance =
             context.expectedFeeEconomicBalance();
 
+        const economics::SupplyDelta& supplyDelta =
+            artifact.supplyDelta();
+
+        if (!supplyDelta.isValid()) {
+            return ArtifactValidationResult::rejected(
+                prefix + "Persisted SupplyDelta is invalid or missing: " +
+                supplyDelta.rejectionReason()
+            );
+        }
+
+        if (supplyDelta.blockHeight() != block.index() ||
+            supplyDelta.blockHash() != block.hash()) {
+            return ArtifactValidationResult::rejected(
+                prefix + "Persisted SupplyDelta does not match the finalized block identity."
+            );
+        }
+
+        const economics::MonetaryPolicy supplyPolicy =
+            economics::MonetaryPolicy::localnetDefault(
+                context.genesisConfig().networkParameters().chainId(),
+                MonetaryFirewall::genesisSupply(context.genesisConfig())
+            );
+
+        const ArtifactValidationResult supplyGateValidation =
+            validateSupplyDelta(
+                supplyPolicy,
+                supplyDelta,
+                {}
+            );
+
+        if (!supplyGateValidation.accepted()) {
+            return ArtifactValidationResult::rejected(
+                prefix + supplyGateValidation.reason()
+            );
+        }
+
         const MonetaryFirewallAudit expectedMonetaryAudit =
-            MonetaryFirewall::buildAudit(
-                context.genesisConfig(),
+            MonetaryFirewall::buildAuditWithSupplyBefore(
                 block.index(),
-                utils::Amount(),
-                artifact.feeBurnRecord().burnAmount(),
+                supplyDelta.supplyBefore(),
+                supplyDelta.mintedAmount(),
+                supplyDelta.burnedAmount(),
                 artifact.treasuryFeeRecord().treasuryAmount(),
                 utils::Amount()
             );
@@ -157,6 +193,18 @@ ArtifactValidationResult MonetaryArtifactValidator::validate(
             );
         }
 
+        const ArtifactValidationResult supplyExpansionConsistency =
+            validateSupplyDeltaConsistencyWithSupplyExpansion(
+                supplyDelta,
+                artifact.supplyExpansionRecord()
+            );
+
+        if (!supplyExpansionConsistency.accepted()) {
+            return ArtifactValidationResult::rejected(
+                prefix + supplyExpansionConsistency.reason()
+            );
+        }
+
         if (RewardDistributionCalculator::totalReward(artifact.rewardDistributions()) != expectedFeeBalance.validatorRewardAmount()) {
             return ArtifactValidationResult::rejected(
                 prefix + "Persisted rewards do not match validator fee allocation."
@@ -166,12 +214,24 @@ ArtifactValidationResult MonetaryArtifactValidator::validate(
         const FeeBurnRecord expectedFeeBurn =
             FeeEconomics::buildFeeBurnRecord(
                 expectedFeeBalance,
-                artifact.feeBurnRecord().supplyBefore()
+                supplyDelta.supplyBefore()
             );
 
         if (!FeeEconomics::sameBurn(expectedFeeBurn, artifact.feeBurnRecord())) {
             return ArtifactValidationResult::rejected(
                 prefix + "Persisted fee burn record does not match rebuilt fee split."
+            );
+        }
+
+        const ArtifactValidationResult feeBurnConsistency =
+            validateSupplyDeltaConsistencyWithFeeBurn(
+                supplyDelta,
+                artifact.feeBurnRecord()
+            );
+
+        if (!feeBurnConsistency.accepted()) {
+            return ArtifactValidationResult::rejected(
+                prefix + feeBurnConsistency.reason()
             );
         }
 
@@ -192,6 +252,18 @@ ArtifactValidationResult MonetaryArtifactValidator::validate(
                 prefix + "Persisted fee economics records do not match monetary firewall audit."
             );
         }
+
+        const ArtifactValidationResult firewallConsistency =
+            validateSupplyDeltaConsistencyWithMonetaryFirewallAudit(
+                supplyDelta,
+                artifact.monetaryFirewallAudit()
+            );
+
+        if (!firewallConsistency.accepted()) {
+            return ArtifactValidationResult::rejected(
+                prefix + firewallConsistency.reason()
+            );
+        }
     } catch (const std::exception& error) {
         return ArtifactValidationResult::rejected(
             prefix + error.what()
@@ -208,11 +280,11 @@ ArtifactValidationResult MonetaryArtifactValidator::validateSupplyDeltaConsisten
     if (!feeBurnRecord.active()) {
         return ArtifactValidationResult::acceptedResult();
     }
-    if (delta.burnedAmount() < feeBurnRecord.burnAmount()) {
+    if (delta.burnedAmount() != feeBurnRecord.burnAmount()) {
         return ArtifactValidationResult::rejected(
             "MonetaryArtifactValidator: SupplyDelta.burnedAmount (" +
             std::to_string(delta.burnedAmount().rawUnits()) +
-            ") is less than FeeBurnRecord.burnAmount (" +
+            ") does not equal FeeBurnRecord.burnAmount (" +
             std::to_string(feeBurnRecord.burnAmount().rawUnits()) + ")."
         );
     }
@@ -226,15 +298,48 @@ ArtifactValidationResult MonetaryArtifactValidator::validateSupplyDeltaConsisten
     if (!supplyExpansionRecord.isValid()) {
         return ArtifactValidationResult::acceptedResult();
     }
-    // If supply expansion claims no mint, SupplyDelta must have no mints.
-    if (supplyExpansionRecord.mintedAmount().isZero() &&
-        !delta.mintedAmount().isZero()) {
+    if (supplyExpansionRecord.mintedAmount() != delta.mintedAmount()) {
         return ArtifactValidationResult::rejected(
-            "MonetaryArtifactValidator: SupplyExpansionRecord claims no mint "
-            "but SupplyDelta.mintedAmount is non-zero (" +
+            "MonetaryArtifactValidator: SupplyExpansionRecord minted amount (" +
+            std::to_string(supplyExpansionRecord.mintedAmount().rawUnits()) +
+            ") does not match SupplyDelta.mintedAmount (" +
             std::to_string(delta.mintedAmount().rawUnits()) + ")."
         );
     }
+
+    if (supplyExpansionRecord.mintedAmount().isZero() &&
+        !delta.mintRecords().empty()) {
+        return ArtifactValidationResult::rejected(
+            "MonetaryArtifactValidator: SupplyExpansionRecord claims no mint "
+            "but SupplyDelta contains mint records."
+        );
+    }
+
+    return ArtifactValidationResult::acceptedResult();
+}
+
+ArtifactValidationResult MonetaryArtifactValidator::validateSupplyDeltaConsistencyWithMonetaryFirewallAudit(
+    const economics::SupplyDelta& delta,
+    const MonetaryFirewallAudit& monetaryFirewallAudit
+) {
+    if (!monetaryFirewallAudit.passed()) {
+        return ArtifactValidationResult::acceptedResult();
+    }
+
+    const SupplyLedgerSnapshot& ledger =
+        monetaryFirewallAudit.supplyLedger();
+
+    if (ledger.blockHeight() != delta.blockHeight() ||
+        ledger.supplyBefore() != delta.supplyBefore() ||
+        ledger.minted() != delta.mintedAmount() ||
+        ledger.burned() != delta.burnedAmount() ||
+        ledger.supplyAfter() != delta.supplyAfter()) {
+        return ArtifactValidationResult::rejected(
+            "MonetaryArtifactValidator: MonetaryFirewallAudit supply ledger "
+            "does not match SupplyDelta."
+        );
+    }
+
     return ArtifactValidationResult::acceptedResult();
 }
 
@@ -270,4 +375,3 @@ ArtifactValidationResult MonetaryArtifactValidator::validateSupplyDelta(
 }
 
 } // namespace nodo::node
-

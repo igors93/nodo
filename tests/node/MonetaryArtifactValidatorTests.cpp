@@ -2,6 +2,9 @@
 #include "economics/MintAuthorization.hpp"
 #include "economics/MonetaryPolicy.hpp"
 #include "economics/SupplyDelta.hpp"
+#include "node/ControlledIssuance.hpp"
+#include "node/FeeEconomics.hpp"
+#include "node/MonetaryFirewall.hpp"
 
 #include <cassert>
 #include <string>
@@ -42,6 +45,57 @@ nodo::economics::MintRecord makeMint(
         nodo::utils::Amount::fromRawUnits(rawUnits),
         nodo::economics::MintReason::GENESIS_ALLOCATION,
         1, blockHeight, blockHash, 1900000001
+    );
+}
+
+nodo::economics::SupplyDelta makeBurnDelta() {
+    const nodo::economics::BurnRecord burn(
+        "artifact-fee-burn-001",
+        10,
+        0,
+        "nodo_fee_pool",
+        nodo::utils::Amount::fromRawUnits(20),
+        "fee burn",
+        nodo::economics::BurnType::FEE_BURN
+    );
+
+    return nodo::economics::SupplyDelta(
+        10,
+        "artifact-hash-burn",
+        0,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(20),
+        nodo::utils::Amount::fromRawUnits(980),
+        {},
+        {burn}
+    );
+}
+
+nodo::node::FeeBurnRecord makeFeeBurnRecord(
+    std::int64_t burnRawUnits
+) {
+    return nodo::node::FeeBurnRecord(
+        "ACTIVE",
+        10,
+        nodo::utils::Amount::fromRawUnits(burnRawUnits),
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(1000 - burnRawUnits),
+        nodo::node::FeeEconomics::FEE_BURN_REASON,
+        "fee-balance-digest"
+    );
+}
+
+nodo::node::SupplyExpansionRecord makeNoSupplyExpansionRecord() {
+    return nodo::node::SupplyExpansionRecord(
+        "NONE",
+        10,
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::node::ControlledIssuance::NO_RECIPIENT_ADDRESS,
+        "NO_ACTIVE_MINT_AUTHORIZATION",
+        "policy-id",
+        nodo::node::ControlledIssuance::NO_SUPPLY_EXPANSION_REASON,
+        "source-authorization-digest"
     );
 }
 
@@ -119,6 +173,95 @@ void testValidateSupplyDeltaRejectsInvalidPolicy() {
            result.reason().find("policy") != std::string::npos);
 }
 
+void testValidateSupplyDeltaRejectsFeeBurnMismatch() {
+    const auto delta = makeBurnDelta();
+    const auto result =
+        nodo::node::MonetaryArtifactValidator::validateSupplyDeltaConsistencyWithFeeBurn(
+            delta,
+            makeFeeBurnRecord(19)
+        );
+
+    assert(!result.accepted());
+    assert(result.reason().find("does not equal") != std::string::npos);
+}
+
+void testValidateSupplyDeltaAcceptsFeeBurnMatch() {
+    const auto delta = makeBurnDelta();
+    const auto result =
+        nodo::node::MonetaryArtifactValidator::validateSupplyDeltaConsistencyWithFeeBurn(
+            delta,
+            makeFeeBurnRecord(20)
+        );
+
+    assert(result.accepted());
+}
+
+void testValidateSupplyDeltaRejectsSupplyExpansionMismatch() {
+    const nodo::economics::SupplyDelta delta(
+        10,
+        "artifact-hash-mint",
+        1,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(5),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(1005),
+        {makeMint("art-mint-expansion", "art-auth-expansion", 5, 10, "artifact-hash-mint")},
+        {}
+    );
+
+    const auto result =
+        nodo::node::MonetaryArtifactValidator::validateSupplyDeltaConsistencyWithSupplyExpansion(
+            delta,
+            makeNoSupplyExpansionRecord()
+        );
+
+    assert(!result.accepted());
+    assert(result.reason().find("SupplyExpansionRecord") != std::string::npos);
+}
+
+void testValidateSupplyDeltaRejectsMonetaryFirewallMismatch() {
+    const auto delta = makeBurnDelta();
+    const nodo::node::MonetaryFirewallAudit mismatchedAudit =
+        nodo::node::MonetaryFirewall::buildAuditWithSupplyBefore(
+            10,
+            nodo::utils::Amount::fromRawUnits(900),
+            nodo::utils::Amount::fromRawUnits(0),
+            nodo::utils::Amount::fromRawUnits(20),
+            nodo::utils::Amount::fromRawUnits(0),
+            nodo::utils::Amount::fromRawUnits(0)
+        );
+
+    const auto result =
+        nodo::node::MonetaryArtifactValidator::validateSupplyDeltaConsistencyWithMonetaryFirewallAudit(
+            delta,
+            mismatchedAudit
+        );
+
+    assert(!result.accepted());
+    assert(result.reason().find("MonetaryFirewallAudit") != std::string::npos);
+}
+
+void testValidateSupplyDeltaAcceptsMonetaryFirewallMatch() {
+    const auto delta = makeBurnDelta();
+    const nodo::node::MonetaryFirewallAudit matchingAudit =
+        nodo::node::MonetaryFirewall::buildAuditWithSupplyBefore(
+            10,
+            nodo::utils::Amount::fromRawUnits(1000),
+            nodo::utils::Amount::fromRawUnits(0),
+            nodo::utils::Amount::fromRawUnits(20),
+            nodo::utils::Amount::fromRawUnits(0),
+            nodo::utils::Amount::fromRawUnits(0)
+        );
+
+    const auto result =
+        nodo::node::MonetaryArtifactValidator::validateSupplyDeltaConsistencyWithMonetaryFirewallAudit(
+            delta,
+            matchingAudit
+        );
+
+    assert(result.accepted());
+}
+
 } // namespace
 
 int main() {
@@ -127,5 +270,10 @@ int main() {
     testValidateSupplyDeltaRejectsUnauthorizedMint();
     testValidateSupplyDeltaAcceptsAuthorizedMint();
     testValidateSupplyDeltaRejectsInvalidPolicy();
+    testValidateSupplyDeltaRejectsFeeBurnMismatch();
+    testValidateSupplyDeltaAcceptsFeeBurnMatch();
+    testValidateSupplyDeltaRejectsSupplyExpansionMismatch();
+    testValidateSupplyDeltaRejectsMonetaryFirewallMismatch();
+    testValidateSupplyDeltaAcceptsMonetaryFirewallMatch();
     return 0;
 }

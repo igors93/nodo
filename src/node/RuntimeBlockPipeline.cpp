@@ -1907,7 +1907,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         feeBurnRecord =
             FeeEconomics::buildFeeBurnRecord(
                 feeEconomicBalance,
-                MonetaryFirewall::genesisSupply(runtime.config().genesisConfig())
+                monetaryValidationResult.supplyDelta().supplyBefore()
             );
 
         treasuryFeeRecord =
@@ -1916,9 +1916,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             );
 
         monetaryFirewallAudit =
-            MonetaryFirewall::buildAudit(
-                runtime.config().genesisConfig(),
+            MonetaryFirewall::buildAuditWithSupplyBefore(
                 production.block().index(),
+                monetaryValidationResult.supplyDelta().supplyBefore(),
                 utils::Amount(),
                 feeBurnRecord.burnAmount(),
                 treasuryFeeRecord.treasuryAmount(),
