@@ -1,6 +1,7 @@
 #include "economics/MintAuthorization.hpp"
 
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace nodo::economics {
@@ -92,6 +93,23 @@ MintAuthorization MintAuthorization::createGenesisAuthorization(
     const std::string& authorizationId,
     utils::Amount maxMintAmount
 ) {
+    if (!policy.isValid()) {
+        throw std::invalid_argument(
+            "MintAuthorization::createGenesisAuthorization rejected invalid policy: " +
+            policy.rejectionReason()
+        );
+    }
+    if (authorizationId.empty()) {
+        throw std::invalid_argument(
+            "MintAuthorization::createGenesisAuthorization rejected empty authorizationId."
+        );
+    }
+    if (!maxMintAmount.isPositive()) {
+        throw std::invalid_argument(
+            "MintAuthorization::createGenesisAuthorization rejected non-positive maxMintAmount: " +
+            std::to_string(maxMintAmount.rawUnits()) + "."
+        );
+    }
     return MintAuthorization(
         authorizationId,
         policy.policyVersion(),

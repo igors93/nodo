@@ -44,6 +44,12 @@ SupplyDelta SupplyDeltaBuilder::build(
         );
     }
     supplyAfterRaw += mintSum;
+
+    if (burnSum > supplyAfterRaw) {
+        throw std::underflow_error(
+            "SupplyDeltaBuilder: burnedAmount exceeds available supply."
+        );
+    }
     supplyAfterRaw -= burnSum;
 
     return SupplyDelta(

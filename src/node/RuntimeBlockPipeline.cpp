@@ -1,5 +1,8 @@
 #include "node/RuntimeBlockPipeline.hpp"
 
+#include "node/FeeEconomics.hpp"
+#include "node/RuntimeMonetaryValidation.hpp"
+
 #include "consensus/ValidatorVoteBuilder.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "consensus/ProposerSchedule.hpp"
@@ -533,6 +536,8 @@ std::string runtimeBlockPipelineStatusToString(
             return "BLOCK_PRODUCTION_FAILED";
         case RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED:
             return "STATE_TRANSITION_FAILED";
+        case RuntimeBlockPipelineStatus::MONETARY_VALIDATION_FAILED:
+            return "MONETARY_VALIDATION_FAILED";
         case RuntimeBlockPipelineStatus::NOT_ENOUGH_VALIDATORS:
             return "NOT_ENOUGH_VALIDATORS";
         case RuntimeBlockPipelineStatus::VOTE_BUILD_FAILED:
@@ -1726,13 +1731,30 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
-    // Task 04 integration point — MonetaryValidationGate pre-vote seam:
-    // Before building validator votes, call:
-    //   economics::MonetaryValidationGate::validate(policy, supplyDelta, authorizations)
-    // and reject if the gate returns REJECTED_BY_FIREWALL.
-    // The SupplyDelta for this block must be derived from the StateTransitionPreview.
-    // See economics/MonetaryValidationGate.hpp for the gate interface.
-    // This ensures no block can be voted on without passing the authorization layer.
+    // Pre-vote monetary gate: the candidate must pass monetary validation before
+    // any validator votes are built. MONETARY_CONTEXT_UNAVAILABLE is also a
+    // rejection — it is never treated as an implicit success.
+    {
+        const FeeEconomicBalance feeBalance =
+            FeeEconomics::buildFeeEconomicBalance(
+                production.block().index(),
+                transitionValidation.totalFee()
+            );
+
+        const RuntimeMonetaryValidationResult monetaryResult =
+            RuntimeMonetaryValidation::validateCandidate(
+                runtime.config().genesisConfig(),
+                production.block(),
+                feeBalance.burnAmount()
+            );
+
+        if (!monetaryResult.isAccepted()) {
+            return RuntimeBlockPipelineResult::rejected(
+                RuntimeBlockPipelineStatus::MONETARY_VALIDATION_FAILED,
+                "Monetary gate rejected candidate block: " + monetaryResult.reason()
+            );
+        }
+    }
 
     std::vector<consensus::ValidatorVoteRecord> votes;
 

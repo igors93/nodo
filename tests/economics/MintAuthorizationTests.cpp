@@ -2,6 +2,7 @@
 #include "economics/MonetaryPolicy.hpp"
 
 #include <cassert>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -181,6 +182,56 @@ void testGenesisAuthorizationIsActiveAtEpochZero() {
     assert(!auth.isActiveAtEpoch(1));
 }
 
+void testGenesisAuthorizationRejectsInvalidPolicy() {
+    const nodo::economics::MonetaryPolicy invalidPolicy;  // default-constructed, empty
+    bool threw = false;
+    try {
+        (void)nodo::economics::MintAuthorization::createGenesisAuthorization(
+            invalidPolicy,
+            "genesis-auth-bad",
+            nodo::utils::Amount::fromRawUnits(1000)
+        );
+    } catch (const std::invalid_argument& e) {
+        threw = true;
+        const std::string msg(e.what());
+        assert(msg.find("invalid policy") != std::string::npos ||
+               msg.find("rejected") != std::string::npos);
+    }
+    assert(threw);
+}
+
+void testGenesisAuthorizationRejectsEmptyAuthorizationId() {
+    const auto policy = testPolicyForFactory();
+    bool threw = false;
+    try {
+        (void)nodo::economics::MintAuthorization::createGenesisAuthorization(
+            policy, "", nodo::utils::Amount::fromRawUnits(1000)
+        );
+    } catch (const std::invalid_argument& e) {
+        threw = true;
+        const std::string msg(e.what());
+        assert(msg.find("authorizationId") != std::string::npos ||
+               msg.find("empty") != std::string::npos);
+    }
+    assert(threw);
+}
+
+void testGenesisAuthorizationRejectsNonPositiveMaxMintAmount() {
+    const auto policy = testPolicyForFactory();
+    bool threw = false;
+    try {
+        (void)nodo::economics::MintAuthorization::createGenesisAuthorization(
+            policy, "genesis-auth-zero", nodo::utils::Amount::fromRawUnits(0)
+        );
+    } catch (const std::invalid_argument& e) {
+        threw = true;
+        const std::string msg(e.what());
+        assert(msg.find("maxMintAmount") != std::string::npos ||
+               msg.find("non-positive") != std::string::npos);
+    }
+    assert(threw);
+}
+
 } // namespace
 
 int main() {
@@ -203,5 +254,9 @@ int main() {
     testGenesisAuthorizationUsesPolicyVersion();
     testGenesisAuthorizationMaxMintAmountMatchesInput();
     testGenesisAuthorizationIsActiveAtEpochZero();
+    // Correction 2: invalid-input guards
+    testGenesisAuthorizationRejectsInvalidPolicy();
+    testGenesisAuthorizationRejectsEmptyAuthorizationId();
+    testGenesisAuthorizationRejectsNonPositiveMaxMintAmount();
     return 0;
 }

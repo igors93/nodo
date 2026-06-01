@@ -98,6 +98,41 @@ void testBuilderWithNoRecordsIsNoOp() {
     assert(delta.supplyAfter() == nodo::utils::Amount::fromRawUnits(500));
 }
 
+void testBuilderRejectsBurnExceedingAvailableSupply() {
+    // supplyBefore=100, minted=0, burned=200 → underflow must throw.
+    bool threw = false;
+    try {
+        (void)nodo::economics::SupplyDeltaBuilder::build(
+            5, "build-hash-underflow", 1,
+            nodo::utils::Amount::fromRawUnits(100),
+            {},
+            {makeBurn("b-overflow", 200, 5, 1)}
+        );
+    } catch (const std::underflow_error& e) {
+        threw = true;
+        const std::string msg(e.what());
+        assert(msg.find("exceeds available supply") != std::string::npos ||
+               msg.find("underflow") != std::string::npos);
+    }
+    assert(threw);
+}
+
+void testBuilderRejectsBurnExceedingSupplyPlusMint() {
+    // supplyBefore=100, minted=50 → available=150, but burned=200 → underflow.
+    bool threw = false;
+    try {
+        (void)nodo::economics::SupplyDeltaBuilder::build(
+            5, "build-hash-uf2", 1,
+            nodo::utils::Amount::fromRawUnits(100),
+            {makeMint("m1", 50, 1, 5, "build-hash-uf2")},
+            {makeBurn("b1", 200, 5, 1)}
+        );
+    } catch (const std::underflow_error&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
 void testBuilderDeltaIsInvalidWhenRecordsMismatchBlock() {
     // Mint has wrong blockHash — delta consistency check fires.
     const auto delta = nodo::economics::SupplyDeltaBuilder::build(
@@ -121,5 +156,7 @@ int main() {
     testBuilderCreatedDeltaIsValidWhenRecordsMatch();
     testBuilderWithNoRecordsIsNoOp();
     testBuilderDeltaIsInvalidWhenRecordsMismatchBlock();
+    testBuilderRejectsBurnExceedingAvailableSupply();
+    testBuilderRejectsBurnExceedingSupplyPlusMint();
     return 0;
 }

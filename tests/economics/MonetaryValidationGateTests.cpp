@@ -146,6 +146,68 @@ void testGateStatusToString() {
            "REJECTED_BY_FIREWALL");
 }
 
+// Correction 3: firewallStatus preservation tests.
+
+void testGatePreservesUnauthorizedMintFirewallStatus() {
+    const nodo::economics::SupplyDelta delta(
+        5, "gate-hash-B2", 1,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(100),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(1100),
+        {makeMint("gate-fw-mint-001", "no-auth", 100, 1, 5, "gate-hash-B2")},
+        {}
+    );
+    const auto result = nodo::economics::MonetaryValidationGate::validate(
+        testPolicy(), delta, {}
+    );
+    assert(!result.isAccepted());
+    assert(result.firewallStatus() == nodo::economics::MonetaryFirewallStatus::UNAUTHORIZED_MINT);
+}
+
+void testGatePreservesInvalidSupplyDeltaFirewallStatus() {
+    // Empty blockHash → INVALID_SUPPLY_DELTA
+    const nodo::economics::SupplyDelta badDelta(
+        1, "", 1,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(1000),
+        {}, {}
+    );
+    const auto result = nodo::economics::MonetaryValidationGate::validate(
+        testPolicy(), badDelta, {}
+    );
+    assert(!result.isAccepted());
+    assert(result.firewallStatus() ==
+           nodo::economics::MonetaryFirewallStatus::INVALID_SUPPLY_DELTA);
+}
+
+void testGateReturnsAcceptedFirewallStatusOnAccept() {
+    const nodo::economics::SupplyDelta delta =
+        nodo::economics::SupplyDelta::noOp(
+            1, "gate-hash-ok", 1, nodo::utils::Amount::fromRawUnits(100)
+        );
+    const auto result = nodo::economics::MonetaryValidationGate::validate(
+        testPolicy(), delta, {}
+    );
+    assert(result.isAccepted());
+    assert(result.firewallStatus() == nodo::economics::MonetaryFirewallStatus::ACCEPTED);
+}
+
+void testGateSerializeIncludesFirewallStatus() {
+    const nodo::economics::SupplyDelta delta =
+        nodo::economics::SupplyDelta::noOp(
+            1, "gate-hash-ser", 1, nodo::utils::Amount::fromRawUnits(100)
+        );
+    const auto result = nodo::economics::MonetaryValidationGate::validate(
+        testPolicy(), delta, {}
+    );
+    const std::string s = result.serialize();
+    assert(s.find("firewallStatus") != std::string::npos);
+    assert(s.find("ACCEPTED") != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -155,5 +217,10 @@ int main() {
     testGatePreservesFirewallRejectionReason();
     testGateSerializeContainsKeyFields();
     testGateStatusToString();
+    // Correction 3: firewallStatus preservation
+    testGatePreservesUnauthorizedMintFirewallStatus();
+    testGatePreservesInvalidSupplyDeltaFirewallStatus();
+    testGateReturnsAcceptedFirewallStatusOnAccept();
+    testGateSerializeIncludesFirewallStatus();
     return 0;
 }

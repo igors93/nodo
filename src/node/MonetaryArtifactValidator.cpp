@@ -9,13 +9,6 @@
 #include <exception>
 #include <vector>
 
-// Task 04 integration point:
-// When FinalizedBlockArtifact carries a SupplyDelta, call
-// economics::MonetaryValidationGate::validate() here before checking the
-// inflation-layer MonetaryFirewallAudit. This ensures the economics-layer
-// authorization check (MintAuthorization) is part of artifact validation.
-// See economics/MonetaryValidationGate.hpp for the gate interface.
-
 namespace nodo::node {
 
 ArtifactValidationResult MonetaryArtifactValidator::validate(
@@ -202,6 +195,37 @@ ArtifactValidationResult MonetaryArtifactValidator::validate(
     } catch (const std::exception& error) {
         return ArtifactValidationResult::rejected(
             prefix + error.what()
+        );
+    }
+
+    return ArtifactValidationResult::acceptedResult();
+}
+
+ArtifactValidationResult MonetaryArtifactValidator::validateSupplyDelta(
+    const economics::MonetaryPolicy& policy,
+    const economics::SupplyDelta& delta,
+    const std::vector<economics::MintAuthorization>& authorizations
+) {
+    if (!policy.isValid()) {
+        return ArtifactValidationResult::rejected(
+            "MonetaryArtifactValidator::validateSupplyDelta: invalid policy: " +
+            policy.rejectionReason()
+        );
+    }
+    if (!delta.isValid()) {
+        return ArtifactValidationResult::rejected(
+            "MonetaryArtifactValidator::validateSupplyDelta: invalid supply delta: " +
+            delta.rejectionReason()
+        );
+    }
+
+    const economics::MonetaryValidationGateResult gateResult =
+        economics::MonetaryValidationGate::validate(policy, delta, authorizations);
+
+    if (!gateResult.isAccepted()) {
+        return ArtifactValidationResult::rejected(
+            "MonetaryArtifactValidator::validateSupplyDelta: gate rejected: " +
+            gateResult.reason()
         );
     }
 
