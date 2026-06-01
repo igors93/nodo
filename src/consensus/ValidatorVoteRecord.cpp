@@ -2,6 +2,7 @@
 
 #include "crypto/Address.hpp"
 #include "crypto/AddressDerivation.hpp"
+#include "crypto/hash.h"
 
 #include <map>
 #include <set>
@@ -55,6 +56,20 @@ bool isValidatorAddressBoundToPublicKey(
         address,
         validatorPublicKey
     );
+}
+
+std::string hashString(
+    const std::string& value
+) {
+    char output[NODO_HASH_BUFFER_SIZE] = {0};
+
+    nodo_hash_string(
+        value.c_str(),
+        output,
+        sizeof(output)
+    );
+
+    return std::string(output);
 }
 
 std::vector<std::string> splitTopLevel(
@@ -524,6 +539,12 @@ std::int64_t ValidatorVoteRecord::createdAt() const {
 
 const crypto::SignatureBundle& ValidatorVoteRecord::signatureBundle() const {
     return m_signatureBundle;
+}
+
+std::string ValidatorVoteRecord::deterministicId() const {
+    return hashString(
+        "NODO_VALIDATOR_VOTE_RECORD_ID_V1|" + serialize()
+    );
 }
 
 std::string ValidatorVoteRecord::signingPayload() const {

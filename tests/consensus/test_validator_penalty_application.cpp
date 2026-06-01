@@ -76,6 +76,10 @@ int main() {
     assert(duplicate.duplicate());
     assert(ledger.size() == 1);
 
+    const auto duplicateDecision = ledger.applyDecision(*first.decision());
+    assert(duplicateDecision.duplicate());
+    assert(ledger.size() == 1);
+
     const auto secondEvidence = evidence(
         'b',
         "validator-alpha",

@@ -4,6 +4,7 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
+#include "storage/StorageSchemaVersion.hpp"
 
 #include <limits>
 #include <map>
@@ -201,6 +202,10 @@ const std::filesystem::path& NodeDataDirectoryConfig::rootPath() const {
 
 std::filesystem::path NodeDataDirectoryConfig::manifestPath() const {
     return m_rootPath / "manifest.nodo";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::storageSchemaVersionPath() const {
+    return storage::StorageSchemaVersionFile::pathForRoot(m_rootPath);
 }
 
 std::filesystem::path NodeDataDirectoryConfig::genesisConfigPath() const {
@@ -690,6 +695,10 @@ NodeDataDirectoryInitResult NodeDataDirectory::initialize(
     try {
         ensureDirectoryTree(directoryConfig);
 
+        storage::StorageSchemaVersion::writeCurrentNodeDataDirectoryVersionFile(
+            directoryConfig.rootPath()
+        );
+
         const NodeRuntimeConfig runtimeConfig(
             genesisConfig,
             localPeer,
@@ -765,6 +774,19 @@ NodeDataDirectoryReadResult NodeDataDirectory::loadManifest(
         return NodeDataDirectoryReadResult::rejected(
             NodeDataDirectoryReadStatus::NOT_INITIALIZED,
             "Node data directory is not initialized."
+        );
+    }
+
+    const storage::StorageSchemaValidationResult schemaValidation =
+        storage::StorageSchemaVersionFile::validateNodeDataDirectoryRoot(
+            directoryConfig.rootPath()
+        );
+
+    if (!schemaValidation.accepted()) {
+        return NodeDataDirectoryReadResult::rejected(
+            NodeDataDirectoryReadStatus::INVALID_MANIFEST,
+            "Invalid node data directory storage schema: " +
+                schemaValidation.reason()
         );
     }
 

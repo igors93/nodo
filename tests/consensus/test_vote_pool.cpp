@@ -40,7 +40,8 @@ nodo::crypto::SignatureBundle fakeSignatureBundle(
 nodo::consensus::ValidatorVoteRecord makeVote(
     const std::string& validator,
     const std::string& blockHash,
-    nodo::consensus::ValidatorVoteDecision decision
+    nodo::consensus::ValidatorVoteDecision decision,
+    std::int64_t createdAt = 1000
 ) {
     const auto publicKey = fakeValidatorPublicKey('a');
     return nodo::consensus::ValidatorVoteRecord(
@@ -52,7 +53,7 @@ nodo::consensus::ValidatorVoteRecord makeVote(
         1,
         decision,
         "reason-hash",
-        1000,
+        createdAt,
         fakeSignatureBundle(publicKey, 'b')
     );
 }
@@ -75,6 +76,18 @@ int main() {
 
     const auto duplicate = pool.submitVote(vote);
     assert(duplicate.duplicate());
+
+    const auto replaySameSlot = pool.submitVote(
+        makeVote(
+            "validator-A",
+            "block-hash-A",
+            nodo::consensus::ValidatorVoteDecision::APPROVE,
+            1001
+        )
+    );
+
+    assert(replaySameSlot.duplicate());
+    assert(pool.totalVoteCount() == 1);
 
     const auto conflicting = pool.submitVote(
         makeVote(

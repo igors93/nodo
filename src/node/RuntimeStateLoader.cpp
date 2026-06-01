@@ -6,6 +6,7 @@
 #include "node/FinalityArtifactValidator.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
+#include "node/ProtocolInvariantChecker.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeStateVerifier.hpp"
 #include "consensus/QuorumCertificate.hpp"
@@ -301,6 +302,20 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
     if (!mempoolLoad.loaded()) {
         return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::MEMPOOL_LOAD_FAILED, mempoolLoad.reason());
+    }
+
+    const ProtocolInvariantCheckResult invariantCheck =
+        ProtocolInvariantChecker::checkRuntimeAgainstManifest(
+            runtime,
+            manifest
+        );
+
+    if (!invariantCheck.passed()) {
+        return RuntimeStateLoadResult::rejected(
+            RuntimeStateLoadStatus::RUNTIME_START_FAILED,
+            "Rebuilt runtime failed protocol invariant audit: " +
+                invariantCheck.reason()
+        );
     }
 
     if (!runtime.isValid()) {

@@ -31,6 +31,7 @@ public:
     const std::filesystem::path& rootPath() const;
 
     std::filesystem::path manifestPath() const;
+    std::filesystem::path storageSchemaVersionPath() const;
     std::filesystem::path genesisConfigPath() const;
     std::filesystem::path localPeerPath() const;
     std::filesystem::path runtimeSnapshotPath() const;

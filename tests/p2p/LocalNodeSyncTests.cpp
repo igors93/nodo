@@ -14,6 +14,7 @@ namespace {
 
 using nodo::consensus::BlockFinalizationRegistry;
 using nodo::consensus::ChainForkSummary;
+using nodo::consensus::FinalizedCheckpoint;
 using nodo::core::Block;
 using nodo::core::Blockchain;
 using nodo::core::LedgerRecord;
@@ -163,6 +164,41 @@ void testRejectsInvalidRemoteSummary() {
     );
 }
 
+void testRejectsRemoteCheckpointAheadOfRemoteTip() {
+    const Blockchain localChain =
+        genesisChain();
+
+    const BlockFinalizationRegistry localFinality;
+
+    const ChainForkSummary regressingRemoteSummary(
+        1,
+        0,
+        localChain.latestBlock().hash(),
+        FinalizedCheckpoint(
+            1,
+            "remote-finalized-hash",
+            localChain.latestBlock().hash(),
+            1,
+            kTimestamp + 35
+        )
+    );
+
+    const auto plan =
+        LocalNodeSynchronizer::evaluatePeerSummary(
+            peer("local", 0),
+            peer("remote", 0),
+            localChain,
+            localFinality,
+            regressingRemoteSummary,
+            kTimestamp + 36
+        );
+
+    requireCondition(
+        plan.rejectReason() == LocalSyncRejectReason::INVALID_REMOTE_SUMMARY,
+        "Remote sync checkpoint ahead of remote tip should be rejected."
+    );
+}
+
 void testRejectsInvalidPeerMetadata() {
     const Blockchain localChain =
         genesisChain();
@@ -204,6 +240,7 @@ int main() {
         testRequestsBlocksFromLongerPeer();
         testNoActionForSameHeightPeer();
         testRejectsInvalidRemoteSummary();
+        testRejectsRemoteCheckpointAheadOfRemoteTip();
         testRejectsInvalidPeerMetadata();
 
         std::cout << "Nodo local node sync tests passed.\n";

@@ -1,6 +1,7 @@
 #include "node/ChainAuditor.hpp"
 
 #include "crypto/ProtocolCryptoContext.hpp"
+#include "node/ProtocolInvariantChecker.hpp"
 #include "node/RuntimeStateLoader.hpp"
 #include "node/RuntimeStateVerifier.hpp"
 
@@ -30,6 +31,18 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
     if (!runtimeVerification.verified()) {
         return ChainAuditResult::failed(
             runtimeVerification.reason()
+        );
+    }
+
+    const ProtocolInvariantCheckResult invariantCheck =
+        ProtocolInvariantChecker::checkRuntimeAgainstManifest(
+            runtime,
+            manifest
+        );
+
+    if (!invariantCheck.passed()) {
+        return ChainAuditResult::failed(
+            invariantCheck.reason()
         );
     }
 

@@ -4,6 +4,7 @@ The default local data directory is `.nodo`.
 
 ```text
 .nodo/
+  storage_schema.nodo
   manifest.nodo
   genesis.nodo
   blocks/
@@ -17,6 +18,12 @@ The default local data directory is `.nodo`.
 ```
 
 ## Manifest
+
+Before `manifest.nodo` is trusted, the loader validates
+`storage_schema.nodo`. The accepted node data directory schema is
+`NODO_NODE_DATA_DIRECTORY` version `1`; missing schema files, unknown schema
+ids, future versions and unsafe downgrades are rejected. Nodo does not perform
+implicit storage migration.
 
 `manifest.nodo` is a strict versioned key-value file. It records chain identity,
 genesis id, latest finalized height/hash, `latestStateRoot`, validator count,

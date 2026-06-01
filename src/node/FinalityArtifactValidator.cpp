@@ -23,6 +23,28 @@ ArtifactValidationResult FinalityArtifactValidator::validate(
             );
         }
 
+        if (!consensus::BlockFinalizer::certificateMatchesBlock(
+                block,
+                artifact.quorumCertificate()
+            )) {
+            return ArtifactValidationResult::rejected(
+                prefix + "quorum certificate does not commit to the persisted block."
+            );
+        }
+
+        if (!artifact.finalizedRecord().matchesBlock(block)) {
+            return ArtifactValidationResult::rejected(
+                prefix + "finalized block record does not commit to the persisted block."
+            );
+        }
+
+        if (artifact.finalizedRecord().quorumCertificate().serialize() !=
+            artifact.quorumCertificate().serialize()) {
+            return ArtifactValidationResult::rejected(
+                prefix + "finalized block record quorum certificate does not match stored certificate."
+            );
+        }
+
         if (artifact.quorumCertificate().requiredVoteCount() != context.requiredVoteCount()) {
             return ArtifactValidationResult::rejected(
                 prefix + "quorum certificate threshold does not match network parameters."

@@ -2,6 +2,7 @@
 #include "config/NetworkParameters.hpp"
 #include "crypto/KeyPair.hpp"
 #include "crypto/PublicKey.hpp"
+#include "storage/StorageSchemaVersion.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -125,6 +126,7 @@ void testInitializeCreatesDurableFiles() {
 
     requireCondition(
         std::filesystem::exists(config.manifestPath()) &&
+        std::filesystem::exists(config.storageSchemaVersionPath()) &&
         std::filesystem::exists(config.genesisConfigPath()) &&
         std::filesystem::exists(config.localPeerPath()) &&
         std::filesystem::exists(config.runtimeSnapshotPath()),
@@ -157,6 +159,44 @@ void testInitializeCreatesDurableFiles() {
             "Manifest file should persist latestStateRoot."
         );
     }
+
+    clean(path);
+}
+
+void testRejectsUnknownStorageSchemaVersion() {
+    const std::filesystem::path path =
+        tempPath("unknown-storage-schema");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig config(path);
+
+    requireCondition(
+        NodeDataDirectory::initialize(
+            config,
+            genesisConfig(),
+            localPeer(),
+            kTimestamp + 15
+        ).initialized(),
+        "Data directory should initialize before schema tampering."
+    );
+
+    {
+        std::ofstream schemaFile(config.storageSchemaVersionPath(), std::ios::trunc);
+        schemaFile << "NODO_STORAGE_SCHEMA_VERSION_V1\n"
+                   << "schemaId=NODO_NODE_DATA_DIRECTORY\n"
+                   << "version=999\n"
+                   << "minimumCompatibleVersion=999\n";
+    }
+
+    const auto loaded =
+        NodeDataDirectory::loadManifest(config);
+
+    requireCondition(
+        !loaded.loaded() &&
+        loaded.reason().find("storage schema") != std::string::npos,
+        "Node data directory should reject an unknown storage schema version."
+    );
 
     clean(path);
 }
@@ -248,6 +288,7 @@ void testMissingDirectoryStatusFailsSafely() {
 int main() {
     try {
         testInitializeCreatesDurableFiles();
+        testRejectsUnknownStorageSchemaVersion();
         testInitializeIsIdempotentForSameGenesis();
         testRejectsDifferentGenesisInExistingDirectory();
         testMissingDirectoryStatusFailsSafely();

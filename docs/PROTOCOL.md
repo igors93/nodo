@@ -57,5 +57,15 @@ before applying finalization, then calculates this root through
 `RuntimeStateVerifier` so loader and chain audit share the same deterministic
 check.
 
+`ProtocolInvariantChecker` is the heavy audit boundary after genesis start and
+after reload. It checks chain-tip height/hash coherence, deterministic latest
+state root calculation, finalized-height bounds, finalized-block linkage,
+minimum active validator count, active validator identity binding and penalty
+ledger idempotency helpers.
+
+Critical local storage is versioned explicitly. The node data directory must
+carry `storage_schema.nodo` for `NODO_NODE_DATA_DIRECTORY` version `1`.
+Unknown versions are not loaded and no downgrade or migration is inferred.
+
 `block produce` never creates transactions. Transactions enter the protocol via
 `tx submit`, then block production consumes the current mempool contents.

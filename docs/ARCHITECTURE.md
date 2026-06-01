@@ -24,17 +24,18 @@ Nodo is organized by runtime responsibility rather than implementation phase.
 
 ## Persistence Flow
 
-The local node directory stores a manifest, finalized block files, a runtime
-snapshot and pending mempool transactions. Runtime reload is rebuild-first:
+The local node directory stores an explicit storage schema version, a manifest,
+finalized block files, a runtime snapshot and pending mempool transactions.
+Runtime reload is rebuild-first:
 
 ```text
-manifest -> genesis runtime -> finalized blocks -> persistent mempool -> audit
+storage schema -> manifest -> genesis runtime -> finalized blocks -> persistent mempool -> audit
 ```
 
-The manifest is accepted only when the rebuilt latest block height, hash and
-`latestStateRoot` match it. Finalized block files carry a `postStateRoot`,
-quorum certificate and finalized record; reload verifies all three before the
-runtime is considered auditable.
+The manifest is accepted only after the storage schema is recognized and the
+rebuilt latest block height, hash and `latestStateRoot` match it. Finalized
+block files carry a `postStateRoot`, quorum certificate and finalized record;
+reload verifies all three before the runtime is considered auditable.
 
 Reload responsibilities are intentionally split. `RuntimeStateLoader`
 coordinates durable reads and runtime replay. `FinalizedBlockArtifactCodec`
@@ -43,8 +44,9 @@ coordinates domain validators for finality, state transition preview, economic
 records, monetary and treasury records, slashing evidence, governance records
 and validator lifecycle accounting. `RuntimeStateVerifier` centralizes
 manifest-to-runtime checks and deterministic `latestStateRoot` recalculation.
-`ChainAuditor` adds the final operational checks for crypto context, mempool
-admission policy and validator registry consistency.
+`ProtocolInvariantChecker` performs heavy runtime invariants after genesis and
+reload. `ChainAuditor` adds the final operational checks for crypto context,
+mempool admission policy and validator registry consistency.
 
 ## Build
 

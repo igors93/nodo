@@ -64,6 +64,7 @@ public:
     std::int64_t createdAt() const;
     const crypto::SignatureBundle& signatureBundle() const;
 
+    std::string deterministicId() const;
     std::string signingPayload() const;
 
     bool matchesBlock(

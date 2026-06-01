@@ -1,5 +1,7 @@
 #include "node/NodeRuntime.hpp"
 
+#include "node/ProtocolInvariantChecker.hpp"
+
 #include <sstream>
 #include <utility>
 
@@ -537,6 +539,17 @@ NodeRuntimeStartResult NodeRuntimeFactory::startFromGenesis(
         return NodeRuntimeStartResult::rejected(
             NodeRuntimeStartStatus::GENESIS_BUILD_FAILED,
             "Started runtime failed audit."
+        );
+    }
+
+    const ProtocolInvariantCheckResult invariantCheck =
+        ProtocolInvariantChecker::checkRuntime(runtime);
+
+    if (!invariantCheck.passed()) {
+        return NodeRuntimeStartResult::rejected(
+            NodeRuntimeStartStatus::GENESIS_BUILD_FAILED,
+            "Started runtime failed protocol invariant audit: " +
+                invariantCheck.reason()
         );
     }
 

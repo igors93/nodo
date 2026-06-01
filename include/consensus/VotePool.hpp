@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -89,6 +90,7 @@ public:
 private:
     std::map<VotePoolBlockKey, std::vector<ValidatorVoteRecord>> m_votesByBlock;
     std::map<std::string, ValidatorVoteRecord> m_voteByValidatorHeightRound;
+    std::set<std::string> m_voteIds;
     std::vector<ValidatorVoteRecord> m_conflictingVotes;
 
     static std::string validatorHeightRoundKey(const ValidatorVoteRecord& vote);

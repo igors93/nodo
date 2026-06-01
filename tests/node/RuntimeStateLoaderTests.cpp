@@ -507,6 +507,118 @@ void testRejectsFinalizedBlockWithTamperedPostStateRoot() {
     clean(path);
 }
 
+void testRejectsFinalizedBlockWithTamperedFeeBalance() {
+    const std::filesystem::path path =
+        tempPath("tampered-fee-balance");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig directoryConfig(path);
+
+    requireCondition(
+        NodeDataDirectory::initialize(
+            directoryConfig,
+            genesisConfig(),
+            localPeer(),
+            kTimestamp + 95
+        ).initialized(),
+        "Data directory should initialize."
+    );
+
+    NodeRuntime runtime =
+        startRuntime();
+
+    const Transaction transaction =
+        signedTransfer(
+            "tamper-fee",
+            1,
+            kTimestamp + 96
+        );
+
+    requireCondition(
+        runtime.mutableMempool().admitTransaction(
+            transaction,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            kTimestamp + 97
+        ).accepted(),
+        "Transaction should enter mempool."
+    );
+
+    const auto pipeline =
+        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            runtime,
+            RuntimeBlockPipelineConfig(
+                100,
+                1,
+                1,
+                kTimestamp + 98
+            ),
+            localValidatorSigner()
+        );
+
+    requireCondition(
+        pipeline.finalized(),
+        "Pipeline should finalize a block."
+    );
+
+    const auto persisted =
+        FinalizedBlockStore::persist(
+            directoryConfig,
+            runtime,
+            pipeline,
+            kTimestamp + 99
+        );
+
+    requireCondition(
+        persisted.stored(),
+        "Finalized block should persist before fee tampering."
+    );
+
+    std::string contents =
+        readFile(persisted.blockPath());
+
+    const std::string expected =
+        "feeBalance.totalFeeRawUnits=" +
+        std::to_string(pipeline.totalFee().rawUnits());
+
+    const std::size_t position =
+        contents.find(expected);
+
+    requireCondition(
+        position != std::string::npos,
+        "Persisted block should contain expected fee balance."
+    );
+
+    contents.replace(
+        position,
+        expected.size(),
+        "feeBalance.totalFeeRawUnits=" +
+            std::to_string(pipeline.totalFee().rawUnits() + 1)
+    );
+
+    writeFile(
+        persisted.blockPath(),
+        contents
+    );
+
+    const auto loaded =
+        RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig(),
+            localPeer()
+        );
+
+    requireCondition(
+        !loaded.loaded() &&
+        loaded.status() == nodo::node::RuntimeStateLoadStatus::BLOCK_FILE_INVALID &&
+        loaded.reason().find("fee") != std::string::npos,
+        "Runtime loader should reject finalized block with tampered fee balance."
+    );
+
+    clean(path);
+}
+
 void testRejectsManifestWithTamperedLatestStateRoot() {
     const std::filesystem::path path =
         tempPath("tampered-manifest-state-root");
@@ -817,6 +929,7 @@ int main() {
         testLoadsRuntimeWithPersistedFinalizedBlock();
         testLoadsPersistentMempoolIntoRuntime();
         testRejectsFinalizedBlockWithTamperedPostStateRoot();
+        testRejectsFinalizedBlockWithTamperedFeeBalance();
         testRejectsManifestWithTamperedLatestStateRoot();
         testRejectsFinalizedBlockWithInvalidQuorumCertificate();
         testRejectsFinalizedBlockWithDuplicateVote();

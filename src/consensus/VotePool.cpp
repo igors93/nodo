@@ -73,11 +73,23 @@ bool VotePoolBlockKey::operator<(const VotePoolBlockKey& other) const {
 VotePool::VotePool()
     : m_votesByBlock(),
       m_voteByValidatorHeightRound(),
+      m_voteIds(),
       m_conflictingVotes() {}
 
 VotePoolResult VotePool::submitVote(const ValidatorVoteRecord& vote) {
     if (!isMinimallyValidVote(vote)) {
         return VotePoolResult(VotePoolStatus::INVALID_VOTE, "Vote failed minimal pool validation.");
+    }
+
+    const std::string voteId =
+        vote.deterministicId();
+
+    if (voteId.empty()) {
+        return VotePoolResult(VotePoolStatus::INVALID_VOTE, "Vote deterministic id is empty.");
+    }
+
+    if (m_voteIds.find(voteId) != m_voteIds.end()) {
+        return VotePoolResult(VotePoolStatus::DUPLICATE, "Validator vote id already exists in pool.");
     }
 
     const std::string validatorKey = validatorHeightRoundKey(vote);
@@ -95,6 +107,7 @@ VotePoolResult VotePool::submitVote(const ValidatorVoteRecord& vote) {
     VotePoolBlockKey blockKey(vote.blockIndex(), vote.blockHash(), vote.round());
     m_votesByBlock[blockKey].push_back(vote);
     m_voteByValidatorHeightRound[validatorKey] = vote;
+    m_voteIds.insert(voteId);
 
     return VotePoolResult(VotePoolStatus::ACCEPTED, "Vote accepted into pool.");
 }
