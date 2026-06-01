@@ -103,6 +103,23 @@ public:
      * The epoch defaults to 0 for all blocks in the current implementation.
      * Task 05 will introduce proper epoch tracking.
      */
+    /*
+     * Full form: uses the provided supplyBefore for cumulative tracking.
+     * This is the form called by RuntimeBlockPipeline using
+     * runtime.supplyState().latestSupply() as supplyBefore.
+     */
+    static RuntimeMonetaryValidationResult validateCandidate(
+        const config::GenesisConfig& genesisConfig,
+        const core::Block& candidateBlock,
+        utils::Amount feeBurnAmount,
+        utils::Amount supplyBefore
+    );
+
+    /*
+     * Convenience form: uses genesis supply as supplyBefore.
+     * Valid only for the first block after genesis, or in tests.
+     * Do NOT use this for multi-block chains — use the four-argument form.
+     */
     static RuntimeMonetaryValidationResult validateCandidate(
         const config::GenesisConfig& genesisConfig,
         const core::Block& candidateBlock,

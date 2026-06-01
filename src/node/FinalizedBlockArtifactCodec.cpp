@@ -2,6 +2,9 @@
 
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/QuorumCertificate.hpp"
+#include "economics/BurnRecord.hpp"
+#include "economics/SupplyDelta.hpp"
+#include "economics/SupplyDeltaBuilder.hpp"
 #include "serialization/BlockCodec.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
@@ -18,7 +21,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_SCHEMA_ID =
-    "NODO_FINALIZED_BLOCK_V19";
+    "NODO_FINALIZED_BLOCK_V20";
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -1471,6 +1474,14 @@ const consensus::FinalizedBlockRecord& FinalizedBlockArtifact::finalizedRecord()
     return m_finalizedRecord;
 }
 
+const economics::SupplyDelta& FinalizedBlockArtifact::supplyDelta() const {
+    return m_supplyDelta;
+}
+
+void FinalizedBlockArtifact::setSupplyDelta(economics::SupplyDelta delta) {
+    m_supplyDelta = std::move(delta);
+}
+
 bool FinalizedBlockArtifact::isValid() const {
     if (!m_block.has_value() ||
         !m_block->isValid() ||
@@ -1991,8 +2002,27 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         "recordCount",
         "block",
         "quorumCertificate",
-        "finalizedRecord"
+        "finalizedRecord",
+        "economics.supplyDelta.epoch",
+        "economics.supplyDelta.supplyBeforeRaw",
+        "economics.supplyDelta.mintedRaw",
+        "economics.supplyDelta.burnedRaw",
+        "economics.supplyDelta.supplyAfterRaw",
+        "economics.supplyDelta.mintRecordCount",
+        "economics.supplyDelta.burnRecordCount"
     };
+
+    // Allow per-record economics.supplyDelta fields (for burn records).
+    for (std::size_t i = 0; i < 8; ++i) {
+        const std::string bp = "economics.supplyDelta.burnRecord." + std::to_string(i) + ".";
+        allowedFields.insert(bp + "burnId");
+        allowedFields.insert(bp + "blockHeight");
+        allowedFields.insert(bp + "epoch");
+        allowedFields.insert(bp + "sourceAddress");
+        allowedFields.insert(bp + "amountRaw");
+        allowedFields.insert(bp + "reason");
+        allowedFields.insert(bp + "burnType");
+    }
 
     for (std::size_t index = 0; index < recordCount; ++index) {
         allowedFields.insert("record." + std::to_string(index));
@@ -2371,6 +2401,60 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
 
     const consensus::FinalizedBlockRecord finalizedRecord =
         consensus::FinalizedBlockRecord::deserialize(document.requireField("finalizedRecord"));
+
+    // Parse economics::SupplyDelta fields (added in V20).
+    const std::uint64_t sdEpoch =
+        parseU64Strict(document.requireField("economics.supplyDelta.epoch"),
+                       "economics.supplyDelta.epoch");
+    const utils::Amount sdSupplyBefore =
+        parseAmountStrict(document.requireField("economics.supplyDelta.supplyBeforeRaw"),
+                          "economics.supplyDelta.supplyBeforeRaw");
+    const utils::Amount sdMinted =
+        parseAmountStrict(document.requireField("economics.supplyDelta.mintedRaw"),
+                          "economics.supplyDelta.mintedRaw");
+    const utils::Amount sdBurned =
+        parseAmountStrict(document.requireField("economics.supplyDelta.burnedRaw"),
+                          "economics.supplyDelta.burnedRaw");
+    const utils::Amount sdSupplyAfter =
+        parseAmountStrict(document.requireField("economics.supplyDelta.supplyAfterRaw"),
+                          "economics.supplyDelta.supplyAfterRaw");
+    const std::size_t sdMintCount =
+        static_cast<std::size_t>(
+            parseU64Strict(document.requireField("economics.supplyDelta.mintRecordCount"),
+                           "economics.supplyDelta.mintRecordCount"));
+    const std::size_t sdBurnCount =
+        static_cast<std::size_t>(
+            parseU64Strict(document.requireField("economics.supplyDelta.burnRecordCount"),
+                           "economics.supplyDelta.burnRecordCount"));
+
+    (void)sdMintCount; // always 0 for current pipeline
+
+    std::vector<economics::BurnRecord> sdBurnRecords;
+    for (std::size_t bi = 0; bi < sdBurnCount; ++bi) {
+        const std::string bp =
+            "economics.supplyDelta.burnRecord." + std::to_string(bi) + ".";
+        sdBurnRecords.emplace_back(
+            document.requireField(bp + "burnId"),
+            parseU64Strict(document.requireField(bp + "blockHeight"), bp + "blockHeight"),
+            parseU64Strict(document.requireField(bp + "epoch"), bp + "epoch"),
+            document.requireField(bp + "sourceAddress"),
+            parseAmountStrict(document.requireField(bp + "amountRaw"), bp + "amountRaw"),
+            document.requireField(bp + "reason"),
+            economics::burnTypeFromString(document.requireField(bp + "burnType"))
+        );
+    }
+
+    economics::SupplyDelta parsedSupplyDelta(
+        block.index(),
+        block.hash(),
+        sdEpoch,
+        sdSupplyBefore,
+        sdMinted,
+        sdBurned,
+        sdSupplyAfter,
+        {},               // no mint records for current pipeline
+        sdBurnRecords
+    );
 
     if (postStateRoot.empty()) {
         throw std::invalid_argument("Finalized block file postStateRoot is empty.");
@@ -3001,6 +3085,36 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
 
+    // economics::SupplyDelta fields (V20).
+    canonicalFields.emplace_back("economics.supplyDelta.epoch",
+        std::to_string(sdEpoch));
+    canonicalFields.emplace_back("economics.supplyDelta.supplyBeforeRaw",
+        std::to_string(sdSupplyBefore.rawUnits()));
+    canonicalFields.emplace_back("economics.supplyDelta.mintedRaw",
+        std::to_string(sdMinted.rawUnits()));
+    canonicalFields.emplace_back("economics.supplyDelta.burnedRaw",
+        std::to_string(sdBurned.rawUnits()));
+    canonicalFields.emplace_back("economics.supplyDelta.supplyAfterRaw",
+        std::to_string(sdSupplyAfter.rawUnits()));
+    canonicalFields.emplace_back("economics.supplyDelta.mintRecordCount", "0");
+    canonicalFields.emplace_back("economics.supplyDelta.burnRecordCount",
+        std::to_string(sdBurnCount));
+    for (std::size_t bi = 0; bi < sdBurnCount; ++bi) {
+        const std::string bp =
+            "economics.supplyDelta.burnRecord." + std::to_string(bi) + ".";
+        const auto& br = sdBurnRecords[bi];
+        canonicalFields.emplace_back(bp + "burnId", br.burnId());
+        canonicalFields.emplace_back(bp + "blockHeight",
+            std::to_string(br.blockHeight()));
+        canonicalFields.emplace_back(bp + "epoch", std::to_string(br.epoch()));
+        canonicalFields.emplace_back(bp + "sourceAddress", br.sourceAddress());
+        canonicalFields.emplace_back(bp + "amountRaw",
+            std::to_string(br.amount().rawUnits()));
+        canonicalFields.emplace_back(bp + "reason", br.reason());
+        canonicalFields.emplace_back(bp + "burnType",
+            economics::burnTypeToString(br.burnType()));
+    }
+
     const std::string canonicalContents =
         serialization::KeyValueFileCodec::serialize(FINALIZED_BLOCK_SCHEMA_ID, canonicalFields);
 
@@ -3008,7 +3122,7 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         throw std::invalid_argument("Finalized block file is not canonical.");
     }
 
-    return FinalizedBlockArtifact(
+    FinalizedBlockArtifact artifact(
         block,
         postStateRoot,
         totalFee,
@@ -3047,6 +3161,8 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         quorumCertificate,
         finalizedRecord
     );
+    artifact.setSupplyDelta(std::move(parsedSupplyDelta));
+    return artifact;
 }
 
 } // namespace nodo::node

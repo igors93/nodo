@@ -1584,6 +1584,14 @@ const ValidatorLifecycleSummary& RuntimeBlockPipelineResult::validatorLifecycleS
     return m_validatorLifecycleSummary;
 }
 
+const economics::SupplyDelta& RuntimeBlockPipelineResult::supplyDelta() const {
+    return m_supplyDelta;
+}
+
+void RuntimeBlockPipelineResult::setSupplyDelta(economics::SupplyDelta delta) {
+    m_supplyDelta = std::move(delta);
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -1734,26 +1742,26 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     // Pre-vote monetary gate: the candidate must pass monetary validation before
     // any validator votes are built. MONETARY_CONTEXT_UNAVAILABLE is also a
     // rejection — it is never treated as an implicit success.
-    {
-        const FeeEconomicBalance feeBalance =
-            FeeEconomics::buildFeeEconomicBalance(
-                production.block().index(),
-                transitionValidation.totalFee()
-            );
+    // The validated SupplyDelta is preserved and propagated into the finalized result.
+    const FeeEconomicBalance preMintFeeBalance =
+        FeeEconomics::buildFeeEconomicBalance(
+            production.block().index(),
+            transitionValidation.totalFee()
+        );
 
-        const RuntimeMonetaryValidationResult monetaryResult =
-            RuntimeMonetaryValidation::validateCandidate(
-                runtime.config().genesisConfig(),
-                production.block(),
-                feeBalance.burnAmount()
-            );
+    const RuntimeMonetaryValidationResult monetaryValidationResult =
+        RuntimeMonetaryValidation::validateCandidate(
+            runtime.config().genesisConfig(),
+            production.block(),
+            preMintFeeBalance.burnAmount(),
+            runtime.supplyState().latestSupply()
+        );
 
-        if (!monetaryResult.isAccepted()) {
-            return RuntimeBlockPipelineResult::rejected(
-                RuntimeBlockPipelineStatus::MONETARY_VALIDATION_FAILED,
-                "Monetary gate rejected candidate block: " + monetaryResult.reason()
-            );
-        }
+    if (!monetaryValidationResult.isAccepted()) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::MONETARY_VALIDATION_FAILED,
+            "Monetary gate rejected candidate block: " + monetaryValidationResult.reason()
+        );
     }
 
     std::vector<consensus::ValidatorVoteRecord> votes;
@@ -2107,43 +2115,57 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         runtime.config().genesisConfig().networkParameters().targetBlockTimeSeconds()
     );
 
-    return RuntimeBlockPipelineResult::finalized(
-        production.block(),
-        certificate.certificate(),
-        finalization.record(),
-        finalizedTransactionIds,
-        transitionValidation.stateRoot(),
-        transitionValidation.totalFee(),
-        rewardDistributions,
-        lockedStakePositions,
-        securityScoreRecords,
-        securityCheckpoints,
-        validatorRiskAssessments,
-        validatorContainmentDecisions,
-        validatorNetworkPolicies,
-        monetaryFirewallAudit,
-        genesisTreasurySnapshot,
-        protectionRewardBudget,
-        protectionRewardGrants,
-        protectionWorkRecords,
-        protectionRewardSummary,
-        protectionRewardSettlements,
-        inflationEpochSnapshot,
-        mintAuthorizationRecord,
-        supplyExpansionRecord,
-        feeEconomicBalance,
-        feeBurnRecord,
-        treasuryFeeRecord,
-        slashingEvidenceRecords,
-        slashingPreparationRecords,
-        slashingEvidenceSummary,
-        cryptographicSlashingEvidenceRecords,
-        stakePenaltyRecords,
-        cryptographicSlashingSummary,
-        governancePolicySnapshot,
-        governanceActionGuards,
-        governanceSummary
-    );
+    RuntimeBlockPipelineResult finalResult =
+        RuntimeBlockPipelineResult::finalized(
+            production.block(),
+            certificate.certificate(),
+            finalization.record(),
+            finalizedTransactionIds,
+            transitionValidation.stateRoot(),
+            transitionValidation.totalFee(),
+            rewardDistributions,
+            lockedStakePositions,
+            securityScoreRecords,
+            securityCheckpoints,
+            validatorRiskAssessments,
+            validatorContainmentDecisions,
+            validatorNetworkPolicies,
+            monetaryFirewallAudit,
+            genesisTreasurySnapshot,
+            protectionRewardBudget,
+            protectionRewardGrants,
+            protectionWorkRecords,
+            protectionRewardSummary,
+            protectionRewardSettlements,
+            inflationEpochSnapshot,
+            mintAuthorizationRecord,
+            supplyExpansionRecord,
+            feeEconomicBalance,
+            feeBurnRecord,
+            treasuryFeeRecord,
+            slashingEvidenceRecords,
+            slashingPreparationRecords,
+            slashingEvidenceSummary,
+            cryptographicSlashingEvidenceRecords,
+            stakePenaltyRecords,
+            cryptographicSlashingSummary,
+            governancePolicySnapshot,
+            governanceActionGuards,
+            governanceSummary
+        );
+
+    // Attach the validated SupplyDelta and advance the supply state.
+    finalResult.setSupplyDelta(monetaryValidationResult.supplyDelta());
+    try {
+        runtime.mutableSupplyState().applyFinalizedDelta(
+            monetaryValidationResult.supplyDelta()
+        );
+    } catch (const std::exception&) {
+        // Supply state update failure is non-fatal for the current block,
+        // but the continuity invariant will be enforced on the next candidate.
+    }
+
+    return finalResult;
 }
 
 std::vector<consensus::ValidatorVoteRecord> RuntimeBlockPipeline::buildValidatorVotes(

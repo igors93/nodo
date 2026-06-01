@@ -85,10 +85,10 @@ std::string RuntimeMonetaryValidationResult::serialize() const {
 RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
     const config::GenesisConfig& genesisConfig,
     const core::Block& candidateBlock,
-    utils::Amount feeBurnAmount
+    utils::Amount feeBurnAmount,
+    utils::Amount supplyBefore
 ) {
     // Derive economics::MonetaryPolicy from the genesis config.
-    // Uses the chain ID and genesis supply to construct a fully specified policy.
     utils::Amount genesisSupplyAmount;
     try {
         genesisSupplyAmount = MonetaryFirewall::genesisSupply(genesisConfig);
@@ -112,10 +112,7 @@ RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
         );
     }
 
-    // supplyBefore: use genesis supply as the pre-block supply.
-    // This is accurate for the current implementation where regular blocks have
-    // no mint operations. Task 05 will persist and reload the running supply.
-    const utils::Amount supplyBefore = genesisSupplyAmount;
+    // Use the explicitly provided supplyBefore (cumulative from supply state).
 
     const std::uint64_t blockHeight = candidateBlock.index();
     const std::string& blockHash = candidateBlock.hash();
@@ -176,6 +173,25 @@ RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
     }
 
     return RuntimeMonetaryValidationResult::accepted(delta, gateResult);
+}
+
+RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
+    const config::GenesisConfig& genesisConfig,
+    const core::Block& candidateBlock,
+    utils::Amount feeBurnAmount
+) {
+    // Convenience overload: uses genesis supply as supplyBefore.
+    // Valid only for the first block or in unit tests.
+    utils::Amount genesisSupply;
+    try {
+        genesisSupply = MonetaryFirewall::genesisSupply(genesisConfig);
+    } catch (const std::exception& e) {
+        return RuntimeMonetaryValidationResult::contextUnavailable(
+            std::string("RuntimeMonetaryValidation: cannot determine genesis supply: ") +
+            e.what()
+        );
+    }
+    return validateCandidate(genesisConfig, candidateBlock, feeBurnAmount, genesisSupply);
 }
 
 } // namespace nodo::node

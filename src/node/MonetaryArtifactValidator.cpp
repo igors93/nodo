@@ -201,6 +201,43 @@ ArtifactValidationResult MonetaryArtifactValidator::validate(
     return ArtifactValidationResult::acceptedResult();
 }
 
+ArtifactValidationResult MonetaryArtifactValidator::validateSupplyDeltaConsistencyWithFeeBurn(
+    const economics::SupplyDelta& delta,
+    const FeeBurnRecord& feeBurnRecord
+) {
+    if (!feeBurnRecord.active()) {
+        return ArtifactValidationResult::acceptedResult();
+    }
+    if (delta.burnedAmount() < feeBurnRecord.burnAmount()) {
+        return ArtifactValidationResult::rejected(
+            "MonetaryArtifactValidator: SupplyDelta.burnedAmount (" +
+            std::to_string(delta.burnedAmount().rawUnits()) +
+            ") is less than FeeBurnRecord.burnAmount (" +
+            std::to_string(feeBurnRecord.burnAmount().rawUnits()) + ")."
+        );
+    }
+    return ArtifactValidationResult::acceptedResult();
+}
+
+ArtifactValidationResult MonetaryArtifactValidator::validateSupplyDeltaConsistencyWithSupplyExpansion(
+    const economics::SupplyDelta& delta,
+    const SupplyExpansionRecord& supplyExpansionRecord
+) {
+    if (!supplyExpansionRecord.isValid()) {
+        return ArtifactValidationResult::acceptedResult();
+    }
+    // If supply expansion claims no mint, SupplyDelta must have no mints.
+    if (supplyExpansionRecord.mintedAmount().isZero() &&
+        !delta.mintedAmount().isZero()) {
+        return ArtifactValidationResult::rejected(
+            "MonetaryArtifactValidator: SupplyExpansionRecord claims no mint "
+            "but SupplyDelta.mintedAmount is non-zero (" +
+            std::to_string(delta.mintedAmount().rawUnits()) + ")."
+        );
+    }
+    return ArtifactValidationResult::acceptedResult();
+}
+
 ArtifactValidationResult MonetaryArtifactValidator::validateSupplyDelta(
     const economics::MonetaryPolicy& policy,
     const economics::SupplyDelta& delta,

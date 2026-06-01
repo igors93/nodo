@@ -2,6 +2,7 @@
 
 #include "consensus/ProposerSchedule.hpp"
 #include "core/GenesisVerifier.hpp"
+#include "node/MonetaryFirewall.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 
 #include <sstream>
@@ -426,6 +427,14 @@ const LocalPeerManager& NodeRuntime::peerManager() const {
     return m_peerManager;
 }
 
+const RuntimeSupplyState& NodeRuntime::supplyState() const {
+    return m_supplyState;
+}
+
+RuntimeSupplyState& NodeRuntime::mutableSupplyState() {
+    return m_supplyState;
+}
+
 LocalPeerManager& NodeRuntime::mutablePeerManager() {
     return m_peerManager;
 }
@@ -640,6 +649,16 @@ NodeRuntimeStartResult NodeRuntimeFactory::startFromGenesis(
         genesis.blockchain(),
         genesis.validatorRegistry()
     );
+
+    // Initialize the supply state with genesis supply.
+    try {
+        const utils::Amount genesisSupply =
+            MonetaryFirewall::genesisSupply(config.genesisConfig());
+        runtime.mutableSupplyState() = RuntimeSupplyState(genesisSupply);
+    } catch (const std::exception&) {
+        // Genesis supply unavailable — leave supply state at zero.
+        // RuntimeMonetaryValidation will handle unavailability gracefully.
+    }
 
     if (!runtime.isValid()) {
         return NodeRuntimeStartResult::rejected(

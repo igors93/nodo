@@ -1,5 +1,7 @@
 #include "node/FinalizedBlockStore.hpp"
 
+#include "economics/BurnRecord.hpp"
+#include "economics/SupplyDelta.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
@@ -12,7 +14,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* FINALIZED_BLOCK_SCHEMA_ID =
-    "NODO_FINALIZED_BLOCK_V19";
+    "NODO_FINALIZED_BLOCK_V20";
 
 } // namespace
 
@@ -874,6 +876,35 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
         "finalizedRecord",
         pipelineResult.finalizedRecord().serialize()
     );
+
+    // economics::SupplyDelta (V20) — the validated supply transition for this block.
+    const economics::SupplyDelta& sd = pipelineResult.supplyDelta();
+    fields.emplace_back("economics.supplyDelta.epoch",
+        std::to_string(sd.epoch()));
+    fields.emplace_back("economics.supplyDelta.supplyBeforeRaw",
+        std::to_string(sd.supplyBefore().rawUnits()));
+    fields.emplace_back("economics.supplyDelta.mintedRaw",
+        std::to_string(sd.mintedAmount().rawUnits()));
+    fields.emplace_back("economics.supplyDelta.burnedRaw",
+        std::to_string(sd.burnedAmount().rawUnits()));
+    fields.emplace_back("economics.supplyDelta.supplyAfterRaw",
+        std::to_string(sd.supplyAfter().rawUnits()));
+    fields.emplace_back("economics.supplyDelta.mintRecordCount", "0");
+    fields.emplace_back("economics.supplyDelta.burnRecordCount",
+        std::to_string(sd.burnRecords().size()));
+
+    for (std::size_t bi = 0; bi < sd.burnRecords().size(); ++bi) {
+        const economics::BurnRecord& br = sd.burnRecords()[bi];
+        const std::string bp =
+            "economics.supplyDelta.burnRecord." + std::to_string(bi) + ".";
+        fields.emplace_back(bp + "burnId", br.burnId());
+        fields.emplace_back(bp + "blockHeight", std::to_string(br.blockHeight()));
+        fields.emplace_back(bp + "epoch", std::to_string(br.epoch()));
+        fields.emplace_back(bp + "sourceAddress", br.sourceAddress());
+        fields.emplace_back(bp + "amountRaw", std::to_string(br.amount().rawUnits()));
+        fields.emplace_back(bp + "reason", br.reason());
+        fields.emplace_back(bp + "burnType", economics::burnTypeToString(br.burnType()));
+    }
 
     return serialization::KeyValueFileCodec::serialize(
         FINALIZED_BLOCK_SCHEMA_ID,

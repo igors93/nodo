@@ -283,6 +283,23 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             );
         }
 
+        // Advance the runtime supply state with the artifact's SupplyDelta.
+        // This enables cumulative supply continuity checks during reload.
+        if (artifact.supplyDelta().isValid()) {
+            try {
+                runtime.mutableSupplyState().applyFinalizedDelta(
+                    artifact.supplyDelta()
+                );
+            } catch (const std::exception&) {
+                // Supply continuity failure during reload — do not silently continue.
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Supply continuity break during reload at block " +
+                    std::to_string(artifact.block().index()) + "."
+                );
+            }
+        }
+
         ++loadedBlockCount;
     }
 

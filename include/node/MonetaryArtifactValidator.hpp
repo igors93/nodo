@@ -27,7 +27,6 @@ public:
      * Validate a SupplyDelta using the economics::MonetaryValidationGate.
      *
      * This is the authorization-layer check for finalized artifacts.
-     * Task 05 will call this when FinalizedBlockArtifact carries a SupplyDelta.
      *
      * Returns accepted if the gate accepts; rejected with a reason otherwise.
      */
@@ -35,6 +34,30 @@ public:
         const economics::MonetaryPolicy& policy,
         const economics::SupplyDelta& delta,
         const std::vector<economics::MintAuthorization>& authorizations
+    );
+
+    /*
+     * Check that SupplyDelta.burnedAmount >= FeeBurnRecord.burnAmount.
+     *
+     * The legacy FeeBurnRecord represents only the fee burn portion. The
+     * SupplyDelta may include additional burns (e.g., slash burns) so it
+     * must be >= the fee burn, not necessarily equal.
+     */
+    static ArtifactValidationResult validateSupplyDeltaConsistencyWithFeeBurn(
+        const economics::SupplyDelta& delta,
+        const FeeBurnRecord& feeBurnRecord
+    );
+
+    /*
+     * Check that SupplyDelta.mintedAmount is consistent with SupplyExpansionRecord.
+     *
+     * If supply expansion claims no minting, the SupplyDelta must also be
+     * mint-free. This prevents the two monetary truth sources from contradicting
+     * each other.
+     */
+    static ArtifactValidationResult validateSupplyDeltaConsistencyWithSupplyExpansion(
+        const economics::SupplyDelta& delta,
+        const SupplyExpansionRecord& supplyExpansionRecord
     );
 };
 

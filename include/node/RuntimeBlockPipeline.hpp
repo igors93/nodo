@@ -6,6 +6,7 @@
 #include "core/Block.hpp"
 #include "core/MempoolBlockProducer.hpp"
 #include "crypto/Signer.hpp"
+#include "economics/SupplyDelta.hpp"
 #include "node/LockedStakePosition.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtectionTreasury.hpp"
@@ -437,6 +438,13 @@ public:
     const std::vector<ValidatorLifecycleRecord>& validatorLifecycleRecords() const;
     const EpochAccountingRecord& epochAccountingRecord() const;
     const ValidatorLifecycleSummary& validatorLifecycleSummary() const;
+    const economics::SupplyDelta& supplyDelta() const;
+
+    /*
+     * Set the SupplyDelta validated by MonetaryValidationGate before votes.
+     * Called by the pipeline after successful monetary validation.
+     */
+    void setSupplyDelta(economics::SupplyDelta delta);
 
     std::string serialize() const;
 
@@ -487,6 +495,7 @@ private:
     std::vector<ValidatorLifecycleRecord> m_validatorLifecycleRecords;
     EpochAccountingRecord m_epochAccountingRecord;
     ValidatorLifecycleSummary m_validatorLifecycleSummary;
+    economics::SupplyDelta m_supplyDelta;
 };
 
 /*

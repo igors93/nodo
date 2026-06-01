@@ -8,6 +8,7 @@
 #include "core/Blockchain.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "mempool/Mempool.hpp"
+#include "node/RuntimeSupplyState.hpp"
 #include "p2p/LocalNodeSync.hpp"
 #include "p2p/PeerMessage.hpp"
 
@@ -158,6 +159,8 @@ public:
     mempool::Mempool& mutableMempool();
     const LocalPeerManager& peerManager() const;
     LocalPeerManager& mutablePeerManager();
+    const RuntimeSupplyState& supplyState() const;
+    RuntimeSupplyState& mutableSupplyState();
 
     bool isRunning() const;
     bool isValid() const;
@@ -194,6 +197,7 @@ private:
     consensus::ConsensusRoundManager m_consensusRoundManager;
     mempool::Mempool m_mempool;
     LocalPeerManager m_peerManager;
+    RuntimeSupplyState m_supplyState;
 };
 
 enum class NodeRuntimeStartStatus {

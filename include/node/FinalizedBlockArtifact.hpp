@@ -20,6 +20,7 @@
 #include "node/ValidatorLifecycle.hpp"
 #include "node/ValidatorNetworkPolicy.hpp"
 #include "node/ValidatorRiskAssessment.hpp"
+#include "economics/SupplyDelta.hpp"
 #include "utils/Amount.hpp"
 
 #include <optional>
@@ -109,6 +110,14 @@ public:
     const ValidatorLifecycleSummary& validatorLifecycleSummary() const;
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
+    const economics::SupplyDelta& supplyDelta() const;
+
+    /*
+     * Attach the SupplyDelta validated by MonetaryValidationGate.
+     * Must be called once after construction before the artifact is used for
+     * chain audit or supply continuity checks.
+     */
+    void setSupplyDelta(economics::SupplyDelta delta);
 
     bool isValid() const;
     std::string serialize() const;
@@ -151,6 +160,7 @@ private:
     ValidatorLifecycleSummary m_validatorLifecycleSummary;
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
+    economics::SupplyDelta m_supplyDelta;
 };
 
 } // namespace nodo::node

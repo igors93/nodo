@@ -1,6 +1,9 @@
 #include "node/ChainAuditor.hpp"
 
 #include "crypto/ProtocolCryptoContext.hpp"
+#include "economics/MonetaryPolicy.hpp"
+#include "economics/SupplyAudit.hpp"
+#include "node/MonetaryFirewall.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 #include "node/RuntimeStateLoader.hpp"
 #include "node/RuntimeStateVerifier.hpp"
@@ -73,6 +76,35 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
 
     if (runtime.validatorRegistry().activeCount() != manifest.validatorCount()) {
         return ChainAuditResult::failed("manifest validatorCount does not match runtime validator registry");
+    }
+
+    // Supply continuity audit: verify finalized SupplyDeltas form a valid chain.
+    const auto& finalizedDeltas = runtime.supplyState().finalizedDeltas();
+    if (!finalizedDeltas.empty()) {
+        utils::Amount genesisSupply;
+        try {
+            genesisSupply = MonetaryFirewall::genesisSupply(runtime.config().genesisConfig());
+        } catch (const std::exception& e) {
+            return ChainAuditResult::failed(
+                std::string("chain audit: cannot determine genesis supply: ") + e.what()
+            );
+        }
+
+        const economics::MonetaryPolicy policy =
+            economics::MonetaryPolicy::localnetDefault(
+                runtime.config().genesisConfig().networkParameters().chainId(),
+                genesisSupply
+            );
+
+        const economics::SupplySequenceAuditResult supplyAudit =
+            economics::SupplyAudit::auditDeltaSequence(policy, finalizedDeltas);
+
+        if (!supplyAudit.isValid()) {
+            return ChainAuditResult::failed(
+                "chain audit: monetary supply continuity failure: " +
+                supplyAudit.reason()
+            );
+        }
     }
 
     return ChainAuditResult::passed(
