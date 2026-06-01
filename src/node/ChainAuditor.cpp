@@ -1,10 +1,8 @@
 #include "node/ChainAuditor.hpp"
 
-#include "core/StateRootCalculator.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
-#include "node/RuntimeAccountStateBuilder.hpp"
-
-#include <exception>
+#include "node/RuntimeStateLoader.hpp"
+#include "node/RuntimeStateVerifier.hpp"
 
 namespace nodo::node {
 
@@ -20,78 +18,19 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
     const NodeRuntimeManifest& manifest =
         load.manifest();
 
-    if (manifest.chainId().empty()) {
-        return ChainAuditResult::failed("manifest chainId is empty");
-    }
-
-    if (manifest.networkName().empty()) {
-        return ChainAuditResult::failed("manifest networkName is empty");
-    }
-
-    if (manifest.genesisConfigId().empty()) {
-        return ChainAuditResult::failed("manifest genesisConfigId is empty");
-    }
-
     const NodeRuntime& runtime =
         load.runtime();
 
-    if (!runtime.isValid()) {
-        return ChainAuditResult::failed("rebuilt runtime is invalid");
-    }
-
-    if (!runtime.blockchain().isValid()) {
-        return ChainAuditResult::failed("rebuilt blockchain is invalid");
-    }
-
-    if (runtime.config().genesisConfig().networkParameters().chainId() != manifest.chainId()) {
-        return ChainAuditResult::failed("manifest chainId does not match runtime network parameters");
-    }
-
-    if (runtime.config().genesisConfig().networkParameters().networkName() != manifest.networkName()) {
-        return ChainAuditResult::failed("manifest networkName does not match runtime network parameters");
-    }
-
-    if (runtime.config().genesisConfig().deterministicId() != manifest.genesisConfigId()) {
-        return ChainAuditResult::failed("manifest genesisConfigId does not match runtime genesis config");
-    }
-
-    if (runtime.blockchain().latestBlock().index() != manifest.latestBlockHeight()) {
-        return ChainAuditResult::failed("manifest latestBlockHeight does not match rebuilt blockchain");
-    }
-
-    if (runtime.blockchain().latestBlock().hash() != manifest.latestBlockHash()) {
-        return ChainAuditResult::failed("manifest latestBlockHash does not match rebuilt blockchain");
-    }
-
-    std::string rebuiltStateRoot;
-
-    try {
-        const std::uint64_t minimumFee =
-            runtime.config().genesisConfig().networkParameters().minimumFeeRawUnits();
-
-        const core::AccountStateView accountState =
-            RuntimeAccountStateBuilder::accountStateViewAtTip(
-                runtime.config().genesisConfig(),
-                runtime.blockchain(),
-                static_cast<std::int64_t>(minimumFee)
-            );
-
-        rebuiltStateRoot =
-            core::StateRootCalculator::calculateAccountStateRoot(
-                accountState
-            );
-    } catch (const std::exception& error) {
-        return ChainAuditResult::failed(
-            std::string("rebuilt account state failed: ") + error.what()
+    const RuntimeStateVerificationResult runtimeVerification =
+        RuntimeStateVerifier::verifyManifestMatchesRuntime(
+            manifest,
+            runtime
         );
-    }
 
-    if (rebuiltStateRoot.empty()) {
-        return ChainAuditResult::failed("rebuilt latestStateRoot is empty");
-    }
-
-    if (manifest.latestStateRoot() != rebuiltStateRoot) {
-        return ChainAuditResult::failed("manifest latestStateRoot does not match rebuilt account state");
+    if (!runtimeVerification.verified()) {
+        return ChainAuditResult::failed(
+            runtimeVerification.reason()
+        );
     }
 
     const crypto::ProtocolCryptoContext cryptoContext =

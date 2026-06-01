@@ -13,6 +13,7 @@
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signer.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"

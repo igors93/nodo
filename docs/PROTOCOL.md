@@ -52,6 +52,8 @@ The runtime manifest stores `latestStateRoot`. At genesis it commits to the
 initial account allocation. After every finalized block, it must match the
 block's `postStateRoot`. Reload rebuilds state from genesis through finalized
 blocks and rejects any manifest, block file or audit result whose root diverges.
+The reload path calculates this root through `RuntimeStateVerifier` so loader
+and chain audit share the same deterministic check.
 
 `block produce` never creates transactions. Transactions enter the protocol via
 `tx submit`, then block production consumes the current mempool contents.

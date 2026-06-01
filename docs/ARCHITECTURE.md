@@ -9,8 +9,9 @@ Nodo is organized by runtime responsibility rather than implementation phase.
   and coin lot rules.
 - `consensus`: votes, quorum certificates, finalization and fork choice.
 - `mempool`: volatile transaction admission and selection.
-- `node`: local runtime, data directory, runtime loader, finalized block store,
-  persistent mempool and local block pipeline.
+- `node`: local runtime, data directory, runtime loader, runtime verifier,
+  finalized block artifact codec/store, persistent mempool and local block
+  pipeline.
 - `storage`: generic chain/block storage helpers and atomic file IO.
 - `serialization`: strict canonical binary codecs for protocol boundaries plus
   deterministic text codecs for legacy development persistence.
@@ -34,6 +35,13 @@ The manifest is accepted only when the rebuilt latest block height, hash and
 `latestStateRoot` match it. Finalized block files carry a `postStateRoot`,
 quorum certificate and finalized record; reload verifies all three before the
 runtime is considered auditable.
+
+Reload responsibilities are intentionally split. `RuntimeStateLoader`
+coordinates durable reads and runtime replay. `FinalizedBlockArtifactCodec`
+owns finalized artifact parsing/serialization shape. `RuntimeStateVerifier`
+centralizes manifest-to-runtime checks and deterministic `latestStateRoot`
+recalculation. `ChainAuditor` adds the final operational checks for crypto
+context, mempool admission policy and validator registry consistency.
 
 ## Build
 
