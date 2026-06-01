@@ -1,6 +1,7 @@
 #ifndef NODO_ECONOMICS_MINT_AUTHORIZATION_HPP
 #define NODO_ECONOMICS_MINT_AUTHORIZATION_HPP
 
+#include "economics/MonetaryPolicy.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
@@ -33,6 +34,19 @@ public:
         utils::Amount maxMintAmount,
         std::string reason,
         std::string approvedBy
+    );
+
+    /*
+     * Factory for bootstrap/localnet/genesis authorizations.
+     *
+     * Creates a minimal valid authorization bound to the policy's version and
+     * epoch 0 (genesis). Use this instead of constructing authorization strings
+     * manually in demo or test code.
+     */
+    static MintAuthorization createGenesisAuthorization(
+        const MonetaryPolicy& policy,
+        const std::string& authorizationId,
+        utils::Amount maxMintAmount
     );
 
     const std::string& authorizationId() const;

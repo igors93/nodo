@@ -32,11 +32,14 @@ nodo::economics::MintAuthorization makeAuth(
     );
 }
 
+// blockIndex and blockHash must match the SupplyDelta this mint belongs to.
 nodo::economics::MintRecord makeMint(
     const std::string& mintId,
     const std::string& authId,
     std::int64_t rawUnits,
-    std::uint64_t epoch = 1
+    std::uint64_t epoch = 1,
+    std::uint64_t blockIndex = 5,
+    const std::string& blockHash = "block-hash-test"
 ) {
     return nodo::economics::MintRecord(
         mintId,
@@ -44,7 +47,7 @@ nodo::economics::MintRecord makeMint(
         "nodo1recipient001",
         nodo::utils::Amount::fromRawUnits(rawUnits),
         nodo::economics::MintReason::GENESIS_ALLOCATION,
-        epoch, 5, "block-hash-test", 1900000001
+        epoch, blockIndex, blockHash, 1900000001
     );
 }
 
@@ -82,6 +85,7 @@ void testValidNoOpDeltaPasses() {
 }
 
 void testValidBurnOnlyDeltaPasses() {
+    // Burn has blockHeight=5, epoch=1 — matches delta(5, "block-hash-B", 1).
     const nodo::economics::SupplyDelta delta(
         5, "block-hash-B", 1,
         nodo::utils::Amount::fromRawUnits(1000),
@@ -97,13 +101,14 @@ void testValidBurnOnlyDeltaPasses() {
 }
 
 void testValidAuthorizedMintPasses() {
+    // Mint must match delta: epoch=1, blockIndex=5, blockHash="block-hash-C".
     const nodo::economics::SupplyDelta delta(
         5, "block-hash-C", 1,
         nodo::utils::Amount::fromRawUnits(1000),
         nodo::utils::Amount::fromRawUnits(500),
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1500),
-        {makeMint("mint-001", "auth-001", 500)},
+        {makeMint("mint-001", "auth-001", 500, 1, 5, "block-hash-C")},
         {}
     );
     const nodo::economics::MonetaryFirewallContext ctx(
@@ -126,7 +131,7 @@ void testInvalidPolicyRejected() {
 }
 
 void testInvalidSupplyDeltaRejected() {
-    // Delta with empty block hash is invalid
+    // Delta with empty block hash is invalid.
     const nodo::economics::SupplyDelta badDelta(
         1, "", 1,
         nodo::utils::Amount::fromRawUnits(1000),
@@ -142,13 +147,14 @@ void testInvalidSupplyDeltaRejected() {
 }
 
 void testMintWithUnknownAuthorizationIdRejected() {
+    // Mint matches delta block/epoch so the firewall reaches its auth check.
     const nodo::economics::SupplyDelta delta(
         5, "block-hash-D", 1,
         nodo::utils::Amount::fromRawUnits(1000),
         nodo::utils::Amount::fromRawUnits(100),
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1100),
-        {makeMint("mint-001", "unknown-auth", 100)},
+        {makeMint("mint-001", "unknown-auth", 100, 1, 5, "block-hash-D")},
         {}
     );
     const nodo::economics::MonetaryFirewallContext ctx(testPolicy(), delta, {});
@@ -165,7 +171,7 @@ void testMintWithExpiredAuthorizationRejected() {
         nodo::utils::Amount::fromRawUnits(100),
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1100),
-        {makeMint("mint-001", "auth-expired", 100, 5)},
+        {makeMint("mint-001", "auth-expired", 100, 5, 5, "block-hash-E")},
         {}
     );
     const nodo::economics::MonetaryFirewallContext ctx(
@@ -179,7 +185,7 @@ void testMintWithExpiredAuthorizationRejected() {
 }
 
 void testMintWithInvalidAuthorizationRejected() {
-    // Auth with zero amount is invalid
+    // Auth with zero amount is invalid.
     const nodo::economics::MintAuthorization badAuth(
         "auth-bad", kPolicyVersion, 1, 10,
         nodo::utils::Amount::fromRawUnits(0),  // invalid: zero amount
@@ -191,7 +197,7 @@ void testMintWithInvalidAuthorizationRejected() {
         nodo::utils::Amount::fromRawUnits(100),
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1100),
-        {makeMint("mint-001", "auth-bad", 100)},
+        {makeMint("mint-001", "auth-bad", 100, 1, 5, "block-hash-F")},
         {}
     );
     const nodo::economics::MonetaryFirewallContext ctx(testPolicy(), delta, {badAuth});
@@ -211,7 +217,7 @@ void testMintPolicyVersionMismatchRejected() {
         nodo::utils::Amount::fromRawUnits(100),
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1100),
-        {makeMint("mint-001", "auth-wrong-version", 100)},
+        {makeMint("mint-001", "auth-wrong-version", 100, 1, 5, "block-hash-G")},
         {}
     );
     const nodo::economics::MonetaryFirewallContext ctx(
@@ -224,14 +230,14 @@ void testMintPolicyVersionMismatchRejected() {
 }
 
 void testMintAmountExceedingAuthorizationRejected() {
-    // Auth allows max 200, but mint is for 300
+    // Auth allows max 200, but mint is for 300.
     const nodo::economics::SupplyDelta delta(
         5, "block-hash-H", 1,
         nodo::utils::Amount::fromRawUnits(1000),
         nodo::utils::Amount::fromRawUnits(300),
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1300),
-        {makeMint("mint-001", "auth-limited", 300)},
+        {makeMint("mint-001", "auth-limited", 300, 1, 5, "block-hash-H")},
         {}
     );
     const nodo::economics::MonetaryFirewallContext ctx(
@@ -246,7 +252,7 @@ void testMintAmountExceedingAuthorizationRejected() {
 }
 
 void testMultipleMintsSameAuthWithinLimitPass() {
-    // Two mints of 100 each = 200 total, auth allows 300
+    // Two mints of 100 each = 200 total, auth allows 300.
     const nodo::economics::SupplyDelta delta(
         5, "block-hash-I", 1,
         nodo::utils::Amount::fromRawUnits(1000),
@@ -254,8 +260,8 @@ void testMultipleMintsSameAuthWithinLimitPass() {
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1200),
         {
-            makeMint("mint-001", "auth-shared", 100),
-            makeMint("mint-002", "auth-shared", 100)
+            makeMint("mint-001", "auth-shared", 100, 1, 5, "block-hash-I"),
+            makeMint("mint-002", "auth-shared", 100, 1, 5, "block-hash-I")
         },
         {}
     );
@@ -269,7 +275,7 @@ void testMultipleMintsSameAuthWithinLimitPass() {
 }
 
 void testMultipleMintsSameAuthExceedingLimitFail() {
-    // Two mints of 200 each = 400 total, auth allows 300
+    // Two mints of 200 each = 400 total, auth allows 300.
     const nodo::economics::SupplyDelta delta(
         5, "block-hash-J", 1,
         nodo::utils::Amount::fromRawUnits(1000),
@@ -277,8 +283,8 @@ void testMultipleMintsSameAuthExceedingLimitFail() {
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1400),
         {
-            makeMint("mint-001", "auth-shared", 200),
-            makeMint("mint-002", "auth-shared", 200)
+            makeMint("mint-001", "auth-shared", 200, 1, 5, "block-hash-J"),
+            makeMint("mint-002", "auth-shared", 200, 1, 5, "block-hash-J")
         },
         {}
     );
@@ -300,7 +306,7 @@ void testDuplicateAuthorizationIdsRejected() {
         nodo::utils::Amount::fromRawUnits(100),
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1100),
-        {makeMint("mint-001", "auth-dup", 100)},
+        {makeMint("mint-001", "auth-dup", 100, 1, 5, "block-hash-K")},
         {}
     );
     const nodo::economics::MonetaryFirewallContext ctx(
@@ -315,6 +321,46 @@ void testDuplicateAuthorizationIdsRejected() {
     assert(!result.isAccepted());
     assert(result.status() ==
            nodo::economics::MonetaryFirewallStatus::DUPLICATE_MINT_AUTHORIZATION);
+}
+
+// Item 2: unused invalid authorizations must not break burn-only or no-op deltas.
+
+void testUnusedInvalidAuthorizationDoesNotBreakBurnOnlyDelta() {
+    // An invalid authorization (zero amount) is in the list, but no mints exist.
+    // The firewall accepts early at step 3 (no mints).
+    const nodo::economics::MintAuthorization unusedBadAuth(
+        "auth-unused-bad", kPolicyVersion, 1, 10,
+        nodo::utils::Amount::fromRawUnits(0),  // invalid: zero amount
+        "reason", "approver"
+    );
+    const nodo::economics::SupplyDelta delta(
+        5, "block-hash-burn-only", 1,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(50),
+        nodo::utils::Amount::fromRawUnits(950),
+        {},
+        {makeBurn("burn-only-001", 50)}
+    );
+    const nodo::economics::MonetaryFirewallContext ctx(testPolicy(), delta, {unusedBadAuth});
+    const auto result = nodo::economics::MonetaryFirewall::validate(ctx);
+    assert(result.isAccepted());
+}
+
+void testUnusedInvalidAuthorizationDoesNotBreakNoOpDelta() {
+    // An invalid authorization is in the list, but the delta is a no-op.
+    const nodo::economics::MintAuthorization unusedBadAuth(
+        "auth-unused-noop", kPolicyVersion, 1, 10,
+        nodo::utils::Amount::fromRawUnits(0),
+        "reason", "approver"
+    );
+    const nodo::economics::MonetaryFirewallContext ctx(
+        testPolicy(),
+        noOpDelta(nodo::utils::Amount::fromRawUnits(1000)),
+        {unusedBadAuth}
+    );
+    const auto result = nodo::economics::MonetaryFirewall::validate(ctx);
+    assert(result.isAccepted());
 }
 
 void testStatusToString() {
@@ -355,6 +401,9 @@ int main() {
     testMultipleMintsSameAuthWithinLimitPass();
     testMultipleMintsSameAuthExceedingLimitFail();
     testDuplicateAuthorizationIdsRejected();
+    // Item 2: unused invalid auth
+    testUnusedInvalidAuthorizationDoesNotBreakBurnOnlyDelta();
+    testUnusedInvalidAuthorizationDoesNotBreakNoOpDelta();
     testStatusToString();
     testResultSerialize();
     return 0;

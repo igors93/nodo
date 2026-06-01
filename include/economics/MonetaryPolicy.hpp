@@ -28,12 +28,6 @@ namespace nodo::economics {
  * 400 basis points (4%) is the maximum allowed annual inflation rate.
  * This matches the constant NODO_MAX_ANNUAL_INFLATION_BASIS_POINTS in
  * node::MonetaryFirewall. Both must stay in sync.
- *
- * Note on MintRecord.authorizationId:
- * The economics::MintRecord type intentionally tracks the sourceBlockHash as
- * the authorization anchor. A future task will migrate MintRecord to carry an
- * explicit authorizationId once node::ControlledIssuance is wired into the
- * production block pipeline.
  */
 class MonetaryPolicy {
 public:

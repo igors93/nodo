@@ -9,6 +9,13 @@
 #include <exception>
 #include <vector>
 
+// Task 04 integration point:
+// When FinalizedBlockArtifact carries a SupplyDelta, call
+// economics::MonetaryValidationGate::validate() here before checking the
+// inflation-layer MonetaryFirewallAudit. This ensures the economics-layer
+// authorization check (MintAuthorization) is part of artifact validation.
+// See economics/MonetaryValidationGate.hpp for the gate interface.
+
 namespace nodo::node {
 
 ArtifactValidationResult MonetaryArtifactValidator::validate(

@@ -92,6 +92,22 @@ std::string SupplyDelta::rejectionReason() const {
         if (!mint.isValid()) {
             return "SupplyDelta rejected: invalid MintRecord id='" + mint.id() + "'.";
         }
+        // Consistency: every mint must belong to the same block and epoch as this delta.
+        if (mint.epoch() != m_epoch) {
+            return "SupplyDelta rejected: MintRecord id='" + mint.id() +
+                   "' epoch " + std::to_string(mint.epoch()) +
+                   " does not match delta epoch " + std::to_string(m_epoch) + ".";
+        }
+        if (mint.sourceBlockIndex() != m_blockHeight) {
+            return "SupplyDelta rejected: MintRecord id='" + mint.id() +
+                   "' sourceBlockIndex " + std::to_string(mint.sourceBlockIndex()) +
+                   " does not match delta blockHeight " + std::to_string(m_blockHeight) + ".";
+        }
+        if (mint.sourceBlockHash() != m_blockHash) {
+            return "SupplyDelta rejected: MintRecord id='" + mint.id() +
+                   "' sourceBlockHash '" + mint.sourceBlockHash() +
+                   "' does not match delta blockHash '" + m_blockHash + "'.";
+        }
         // Overflow check: mintSum + mint.amount().rawUnits() must not overflow.
         if (mint.amount().rawUnits() > 0 &&
             mintSum > INT64_MAX - mint.amount().rawUnits()) {
@@ -112,6 +128,17 @@ std::string SupplyDelta::rejectionReason() const {
         if (!burn.isValid()) {
             return "SupplyDelta rejected: invalid BurnRecord burnId='" +
                    burn.burnId() + "': " + burn.rejectionReason();
+        }
+        // Consistency: every burn must belong to the same block and epoch as this delta.
+        if (burn.epoch() != m_epoch) {
+            return "SupplyDelta rejected: BurnRecord burnId='" + burn.burnId() +
+                   "' epoch " + std::to_string(burn.epoch()) +
+                   " does not match delta epoch " + std::to_string(m_epoch) + ".";
+        }
+        if (burn.blockHeight() != m_blockHeight) {
+            return "SupplyDelta rejected: BurnRecord burnId='" + burn.burnId() +
+                   "' blockHeight " + std::to_string(burn.blockHeight()) +
+                   " does not match delta blockHeight " + std::to_string(m_blockHeight) + ".";
         }
         if (burn.amount().rawUnits() > 0 &&
             burnSum > INT64_MAX - burn.amount().rawUnits()) {

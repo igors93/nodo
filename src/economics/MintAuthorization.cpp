@@ -86,4 +86,21 @@ std::string MintAuthorization::serialize() const {
     return oss.str();
 }
 
+
+MintAuthorization MintAuthorization::createGenesisAuthorization(
+    const MonetaryPolicy& policy,
+    const std::string& authorizationId,
+    utils::Amount maxMintAmount
+) {
+    return MintAuthorization(
+        authorizationId,
+        policy.policyVersion(),
+        0,   // genesis epoch
+        0,   // single-epoch authorization valid only at epoch 0
+        maxMintAmount,
+        "genesis allocation",
+        "GENESIS"
+    );
+}
+
 } // namespace nodo::economics

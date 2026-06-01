@@ -1726,6 +1726,14 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
+    // Task 04 integration point — MonetaryValidationGate pre-vote seam:
+    // Before building validator votes, call:
+    //   economics::MonetaryValidationGate::validate(policy, supplyDelta, authorizations)
+    // and reject if the gate returns REJECTED_BY_FIREWALL.
+    // The SupplyDelta for this block must be derived from the StateTransitionPreview.
+    // See economics/MonetaryValidationGate.hpp for the gate interface.
+    // This ensures no block can be voted on without passing the authorization layer.
+
     std::vector<consensus::ValidatorVoteRecord> votes;
 
     try {

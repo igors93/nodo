@@ -9,7 +9,10 @@ namespace {
 nodo::economics::MintRecord makeMint(
     const std::string& id,
     std::int64_t rawUnits,
-    const std::string& authorizationId = "auth-delta-test-001"
+    const std::string& authorizationId = "auth-delta-test-001",
+    std::uint64_t epoch = 1,
+    std::uint64_t blockHeight = 5,
+    const std::string& blockHash = "block-hash-test"
 ) {
     return nodo::economics::MintRecord(
         id,
@@ -17,16 +20,18 @@ nodo::economics::MintRecord makeMint(
         "nodo1recipient001",
         nodo::utils::Amount::fromRawUnits(rawUnits),
         nodo::economics::MintReason::GENESIS_ALLOCATION,
-        1, 5, "block-hash-test", 1900000001
+        epoch, blockHeight, blockHash, 1900000001
     );
 }
 
 nodo::economics::BurnRecord makeBurn(
     const std::string& id,
-    std::int64_t rawUnits
+    std::int64_t rawUnits,
+    std::uint64_t blockHeight = 5,
+    std::uint64_t epoch = 1
 ) {
     return nodo::economics::BurnRecord(
-        id, 5, 1, "nodo1sender001",
+        id, blockHeight, epoch, "nodo1sender001",
         nodo::utils::Amount::fromRawUnits(rawUnits),
         "fee", nodo::economics::BurnType::FEE_BURN
     );
@@ -47,13 +52,14 @@ void testNoOpDeltaIsValid() {
 }
 
 void testValidMintDelta() {
+    // Mint record must match delta's epoch=1, blockHeight=5, blockHash="block-hash-B"
     const nodo::economics::SupplyDelta delta(
         5, "block-hash-B", 1,
         nodo::utils::Amount::fromRawUnits(1000),
         nodo::utils::Amount::fromRawUnits(200),
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1200),
-        {makeMint("mint-001", 200)},
+        {makeMint("mint-001", 200, "auth-delta-test-001", 1, 5, "block-hash-B")},
         {}
     );
     assert(delta.isValid());
@@ -61,6 +67,7 @@ void testValidMintDelta() {
 }
 
 void testValidBurnDelta() {
+    // Burn record must match delta's epoch=1, blockHeight=6
     const nodo::economics::SupplyDelta delta(
         6, "block-hash-C", 1,
         nodo::utils::Amount::fromRawUnits(1000),
@@ -68,7 +75,7 @@ void testValidBurnDelta() {
         nodo::utils::Amount::fromRawUnits(50),
         nodo::utils::Amount::fromRawUnits(950),
         {},
-        {makeBurn("burn-001", 50)}
+        {makeBurn("burn-001", 50, 6, 1)}
     );
     assert(delta.isValid());
 }
@@ -88,13 +95,14 @@ void testEmptyBlockHashRejected() {
 
 void testMintAmountMismatchRejected() {
     // mintedAmount=200 but mint records sum=100
+    // Mint matches delta block/epoch to isolate the arithmetic check.
     const nodo::economics::SupplyDelta delta(
         8, "block-hash-D", 1,
         nodo::utils::Amount::fromRawUnits(1000),
         nodo::utils::Amount::fromRawUnits(200),
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1200),
-        {makeMint("mint-002", 100)},
+        {makeMint("mint-002", 100, "auth-delta-test-001", 1, 8, "block-hash-D")},
         {}
     );
     assert(!delta.isValid());
@@ -110,7 +118,7 @@ void testBurnAmountMismatchRejected() {
         nodo::utils::Amount::fromRawUnits(100),
         nodo::utils::Amount::fromRawUnits(900),
         {},
-        {makeBurn("burn-002", 50)}
+        {makeBurn("burn-002", 50, 9, 1)}
     );
     assert(!delta.isValid());
     assert(delta.rejectionReason().find("burn") != std::string::npos);
@@ -124,7 +132,7 @@ void testSupplyAfterMismatchRejected() {
         nodo::utils::Amount::fromRawUnits(100),
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(999),
-        {makeMint("mint-003", 100)},
+        {makeMint("mint-003", 100, "auth-delta-test-001", 1, 10, "block-hash-F")},
         {}
     );
     assert(!delta.isValid());
@@ -133,7 +141,6 @@ void testSupplyAfterMismatchRejected() {
 
 void testUnderflowBurnedExceedsAvailableSupply() {
     // supplyBefore=100, minted=0, burned=200 → would go negative
-    // The SupplyDelta itself will catch the underflow in rejectionReason
     const nodo::economics::SupplyDelta delta(
         11, "block-hash-G", 1,
         nodo::utils::Amount::fromRawUnits(100),
@@ -141,17 +148,17 @@ void testUnderflowBurnedExceedsAvailableSupply() {
         nodo::utils::Amount::fromRawUnits(200),
         nodo::utils::Amount(-100),  // intentionally negative to test rejection
         {},
-        {makeBurn("burn-003", 200)}
+        {makeBurn("burn-003", 200, 11, 1)}
     );
     assert(!delta.isValid());
 }
 
 void testInvalidMintRecordCausesDeltaRejection() {
-    // Mint record with empty id is invalid
+    // Mint record with empty id is invalid — isValid() fires first, before consistency checks.
     const nodo::economics::MintRecord badMint(
         "", "auth-bad-001", "nodo1r", nodo::utils::Amount::fromRawUnits(100),
         nodo::economics::MintReason::GENESIS_ALLOCATION,
-        1, 5, "block-hash", 1900000001
+        1, 12, "block-hash-H", 1900000001
     );
     const nodo::economics::SupplyDelta delta(
         12, "block-hash-H", 1,
@@ -165,8 +172,9 @@ void testInvalidMintRecordCausesDeltaRejection() {
 }
 
 void testInvalidBurnRecordCausesDeltaRejection() {
+    // Burn record with empty burnId is invalid — isValid() fires first.
     const nodo::economics::BurnRecord badBurn(
-        "", 5, 1, "nodo1s",
+        "", 13, 1, "nodo1s",
         nodo::utils::Amount::fromRawUnits(50),
         "fee", nodo::economics::BurnType::FEE_BURN
     );
@@ -183,13 +191,14 @@ void testInvalidBurnRecordCausesDeltaRejection() {
 
 void testMintRecordWithEmptyAuthorizationIdCausesDeltaRejection() {
     // Delta with a mint record that has empty authorizationId must be rejected.
+    // isValid() on the MintRecord fires first (empty authId), before consistency checks.
     const nodo::economics::SupplyDelta delta(
         14, "block-hash-J", 1,
         nodo::utils::Amount::fromRawUnits(1000),
         nodo::utils::Amount::fromRawUnits(100),
         nodo::utils::Amount::fromRawUnits(0),
         nodo::utils::Amount::fromRawUnits(1100),
-        {makeMint("mint-no-auth", 100, "")},  // empty authorizationId
+        {makeMint("mint-no-auth", 100, "", 1, 14, "block-hash-J")},
         {}
     );
     assert(!delta.isValid());
@@ -207,6 +216,103 @@ void testDeltaSerializationContainsKeyFields() {
     assert(s.find("100") != std::string::npos);
 }
 
+// --- Item 1: new consistency rejection tests ---
+
+void testMintEpochMismatchRejected() {
+    // Mint has epoch=2 but delta expects epoch=1.
+    const nodo::economics::SupplyDelta delta(
+        5, "block-hash-epoch", 1,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(100),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(1100),
+        {makeMint("mint-epoch", 100, "auth-001", 2, 5, "block-hash-epoch")},
+        {}
+    );
+    assert(!delta.isValid());
+    assert(delta.rejectionReason().find("epoch") != std::string::npos);
+    assert(delta.rejectionReason().find("mint-epoch") != std::string::npos);
+}
+
+void testMintSourceBlockIndexMismatchRejected() {
+    // Mint has sourceBlockIndex=99 but delta blockHeight=5.
+    const nodo::economics::SupplyDelta delta(
+        5, "block-hash-idx", 1,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(100),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(1100),
+        {makeMint("mint-idx", 100, "auth-001", 1, 99, "block-hash-idx")},
+        {}
+    );
+    assert(!delta.isValid());
+    assert(delta.rejectionReason().find("sourceBlockIndex") != std::string::npos);
+    assert(delta.rejectionReason().find("mint-idx") != std::string::npos);
+}
+
+void testMintSourceBlockHashMismatchRejected() {
+    // Mint has sourceBlockHash="wrong-hash" but delta has "block-hash-real".
+    const nodo::economics::SupplyDelta delta(
+        5, "block-hash-real", 1,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(100),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(1100),
+        {makeMint("mint-hash", 100, "auth-001", 1, 5, "wrong-hash")},
+        {}
+    );
+    assert(!delta.isValid());
+    assert(delta.rejectionReason().find("sourceBlockHash") != std::string::npos);
+    assert(delta.rejectionReason().find("mint-hash") != std::string::npos);
+}
+
+void testBurnEpochMismatchRejected() {
+    // Burn has epoch=3 but delta expects epoch=1.
+    const nodo::economics::SupplyDelta delta(
+        7, "block-hash-burn-epoch", 1,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(50),
+        nodo::utils::Amount::fromRawUnits(950),
+        {},
+        {makeBurn("burn-epoch", 50, 7, 3)}
+    );
+    assert(!delta.isValid());
+    assert(delta.rejectionReason().find("epoch") != std::string::npos);
+    assert(delta.rejectionReason().find("burn-epoch") != std::string::npos);
+}
+
+void testBurnBlockHeightMismatchRejected() {
+    // Burn has blockHeight=999 but delta expects blockHeight=7.
+    const nodo::economics::SupplyDelta delta(
+        7, "block-hash-burn-height", 1,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(50),
+        nodo::utils::Amount::fromRawUnits(950),
+        {},
+        {makeBurn("burn-height", 50, 999, 1)}
+    );
+    assert(!delta.isValid());
+    assert(delta.rejectionReason().find("blockHeight") != std::string::npos);
+    assert(delta.rejectionReason().find("burn-height") != std::string::npos);
+}
+
+void testValidRecordsMatchingDeltaPass() {
+    // Explicitly verify all fields match: blockHeight=20, blockHash="block-real", epoch=3.
+    const nodo::economics::SupplyDelta delta(
+        20, "block-real", 3,
+        nodo::utils::Amount::fromRawUnits(5000),
+        nodo::utils::Amount::fromRawUnits(200),
+        nodo::utils::Amount::fromRawUnits(100),
+        nodo::utils::Amount::fromRawUnits(5100),
+        {makeMint("mint-match", 200, "auth-match", 3, 20, "block-real")},
+        {makeBurn("burn-match", 100, 20, 3)}
+    );
+    assert(delta.isValid());
+    assert(delta.rejectionReason().empty());
+}
+
 } // namespace
 
 int main() {
@@ -222,5 +328,12 @@ int main() {
     testInvalidBurnRecordCausesDeltaRejection();
     testMintRecordWithEmptyAuthorizationIdCausesDeltaRejection();
     testDeltaSerializationContainsKeyFields();
+    // Item 1: new consistency rejection tests
+    testMintEpochMismatchRejected();
+    testMintSourceBlockIndexMismatchRejected();
+    testMintSourceBlockHashMismatchRejected();
+    testBurnEpochMismatchRejected();
+    testBurnBlockHeightMismatchRejected();
+    testValidRecordsMatchingDeltaPass();
     return 0;
 }

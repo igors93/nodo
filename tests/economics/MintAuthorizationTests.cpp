@@ -1,4 +1,5 @@
 #include "economics/MintAuthorization.hpp"
+#include "economics/MonetaryPolicy.hpp"
 
 #include <cassert>
 #include <string>
@@ -130,6 +131,56 @@ void testSerializationIncludesKeyFields() {
     assert(s.find("1000") != std::string::npos);
 }
 
+// Item 4: createGenesisAuthorization factory tests.
+
+nodo::economics::MonetaryPolicy testPolicyForFactory() {
+    return nodo::economics::MonetaryPolicy::localnetDefault(
+        "nodo-localnet-1",
+        nodo::utils::Amount::fromRawUnits(1000000)
+    );
+}
+
+void testGenesisAuthorizationHelperCreatesValidAuth() {
+    const auto policy = testPolicyForFactory();
+    const auto auth = nodo::economics::MintAuthorization::createGenesisAuthorization(
+        policy, "genesis-auth-001", nodo::utils::Amount::fromRawUnits(500000)
+    );
+    assert(auth.isValid());
+    assert(auth.rejectionReason().empty());
+    assert(auth.authorizationId() == "genesis-auth-001");
+    assert(auth.maxMintAmount() == nodo::utils::Amount::fromRawUnits(500000));
+    assert(auth.epoch() == 0);
+    assert(auth.expiresAtEpoch() == 0);
+    assert(auth.approvedBy() == "GENESIS");
+}
+
+void testGenesisAuthorizationUsesPolicyVersion() {
+    const auto policy = testPolicyForFactory();
+    const auto auth = nodo::economics::MintAuthorization::createGenesisAuthorization(
+        policy, "genesis-auth-002", nodo::utils::Amount::fromRawUnits(1000)
+    );
+    assert(auth.policyVersion() == policy.policyVersion());
+    assert(auth.policyVersion() == "NODO_MONETARY_POLICY_V1");
+}
+
+void testGenesisAuthorizationMaxMintAmountMatchesInput() {
+    const auto policy = testPolicyForFactory();
+    const nodo::utils::Amount requestedAmount = nodo::utils::Amount::fromRawUnits(99999);
+    const auto auth = nodo::economics::MintAuthorization::createGenesisAuthorization(
+        policy, "genesis-auth-003", requestedAmount
+    );
+    assert(auth.maxMintAmount() == requestedAmount);
+}
+
+void testGenesisAuthorizationIsActiveAtEpochZero() {
+    const auto policy = testPolicyForFactory();
+    const auto auth = nodo::economics::MintAuthorization::createGenesisAuthorization(
+        policy, "genesis-auth-004", nodo::utils::Amount::fromRawUnits(1000)
+    );
+    assert(auth.isActiveAtEpoch(0));
+    assert(!auth.isActiveAtEpoch(1));
+}
+
 } // namespace
 
 int main() {
@@ -147,5 +198,10 @@ int main() {
     testInactiveAfterExpiryEpoch();
     testSingleEpochAuthorizationActiveOnlyOnThatEpoch();
     testSerializationIncludesKeyFields();
+    // Item 4: factory tests
+    testGenesisAuthorizationHelperCreatesValidAuth();
+    testGenesisAuthorizationUsesPolicyVersion();
+    testGenesisAuthorizationMaxMintAmountMatchesInput();
+    testGenesisAuthorizationIsActiveAtEpochZero();
     return 0;
 }
