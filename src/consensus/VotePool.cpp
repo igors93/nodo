@@ -1,0 +1,210 @@
+#include "consensus/VotePool.hpp"
+
+#include <sstream>
+#include <utility>
+
+namespace nodo::consensus {
+
+std::string votePoolStatusToString(VotePoolStatus status) {
+    switch (status) {
+        case VotePoolStatus::ACCEPTED: return "ACCEPTED";
+        case VotePoolStatus::DUPLICATE: return "DUPLICATE";
+        case VotePoolStatus::CONFLICTING_VOTE: return "CONFLICTING_VOTE";
+        case VotePoolStatus::INVALID_VOTE: return "INVALID_VOTE";
+        default: return "INVALID_VOTE";
+    }
+}
+
+VotePoolResult::VotePoolResult()
+    : m_status(VotePoolStatus::INVALID_VOTE),
+      m_reason("Uninitialized vote pool result.") {}
+
+VotePoolResult::VotePoolResult(VotePoolStatus status, std::string reason)
+    : m_status(status),
+      m_reason(std::move(reason)) {}
+
+VotePoolStatus VotePoolResult::status() const { return m_status; }
+const std::string& VotePoolResult::reason() const { return m_reason; }
+bool VotePoolResult::accepted() const { return m_status == VotePoolStatus::ACCEPTED; }
+bool VotePoolResult::duplicate() const { return m_status == VotePoolStatus::DUPLICATE; }
+bool VotePoolResult::conflicting() const { return m_status == VotePoolStatus::CONFLICTING_VOTE; }
+bool VotePoolResult::success() const { return accepted() || duplicate(); }
+
+VotePoolBlockKey::VotePoolBlockKey()
+    : m_blockIndex(0),
+      m_blockHash(""),
+      m_round(0) {}
+
+VotePoolBlockKey::VotePoolBlockKey(std::uint64_t blockIndex, std::string blockHash, std::uint64_t round)
+    : m_blockIndex(blockIndex),
+      m_blockHash(std::move(blockHash)),
+      m_round(round) {}
+
+std::uint64_t VotePoolBlockKey::blockIndex() const { return m_blockIndex; }
+const std::string& VotePoolBlockKey::blockHash() const { return m_blockHash; }
+std::uint64_t VotePoolBlockKey::round() const { return m_round; }
+
+bool VotePoolBlockKey::isValid() const {
+    return m_blockIndex > 0 && !m_blockHash.empty() && m_round > 0;
+}
+
+std::string VotePoolBlockKey::serialize() const {
+    std::ostringstream output;
+    output << "VotePoolBlockKey{"
+           << "blockIndex=" << m_blockIndex
+           << ";blockHash=" << m_blockHash
+           << ";round=" << m_round
+           << "}";
+    return output.str();
+}
+
+bool VotePoolBlockKey::operator<(const VotePoolBlockKey& other) const {
+    if (m_blockIndex != other.m_blockIndex) {
+        return m_blockIndex < other.m_blockIndex;
+    }
+
+    if (m_round != other.m_round) {
+        return m_round < other.m_round;
+    }
+
+    return m_blockHash < other.m_blockHash;
+}
+
+VotePool::VotePool()
+    : m_votesByBlock(),
+      m_voteByValidatorHeightRound(),
+      m_conflictingVotes() {}
+
+VotePoolResult VotePool::submitVote(const ValidatorVoteRecord& vote) {
+    if (!isMinimallyValidVote(vote)) {
+        return VotePoolResult(VotePoolStatus::INVALID_VOTE, "Vote failed minimal pool validation.");
+    }
+
+    const std::string validatorKey = validatorHeightRoundKey(vote);
+    const auto existing = m_voteByValidatorHeightRound.find(validatorKey);
+
+    if (existing != m_voteByValidatorHeightRound.end()) {
+        if (sameVoteDecision(existing->second, vote)) {
+            return VotePoolResult(VotePoolStatus::DUPLICATE, "Validator vote already exists in pool.");
+        }
+
+        m_conflictingVotes.push_back(vote);
+        return VotePoolResult(VotePoolStatus::CONFLICTING_VOTE, "Validator submitted a conflicting vote.");
+    }
+
+    VotePoolBlockKey blockKey(vote.blockIndex(), vote.blockHash(), vote.round());
+    m_votesByBlock[blockKey].push_back(vote);
+    m_voteByValidatorHeightRound[validatorKey] = vote;
+
+    return VotePoolResult(VotePoolStatus::ACCEPTED, "Vote accepted into pool.");
+}
+
+std::vector<ValidatorVoteRecord> VotePool::votesForBlock(
+    std::uint64_t blockIndex,
+    const std::string& blockHash,
+    std::uint64_t round
+) const {
+    const VotePoolBlockKey key(blockIndex, blockHash, round);
+    const auto found = m_votesByBlock.find(key);
+    return found == m_votesByBlock.end() ? std::vector<ValidatorVoteRecord>() : found->second;
+}
+
+std::size_t VotePool::voteCountForBlock(
+    std::uint64_t blockIndex,
+    const std::string& blockHash,
+    std::uint64_t round
+) const {
+    return votesForBlock(blockIndex, blockHash, round).size();
+}
+
+bool VotePool::hasConflictingVote(
+    const std::string& validatorAddress,
+    std::uint64_t blockIndex,
+    std::uint64_t round
+) const {
+    for (const auto& vote : m_conflictingVotes) {
+        if (vote.validatorAddress() == validatorAddress &&
+            vote.blockIndex() == blockIndex &&
+            vote.round() == round) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::size_t VotePool::totalVoteCount() const {
+    return m_voteByValidatorHeightRound.size();
+}
+
+std::string VotePool::serialize() const {
+    std::ostringstream output;
+    output << "VotePool{"
+           << "totalVoteCount=" << totalVoteCount()
+           << ";conflictingVoteCount=" << m_conflictingVotes.size()
+           << ";blocks=[";
+    bool first = true;
+    for (const auto& [key, votes] : m_votesByBlock) {
+        if (!first) {
+            output << ",";
+        }
+        output << key.serialize() << "#voteCount=" << votes.size();
+        first = false;
+    }
+    output << "]}";
+    return output.str();
+}
+
+std::string VotePool::validatorHeightRoundKey(const ValidatorVoteRecord& vote) {
+    return vote.validatorAddress()
+        + "#"
+        + std::to_string(vote.blockIndex())
+        + "#"
+        + std::to_string(vote.round());
+}
+
+bool VotePool::sameVoteDecision(const ValidatorVoteRecord& left, const ValidatorVoteRecord& right) {
+    return left.validatorAddress() == right.validatorAddress() &&
+           left.blockIndex() == right.blockIndex() &&
+           left.blockHash() == right.blockHash() &&
+           left.previousHash() == right.previousHash() &&
+           left.round() == right.round() &&
+           left.decision() == right.decision();
+}
+
+bool VotePool::isMinimallyValidVote(const ValidatorVoteRecord& vote) {
+    return !vote.validatorAddress().empty() &&
+           vote.blockIndex() > 0 &&
+           !vote.blockHash().empty() &&
+           !vote.previousHash().empty() &&
+           vote.round() > 0 &&
+           vote.decision() != ValidatorVoteDecision::UNKNOWN &&
+           vote.createdAt() > 0;
+}
+
+QuorumCertificateBuildResult QuorumAssembly::tryBuildCertificate(
+    const VotePool& votePool,
+    std::uint64_t blockIndex,
+    const std::string& blockHash,
+    const std::string& previousHash,
+    std::uint64_t round,
+    const core::ValidatorRegistry& validatorRegistry,
+    const crypto::CryptoPolicy& policy,
+    const crypto::SignatureProvider& provider,
+    std::uint64_t thresholdNumerator,
+    std::uint64_t thresholdDenominator
+) {
+    return QuorumCertificateBuilder::buildFromVotes(
+        blockIndex,
+        blockHash,
+        previousHash,
+        round,
+        votePool.votesForBlock(blockIndex, blockHash, round),
+        validatorRegistry,
+        policy,
+        provider,
+        thresholdNumerator,
+        thresholdDenominator
+    );
+}
+
+} // namespace nodo::consensus

@@ -1,0 +1,57 @@
+#ifndef NODO_P2P_PEER_REGISTRY_HPP
+#define NODO_P2P_PEER_REGISTRY_HPP
+
+#include "p2p/Peer.hpp"
+
+#include <map>
+#include <string>
+#include <vector>
+
+namespace nodo::p2p {
+
+enum class PeerRegistryStatus {
+    REGISTERED,
+    UPDATED,
+    REJECTED,
+    NOT_FOUND
+};
+
+std::string peerRegistryStatusToString(PeerRegistryStatus status);
+
+class PeerRegistryResult {
+public:
+    PeerRegistryResult();
+    PeerRegistryResult(PeerRegistryStatus status, std::string reason);
+
+    PeerRegistryStatus status() const;
+    const std::string& reason() const;
+    bool success() const;
+
+private:
+    PeerRegistryStatus m_status;
+    std::string m_reason;
+};
+
+class PeerRegistry {
+public:
+    PeerRegistry();
+
+    PeerRegistryResult registerPeer(PeerMetadata peer);
+    PeerRegistryResult updateHeartbeat(const std::string& nodeId, std::int64_t seenAt);
+    PeerRegistryResult quarantinePeer(const std::string& nodeId, std::string reason);
+
+    bool contains(const std::string& nodeId) const;
+    const PeerMetadata* peer(const std::string& nodeId) const;
+    std::vector<PeerMetadata> activePeers() const;
+    std::vector<PeerMetadata> allPeers() const;
+    std::size_t size() const;
+    bool isValid() const;
+    std::string serialize() const;
+
+private:
+    std::map<std::string, PeerMetadata> m_peersByNodeId;
+};
+
+} // namespace nodo::p2p
+
+#endif
