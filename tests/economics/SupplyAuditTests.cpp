@@ -1,4 +1,6 @@
 #include "economics/SupplyAudit.hpp"
+#include "economics/BurnRecord.hpp"
+#include "economics/MintRecord.hpp"
 
 #include <cassert>
 #include <vector>
@@ -99,6 +101,100 @@ void testReportSerializes() {
     assert(s.find("valid=1") != std::string::npos);
 }
 
+// ---- Delta sequence audit tests ----
+
+nodo::economics::SupplyDelta noOpDelta(
+    std::uint64_t height,
+    nodo::utils::Amount supply
+) {
+    return nodo::economics::SupplyDelta::noOp(
+        height,
+        "block-hash-" + std::to_string(height),
+        1,
+        supply
+    );
+}
+
+void testDeltaSequenceEmptyAuditFromPolicy() {
+    const auto policy = nodo::economics::MonetaryPolicy::localnetDefault(
+        "nodo-testnet-1",
+        nodo::utils::Amount::fromRawUnits(1000)
+    );
+    const auto result = nodo::economics::SupplyAudit::auditDeltaSequence(policy, {});
+    assert(result.isValid());
+    assert(result.deltaCount() == 0);
+    assert(result.finalSupply() == nodo::utils::Amount::fromRawUnits(1000));
+    assert(result.status() == nodo::economics::SupplyAuditStatus::VALID);
+}
+
+void testDeltaSequenceValidSequence() {
+    const auto policy = nodo::economics::MonetaryPolicy::localnetDefault(
+        "nodo-testnet-1",
+        nodo::utils::Amount::fromRawUnits(1000)
+    );
+    const std::vector<nodo::economics::SupplyDelta> deltas = {
+        noOpDelta(1, nodo::utils::Amount::fromRawUnits(1000)),
+        noOpDelta(2, nodo::utils::Amount::fromRawUnits(1000)),
+        noOpDelta(3, nodo::utils::Amount::fromRawUnits(1000))
+    };
+    const auto result = nodo::economics::SupplyAudit::auditDeltaSequence(policy, deltas);
+    assert(result.isValid());
+    assert(result.deltaCount() == 3);
+    assert(result.finalSupply() == nodo::utils::Amount::fromRawUnits(1000));
+}
+
+void testDeltaSequenceContinuityFailureRejected() {
+    const auto policy = nodo::economics::MonetaryPolicy::localnetDefault(
+        "nodo-testnet-1",
+        nodo::utils::Amount::fromRawUnits(1000)
+    );
+    // delta[0] supplyBefore=1000, delta[1] supplyBefore=500 (should be 1000)
+    const std::vector<nodo::economics::SupplyDelta> deltas = {
+        noOpDelta(1, nodo::utils::Amount::fromRawUnits(1000)),
+        noOpDelta(2, nodo::utils::Amount::fromRawUnits(500))  // wrong
+    };
+    const auto result = nodo::economics::SupplyAudit::auditDeltaSequence(policy, deltas);
+    assert(!result.isValid());
+    assert(result.status() == nodo::economics::SupplyAuditStatus::SUPPLY_CONTINUITY_FAILURE);
+    assert(result.failedBlockHeight() == 2);
+}
+
+void testDeltaSequenceInvalidDeltaRejected() {
+    const auto policy = nodo::economics::MonetaryPolicy::localnetDefault(
+        "nodo-testnet-1",
+        nodo::utils::Amount::fromRawUnits(1000)
+    );
+    // Delta with empty block hash is invalid
+    const nodo::economics::SupplyDelta badDelta(
+        1, "", 1,
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(1000),
+        {}, {}
+    );
+    const auto result = nodo::economics::SupplyAudit::auditDeltaSequence(policy, {badDelta});
+    assert(!result.isValid());
+    assert(result.status() == nodo::economics::SupplyAuditStatus::INVALID_DELTA);
+}
+
+void testDeltaSequenceInvalidPolicyRejected() {
+    const nodo::economics::MonetaryPolicy invalidPolicy;  // default-constructed, empty fields
+    const auto result = nodo::economics::SupplyAudit::auditDeltaSequence(invalidPolicy, {});
+    assert(!result.isValid());
+    assert(result.status() == nodo::economics::SupplyAuditStatus::INVALID_POLICY);
+}
+
+void testDeltaSequenceResultSerializes() {
+    const auto policy = nodo::economics::MonetaryPolicy::localnetDefault(
+        "nodo-testnet-1", nodo::utils::Amount::fromRawUnits(500)
+    );
+    const auto result = nodo::economics::SupplyAudit::auditDeltaSequence(policy, {});
+    const std::string s = result.serialize();
+    assert(!s.empty());
+    assert(s.find("VALID") != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -108,5 +204,12 @@ int main() {
     testNegativeTreasuryFails();
     testEmptyStakesAndZeroSupply();
     testReportSerializes();
+
+    testDeltaSequenceEmptyAuditFromPolicy();
+    testDeltaSequenceValidSequence();
+    testDeltaSequenceContinuityFailureRejected();
+    testDeltaSequenceInvalidDeltaRejected();
+    testDeltaSequenceInvalidPolicyRejected();
+    testDeltaSequenceResultSerializes();
     return 0;
 }

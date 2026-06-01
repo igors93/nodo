@@ -134,4 +134,122 @@ SupplyAuditResult SupplyAudit::audit(
     );
 }
 
+std::string supplyAuditStatusToString(SupplyAuditStatus status) {
+    switch (status) {
+        case SupplyAuditStatus::VALID:                    return "VALID";
+        case SupplyAuditStatus::INVALID_POLICY:           return "INVALID_POLICY";
+        case SupplyAuditStatus::INVALID_DELTA:            return "INVALID_DELTA";
+        case SupplyAuditStatus::SUPPLY_CONTINUITY_FAILURE: return "SUPPLY_CONTINUITY_FAILURE";
+        case SupplyAuditStatus::SUPPLY_OVERFLOW:          return "SUPPLY_OVERFLOW";
+        case SupplyAuditStatus::SUPPLY_UNDERFLOW:         return "SUPPLY_UNDERFLOW";
+        default:                                          return "UNKNOWN";
+    }
+}
+
+SupplySequenceAuditResult::SupplySequenceAuditResult()
+    : m_valid(false),
+      m_status(SupplyAuditStatus::INVALID_POLICY),
+      m_reason(""),
+      m_finalSupply(utils::Amount::fromRawUnits(0)),
+      m_deltaCount(0),
+      m_failedBlockHeight(0) {}
+
+SupplySequenceAuditResult SupplySequenceAuditResult::valid(
+    utils::Amount finalSupply,
+    std::size_t deltaCount
+) {
+    SupplySequenceAuditResult r;
+    r.m_valid = true;
+    r.m_status = SupplyAuditStatus::VALID;
+    r.m_finalSupply = finalSupply;
+    r.m_deltaCount = deltaCount;
+    r.m_failedBlockHeight = 0;
+    return r;
+}
+
+SupplySequenceAuditResult SupplySequenceAuditResult::invalid(
+    SupplyAuditStatus status,
+    std::string reason,
+    std::uint64_t failedBlockHeight
+) {
+    SupplySequenceAuditResult r;
+    r.m_valid = false;
+    r.m_status = status;
+    r.m_reason = std::move(reason);
+    r.m_failedBlockHeight = failedBlockHeight;
+    return r;
+}
+
+bool SupplySequenceAuditResult::isValid() const { return m_valid; }
+SupplyAuditStatus SupplySequenceAuditResult::status() const { return m_status; }
+const std::string& SupplySequenceAuditResult::reason() const { return m_reason; }
+utils::Amount SupplySequenceAuditResult::finalSupply() const { return m_finalSupply; }
+std::size_t SupplySequenceAuditResult::deltaCount() const { return m_deltaCount; }
+std::uint64_t SupplySequenceAuditResult::failedBlockHeight() const { return m_failedBlockHeight; }
+
+std::string SupplySequenceAuditResult::serialize() const {
+    std::ostringstream oss;
+    oss << "SupplySequenceAuditResult{"
+        << "valid=" << (m_valid ? "1" : "0")
+        << ";status=" << supplyAuditStatusToString(m_status)
+        << ";deltaCount=" << m_deltaCount
+        << ";finalSupplyRaw=" << m_finalSupply.rawUnits()
+        << ";failedBlockHeight=" << m_failedBlockHeight
+        << ";reason=" << m_reason
+        << "}";
+    return oss.str();
+}
+
+SupplySequenceAuditResult SupplyAudit::auditDeltaSequence(
+    const MonetaryPolicy& policy,
+    const std::vector<SupplyDelta>& deltas
+) {
+    if (!policy.isValid()) {
+        return SupplySequenceAuditResult::invalid(
+            SupplyAuditStatus::INVALID_POLICY,
+            "MonetaryPolicy is invalid: " + policy.rejectionReason(),
+            0
+        );
+    }
+
+    utils::Amount expectedSupply = policy.initialSupply();
+
+    for (const auto& delta : deltas) {
+        if (!delta.isValid()) {
+            return SupplySequenceAuditResult::invalid(
+                SupplyAuditStatus::INVALID_DELTA,
+                "SupplyDelta at block " + std::to_string(delta.blockHeight()) +
+                " is invalid: " + delta.rejectionReason(),
+                delta.blockHeight()
+            );
+        }
+
+        if (delta.supplyBefore() != expectedSupply) {
+            return SupplySequenceAuditResult::invalid(
+                SupplyAuditStatus::SUPPLY_CONTINUITY_FAILURE,
+                "Supply continuity failure at block " +
+                std::to_string(delta.blockHeight()) +
+                ": expected supplyBefore=" +
+                std::to_string(expectedSupply.rawUnits()) +
+                " but got " +
+                std::to_string(delta.supplyBefore().rawUnits()) + ".",
+                delta.blockHeight()
+            );
+        }
+
+        if (delta.supplyAfter().isNegative()) {
+            return SupplySequenceAuditResult::invalid(
+                SupplyAuditStatus::SUPPLY_UNDERFLOW,
+                "Supply underflow at block " +
+                std::to_string(delta.blockHeight()) + ".",
+                delta.blockHeight()
+            );
+        }
+
+        expectedSupply = delta.supplyAfter();
+    }
+
+    return SupplySequenceAuditResult::valid(expectedSupply, deltas.size());
+}
+
 } // namespace nodo::economics
