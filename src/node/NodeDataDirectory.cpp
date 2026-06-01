@@ -1,5 +1,7 @@
 #include "node/NodeDataDirectory.hpp"
 
+#include "consensus/ConsensusRecoveryStore.hpp"
+#include "core/GenesisVerifier.hpp"
 #include "core/StateRootCalculator.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
@@ -218,6 +220,10 @@ std::filesystem::path NodeDataDirectoryConfig::localPeerPath() const {
 
 std::filesystem::path NodeDataDirectoryConfig::runtimeSnapshotPath() const {
     return m_rootPath / "runtime" / "runtime_snapshot.nodo";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::consensusRecoveryPath() const {
+    return m_rootPath / "runtime" / "consensus_round.nodo";
 }
 
 std::filesystem::path NodeDataDirectoryConfig::blocksDirectoryPath() const {
@@ -647,6 +653,21 @@ NodeDataDirectoryInitResult NodeDataDirectory::initialize(
         );
     }
 
+    const core::GenesisVerificationResult genesisVerification =
+        core::GenesisVerifier::verify(genesisConfig);
+
+    if (!genesisVerification.isValid()) {
+        return NodeDataDirectoryInitResult::rejected(
+            NodeDataDirectoryInitStatus::INVALID_GENESIS_CONFIG,
+            "Genesis verification failed: " +
+                core::genesisVerificationStatusToString(
+                    genesisVerification.status()
+                ) +
+                ": " +
+                genesisVerification.reason()
+        );
+    }
+
     if (!genesisConfig.isValid()) {
         return NodeDataDirectoryInitResult::rejected(
             NodeDataDirectoryInitStatus::INVALID_GENESIS_CONFIG,
@@ -744,6 +765,15 @@ NodeDataDirectoryInitResult NodeDataDirectory::initialize(
             runtimeStart.runtime().serialize() + "\n"
         );
 
+        if (!consensus::ConsensusRecoveryStore::save(
+                directoryConfig.consensusRecoveryPath(),
+                runtimeStart.runtime().consensusRoundManager().currentState())) {
+            return NodeDataDirectoryInitResult::rejected(
+                NodeDataDirectoryInitStatus::IO_ERROR,
+                "Failed to persist consensus recovery state."
+            );
+        }
+
         writeTextFile(
             directoryConfig.manifestPath(),
             manifest.toFileContents()
@@ -839,6 +869,15 @@ NodeDataDirectoryReadResult NodeDataDirectory::writeRuntimeSnapshot(
             directoryConfig.runtimeSnapshotPath(),
             runtime.serialize() + "\n"
         );
+
+        if (!consensus::ConsensusRecoveryStore::save(
+                directoryConfig.consensusRecoveryPath(),
+                runtime.consensusRoundManager().currentState())) {
+            return NodeDataDirectoryReadResult::rejected(
+                NodeDataDirectoryReadStatus::IO_ERROR,
+                "Failed to persist consensus recovery state."
+            );
+        }
 
         writeTextFile(
             directoryConfig.manifestPath(),

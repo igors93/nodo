@@ -154,6 +154,7 @@ GossipMesh::GossipMesh(
     m_peerRegistry(),
     m_outboundQueue(1024),
     m_inboundValidator(),
+    m_rateLimiter(),
     m_inbox(),
     m_invalidMessagesByPeer() {}
 
@@ -301,6 +302,12 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
             continue;
         }
 
+        if (!m_rateLimiter.shouldAllow(message->fromNodeId(), now)) {
+            recordInvalidMessage(message->fromNodeId(), "Peer exceeded message rate limit.");
+            ++rejected;
+            continue;
+        }
+
         const InboundMessageResult validation =
             m_inboundValidator.validate(
                 message->envelope(),
@@ -332,6 +339,13 @@ std::size_t GossipMesh::invalidMessageCountForPeer(const std::string& nodeId) co
     }
 
     return found->second;
+}
+
+std::uint32_t GossipMesh::rateLimitedMessageCountForPeer(
+    const std::string& nodeId,
+    std::int64_t now
+) const {
+    return m_rateLimiter.messageCount(nodeId, now);
 }
 
 bool GossipMesh::shouldQuarantinePeer(const std::string& nodeId) const {

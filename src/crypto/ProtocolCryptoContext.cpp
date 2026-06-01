@@ -19,7 +19,9 @@ bool isTestnetName(
     const std::string& networkName
 ) {
     return networkName == "testnet" ||
-           networkName == "nodo-testnet";
+           networkName == "nodo-testnet" ||
+           networkName == "testnet-candidate" ||
+           networkName == "nodo-testnet-candidate";
 }
 
 bool isMainnetName(

@@ -1,6 +1,9 @@
 #include "economics/StakeAccount.hpp"
 #include "economics/StakeSlashApplication.hpp"
+#include "economics/SupplyAudit.hpp"
 #include "economics/ValidatorStakeState.hpp"
+#include "consensus/SlashingEvidence.hpp"
+#include "consensus/ValidatorPenaltyApplication.hpp"
 
 #include <cassert>
 #include <stdexcept>
@@ -137,6 +140,199 @@ void testSlashTombstonedValidatorRejected() {
     assert(r == nodo::economics::SlashResult::VALIDATOR_TOMBSTONED);
 }
 
+nodo::consensus::SlashingEvidenceRecord evidenceRecord(
+    const std::string& evidenceId,
+    nodo::consensus::SlashingEvidenceType type
+) {
+    return nodo::consensus::SlashingEvidenceRecord(
+        evidenceId,
+        type,
+        "validator-a",
+        "payload-hash-" + evidenceId,
+        nodo::consensus::SlashingEvidenceSeverity::SLASHABLE,
+        1000
+    );
+}
+
+void testPenaltyDecisionAppliesSlashAndIsIdempotent() {
+    nodo::economics::ValidatorStakeState state(
+        nodo::economics::StakeAccount(
+            "validator-a",
+            nodo::utils::Amount::fromRawUnits(1000)
+        )
+    );
+
+    const auto decision =
+        nodo::consensus::ValidatorPenaltyDecision::create(
+            evidenceRecord(
+                "penalty-evidence-001",
+                nodo::consensus::SlashingEvidenceType::DOUBLE_VOTE
+            ),
+            nodo::consensus::ValidatorPenaltyPolicy(
+                100,
+                100,
+                64,
+                false
+            ),
+            1001
+        );
+
+    const auto r1 =
+        nodo::economics::StakeSlashApplication::applyPenaltyDecision(
+            state,
+            decision
+        );
+
+    const auto r2 =
+        nodo::economics::StakeSlashApplication::applyPenaltyDecision(
+            state,
+            decision
+        );
+
+    assert(r1 == nodo::economics::SlashResult::APPLIED);
+    assert(r2 == nodo::economics::SlashResult::ALREADY_APPLIED);
+    assert(state.account().slashedAmount() == nodo::utils::Amount::fromRawUnits(100));
+    assert(!state.account().isEligible());
+    assert(state.account().jailed());
+}
+
+void testPenaltyDecisionNeverMakesStakeNegative() {
+    nodo::economics::ValidatorStakeState state(
+        nodo::economics::StakeAccount(
+            "validator-a",
+            nodo::utils::Amount::fromRawUnits(50)
+        )
+    );
+
+    const auto decision =
+        nodo::consensus::ValidatorPenaltyDecision::create(
+            evidenceRecord(
+                "penalty-evidence-002",
+                nodo::consensus::SlashingEvidenceType::DOUBLE_VOTE
+            ),
+            nodo::consensus::ValidatorPenaltyPolicy(
+                100,
+                100,
+                64,
+                false
+            ),
+            1002
+        );
+
+    const auto result =
+        nodo::economics::StakeSlashApplication::applyPenaltyDecision(
+            state,
+            decision
+        );
+
+    assert(result == nodo::economics::SlashResult::WOULD_EXCEED_STAKE);
+    assert(state.account().slashedAmount() == nodo::utils::Amount::fromRawUnits(0));
+    assert(state.account().bondedAmount() == nodo::utils::Amount::fromRawUnits(50));
+    assert(state.account().isValid());
+}
+
+void testPenaltyDecisionJailAndTombstoneAffectEligibility() {
+    nodo::economics::ValidatorStakeState jailedState(
+        nodo::economics::StakeAccount(
+            "validator-a",
+            nodo::utils::Amount::fromRawUnits(1000)
+        )
+    );
+
+    const auto jailDecision =
+        nodo::consensus::ValidatorPenaltyDecision::create(
+            evidenceRecord(
+                "penalty-evidence-003",
+                nodo::consensus::SlashingEvidenceType::INVALID_SIGNATURE
+            ),
+            nodo::consensus::ValidatorPenaltyPolicy(
+                100,
+                100,
+                64,
+                false
+            ),
+            1003
+        );
+
+    assert(nodo::economics::StakeSlashApplication::applyPenaltyDecision(
+               jailedState,
+               jailDecision
+           ) == nodo::economics::SlashResult::APPLIED);
+    assert(jailedState.account().jailed());
+    assert(!jailedState.account().isEligible());
+
+    nodo::economics::ValidatorStakeState tombstonedState(
+        nodo::economics::StakeAccount(
+            "validator-a",
+            nodo::utils::Amount::fromRawUnits(1000)
+        )
+    );
+
+    const auto tombstoneDecision =
+        nodo::consensus::ValidatorPenaltyDecision::create(
+            evidenceRecord(
+                "penalty-evidence-004",
+                nodo::consensus::SlashingEvidenceType::EQUIVOCATION
+            ),
+            nodo::consensus::ValidatorPenaltyPolicy(
+                100,
+                100,
+                64,
+                true
+            ),
+            1004
+        );
+
+    assert(nodo::economics::StakeSlashApplication::applyPenaltyDecision(
+               tombstonedState,
+               tombstoneDecision
+           ) == nodo::economics::SlashResult::APPLIED);
+    assert(tombstonedState.account().tombstoned());
+    assert(!tombstonedState.account().isEligible());
+}
+
+void testSupplyAuditIncludesPenaltySlash() {
+    nodo::economics::ValidatorStakeState state(
+        nodo::economics::StakeAccount(
+            "validator-a",
+            nodo::utils::Amount::fromRawUnits(1000)
+        )
+    );
+
+    const auto decision =
+        nodo::consensus::ValidatorPenaltyDecision::create(
+            evidenceRecord(
+                "penalty-evidence-005",
+                nodo::consensus::SlashingEvidenceType::DOUBLE_VOTE
+            ),
+            nodo::consensus::ValidatorPenaltyPolicy(
+                100,
+                100,
+                64,
+                false
+            ),
+            1005
+        );
+
+    assert(nodo::economics::StakeSlashApplication::applyPenaltyDecision(
+               state,
+               decision
+           ) == nodo::economics::SlashResult::APPLIED);
+
+    const auto audit =
+        nodo::economics::SupplyAudit::audit(
+            nodo::utils::Amount::fromRawUnits(1100),
+            {state},
+            nodo::utils::Amount::fromRawUnits(0),
+            nodo::utils::Amount::fromRawUnits(0),
+            nodo::utils::Amount::fromRawUnits(0),
+            nodo::utils::Amount::fromRawUnits(0)
+        );
+
+    assert(audit.isValid());
+    assert(audit.totalSlashed() == nodo::utils::Amount::fromRawUnits(100));
+}
+
 void testAccountSerializes() {
     const nodo::economics::StakeAccount acct(
         "validator-x",
@@ -161,6 +357,10 @@ int main() {
     testSlashApplicationIdempotency();
     testSlashWithEmptyEvidenceIdRejected();
     testSlashTombstonedValidatorRejected();
+    testPenaltyDecisionAppliesSlashAndIsIdempotent();
+    testPenaltyDecisionNeverMakesStakeNegative();
+    testPenaltyDecisionJailAndTombstoneAffectEligibility();
+    testSupplyAuditIncludesPenaltySlash();
     testAccountSerializes();
     return 0;
 }

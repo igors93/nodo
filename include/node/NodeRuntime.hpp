@@ -3,6 +3,7 @@
 
 #include "config/NetworkParameters.hpp"
 #include "consensus/BlockFinalizer.hpp"
+#include "consensus/ConsensusRoundManager.hpp"
 #include "consensus/ForkChoice.hpp"
 #include "core/Blockchain.hpp"
 #include "core/ValidatorRegistry.hpp"
@@ -151,6 +152,8 @@ public:
     const core::ValidatorRegistry& validatorRegistry() const;
     const consensus::BlockFinalizationRegistry& finalizationRegistry() const;
     consensus::BlockFinalizationRegistry& mutableFinalizationRegistry();
+    const consensus::ConsensusRoundManager& consensusRoundManager() const;
+    consensus::ConsensusRoundManager& mutableConsensusRoundManager();
     const mempool::Mempool& mempool() const;
     mempool::Mempool& mutableMempool();
     const LocalPeerManager& peerManager() const;
@@ -160,6 +163,14 @@ public:
     bool isValid() const;
 
     consensus::ChainForkSummary chainSummary() const;
+
+    consensus::VoteCollectResult submitConsensusVote(
+        const consensus::ValidatorVoteRecord& vote
+    );
+
+    bool advanceConsensusRoundIfTimedOut(
+        std::int64_t now
+    );
 
     p2p::PeerMessage localChainSummaryMessage(
         const std::string& toPeerId,
@@ -180,6 +191,7 @@ private:
     core::Blockchain m_blockchain;
     core::ValidatorRegistry m_validatorRegistry;
     consensus::BlockFinalizationRegistry m_finalizationRegistry;
+    consensus::ConsensusRoundManager m_consensusRoundManager;
     mempool::Mempool m_mempool;
     LocalPeerManager m_peerManager;
 };

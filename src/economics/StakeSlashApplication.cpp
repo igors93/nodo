@@ -44,4 +44,49 @@ SlashResult StakeSlashApplication::apply(
     return SlashResult::APPLIED;
 }
 
+SlashResult StakeSlashApplication::applyPenaltyDecision(
+    ValidatorStakeState& state,
+    const consensus::ValidatorPenaltyDecision& decision
+) {
+    if (!decision.isValid() ||
+        decision.evidenceId().empty() ||
+        decision.validatorAddress() != state.account().validatorAddress()) {
+        return SlashResult::INVALID_EVIDENCE;
+    }
+
+    if (state.hasAppliedEvidence(decision.evidenceId())) {
+        return SlashResult::ALREADY_APPLIED;
+    }
+
+    if (state.account().tombstoned()) {
+        return SlashResult::VALIDATOR_TOMBSTONED;
+    }
+
+    if (decision.slashable()) {
+        const SlashResult slashResult =
+            apply(
+                state,
+                decision.evidenceId(),
+                utils::Amount::fromRawUnits(decision.slashAmountRawUnits())
+            );
+
+        if (slashResult != SlashResult::APPLIED &&
+            slashResult != SlashResult::ALREADY_APPLIED) {
+            return slashResult;
+        }
+    } else {
+        state.recordAppliedEvidence(decision.evidenceId());
+    }
+
+    if (decision.tombstonesValidator()) {
+        state.account().tombstone();
+    } else if (decision.jailsValidator()) {
+        state.account().jail();
+    }
+
+    state.updateBondingStatus();
+
+    return SlashResult::APPLIED;
+}
+
 } // namespace nodo::economics

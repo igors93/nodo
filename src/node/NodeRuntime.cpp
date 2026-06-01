@@ -1,11 +1,45 @@
 #include "node/NodeRuntime.hpp"
 
+#include "consensus/ProposerSchedule.hpp"
+#include "core/GenesisVerifier.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 
 #include <sstream>
 #include <utility>
 
 namespace nodo::node {
+
+namespace {
+
+void initializeConsensusRound(
+    consensus::ConsensusRoundManager& manager,
+    const config::GenesisConfig& genesisConfig,
+    const core::Blockchain& blockchain,
+    const core::ValidatorRegistry& validatorRegistry
+) {
+    const std::uint64_t nextHeight =
+        blockchain.latestBlock().index() + 1;
+
+    constexpr std::uint64_t initialRound = 1;
+
+    const std::string proposer =
+        consensus::ProposerSchedule::selectProposer(
+            validatorRegistry,
+            genesisConfig.networkParameters().chainId(),
+            nextHeight,
+            initialRound
+        );
+
+    manager.advanceToHeight(
+        nextHeight,
+        initialRound,
+        proposer,
+        genesisConfig.genesisTimestamp(),
+        genesisConfig.networkParameters().targetBlockTimeSeconds()
+    );
+}
+
+} // namespace
 
 std::string peerUpdateStatusToString(
     PeerUpdateStatus status
@@ -315,6 +349,7 @@ NodeRuntime::NodeRuntime()
       m_blockchain(),
       m_validatorRegistry(),
       m_finalizationRegistry(),
+      m_consensusRoundManager(),
       m_mempool(),
       m_peerManager(1) {}
 
@@ -328,8 +363,20 @@ NodeRuntime::NodeRuntime(
       m_blockchain(std::move(blockchain)),
       m_validatorRegistry(std::move(validatorRegistry)),
       m_finalizationRegistry(),
+      m_consensusRoundManager(),
       m_mempool(),
-      m_peerManager(m_config.maxPeers()) {}
+      m_peerManager(m_config.maxPeers()) {
+    if (m_config.genesisConfig().isValid() &&
+        !m_blockchain.empty() &&
+        m_validatorRegistry.isValid()) {
+        initializeConsensusRound(
+            m_consensusRoundManager,
+            m_config.genesisConfig(),
+            m_blockchain,
+            m_validatorRegistry
+        );
+    }
+}
 
 const NodeRuntimeConfig& NodeRuntime::config() const {
     return m_config;
@@ -359,6 +406,14 @@ consensus::BlockFinalizationRegistry& NodeRuntime::mutableFinalizationRegistry()
     return m_finalizationRegistry;
 }
 
+const consensus::ConsensusRoundManager& NodeRuntime::consensusRoundManager() const {
+    return m_consensusRoundManager;
+}
+
+consensus::ConsensusRoundManager& NodeRuntime::mutableConsensusRoundManager() {
+    return m_consensusRoundManager;
+}
+
 const mempool::Mempool& NodeRuntime::mempool() const {
     return m_mempool;
 }
@@ -386,6 +441,7 @@ bool NodeRuntime::isValid() const {
            m_blockchain.isValid() &&
            m_validatorRegistry.isValid() &&
            m_finalizationRegistry.isValid() &&
+           m_consensusRoundManager.currentState().isValid() &&
            m_peerManager.isValid();
 }
 
@@ -394,6 +450,40 @@ consensus::ChainForkSummary NodeRuntime::chainSummary() const {
         m_blockchain,
         m_finalizationRegistry
     );
+}
+
+consensus::VoteCollectResult NodeRuntime::submitConsensusVote(
+    const consensus::ValidatorVoteRecord& vote
+) {
+    return m_consensusRoundManager.submitVote(vote);
+}
+
+bool NodeRuntime::advanceConsensusRoundIfTimedOut(
+    std::int64_t now
+) {
+    if (!m_consensusRoundManager.isTimeoutExpired(now)) {
+        return false;
+    }
+
+    const std::uint64_t newRound =
+        m_consensusRoundManager.currentState().round() + 1;
+
+    const std::string proposer =
+        consensus::ProposerSchedule::selectProposer(
+            m_validatorRegistry,
+            m_config.genesisConfig().networkParameters().chainId(),
+            m_consensusRoundManager.currentState().height(),
+            newRound
+        );
+
+    m_consensusRoundManager.advanceRound(
+        newRound,
+        proposer,
+        now,
+        m_config.genesisConfig().networkParameters().targetBlockTimeSeconds()
+    );
+
+    return true;
 }
 
 p2p::PeerMessage NodeRuntime::localChainSummaryMessage(
@@ -432,6 +522,7 @@ std::string NodeRuntime::serialize() const {
         << ";blockchainSize=" << m_blockchain.size()
         << ";validatorRegistrySize=" << m_validatorRegistry.size()
         << ";finalizationRegistrySize=" << m_finalizationRegistry.size()
+        << ";consensusRound=" << m_consensusRoundManager.currentState().serialize()
         << ";peerManager=" << m_peerManager.serialize()
         << "}";
 
@@ -510,6 +601,21 @@ std::string NodeRuntimeStartResult::serialize() const {
 NodeRuntimeStartResult NodeRuntimeFactory::startFromGenesis(
     const NodeRuntimeConfig& config
 ) {
+    const core::GenesisVerificationResult genesisVerification =
+        core::GenesisVerifier::verify(config.genesisConfig());
+
+    if (!genesisVerification.isValid()) {
+        return NodeRuntimeStartResult::rejected(
+            NodeRuntimeStartStatus::INVALID_CONFIG,
+            "Genesis verification failed: " +
+                core::genesisVerificationStatusToString(
+                    genesisVerification.status()
+                ) +
+                ": " +
+                genesisVerification.reason()
+        );
+    }
+
     if (!config.isValid()) {
         return NodeRuntimeStartResult::rejected(
             NodeRuntimeStartStatus::INVALID_CONFIG,

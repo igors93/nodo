@@ -1,5 +1,6 @@
 #include "node/RuntimeStateLoader.hpp"
 
+#include "consensus/ConsensusRecoveryStore.hpp"
 #include "config/NetworkParameters.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionBuilder.hpp"
@@ -90,7 +91,7 @@ void clean(
 std::string readFile(
     const std::filesystem::path& path
 ) {
-    std::ifstream input(path);
+    std::ifstream input(path, std::ios::in | std::ios::binary);
     return std::string(
         (std::istreambuf_iterator<char>(input)),
         std::istreambuf_iterator<char>()
@@ -101,7 +102,7 @@ void writeFile(
     const std::filesystem::path& path,
     const std::string& contents
 ) {
-    std::ofstream output(path, std::ios::trunc);
+    std::ofstream output(path, std::ios::out | std::ios::binary | std::ios::trunc);
     output << contents;
 }
 
@@ -392,6 +393,60 @@ void testLoadsPersistentMempoolIntoRuntime() {
         loaded.loadedMempoolTransactionCount() == 1U &&
         loaded.runtime().mempool().size() == 1U,
         "Persistent mempool should be loaded into runtime."
+    );
+
+    clean(path);
+}
+
+void testLoadsConsensusRecoveryRoundIntoRuntime() {
+    const std::filesystem::path path =
+        tempPath("consensus-recovery-round");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig directoryConfig(path);
+
+    requireCondition(
+        NodeDataDirectory::initialize(
+            directoryConfig,
+            genesisConfig(),
+            localPeer(),
+            kTimestamp + 55
+        ).initialized(),
+        "Data directory should initialize."
+    );
+
+    requireCondition(
+        nodo::consensus::ConsensusRecoveryStore::save(
+            directoryConfig.consensusRecoveryPath(),
+            nodo::consensus::ConsensusRoundState(
+                1,
+                3,
+                "runtime-state-loader-recovered-proposer",
+                kTimestamp + 56
+            )
+        ),
+        "Consensus recovery round should persist before loader test."
+    );
+
+    const auto loaded =
+        RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig(),
+            localPeer()
+        );
+
+    requireCondition(
+        loaded.loaded(),
+        "Runtime should load with persisted consensus round state."
+    );
+
+    requireCondition(
+        loaded.runtime().consensusRoundManager().currentState().height() == 1 &&
+        loaded.runtime().consensusRoundManager().currentState().round() == 3 &&
+        loaded.runtime().consensusRoundManager().currentState().proposerAddress() ==
+            "runtime-state-loader-recovered-proposer",
+        "Runtime loader should restore persisted consensus round state."
     );
 
     clean(path);
@@ -928,6 +983,7 @@ int main() {
     try {
         testLoadsRuntimeWithPersistedFinalizedBlock();
         testLoadsPersistentMempoolIntoRuntime();
+        testLoadsConsensusRecoveryRoundIntoRuntime();
         testRejectsFinalizedBlockWithTamperedPostStateRoot();
         testRejectsFinalizedBlockWithTamperedFeeBalance();
         testRejectsManifestWithTamperedLatestStateRoot();

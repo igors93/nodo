@@ -1,5 +1,6 @@
 #include "node/NodeDataDirectory.hpp"
 #include "config/NetworkParameters.hpp"
+#include "consensus/ConsensusRecoveryStore.hpp"
 #include "crypto/KeyPair.hpp"
 #include "crypto/PublicKey.hpp"
 #include "storage/StorageSchemaVersion.hpp"
@@ -129,8 +130,21 @@ void testInitializeCreatesDurableFiles() {
         std::filesystem::exists(config.storageSchemaVersionPath()) &&
         std::filesystem::exists(config.genesisConfigPath()) &&
         std::filesystem::exists(config.localPeerPath()) &&
-        std::filesystem::exists(config.runtimeSnapshotPath()),
+        std::filesystem::exists(config.runtimeSnapshotPath()) &&
+        std::filesystem::exists(config.consensusRecoveryPath()),
         "Initialization should create durable files."
+    );
+
+    const auto recoveredRound =
+        nodo::consensus::ConsensusRecoveryStore::load(
+            config.consensusRecoveryPath()
+        );
+
+    requireCondition(
+        recoveredRound.has_value() &&
+        recoveredRound->height() == 1 &&
+        recoveredRound->round() == 1,
+        "Initialization should persist the consensus recovery round."
     );
 
     requireCondition(
@@ -235,6 +249,41 @@ void testInitializeIsIdempotentForSameGenesis() {
     clean(path);
 }
 
+void testInitializeRejectsGenesisVerifierFailure() {
+    const std::filesystem::path path =
+        tempPath("genesis-verifier-reject");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig config(path);
+
+    const GenesisConfig duplicateGenesis(
+        NetworkParameters::developmentLocal(),
+        kTimestamp,
+        {
+            validator("duplicate"),
+            validator("duplicate")
+        },
+        "duplicate-genesis"
+    );
+
+    const auto result =
+        NodeDataDirectory::initialize(
+            config,
+            duplicateGenesis,
+            localPeer(),
+            kTimestamp + 25
+        );
+
+    requireCondition(
+        result.status() == NodeDataDirectoryInitStatus::INVALID_GENESIS_CONFIG &&
+        result.reason().find("Genesis verification failed") != std::string::npos,
+        "Node data directory initialization should require GenesisVerifier."
+    );
+
+    clean(path);
+}
+
 void testRejectsDifferentGenesisInExistingDirectory() {
     const std::filesystem::path path =
         tempPath("different-genesis");
@@ -290,6 +339,7 @@ int main() {
         testInitializeCreatesDurableFiles();
         testRejectsUnknownStorageSchemaVersion();
         testInitializeIsIdempotentForSameGenesis();
+        testInitializeRejectsGenesisVerifierFailure();
         testRejectsDifferentGenesisInExistingDirectory();
         testMissingDirectoryStatusFailsSafely();
 

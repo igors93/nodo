@@ -42,7 +42,7 @@ void clean(
 std::string readFile(
     const std::filesystem::path& path
 ) {
-    std::ifstream input(path);
+    std::ifstream input(path, std::ios::in | std::ios::binary);
     return std::string(
         (std::istreambuf_iterator<char>(input)),
         std::istreambuf_iterator<char>()
@@ -53,7 +53,7 @@ void writeFile(
     const std::filesystem::path& path,
     const std::string& contents
 ) {
-    std::ofstream output(path, std::ios::trunc);
+    std::ofstream output(path, std::ios::out | std::ios::binary | std::ios::trunc);
     output << contents;
 }
 

@@ -2,6 +2,7 @@
 
 #include "consensus/ValidatorVoteBuilder.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
+#include "consensus/ProposerSchedule.hpp"
 #include "core/AccountState.hpp"
 #include "core/AccountStateView.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
@@ -1644,6 +1645,19 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
+    const consensus::ConsensusRoundState activeRound =
+        runtime.consensusRoundManager().currentState();
+
+    if (config.consensusRound() != activeRound.round()) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::VOTE_BUILD_FAILED,
+            "Consensus round mismatch: pipeline requested round "
+            + std::to_string(config.consensusRound()) +
+            " but runtime is at round " +
+            std::to_string(activeRound.round()) + "."
+        );
+    }
+
     const crypto::ProtocolCryptoContext cryptoContext =
         crypto::ProtocolCryptoContext::fromNetworkName(
             runtime.config().genesisConfig().networkParameters().networkName()
@@ -1679,6 +1693,16 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
+    if (production.block().index() != activeRound.height()) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::VOTE_BUILD_FAILED,
+            "Candidate block height " +
+            std::to_string(production.block().index()) +
+            " does not match active consensus height " +
+            std::to_string(activeRound.height()) + "."
+        );
+    }
+
     core::BlockValidationResult transitionValidation;
 
     try {
@@ -1708,7 +1732,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         votes = buildValidatorVotes(
             runtime,
             production.block(),
-            config.consensusRound(),
+            activeRound.round(),
             config.timestamp() + 1,
             localValidatorSigner
         );
@@ -1726,12 +1750,27 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
+    for (const consensus::ValidatorVoteRecord& vote : votes) {
+        const consensus::VoteCollectResult collected =
+            runtime.submitConsensusVote(vote);
+
+        if (!collected.accepted()) {
+            return RuntimeBlockPipelineResult::rejected(
+                RuntimeBlockPipelineStatus::VOTE_BUILD_FAILED,
+                "Consensus vote rejected by active round manager: " +
+                    consensus::voteCollectStatusToString(collected.status()) +
+                    ": " +
+                    collected.reason()
+            );
+        }
+    }
+
     const consensus::QuorumCertificateBuildResult certificate =
         consensus::QuorumCertificateBuilder::buildFromVotes(
             production.block().index(),
             production.block().hash(),
             production.block().previousHash(),
-            config.consensusRound(),
+            activeRound.round(),
             votes,
             runtime.validatorRegistry(),
             cryptoContext.policy(),
@@ -2015,6 +2054,27 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     removeFinalizedTransactionsFromMempool(
         runtime,
         finalizedTransactionIds
+    );
+
+    const std::uint64_t nextHeight =
+        production.block().index() + 1;
+
+    constexpr std::uint64_t nextRound = 1;
+
+    const std::string nextProposer =
+        consensus::ProposerSchedule::selectProposer(
+            runtime.validatorRegistry(),
+            runtime.config().genesisConfig().networkParameters().chainId(),
+            nextHeight,
+            nextRound
+        );
+
+    runtime.mutableConsensusRoundManager().advanceToHeight(
+        nextHeight,
+        nextRound,
+        nextProposer,
+        config.timestamp() + 3,
+        runtime.config().genesisConfig().networkParameters().targetBlockTimeSeconds()
     );
 
     return RuntimeBlockPipelineResult::finalized(

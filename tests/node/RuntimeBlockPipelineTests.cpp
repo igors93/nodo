@@ -265,6 +265,13 @@ void testProducesFinalizesAndCleansMempool() {
         runtime.mempool().empty(),
         "Finalized transactions should be removed from mempool."
     );
+
+    requireCondition(
+        result.certificate().round() == 1 &&
+        runtime.consensusRoundManager().currentState().height() == 2 &&
+        runtime.consensusRoundManager().currentState().round() == 1,
+        "Finalized block pipeline should use and advance runtime consensus round state."
+    );
 }
 
 void testRejectsEmptyMempool() {
@@ -313,6 +320,36 @@ void testRejectsInvalidConfig() {
     );
 }
 
+void testRejectsConsensusRoundMismatch() {
+    NodeRuntime runtime =
+        startRuntime();
+
+    admitTransaction(runtime);
+
+    const auto result =
+        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            runtime,
+            RuntimeBlockPipelineConfig(
+                100,
+                1,
+                2,
+                kTimestamp + 50
+            ),
+            localValidatorSigner()
+        );
+
+    requireCondition(
+        result.status() == RuntimeBlockPipelineStatus::VOTE_BUILD_FAILED,
+        "Pipeline should reject a block attempt outside the active consensus round."
+    );
+
+    requireCondition(
+        runtime.blockchain().size() == 1U &&
+        !runtime.mempool().empty(),
+        "Consensus round mismatch should not append a block or clear mempool."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -321,6 +358,7 @@ int main() {
         testRejectsEconomicallyInvalidTransactionBeforeFinalization();
         testRejectsEmptyMempool();
         testRejectsInvalidConfig();
+        testRejectsConsensusRoundMismatch();
 
         std::cout << "Nodo runtime block pipeline tests passed.\n";
         return 0;

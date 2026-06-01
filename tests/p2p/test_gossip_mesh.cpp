@@ -2,7 +2,9 @@
 #include "p2p/LoopbackTransport.hpp"
 
 #include <cassert>
+#include <cstddef>
 #include <memory>
+#include <string>
 
 using namespace nodo::p2p;
 
@@ -53,6 +55,33 @@ int main() {
     assert(received.rejectedCount() == 0);
     assert(meshB.inbox().countForType(NetworkMessageType::TRANSACTION_ANNOUNCE) == 1);
     assert(meshB.inbox().messagesForType(NetworkMessageType::TRANSACTION_ANNOUNCE)[0].payload() == "tx-1");
+
+    std::size_t queuedFlood = 0;
+    for (int index = 0; index < 100; ++index) {
+        const GossipDeliveryReport queuedMessage =
+            meshA.broadcast(
+                NetworkMessageType::TRANSACTION_ANNOUNCE,
+                "tx-flood-" + std::to_string(index),
+                1010
+            );
+        queuedFlood += queuedMessage.acceptedCount();
+    }
+
+    assert(queuedFlood == 100);
+
+    const GossipDeliveryReport sentFlood =
+        meshA.flushOutbound(1010);
+
+    assert(sentFlood.acceptedCount() == 100);
+
+    const GossipDeliveryReport receivedFlood =
+        meshB.receiveAvailable(1010);
+
+    assert(receivedFlood.acceptedCount() == 99);
+    assert(receivedFlood.rejectedCount() == 1);
+    assert(meshB.rateLimitedMessageCountForPeer("node-a", 1010) == 100);
+    assert(meshB.invalidMessageCountForPeer("node-a") == 1);
+    assert(meshB.inbox().countForType(NetworkMessageType::TRANSACTION_ANNOUNCE) == 100);
 
     return 0;
 }

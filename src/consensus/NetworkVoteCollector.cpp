@@ -64,6 +64,21 @@ VoteCollectResult NetworkVoteCollector::submitNetworkVote(const ValidatorVoteRec
             " for height " + std::to_string(m_currentHeight)
         );
     }
+    if (vote.blockIndex() > m_currentHeight) {
+        return VoteCollectResult(
+            VoteCollectStatus::REJECTED_INVALID,
+            "Vote block index " + std::to_string(vote.blockIndex()) +
+            " is above current height " + std::to_string(m_currentHeight)
+        );
+    }
+    if (vote.round() > m_currentRound) {
+        return VoteCollectResult(
+            VoteCollectStatus::REJECTED_INVALID,
+            "Vote round " + std::to_string(vote.round()) +
+            " is above current round " + std::to_string(m_currentRound) +
+            " for height " + std::to_string(m_currentHeight)
+        );
+    }
 
     const VotePoolResult poolResult = m_pool.submitVote(vote);
     if (poolResult.duplicate()) {

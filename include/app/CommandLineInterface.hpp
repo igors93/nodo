@@ -17,6 +17,7 @@ public:
 
     std::string command;
     std::filesystem::path dataDirectory;
+    std::string networkName;
     std::string peerId;
     std::string endpoint;
     std::string keyId;
@@ -104,6 +105,14 @@ private:
     );
 
     static CommandLineResult executeChainAudit(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeTestnetReadiness(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeDiagnostics(
         const CommandLineOptions& options
     );
 

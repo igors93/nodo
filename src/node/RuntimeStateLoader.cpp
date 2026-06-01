@@ -1,5 +1,6 @@
 #include "node/RuntimeStateLoader.hpp"
 
+#include "consensus/ConsensusRecoveryStore.hpp"
 #include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedArtifactValidationContext.hpp"
 #include "node/FinalizedArtifactValidator.hpp"
@@ -15,6 +16,7 @@
 #include <exception>
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <utility>
 
@@ -197,6 +199,20 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
     }
 
     NodeRuntime runtime = start.runtime();
+
+    if (const std::optional<consensus::ConsensusRoundState> recoveredRound =
+            consensus::ConsensusRecoveryStore::load(
+                directoryConfig.consensusRecoveryPath()
+            );
+        recoveredRound.has_value()) {
+        runtime.mutableConsensusRoundManager().advanceToHeight(
+            recoveredRound->height(),
+            recoveredRound->round(),
+            recoveredRound->proposerAddress(),
+            recoveredRound->roundStartedAt(),
+            genesisConfig.networkParameters().targetBlockTimeSeconds()
+        );
+    }
 
     const crypto::ProtocolCryptoContext cryptoContext =
         crypto::ProtocolCryptoContext::fromNetworkName(manifest.networkName());

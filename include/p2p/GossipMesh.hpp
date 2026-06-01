@@ -4,6 +4,7 @@
 #include "p2p/InboundMessageValidator.hpp"
 #include "p2p/OutboundMessageQueue.hpp"
 #include "p2p/PeerRegistry.hpp"
+#include "p2p/PeerRateLimiter.hpp"
 #include "p2p/Transport.hpp"
 
 #include <cstddef>
@@ -121,12 +122,18 @@ public:
         const std::string& nodeId
     ) const;
 
+    std::uint32_t rateLimitedMessageCountForPeer(
+        const std::string& nodeId,
+        std::int64_t now
+    ) const;
+
 private:
     GossipMeshConfig m_config;
     Transport& m_transport;
     PeerRegistry m_peerRegistry;
     OutboundMessageQueue m_outboundQueue;
     InboundMessageValidator m_inboundValidator;
+    PeerRateLimiter m_rateLimiter;
     GossipInbox m_inbox;
     std::map<std::string, std::size_t> m_invalidMessagesByPeer;
 

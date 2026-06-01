@@ -42,7 +42,7 @@ void writeFile(
     const std::filesystem::path& path,
     const std::string& contents
 ) {
-    std::ofstream output(path, std::ios::trunc);
+    std::ofstream output(path, std::ios::out | std::ios::binary | std::ios::trunc);
     output << contents;
 }
 

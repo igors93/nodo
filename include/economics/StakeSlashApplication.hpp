@@ -1,6 +1,7 @@
 #ifndef NODO_ECONOMICS_STAKE_SLASH_APPLICATION_HPP
 #define NODO_ECONOMICS_STAKE_SLASH_APPLICATION_HPP
 
+#include "consensus/ValidatorPenaltyApplication.hpp"
 #include "economics/ValidatorStakeState.hpp"
 #include "utils/Amount.hpp"
 
@@ -33,6 +34,11 @@ public:
         ValidatorStakeState& state,
         const std::string& evidenceId,
         utils::Amount slashAmount
+    );
+
+    static SlashResult applyPenaltyDecision(
+        ValidatorStakeState& state,
+        const consensus::ValidatorPenaltyDecision& decision
     );
 };
 
