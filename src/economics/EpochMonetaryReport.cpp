@@ -50,6 +50,8 @@ EpochMonetaryReport EpochMonetaryReport::fromDeltas(
     report.m_endBlock = endBlock;
     report.m_policyVersion = policy.policyVersion();
     report.m_deltaCount = deltas.size();
+
+    // For an empty sequence use the policy's initial supply as the baseline.
     report.m_startingSupply = policy.initialSupply();
 
     const SupplySequenceAuditResult supplyAudit =
@@ -68,6 +70,11 @@ EpochMonetaryReport EpochMonetaryReport::fromDeltas(
         report.m_rejectionReason = "";
         return report;
     }
+
+    // For a non-empty validated sequence, startingSupply comes from the first
+    // delta's supplyBefore, not from the policy constant. This is the canonical
+    // supply at the start of the reporting window.
+    report.m_startingSupply = deltas.front().supplyBefore();
 
     std::int64_t totalMintedRaw = 0;
     std::int64_t totalBurnedRaw = 0;
@@ -92,6 +99,43 @@ EpochMonetaryReport EpochMonetaryReport::fromDeltas(
     report.m_totalMinted = utils::Amount::fromRawUnits(totalMintedRaw);
     report.m_totalBurned = utils::Amount::fromRawUnits(totalBurnedRaw);
     report.m_valid = true;
+    report.m_rejectionReason = "";
+    return report;
+}
+
+EpochMonetaryReport EpochMonetaryReport::fromStoredFields(
+    const MonetaryPolicy& policy,
+    std::uint64_t epoch,
+    std::uint64_t startBlock,
+    std::uint64_t endBlock,
+    utils::Amount startingSupply,
+    utils::Amount endingSupply,
+    utils::Amount totalMinted,
+    utils::Amount totalBurned,
+    std::size_t deltaCount,
+    std::size_t mintRecordCount,
+    std::size_t burnRecordCount
+) {
+    EpochMonetaryReport report;
+
+    if (!policy.isValid()) {
+        report.m_rejectionReason = "EpochMonetaryReport::fromStoredFields: invalid policy: " +
+                                    policy.rejectionReason();
+        return report;
+    }
+
+    report.m_epoch           = epoch;
+    report.m_startBlock      = startBlock;
+    report.m_endBlock        = endBlock;
+    report.m_startingSupply  = startingSupply;
+    report.m_endingSupply    = endingSupply;
+    report.m_totalMinted     = totalMinted;
+    report.m_totalBurned     = totalBurned;
+    report.m_deltaCount      = deltaCount;
+    report.m_mintRecordCount = mintRecordCount;
+    report.m_burnRecordCount = burnRecordCount;
+    report.m_policyVersion   = policy.policyVersion();
+    report.m_valid           = true;
     report.m_rejectionReason = "";
     return report;
 }

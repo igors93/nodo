@@ -313,6 +313,50 @@ void testAuditArtifactsRejectsOutOfOrderHeight() {
     assert(result.reason().find("out-of-order") != std::string::npos);
 }
 
+// Artifact sequence must start at height 1, not 0.
+// Genesis (height 0) is not stored as a FinalizedBlockArtifact.
+void testAuditDeltasRejectsSequenceStartingAtHeightZero() {
+    const std::vector<nodo::economics::SupplyDelta> deltas = {
+        noOpDelta(0, Amount::fromRawUnits(1000))
+    };
+
+    const auto result =
+        nodo::node::FinalizedSupplyAudit::auditDeltas(testPolicy(), deltas);
+
+    assert(!result.passed());
+    assert(result.reason().find("out-of-order") != std::string::npos);
+    assert(result.failedBlockHeight() == 0);
+}
+
+// A missing height in the sequence is rejected.
+void testAuditDeltasRejectsMissingHeight() {
+    const std::vector<nodo::economics::SupplyDelta> deltas = {
+        noOpDelta(1, Amount::fromRawUnits(1000)),
+        noOpDelta(3, Amount::fromRawUnits(1000))   // height 2 is missing
+    };
+
+    const auto result =
+        nodo::node::FinalizedSupplyAudit::auditDeltas(testPolicy(), deltas);
+
+    assert(!result.passed());
+    assert(result.failedBlockHeight() == 3);
+}
+
+// Artifact starting at height 0 (genesis) is rejected by auditArtifacts.
+void testAuditArtifactsRejectsGenesisHeightArtifact() {
+    // A delta at height 0 but pointing to block at height 0 — rejected because
+    // FinalizedSupplyAudit expects artifacts to start at height 1.
+    const nodo::node::FinalizedBlockArtifact artifact =
+        artifactWithMatchingDelta(0, Amount::fromRawUnits(1000));
+
+    const auto result =
+        nodo::node::FinalizedSupplyAudit::auditArtifacts(testPolicy(), {artifact});
+
+    assert(!result.passed());
+    assert(result.reason().find("out-of-order") != std::string::npos ||
+           result.reason().find("expected") != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -325,5 +369,8 @@ int main() {
     testAuditArtifactsRejectsHeightMismatch();
     testAuditArtifactsRejectsHashMismatch();
     testAuditArtifactsRejectsOutOfOrderHeight();
+    testAuditDeltasRejectsSequenceStartingAtHeightZero();
+    testAuditDeltasRejectsMissingHeight();
+    testAuditArtifactsRejectsGenesisHeightArtifact();
     return 0;
 }

@@ -208,6 +208,61 @@ void testReportRejectsInvalidPolicy() {
     assert(!report.isValid());
 }
 
+// startingSupply must equal first delta's supplyBefore, not policy.initialSupply().
+void testReportStartingSupplyEqualsFirstDeltaSupplyBefore() {
+    const auto s0 = initialSupply();
+    std::vector<nodo::economics::SupplyDelta> deltas = {
+        noOpDelta(1, "hash-sv-1", 0, s0)
+    };
+    const auto report = nodo::economics::EpochMonetaryReport::fromDeltas(
+        testPolicy(), 0, 1, 1, deltas
+    );
+    assert(report.isValid());
+    assert(report.startingSupply() == s0);
+    assert(report.startingSupply() == deltas[0].supplyBefore());
+}
+
+// endingSupply must equal last delta's supplyAfter.
+void testReportEndingSupplyEqualsLastDeltaSupplyAfterExplicit() {
+    const auto s0 = initialSupply();
+    std::vector<nodo::economics::SupplyDelta> deltas = {
+        burnDelta(1, "hash-end-explicit", 0, s0, 100)
+    };
+    const auto report = nodo::economics::EpochMonetaryReport::fromDeltas(
+        testPolicy(), 0, 1, 1, deltas
+    );
+    assert(report.isValid());
+    assert(report.endingSupply() == deltas[0].supplyAfter());
+    assert(report.endingSupply() == nodo::utils::Amount::fromRawUnits(s0.rawUnits() - 100));
+}
+
+// Two burn deltas accumulate totals correctly and startingSupply tracks first delta.
+void testReportFromTwoBurnDeltasAccumulates() {
+    const auto s0 = initialSupply();
+    const auto s1 = nodo::utils::Amount::fromRawUnits(s0.rawUnits() - 50);
+    std::vector<nodo::economics::SupplyDelta> deltas = {
+        burnDelta(1, "hash-acc-1", 0, s0, 50),
+        burnDelta(2, "hash-acc-2", 0, s1, 30)
+    };
+    const auto report = nodo::economics::EpochMonetaryReport::fromDeltas(
+        testPolicy(), 0, 1, 2, deltas
+    );
+    assert(report.isValid());
+    assert(report.startingSupply() == s0);
+    assert(report.totalBurned() == nodo::utils::Amount::fromRawUnits(80));
+    assert(report.endingSupply() == nodo::utils::Amount::fromRawUnits(s0.rawUnits() - 80));
+}
+
+// Empty sequence uses policy initial supply.
+void testReportEmptySequenceUsesGenesisSupply() {
+    const auto report = nodo::economics::EpochMonetaryReport::fromDeltas(
+        testPolicy(), 0, 0, 0, {}
+    );
+    assert(report.isValid());
+    assert(report.startingSupply() == testPolicy().initialSupply());
+    assert(report.endingSupply() == testPolicy().initialSupply());
+}
+
 } // namespace
 
 int main() {
@@ -220,5 +275,9 @@ int main() {
     testReportRejectsSequenceNotStartingAtPolicySupply();
     testReportSerializationIncludesKeyFields();
     testReportRejectsInvalidPolicy();
+    testReportStartingSupplyEqualsFirstDeltaSupplyBefore();
+    testReportEndingSupplyEqualsLastDeltaSupplyAfterExplicit();
+    testReportFromTwoBurnDeltasAccumulates();
+    testReportEmptySequenceUsesGenesisSupply();
     return 0;
 }

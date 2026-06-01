@@ -4,6 +4,7 @@
 #include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/KeyPair.hpp"
 #include "node/NodeRuntime.hpp"
+#include "node/RuntimeBlockPipeline.hpp"
 #include "utils/Amount.hpp"
 
 #include <cassert>
@@ -18,6 +19,8 @@ using nodo::config::NetworkParameters;
 using nodo::node::NodeRuntime;
 using nodo::node::NodeRuntimeConfig;
 using nodo::node::NodeRuntimeFactory;
+using nodo::node::RuntimeMonetaryValidation;
+using nodo::node::RuntimeMonetaryValidationStatus;
 using nodo::p2p::PeerInfo;
 using nodo::utils::Amount;
 
@@ -50,16 +53,20 @@ NodeRuntime startRuntime() {
     return result.runtime();
 }
 
+// All production tests use the 4-arg form (explicit supplyBefore).
 void testAcceptedResultReportsAccepted() {
     NodeRuntime runtime = startRuntime();
     const auto& genesisBlock = runtime.blockchain().blocks().front();
 
-    const auto result = nodo::node::RuntimeMonetaryValidation::validateCandidate(
-        runtime.config().genesisConfig(), genesisBlock, Amount::fromRawUnits(0)
+    const auto result = RuntimeMonetaryValidation::validateCandidate(
+        runtime.config().genesisConfig(),
+        genesisBlock,
+        Amount::fromRawUnits(0),
+        runtime.supplyState().latestSupply()
     );
 
     assert(result.isAccepted());
-    assert(result.status() == nodo::node::RuntimeMonetaryValidationStatus::ACCEPTED);
+    assert(result.status() == RuntimeMonetaryValidationStatus::ACCEPTED);
     assert(result.reason().empty());
 }
 
@@ -67,8 +74,11 @@ void testNoOpCandidateWithZeroFeePassesGate() {
     NodeRuntime runtime = startRuntime();
     const auto& genesisBlock = runtime.blockchain().blocks().front();
 
-    const auto result = nodo::node::RuntimeMonetaryValidation::validateCandidate(
-        runtime.config().genesisConfig(), genesisBlock, Amount::fromRawUnits(0)
+    const auto result = RuntimeMonetaryValidation::validateCandidate(
+        runtime.config().genesisConfig(),
+        genesisBlock,
+        Amount::fromRawUnits(0),
+        runtime.supplyState().latestSupply()
     );
 
     assert(result.isAccepted());
@@ -81,9 +91,11 @@ void testCandidateWithFeeBurnBuildsRealSupplyDelta() {
     NodeRuntime runtime = startRuntime();
     const auto& genesisBlock = runtime.blockchain().blocks().front();
 
-    // Pass a concrete fee burn amount — this should build a burn-only SupplyDelta.
-    const auto result = nodo::node::RuntimeMonetaryValidation::validateCandidate(
-        runtime.config().genesisConfig(), genesisBlock, Amount::fromRawUnits(20)
+    const auto result = RuntimeMonetaryValidation::validateCandidate(
+        runtime.config().genesisConfig(),
+        genesisBlock,
+        Amount::fromRawUnits(20),
+        runtime.supplyState().latestSupply()
     );
 
     assert(result.isAccepted());
@@ -98,8 +110,11 @@ void testResultSerializationIncludesStatus() {
     NodeRuntime runtime = startRuntime();
     const auto& genesisBlock = runtime.blockchain().blocks().front();
 
-    const auto result = nodo::node::RuntimeMonetaryValidation::validateCandidate(
-        runtime.config().genesisConfig(), genesisBlock, Amount::fromRawUnits(0)
+    const auto result = RuntimeMonetaryValidation::validateCandidate(
+        runtime.config().genesisConfig(),
+        genesisBlock,
+        Amount::fromRawUnits(0),
+        runtime.supplyState().latestSupply()
     );
 
     const std::string s = result.serialize();
@@ -109,13 +124,48 @@ void testResultSerializationIncludesStatus() {
 
 void testStatusToString() {
     assert(nodo::node::runtimeMonetaryValidationStatusToString(
-               nodo::node::RuntimeMonetaryValidationStatus::ACCEPTED) == "ACCEPTED");
+               RuntimeMonetaryValidationStatus::ACCEPTED) == "ACCEPTED");
     assert(nodo::node::runtimeMonetaryValidationStatusToString(
-               nodo::node::RuntimeMonetaryValidationStatus::MONETARY_CONTEXT_UNAVAILABLE) ==
+               RuntimeMonetaryValidationStatus::MONETARY_CONTEXT_UNAVAILABLE) ==
            "MONETARY_CONTEXT_UNAVAILABLE");
     assert(nodo::node::runtimeMonetaryValidationStatusToString(
-               nodo::node::RuntimeMonetaryValidationStatus::REJECTED_BY_GATE) ==
+               RuntimeMonetaryValidationStatus::REJECTED_BY_GATE) ==
            "REJECTED_BY_GATE");
+}
+
+// validateFirstBlockCandidate rejects any block whose index is not 1.
+void testValidateFirstBlockCandidateRejectsNonHeightOne() {
+    NodeRuntime runtime = startRuntime();
+    // Genesis block has index 0 — must be rejected.
+    const auto& genesisBlock = runtime.blockchain().blocks().front();
+    assert(genesisBlock.index() == 0);
+
+    const auto result = RuntimeMonetaryValidation::validateFirstBlockCandidate(
+        runtime.config().genesisConfig(),
+        genesisBlock,
+        Amount::fromRawUnits(0)
+    );
+
+    assert(!result.isAccepted());
+    assert(result.status() == RuntimeMonetaryValidationStatus::MONETARY_CONTEXT_UNAVAILABLE);
+    assert(!result.reason().empty());
+}
+
+// The 4-arg form requires explicit supplyBefore.
+void testFourArgFormRequiresExplicitSupplyBefore() {
+    NodeRuntime runtime = startRuntime();
+    const auto& genesisBlock = runtime.blockchain().blocks().front();
+    const Amount explicitSupply = runtime.supplyState().latestSupply();
+
+    const auto result = RuntimeMonetaryValidation::validateCandidate(
+        runtime.config().genesisConfig(),
+        genesisBlock,
+        Amount::fromRawUnits(0),
+        explicitSupply
+    );
+
+    assert(result.isAccepted());
+    assert(result.supplyDelta().supplyBefore() == explicitSupply);
 }
 
 } // namespace
@@ -126,5 +176,7 @@ int main() {
     testCandidateWithFeeBurnBuildsRealSupplyDelta();
     testResultSerializationIncludesStatus();
     testStatusToString();
+    testValidateFirstBlockCandidateRejectsNonHeightOne();
+    testFourArgFormRequiresExplicitSupplyBefore();
     return 0;
 }

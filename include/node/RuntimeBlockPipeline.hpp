@@ -393,6 +393,53 @@ public:
         GovernanceSummary governanceSummary
     );
 
+    /*
+     * Full finalized result including the validated SupplyDelta.
+     *
+     * This is the canonical factory for the normal runtime path.
+     * SupplyDelta must be valid and match the finalized block identity.
+     * All shorter overloads produce a result with a default (invalid) SupplyDelta
+     * and are only valid for tests that do not assert result.finalized().
+     */
+    static RuntimeBlockPipelineResult finalized(
+        core::Block block,
+        consensus::QuorumCertificate certificate,
+        consensus::FinalizedBlockRecord finalizedRecord,
+        std::vector<std::string> finalizedTransactionIds,
+        std::string postStateRoot,
+        utils::Amount totalFee,
+        std::vector<RewardDistribution> rewardDistributions,
+        std::vector<LockedStakePosition> lockedStakePositions,
+        std::vector<SecurityScoreRecord> securityScoreRecords,
+        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+        MonetaryFirewallAudit monetaryFirewallAudit,
+        GenesisTreasurySnapshot genesisTreasurySnapshot,
+        ProtectionRewardBudget protectionRewardBudget,
+        std::vector<ProtectionRewardGrant> protectionRewardGrants,
+        std::vector<ProtectionWorkRecord> protectionWorkRecords,
+        ProtectionRewardSummary protectionRewardSummary,
+        std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+        InflationEpochSnapshot inflationEpochSnapshot,
+        MintAuthorizationRecord mintAuthorizationRecord,
+        SupplyExpansionRecord supplyExpansionRecord,
+        FeeEconomicBalance feeEconomicBalance,
+        FeeBurnRecord feeBurnRecord,
+        TreasuryFeeRecord treasuryFeeRecord,
+        std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+        std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+        SlashingEvidenceSummary slashingEvidenceSummary,
+        std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
+        std::vector<StakePenaltyRecord> stakePenaltyRecords,
+        CryptographicSlashingSummary cryptographicSlashingSummary,
+        GovernancePolicySnapshot governancePolicySnapshot,
+        std::vector<GovernanceActionGuard> governanceActionGuards,
+        GovernanceSummary governanceSummary,
+        economics::SupplyDelta supplyDelta
+    );
+
     static RuntimeBlockPipelineResult rejected(
         RuntimeBlockPipelineStatus status,
         std::string reason

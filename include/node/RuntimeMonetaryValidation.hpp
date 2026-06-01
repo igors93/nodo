@@ -114,11 +114,12 @@ public:
     );
 
     /*
-     * Convenience form: uses genesis supply as supplyBefore.
-     * Valid only for the first block after genesis, or in tests.
-     * Do NOT use this for multi-block chains; use the four-argument form.
+     * Restricted form: uses genesis supply as supplyBefore.
+     * Only valid for block.index() == 1 (the first block after genesis).
+     * Rejects any other height to prevent accidental use in multi-block chains.
+     * Use the four-argument form for all other heights.
      */
-    static RuntimeMonetaryValidationResult validateCandidate(
+    static RuntimeMonetaryValidationResult validateFirstBlockCandidate(
         const config::GenesisConfig& genesisConfig,
         const core::Block& candidateBlock,
         utils::Amount feeBurnAmount

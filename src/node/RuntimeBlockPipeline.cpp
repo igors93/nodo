@@ -1249,6 +1249,66 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     std::vector<GovernanceActionGuard> governanceActionGuards,
     GovernanceSummary governanceSummary
 ) {
+    return finalized(
+        std::move(block), std::move(certificate), std::move(finalizedRecord),
+        std::move(finalizedTransactionIds), std::move(postStateRoot), totalFee,
+        std::move(rewardDistributions), std::move(lockedStakePositions),
+        std::move(securityScoreRecords), std::move(securityCheckpoints),
+        std::move(validatorRiskAssessments), std::move(validatorContainmentDecisions),
+        std::move(validatorNetworkPolicies), std::move(monetaryFirewallAudit),
+        std::move(genesisTreasurySnapshot), std::move(protectionRewardBudget),
+        std::move(protectionRewardGrants), std::move(protectionWorkRecords),
+        std::move(protectionRewardSummary), std::move(protectionRewardSettlements),
+        std::move(inflationEpochSnapshot), std::move(mintAuthorizationRecord),
+        std::move(supplyExpansionRecord), std::move(feeEconomicBalance),
+        std::move(feeBurnRecord), std::move(treasuryFeeRecord),
+        std::move(slashingEvidenceRecords), std::move(slashingPreparationRecords),
+        std::move(slashingEvidenceSummary), std::move(cryptographicSlashingEvidenceRecords),
+        std::move(stakePenaltyRecords), std::move(cryptographicSlashingSummary),
+        std::move(governancePolicySnapshot), std::move(governanceActionGuards),
+        std::move(governanceSummary),
+        economics::SupplyDelta{}
+    );
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
+    core::Block block,
+    consensus::QuorumCertificate certificate,
+    consensus::FinalizedBlockRecord finalizedRecord,
+    std::vector<std::string> finalizedTransactionIds,
+    std::string postStateRoot,
+    utils::Amount totalFee,
+    std::vector<RewardDistribution> rewardDistributions,
+    std::vector<LockedStakePosition> lockedStakePositions,
+    std::vector<SecurityScoreRecord> securityScoreRecords,
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+    std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+    MonetaryFirewallAudit monetaryFirewallAudit,
+    GenesisTreasurySnapshot genesisTreasurySnapshot,
+    ProtectionRewardBudget protectionRewardBudget,
+    std::vector<ProtectionRewardGrant> protectionRewardGrants,
+    std::vector<ProtectionWorkRecord> protectionWorkRecords,
+    ProtectionRewardSummary protectionRewardSummary,
+    std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+    InflationEpochSnapshot inflationEpochSnapshot,
+    MintAuthorizationRecord mintAuthorizationRecord,
+    SupplyExpansionRecord supplyExpansionRecord,
+    FeeEconomicBalance feeEconomicBalance,
+    FeeBurnRecord feeBurnRecord,
+    TreasuryFeeRecord treasuryFeeRecord,
+    std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+    std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+    SlashingEvidenceSummary slashingEvidenceSummary,
+    std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
+    std::vector<StakePenaltyRecord> stakePenaltyRecords,
+    CryptographicSlashingSummary cryptographicSlashingSummary,
+    GovernancePolicySnapshot governancePolicySnapshot,
+    std::vector<GovernanceActionGuard> governanceActionGuards,
+    GovernanceSummary governanceSummary,
+    economics::SupplyDelta supplyDelta
+) {
     RuntimeBlockPipelineResult result;
     result.m_status = RuntimeBlockPipelineStatus::FINALIZED;
     result.m_reason = "";
@@ -1287,6 +1347,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     result.m_governancePolicySnapshot = std::move(governancePolicySnapshot);
     result.m_governanceActionGuards = std::move(governanceActionGuards);
     result.m_governanceSummary = std::move(governanceSummary);
+    result.m_supplyDelta = std::move(supplyDelta);
 
     if (result.m_cryptographicSlashingSummary.status() == "NOT_EVALUATED") {
         result.m_cryptographicSlashingSummary =
@@ -2167,10 +2228,10 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             cryptographicSlashingSummary,
             governancePolicySnapshot,
             governanceActionGuards,
-            governanceSummary
+            governanceSummary,
+            monetaryValidationResult.supplyDelta()
         );
 
-    finalResult.setSupplyDelta(monetaryValidationResult.supplyDelta());
     try {
         runtime.mutableSupplyState().applyFinalizedDelta(
             monetaryValidationResult.supplyDelta()

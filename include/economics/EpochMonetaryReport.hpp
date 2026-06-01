@@ -30,6 +30,27 @@ public:
         const std::vector<SupplyDelta>& deltas
     );
 
+    /*
+     * Reconstruct a report from persisted fields without re-running SupplyAudit.
+     *
+     * Used by EpochMonetaryReportStore::decode when reloading from disk.
+     * The caller must verify the arithmetic invariant and the policy version
+     * before calling this. ChainAuditor then re-verifies against finalized deltas.
+     */
+    static EpochMonetaryReport fromStoredFields(
+        const MonetaryPolicy& policy,
+        std::uint64_t epoch,
+        std::uint64_t startBlock,
+        std::uint64_t endBlock,
+        utils::Amount startingSupply,
+        utils::Amount endingSupply,
+        utils::Amount totalMinted,
+        utils::Amount totalBurned,
+        std::size_t deltaCount,
+        std::size_t mintRecordCount,
+        std::size_t burnRecordCount
+    );
+
     std::uint64_t epoch() const;
     std::uint64_t startBlock() const;
     std::uint64_t endBlock() const;

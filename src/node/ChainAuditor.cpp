@@ -1,8 +1,10 @@
 #include "node/ChainAuditor.hpp"
 
 #include "crypto/ProtocolCryptoContext.hpp"
+#include "economics/EpochMonetaryReport.hpp"
 #include "economics/MonetaryPolicy.hpp"
 #include "node/FinalizedSupplyAudit.hpp"
+#include "node/MonetaryAuditDiagnostic.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 #include "node/RuntimeStateLoader.hpp"
@@ -80,8 +82,11 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
 
     // Supply continuity audit: verify finalized SupplyDeltas form a valid chain.
     const auto& finalizedDeltas = runtime.supplyState().finalizedDeltas();
+
+    economics::MonetaryPolicy policy;
+    utils::Amount genesisSupply;
+
     if (!finalizedDeltas.empty()) {
-        utils::Amount genesisSupply;
         try {
             genesisSupply = MonetaryFirewall::genesisSupply(runtime.config().genesisConfig());
         } catch (const std::exception& e) {
@@ -90,19 +95,52 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
             );
         }
 
-        const economics::MonetaryPolicy policy =
-            economics::MonetaryPolicy::localnetDefault(
-                runtime.config().genesisConfig().networkParameters().chainId(),
-                genesisSupply
-            );
+        policy = economics::MonetaryPolicy::localnetDefault(
+            runtime.config().genesisConfig().networkParameters().chainId(),
+            genesisSupply
+        );
 
         const FinalizedSupplyAuditResult supplyAudit =
             FinalizedSupplyAudit::auditDeltas(policy, finalizedDeltas);
 
         if (!supplyAudit.passed()) {
+            const MonetaryAuditDiagnostic diag =
+                MonetaryAuditDiagnostic::supplyContinuityFailure(
+                    supplyAudit.reason(),
+                    supplyAudit.failedBlockHeight(),
+                    utils::Amount::fromRawUnits(0),
+                    utils::Amount::fromRawUnits(0),
+                    supplyAudit.finalSupply()
+                );
             return ChainAuditResult::failed(
                 "chain audit: monetary supply continuity failure: " +
-                supplyAudit.reason()
+                supplyAudit.reason() + " | " + diag.serialize()
+            );
+        }
+
+        // Epoch monetary report verification: rebuild the report from finalized
+        // deltas. This proves the delta sequence is self-consistent and that a
+        // correct report can be derived deterministically from the chain.
+        // For epoch 0 (current simple behavior), the full delta sequence is used.
+        const economics::EpochMonetaryReport rebuiltReport =
+            economics::EpochMonetaryReport::fromDeltas(
+                policy,
+                0,
+                finalizedDeltas.front().blockHeight(),
+                finalizedDeltas.back().blockHeight(),
+                finalizedDeltas
+            );
+
+        if (!rebuiltReport.isValid()) {
+            const MonetaryAuditDiagnostic diag =
+                MonetaryAuditDiagnostic::reportMissing(
+                    "cannot rebuild epoch monetary report from finalized deltas: " +
+                    rebuiltReport.rejectionReason(),
+                    0
+                );
+            return ChainAuditResult::failed(
+                "chain audit: epoch monetary report rebuild failed: " +
+                rebuiltReport.rejectionReason() + " | " + diag.serialize()
             );
         }
     }

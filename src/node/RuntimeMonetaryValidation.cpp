@@ -175,13 +175,22 @@ RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
     return RuntimeMonetaryValidationResult::accepted(delta, gateResult);
 }
 
-RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
+RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateFirstBlockCandidate(
     const config::GenesisConfig& genesisConfig,
     const core::Block& candidateBlock,
     utils::Amount feeBurnAmount
 ) {
-    // Convenience overload: uses genesis supply as supplyBefore.
-    // Valid only for the first block or in unit tests.
+    // Restricted form: only valid for block.index() == 1 (first block after genesis).
+    // Rejecting any other height prevents accidental use for multi-block chains where
+    // the cumulative supply differs from genesis supply.
+    if (candidateBlock.index() != 1) {
+        return RuntimeMonetaryValidationResult::contextUnavailable(
+            "RuntimeMonetaryValidation::validateFirstBlockCandidate: "
+            "only valid for block index 1, got " +
+            std::to_string(candidateBlock.index()) + "."
+        );
+    }
+
     utils::Amount genesisSupply;
     try {
         genesisSupply = MonetaryFirewall::genesisSupply(genesisConfig);

@@ -141,7 +141,7 @@ void testRuntimeMonetaryValidationContextUnavailableRejectsVotes() {
     // feeBurnAmount = 2000000000000 (double the supply) → underflow → context unavailable
     const Amount hugeBurn = Amount::fromRawUnits(2000000000000LL);
     const auto result = RuntimeMonetaryValidation::validateCandidate(
-        genesis, genesisBlock, hugeBurn
+        genesis, genesisBlock, hugeBurn, runtime.supplyState().latestSupply()
     );
     assert(!result.isAccepted());
     assert(result.status() == RuntimeMonetaryValidationStatus::MONETARY_CONTEXT_UNAVAILABLE);

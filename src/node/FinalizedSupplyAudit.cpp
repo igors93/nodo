@@ -29,6 +29,10 @@ FinalizedSupplyAuditResult fromSequenceAudit(
 FinalizedSupplyAuditResult validateDeltaHeights(
     const std::vector<economics::SupplyDelta>& deltas
 ) {
+    // Finalized artifacts start at block height 1. The genesis block (height 0)
+    // is handled separately during node bootstrap and is NOT stored as a
+    // FinalizedBlockArtifact. Any sequence that starts at height 0 is therefore
+    // invalid in this audit context.
     std::uint64_t expectedHeight = 1;
 
     for (const auto& delta : deltas) {
