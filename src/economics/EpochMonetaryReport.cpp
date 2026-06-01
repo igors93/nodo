@@ -1,5 +1,7 @@
 #include "economics/EpochMonetaryReport.hpp"
 
+#include "economics/SupplyAudit.hpp"
+
 #include <climits>
 #include <sstream>
 #include <utility>
@@ -15,6 +17,8 @@ EpochMonetaryReport::EpochMonetaryReport()
       m_totalMinted(utils::Amount::fromRawUnits(0)),
       m_totalBurned(utils::Amount::fromRawUnits(0)),
       m_deltaCount(0),
+      m_mintRecordCount(0),
+      m_burnRecordCount(0),
       m_policyVersion(""),
       m_valid(false),
       m_rejectionReason("EpochMonetaryReport: default-constructed.") {}
@@ -46,6 +50,18 @@ EpochMonetaryReport EpochMonetaryReport::fromDeltas(
     report.m_endBlock = endBlock;
     report.m_policyVersion = policy.policyVersion();
     report.m_deltaCount = deltas.size();
+    report.m_startingSupply = policy.initialSupply();
+
+    const SupplySequenceAuditResult supplyAudit =
+        SupplyAudit::auditDeltaSequence(policy, deltas);
+
+    if (!supplyAudit.isValid()) {
+        report.m_rejectionReason = "EpochMonetaryReport: " +
+                                    supplyAudit.reason();
+        return report;
+    }
+
+    report.m_endingSupply = supplyAudit.finalSupply();
 
     if (deltas.empty()) {
         report.m_valid = true;
@@ -53,36 +69,10 @@ EpochMonetaryReport EpochMonetaryReport::fromDeltas(
         return report;
     }
 
-    // Validate that first delta is valid.
-    if (!deltas.front().isValid()) {
-        report.m_rejectionReason = "EpochMonetaryReport: first delta is invalid: " +
-                                    deltas.front().rejectionReason();
-        return report;
-    }
-
-    report.m_startingSupply = deltas.front().supplyBefore();
-
     std::int64_t totalMintedRaw = 0;
     std::int64_t totalBurnedRaw = 0;
-    utils::Amount expectedSupply = report.m_startingSupply;
 
     for (const auto& delta : deltas) {
-        if (!delta.isValid()) {
-            report.m_rejectionReason = "EpochMonetaryReport: invalid delta at block " +
-                                        std::to_string(delta.blockHeight()) + ": " +
-                                        delta.rejectionReason();
-            return report;
-        }
-        if (delta.supplyBefore() != expectedSupply) {
-            report.m_rejectionReason = "EpochMonetaryReport: continuity break at block " +
-                                        std::to_string(delta.blockHeight()) +
-                                        " — expected supplyBefore=" +
-                                        std::to_string(expectedSupply.rawUnits()) +
-                                        " got=" +
-                                        std::to_string(delta.supplyBefore().rawUnits()) + ".";
-            return report;
-        }
-        // Overflow guard on accumulation.
         if (delta.mintedAmount().rawUnits() > 0 &&
             totalMintedRaw > INT64_MAX - delta.mintedAmount().rawUnits()) {
             report.m_rejectionReason = "EpochMonetaryReport: totalMinted overflow.";
@@ -95,10 +85,10 @@ EpochMonetaryReport EpochMonetaryReport::fromDeltas(
         }
         totalMintedRaw += delta.mintedAmount().rawUnits();
         totalBurnedRaw += delta.burnedAmount().rawUnits();
-        expectedSupply = delta.supplyAfter();
+        report.m_mintRecordCount += delta.mintRecords().size();
+        report.m_burnRecordCount += delta.burnRecords().size();
     }
 
-    report.m_endingSupply = expectedSupply;
     report.m_totalMinted = utils::Amount::fromRawUnits(totalMintedRaw);
     report.m_totalBurned = utils::Amount::fromRawUnits(totalBurnedRaw);
     report.m_valid = true;
@@ -114,6 +104,8 @@ utils::Amount EpochMonetaryReport::endingSupply() const { return m_endingSupply;
 utils::Amount EpochMonetaryReport::totalMinted() const { return m_totalMinted; }
 utils::Amount EpochMonetaryReport::totalBurned() const { return m_totalBurned; }
 std::size_t EpochMonetaryReport::deltaCount() const { return m_deltaCount; }
+std::size_t EpochMonetaryReport::mintRecordCount() const { return m_mintRecordCount; }
+std::size_t EpochMonetaryReport::burnRecordCount() const { return m_burnRecordCount; }
 const std::string& EpochMonetaryReport::policyVersion() const { return m_policyVersion; }
 
 bool EpochMonetaryReport::isValid() const { return m_valid; }
@@ -130,6 +122,8 @@ std::string EpochMonetaryReport::serialize() const {
         << ";totalMintedRaw=" << m_totalMinted.rawUnits()
         << ";totalBurnedRaw=" << m_totalBurned.rawUnits()
         << ";deltaCount=" << m_deltaCount
+        << ";mintRecordCount=" << m_mintRecordCount
+        << ";burnRecordCount=" << m_burnRecordCount
         << ";policyVersion=" << m_policyVersion
         << ";valid=" << (m_valid ? "1" : "0")
         << "}";

@@ -53,6 +53,33 @@ void testApplyDeltaAdvancesSupply() {
     assert(state.finalizedDeltaCount() == 1);
 }
 
+void testApplyInvalidDeltaThrows() {
+    RuntimeSupplyState state(Amount::fromRawUnits(1000));
+    const nodo::economics::SupplyDelta invalidDelta(
+        1,
+        "",
+        0,
+        Amount::fromRawUnits(1000),
+        Amount::fromRawUnits(0),
+        Amount::fromRawUnits(0),
+        Amount::fromRawUnits(1000),
+        {},
+        {}
+    );
+
+    bool threw = false;
+    try {
+        state.applyFinalizedDelta(invalidDelta);
+    } catch (const std::invalid_argument& e) {
+        threw = true;
+        const std::string msg(e.what());
+        assert(msg.find("invalid delta") != std::string::npos);
+    }
+    assert(threw);
+    assert(state.latestSupply() == Amount::fromRawUnits(1000));
+    assert(state.finalizedDeltaCount() == 0);
+}
+
 void testTwoSequentialDeltas() {
     RuntimeSupplyState state(Amount::fromRawUnits(1000));
     state.applyFinalizedDelta(burnDelta(1, "h1", Amount::fromRawUnits(1000), 20));
@@ -74,7 +101,7 @@ void testSupplyBefore1EqualsSupplyAfter0() {
 void testContinuityBreakThrows() {
     RuntimeSupplyState state(Amount::fromRawUnits(1000));
     state.applyFinalizedDelta(burnDelta(1, "h1", Amount::fromRawUnits(1000), 20));
-    // Wrong supplyBefore for block 2 — should throw.
+    // Wrong supplyBefore for block 2 should throw.
     bool threw = false;
     try {
         state.applyFinalizedDelta(
@@ -100,6 +127,7 @@ void testSerialize() {
 int main() {
     testInitialSupplyEqualsGenesisSupply();
     testApplyDeltaAdvancesSupply();
+    testApplyInvalidDeltaThrows();
     testTwoSequentialDeltas();
     testSupplyBefore1EqualsSupplyAfter0();
     testContinuityBreakThrows();

@@ -16,7 +16,7 @@ namespace nodo::node {
  * Security principle:
  * Only supply transitions that passed MonetaryValidationGate may advance the
  * state. The state is never rolled back except on chain reorganization (not
- * implemented yet — Task 06 will handle reload from disk).
+ * implemented yet; Task 06 will handle reload from disk).
  *
  * After finalization of block N, latestSupply() returns supplyDelta(N).supplyAfter().
  * RuntimeMonetaryValidation uses this as supplyBefore for block N+1.

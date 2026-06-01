@@ -15,10 +15,10 @@ namespace nodo::node {
  * RuntimeMonetaryValidationStatus is the pipeline-level outcome of preparing
  * and running the monetary gate for a candidate block.
  *
- * ACCEPTED                  — gate passed; the candidate may proceed to votes.
- * MONETARY_CONTEXT_UNAVAILABLE — enough information was not available to build a
+ * ACCEPTED                  - gate passed; the candidate may proceed to votes.
+ * MONETARY_CONTEXT_UNAVAILABLE - enough information was not available to build a
  *                               real SupplyDelta; the candidate must be rejected.
- * REJECTED_BY_GATE          — the economics::MonetaryValidationGate rejected the
+ * REJECTED_BY_GATE          - the economics::MonetaryValidationGate rejected the
  *                               candidate's supply delta.
  *
  * Security principle:
@@ -76,9 +76,7 @@ private:
  * economics::MonetaryValidationGate.
  *
  * It derives a real SupplyDelta for a candidate block using:
- *   - the genesis supply as supplyBefore (accurate for the current pipeline
- *     which has no inter-block minting; will be superseded in Task 05 when
- *     SupplyDelta is persisted as a finalized artifact);
+ *   - the latest finalized supply as supplyBefore;
  *   - fee burn amounts derived from the transaction fee total;
  *   - no mint records for regular (non-genesis) blocks.
  *
@@ -87,7 +85,7 @@ private:
  * Security principle:
  * A non-zero feeBurnAmount represents a real supply reduction. The SupplyDelta
  * built here accurately reflects the block's monetary effects for the current
- * pipeline. Returning MONETARY_CONTEXT_UNAVAILABLE is always a rejection — it
+ * pipeline. Returning MONETARY_CONTEXT_UNAVAILABLE is always a rejection; it
  * is never treated as a no-op success.
  */
 class RuntimeMonetaryValidation {
@@ -96,12 +94,12 @@ public:
      * validateCandidate builds the SupplyDelta and runs the monetary gate.
      *
      * Parameters:
-     *   genesisConfig   — provides genesis supply and chain identity.
-     *   candidateBlock  — the block being validated (blockIndex, blockHash, epoch).
-     *   feeBurnAmount   — the portion of fees that will be burned (may be zero).
-     *
-     * The epoch defaults to 0 for all blocks in the current implementation.
-     * Task 05 will introduce proper epoch tracking.
+     *   genesisConfig   - provides genesis supply and chain identity.
+     *   candidateBlock  - the block being validated (blockIndex, blockHash, epoch).
+     *   feeBurnAmount   - the portion of fees that will be burned (may be zero).
+ *
+ * The epoch defaults to 0 for all blocks in the current implementation.
+ * Later monetary tasks will introduce proper epoch tracking.
      */
     /*
      * Full form: uses the provided supplyBefore for cumulative tracking.
@@ -118,7 +116,7 @@ public:
     /*
      * Convenience form: uses genesis supply as supplyBefore.
      * Valid only for the first block after genesis, or in tests.
-     * Do NOT use this for multi-block chains — use the four-argument form.
+     * Do NOT use this for multi-block chains; use the four-argument form.
      */
     static RuntimeMonetaryValidationResult validateCandidate(
         const config::GenesisConfig& genesisConfig,

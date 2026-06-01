@@ -37,6 +37,7 @@ public:
         core::Block block,
         std::string postStateRoot,
         utils::Amount totalFee,
+        economics::SupplyDelta supplyDelta,
         std::vector<RewardDistribution> rewardDistributions,
         std::vector<LockedStakePosition> lockedStakePositions,
         std::vector<SecurityScoreRecord> securityScoreRecords,
@@ -111,13 +112,6 @@ public:
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
     const economics::SupplyDelta& supplyDelta() const;
-
-    /*
-     * Attach the SupplyDelta validated by MonetaryValidationGate.
-     * Must be called once after construction before the artifact is used for
-     * chain audit or supply continuity checks.
-     */
-    void setSupplyDelta(economics::SupplyDelta delta);
 
     bool isValid() const;
     std::string serialize() const;

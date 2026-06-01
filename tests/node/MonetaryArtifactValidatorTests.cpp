@@ -99,6 +99,34 @@ nodo::node::SupplyExpansionRecord makeNoSupplyExpansionRecord() {
     );
 }
 
+nodo::node::MonetaryFirewallAudit makeFirewallAudit(
+    std::int64_t supplyBefore,
+    std::int64_t minted,
+    std::int64_t burned,
+    std::int64_t treasuryDelta,
+    std::int64_t supplyAfter
+) {
+    const nodo::node::MonetaryPolicy policy =
+        nodo::node::MonetaryPolicy::protocolDefault();
+
+    return nodo::node::MonetaryFirewallAudit(
+        "PASS",
+        nodo::node::SupplyLedgerSnapshot(
+            10,
+            nodo::utils::Amount::fromRawUnits(supplyBefore),
+            nodo::utils::Amount::fromRawUnits(minted),
+            nodo::utils::Amount::fromRawUnits(burned),
+            nodo::utils::Amount::fromRawUnits(treasuryDelta),
+            nodo::utils::Amount::fromRawUnits(supplyAfter)
+        ),
+        nodo::utils::Amount::fromRawUnits(1000),
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(minted),
+        policy.deterministicId(),
+        nodo::node::MonetaryFirewall::ZERO_MINT_REASON
+    );
+}
+
 void testValidateSupplyDeltaAcceptsNoOpDelta() {
     const auto delta = nodo::economics::SupplyDelta::noOp(
         10, "artifact-hash-A", 1, nodo::utils::Amount::fromRawUnits(1000)
@@ -241,6 +269,42 @@ void testValidateSupplyDeltaRejectsMonetaryFirewallMismatch() {
     assert(result.reason().find("MonetaryFirewallAudit") != std::string::npos);
 }
 
+void testValidateSupplyDeltaRejectsMonetaryFirewallMintedMismatch() {
+    const auto delta = makeBurnDelta();
+    const auto result =
+        nodo::node::MonetaryArtifactValidator::validateSupplyDeltaConsistencyWithMonetaryFirewallAudit(
+            delta,
+            makeFirewallAudit(1000, 1, 20, 0, 981)
+        );
+
+    assert(!result.accepted());
+    assert(result.reason().find("MonetaryFirewallAudit") != std::string::npos);
+}
+
+void testValidateSupplyDeltaRejectsMonetaryFirewallBurnedMismatch() {
+    const auto delta = makeBurnDelta();
+    const auto result =
+        nodo::node::MonetaryArtifactValidator::validateSupplyDeltaConsistencyWithMonetaryFirewallAudit(
+            delta,
+            makeFirewallAudit(1000, 0, 19, 0, 981)
+        );
+
+    assert(!result.accepted());
+    assert(result.reason().find("MonetaryFirewallAudit") != std::string::npos);
+}
+
+void testValidateSupplyDeltaRejectsMonetaryFirewallSupplyAfterMismatch() {
+    const auto delta = makeBurnDelta();
+    const auto result =
+        nodo::node::MonetaryArtifactValidator::validateSupplyDeltaConsistencyWithMonetaryFirewallAudit(
+            delta,
+            makeFirewallAudit(1000, 0, 20, 0, 979)
+        );
+
+    assert(!result.accepted());
+    assert(result.reason().find("MonetaryFirewallAudit") != std::string::npos);
+}
+
 void testValidateSupplyDeltaAcceptsMonetaryFirewallMatch() {
     const auto delta = makeBurnDelta();
     const nodo::node::MonetaryFirewallAudit matchingAudit =
@@ -274,6 +338,9 @@ int main() {
     testValidateSupplyDeltaAcceptsFeeBurnMatch();
     testValidateSupplyDeltaRejectsSupplyExpansionMismatch();
     testValidateSupplyDeltaRejectsMonetaryFirewallMismatch();
+    testValidateSupplyDeltaRejectsMonetaryFirewallMintedMismatch();
+    testValidateSupplyDeltaRejectsMonetaryFirewallBurnedMismatch();
+    testValidateSupplyDeltaRejectsMonetaryFirewallSupplyAfterMismatch();
     testValidateSupplyDeltaAcceptsMonetaryFirewallMatch();
     return 0;
 }

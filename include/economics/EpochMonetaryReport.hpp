@@ -38,6 +38,8 @@ public:
     utils::Amount totalMinted() const;
     utils::Amount totalBurned() const;
     std::size_t deltaCount() const;
+    std::size_t mintRecordCount() const;
+    std::size_t burnRecordCount() const;
     const std::string& policyVersion() const;
 
     bool isValid() const;
@@ -53,6 +55,8 @@ private:
     utils::Amount m_totalMinted;
     utils::Amount m_totalBurned;
     std::size_t m_deltaCount;
+    std::size_t m_mintRecordCount;
+    std::size_t m_burnRecordCount;
     std::string m_policyVersion;
     bool m_valid;
     std::string m_rejectionReason;

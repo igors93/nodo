@@ -1245,6 +1245,7 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     core::Block block,
     std::string postStateRoot,
     utils::Amount totalFee,
+    economics::SupplyDelta supplyDelta,
     std::vector<RewardDistribution> rewardDistributions,
     std::vector<LockedStakePosition> lockedStakePositions,
     std::vector<SecurityScoreRecord> securityScoreRecords,
@@ -1316,7 +1317,8 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_epochAccountingRecord(std::move(epochAccountingRecord)),
       m_validatorLifecycleSummary(std::move(validatorLifecycleSummary)),
       m_quorumCertificate(std::move(quorumCertificate)),
-      m_finalizedRecord(std::move(finalizedRecord)) {}
+      m_finalizedRecord(std::move(finalizedRecord)),
+      m_supplyDelta(std::move(supplyDelta)) {}
 
 const core::Block& FinalizedBlockArtifact::block() const {
     if (!m_block.has_value()) {
@@ -1472,10 +1474,6 @@ const consensus::FinalizedBlockRecord& FinalizedBlockArtifact::finalizedRecord()
 
 const economics::SupplyDelta& FinalizedBlockArtifact::supplyDelta() const {
     return m_supplyDelta;
-}
-
-void FinalizedBlockArtifact::setSupplyDelta(economics::SupplyDelta delta) {
-    m_supplyDelta = std::move(delta);
 }
 
 bool FinalizedBlockArtifact::isValid() const {
@@ -2395,7 +2393,7 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
     const consensus::FinalizedBlockRecord finalizedRecord =
         consensus::FinalizedBlockRecord::deserialize(document.requireField("finalizedRecord"));
 
-    const economics::SupplyDelta parsedSupplyDelta =
+    economics::SupplyDelta parsedSupplyDelta =
         FinalizedMonetarySectionCodec::decodeSupplyDelta(
             document,
             block.index(),
@@ -3064,6 +3062,7 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         block,
         postStateRoot,
         totalFee,
+        std::move(parsedSupplyDelta),
         rewardDistributions,
         lockedStakePositions,
         securityScoreRecords,
@@ -3099,7 +3098,6 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         quorumCertificate,
         finalizedRecord
     );
-    artifact.setSupplyDelta(std::move(parsedSupplyDelta));
     return artifact;
 }
 

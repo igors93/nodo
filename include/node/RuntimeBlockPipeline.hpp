@@ -34,6 +34,8 @@
 
 namespace nodo::node {
 
+class RuntimeBlockPipeline;
+
 /*
  * RuntimeBlockPipelineConfig controls one local block production/finalization
  * attempt.
@@ -440,15 +442,13 @@ public:
     const ValidatorLifecycleSummary& validatorLifecycleSummary() const;
     const economics::SupplyDelta& supplyDelta() const;
 
-    /*
-     * Set the SupplyDelta validated by MonetaryValidationGate before votes.
-     * Called by the pipeline after successful monetary validation.
-     */
-    void setSupplyDelta(economics::SupplyDelta delta);
-
     std::string serialize() const;
 
 private:
+    friend class RuntimeBlockPipeline;
+
+    void setSupplyDelta(economics::SupplyDelta delta);
+
     RuntimeBlockPipelineStatus m_status;
     std::string m_reason;
 

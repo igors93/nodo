@@ -1353,6 +1353,9 @@ bool RuntimeBlockPipelineResult::finalized() const {
            m_block->isValid() &&
            m_certificate.isStructurallyValid() &&
            m_finalizedRecord.isStructurallyValid() &&
+           m_supplyDelta.isValid() &&
+           m_supplyDelta.blockHeight() == m_block->index() &&
+           m_supplyDelta.blockHash() == m_block->hash() &&
            !m_postStateRoot.empty() &&
            !m_totalFee.isNegative() &&
            feeEconomicsPlanIsValid(
@@ -1741,7 +1744,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
 
     // Pre-vote monetary gate: the candidate must pass monetary validation before
     // any validator votes are built. MONETARY_CONTEXT_UNAVAILABLE is also a
-    // rejection — it is never treated as an implicit success.
+    // rejection; it is never treated as an implicit success.
     // The validated SupplyDelta is preserved and propagated into the finalized result.
     const FeeEconomicBalance preMintFeeBalance =
         FeeEconomics::buildFeeEconomicBalance(
@@ -2066,6 +2069,19 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
+    try {
+        RuntimeSupplyState supplyStateProbe = runtime.supplyState();
+        supplyStateProbe.applyFinalizedDelta(
+            monetaryValidationResult.supplyDelta()
+        );
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            std::string("Supply state continuity check failed before finalization: ") +
+            error.what()
+        );
+    }
+
     const consensus::BlockFinalizationResult finalization =
         consensus::BlockFinalizer::finalizeBlock(
             runtime.mutableBlockchain(),
@@ -2154,15 +2170,17 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             governanceSummary
         );
 
-    // Attach the validated SupplyDelta and advance the supply state.
     finalResult.setSupplyDelta(monetaryValidationResult.supplyDelta());
     try {
         runtime.mutableSupplyState().applyFinalizedDelta(
             monetaryValidationResult.supplyDelta()
         );
-    } catch (const std::exception&) {
-        // Supply state update failure is non-fatal for the current block,
-        // but the continuity invariant will be enforced on the next candidate.
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            std::string("Supply state update failed after finalization: ") +
+            error.what()
+        );
     }
 
     return finalResult;

@@ -33,7 +33,7 @@ void RuntimeSupplyState::applyFinalizedDelta(economics::SupplyDelta delta) {
     }
     if (delta.supplyBefore() != m_latestSupply) {
         throw std::invalid_argument(
-            "RuntimeSupplyState::applyFinalizedDelta: supply continuity break — "
+            "RuntimeSupplyState::applyFinalizedDelta: supply continuity break: "
             "delta.supplyBefore (" + std::to_string(delta.supplyBefore().rawUnits()) +
             ") does not equal latestSupply (" +
             std::to_string(m_latestSupply.rawUnits()) + ")."

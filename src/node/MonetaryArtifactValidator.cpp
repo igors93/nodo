@@ -323,7 +323,20 @@ ArtifactValidationResult MonetaryArtifactValidator::validateSupplyDeltaConsisten
     const MonetaryFirewallAudit& monetaryFirewallAudit
 ) {
     if (!monetaryFirewallAudit.passed()) {
-        return ArtifactValidationResult::acceptedResult();
+        if (monetaryFirewallAudit.status() == "NOT_EVALUATED") {
+            return ArtifactValidationResult::acceptedResult();
+        }
+
+        return ArtifactValidationResult::rejected(
+            "MonetaryArtifactValidator: MonetaryFirewallAudit is invalid "
+            "or did not pass."
+        );
+    }
+
+    if (!monetaryFirewallAudit.isValid()) {
+        return ArtifactValidationResult::rejected(
+            "MonetaryArtifactValidator: MonetaryFirewallAudit is invalid."
+        );
     }
 
     const SupplyLedgerSnapshot& ledger =

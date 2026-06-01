@@ -583,6 +583,29 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
     expectDecodeRejected(
         replaceFirst(
             blockContents,
+            "supplyDelta.blockHeight=1",
+            "supplyDelta.blockHeight=2"
+        ),
+        "Finalized block codec should reject a SupplyDelta block-height mismatch."
+    );
+
+    expectDecodeRejected(
+        replaceFirst(
+            blockContents,
+            "supplyDelta.blockHash=" + pipeline.block().hash(),
+            "supplyDelta.blockHash=tampered-supply-delta-hash"
+        ),
+        "Finalized block codec should reject a SupplyDelta block-hash mismatch."
+    );
+
+    expectDecodeRejected(
+        blockContents + "unexpectedSupplyDeltaField=1\n",
+        "Finalized block codec should reject unexpected artifact fields."
+    );
+
+    expectDecodeRejected(
+        replaceFirst(
+            blockContents,
             FinalizedArtifactSchema::currentSchemaId(),
             "NODO_FINALIZED_BLOCK_V19"
         ),

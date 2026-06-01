@@ -2,7 +2,7 @@
 
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "economics/MonetaryPolicy.hpp"
-#include "economics/SupplyAudit.hpp"
+#include "node/FinalizedSupplyAudit.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 #include "node/RuntimeStateLoader.hpp"
@@ -96,10 +96,10 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
                 genesisSupply
             );
 
-        const economics::SupplySequenceAuditResult supplyAudit =
-            economics::SupplyAudit::auditDeltaSequence(policy, finalizedDeltas);
+        const FinalizedSupplyAuditResult supplyAudit =
+            FinalizedSupplyAudit::auditDeltas(policy, finalizedDeltas);
 
-        if (!supplyAudit.isValid()) {
+        if (!supplyAudit.passed()) {
             return ChainAuditResult::failed(
                 "chain audit: monetary supply continuity failure: " +
                 supplyAudit.reason()

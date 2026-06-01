@@ -20,9 +20,9 @@ nodo::economics::ValidatorStakeState makeStake(
 }
 
 void testBalancedSupplyPasses() {
-    // genesis=1000, rewards=100, burned=50 → effective=1050
+    // genesis=1000, rewards=100, burned=50 => effective=1050
     // bonded=400, slashed=50, treasury=100, free=500
-    // 400+50+100+500 = 1050 ✓
+    // 400+50+100+500 = 1050
     const auto result = nodo::economics::SupplyAudit::audit(
         nodo::utils::Amount::fromRawUnits(1000),
         {makeStake("v-a", 400, 50)},
@@ -35,8 +35,8 @@ void testBalancedSupplyPasses() {
 }
 
 void testMismatchedSupplyFails() {
-    // genesis=1000, rewards=0, burned=0 → effective=1000
-    // bonded=400, slashed=0, treasury=100, free=600 → rhs=1100 ≠ 1000
+    // genesis=1000, rewards=0, burned=0 => effective=1000
+    // bonded=400, slashed=0, treasury=100, free=600 => rhs=1100 != 1000
     const auto result = nodo::economics::SupplyAudit::audit(
         nodo::utils::Amount::fromRawUnits(1000),
         {makeStake("v-a", 400)},
@@ -74,7 +74,7 @@ void testNegativeTreasuryFails() {
 }
 
 void testEmptyStakesAndZeroSupply() {
-    // genesis=0, no stakes, treasury=0, rewards=0, burned=0, free=0 → 0==0 ✓
+    // genesis=0, no stakes, treasury=0, rewards=0, burned=0, free=0 => 0==0
     const auto result = nodo::economics::SupplyAudit::audit(
         nodo::utils::Amount::fromRawUnits(0),
         {},
@@ -115,6 +115,39 @@ nodo::economics::SupplyDelta noOpDelta(
     );
 }
 
+nodo::economics::BurnRecord feeBurn(
+    std::uint64_t height,
+    std::int64_t rawUnits
+) {
+    return nodo::economics::BurnRecord(
+        "fee-burn-" + std::to_string(height),
+        height,
+        1,
+        "nodo_fee_pool",
+        nodo::utils::Amount::fromRawUnits(rawUnits),
+        "fee burn",
+        nodo::economics::BurnType::FEE_BURN
+    );
+}
+
+nodo::economics::SupplyDelta burnDelta(
+    std::uint64_t height,
+    nodo::utils::Amount supplyBefore,
+    std::int64_t rawUnits
+) {
+    return nodo::economics::SupplyDelta(
+        height,
+        "block-hash-" + std::to_string(height),
+        1,
+        supplyBefore,
+        nodo::utils::Amount::fromRawUnits(0),
+        nodo::utils::Amount::fromRawUnits(rawUnits),
+        nodo::utils::Amount::fromRawUnits(supplyBefore.rawUnits() - rawUnits),
+        {},
+        {feeBurn(height, rawUnits)}
+    );
+}
+
 void testDeltaSequenceEmptyAuditFromPolicy() {
     const auto policy = nodo::economics::MonetaryPolicy::localnetDefault(
         "nodo-testnet-1",
@@ -152,6 +185,21 @@ void testDeltaSequenceContinuityFailureRejected() {
     const std::vector<nodo::economics::SupplyDelta> deltas = {
         noOpDelta(1, nodo::utils::Amount::fromRawUnits(1000)),
         noOpDelta(2, nodo::utils::Amount::fromRawUnits(500))  // wrong
+    };
+    const auto result = nodo::economics::SupplyAudit::auditDeltaSequence(policy, deltas);
+    assert(!result.isValid());
+    assert(result.status() == nodo::economics::SupplyAuditStatus::SUPPLY_CONTINUITY_FAILURE);
+    assert(result.failedBlockHeight() == 2);
+}
+
+void testDeltaSequenceRejectsResetToGenesisAfterBurn() {
+    const auto policy = nodo::economics::MonetaryPolicy::localnetDefault(
+        "nodo-testnet-1",
+        nodo::utils::Amount::fromRawUnits(1000)
+    );
+    const std::vector<nodo::economics::SupplyDelta> deltas = {
+        burnDelta(1, nodo::utils::Amount::fromRawUnits(1000), 20),
+        noOpDelta(2, nodo::utils::Amount::fromRawUnits(1000))
     };
     const auto result = nodo::economics::SupplyAudit::auditDeltaSequence(policy, deltas);
     assert(!result.isValid());
@@ -208,6 +256,7 @@ int main() {
     testDeltaSequenceEmptyAuditFromPolicy();
     testDeltaSequenceValidSequence();
     testDeltaSequenceContinuityFailureRejected();
+    testDeltaSequenceRejectsResetToGenesisAfterBurn();
     testDeltaSequenceInvalidDeltaRejected();
     testDeltaSequenceInvalidPolicyRejected();
     testDeltaSequenceResultSerializes();
