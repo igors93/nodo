@@ -1,19 +1,61 @@
-build/
-*.exe
+# Build output directories
+
+/build/
+/build-win/
+/build-*/
+/out/
+/cmake-build-*/
+
+# CMake generated files
+
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+build.ninja
+.ninja_deps
+.ninja_log
+.ninja_lock
+
+# Compiled binaries and objects
+
 *.o
 *.obj
+*.exe
 *.dll
+*.lib
+*.a
 *.pdb
 *.ilk
-.vscode/
-.DS_Store
-__pycache__/
-*.pyc
+
+# Local Nodo runtime data
+
+.nodo/
+.nodo-test/
+
+# Local diagnostics/output data
+
 diagnostics/reports/
+
+# Local editor/system files
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Python cache
+
+**pycache**/
+*.pyc
+
+# Generated data, but keep directory placeholder
 
 data/*
 !data/.gitkeep
 
 # Do not vendor the full blst repository inside Nodo.
+
 # blst must be installed as an external system dependency.
+
 third_party/blst/

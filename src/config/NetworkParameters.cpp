@@ -271,6 +271,46 @@ NetworkParameters NetworkParameters::developmentLocal() {
     );
 }
 
+NetworkParameters NetworkParameters::testnetCandidate() {
+    return NetworkParameters(
+        "nodo-testnet-1",
+        "nodo-testnet-candidate",
+        "nodo/0.1",
+        300,
+        4,
+        2,
+        3,
+        500,
+        64,
+        5000,
+        1000,
+        30,
+        3,
+        "NODO_CRYPTO_SUITE_V1",
+        "NODO_STORAGE_V2"
+    );
+}
+
+NetworkParameters NetworkParameters::mainnetPlaceholder() {
+    return NetworkParameters(
+        "nodo-mainnet-1",
+        "nodo-mainnet",
+        "nodo/0.1",
+        600,
+        7,
+        2,
+        3,
+        250,
+        256,
+        10000,
+        10000,
+        15,
+        6,
+        "NODO_CRYPTO_SUITE_V1",
+        "NODO_STORAGE_V2"
+    );
+}
+
 BootstrapValidatorConfig::BootstrapValidatorConfig()
     : m_validatorPublicKey(),
       m_activationEpoch(0),

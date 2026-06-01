@@ -63,6 +63,8 @@ public:
     std::string serialize() const;
 
     static NetworkParameters developmentLocal();
+    static NetworkParameters testnetCandidate();
+    static NetworkParameters mainnetPlaceholder();
 
 private:
     std::string m_chainId;
