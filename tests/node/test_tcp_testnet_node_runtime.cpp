@@ -1,0 +1,109 @@
+#include "node/TcpTestnetNodeRuntime.hpp"
+
+#include <cassert>
+#include <filesystem>
+#include <iostream>
+
+using namespace nodo;
+
+int main() {
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / "nodo_tcp_testnet_node_runtime_test";
+
+    std::filesystem::remove_all(root);
+
+    node::TcpTestnetNodeRuntime nodeA(
+        node::TcpTestnetNodeRuntimeConfig(
+            "node-a",
+            "127.0.0.1",
+            0,
+            "nodo-localnet",
+            "localnet-chain",
+            "1.0.0",
+            root / "node-a",
+            30,
+            3
+        )
+    );
+
+    node::TcpTestnetNodeRuntime nodeB(
+        node::TcpTestnetNodeRuntimeConfig(
+            "node-b",
+            "127.0.0.1",
+            0,
+            "nodo-localnet",
+            "localnet-chain",
+            "1.0.0",
+            root / "node-b",
+            30,
+            3
+        )
+    );
+
+    assert(nodeA.start().success());
+    assert(nodeB.start().success());
+    assert(nodeA.running());
+    assert(nodeB.running());
+
+    p2p::PeerMetadata peerA(
+        "node-a",
+        nodeA.transport().localEndpoint(),
+        "fingerprint-a",
+        1000,
+        1000,
+        0,
+        false
+    );
+
+    p2p::PeerMetadata peerB(
+        "node-b",
+        nodeB.transport().localEndpoint(),
+        "fingerprint-b",
+        1000,
+        1000,
+        0,
+        false
+    );
+
+    assert(nodeA.addPeer(peerB).success());
+    assert(nodeB.addPeer(peerA).success());
+    assert(nodeA.connectPeer("node-b").success());
+
+    node::ChainStatusMessage status(
+        "nodo-localnet",
+        "localnet-chain",
+        "1.0.0",
+        10,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        10,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+
+    assert(status.isValid());
+
+    const auto broadcastReport = nodeA.broadcastChainStatus(status, 1000);
+    assert(broadcastReport.acceptedCount() == 1);
+
+    (void)nodeA.tick(1000);
+
+    for (int attempt = 0;
+         attempt < 1000 &&
+         nodeB.gossipMesh().inbox().countForType(p2p::NetworkMessageType::CHAIN_STATUS) == 0;
+         ++attempt) {
+        (void)nodeB.tick(1000);
+    }
+
+    assert(nodeB.gossipMesh().inbox().countForType(
+        p2p::NetworkMessageType::CHAIN_STATUS
+    ) == 1);
+
+    nodeA.savePeersToDisk();
+    assert(std::filesystem::exists(nodeA.config().peersFilePath()));
+
+    nodeA.stop();
+    nodeB.stop();
+    std::filesystem::remove_all(root);
+
+    std::cout << "tcp testnet node runtime tests passed\n";
+    return 0;
+}

@@ -1,0 +1,69 @@
+# TCP Testnet Node Runtime
+
+This phase adds the first socket-backed testnet runtime boundary for Nodo.
+
+It does not claim that Nodo is ready for a public mainnet. It gives the project a
+clean way to run multiple local nodes over TCP while preserving the separation
+created by the previous phases:
+
+- protocol messages stay inside `NetworkEnvelope`;
+- gossip continues through `GossipMesh`;
+- delivery happens through the `Transport` interface;
+- TCP framing is canonical and size-limited;
+- peer metadata can be loaded from and saved to a local `peers.conf` file.
+
+## Added modules
+
+- `p2p::TcpTransportFrameCodec`
+- `p2p::TcpTransport`
+- `node::TcpTestnetNodeRuntimeConfig`
+- `node::TcpTestnetPeerFileEntry`
+- `node::TcpTestnetPeerStore`
+- `node::TcpTestnetNodeRuntime`
+
+## What works now
+
+A local testnet runtime can:
+
+1. Bind a node to a TCP port.
+2. Register peer endpoints.
+3. Connect to another local node.
+4. Send canonical transport frames over TCP.
+5. Poll inbound TCP frames without background threads.
+6. Feed accepted messages into the existing gossip mesh.
+7. Persist and reload a simple peer file.
+
+## Why this is synchronous
+
+This runtime intentionally does not start threads. Operators and tests call
+`tick(now)` to flush outbound messages and receive inbound messages.
+
+That makes behavior deterministic, easier to test on low-power machines and safer
+while the protocol is still evolving.
+
+## Peer file format
+
+`peers.conf` uses one peer per line:
+
+```text
+nodeId host port publicKeyFingerprint
+```
+
+Example:
+
+```text
+node-a 127.0.0.1 30333 fingerprint-a
+node-b 127.0.0.1 30334 fingerprint-b
+```
+
+## Not included yet
+
+- encrypted peer channels;
+- authentication during TCP connection setup;
+- persistent block sync over TCP;
+- automatic peer discovery;
+- NAT traversal;
+- bandwidth accounting;
+- production-grade async event loop.
+
+Those should be implemented after this testnet runtime boundary is stable.
