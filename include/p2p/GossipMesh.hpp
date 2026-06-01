@@ -1,0 +1,145 @@
+#ifndef NODO_P2P_GOSSIP_MESH_HPP
+#define NODO_P2P_GOSSIP_MESH_HPP
+
+#include "p2p/InboundMessageValidator.hpp"
+#include "p2p/OutboundMessageQueue.hpp"
+#include "p2p/PeerRegistry.hpp"
+#include "p2p/Transport.hpp"
+
+#include <cstddef>
+#include <cstdint>
+#include <map>
+#include <string>
+#include <vector>
+
+namespace nodo::p2p {
+
+class GossipMeshConfig {
+public:
+    GossipMeshConfig();
+
+    GossipMeshConfig(
+        std::string localNodeId,
+        std::string networkId,
+        std::string chainId,
+        std::string protocolVersion,
+        std::uint32_t defaultTtlSeconds,
+        std::size_t invalidMessageQuarantineThreshold
+    );
+
+    const std::string& localNodeId() const;
+    const std::string& networkId() const;
+    const std::string& chainId() const;
+    const std::string& protocolVersion() const;
+    std::uint32_t defaultTtlSeconds() const;
+    std::size_t invalidMessageQuarantineThreshold() const;
+
+    bool isValid() const;
+
+private:
+    std::string m_localNodeId;
+    std::string m_networkId;
+    std::string m_chainId;
+    std::string m_protocolVersion;
+    std::uint32_t m_defaultTtlSeconds;
+    std::size_t m_invalidMessageQuarantineThreshold;
+};
+
+class GossipDeliveryReport {
+public:
+    GossipDeliveryReport();
+    GossipDeliveryReport(std::size_t acceptedCount, std::size_t rejectedCount);
+
+    std::size_t acceptedCount() const;
+    std::size_t rejectedCount() const;
+    bool allAccepted() const;
+    std::string serialize() const;
+
+private:
+    std::size_t m_acceptedCount;
+    std::size_t m_rejectedCount;
+};
+
+class GossipInbox {
+public:
+    GossipInbox();
+
+    void add(const NetworkEnvelope& envelope);
+
+    std::size_t totalCount() const;
+    std::size_t countForType(NetworkMessageType type) const;
+    std::vector<NetworkEnvelope> messagesForType(NetworkMessageType type) const;
+    std::string serialize() const;
+
+private:
+    std::map<NetworkMessageType, std::vector<NetworkEnvelope>> m_messagesByType;
+};
+
+class GossipMesh {
+public:
+    GossipMesh(
+        GossipMeshConfig config,
+        Transport& transport
+    );
+
+    const GossipMeshConfig& config() const;
+    PeerRegistry& peerRegistry();
+    const PeerRegistry& peerRegistry() const;
+    const GossipInbox& inbox() const;
+
+    PeerRegistryResult registerPeer(PeerMetadata peer);
+
+    TransportResult connectPeer(
+        const std::string& remoteNodeId
+    );
+
+    TransportResult disconnectPeer(
+        const std::string& remoteNodeId
+    );
+
+    NetworkEnvelope createEnvelope(
+        NetworkMessageType type,
+        const std::string& payload,
+        std::int64_t now
+    ) const;
+
+    GossipDeliveryReport broadcast(
+        NetworkMessageType type,
+        const std::string& payload,
+        std::int64_t now
+    );
+
+    GossipDeliveryReport flushOutbound(
+        std::int64_t now
+    );
+
+    GossipDeliveryReport receiveAvailable(
+        std::int64_t now
+    );
+
+    std::size_t invalidMessageCountForPeer(
+        const std::string& nodeId
+    ) const;
+
+private:
+    GossipMeshConfig m_config;
+    Transport& m_transport;
+    PeerRegistry m_peerRegistry;
+    OutboundMessageQueue m_outboundQueue;
+    InboundMessageValidator m_inboundValidator;
+    GossipInbox m_inbox;
+    std::map<std::string, std::size_t> m_invalidMessagesByPeer;
+
+    bool shouldQuarantinePeer(
+        const std::string& nodeId
+    ) const;
+
+    void recordInvalidMessage(
+        const std::string& nodeId,
+        const std::string& reason
+    );
+};
+
+} // namespace nodo::p2p
+
+#endif
