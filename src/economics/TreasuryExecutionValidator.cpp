@@ -1,5 +1,6 @@
 #include "economics/TreasuryExecutionValidator.hpp"
 
+#include "economics/TreasuryGovernanceEvidenceValidator.hpp"
 #include "economics/TreasurySpendValidator.hpp"
 
 #include <utility>
@@ -18,6 +19,10 @@ std::string treasuryExecutionValidationStatusToString(
             return "SPEND_VALIDATOR_REJECTED";
         case TreasuryExecutionValidationStatus::SPEND_RECORD_MISMATCH:
             return "SPEND_RECORD_MISMATCH";
+        case TreasuryExecutionValidationStatus::MISSING_GOVERNANCE_CONTEXT:
+            return "MISSING_GOVERNANCE_CONTEXT";
+        case TreasuryExecutionValidationStatus::INVALID_GOVERNANCE_CONTEXT:
+            return "INVALID_GOVERNANCE_CONTEXT";
         default:
             return "UNKNOWN";
     }
@@ -141,6 +146,28 @@ TreasuryExecutionValidationResult TreasuryExecutionValidator::validateEvidence(
         return TreasuryExecutionValidationResult::rejected(
             TreasuryExecutionValidationStatus::SPEND_RECORD_MISMATCH,
             "TreasuryExecutionValidator: treasuryBalanceAfter mismatch."
+        );
+    }
+
+    // 4. Validate governance context: the approval must have been produced by
+    //    GovernanceApprovalBridge, not forged directly.
+    const GovernanceEvidenceValidationResult govResult =
+        TreasuryGovernanceEvidenceValidator::validateGovernanceContext(evidence);
+
+    if (govResult.status() == GovernanceEvidenceValidationStatus::MISSING_GOVERNANCE_CONTEXT) {
+        return TreasuryExecutionValidationResult::rejected(
+            TreasuryExecutionValidationStatus::MISSING_GOVERNANCE_CONTEXT,
+            "TreasuryExecutionValidator: evidence is missing governance approval context. "
+            "Production treasury evidence must be produced via GovernanceApprovalBridge: " +
+            govResult.reason()
+        );
+    }
+
+    if (!govResult.isAccepted()) {
+        return TreasuryExecutionValidationResult::rejected(
+            TreasuryExecutionValidationStatus::INVALID_GOVERNANCE_CONTEXT,
+            "TreasuryExecutionValidator: governance context validation failed: " +
+            govResult.reason()
         );
     }
 

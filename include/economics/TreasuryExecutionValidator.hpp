@@ -11,7 +11,9 @@ enum class TreasuryExecutionValidationStatus {
     ACCEPTED,
     INVALID_EVIDENCE,
     SPEND_VALIDATOR_REJECTED,
-    SPEND_RECORD_MISMATCH
+    SPEND_RECORD_MISMATCH,
+    MISSING_GOVERNANCE_CONTEXT,
+    INVALID_GOVERNANCE_CONTEXT
 };
 
 std::string treasuryExecutionValidationStatusToString(

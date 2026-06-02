@@ -1,6 +1,10 @@
 #include "node/FinalizedTreasurySection.hpp"
 #include "node/FinalizedTreasurySectionCodec.hpp"
 #include "node/FinalizedTreasurySectionValidator.hpp"
+#include "economics/GovernanceApprovalBridge.hpp"
+#include "economics/GovernanceDecisionRecord.hpp"
+#include "economics/GovernancePolicy.hpp"
+#include "economics/GovernanceProposalEnvelope.hpp"
 #include "economics/TreasuryExecutionEvidence.hpp"
 #include "economics/TreasurySpendRecord.hpp"
 #include "economics/TreasurySpendValidator.hpp"
@@ -12,12 +16,18 @@
 
 namespace {
 
+using nodo::economics::GovernanceApprovalBridge;
+using nodo::economics::GovernanceApprovalContext;
+using nodo::economics::GovernanceDecisionRecord;
+using nodo::economics::GovernanceDecisionStatus;
+using nodo::economics::GovernancePolicy;
+using nodo::economics::GovernanceProposalEnvelope;
 using nodo::economics::TreasuryAccount;
 using nodo::economics::TreasuryApproval;
+using nodo::economics::TreasuryExecutionEvidence;
 using nodo::economics::TreasuryPolicy;
 using nodo::economics::TreasuryProposal;
 using nodo::economics::TreasurySpendRecord;
-using nodo::economics::TreasuryExecutionEvidence;
 using nodo::node::FinalizedTreasurySection;
 using nodo::node::FinalizedTreasurySectionCodec;
 using nodo::node::FinalizedTreasurySectionValidator;
@@ -44,7 +54,7 @@ TreasuryAccount validTreasury(Amount balance = Amount::fromRawUnits(1000000)) {
     );
 }
 
-TreasuryPolicy validPolicy() {
+TreasuryPolicy validSpendPolicy() {
     return TreasuryPolicy(
         "treasury-policy-v1",
         Amount::fromRawUnits(500000), Amount::fromRawUnits(100000),
@@ -52,6 +62,7 @@ TreasuryPolicy validPolicy() {
     );
 }
 
+// Build governance-backed evidence using the canonical bridge path.
 TreasuryExecutionEvidence makeEvidence(
     const std::string& evidenceId,
     const std::string& proposalId,
@@ -64,20 +75,44 @@ TreasuryExecutionEvidence makeEvidence(
         Amount::fromRawUnits(amount),
         "fund validator", 1, 0, "proposer-node"
     );
-    TreasuryApproval approval(
-        "appr-" + proposalId, proposalId, 3,
-        "governance-node", "proof-" + proposalId
+    const auto treasury = validTreasury(Amount::fromRawUnits(balance));
+    const auto spendPolicy = validSpendPolicy();
+
+    // Governance objects — unique governance proposal per treasury proposal.
+    const std::string govPropId = "gov-" + proposalId;
+    const GovernancePolicy govPolicy("governance-v1", 10, 5, true, false);
+    const GovernanceProposalEnvelope envelope(
+        govPropId, "TREASURY_SPEND",
+        proposal, 5, "submitter-node", "governance-v1", "hash-" + proposalId
     );
+    const GovernanceDecisionRecord decision(
+        "dec-" + proposalId, govPropId, "TREASURY_SPEND",
+        GovernanceDecisionStatus::APPROVED,
+        20, "governance-node", "proof-" + proposalId, "governance-v1"
+    );
+
+    const auto bridgeResult = GovernanceApprovalBridge::produceTreasuryApproval(
+        govPolicy, envelope, decision
+    );
+    assert(bridgeResult.isAccepted());
+    const TreasuryApproval& approval = bridgeResult.treasuryApproval();
+
     const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
-        validTreasury(Amount::fromRawUnits(balance)), validPolicy(),
-        proposal, approval, blockHeight, Amount::fromRawUnits(0)
+        treasury, spendPolicy, proposal, approval,
+        blockHeight, Amount::fromRawUnits(0)
     );
     assert(spendResult.accepted());
+
+    GovernanceApprovalContext ctx;
+    ctx.governancePolicy = govPolicy;
+    ctx.governanceProposalEnvelope = envelope;
+    ctx.governanceDecisionRecord = decision;
+
     return TreasuryExecutionEvidence(
-        evidenceId, proposal, approval, validPolicy(),
-        validTreasury(Amount::fromRawUnits(balance)),
-        blockHeight, Amount::fromRawUnits(0),
-        spendResult.spendRecord(), 1900000001
+        evidenceId, proposal, approval, spendPolicy,
+        treasury, blockHeight, Amount::fromRawUnits(0),
+        spendResult.spendRecord(), 1900000001,
+        std::move(ctx)
     );
 }
 
@@ -166,6 +201,7 @@ void testValidatorRejectsSpendWithoutEvidence() {
     assert(!result.reason().empty());
 }
 
+// Governance-backed evidence is accepted by the validator.
 void testValidatorPassesForEvidenceSection() {
     std::vector<TreasuryExecutionEvidence> evidence = {
         makeEvidence("ev-001", "prop-001", 50000)
@@ -174,6 +210,37 @@ void testValidatorPassesForEvidenceSection() {
     const auto result = FinalizedTreasurySectionValidator::validate(section);
     assert(result.passed());
     assert(result.status() == TreasurySectionValidationStatus::VALID);
+}
+
+// Evidence without governance context is rejected by the validator.
+void testValidatorRejectsEvidenceWithoutGovernanceContext() {
+    TreasuryProposal proposal(
+        "prop-001", "recipient-addr",
+        Amount::fromRawUnits(50000),
+        "fund validator", 1, 0, "proposer-node"
+    );
+    const TreasuryApproval directApproval(
+        "appr-001", "prop-001", 3, "governance-node", "manual-proof"
+    );
+    const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
+        validTreasury(), validSpendPolicy(), proposal, directApproval,
+        10, Amount::fromRawUnits(0)
+    );
+    assert(spendResult.accepted());
+
+    std::vector<TreasuryExecutionEvidence> evidence = {
+        TreasuryExecutionEvidence(
+            "ev-no-gov",
+            proposal, directApproval, validSpendPolicy(),
+            validTreasury(), 10, Amount::fromRawUnits(0),
+            spendResult.spendRecord(), 1900000001
+            // no governance context
+        )
+    };
+    const FinalizedTreasurySection section(std::move(evidence));
+    const auto result = FinalizedTreasurySectionValidator::validate(section);
+    assert(!result.passed());
+    assert(result.status() == TreasurySectionValidationStatus::MISSING_GOVERNANCE_CONTEXT);
 }
 
 void testValidatorFailsForInvalidSection() {
@@ -223,6 +290,7 @@ int main() {
     testValidatorPassesForEmptySection();
     testValidatorRejectsSpendWithoutEvidence();
     testValidatorPassesForEvidenceSection();
+    testValidatorRejectsEvidenceWithoutGovernanceContext();
     testValidatorFailsForInvalidSection();
     testCodecRoundTripsEmptySection();
     testCodecRoundTripsLegacySection();

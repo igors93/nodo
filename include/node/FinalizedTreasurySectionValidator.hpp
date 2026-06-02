@@ -13,7 +13,9 @@ enum class TreasurySectionValidationStatus {
     INVALID_SPEND_RECORD,
     SPEND_WITHOUT_EVIDENCE,
     INVALID_EVIDENCE,
-    EVIDENCE_SPEND_MISMATCH
+    EVIDENCE_SPEND_MISMATCH,
+    MISSING_GOVERNANCE_CONTEXT,
+    INVALID_GOVERNANCE_CONTEXT
 };
 
 std::string treasurySectionValidationStatusToString(
@@ -34,6 +36,12 @@ public:
         std::size_t index, std::string reason
     );
     static TreasurySectionValidationResult evidenceSpendMismatch(
+        std::size_t index, std::string reason
+    );
+    static TreasurySectionValidationResult missingGovernanceContext(
+        std::size_t index, std::string reason
+    );
+    static TreasurySectionValidationResult invalidGovernanceContext(
         std::size_t index, std::string reason
     );
 

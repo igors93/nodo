@@ -1,5 +1,7 @@
 #include "node/FinalizedTreasurySectionValidator.hpp"
 
+#include "economics/TreasuryGovernanceEvidenceValidator.hpp"
+
 #include <utility>
 
 namespace nodo::node {
@@ -20,6 +22,10 @@ std::string treasurySectionValidationStatusToString(
             return "INVALID_EVIDENCE";
         case TreasurySectionValidationStatus::EVIDENCE_SPEND_MISMATCH:
             return "EVIDENCE_SPEND_MISMATCH";
+        case TreasurySectionValidationStatus::MISSING_GOVERNANCE_CONTEXT:
+            return "MISSING_GOVERNANCE_CONTEXT";
+        case TreasurySectionValidationStatus::INVALID_GOVERNANCE_CONTEXT:
+            return "INVALID_GOVERNANCE_CONTEXT";
         default:
             return "UNKNOWN";
     }
@@ -84,6 +90,26 @@ TreasurySectionValidationResult TreasurySectionValidationResult::evidenceSpendMi
     return r;
 }
 
+TreasurySectionValidationResult TreasurySectionValidationResult::missingGovernanceContext(
+    std::size_t index, std::string reason
+) {
+    TreasurySectionValidationResult r;
+    r.m_status = TreasurySectionValidationStatus::MISSING_GOVERNANCE_CONTEXT;
+    r.m_reason = "evidence at index " + std::to_string(index) +
+                 " is missing governance context: " + std::move(reason);
+    return r;
+}
+
+TreasurySectionValidationResult TreasurySectionValidationResult::invalidGovernanceContext(
+    std::size_t index, std::string reason
+) {
+    TreasurySectionValidationResult r;
+    r.m_status = TreasurySectionValidationStatus::INVALID_GOVERNANCE_CONTEXT;
+    r.m_reason = "evidence at index " + std::to_string(index) +
+                 " has invalid governance context: " + std::move(reason);
+    return r;
+}
+
 bool TreasurySectionValidationResult::passed() const {
     return m_status == TreasurySectionValidationStatus::VALID;
 }
@@ -121,12 +147,30 @@ TreasurySectionValidationResult FinalizedTreasurySectionValidator::validate(
         );
     }
 
-    // Validate each evidence entry individually.
+    // Validate each evidence entry: structural validity and governance context.
     for (std::size_t i = 0; i < section.executionEvidence().size(); ++i) {
         const auto& ev = section.executionEvidence()[i];
         if (!ev.isValid()) {
             return TreasurySectionValidationResult::invalidEvidence(
                 i, ev.rejectionReason()
+            );
+        }
+
+        // Production evidence must carry governance approval context proving
+        // the TreasuryApproval was produced by GovernanceApprovalBridge.
+        const auto govResult =
+            economics::TreasuryGovernanceEvidenceValidator::validateGovernanceContext(ev);
+
+        if (govResult.status() ==
+            economics::GovernanceEvidenceValidationStatus::MISSING_GOVERNANCE_CONTEXT) {
+            return TreasurySectionValidationResult::missingGovernanceContext(
+                i, govResult.reason()
+            );
+        }
+
+        if (!govResult.isAccepted()) {
+            return TreasurySectionValidationResult::invalidGovernanceContext(
+                i, govResult.reason()
             );
         }
     }

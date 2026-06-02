@@ -15,6 +15,8 @@ TreasuryExecutionEvidence::TreasuryExecutionEvidence()
       m_epochSpentSoFar(utils::Amount::fromRawUnits(0)),
       m_spendRecord(),
       m_createdAt(0),
+      m_hasGovernanceContext(false),
+      m_governanceContext(),
       m_validated(false),
       m_valid(false),
       m_rejectionReason("TreasuryExecutionEvidence: default-constructed, not valid.") {}
@@ -39,6 +41,35 @@ TreasuryExecutionEvidence::TreasuryExecutionEvidence(
       m_epochSpentSoFar(epochSpentSoFar),
       m_spendRecord(std::move(spendRecord)),
       m_createdAt(createdAt),
+      m_hasGovernanceContext(false),
+      m_governanceContext(),
+      m_validated(false),
+      m_valid(false),
+      m_rejectionReason("") {}
+
+TreasuryExecutionEvidence::TreasuryExecutionEvidence(
+    std::string evidenceId,
+    TreasuryProposal proposal,
+    TreasuryApproval approval,
+    TreasuryPolicy policy,
+    TreasuryAccount treasuryAccountBefore,
+    std::uint64_t currentBlockHeight,
+    utils::Amount epochSpentSoFar,
+    TreasurySpendRecord spendRecord,
+    std::int64_t createdAt,
+    GovernanceApprovalContext governanceContext
+)
+    : m_evidenceId(std::move(evidenceId)),
+      m_proposal(std::move(proposal)),
+      m_approval(std::move(approval)),
+      m_policy(std::move(policy)),
+      m_treasuryAccountBefore(std::move(treasuryAccountBefore)),
+      m_currentBlockHeight(currentBlockHeight),
+      m_epochSpentSoFar(epochSpentSoFar),
+      m_spendRecord(std::move(spendRecord)),
+      m_createdAt(createdAt),
+      m_hasGovernanceContext(true),
+      m_governanceContext(std::move(governanceContext)),
       m_validated(false),
       m_valid(false),
       m_rejectionReason("") {}
@@ -47,11 +78,25 @@ const std::string& TreasuryExecutionEvidence::evidenceId() const { return m_evid
 const TreasuryProposal& TreasuryExecutionEvidence::proposal() const { return m_proposal; }
 const TreasuryApproval& TreasuryExecutionEvidence::approval() const { return m_approval; }
 const TreasuryPolicy& TreasuryExecutionEvidence::policy() const { return m_policy; }
-const TreasuryAccount& TreasuryExecutionEvidence::treasuryAccountBefore() const { return m_treasuryAccountBefore; }
-std::uint64_t TreasuryExecutionEvidence::currentBlockHeight() const { return m_currentBlockHeight; }
+const TreasuryAccount& TreasuryExecutionEvidence::treasuryAccountBefore() const {
+    return m_treasuryAccountBefore;
+}
+std::uint64_t TreasuryExecutionEvidence::currentBlockHeight() const {
+    return m_currentBlockHeight;
+}
 utils::Amount TreasuryExecutionEvidence::epochSpentSoFar() const { return m_epochSpentSoFar; }
-const TreasurySpendRecord& TreasuryExecutionEvidence::spendRecord() const { return m_spendRecord; }
+const TreasurySpendRecord& TreasuryExecutionEvidence::spendRecord() const {
+    return m_spendRecord;
+}
 std::int64_t TreasuryExecutionEvidence::createdAt() const { return m_createdAt; }
+
+bool TreasuryExecutionEvidence::hasGovernanceContext() const {
+    return m_hasGovernanceContext;
+}
+
+const GovernanceApprovalContext& TreasuryExecutionEvidence::governanceContext() const {
+    return m_governanceContext;
+}
 
 bool TreasuryExecutionEvidence::isValid() const {
     if (!m_validated) {
@@ -203,12 +248,20 @@ std::string TreasuryExecutionEvidence::serialize() const {
         << ";currentBlockHeight=" << m_currentBlockHeight
         << ";epochSpentSoFarRawUnits=" << m_epochSpentSoFar.rawUnits()
         << ";createdAt=" << m_createdAt
+        << ";hasGovernanceContext=" << (m_hasGovernanceContext ? "1" : "0")
         << ";proposal=" << m_proposal.serialize()
         << ";approval=" << m_approval.serialize()
         << ";policy=" << m_policy.serialize()
         << ";treasuryAccountBefore=" << m_treasuryAccountBefore.serialize()
-        << ";spend=" << m_spendRecord.serialize()
-        << "}";
+        << ";spend=" << m_spendRecord.serialize();
+
+    if (m_hasGovernanceContext) {
+        oss << ";governancePolicy=" << m_governanceContext.governancePolicy.serialize()
+            << ";governanceEnvelope=" << m_governanceContext.governanceProposalEnvelope.serialize()
+            << ";governanceDecision=" << m_governanceContext.governanceDecisionRecord.serialize();
+    }
+
+    oss << "}";
     return oss.str();
 }
 
