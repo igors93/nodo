@@ -1,6 +1,8 @@
 #include "node/GovernanceLifecycleCodec.hpp"
 
 #include "economics/GovernanceDecisionBuilder.hpp"
+#include "economics/GovernanceLifecycleState.hpp"
+#include "economics/GovernanceTransitionProof.hpp"
 
 #include <limits>
 #include <stdexcept>
@@ -138,6 +140,7 @@ void addLifecycleAllowed(
     allowed.insert(prefix + "lifecycleId");
     allowed.insert(prefix + "createdAtBlock");
     allowed.insert(prefix + "finalizedAtBlock");
+    allowed.insert(prefix + "declaredCurrentState");
 
     const std::string gp = prefix + "governancePolicy.";
     allowed.insert(gp + "policyVersion");
@@ -163,6 +166,27 @@ void addLifecycleAllowed(
     allowed.insert(ep + "summaryHash");
     addTreasuryProposalAllowed(ep + "treasuryProposal.", allowed);
 
+    // Transition history.
+    allowed.insert(prefix + "transitionCount");
+    const std::size_t transitionCount = static_cast<std::size_t>(
+        parseU64(
+            doc.requireField(prefix + "transitionCount"),
+            prefix + "transitionCount"
+        )
+    );
+    for (std::size_t i = 0; i < transitionCount; ++i) {
+        const std::string tp = prefix + "transition." + std::to_string(i) + ".";
+        allowed.insert(tp + "transitionId");
+        allowed.insert(tp + "governanceProposalId");
+        allowed.insert(tp + "fromState");
+        allowed.insert(tp + "toState");
+        allowed.insert(tp + "transitionBlock");
+        allowed.insert(tp + "actorId");
+        allowed.insert(tp + "reason");
+        allowed.insert(tp + "transitionProof");
+        allowed.insert(tp + "policyVersion");
+    }
+
     allowed.insert(prefix + "voteCount");
     const std::size_t voteCount = static_cast<std::size_t>(
         parseU64(doc.requireField(prefix + "voteCount"), prefix + "voteCount")
@@ -182,20 +206,20 @@ void addLifecycleAllowed(
         allowed.insert(votePrefix + "voteProof");
     }
 
-    const std::string tp = prefix + "tally.";
-    allowed.insert(tp + "governanceProposalId");
-    allowed.insert(tp + "policyVersion");
-    allowed.insert(tp + "totalVotingPowerRawUnits");
-    allowed.insert(tp + "yesVotingPowerRawUnits");
-    allowed.insert(tp + "noVotingPowerRawUnits");
-    allowed.insert(tp + "abstainVotingPowerRawUnits");
-    allowed.insert(tp + "yesCount");
-    allowed.insert(tp + "noCount");
-    allowed.insert(tp + "abstainCount");
-    allowed.insert(tp + "quorumMet");
-    allowed.insert(tp + "approvalThresholdMet");
-    allowed.insert(tp + "approved");
-    allowed.insert(tp + "tallyProof");
+    const std::string tallyp = prefix + "tally.";
+    allowed.insert(tallyp + "governanceProposalId");
+    allowed.insert(tallyp + "policyVersion");
+    allowed.insert(tallyp + "totalVotingPowerRawUnits");
+    allowed.insert(tallyp + "yesVotingPowerRawUnits");
+    allowed.insert(tallyp + "noVotingPowerRawUnits");
+    allowed.insert(tallyp + "abstainVotingPowerRawUnits");
+    allowed.insert(tallyp + "yesCount");
+    allowed.insert(tallyp + "noCount");
+    allowed.insert(tallyp + "abstainCount");
+    allowed.insert(tallyp + "quorumMet");
+    allowed.insert(tallyp + "approvalThresholdMet");
+    allowed.insert(tallyp + "approved");
+    allowed.insert(tallyp + "tallyProof");
 
     const std::string dp = prefix + "decision.";
     allowed.insert(dp + "decisionId");
@@ -279,6 +303,10 @@ void GovernanceLifecycleCodec::appendFields(
         prefix + "finalizedAtBlock",
         std::to_string(lifecycle.finalizedAtBlock())
     );
+    fields.emplace_back(
+        prefix + "declaredCurrentState",
+        economics::governanceLifecycleStateToString(lifecycle.declaredCurrentState())
+    );
 
     const economics::GovernancePolicy& gp = lifecycle.governancePolicy();
     const std::string gpp = prefix + "governancePolicy.";
@@ -342,6 +370,36 @@ void GovernanceLifecycleCodec::appendFields(
         fields
     );
 
+    // Transition history.
+    const auto& transitions = lifecycle.transitionHistory();
+    fields.emplace_back(
+        prefix + "transitionCount",
+        std::to_string(transitions.size())
+    );
+    for (std::size_t i = 0; i < transitions.size(); ++i) {
+        const economics::GovernanceLifecycleTransition& t = transitions[i];
+        const std::string tp = prefix + "transition." + std::to_string(i) + ".";
+        fields.emplace_back(tp + "transitionId", t.transitionId());
+        fields.emplace_back(tp + "governanceProposalId", t.governanceProposalId());
+        fields.emplace_back(
+            tp + "fromState",
+            economics::governanceLifecycleStateToString(t.fromState())
+        );
+        fields.emplace_back(
+            tp + "toState",
+            economics::governanceLifecycleStateToString(t.toState())
+        );
+        fields.emplace_back(
+            tp + "transitionBlock",
+            std::to_string(t.transitionBlock())
+        );
+        fields.emplace_back(tp + "actorId", t.actorId());
+        // Empty reason is encoded as "-" because the codec rejects empty field values.
+        fields.emplace_back(tp + "reason", t.reason().empty() ? "-" : t.reason());
+        fields.emplace_back(tp + "transitionProof", t.transitionProof());
+        fields.emplace_back(tp + "policyVersion", t.policyVersion());
+    }
+
     fields.emplace_back(
         prefix + "voteCount",
         std::to_string(lifecycle.voteEvidenceList().size())
@@ -380,35 +438,35 @@ void GovernanceLifecycleCodec::appendFields(
     }
 
     const economics::GovernanceTallyReport& tally = lifecycle.tallyReport();
-    const std::string tp = prefix + "tally.";
-    fields.emplace_back(tp + "governanceProposalId", tally.governanceProposalId());
-    fields.emplace_back(tp + "policyVersion", tally.policyVersion());
+    const std::string tallyp = prefix + "tally.";
+    fields.emplace_back(tallyp + "governanceProposalId", tally.governanceProposalId());
+    fields.emplace_back(tallyp + "policyVersion", tally.policyVersion());
     fields.emplace_back(
-        tp + "totalVotingPowerRawUnits",
+        tallyp + "totalVotingPowerRawUnits",
         std::to_string(tally.totalVotingPower().rawUnits())
     );
     fields.emplace_back(
-        tp + "yesVotingPowerRawUnits",
+        tallyp + "yesVotingPowerRawUnits",
         std::to_string(tally.yesVotingPower().rawUnits())
     );
     fields.emplace_back(
-        tp + "noVotingPowerRawUnits",
+        tallyp + "noVotingPowerRawUnits",
         std::to_string(tally.noVotingPower().rawUnits())
     );
     fields.emplace_back(
-        tp + "abstainVotingPowerRawUnits",
+        tallyp + "abstainVotingPowerRawUnits",
         std::to_string(tally.abstainVotingPower().rawUnits())
     );
-    fields.emplace_back(tp + "yesCount", std::to_string(tally.yesCount()));
-    fields.emplace_back(tp + "noCount", std::to_string(tally.noCount()));
-    fields.emplace_back(tp + "abstainCount", std::to_string(tally.abstainCount()));
-    fields.emplace_back(tp + "quorumMet", tally.quorumMet() ? "1" : "0");
+    fields.emplace_back(tallyp + "yesCount", std::to_string(tally.yesCount()));
+    fields.emplace_back(tallyp + "noCount", std::to_string(tally.noCount()));
+    fields.emplace_back(tallyp + "abstainCount", std::to_string(tally.abstainCount()));
+    fields.emplace_back(tallyp + "quorumMet", tally.quorumMet() ? "1" : "0");
     fields.emplace_back(
-        tp + "approvalThresholdMet",
+        tallyp + "approvalThresholdMet",
         tally.approvalThresholdMet() ? "1" : "0"
     );
-    fields.emplace_back(tp + "approved", tally.approved() ? "1" : "0");
-    fields.emplace_back(tp + "tallyProof", tally.tallyProof());
+    fields.emplace_back(tallyp + "approved", tally.approved() ? "1" : "0");
+    fields.emplace_back(tallyp + "tallyProof", tally.tallyProof());
 
     const economics::GovernanceDecisionRecord& decision =
         lifecycle.decisionRecord();
@@ -501,6 +559,66 @@ economics::GovernanceLifecycleRecord GovernanceLifecycleCodec::decodeFromDocumen
         doc.requireField(prefix + "proposalEnvelope.summaryHash")
     );
 
+    // Decode declared current state.
+    economics::GovernanceLifecycleState declaredCurrentState =
+        economics::GovernanceLifecycleState::DRAFT;
+    if (!economics::governanceLifecycleStateFromString(
+            doc.requireField(prefix + "declaredCurrentState"),
+            declaredCurrentState)) {
+        throw std::runtime_error(
+            "GovernanceLifecycleCodec: invalid declaredCurrentState."
+        );
+    }
+
+    // Decode transition history.
+    const std::size_t transitionCount = static_cast<std::size_t>(
+        parseU64(
+            doc.requireField(prefix + "transitionCount"),
+            prefix + "transitionCount"
+        )
+    );
+    std::vector<economics::GovernanceLifecycleTransition> transitions;
+    transitions.reserve(transitionCount);
+    for (std::size_t i = 0; i < transitionCount; ++i) {
+        const std::string tp = prefix + "transition." + std::to_string(i) + ".";
+
+        economics::GovernanceLifecycleState fromState =
+            economics::GovernanceLifecycleState::DRAFT;
+        if (!economics::governanceLifecycleStateFromString(
+                doc.requireField(tp + "fromState"),
+                fromState)) {
+            throw std::runtime_error(
+                "GovernanceLifecycleCodec: invalid fromState at transition[" +
+                std::to_string(i) + "]."
+            );
+        }
+
+        economics::GovernanceLifecycleState toState =
+            economics::GovernanceLifecycleState::DRAFT;
+        if (!economics::governanceLifecycleStateFromString(
+                doc.requireField(tp + "toState"),
+                toState)) {
+            throw std::runtime_error(
+                "GovernanceLifecycleCodec: invalid toState at transition[" +
+                std::to_string(i) + "]."
+            );
+        }
+
+        const std::string reasonRaw = doc.requireField(tp + "reason");
+        const std::string reason = (reasonRaw == "-") ? "" : reasonRaw;
+        transitions.emplace_back(
+            doc.requireField(tp + "transitionId"),
+            doc.requireField(tp + "governanceProposalId"),
+            fromState,
+            toState,
+            parseU64(doc.requireField(tp + "transitionBlock"), tp + "transitionBlock"),
+            doc.requireField(tp + "actorId"),
+            reason,
+            doc.requireField(tp + "transitionProof"),
+            doc.requireField(tp + "policyVersion")
+        );
+    }
+
     const std::size_t voteCount = static_cast<std::size_t>(
         parseU64(doc.requireField(prefix + "voteCount"), prefix + "voteCount")
     );
@@ -545,36 +663,36 @@ economics::GovernanceLifecycleRecord GovernanceLifecycleCodec::decodeFromDocumen
         );
     }
 
-    const std::string tp = prefix + "tally.";
+    const std::string tallyp = prefix + "tally.";
     economics::GovernanceTallyReport tally(
-        doc.requireField(tp + "governanceProposalId"),
-        doc.requireField(tp + "policyVersion"),
+        doc.requireField(tallyp + "governanceProposalId"),
+        doc.requireField(tallyp + "policyVersion"),
         parseU64(
-            doc.requireField(tp + "totalVotingPowerRawUnits"),
-            tp + "totalVotingPowerRawUnits"
+            doc.requireField(tallyp + "totalVotingPowerRawUnits"),
+            tallyp + "totalVotingPowerRawUnits"
         ),
         parseU64(
-            doc.requireField(tp + "yesVotingPowerRawUnits"),
-            tp + "yesVotingPowerRawUnits"
+            doc.requireField(tallyp + "yesVotingPowerRawUnits"),
+            tallyp + "yesVotingPowerRawUnits"
         ),
         parseU64(
-            doc.requireField(tp + "noVotingPowerRawUnits"),
-            tp + "noVotingPowerRawUnits"
+            doc.requireField(tallyp + "noVotingPowerRawUnits"),
+            tallyp + "noVotingPowerRawUnits"
         ),
         parseU64(
-            doc.requireField(tp + "abstainVotingPowerRawUnits"),
-            tp + "abstainVotingPowerRawUnits"
+            doc.requireField(tallyp + "abstainVotingPowerRawUnits"),
+            tallyp + "abstainVotingPowerRawUnits"
         ),
-        parseU64(doc.requireField(tp + "yesCount"), tp + "yesCount"),
-        parseU64(doc.requireField(tp + "noCount"), tp + "noCount"),
-        parseU64(doc.requireField(tp + "abstainCount"), tp + "abstainCount"),
-        parseBool(doc.requireField(tp + "quorumMet"), tp + "quorumMet"),
+        parseU64(doc.requireField(tallyp + "yesCount"), tallyp + "yesCount"),
+        parseU64(doc.requireField(tallyp + "noCount"), tallyp + "noCount"),
+        parseU64(doc.requireField(tallyp + "abstainCount"), tallyp + "abstainCount"),
+        parseBool(doc.requireField(tallyp + "quorumMet"), tallyp + "quorumMet"),
         parseBool(
-            doc.requireField(tp + "approvalThresholdMet"),
-            tp + "approvalThresholdMet"
+            doc.requireField(tallyp + "approvalThresholdMet"),
+            tallyp + "approvalThresholdMet"
         ),
-        parseBool(doc.requireField(tp + "approved"), tp + "approved"),
-        doc.requireField(tp + "tallyProof")
+        parseBool(doc.requireField(tallyp + "approved"), tallyp + "approved"),
+        doc.requireField(tallyp + "tallyProof")
     );
 
     economics::GovernanceDecisionStatus decisionStatus =
@@ -612,7 +730,9 @@ economics::GovernanceLifecycleRecord GovernanceLifecycleCodec::decodeFromDocumen
         parseU64(doc.requireField(prefix + "createdAtBlock"),
                  prefix + "createdAtBlock"),
         parseU64(doc.requireField(prefix + "finalizedAtBlock"),
-                 prefix + "finalizedAtBlock")
+                 prefix + "finalizedAtBlock"),
+        declaredCurrentState,
+        std::move(transitions)
     );
 }
 

@@ -4,6 +4,9 @@
 #include "economics/GovernanceApprovalBridge.hpp"
 #include "economics/GovernanceDecisionBuilder.hpp"
 #include "economics/GovernanceLifecycleRecord.hpp"
+#include "economics/GovernanceLifecycleState.hpp"
+#include "economics/GovernanceLifecycleTransition.hpp"
+#include "economics/GovernanceTransitionProof.hpp"
 #include "economics/GovernanceVoteProof.hpp"
 #include "economics/GovernanceVoteSetAudit.hpp"
 #include "economics/TreasuryExecutionEvidence.hpp"
@@ -158,6 +161,44 @@ inline std::vector<economics::GovernanceVoteEvidence> validVotes(
     };
 }
 
+// Build canonical transition history for a lifecycle ending at DECIDED_APPROVED.
+// Block layout:
+//   5  DRAFT -> SUBMITTED  (submittedAtBlock from envelope)
+//   6  SUBMITTED -> REVIEW
+//   10 REVIEW -> VOTING
+//   18 VOTING -> TALLYING
+//   decidedAtBlock TALLYING -> DECIDED_APPROVED
+inline std::vector<economics::GovernanceLifecycleTransition> validTransitionHistory(
+    const std::string& governanceProposalId = "gov-prop-001",
+    const std::string& policyVersion = "governance-v1",
+    std::uint64_t decidedAtBlock = 20
+) {
+    using S = economics::GovernanceLifecycleState;
+    auto makeTransition = [&](
+        const std::string& id,
+        S from,
+        S to,
+        std::uint64_t block,
+        const std::string& actor,
+        const std::string& reason = ""
+    ) {
+        const std::string proof = economics::GovernanceTransitionProof::build(
+            governanceProposalId, id, from, to, block, actor, policyVersion
+        );
+        return economics::GovernanceLifecycleTransition(
+            id, governanceProposalId, from, to, block, actor, reason, proof, policyVersion
+        );
+    };
+
+    return {
+        makeTransition("trans-001", S::DRAFT,     S::SUBMITTED,        5,              "submitter-node"),
+        makeTransition("trans-002", S::SUBMITTED, S::REVIEW,           6,              "governance-node"),
+        makeTransition("trans-003", S::REVIEW,    S::VOTING,           10,             "governance-node"),
+        makeTransition("trans-004", S::VOTING,    S::TALLYING,         18,             "governance-node"),
+        makeTransition("trans-005", S::TALLYING,  S::DECIDED_APPROVED, decidedAtBlock, "governance-node"),
+    };
+}
+
 inline economics::GovernanceLifecycleRecord validLifecycle(
     const std::string& lifecycleId = "lifecycle-001",
     const std::string& proposalId = "prop-001",
@@ -195,6 +236,9 @@ inline economics::GovernanceLifecycleRecord validLifecycle(
         );
     assert(decisionBuild.built());
 
+    std::vector<economics::GovernanceLifecycleTransition> transitions =
+        validTransitionHistory(governanceProposalId, "governance-v1", decidedAtBlock);
+
     economics::GovernanceLifecycleRecord lifecycle(
         lifecycleId,
         envelope,
@@ -204,7 +248,9 @@ inline economics::GovernanceLifecycleRecord validLifecycle(
         tally,
         decisionBuild.decisionRecord(),
         5,
-        decidedAtBlock
+        decidedAtBlock,
+        economics::GovernanceLifecycleState::DECIDED_APPROVED,
+        std::move(transitions)
     );
     assert(lifecycle.isValid());
     return lifecycle;

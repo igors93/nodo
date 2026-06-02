@@ -156,6 +156,8 @@ void testOldBridgeOnlyApprovalRejectedInProduction() {
            result.status() == GovernanceEvidenceValidationStatus::APPROVAL_ID_MISMATCH);
 }
 
+// Forged vote proof makes the lifecycle structurally invalid at construction time.
+// The bridge rejects it because lifecycle.isValid() == false.
 void testForgedVoteProofRejected() {
     auto votes = validVotes();
     const GovernanceVoteRecord forgedRecord(
@@ -176,16 +178,21 @@ void testForgedVoteProofRejected() {
         forgedRecord
     );
 
+    // votes[0] is individually invalid (forged proof), so the lifecycle constructor
+    // rejects it at the vote evidence validation step.
+    const auto base = validLifecycle();
     const auto lifecycle = GovernanceLifecycleRecord(
         "lifecycle-forged-vote",
         nodo::tests::fixtures::validEnvelope(),
         validGovernancePolicy(),
         validVotingPolicy(),
         votes,
-        validLifecycle().tallyReport(),
-        validLifecycle().decisionRecord(),
+        base.tallyReport(),
+        base.decisionRecord(),
         5,
-        20
+        20,
+        base.declaredCurrentState(),
+        base.transitionHistory()
     );
     assert(!lifecycle.isValid());
     const auto bridgeResult =
@@ -234,6 +241,8 @@ void testTamperedTallyRejected() {
     );
     assert(tamperedTally.isValid());
 
+    // The constructor validates transition history independently from tally consistency.
+    // A lifecycle with a tampered tally is structurally valid until the verifier checks it.
     const GovernanceLifecycleRecord tamperedLifecycle(
         "lifecycle-tampered-tally",
         lifecycle.proposalEnvelope(),
@@ -243,7 +252,9 @@ void testTamperedTallyRejected() {
         tamperedTally,
         lifecycle.decisionRecord(),
         lifecycle.createdAtBlock(),
-        lifecycle.finalizedAtBlock()
+        lifecycle.finalizedAtBlock(),
+        lifecycle.declaredCurrentState(),
+        lifecycle.transitionHistory()
     );
     assert(tamperedLifecycle.isValid());
 
@@ -268,6 +279,8 @@ void testTamperedDecisionRejected() {
         lifecycle.decisionRecord().policyVersion()
     );
 
+    // The constructor does not check that decision status matches tally.approved.
+    // A lifecycle with a tampered decision status is structurally valid until the verifier.
     const GovernanceLifecycleRecord tamperedLifecycle(
         "lifecycle-tampered-decision",
         lifecycle.proposalEnvelope(),
@@ -277,7 +290,9 @@ void testTamperedDecisionRejected() {
         lifecycle.tallyReport(),
         tamperedDecision,
         lifecycle.createdAtBlock(),
-        lifecycle.finalizedAtBlock()
+        lifecycle.finalizedAtBlock(),
+        lifecycle.declaredCurrentState(),
+        lifecycle.transitionHistory()
     );
     assert(tamperedLifecycle.isValid());
 

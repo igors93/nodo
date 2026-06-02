@@ -10,6 +10,7 @@ namespace nodo::economics {
 enum class GovernanceLifecycleVerificationStatus {
     VERIFIED,
     INVALID_LIFECYCLE,
+    TRANSITION_AUDIT_FAILED,
     VOTE_AUDIT_FAILED,
     TALLY_MISMATCH,
     DECISION_AUDIT_FAILED

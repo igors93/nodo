@@ -1,6 +1,7 @@
 #include "economics/GovernanceLifecycleVerifier.hpp"
 
 #include "economics/GovernanceDecisionAudit.hpp"
+#include "economics/GovernanceLifecycleTransitionAudit.hpp"
 #include "economics/GovernanceTallyReport.hpp"
 #include "economics/GovernanceVoteSetAudit.hpp"
 
@@ -16,6 +17,8 @@ std::string governanceLifecycleVerificationStatusToString(
             return "VERIFIED";
         case GovernanceLifecycleVerificationStatus::INVALID_LIFECYCLE:
             return "INVALID_LIFECYCLE";
+        case GovernanceLifecycleVerificationStatus::TRANSITION_AUDIT_FAILED:
+            return "TRANSITION_AUDIT_FAILED";
         case GovernanceLifecycleVerificationStatus::VOTE_AUDIT_FAILED:
             return "VOTE_AUDIT_FAILED";
         case GovernanceLifecycleVerificationStatus::TALLY_MISMATCH:
@@ -91,6 +94,36 @@ GovernanceLifecycleVerificationResult GovernanceLifecycleVerifier::verify(
             GovernanceLifecycleVerificationStatus::INVALID_LIFECYCLE,
             "GovernanceLifecycleVerifier: lifecycle is invalid: " +
             lifecycle.rejectionReason()
+        );
+    }
+
+    // Re-run transition audit independently of what the constructor already validated.
+    // This provides defense-in-depth: even if a lifecycle object were constructed
+    // through a non-standard path, the verifier enforces the same rules.
+    const GovernanceLifecycleTransitionAuditResult transitionAudit =
+        GovernanceLifecycleTransitionAudit::audit(
+            lifecycle.transitionHistory(),
+            lifecycle.proposalEnvelope().governanceProposalId(),
+            lifecycle.governancePolicy().policyVersion()
+        );
+
+    if (!transitionAudit.accepted()) {
+        return GovernanceLifecycleVerificationResult::rejected(
+            GovernanceLifecycleVerificationStatus::TRANSITION_AUDIT_FAILED,
+            "GovernanceLifecycleVerifier: transition audit failed: " +
+            transitionAudit.reason()
+        );
+    }
+
+    // Lifecycle must have reached a decided state before vote/tally/decision can be accepted.
+    if (!isDecidedGovernanceState(transitionAudit.finalState()) &&
+        transitionAudit.finalState() != GovernanceLifecycleState::APPROVAL_PRODUCED &&
+        transitionAudit.finalState() != GovernanceLifecycleState::EXECUTED) {
+        return GovernanceLifecycleVerificationResult::rejected(
+            GovernanceLifecycleVerificationStatus::TRANSITION_AUDIT_FAILED,
+            "GovernanceLifecycleVerifier: lifecycle did not reach a decided state. "
+            "Final state: '" +
+            governanceLifecycleStateToString(transitionAudit.finalState()) + "'."
         );
     }
 

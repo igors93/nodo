@@ -26,6 +26,9 @@ using nodo::tests::fixtures::validLifecycle;
 using nodo::tests::fixtures::voteEvidence;
 using nodo::tests::fixtures::validVotes;
 
+// Creates a lifecycle with different votes but the same transition history.
+// The constructor accepts this (transitions are valid). The verifier catches
+// inconsistencies between votes and stored tally/decision.
 GovernanceLifecycleRecord withVotes(
     const GovernanceLifecycleRecord& base,
     std::vector<GovernanceVoteEvidence> votes
@@ -39,7 +42,9 @@ GovernanceLifecycleRecord withVotes(
         base.tallyReport(),
         base.decisionRecord(),
         base.createdAtBlock(),
-        base.finalizedAtBlock()
+        base.finalizedAtBlock(),
+        base.declaredCurrentState(),
+        base.transitionHistory()
     );
 }
 
@@ -132,7 +137,9 @@ void testTamperedTallyFails() {
         tampered,
         base.decisionRecord(),
         base.createdAtBlock(),
-        base.finalizedAtBlock()
+        base.finalizedAtBlock(),
+        base.declaredCurrentState(),
+        base.transitionHistory()
     );
     const auto result = GovernanceLifecycleVerifier::verify(lifecycle);
     assert(!result.verified());
@@ -160,7 +167,9 @@ void testTamperedDecisionProofFails() {
         base.tallyReport(),
         tampered,
         base.createdAtBlock(),
-        base.finalizedAtBlock()
+        base.finalizedAtBlock(),
+        base.declaredCurrentState(),
+        base.transitionHistory()
     );
     const auto result = GovernanceLifecycleVerifier::verify(lifecycle);
     assert(!result.verified());
@@ -179,7 +188,9 @@ void testReuseTallyForAnotherProposalFails() {
         base.tallyReport(),
         other.decisionRecord(),
         other.createdAtBlock(),
-        other.finalizedAtBlock()
+        other.finalizedAtBlock(),
+        other.declaredCurrentState(),
+        other.transitionHistory()
     );
     assert(!lifecycle.isValid());
 }

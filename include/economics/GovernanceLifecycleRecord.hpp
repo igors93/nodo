@@ -2,6 +2,8 @@
 #define NODO_ECONOMICS_GOVERNANCE_LIFECYCLE_RECORD_HPP
 
 #include "economics/GovernanceDecisionRecord.hpp"
+#include "economics/GovernanceLifecycleState.hpp"
+#include "economics/GovernanceLifecycleTransition.hpp"
 #include "economics/GovernancePolicy.hpp"
 #include "economics/GovernanceProposalEnvelope.hpp"
 #include "economics/GovernanceTallyReport.hpp"
@@ -27,7 +29,9 @@ public:
         GovernanceTallyReport tallyReport,
         GovernanceDecisionRecord decisionRecord,
         std::uint64_t createdAtBlock,
-        std::uint64_t finalizedAtBlock
+        std::uint64_t finalizedAtBlock,
+        GovernanceLifecycleState declaredCurrentState,
+        std::vector<GovernanceLifecycleTransition> transitionHistory
     );
 
     const std::string& lifecycleId() const;
@@ -39,6 +43,8 @@ public:
     const GovernanceDecisionRecord& decisionRecord() const;
     std::uint64_t createdAtBlock() const;
     std::uint64_t finalizedAtBlock() const;
+    GovernanceLifecycleState declaredCurrentState() const;
+    const std::vector<GovernanceLifecycleTransition>& transitionHistory() const;
 
     bool isValid() const;
     const std::string& rejectionReason() const;
@@ -55,6 +61,8 @@ private:
     GovernanceDecisionRecord m_decisionRecord;
     std::uint64_t m_createdAtBlock;
     std::uint64_t m_finalizedAtBlock;
+    GovernanceLifecycleState m_declaredCurrentState;
+    std::vector<GovernanceLifecycleTransition> m_transitionHistory;
     bool m_valid;
     std::string m_rejectionReason;
 };

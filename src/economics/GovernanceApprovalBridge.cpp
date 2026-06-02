@@ -1,5 +1,6 @@
 #include "economics/GovernanceApprovalBridge.hpp"
 
+#include "economics/GovernanceLifecycleState.hpp"
 #include "economics/GovernanceLifecycleVerifier.hpp"
 #include "economics/TreasuryApprovalProof.hpp"
 
@@ -203,6 +204,17 @@ GovernanceApprovalBridge::produceTreasuryApprovalFromVerifiedLifecycle(
             GovernanceApprovalBridgeStatus::INVALID_LIFECYCLE,
             "GovernanceApprovalBridge: lifecycle verification failed: " +
             verification.reason()
+        );
+    }
+
+    // Transition history must have placed the lifecycle in an approval-eligible state.
+    // Only DECIDED_APPROVED (verified above) may produce a TreasuryApproval.
+    if (!isApprovalEligibleGovernanceState(lifecycle.declaredCurrentState())) {
+        return GovernanceApprovalBridgeResult::rejected(
+            GovernanceApprovalBridgeStatus::INVALID_LIFECYCLE,
+            "GovernanceApprovalBridge: lifecycle state '" +
+            governanceLifecycleStateToString(lifecycle.declaredCurrentState()) +
+            "' is not approval-eligible. Only DECIDED_APPROVED may produce a TreasuryApproval."
         );
     }
 

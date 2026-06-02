@@ -1,5 +1,7 @@
 #include "economics/GovernanceLifecycleRecord.hpp"
 
+#include "economics/GovernanceLifecycleTransitionAudit.hpp"
+
 #include <cstddef>
 #include <sstream>
 #include <utility>
@@ -26,6 +28,7 @@ bool sameVotingPolicy(
 GovernanceLifecycleRecord::GovernanceLifecycleRecord()
     : m_createdAtBlock(0),
       m_finalizedAtBlock(0),
+      m_declaredCurrentState(GovernanceLifecycleState::DRAFT),
       m_valid(false),
       m_rejectionReason("GovernanceLifecycleRecord: default-constructed.") {}
 
@@ -38,7 +41,9 @@ GovernanceLifecycleRecord::GovernanceLifecycleRecord(
     GovernanceTallyReport tallyReport,
     GovernanceDecisionRecord decisionRecord,
     std::uint64_t createdAtBlock,
-    std::uint64_t finalizedAtBlock
+    std::uint64_t finalizedAtBlock,
+    GovernanceLifecycleState declaredCurrentState,
+    std::vector<GovernanceLifecycleTransition> transitionHistory
 )
     : m_lifecycleId(std::move(lifecycleId)),
       m_proposalEnvelope(std::move(proposalEnvelope)),
@@ -49,6 +54,8 @@ GovernanceLifecycleRecord::GovernanceLifecycleRecord(
       m_decisionRecord(std::move(decisionRecord)),
       m_createdAtBlock(createdAtBlock),
       m_finalizedAtBlock(finalizedAtBlock),
+      m_declaredCurrentState(declaredCurrentState),
+      m_transitionHistory(std::move(transitionHistory)),
       m_valid(false),
       m_rejectionReason("")
 {
@@ -174,6 +181,48 @@ GovernanceLifecycleRecord::GovernanceLifecycleRecord(
         return;
     }
 
+    // Validate transition history and verify declared state matches rebuilt final state.
+    if (m_transitionHistory.empty()) {
+        m_rejectionReason =
+            "GovernanceLifecycleRecord: transitionHistory must not be empty.";
+        return;
+    }
+
+    const GovernanceLifecycleTransitionAuditResult transitionAudit =
+        GovernanceLifecycleTransitionAudit::audit(
+            m_transitionHistory,
+            m_proposalEnvelope.governanceProposalId(),
+            m_governancePolicy.policyVersion()
+        );
+
+    if (!transitionAudit.accepted()) {
+        m_rejectionReason =
+            "GovernanceLifecycleRecord: transition audit failed: " +
+            transitionAudit.reason();
+        return;
+    }
+
+    if (m_declaredCurrentState != transitionAudit.finalState()) {
+        m_rejectionReason =
+            "GovernanceLifecycleRecord: declaredCurrentState='" +
+            governanceLifecycleStateToString(m_declaredCurrentState) +
+            "' does not match rebuilt final state='" +
+            governanceLifecycleStateToString(transitionAudit.finalState()) + "'.";
+        return;
+    }
+
+    // Votes require the lifecycle to have reached at least VOTING.
+    // A decided lifecycle (DECIDED_APPROVED / DECIDED_REJECTED) necessarily passed VOTING.
+    if (!isDecidedGovernanceState(m_declaredCurrentState) &&
+        m_declaredCurrentState != GovernanceLifecycleState::APPROVAL_PRODUCED &&
+        m_declaredCurrentState != GovernanceLifecycleState::EXECUTED) {
+        m_rejectionReason =
+            "GovernanceLifecycleRecord: vote evidence is only valid for lifecycles "
+            "that reached a decided state. Current state: '" +
+            governanceLifecycleStateToString(m_declaredCurrentState) + "'.";
+        return;
+    }
+
     m_valid = true;
 }
 
@@ -205,6 +254,13 @@ std::uint64_t GovernanceLifecycleRecord::createdAtBlock() const {
 std::uint64_t GovernanceLifecycleRecord::finalizedAtBlock() const {
     return m_finalizedAtBlock;
 }
+GovernanceLifecycleState GovernanceLifecycleRecord::declaredCurrentState() const {
+    return m_declaredCurrentState;
+}
+const std::vector<GovernanceLifecycleTransition>&
+GovernanceLifecycleRecord::transitionHistory() const {
+    return m_transitionHistory;
+}
 bool GovernanceLifecycleRecord::isValid() const { return m_valid; }
 const std::string& GovernanceLifecycleRecord::rejectionReason() const {
     return m_rejectionReason;
@@ -216,6 +272,8 @@ std::string GovernanceLifecycleRecord::serialize() const {
         << "lifecycleId=" << m_lifecycleId
         << ";createdAtBlock=" << m_createdAtBlock
         << ";finalizedAtBlock=" << m_finalizedAtBlock
+        << ";declaredCurrentState=" << governanceLifecycleStateToString(m_declaredCurrentState)
+        << ";transitionCount=" << m_transitionHistory.size()
         << ";proposalEnvelope=" << m_proposalEnvelope.serialize()
         << ";governancePolicy=" << m_governancePolicy.serialize()
         << ";votingPolicy=" << m_votingPolicy.serialize()
