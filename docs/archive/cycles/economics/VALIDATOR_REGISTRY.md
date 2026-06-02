@@ -1,3 +1,6 @@
+> Archived document.
+> This file is kept for historical context only and may not describe the current Nodo implementation.
+
 # Nodo Validator Registry and Identity Binding
 
 Status: Cycle 1 Foundation  

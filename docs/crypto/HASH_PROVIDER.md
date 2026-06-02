@@ -42,7 +42,7 @@ Replacing the old placeholder hash improves the foundation before moving deeper 
 
 ## Important Security Note
 
-This is a real SHA-256 implementation with known-vector tests, but Nodo is still not production-ready.
+This is a real SHA-256 implementation with known-vector tests, but Nodo is still not suitable for production use.
 
 Before real funds, the hash boundary should eventually be reviewed, fuzz-tested, and possibly backed by a widely audited cryptographic library/provider.
 

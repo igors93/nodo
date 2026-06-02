@@ -43,7 +43,7 @@ It does not generate real post-quantum keys.
 
 It does not verify real post-quantum signatures.
 
-It does not make Nodo production-ready.
+It does not make Nodo suitable for production use.
 
 ## Known Post-Quantum Families
 
@@ -76,4 +76,4 @@ The provider interface prepares Nodo for:
 
 ## Security Rule
 
-No post-quantum provider should be marked production-ready until it is backed by an audited implementation, test vectors, key validation rules, serialization rules, and signature verification tests.
+No post-quantum provider should be marked suitable for production use until it is backed by an audited implementation, test vectors, key validation rules, serialization rules, and signature verification tests.

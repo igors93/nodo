@@ -1,7 +1,7 @@
 # Hardened Protocol Foundation
 
-This package hardens Nodo's local protocol foundation without pretending the
-project is production-mainnet ready.
+This package hardens Nodo's local protocol foundation without presenting the
+project as production mainnet software.
 
 ## Implemented boundaries
 

@@ -1,23 +1,45 @@
 # Nodo Roadmap
 
-## Near Term
+Nodo is in development and pre-mainnet. This roadmap describes project direction; it is not a production-readiness claim.
 
-- Add audited production provider validation around the current OpenSSL/blst suite.
-- Add encrypted durable validator key management.
-- Move from development text serialization to a stricter canonical binary format.
-- Expand runtime reload validation to decode and audit quorum/finalization
-  records, not only block payload integrity.
-- Add a real networking runtime around the existing P2P message foundation.
+## Completed Foundations
 
-## Runtime Hardening
+- Localnet runtime pipeline: init, keys, transaction submission, block production, reload, status, inspection, and chain audit.
+- CMake and CTest build/test structure.
+- Storage schema validation and atomic file helpers.
+- Runtime state reload and manifest/state-root verification.
+- Finalized artifact validation and persistence.
+- Monetary reports, supply deltas, and supply audit foundations.
+- Treasury policy, spend validation, execution evidence, and finalized treasury audit.
+- Governance vote proof, vote evidence, vote-set audit, tally, decision audit, lifecycle record, lifecycle store, and lifecycle-backed treasury approval.
+- Consensus round manager, proposer schedule, quorum certificates, finalization, fork choice foundations, and slashing evidence.
+- P2P message validation, gossip mesh, loopback/TCP transports, encrypted peer-channel foundations, persistent sync, and peer rate limiting.
+- Testnet-candidate network profile, readiness checks, and operator diagnostics foundations.
 
-- Keep rejecting malformed persistence data instead of skipping it.
-- Keep file writes atomic and reject conflicting block/mempool artifacts.
-- Add recovery handling for stale temporary files.
-- Add migration/version handling for node data directory formats.
+## In Progress
 
-## Economics And Protection
+- Official testnet runtime hardening.
+- Governance proposal state machine and lifecycle transitions.
+- Production key safety gates and audited signing-provider boundaries.
+- Validator reward settlement connected to measurable protection work.
+- Stake/slash lifecycle integration and validator eligibility hardening.
+- Network hardening, peer policy, and testnet operations.
+- Canonical storage/reload audit expansion for all finalized economic and governance records.
 
-- Connect useful protection work to production validator rewards.
-- Add stake/penalty records once real identity and key management are available.
-- Keep reward emission auditable through ledger records and rebuilders.
+## Planned
+
+- Encrypted durable validator key management.
+- Wallet and custody boundaries.
+- Staking-backed validator economics.
+- Public governance workflow and operator tooling.
+- Production slashing lifecycle with evidence retention and appeals policy.
+- Mainnet readiness gates for custody, networking, storage, economics, governance, and security audit.
+- External audit process before any production network claim.
+
+## Explicit Non-Goals Until Ready
+
+- No production mainnet claim.
+- No production custody claim.
+- No unaudited treasury execution path.
+- No governance decision accepted without vote evidence.
+- No monetary expansion without canonical authorization.
