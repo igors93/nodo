@@ -163,11 +163,13 @@ economics::EpochMonetaryReport EpochMonetaryReportStore::decode(
 
     // Reconstruct the report. We do not call fromDeltas (deltas are not
     // persisted in this file) — instead we rebuild from the stored totals.
-    // The caller must verify this report against rebuilt deltas separately
-    // (ChainAuditor does this).
+    // fromStoredFields performs its own defensive validation (arithmetic,
+    // policy version, block range). The caller must verify this report against
+    // rebuilt deltas separately (ChainAuditor does this).
     economics::EpochMonetaryReport report =
         economics::EpochMonetaryReport::fromStoredFields(
             policy,
+            policyVer,
             epoch,
             startBlock,
             endBlock,
@@ -179,6 +181,13 @@ economics::EpochMonetaryReport EpochMonetaryReportStore::decode(
             static_cast<std::size_t>(mintCount),
             static_cast<std::size_t>(burnCount)
         );
+
+    if (!report.isValid()) {
+        throw std::runtime_error(
+            "EpochMonetaryReportStore: fromStoredFields rejected stored data: " +
+            report.rejectionReason()
+        );
+    }
 
     return report;
 }

@@ -105,6 +105,7 @@ EpochMonetaryReport EpochMonetaryReport::fromDeltas(
 
 EpochMonetaryReport EpochMonetaryReport::fromStoredFields(
     const MonetaryPolicy& policy,
+    const std::string& storedPolicyVersion,
     std::uint64_t epoch,
     std::uint64_t startBlock,
     std::uint64_t endBlock,
@@ -121,6 +122,36 @@ EpochMonetaryReport EpochMonetaryReport::fromStoredFields(
     if (!policy.isValid()) {
         report.m_rejectionReason = "EpochMonetaryReport::fromStoredFields: invalid policy: " +
                                     policy.rejectionReason();
+        return report;
+    }
+
+    if (storedPolicyVersion != policy.policyVersion()) {
+        report.m_rejectionReason =
+            "EpochMonetaryReport::fromStoredFields: policyVersion mismatch: "
+            "stored=" + storedPolicyVersion +
+            " expected=" + policy.policyVersion();
+        return report;
+    }
+
+    if (startBlock > endBlock) {
+        report.m_rejectionReason =
+            "EpochMonetaryReport::fromStoredFields: startBlock (" +
+            std::to_string(startBlock) + ") > endBlock (" +
+            std::to_string(endBlock) + ").";
+        return report;
+    }
+
+    // startingSupply + totalMinted - totalBurned must equal endingSupply.
+    const std::int64_t computedEnding =
+        startingSupply.rawUnits() + totalMinted.rawUnits() - totalBurned.rawUnits();
+    if (computedEnding != endingSupply.rawUnits()) {
+        report.m_rejectionReason =
+            "EpochMonetaryReport::fromStoredFields: arithmetic mismatch: "
+            "starting(" + std::to_string(startingSupply.rawUnits()) +
+            ") + minted(" + std::to_string(totalMinted.rawUnits()) +
+            ") - burned(" + std::to_string(totalBurned.rawUnits()) +
+            ") = " + std::to_string(computedEnding) +
+            " != ending(" + std::to_string(endingSupply.rawUnits()) + ").";
         return report;
     }
 

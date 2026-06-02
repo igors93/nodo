@@ -494,8 +494,6 @@ public:
 private:
     friend class RuntimeBlockPipeline;
 
-    void setSupplyDelta(economics::SupplyDelta delta);
-
     RuntimeBlockPipelineStatus m_status;
     std::string m_reason;
 

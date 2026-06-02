@@ -3,17 +3,22 @@
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "economics/EpochMonetaryReport.hpp"
 #include "economics/MonetaryPolicy.hpp"
+#include "node/EpochMonetaryReportStore.hpp"
 #include "node/FinalizedSupplyAudit.hpp"
 #include "node/MonetaryAuditDiagnostic.hpp"
 #include "node/MonetaryFirewall.hpp"
+#include "node/MonetaryReportVerifier.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 #include "node/RuntimeStateLoader.hpp"
 #include "node/RuntimeStateVerifier.hpp"
 
+#include <filesystem>
+
 namespace nodo::node {
 
 ChainAuditResult ChainAuditor::auditLoadedRuntime(
-    const RuntimeStateLoadResult& load
+    const RuntimeStateLoadResult& load,
+    const std::filesystem::path& monetaryReportPath
 ) {
     if (!load.loaded()) {
         return ChainAuditResult::failed(
@@ -80,7 +85,6 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
         return ChainAuditResult::failed("manifest validatorCount does not match runtime validator registry");
     }
 
-    // Supply continuity audit: verify finalized SupplyDeltas form a valid chain.
     const auto& finalizedDeltas = runtime.supplyState().finalizedDeltas();
 
     economics::MonetaryPolicy policy;
@@ -100,6 +104,7 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
             genesisSupply
         );
 
+        // Supply continuity audit: verify finalized SupplyDeltas form a valid chain.
         const FinalizedSupplyAuditResult supplyAudit =
             FinalizedSupplyAudit::auditDeltas(policy, finalizedDeltas);
 
@@ -108,8 +113,8 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
                 MonetaryAuditDiagnostic::supplyContinuityFailure(
                     supplyAudit.reason(),
                     supplyAudit.failedBlockHeight(),
-                    utils::Amount::fromRawUnits(0),
-                    utils::Amount::fromRawUnits(0),
+                    supplyAudit.expectedSupply(),
+                    supplyAudit.actualSupply(),
                     supplyAudit.finalSupply()
                 );
             return ChainAuditResult::failed(
@@ -119,9 +124,7 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
         }
 
         // Epoch monetary report verification: rebuild the report from finalized
-        // deltas. This proves the delta sequence is self-consistent and that a
-        // correct report can be derived deterministically from the chain.
-        // For epoch 0 (current simple behavior), the full delta sequence is used.
+        // deltas. This proves the delta sequence is self-consistent.
         const economics::EpochMonetaryReport rebuiltReport =
             economics::EpochMonetaryReport::fromDeltas(
                 policy,
@@ -142,6 +145,50 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
                 "chain audit: epoch monetary report rebuild failed: " +
                 rebuiltReport.rejectionReason() + " | " + diag.serialize()
             );
+        }
+
+        // If a persisted report path is provided, load and compare it against
+        // the rebuilt report. A mismatch or missing file fails the audit.
+        if (!monetaryReportPath.empty()) {
+            if (!std::filesystem::exists(monetaryReportPath)) {
+                const MonetaryAuditDiagnostic diag =
+                    MonetaryAuditDiagnostic::reportMissing(
+                        "expected persisted monetary report not found at: " +
+                        monetaryReportPath.string(),
+                        0
+                    );
+                return ChainAuditResult::failed(
+                    "chain audit: persisted monetary report missing: " +
+                    monetaryReportPath.string() + " | " + diag.serialize()
+                );
+            }
+
+            economics::EpochMonetaryReport persistedReport;
+            try {
+                persistedReport = EpochMonetaryReportStore::read(
+                    monetaryReportPath, policy
+                );
+            } catch (const std::exception& e) {
+                const MonetaryAuditDiagnostic diag =
+                    MonetaryAuditDiagnostic::reportMissing(
+                        std::string("failed to decode persisted monetary report: ") + e.what(),
+                        0
+                    );
+                return ChainAuditResult::failed(
+                    std::string("chain audit: persisted monetary report decode failed: ") +
+                    e.what() + " | " + diag.serialize()
+                );
+            }
+
+            const MonetaryReportVerificationResult verif =
+                MonetaryReportVerifier::verify(persistedReport, rebuiltReport);
+
+            if (!verif.matched()) {
+                return ChainAuditResult::failed(
+                    "chain audit: persisted monetary report does not match rebuilt report: " +
+                    verif.reason() + " | " + verif.serialize()
+                );
+            }
         }
     }
 

@@ -1652,10 +1652,6 @@ const economics::SupplyDelta& RuntimeBlockPipelineResult::supplyDelta() const {
     return m_supplyDelta;
 }
 
-void RuntimeBlockPipelineResult::setSupplyDelta(economics::SupplyDelta delta) {
-    m_supplyDelta = std::move(delta);
-}
-
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 

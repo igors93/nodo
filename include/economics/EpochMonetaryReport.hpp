@@ -39,6 +39,7 @@ public:
      */
     static EpochMonetaryReport fromStoredFields(
         const MonetaryPolicy& policy,
+        const std::string& storedPolicyVersion,
         std::uint64_t epoch,
         std::uint64_t startBlock,
         std::uint64_t endBlock,

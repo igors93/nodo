@@ -23,7 +23,9 @@ public:
 
     static FinalizedSupplyAuditResult failed(
         std::string reason,
-        std::uint64_t failedBlockHeight
+        std::uint64_t failedBlockHeight,
+        utils::Amount expectedSupply = utils::Amount::fromRawUnits(0),
+        utils::Amount actualSupply   = utils::Amount::fromRawUnits(0)
     );
 
     bool passed() const;
@@ -31,6 +33,8 @@ public:
     utils::Amount finalSupply() const;
     std::size_t deltaCount() const;
     std::uint64_t failedBlockHeight() const;
+    utils::Amount expectedSupply() const;
+    utils::Amount actualSupply() const;
 
     std::string serialize() const;
 
@@ -40,6 +44,8 @@ private:
     utils::Amount m_finalSupply;
     std::size_t m_deltaCount;
     std::uint64_t m_failedBlockHeight;
+    utils::Amount m_expectedSupply;
+    utils::Amount m_actualSupply;
 };
 
 class FinalizedSupplyAudit {

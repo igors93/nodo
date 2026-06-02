@@ -10,29 +10,13 @@ namespace nodo::node {
 
 namespace {
 
-FinalizedSupplyAuditResult fromSequenceAudit(
-    const economics::SupplySequenceAuditResult& audit
-) {
-    if (audit.isValid()) {
-        return FinalizedSupplyAuditResult::passed(
-            audit.finalSupply(),
-            audit.deltaCount()
-        );
-    }
-
-    return FinalizedSupplyAuditResult::failed(
-        "FinalizedSupplyAudit: " + audit.reason(),
-        audit.failedBlockHeight()
-    );
-}
-
+// Finalized artifacts start at block height 1. The genesis block (height 0)
+// is handled separately during node bootstrap and is NOT stored as a
+// FinalizedBlockArtifact. Any sequence that starts at height 0 is therefore
+// invalid in this audit context.
 FinalizedSupplyAuditResult validateDeltaHeights(
     const std::vector<economics::SupplyDelta>& deltas
 ) {
-    // Finalized artifacts start at block height 1. The genesis block (height 0)
-    // is handled separately during node bootstrap and is NOT stored as a
-    // FinalizedBlockArtifact. Any sequence that starts at height 0 is therefore
-    // invalid in this audit context.
     std::uint64_t expectedHeight = 1;
 
     for (const auto& delta : deltas) {
@@ -42,7 +26,9 @@ FinalizedSupplyAuditResult validateDeltaHeights(
                 "SupplyDelta height: expected " +
                 std::to_string(expectedHeight) + " got " +
                 std::to_string(delta.blockHeight()) + ".",
-                delta.blockHeight()
+                delta.blockHeight(),
+                utils::Amount::fromRawUnits(0),
+                utils::Amount::fromRawUnits(0)
             );
         }
 
@@ -55,6 +41,58 @@ FinalizedSupplyAuditResult validateDeltaHeights(
     );
 }
 
+// For a continuity failure at blockHeight H, the expected supply is supplyAfter
+// of delta H-1; the actual supply is supplyBefore of delta H.
+FinalizedSupplyAuditResult withSupplyContext(
+    FinalizedSupplyAuditResult base,
+    const std::vector<economics::SupplyDelta>& deltas
+) {
+    if (base.passed() || base.failedBlockHeight() == 0) {
+        return base;
+    }
+
+    const std::uint64_t failedH = base.failedBlockHeight();
+    utils::Amount expected = utils::Amount::fromRawUnits(0);
+    utils::Amount actual   = utils::Amount::fromRawUnits(0);
+
+    for (std::size_t i = 0; i < deltas.size(); ++i) {
+        if (deltas[i].blockHeight() == failedH) {
+            actual = deltas[i].supplyBefore();
+            if (i > 0) {
+                expected = deltas[i - 1].supplyAfter();
+            }
+            break;
+        }
+    }
+
+    return FinalizedSupplyAuditResult::failed(
+        base.reason(),
+        failedH,
+        expected,
+        actual
+    );
+}
+
+FinalizedSupplyAuditResult fromSequenceAudit(
+    const economics::SupplySequenceAuditResult& audit,
+    const std::vector<economics::SupplyDelta>& deltas
+) {
+    if (audit.isValid()) {
+        return FinalizedSupplyAuditResult::passed(
+            audit.finalSupply(),
+            audit.deltaCount()
+        );
+    }
+
+    return withSupplyContext(
+        FinalizedSupplyAuditResult::failed(
+            "FinalizedSupplyAudit: " + audit.reason(),
+            audit.failedBlockHeight()
+        ),
+        deltas
+    );
+}
+
 } // namespace
 
 FinalizedSupplyAuditResult::FinalizedSupplyAuditResult()
@@ -62,7 +100,9 @@ FinalizedSupplyAuditResult::FinalizedSupplyAuditResult()
       m_reason("Uninitialized finalized supply audit result."),
       m_finalSupply(utils::Amount::fromRawUnits(0)),
       m_deltaCount(0),
-      m_failedBlockHeight(0) {}
+      m_failedBlockHeight(0),
+      m_expectedSupply(utils::Amount::fromRawUnits(0)),
+      m_actualSupply(utils::Amount::fromRawUnits(0)) {}
 
 FinalizedSupplyAuditResult FinalizedSupplyAuditResult::passed(
     utils::Amount finalSupply,
@@ -79,12 +119,16 @@ FinalizedSupplyAuditResult FinalizedSupplyAuditResult::passed(
 
 FinalizedSupplyAuditResult FinalizedSupplyAuditResult::failed(
     std::string reason,
-    std::uint64_t failedBlockHeight
+    std::uint64_t failedBlockHeight,
+    utils::Amount expectedSupply,
+    utils::Amount actualSupply
 ) {
     FinalizedSupplyAuditResult result;
     result.m_passed = false;
     result.m_reason = std::move(reason);
     result.m_failedBlockHeight = failedBlockHeight;
+    result.m_expectedSupply = expectedSupply;
+    result.m_actualSupply = actualSupply;
     return result;
 }
 
@@ -108,6 +152,14 @@ std::uint64_t FinalizedSupplyAuditResult::failedBlockHeight() const {
     return m_failedBlockHeight;
 }
 
+utils::Amount FinalizedSupplyAuditResult::expectedSupply() const {
+    return m_expectedSupply;
+}
+
+utils::Amount FinalizedSupplyAuditResult::actualSupply() const {
+    return m_actualSupply;
+}
+
 std::string FinalizedSupplyAuditResult::serialize() const {
     std::ostringstream oss;
     oss << "FinalizedSupplyAuditResult{"
@@ -115,6 +167,8 @@ std::string FinalizedSupplyAuditResult::serialize() const {
         << ";deltaCount=" << m_deltaCount
         << ";finalSupplyRaw=" << m_finalSupply.rawUnits()
         << ";failedBlockHeight=" << m_failedBlockHeight
+        << ";expectedSupplyRaw=" << m_expectedSupply.rawUnits()
+        << ";actualSupplyRaw=" << m_actualSupply.rawUnits()
         << ";reason=" << m_reason
         << "}";
     return oss.str();
@@ -136,7 +190,9 @@ FinalizedSupplyAuditResult FinalizedSupplyAudit::auditArtifacts(
             return FinalizedSupplyAuditResult::failed(
                 "FinalizedSupplyAudit: finalized artifact has invalid or "
                 "missing SupplyDelta: " + delta.rejectionReason(),
-                delta.blockHeight()
+                delta.blockHeight(),
+                utils::Amount::fromRawUnits(0),
+                utils::Amount::fromRawUnits(0)
             );
         }
 
@@ -149,7 +205,9 @@ FinalizedSupplyAuditResult FinalizedSupplyAudit::auditArtifacts(
                     "height: expected " +
                     std::to_string(expectedHeight) + " got " +
                     std::to_string(block.index()) + ".",
-                    block.index()
+                    block.index(),
+                    utils::Amount::fromRawUnits(0),
+                    utils::Amount::fromRawUnits(0)
                 );
             }
 
@@ -158,7 +216,9 @@ FinalizedSupplyAuditResult FinalizedSupplyAudit::auditArtifacts(
                 return FinalizedSupplyAuditResult::failed(
                     "FinalizedSupplyAudit: SupplyDelta block identity does "
                     "not match finalized artifact block.",
-                    delta.blockHeight()
+                    delta.blockHeight(),
+                    utils::Amount::fromRawUnits(0),
+                    utils::Amount::fromRawUnits(0)
                 );
             }
 
@@ -167,7 +227,9 @@ FinalizedSupplyAuditResult FinalizedSupplyAudit::auditArtifacts(
             return FinalizedSupplyAuditResult::failed(
                 std::string("FinalizedSupplyAudit: finalized artifact has no "
                             "auditable block: ") + error.what(),
-                delta.blockHeight()
+                delta.blockHeight(),
+                utils::Amount::fromRawUnits(0),
+                utils::Amount::fromRawUnits(0)
             );
         }
 
@@ -183,7 +245,8 @@ FinalizedSupplyAuditResult FinalizedSupplyAudit::auditDeltas(
 ) {
     if (!policy.isValid()) {
         return fromSequenceAudit(
-            economics::SupplyAudit::auditDeltaSequence(policy, deltas)
+            economics::SupplyAudit::auditDeltaSequence(policy, deltas),
+            deltas
         );
     }
 
@@ -195,7 +258,8 @@ FinalizedSupplyAuditResult FinalizedSupplyAudit::auditDeltas(
     }
 
     return fromSequenceAudit(
-        economics::SupplyAudit::auditDeltaSequence(policy, deltas)
+        economics::SupplyAudit::auditDeltaSequence(policy, deltas),
+        deltas
     );
 }
 
