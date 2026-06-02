@@ -52,7 +52,10 @@ FinalizedTreasuryAuditResult FinalizedTreasuryAudit::auditArtifacts(
     std::uint64_t epoch,
     const std::vector<FinalizedBlockArtifact>& artifacts
 ) {
+    // Collect evidence and spend records from all artifacts.
+    std::vector<economics::TreasuryExecutionEvidence> allEvidence;
     std::vector<economics::TreasurySpendRecord> allSpends;
+    bool anyEvidence = false;
 
     for (std::size_t i = 0; i < artifacts.size(); ++i) {
         const auto& section = artifacts[i].treasurySection();
@@ -67,8 +70,31 @@ FinalizedTreasuryAuditResult FinalizedTreasuryAudit::auditArtifacts(
             );
         }
 
-        for (const auto& rec : section.spendRecords()) {
-            allSpends.push_back(rec);
+        if (section.hasEvidence()) {
+            anyEvidence = true;
+            for (const auto& ev : section.executionEvidence()) {
+                allEvidence.push_back(ev);
+                allSpends.push_back(ev.spendRecord());
+            }
+        } else {
+            // Legacy section with spend records only.
+            for (const auto& rec : section.spendRecords()) {
+                allSpends.push_back(rec);
+            }
+        }
+    }
+
+    // If any evidence was present, run replay protection across all evidence.
+    if (anyEvidence && !allEvidence.empty()) {
+        const auto replayResult =
+            FinalizedTreasuryExecutionAudit::auditEvidence(allEvidence);
+
+        if (!replayResult.accepted()) {
+            return FinalizedTreasuryAuditResult::failed(
+                "FinalizedTreasuryAudit: replay protection rejected evidence: " +
+                replayResult.reason(),
+                static_cast<std::uint64_t>(replayResult.failedAtIndex())
+            );
         }
     }
 

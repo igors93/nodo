@@ -2,8 +2,10 @@
 #define NODO_NODE_FINALIZED_TREASURY_AUDIT_HPP
 
 #include "economics/EpochTreasuryReport.hpp"
+#include "economics/TreasuryExecutionEvidence.hpp"
 #include "economics/TreasurySpendRecord.hpp"
 #include "node/FinalizedBlockArtifact.hpp"
+#include "node/FinalizedTreasuryExecutionAudit.hpp"
 
 #include <cstdint>
 #include <string>
@@ -40,18 +42,28 @@ private:
 };
 
 /*
- * FinalizedTreasuryAudit collects and validates TreasurySpendRecord entries
- * from a sequence of finalized artifacts, then derives an EpochTreasuryReport.
+ * FinalizedTreasuryAudit collects and validates treasury execution evidence
+ * from a sequence of finalized artifacts, runs replay protection, and derives
+ * an EpochTreasuryReport from the validated evidence.
  *
  * Security principle:
  * No treasury spend can hide from the audit. Every finalized artifact's
- * treasury section must be valid, and the rebuilt EpochTreasuryReport must
- * agree with any persisted treasury report.
+ * treasury section must be valid, execution evidence must pass replay protection,
+ * and the rebuilt EpochTreasuryReport must agree with any persisted report.
+ *
+ * When evidence is present:
+ *   - evidence is validated first;
+ *   - replay protection runs across all evidence in the artifact sequence;
+ *   - spend records are derived from evidence for the report.
+ * When only legacy spend records are present (no evidence):
+ *   - spend records are validated and summed directly;
+ *   - a warning is embedded in the reason field of the result.
  */
 class FinalizedTreasuryAudit {
 public:
     // Audit the treasury sections of a sequence of finalized artifacts.
-    // Returns the rebuilt EpochTreasuryReport derived from all spend records.
+    // Returns the rebuilt EpochTreasuryReport derived from validated evidence
+    // or (fallback) from spend records when no evidence is available.
     static FinalizedTreasuryAuditResult auditArtifacts(
         std::uint64_t epoch,
         const std::vector<FinalizedBlockArtifact>& artifacts

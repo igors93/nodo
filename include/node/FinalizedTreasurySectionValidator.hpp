@@ -10,7 +10,10 @@ namespace nodo::node {
 enum class TreasurySectionValidationStatus {
     VALID,
     INVALID_SECTION,
-    INVALID_SPEND_RECORD
+    INVALID_SPEND_RECORD,
+    SPEND_WITHOUT_EVIDENCE,
+    INVALID_EVIDENCE,
+    EVIDENCE_SPEND_MISMATCH
 };
 
 std::string treasurySectionValidationStatusToString(
@@ -26,6 +29,13 @@ public:
     static TreasurySectionValidationResult invalidSpendRecord(
         std::size_t index, std::string reason
     );
+    static TreasurySectionValidationResult spendWithoutEvidence(std::string reason);
+    static TreasurySectionValidationResult invalidEvidence(
+        std::size_t index, std::string reason
+    );
+    static TreasurySectionValidationResult evidenceSpendMismatch(
+        std::size_t index, std::string reason
+    );
 
     bool passed() const;
     TreasurySectionValidationStatus status() const;
@@ -37,11 +47,13 @@ private:
 };
 
 /*
- * FinalizedTreasurySectionValidator validates all spend records in a section.
+ * FinalizedTreasurySectionValidator validates all spend records and execution
+ * evidence in a treasury section.
  *
  * Security principle:
- * No spend record may be included in a finalized artifact without individual
- * validation. A single invalid record makes the whole section unacceptable.
+ * A non-empty treasury section must carry execution evidence for every spend
+ * record. A spend record without matching evidence is rejected in production
+ * validation. An empty section (no spends, no evidence) is always valid.
  */
 class FinalizedTreasurySectionValidator {
 public:

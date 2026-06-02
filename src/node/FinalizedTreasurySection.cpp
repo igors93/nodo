@@ -8,14 +8,61 @@ namespace nodo::node {
 
 FinalizedTreasurySection::FinalizedTreasurySection()
     : m_treasurySpendTotal(utils::Amount::fromRawUnits(0)),
+      m_hasEvidence(false),
       m_valid(true),
       m_rejectionReason("") {}
+
+FinalizedTreasurySection::FinalizedTreasurySection(
+    std::vector<economics::TreasuryExecutionEvidence> executionEvidence
+)
+    : m_executionEvidence(std::move(executionEvidence)),
+      m_treasurySpendTotal(utils::Amount::fromRawUnits(0)),
+      m_hasEvidence(true),
+      m_valid(false),
+      m_rejectionReason("")
+{
+    std::int64_t runningTotal = 0;
+
+    for (std::size_t i = 0; i < m_executionEvidence.size(); ++i) {
+        const auto& ev = m_executionEvidence[i];
+
+        if (!ev.isValid()) {
+            m_rejectionReason =
+                "FinalizedTreasurySection: execution evidence at index " +
+                std::to_string(i) + " is invalid: " + ev.rejectionReason();
+            return;
+        }
+
+        const auto& rec = ev.spendRecord();
+        if (!rec.isValid()) {
+            m_rejectionReason =
+                "FinalizedTreasurySection: spend record in evidence at index " +
+                std::to_string(i) + " is invalid: " + rec.rejectionReason();
+            return;
+        }
+
+        if (rec.amount().rawUnits() >
+            std::numeric_limits<std::int64_t>::max() - runningTotal) {
+            m_rejectionReason =
+                "FinalizedTreasurySection: treasury spend total would overflow int64 "
+                "at evidence index " + std::to_string(i);
+            return;
+        }
+
+        runningTotal += rec.amount().rawUnits();
+        m_spendRecords.push_back(rec);
+    }
+
+    m_treasurySpendTotal = utils::Amount::fromRawUnits(runningTotal);
+    m_valid = true;
+}
 
 FinalizedTreasurySection::FinalizedTreasurySection(
     std::vector<economics::TreasurySpendRecord> spendRecords
 )
     : m_spendRecords(std::move(spendRecords)),
       m_treasurySpendTotal(utils::Amount::fromRawUnits(0)),
+      m_hasEvidence(false),
       m_valid(false),
       m_rejectionReason("")
 {
@@ -29,7 +76,6 @@ FinalizedTreasurySection::FinalizedTreasurySection(
                 std::to_string(i) + " is invalid: " + rec.rejectionReason();
             return;
         }
-        // Overflow guard for running total.
         if (rec.amount().rawUnits() >
             std::numeric_limits<std::int64_t>::max() - runningTotal) {
             m_rejectionReason =
@@ -44,9 +90,18 @@ FinalizedTreasurySection::FinalizedTreasurySection(
     m_valid = true;
 }
 
+const std::vector<economics::TreasuryExecutionEvidence>&
+FinalizedTreasurySection::executionEvidence() const {
+    return m_executionEvidence;
+}
+
 const std::vector<economics::TreasurySpendRecord>&
 FinalizedTreasurySection::spendRecords() const {
     return m_spendRecords;
+}
+
+std::size_t FinalizedTreasurySection::evidenceCount() const {
+    return m_executionEvidence.size();
 }
 
 std::size_t FinalizedTreasurySection::spendRecordCount() const {
@@ -55,6 +110,10 @@ std::size_t FinalizedTreasurySection::spendRecordCount() const {
 
 utils::Amount FinalizedTreasurySection::treasurySpendTotal() const {
     return m_treasurySpendTotal;
+}
+
+bool FinalizedTreasurySection::hasEvidence() const {
+    return m_hasEvidence;
 }
 
 bool FinalizedTreasurySection::isValid() const { return m_valid; }
@@ -66,8 +125,10 @@ const std::string& FinalizedTreasurySection::rejectionReason() const {
 std::string FinalizedTreasurySection::serialize() const {
     std::ostringstream oss;
     oss << "FinalizedTreasurySection{"
-        << "spendRecordCount=" << m_spendRecords.size()
+        << "evidenceCount=" << m_executionEvidence.size()
+        << ";spendRecordCount=" << m_spendRecords.size()
         << ";treasurySpendTotalRaw=" << m_treasurySpendTotal.rawUnits()
+        << ";hasEvidence=" << (m_hasEvidence ? "1" : "0")
         << ";valid=" << (m_valid ? "1" : "0")
         << "}";
     return oss.str();
