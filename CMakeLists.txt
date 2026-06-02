@@ -17,6 +17,48 @@ endif()
 
 include(cmake/NodoDependencies.cmake)
 
+function(nodo_copy_mingw_runtime_dlls target_name)
+    if(NOT MINGW)
+        return()
+    endif()
+
+    get_filename_component(NODO_MINGW_COMPILER_DIR
+        "${CMAKE_CXX_COMPILER}"
+        DIRECTORY
+    )
+
+    set(NODO_MINGW_RUNTIME_DLLS
+        libstdc++-6.dll
+        libgcc_s_seh-1.dll
+        libwinpthread-1.dll
+        libcrypto-3-x64.dll
+    )
+
+    foreach(NODO_MINGW_RUNTIME_DLL IN LISTS NODO_MINGW_RUNTIME_DLLS)
+        string(MAKE_C_IDENTIFIER
+            "${NODO_MINGW_RUNTIME_DLL}"
+            NODO_MINGW_RUNTIME_DLL_ID
+        )
+
+        find_file(NODO_MINGW_RUNTIME_DLL_${NODO_MINGW_RUNTIME_DLL_ID}
+            NAMES "${NODO_MINGW_RUNTIME_DLL}"
+            HINTS
+                "${NODO_MINGW_COMPILER_DIR}"
+                ENV PATH
+            NO_DEFAULT_PATH
+        )
+
+        if(NODO_MINGW_RUNTIME_DLL_${NODO_MINGW_RUNTIME_DLL_ID})
+            add_custom_command(TARGET ${target_name} POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "${NODO_MINGW_RUNTIME_DLL_${NODO_MINGW_RUNTIME_DLL_ID}}"
+                    "$<TARGET_FILE_DIR:${target_name}>"
+                VERBATIM
+            )
+        endif()
+    endforeach()
+endfunction()
+
 add_library(nodo_core STATIC
     src/crypto/hash.c
 )
@@ -68,6 +110,8 @@ target_link_libraries(nodo
         nodo_core
 )
 
+nodo_copy_mingw_runtime_dlls(nodo)
+
 enable_testing()
 
 function(nodo_add_test test_name test_source)
@@ -79,6 +123,8 @@ function(nodo_add_test test_name test_source)
         PRIVATE
             nodo_core
     )
+
+    nodo_copy_mingw_runtime_dlls(${test_name})
 
     add_test(
         NAME ${test_name}

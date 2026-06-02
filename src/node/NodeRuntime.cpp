@@ -231,6 +231,7 @@ const p2p::PeerInfo* LocalPeerManager::bestSyncPeer(
 
 std::vector<p2p::PeerInfo> LocalPeerManager::peers() const {
     std::vector<p2p::PeerInfo> result;
+    result.reserve(m_peersById.size());
 
     for (const auto& [_, peerInfo] : m_peersById) {
         result.push_back(peerInfo);

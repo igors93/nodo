@@ -95,6 +95,8 @@ const PeerMetadata* PeerRegistry::peer(const std::string& nodeId) const {
 
 std::vector<PeerMetadata> PeerRegistry::activePeers() const {
     std::vector<PeerMetadata> peers;
+    peers.reserve(m_peersByNodeId.size());
+
     for (const auto& [_, peerMetadata] : m_peersByNodeId) {
         if (!peerMetadata.quarantined()) {
             peers.push_back(peerMetadata);
@@ -105,6 +107,8 @@ std::vector<PeerMetadata> PeerRegistry::activePeers() const {
 
 std::vector<PeerMetadata> PeerRegistry::allPeers() const {
     std::vector<PeerMetadata> peers;
+    peers.reserve(m_peersByNodeId.size());
+
     for (const auto& [_, peerMetadata] : m_peersByNodeId) {
         peers.push_back(peerMetadata);
     }

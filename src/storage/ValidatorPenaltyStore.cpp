@@ -8,6 +8,37 @@
 
 namespace nodo::storage {
 
+namespace {
+
+constexpr const char* PENALTY_FILE_EXTENSION = ".penalty";
+
+bool isPenaltyFile(
+    const std::filesystem::directory_entry& entry
+) {
+    return entry.is_regular_file() &&
+           entry.path().extension() == PENALTY_FILE_EXTENSION;
+}
+
+std::size_t penaltyFileCount(
+    const std::filesystem::path& penaltyDirectory
+) {
+    if (!std::filesystem::exists(penaltyDirectory)) {
+        return 0;
+    }
+
+    std::size_t count = 0;
+
+    for (const auto& entry : std::filesystem::directory_iterator(penaltyDirectory)) {
+        if (isPenaltyFile(entry)) {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
+} // namespace
+
 ValidatorPenaltyStore::ValidatorPenaltyStore(std::filesystem::path penaltyDirectory)
     : m_penaltyDirectory(std::move(penaltyDirectory)) {}
 
@@ -66,15 +97,15 @@ std::vector<consensus::ValidatorPenaltyDecision> ValidatorPenaltyStore::loadAll(
     }
 
     std::vector<std::filesystem::path> files;
-    for (const auto& entry : std::filesystem::directory_iterator(m_penaltyDirectory)) {
-        if (!entry.is_regular_file()) {
-            continue;
-        }
+    files.reserve(penaltyFileCount(m_penaltyDirectory));
 
-        if (entry.path().extension() == ".penalty") {
+    for (const auto& entry : std::filesystem::directory_iterator(m_penaltyDirectory)) {
+        if (isPenaltyFile(entry)) {
             files.push_back(entry.path());
         }
     }
+
+    decisions.reserve(files.size());
 
     std::sort(files.begin(), files.end());
     for (const auto& file : files) {
@@ -85,7 +116,7 @@ std::vector<consensus::ValidatorPenaltyDecision> ValidatorPenaltyStore::loadAll(
 }
 
 std::size_t ValidatorPenaltyStore::count() const {
-    return loadAll().size();
+    return penaltyFileCount(m_penaltyDirectory);
 }
 
 std::filesystem::path ValidatorPenaltyStore::pathForPenaltyId(
@@ -94,7 +125,7 @@ std::filesystem::path ValidatorPenaltyStore::pathForPenaltyId(
     if (!isSafePenaltyId(penaltyId)) {
         throw std::invalid_argument("Validator penalty id is unsafe.");
     }
-    return m_penaltyDirectory / (penaltyId + ".penalty");
+    return m_penaltyDirectory / (penaltyId + PENALTY_FILE_EXTENSION);
 }
 
 bool ValidatorPenaltyStore::isSafePenaltyId(

@@ -103,7 +103,6 @@ std::vector<ReadinessDiagnostic> TestnetReadinessChecker::check(
 
     // Check 6: Node has at least genesis block.
     {
-        const bool hasSynced = finalizedHeight >= 1 || finalizedHeight == 0;
         std::ostringstream detail;
         detail << "Finalized height is " << finalizedHeight << ".";
         checks.emplace_back("chain_initialized", true, detail.str());

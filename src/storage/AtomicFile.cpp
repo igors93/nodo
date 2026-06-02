@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <fstream>
-#include <sstream>
 #include <stdexcept>
 #include <system_error>
 
@@ -147,14 +146,31 @@ std::string AtomicFile::readTextFile(
         throw std::runtime_error("Unable to open file for reading: " + path.string());
     }
 
-    std::ostringstream buffer;
-    buffer << input.rdbuf();
+    input.seekg(0, std::ios::end);
+    const std::streampos end =
+        input.tellg();
 
-    if (!input.good() && !input.eof()) {
-        throw std::runtime_error("Unable to read file: " + path.string());
+    if (end < 0) {
+        throw std::runtime_error("Unable to determine file size: " + path.string());
     }
 
-    return buffer.str();
+    std::string contents;
+    contents.resize(static_cast<std::size_t>(end));
+
+    input.seekg(0, std::ios::beg);
+
+    if (!contents.empty()) {
+        input.read(
+            contents.data(),
+            static_cast<std::streamsize>(contents.size())
+        );
+
+        if (input.gcount() != static_cast<std::streamsize>(contents.size())) {
+            throw std::runtime_error("Unable to read complete file: " + path.string());
+        }
+    }
+
+    return contents;
 }
 
 bool AtomicFile::isTemporaryWriteFile(

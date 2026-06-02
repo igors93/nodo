@@ -11,6 +11,31 @@ namespace {
 
 constexpr const char* EVIDENCE_FILE_EXTENSION = ".evidence";
 
+bool isEvidenceFile(
+    const std::filesystem::directory_entry& entry
+) {
+    return entry.is_regular_file() &&
+           entry.path().extension() == EVIDENCE_FILE_EXTENSION;
+}
+
+std::size_t evidenceFileCount(
+    const std::filesystem::path& evidenceDirectory
+) {
+    if (!std::filesystem::exists(evidenceDirectory)) {
+        return 0;
+    }
+
+    std::size_t count = 0;
+
+    for (const auto& entry : std::filesystem::directory_iterator(evidenceDirectory)) {
+        if (isEvidenceFile(entry)) {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
 } // namespace
 
 SlashingEvidenceStore::SlashingEvidenceStore(
@@ -74,9 +99,10 @@ std::vector<consensus::SlashingEvidenceRecord> SlashingEvidenceStore::loadAll() 
         return records;
     }
 
+    records.reserve(evidenceFileCount(m_evidenceDirectory));
+
     for (const auto& entry : std::filesystem::directory_iterator(m_evidenceDirectory)) {
-        if (!entry.is_regular_file() ||
-            entry.path().extension() != EVIDENCE_FILE_EXTENSION) {
+        if (!isEvidenceFile(entry)) {
             continue;
         }
 
@@ -95,7 +121,7 @@ std::vector<consensus::SlashingEvidenceRecord> SlashingEvidenceStore::loadAll() 
 }
 
 std::size_t SlashingEvidenceStore::count() const {
-    return loadAll().size();
+    return evidenceFileCount(m_evidenceDirectory);
 }
 
 std::filesystem::path SlashingEvidenceStore::pathForEvidenceId(

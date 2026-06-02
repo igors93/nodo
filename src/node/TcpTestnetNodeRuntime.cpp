@@ -100,7 +100,6 @@ std::filesystem::path TcpTestnetNodeRuntimeConfig::peersFilePath() const {
 bool TcpTestnetNodeRuntimeConfig::isValid() const {
     return isSafeScalar(m_nodeId) &&
            isSafeScalar(m_host) &&
-           m_port <= 65535 &&
            isSafeScalar(m_networkId) &&
            isSafeScalar(m_chainId) &&
            isSafeScalar(m_protocolVersion) &&
