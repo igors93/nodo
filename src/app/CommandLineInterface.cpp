@@ -18,9 +18,11 @@
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signer.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "economics/MonetaryPolicy.hpp"
 #include "node/ChainAuditor.hpp"
 #include "node/ChainAuditResult.hpp"
 #include "node/FinalizedBlockStore.hpp"
+#include "node/MonetaryFirewall.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/OperatorDiagnostics.hpp"
@@ -28,6 +30,7 @@
 #include "node/ProductionKeySafetyGate.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
+#include "node/RuntimeMonetaryReportService.hpp"
 #include "node/RuntimeStateLoader.hpp"
 #include "node/TestnetReadinessChecker.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
@@ -920,7 +923,8 @@ CommandLineResult CommandLineInterface::executeChainAudit(
 
     const node::ChainAuditResult audit =
         node::ChainAuditor::auditLoadedRuntime(
-            load
+            load,
+            directoryConfig.epochMonetaryReportPath()
         );
 
     if (!audit.passed()) {
@@ -1726,6 +1730,27 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
             + persistedBlock.reason()
             + "\n"
         );
+    }
+
+    // Persist epoch monetary report after successful finalization.
+    // This enables chain audit to verify supply/monetary consistency.
+    // A failure here is logged but does not retroactively fail the block production.
+    try {
+        const utils::Amount genesisSupply =
+            node::MonetaryFirewall::genesisSupply(genesisConfig);
+        const economics::MonetaryPolicy policy =
+            economics::MonetaryPolicy::localnetDefault(
+                genesisConfig.networkParameters().chainId(),
+                genesisSupply
+            );
+        node::RuntimeMonetaryReportService::buildAndPersist(
+            policy,
+            runtime.supplyState().finalizedDeltas(),
+            0,
+            directoryConfig.epochMonetaryReportPath()
+        );
+    } catch (const std::exception&) {
+        // Non-fatal: audit will detect missing/stale report on next chain audit run.
     }
 
     const std::size_t removedPendingTransactions =

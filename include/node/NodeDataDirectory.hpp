@@ -41,6 +41,7 @@ public:
     std::filesystem::path peersDirectoryPath() const;
     std::filesystem::path mempoolDirectoryPath() const;
     std::filesystem::path runtimeDirectoryPath() const;
+    std::filesystem::path epochMonetaryReportPath() const;
 
     bool isValid() const;
 

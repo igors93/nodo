@@ -246,6 +246,10 @@ std::filesystem::path NodeDataDirectoryConfig::runtimeDirectoryPath() const {
     return m_rootPath / "runtime";
 }
 
+std::filesystem::path NodeDataDirectoryConfig::epochMonetaryReportPath() const {
+    return m_rootPath / "runtime" / "epoch_monetary_report.nodo";
+}
+
 bool NodeDataDirectoryConfig::isValid() const {
     return isSafePath(m_rootPath);
 }

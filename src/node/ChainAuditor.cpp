@@ -16,57 +16,43 @@
 
 namespace nodo::node {
 
-ChainAuditResult ChainAuditor::auditLoadedRuntime(
+namespace {
+
+// Internal helper used by both public entry points. requireReport controls
+// whether a missing monetaryReportPath is fatal when finalized deltas exist.
+ChainAuditResult auditImpl(
     const RuntimeStateLoadResult& load,
-    const std::filesystem::path& monetaryReportPath
+    const std::filesystem::path& monetaryReportPath,
+    bool requireReport
 ) {
     if (!load.loaded()) {
-        return ChainAuditResult::failed(
-            load.reason()
-        );
+        return ChainAuditResult::failed(load.reason());
     }
 
-    const NodeRuntimeManifest& manifest =
-        load.manifest();
-
-    const NodeRuntime& runtime =
-        load.runtime();
+    const NodeRuntimeManifest& manifest = load.manifest();
+    const NodeRuntime& runtime          = load.runtime();
 
     const RuntimeStateVerificationResult runtimeVerification =
-        RuntimeStateVerifier::verifyManifestMatchesRuntime(
-            manifest,
-            runtime
-        );
+        RuntimeStateVerifier::verifyManifestMatchesRuntime(manifest, runtime);
 
     if (!runtimeVerification.verified()) {
-        return ChainAuditResult::failed(
-            runtimeVerification.reason()
-        );
+        return ChainAuditResult::failed(runtimeVerification.reason());
     }
 
     const ProtocolInvariantCheckResult invariantCheck =
-        ProtocolInvariantChecker::checkRuntimeAgainstManifest(
-            runtime,
-            manifest
-        );
+        ProtocolInvariantChecker::checkRuntimeAgainstManifest(runtime, manifest);
 
     if (!invariantCheck.passed()) {
-        return ChainAuditResult::failed(
-            invariantCheck.reason()
-        );
+        return ChainAuditResult::failed(invariantCheck.reason());
     }
 
     const crypto::ProtocolCryptoContext cryptoContext =
-        crypto::ProtocolCryptoContext::fromNetworkName(
-            manifest.networkName()
-        );
+        crypto::ProtocolCryptoContext::fromNetworkName(manifest.networkName());
 
     if (!cryptoContext.isValid()) {
         return ChainAuditResult::failed(
-            "invalid crypto context for network "
-            + manifest.networkName()
-            + ": "
-            + cryptoContext.rejectionReason()
+            "invalid crypto context for network " + manifest.networkName() +
+            ": " + cryptoContext.rejectionReason()
         );
     }
 
@@ -82,7 +68,9 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
     }
 
     if (runtime.validatorRegistry().activeCount() != manifest.validatorCount()) {
-        return ChainAuditResult::failed("manifest validatorCount does not match runtime validator registry");
+        return ChainAuditResult::failed(
+            "manifest validatorCount does not match runtime validator registry"
+        );
     }
 
     const auto& finalizedDeltas = runtime.supplyState().finalizedDeltas();
@@ -92,7 +80,9 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
 
     if (!finalizedDeltas.empty()) {
         try {
-            genesisSupply = MonetaryFirewall::genesisSupply(runtime.config().genesisConfig());
+            genesisSupply = MonetaryFirewall::genesisSupply(
+                runtime.config().genesisConfig()
+            );
         } catch (const std::exception& e) {
             return ChainAuditResult::failed(
                 std::string("chain audit: cannot determine genesis supply: ") + e.what()
@@ -147,9 +137,21 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
             );
         }
 
-        // If a persisted report path is provided, load and compare it against
-        // the rebuilt report. A mismatch or missing file fails the audit.
-        if (!monetaryReportPath.empty()) {
+        // Report path is required when finalized deltas exist.
+        if (monetaryReportPath.empty()) {
+            if (requireReport) {
+                const MonetaryAuditDiagnostic diag =
+                    MonetaryAuditDiagnostic::reportMissing(
+                        "monetary report verification is required but no report path was provided",
+                        0
+                    );
+                return ChainAuditResult::failed(
+                    "chain audit: monetary report path required when finalized deltas exist"
+                    " | " + diag.serialize()
+                );
+            }
+            // Dev-mode: skip report verification when path is empty.
+        } else {
             if (!std::filesystem::exists(monetaryReportPath)) {
                 const MonetaryAuditDiagnostic diag =
                     MonetaryAuditDiagnostic::reportMissing(
@@ -202,6 +204,21 @@ ChainAuditResult ChainAuditor::auditLoadedRuntime(
         load.loadedMempoolTransactionCount(),
         manifest.validatorCount()
     );
+}
+
+} // namespace
+
+ChainAuditResult ChainAuditor::auditLoadedRuntime(
+    const RuntimeStateLoadResult& load,
+    const std::filesystem::path& monetaryReportPath
+) {
+    return auditImpl(load, monetaryReportPath, true);
+}
+
+ChainAuditResult ChainAuditor::auditLoadedRuntimeDevMode(
+    const RuntimeStateLoadResult& load
+) {
+    return auditImpl(load, {}, false);
 }
 
 } // namespace nodo::node

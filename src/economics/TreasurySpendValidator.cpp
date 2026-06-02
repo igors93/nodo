@@ -1,5 +1,6 @@
 #include "economics/TreasurySpendValidator.hpp"
 
+#include <limits>
 #include <sstream>
 #include <utility>
 
@@ -21,12 +22,16 @@ std::string treasurySpendStatusToString(TreasurySpendStatus status) {
             return "APPROVAL_MISMATCH";
         case TreasurySpendStatus::TIMELOCK_NOT_SATISFIED:
             return "TIMELOCK_NOT_SATISFIED";
+        case TreasurySpendStatus::TIMELOCK_OVERFLOW:
+            return "TIMELOCK_OVERFLOW";
         case TreasurySpendStatus::INSUFFICIENT_TREASURY_BALANCE:
             return "INSUFFICIENT_TREASURY_BALANCE";
         case TreasurySpendStatus::PROPOSAL_LIMIT_EXCEEDED:
             return "PROPOSAL_LIMIT_EXCEEDED";
         case TreasurySpendStatus::EPOCH_LIMIT_EXCEEDED:
             return "EPOCH_LIMIT_EXCEEDED";
+        case TreasurySpendStatus::EPOCH_SPEND_OVERFLOW:
+            return "EPOCH_SPEND_OVERFLOW";
         case TreasurySpendStatus::TREASURY_LOCKED:
             return "TREASURY_LOCKED";
         default:
@@ -130,6 +135,17 @@ TreasurySpendValidationResult TreasurySpendValidator::validateSpend(
         }
     }
 
+    // Overflow guard for timelock height computation.
+    if (policy.timelockBlocks() >
+        std::numeric_limits<std::uint64_t>::max() - proposal.createdAtBlock()) {
+        return TreasurySpendValidationResult::rejected(
+            TreasurySpendStatus::TIMELOCK_OVERFLOW,
+            "timelock height computation would overflow uint64: createdAtBlock=" +
+            std::to_string(proposal.createdAtBlock()) +
+            " timelockBlocks=" + std::to_string(policy.timelockBlocks())
+        );
+    }
+
     // Timelock: currentBlockHeight >= proposal.createdAtBlock + policy.timelockBlocks.
     const std::uint64_t unlockHeight =
         proposal.createdAtBlock() + policy.timelockBlocks();
@@ -141,7 +157,7 @@ TreasurySpendValidationResult TreasurySpendValidator::validateSpend(
         );
     }
 
-    // Treasury balance check.
+    // Treasury balance check (before limit checks so balance is the first monetary gate).
     if (proposal.amount() > treasury.balance()) {
         return TreasurySpendValidationResult::rejected(
             TreasurySpendStatus::INSUFFICIENT_TREASURY_BALANCE,
@@ -150,9 +166,8 @@ TreasurySpendValidationResult TreasurySpendValidator::validateSpend(
         );
     }
 
-    // Per-proposal limit.
-    if (policy.maxSpendPerProposal().isPositive() &&
-        proposal.amount() > policy.maxSpendPerProposal()) {
+    // Per-proposal limit: zero limit means no spending is permitted.
+    if (proposal.amount() > policy.maxSpendPerProposal()) {
         return TreasurySpendValidationResult::rejected(
             TreasurySpendStatus::PROPOSAL_LIMIT_EXCEEDED,
             "proposal amount (" + std::to_string(proposal.amount().rawUnits()) +
@@ -161,18 +176,27 @@ TreasurySpendValidationResult TreasurySpendValidator::validateSpend(
         );
     }
 
-    // Per-epoch limit.
-    if (policy.maxSpendPerEpoch().isPositive()) {
-        const std::int64_t totalAfter =
-            epochSpentSoFar.rawUnits() + proposal.amount().rawUnits();
-        if (utils::Amount::fromRawUnits(totalAfter) > policy.maxSpendPerEpoch()) {
-            return TreasurySpendValidationResult::rejected(
-                TreasurySpendStatus::EPOCH_LIMIT_EXCEEDED,
-                "epoch spend total (" + std::to_string(totalAfter) +
-                ") would exceed maxSpendPerEpoch (" +
-                std::to_string(policy.maxSpendPerEpoch().rawUnits()) + ")"
-            );
-        }
+    // Overflow guard for epoch spend total before computing it.
+    if (proposal.amount().rawUnits() >
+        std::numeric_limits<std::int64_t>::max() - epochSpentSoFar.rawUnits()) {
+        return TreasurySpendValidationResult::rejected(
+            TreasurySpendStatus::EPOCH_SPEND_OVERFLOW,
+            "epoch spend total would overflow int64: epochSpentSoFar=" +
+            std::to_string(epochSpentSoFar.rawUnits()) +
+            " proposalAmount=" + std::to_string(proposal.amount().rawUnits())
+        );
+    }
+
+    // Per-epoch limit: zero limit means no spending is permitted.
+    const std::int64_t totalAfter =
+        epochSpentSoFar.rawUnits() + proposal.amount().rawUnits();
+    if (utils::Amount::fromRawUnits(totalAfter) > policy.maxSpendPerEpoch()) {
+        return TreasurySpendValidationResult::rejected(
+            TreasurySpendStatus::EPOCH_LIMIT_EXCEEDED,
+            "epoch spend total (" + std::to_string(totalAfter) +
+            ") would exceed maxSpendPerEpoch (" +
+            std::to_string(policy.maxSpendPerEpoch().rawUnits()) + ")"
+        );
     }
 
     // Lock check — after balance/limit checks so we can give a specific reason.
@@ -185,12 +209,24 @@ TreasurySpendValidationResult TreasurySpendValidator::validateSpend(
     }
 
     const utils::Amount balanceBefore = treasury.balance();
-    const utils::Amount balanceAfter  = utils::Amount::fromRawUnits(
+    // Balance underflow is impossible here: the balance check above ensures
+    // proposal.amount() <= treasury.balance(), so the subtraction is safe.
+    const utils::Amount balanceAfter = utils::Amount::fromRawUnits(
         balanceBefore.rawUnits() - proposal.amount().rawUnits()
     );
 
+    // Deterministic spend id encodes the full execution context so that the same
+    // proposal cannot produce an identical spend record under different conditions.
+    const std::string spendId =
+        "spend:" +
+        proposal.proposalId() + ":" +
+        std::to_string(currentBlockHeight) + ":" +
+        std::to_string(proposal.requestedEpoch()) + ":" +
+        proposal.recipientAddress() + ":" +
+        std::to_string(proposal.amount().rawUnits());
+
     const TreasurySpendRecord spendRecord(
-        "spend-" + proposal.proposalId(),
+        spendId,
         proposal.proposalId(),
         proposal.recipientAddress(),
         proposal.amount(),

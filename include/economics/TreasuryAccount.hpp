@@ -12,7 +12,8 @@ enum class TreasuryDebitStatus {
     ACCEPTED,
     LOCKED,
     INSUFFICIENT_BALANCE,
-    NEGATIVE_AMOUNT
+    NEGATIVE_AMOUNT,
+    INVALID_ACCOUNT
 };
 
 std::string treasuryDebitStatusToString(TreasuryDebitStatus status);
@@ -27,6 +28,7 @@ public:
         utils::Amount available, utils::Amount requested
     );
     static TreasuryDebitResult negativeAmount();
+    static TreasuryDebitResult invalidAccount(std::string reason);
 
     bool accepted() const;
     TreasuryDebitStatus status() const;

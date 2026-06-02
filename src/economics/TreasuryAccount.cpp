@@ -12,6 +12,7 @@ std::string treasuryDebitStatusToString(TreasuryDebitStatus status) {
         case TreasuryDebitStatus::LOCKED:               return "LOCKED";
         case TreasuryDebitStatus::INSUFFICIENT_BALANCE: return "INSUFFICIENT_BALANCE";
         case TreasuryDebitStatus::NEGATIVE_AMOUNT:      return "NEGATIVE_AMOUNT";
+        case TreasuryDebitStatus::INVALID_ACCOUNT:      return "INVALID_ACCOUNT";
         default:                                         return "UNKNOWN";
     }
 }
@@ -51,6 +52,13 @@ TreasuryDebitResult TreasuryDebitResult::negativeAmount() {
     TreasuryDebitResult r;
     r.m_status = TreasuryDebitStatus::NEGATIVE_AMOUNT;
     r.m_reason = "debit amount must be positive";
+    return r;
+}
+
+TreasuryDebitResult TreasuryDebitResult::invalidAccount(std::string reason) {
+    TreasuryDebitResult r;
+    r.m_status = TreasuryDebitStatus::INVALID_ACCOUNT;
+    r.m_reason = "cannot debit invalid treasury account: " + std::move(reason);
     return r;
 }
 
@@ -146,6 +154,9 @@ TreasuryAccount TreasuryAccount::credit(utils::Amount amount) const {
 }
 
 TreasuryDebitResult TreasuryAccount::tryDebit(utils::Amount amount) const {
+    if (!m_valid) {
+        return TreasuryDebitResult::invalidAccount(m_rejectionReason);
+    }
     if (!amount.isPositive()) {
         return TreasuryDebitResult::negativeAmount();
     }
