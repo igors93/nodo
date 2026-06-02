@@ -3,6 +3,8 @@
 #include "economics/SupplyDelta.hpp"
 #include "node/FinalizedArtifactSchema.hpp"
 #include "node/FinalizedMonetarySectionCodec.hpp"
+#include "node/FinalizedTreasurySection.hpp"
+#include "node/FinalizedTreasurySectionCodec.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
@@ -882,6 +884,14 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
 
     FinalizedMonetarySectionCodec::appendSupplyDeltaFields(
         pipelineResult.supplyDelta(),
+        fields
+    );
+
+    // Treasury section: pipeline produces no treasury spends yet.
+    // The empty section establishes the canonical field layout so audit tools
+    // can verify the section is present and valid from the first block.
+    FinalizedTreasurySectionCodec::appendFields(
+        FinalizedTreasurySection{},
         fields
     );
 

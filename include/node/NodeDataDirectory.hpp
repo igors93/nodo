@@ -42,6 +42,7 @@ public:
     std::filesystem::path mempoolDirectoryPath() const;
     std::filesystem::path runtimeDirectoryPath() const;
     std::filesystem::path epochMonetaryReportPath() const;
+    std::filesystem::path epochTreasuryReportPath() const;
 
     bool isValid() const;
 

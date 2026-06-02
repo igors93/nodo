@@ -2,12 +2,14 @@
 #define NODO_NODE_RUNTIME_STATE_LOADER_HPP
 
 #include "config/NetworkParameters.hpp"
+#include "node/FinalizedBlockArtifact.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "p2p/PeerMessage.hpp"
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 namespace nodo::node {
 
@@ -36,7 +38,8 @@ public:
         NodeRuntime runtime,
         NodeRuntimeManifest manifest,
         std::size_t loadedBlockCount,
-        std::size_t loadedMempoolTransactionCount
+        std::size_t loadedMempoolTransactionCount,
+        std::vector<FinalizedBlockArtifact> loadedArtifacts = {}
     );
 
     static RuntimeStateLoadResult rejected(
@@ -52,6 +55,7 @@ public:
     const NodeRuntimeManifest& manifest() const;
     std::size_t loadedBlockCount() const;
     std::size_t loadedMempoolTransactionCount() const;
+    const std::vector<FinalizedBlockArtifact>& loadedArtifacts() const;
 
     std::string serialize() const;
 
@@ -62,6 +66,7 @@ private:
     NodeRuntimeManifest m_manifest;
     std::size_t m_loadedBlockCount;
     std::size_t m_loadedMempoolTransactionCount;
+    std::vector<FinalizedBlockArtifact> m_loadedArtifacts;
 };
 
 class RuntimeStateLoader {

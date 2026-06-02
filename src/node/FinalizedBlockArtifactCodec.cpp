@@ -4,6 +4,8 @@
 #include "consensus/QuorumCertificate.hpp"
 #include "node/FinalizedArtifactSchema.hpp"
 #include "node/FinalizedMonetarySectionCodec.hpp"
+#include "node/FinalizedTreasurySectionCodec.hpp"
+#include "node/FinalizedTreasurySectionValidator.hpp"
 #include "serialization/BlockCodec.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
@@ -1239,7 +1241,8 @@ FinalizedBlockArtifact::FinalizedBlockArtifact()
       m_epochAccountingRecord(EpochAccountingRecord::notEvaluated()),
       m_validatorLifecycleSummary(ValidatorLifecycleSummary::notEvaluated()),
       m_quorumCertificate(),
-      m_finalizedRecord() {}
+      m_finalizedRecord(),
+      m_treasurySection() {}
 
 FinalizedBlockArtifact::FinalizedBlockArtifact(
     core::Block block,
@@ -1279,7 +1282,8 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
     EpochAccountingRecord epochAccountingRecord,
     ValidatorLifecycleSummary validatorLifecycleSummary,
     consensus::QuorumCertificate quorumCertificate,
-    consensus::FinalizedBlockRecord finalizedRecord
+    consensus::FinalizedBlockRecord finalizedRecord,
+    FinalizedTreasurySection treasurySection
 )
     : m_block(std::move(block)),
       m_postStateRoot(std::move(postStateRoot)),
@@ -1318,7 +1322,8 @@ FinalizedBlockArtifact::FinalizedBlockArtifact(
       m_validatorLifecycleSummary(std::move(validatorLifecycleSummary)),
       m_quorumCertificate(std::move(quorumCertificate)),
       m_finalizedRecord(std::move(finalizedRecord)),
-      m_supplyDelta(std::move(supplyDelta)) {}
+      m_supplyDelta(std::move(supplyDelta)),
+      m_treasurySection(std::move(treasurySection)) {}
 
 const core::Block& FinalizedBlockArtifact::block() const {
     if (!m_block.has_value()) {
@@ -1474,6 +1479,10 @@ const consensus::FinalizedBlockRecord& FinalizedBlockArtifact::finalizedRecord()
 
 const economics::SupplyDelta& FinalizedBlockArtifact::supplyDelta() const {
     return m_supplyDelta;
+}
+
+const FinalizedTreasurySection& FinalizedBlockArtifact::treasurySection() const {
+    return m_treasurySection;
 }
 
 bool FinalizedBlockArtifact::isValid() const {
@@ -1836,6 +1845,8 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         FinalizedMonetarySectionCodec::mintRecordCount(document);
     const std::size_t supplyDeltaBurnRecordCount =
         FinalizedMonetarySectionCodec::burnRecordCount(document);
+    const std::size_t treasurySpendCount =
+        FinalizedTreasurySectionCodec::spendCountFromDocument(document);
 
     std::set<std::string> allowedFields = {
         "blockIndex",
@@ -2013,6 +2024,11 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         allowedFields,
         supplyDeltaMintRecordCount,
         supplyDeltaBurnRecordCount
+    );
+
+    FinalizedTreasurySectionCodec::addAllowedFields(
+        allowedFields,
+        treasurySpendCount
     );
 
     for (std::size_t index = 0; index < recordCount; ++index) {
@@ -2399,6 +2415,29 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
             block.index(),
             block.hash()
         );
+
+    FinalizedTreasurySection parsedTreasurySection =
+        FinalizedTreasurySectionCodec::decodeFromDocument(
+            document,
+            treasurySpendCount
+        );
+
+    if (!parsedTreasurySection.isValid()) {
+        throw std::invalid_argument(
+            "Finalized block treasury section is invalid: " +
+            parsedTreasurySection.rejectionReason()
+        );
+    }
+
+    const auto treasurySectionValidation =
+        FinalizedTreasurySectionValidator::validate(parsedTreasurySection);
+
+    if (!treasurySectionValidation.passed()) {
+        throw std::invalid_argument(
+            "Finalized block treasury section failed validation: " +
+            treasurySectionValidation.reason()
+        );
+    }
 
     if (postStateRoot.empty()) {
         throw std::invalid_argument("Finalized block file postStateRoot is empty.");
@@ -3048,6 +3087,11 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         canonicalFields
     );
 
+    FinalizedTreasurySectionCodec::appendFields(
+        parsedTreasurySection,
+        canonicalFields
+    );
+
     const std::string canonicalContents =
         serialization::KeyValueFileCodec::serialize(
             FinalizedArtifactSchema::currentSchemaId(),
@@ -3096,7 +3140,8 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         epochAccountingRecord,
         validatorLifecycleSummary,
         quorumCertificate,
-        finalizedRecord
+        finalizedRecord,
+        std::move(parsedTreasurySection)
     );
     return artifact;
 }

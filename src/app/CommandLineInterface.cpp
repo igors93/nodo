@@ -18,9 +18,11 @@
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signer.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "economics/EpochTreasuryReport.hpp"
 #include "economics/MonetaryPolicy.hpp"
 #include "node/ChainAuditor.hpp"
 #include "node/ChainAuditResult.hpp"
+#include "node/EpochTreasuryReportStore.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/NodeDataDirectory.hpp"
@@ -924,7 +926,8 @@ CommandLineResult CommandLineInterface::executeChainAudit(
     const node::ChainAuditResult audit =
         node::ChainAuditor::auditLoadedRuntime(
             load,
-            directoryConfig.epochMonetaryReportPath()
+            directoryConfig.epochMonetaryReportPath(),
+            directoryConfig.epochTreasuryReportPath()
         );
 
     if (!audit.passed()) {
@@ -1733,24 +1736,61 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
     }
 
     // Persist epoch monetary report after successful finalization.
-    // This enables chain audit to verify supply/monetary consistency.
-    // A failure here is logged but does not retroactively fail the block production.
-    try {
-        const utils::Amount genesisSupply =
-            node::MonetaryFirewall::genesisSupply(genesisConfig);
-        const economics::MonetaryPolicy policy =
+    // Failure here is a hard error: a persisted block without a verifiable
+    // monetary report is not acceptable in the normal production path.
+    {
+        utils::Amount genesisSupply;
+        try {
+            genesisSupply = node::MonetaryFirewall::genesisSupply(genesisConfig);
+        } catch (const std::exception& e) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                std::string("Block persisted but genesis supply unavailable for monetary report: ") +
+                e.what() + "\n"
+            );
+        }
+
+        const economics::MonetaryPolicy reportPolicy =
             economics::MonetaryPolicy::localnetDefault(
                 genesisConfig.networkParameters().chainId(),
                 genesisSupply
             );
-        node::RuntimeMonetaryReportService::buildAndPersist(
-            policy,
+
+        const auto reportResult = node::RuntimeMonetaryReportService::buildAndPersist(
+            reportPolicy,
             runtime.supplyState().finalizedDeltas(),
             0,
             directoryConfig.epochMonetaryReportPath()
         );
-    } catch (const std::exception&) {
-        // Non-fatal: audit will detect missing/stale report on next chain audit run.
+
+        if (!reportResult.succeeded()) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "Block persisted but monetary report persistence failed: " +
+                reportResult.reason() + "\n"
+            );
+        }
+    }
+
+    // Persist epoch treasury report after successful finalization.
+    // All current artifacts have empty treasury sections (no real spends yet).
+    // Task 10 will wire the full artifact spend sequence into this path.
+    {
+        const economics::EpochTreasuryReport treasuryReport =
+            economics::EpochTreasuryReport::fromSpendRecords(0, {});
+
+        try {
+            node::EpochTreasuryReportStore::write(
+                directoryConfig.epochTreasuryReportPath(),
+                treasuryReport
+            );
+        } catch (const std::exception& e) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                std::string("Block persisted but treasury report persistence failed: ") +
+                e.what() + "\n"
+            );
+        }
     }
 
     const std::size_t removedPendingTransactions =

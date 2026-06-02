@@ -21,6 +21,7 @@
 #include "node/ValidatorNetworkPolicy.hpp"
 #include "node/ValidatorRiskAssessment.hpp"
 #include "economics/SupplyDelta.hpp"
+#include "node/FinalizedTreasurySection.hpp"
 #include "utils/Amount.hpp"
 
 #include <optional>
@@ -71,7 +72,8 @@ public:
         EpochAccountingRecord epochAccountingRecord,
         ValidatorLifecycleSummary validatorLifecycleSummary,
         consensus::QuorumCertificate quorumCertificate,
-        consensus::FinalizedBlockRecord finalizedRecord
+        consensus::FinalizedBlockRecord finalizedRecord,
+        FinalizedTreasurySection treasurySection = FinalizedTreasurySection{}
     );
 
     const core::Block& block() const;
@@ -112,6 +114,7 @@ public:
     const consensus::QuorumCertificate& quorumCertificate() const;
     const consensus::FinalizedBlockRecord& finalizedRecord() const;
     const economics::SupplyDelta& supplyDelta() const;
+    const FinalizedTreasurySection& treasurySection() const;
 
     bool isValid() const;
     std::string serialize() const;
@@ -155,6 +158,7 @@ private:
     consensus::QuorumCertificate m_quorumCertificate;
     consensus::FinalizedBlockRecord m_finalizedRecord;
     economics::SupplyDelta m_supplyDelta;
+    FinalizedTreasurySection m_treasurySection;
 };
 
 } // namespace nodo::node

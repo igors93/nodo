@@ -101,7 +101,8 @@ RuntimeStateLoadResult RuntimeStateLoadResult::loaded(
     NodeRuntime runtime,
     NodeRuntimeManifest manifest,
     std::size_t loadedBlockCount,
-    std::size_t loadedMempoolTransactionCount
+    std::size_t loadedMempoolTransactionCount,
+    std::vector<FinalizedBlockArtifact> loadedArtifacts
 ) {
     RuntimeStateLoadResult result;
     result.m_status = RuntimeStateLoadStatus::LOADED;
@@ -110,6 +111,7 @@ RuntimeStateLoadResult RuntimeStateLoadResult::loaded(
     result.m_manifest = std::move(manifest);
     result.m_loadedBlockCount = loadedBlockCount;
     result.m_loadedMempoolTransactionCount = loadedMempoolTransactionCount;
+    result.m_loadedArtifacts = std::move(loadedArtifacts);
     return result;
 }
 
@@ -151,6 +153,10 @@ std::size_t RuntimeStateLoadResult::loadedBlockCount() const {
 
 std::size_t RuntimeStateLoadResult::loadedMempoolTransactionCount() const {
     return m_loadedMempoolTransactionCount;
+}
+
+const std::vector<FinalizedBlockArtifact>& RuntimeStateLoadResult::loadedArtifacts() const {
+    return m_loadedArtifacts;
 }
 
 std::string RuntimeStateLoadResult::serialize() const {
@@ -225,6 +231,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
     }
 
     std::size_t loadedBlockCount = 0;
+    std::vector<FinalizedBlockArtifact> loadedArtifacts;
 
     for (std::uint64_t height = 1; height <= manifest.latestBlockHeight(); ++height) {
         const std::filesystem::path blockPath =
@@ -296,6 +303,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             );
         }
 
+        loadedArtifacts.push_back(artifact);
         ++loadedBlockCount;
     }
 
@@ -351,7 +359,11 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::RUNTIME_START_FAILED, "Rebuilt runtime failed final audit.");
     }
 
-    return RuntimeStateLoadResult::loaded(runtime, manifest, loadedBlockCount, mempoolLoad.loadedTransactionCount());
+    return RuntimeStateLoadResult::loaded(
+        runtime, manifest,
+        loadedBlockCount, mempoolLoad.loadedTransactionCount(),
+        std::move(loadedArtifacts)
+    );
 }
 
 } // namespace nodo::node

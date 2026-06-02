@@ -2,9 +2,13 @@
 
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "economics/EpochMonetaryReport.hpp"
+#include "economics/EpochTreasuryReport.hpp"
 #include "economics/MonetaryPolicy.hpp"
 #include "node/EpochMonetaryReportStore.hpp"
+#include "node/EpochTreasuryReportStore.hpp"
+#include "node/EpochTreasuryReportVerifier.hpp"
 #include "node/FinalizedSupplyAudit.hpp"
+#include "node/FinalizedTreasuryAudit.hpp"
 #include "node/MonetaryAuditDiagnostic.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/MonetaryReportVerifier.hpp"
@@ -23,6 +27,7 @@ namespace {
 ChainAuditResult auditImpl(
     const RuntimeStateLoadResult& load,
     const std::filesystem::path& monetaryReportPath,
+    const std::filesystem::path& treasuryReportPath,
     bool requireReport
 ) {
     if (!load.loaded()) {
@@ -192,6 +197,48 @@ ChainAuditResult auditImpl(
                 );
             }
         }
+
+        // Treasury section audit: validate spend records in all loaded artifacts.
+        const FinalizedTreasuryAuditResult treasuryAudit =
+            FinalizedTreasuryAudit::auditArtifacts(0, load.loadedArtifacts());
+
+        if (!treasuryAudit.passed()) {
+            return ChainAuditResult::failed(
+                "chain audit: treasury section audit failed: " + treasuryAudit.reason()
+            );
+        }
+
+        // Treasury report verification.
+        if (!treasuryReportPath.empty()) {
+            if (!std::filesystem::exists(treasuryReportPath)) {
+                return ChainAuditResult::failed(
+                    "chain audit: expected persisted treasury report not found at: " +
+                    treasuryReportPath.string()
+                );
+            }
+
+            economics::EpochTreasuryReport persistedTreasuryReport;
+            try {
+                persistedTreasuryReport = EpochTreasuryReportStore::read(treasuryReportPath);
+            } catch (const std::exception& e) {
+                return ChainAuditResult::failed(
+                    std::string("chain audit: treasury report decode failed: ") + e.what()
+                );
+            }
+
+            const EpochTreasuryVerificationResult treasuryVerif =
+                EpochTreasuryReportVerifier::verify(
+                    persistedTreasuryReport,
+                    treasuryAudit.rebuiltReport()
+                );
+
+            if (!treasuryVerif.matched()) {
+                return ChainAuditResult::failed(
+                    "chain audit: persisted treasury report does not match rebuilt report: " +
+                    treasuryVerif.reason()
+                );
+            }
+        }
     }
 
     return ChainAuditResult::passed(
@@ -210,15 +257,16 @@ ChainAuditResult auditImpl(
 
 ChainAuditResult ChainAuditor::auditLoadedRuntime(
     const RuntimeStateLoadResult& load,
-    const std::filesystem::path& monetaryReportPath
+    const std::filesystem::path& monetaryReportPath,
+    const std::filesystem::path& treasuryReportPath
 ) {
-    return auditImpl(load, monetaryReportPath, true);
+    return auditImpl(load, monetaryReportPath, treasuryReportPath, true);
 }
 
 ChainAuditResult ChainAuditor::auditLoadedRuntimeDevMode(
     const RuntimeStateLoadResult& load
 ) {
-    return auditImpl(load, {}, false);
+    return auditImpl(load, {}, {}, false);
 }
 
 } // namespace nodo::node

@@ -25,14 +25,15 @@ public:
      */
     static ChainAuditResult auditLoadedRuntime(
         const RuntimeStateLoadResult& load,
-        const std::filesystem::path& monetaryReportPath = {}
+        const std::filesystem::path& monetaryReportPath = {},
+        const std::filesystem::path& treasuryReportPath = {}
     );
 
     /*
      * Audit a loaded runtime without requiring a persisted monetary report.
      *
      * This helper is intended for development/testing only. In production,
-     * always use auditLoadedRuntime with an explicit monetaryReportPath.
+     * always use auditLoadedRuntime with explicit report paths.
      * The name makes the intentional skip visible at every call site.
      */
     static ChainAuditResult auditLoadedRuntimeDevMode(
