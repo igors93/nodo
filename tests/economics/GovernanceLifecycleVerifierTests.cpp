@@ -23,6 +23,7 @@ using nodo::economics::GovernanceVoteEvidence;
 using nodo::economics::GovernanceVoteProof;
 using nodo::economics::GovernanceVoteRecord;
 using nodo::tests::fixtures::validLifecycle;
+using nodo::tests::fixtures::voteEvidence;
 using nodo::tests::fixtures::validVotes;
 
 GovernanceLifecycleRecord withVotes(
@@ -51,16 +52,15 @@ void testValidLifecycleVerifies() {
 void testDuplicateVoterFails() {
     const auto base = validLifecycle();
     auto votes = base.voteEvidenceList();
-    const GovernanceVoteRecord duplicate(
+    votes[1] = voteEvidence(
         "vote-004",
-        "gov-prop-001",
         "validator-a",
         GovernanceVoteChoice::NO,
         20,
-        13,
-        "governance-v1"
+        "prop-001",
+        "gov-prop-001",
+        13
     );
-    votes[1] = GovernanceVoteEvidence(duplicate, GovernanceVoteProof::build(duplicate));
 
     const auto result = GovernanceLifecycleVerifier::verify(withVotes(base, votes));
     assert(!result.verified());
@@ -70,16 +70,15 @@ void testDuplicateVoterFails() {
 void testChangeVoteChoiceAfterTallyFails() {
     const auto base = validLifecycle();
     auto votes = base.voteEvidenceList();
-    const GovernanceVoteRecord changed(
+    votes[0] = voteEvidence(
         "vote-001",
-        "gov-prop-001",
         "validator-a",
         GovernanceVoteChoice::NO,
         60,
-        12,
-        "governance-v1"
+        "prop-001",
+        "gov-prop-001",
+        12
     );
-    votes[0] = GovernanceVoteEvidence(changed, GovernanceVoteProof::build(changed));
 
     const auto result = GovernanceLifecycleVerifier::verify(withVotes(base, votes));
     assert(!result.verified());
@@ -90,16 +89,15 @@ void testChangeVoteChoiceAfterTallyFails() {
 void testChangeVotePowerAfterTallyFails() {
     const auto base = validLifecycle();
     auto votes = base.voteEvidenceList();
-    const GovernanceVoteRecord changed(
+    votes[0] = voteEvidence(
         "vote-001",
-        "gov-prop-001",
         "validator-a",
         GovernanceVoteChoice::YES,
         61,
-        12,
-        "governance-v1"
+        "prop-001",
+        "gov-prop-001",
+        12
     );
-    votes[0] = GovernanceVoteEvidence(changed, GovernanceVoteProof::build(changed));
 
     const auto result = GovernanceLifecycleVerifier::verify(withVotes(base, votes));
     assert(!result.verified());

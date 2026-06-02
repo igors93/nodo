@@ -1,9 +1,27 @@
 #include "economics/GovernanceVoteSetAudit.hpp"
 
+#include <algorithm>
 #include <set>
 #include <utility>
 
 namespace nodo::economics {
+
+namespace {
+
+bool sameVotingPolicy(
+    const GovernanceVotingPolicy& left,
+    const GovernanceVotingPolicy& right
+) {
+    return left.policyVersion() == right.policyVersion() &&
+           left.quorumVotingPower() == right.quorumVotingPower() &&
+           left.approvalThresholdBasisPoints() ==
+               right.approvalThresholdBasisPoints() &&
+           left.minimumVotingPower() == right.minimumVotingPower() &&
+           left.allowAbstain() == right.allowAbstain() &&
+           left.allowVoteReplacement() == right.allowVoteReplacement();
+}
+
+} // namespace
 
 std::string governanceVoteSetAuditStatusToString(
     GovernanceVoteSetAuditStatus status
@@ -21,14 +39,14 @@ std::string governanceVoteSetAuditStatusToString(
             return "PROPOSAL_MISMATCH";
         case GovernanceVoteSetAuditStatus::POLICY_VERSION_MISMATCH:
             return "POLICY_VERSION_MISMATCH";
+        case GovernanceVoteSetAuditStatus::DUPLICATE_EVIDENCE_ID:
+            return "DUPLICATE_EVIDENCE_ID";
         case GovernanceVoteSetAuditStatus::DUPLICATE_VOTE_ID:
             return "DUPLICATE_VOTE_ID";
         case GovernanceVoteSetAuditStatus::DUPLICATE_VOTER:
             return "DUPLICATE_VOTER";
-        case GovernanceVoteSetAuditStatus::ABSTAIN_NOT_ALLOWED:
-            return "ABSTAIN_NOT_ALLOWED";
-        case GovernanceVoteSetAuditStatus::TALLY_BUILD_FAILED:
-            return "TALLY_BUILD_FAILED";
+        case GovernanceVoteSetAuditStatus::REPLACEMENT_NOT_IMPLEMENTED:
+            return "REPLACEMENT_NOT_IMPLEMENTED";
         default:
             return "UNKNOWN";
     }
@@ -37,16 +55,15 @@ std::string governanceVoteSetAuditStatusToString(
 GovernanceVoteSetAuditResult::GovernanceVoteSetAuditResult()
     : m_accepted(false),
       m_status(GovernanceVoteSetAuditStatus::INVALID_VOTING_POLICY),
-      m_failedAtIndex(0),
-      m_tallyReport() {}
+      m_failedAtIndex(0) {}
 
 GovernanceVoteSetAuditResult GovernanceVoteSetAuditResult::accepted(
-    GovernanceTallyReport tallyReport
+    std::vector<GovernanceVoteEvidence> canonicalVotes
 ) {
     GovernanceVoteSetAuditResult result;
     result.m_accepted = true;
     result.m_status = GovernanceVoteSetAuditStatus::ACCEPTED;
-    result.m_tallyReport = std::move(tallyReport);
+    result.m_canonicalVotes = std::move(canonicalVotes);
     return result;
 }
 
@@ -63,30 +80,41 @@ GovernanceVoteSetAuditResult GovernanceVoteSetAuditResult::rejected(
     return result;
 }
 
-bool GovernanceVoteSetAuditResult::accepted() const { return m_accepted; }
+bool GovernanceVoteSetAuditResult::accepted() const {
+    return m_accepted;
+}
+
+bool GovernanceVoteSetAuditResult::isValid() const {
+    return m_accepted;
+}
+
 GovernanceVoteSetAuditStatus GovernanceVoteSetAuditResult::status() const {
     return m_status;
 }
+
 const std::string& GovernanceVoteSetAuditResult::reason() const {
     return m_reason;
 }
+
 std::size_t GovernanceVoteSetAuditResult::failedAtIndex() const {
     return m_failedAtIndex;
 }
-const GovernanceTallyReport& GovernanceVoteSetAuditResult::tallyReport() const {
-    return m_tallyReport;
+
+const std::vector<GovernanceVoteEvidence>&
+GovernanceVoteSetAuditResult::canonicalVotes() const {
+    return m_canonicalVotes;
 }
 
-GovernanceVoteSetAuditResult GovernanceVoteSetAudit::auditVotes(
-    const GovernanceVotingPolicy& votingPolicy,
+GovernanceVoteSetAuditResult GovernanceVoteSetAudit::audit(
     const std::string& governanceProposalId,
+    const GovernanceVotingPolicy& votingPolicy,
     const std::vector<GovernanceVoteEvidence>& voteEvidenceList
 ) {
     if (!votingPolicy.isValid()) {
         return GovernanceVoteSetAuditResult::rejected(
             GovernanceVoteSetAuditStatus::INVALID_VOTING_POLICY,
             "GovernanceVoteSetAudit: voting policy is invalid: " +
-            votingPolicy.rejectionReason()
+                votingPolicy.rejectionReason()
         );
     }
 
@@ -104,14 +132,9 @@ GovernanceVoteSetAuditResult GovernanceVoteSetAudit::auditVotes(
         );
     }
 
+    std::set<std::string> evidenceIds;
     std::set<std::string> voteIds;
     std::set<std::string> voterIds;
-    std::uint64_t yesPower = 0;
-    std::uint64_t noPower = 0;
-    std::uint64_t abstainPower = 0;
-    std::uint64_t yesCount = 0;
-    std::uint64_t noCount = 0;
-    std::uint64_t abstainCount = 0;
 
     for (std::size_t i = 0; i < voteEvidenceList.size(); ++i) {
         const GovernanceVoteEvidence& evidence = voteEvidenceList[i];
@@ -120,19 +143,33 @@ GovernanceVoteSetAuditResult GovernanceVoteSetAudit::auditVotes(
             return GovernanceVoteSetAuditResult::rejected(
                 GovernanceVoteSetAuditStatus::INVALID_VOTE_EVIDENCE,
                 "GovernanceVoteSetAudit: vote evidence is invalid: " +
-                evidence.rejectionReason(),
+                    evidence.rejectionReason(),
+                i
+            );
+        }
+
+        if (evidence.proposalEnvelope().governanceProposalId() !=
+            governanceProposalId) {
+            return GovernanceVoteSetAuditResult::rejected(
+                GovernanceVoteSetAuditStatus::PROPOSAL_MISMATCH,
+                "GovernanceVoteSetAudit: evidence proposal does not match audit proposal.",
+                i
+            );
+        }
+
+        if (!sameVotingPolicy(evidence.votingPolicy(), votingPolicy)) {
+            return GovernanceVoteSetAuditResult::rejected(
+                GovernanceVoteSetAuditStatus::POLICY_VERSION_MISMATCH,
+                "GovernanceVoteSetAudit: evidence voting policy does not match audit policy.",
                 i
             );
         }
 
         const GovernanceVoteRecord& vote = evidence.voteRecord();
-
         if (vote.governanceProposalId() != governanceProposalId) {
             return GovernanceVoteSetAuditResult::rejected(
                 GovernanceVoteSetAuditStatus::PROPOSAL_MISMATCH,
-                "GovernanceVoteSetAudit: vote proposal '" +
-                vote.governanceProposalId() + "' does not match lifecycle proposal '" +
-                governanceProposalId + "'.",
+                "GovernanceVoteSetAudit: vote proposal does not match audit proposal.",
                 i
             );
         }
@@ -140,9 +177,16 @@ GovernanceVoteSetAuditResult GovernanceVoteSetAudit::auditVotes(
         if (vote.policyVersion() != votingPolicy.policyVersion()) {
             return GovernanceVoteSetAuditResult::rejected(
                 GovernanceVoteSetAuditStatus::POLICY_VERSION_MISMATCH,
-                "GovernanceVoteSetAudit: vote policyVersion '" +
-                vote.policyVersion() + "' does not match voting policy '" +
-                votingPolicy.policyVersion() + "'.",
+                "GovernanceVoteSetAudit: vote policyVersion does not match audit policy.",
+                i
+            );
+        }
+
+        if (!evidenceIds.insert(evidence.evidenceId()).second) {
+            return GovernanceVoteSetAuditResult::rejected(
+                GovernanceVoteSetAuditStatus::DUPLICATE_EVIDENCE_ID,
+                "GovernanceVoteSetAudit: duplicate evidenceId '" +
+                    evidence.evidenceId() + "'.",
                 i
             );
         }
@@ -156,82 +200,39 @@ GovernanceVoteSetAuditResult GovernanceVoteSetAudit::auditVotes(
         }
 
         if (!voterIds.insert(vote.voterId()).second) {
+            if (votingPolicy.allowVoteReplacement()) {
+                return GovernanceVoteSetAuditResult::rejected(
+                    GovernanceVoteSetAuditStatus::REPLACEMENT_NOT_IMPLEMENTED,
+                    "GovernanceVoteSetAudit: vote replacement is not implemented.",
+                    i
+                );
+            }
             return GovernanceVoteSetAuditResult::rejected(
                 GovernanceVoteSetAuditStatus::DUPLICATE_VOTER,
-                "GovernanceVoteSetAudit: duplicate voterId '" + vote.voterId() +
-                "' for proposal '" + governanceProposalId + "'.",
+                "GovernanceVoteSetAudit: duplicate voterId '" + vote.voterId() + "'.",
                 i
             );
         }
+    }
 
-        switch (vote.choice()) {
-            case GovernanceVoteChoice::YES:
-                yesPower += vote.votingPower();
-                ++yesCount;
-                break;
-            case GovernanceVoteChoice::NO:
-                noPower += vote.votingPower();
-                ++noCount;
-                break;
-            case GovernanceVoteChoice::ABSTAIN:
-                if (!votingPolicy.allowAbstain()) {
-                    return GovernanceVoteSetAuditResult::rejected(
-                        GovernanceVoteSetAuditStatus::ABSTAIN_NOT_ALLOWED,
-                        "GovernanceVoteSetAudit: abstain vote is not allowed.",
-                        i
-                    );
-                }
-                abstainPower += vote.votingPower();
-                ++abstainCount;
-                break;
+    std::vector<GovernanceVoteEvidence> canonical = voteEvidenceList;
+    std::sort(
+        canonical.begin(),
+        canonical.end(),
+        [](const GovernanceVoteEvidence& left, const GovernanceVoteEvidence& right) {
+            return left.voteRecord().voteId() < right.voteRecord().voteId();
         }
-    }
-
-    const std::uint64_t totalPower = yesPower + noPower + abstainPower;
-    const bool quorumMet = totalPower >= votingPolicy.quorumThresholdPower();
-    const bool approvalMet = yesPower >= votingPolicy.approvalThresholdPower();
-    const bool approved = quorumMet && approvalMet;
-
-    const std::string proof = GovernanceTallyReport::buildTallyProof(
-        governanceProposalId,
-        votingPolicy.policyVersion(),
-        totalPower,
-        yesPower,
-        noPower,
-        abstainPower,
-        yesCount,
-        noCount,
-        abstainCount,
-        quorumMet,
-        approvalMet,
-        approved
     );
 
-    GovernanceTallyReport tally(
-        governanceProposalId,
-        votingPolicy.policyVersion(),
-        totalPower,
-        yesPower,
-        noPower,
-        abstainPower,
-        yesCount,
-        noCount,
-        abstainCount,
-        quorumMet,
-        approvalMet,
-        approved,
-        proof
-    );
+    return GovernanceVoteSetAuditResult::accepted(std::move(canonical));
+}
 
-    if (!tally.isValid()) {
-        return GovernanceVoteSetAuditResult::rejected(
-            GovernanceVoteSetAuditStatus::TALLY_BUILD_FAILED,
-            "GovernanceVoteSetAudit: rebuilt tally is invalid: " +
-            tally.rejectionReason()
-        );
-    }
-
-    return GovernanceVoteSetAuditResult::accepted(std::move(tally));
+GovernanceVoteSetAuditResult GovernanceVoteSetAudit::auditVotes(
+    const GovernanceVotingPolicy& votingPolicy,
+    const std::string& governanceProposalId,
+    const std::vector<GovernanceVoteEvidence>& voteEvidenceList
+) {
+    return audit(governanceProposalId, votingPolicy, voteEvidenceList);
 }
 
 } // namespace nodo::economics

@@ -6,6 +6,23 @@
 
 namespace nodo::economics {
 
+namespace {
+
+bool sameVotingPolicy(
+    const GovernanceVotingPolicy& left,
+    const GovernanceVotingPolicy& right
+) {
+    return left.policyVersion() == right.policyVersion() &&
+           left.quorumVotingPower() == right.quorumVotingPower() &&
+           left.approvalThresholdBasisPoints() ==
+               right.approvalThresholdBasisPoints() &&
+           left.minimumVotingPower() == right.minimumVotingPower() &&
+           left.allowAbstain() == right.allowAbstain() &&
+           left.allowVoteReplacement() == right.allowVoteReplacement();
+}
+
+} // namespace
+
 GovernanceLifecycleRecord::GovernanceLifecycleRecord()
     : m_createdAtBlock(0),
       m_finalizedAtBlock(0),
@@ -73,6 +90,25 @@ GovernanceLifecycleRecord::GovernanceLifecycleRecord(
                 "GovernanceLifecycleRecord: vote evidence at index " +
                 std::to_string(index) + " is invalid: " +
                 m_voteEvidenceList[index].rejectionReason();
+            return;
+        }
+
+        if (m_voteEvidenceList[index].proposalEnvelope().serialize() !=
+            m_proposalEnvelope.serialize()) {
+            m_rejectionReason =
+                "GovernanceLifecycleRecord: vote evidence at index " +
+                std::to_string(index) +
+                " is bound to a different proposal envelope.";
+            return;
+        }
+
+        if (!sameVotingPolicy(
+                m_voteEvidenceList[index].votingPolicy(),
+                m_votingPolicy)) {
+            m_rejectionReason =
+                "GovernanceLifecycleRecord: vote evidence at index " +
+                std::to_string(index) +
+                " is bound to a different voting policy.";
             return;
         }
     }

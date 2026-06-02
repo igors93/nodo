@@ -38,73 +38,111 @@ bool governanceVoteChoiceFromString(
 }
 
 GovernanceVoteRecord::GovernanceVoteRecord()
-    : m_choice(GovernanceVoteChoice::ABSTAIN),
-      m_votingPower(0),
-      m_votedAtBlock(0),
-      m_valid(false),
-      m_rejectionReason("GovernanceVoteRecord: default-constructed.") {}
+    : m_voteChoice(GovernanceVoteChoice::NO),
+      m_votingPower(utils::Amount::fromRawUnits(0)),
+      m_castAtBlock(0) {}
 
 GovernanceVoteRecord::GovernanceVoteRecord(
     std::string voteId,
     std::string governanceProposalId,
     std::string voterId,
-    GovernanceVoteChoice choice,
-    std::uint64_t votingPower,
-    std::uint64_t votedAtBlock,
+    GovernanceVoteChoice voteChoice,
+    utils::Amount votingPower,
+    std::uint64_t castAtBlock,
+    std::string votingPowerSource,
+    std::string voteProof,
     std::string policyVersion
 )
     : m_voteId(std::move(voteId)),
       m_governanceProposalId(std::move(governanceProposalId)),
       m_voterId(std::move(voterId)),
-      m_choice(choice),
+      m_voteChoice(voteChoice),
       m_votingPower(votingPower),
-      m_votedAtBlock(votedAtBlock),
-      m_policyVersion(std::move(policyVersion)),
-      m_valid(false),
-      m_rejectionReason("")
-{
-    if (m_voteId.empty()) {
-        m_rejectionReason = "GovernanceVoteRecord: voteId must not be empty.";
-        return;
-    }
-    if (m_governanceProposalId.empty()) {
-        m_rejectionReason =
-            "GovernanceVoteRecord: governanceProposalId must not be empty.";
-        return;
-    }
-    if (m_voterId.empty()) {
-        m_rejectionReason = "GovernanceVoteRecord: voterId must not be empty.";
-        return;
-    }
-    if (m_votingPower == 0) {
-        m_rejectionReason = "GovernanceVoteRecord: votingPower must be positive.";
-        return;
-    }
-    if (m_votedAtBlock == 0) {
-        m_rejectionReason = "GovernanceVoteRecord: votedAtBlock must be positive.";
-        return;
-    }
-    if (m_policyVersion.empty()) {
-        m_rejectionReason = "GovernanceVoteRecord: policyVersion must not be empty.";
-        return;
-    }
-    m_valid = true;
-}
+      m_castAtBlock(castAtBlock),
+      m_votingPowerSource(std::move(votingPowerSource)),
+      m_voteProof(std::move(voteProof)),
+      m_policyVersion(std::move(policyVersion)) {}
 
 const std::string& GovernanceVoteRecord::voteId() const { return m_voteId; }
 const std::string& GovernanceVoteRecord::governanceProposalId() const {
     return m_governanceProposalId;
 }
 const std::string& GovernanceVoteRecord::voterId() const { return m_voterId; }
-GovernanceVoteChoice GovernanceVoteRecord::choice() const { return m_choice; }
-std::uint64_t GovernanceVoteRecord::votingPower() const { return m_votingPower; }
-std::uint64_t GovernanceVoteRecord::votedAtBlock() const { return m_votedAtBlock; }
+GovernanceVoteChoice GovernanceVoteRecord::voteChoice() const { return m_voteChoice; }
+utils::Amount GovernanceVoteRecord::votingPower() const { return m_votingPower; }
+std::uint64_t GovernanceVoteRecord::castAtBlock() const { return m_castAtBlock; }
+const std::string& GovernanceVoteRecord::votingPowerSource() const {
+    return m_votingPowerSource;
+}
+const std::string& GovernanceVoteRecord::voteProof() const { return m_voteProof; }
 const std::string& GovernanceVoteRecord::policyVersion() const {
     return m_policyVersion;
 }
-bool GovernanceVoteRecord::isValid() const { return m_valid; }
-const std::string& GovernanceVoteRecord::rejectionReason() const {
-    return m_rejectionReason;
+
+bool GovernanceVoteRecord::isValid() const {
+    return rejectionReason().empty();
+}
+
+std::string GovernanceVoteRecord::rejectionReason() const {
+    if (m_voteId.empty()) {
+        return "GovernanceVoteRecord rejected: voteId is empty.";
+    }
+    if (m_governanceProposalId.empty()) {
+        return "GovernanceVoteRecord rejected: governanceProposalId is empty.";
+    }
+    if (m_voterId.empty()) {
+        return "GovernanceVoteRecord rejected: voterId is empty.";
+    }
+    if (m_castAtBlock == 0) {
+        return "GovernanceVoteRecord rejected: castAtBlock must be positive.";
+    }
+    if (m_votingPowerSource.empty()) {
+        return "GovernanceVoteRecord rejected: votingPowerSource is empty.";
+    }
+    if (m_voteProof.empty()) {
+        return "GovernanceVoteRecord rejected: voteProof is empty.";
+    }
+    if (m_policyVersion.empty()) {
+        return "GovernanceVoteRecord rejected: policyVersion is empty.";
+    }
+    if (m_votingPower.isNegative()) {
+        return "GovernanceVoteRecord rejected: votingPower is negative.";
+    }
+    return "";
+}
+
+bool GovernanceVoteRecord::isValidUnderPolicy(
+    const GovernanceVotingPolicy& policy
+) const {
+    return policyRejectionReason(policy).empty();
+}
+
+std::string GovernanceVoteRecord::policyRejectionReason(
+    const GovernanceVotingPolicy& policy
+) const {
+    if (!isValid()) {
+        return rejectionReason();
+    }
+    if (!policy.isValid()) {
+        return "GovernanceVoteRecord policy check: policy is invalid: " +
+               policy.rejectionReason();
+    }
+    if (m_policyVersion != policy.policyVersion()) {
+        return "GovernanceVoteRecord policy check: policyVersion='" +
+               m_policyVersion + "' does not match policy.policyVersion='" +
+               policy.policyVersion() + "'.";
+    }
+    if (m_votingPower < policy.minimumVotingPower()) {
+        return "GovernanceVoteRecord policy check: votingPower=" +
+               std::to_string(m_votingPower.rawUnits()) +
+               " is below minimumVotingPower=" +
+               std::to_string(policy.minimumVotingPower().rawUnits()) + ".";
+    }
+    if (m_voteChoice == GovernanceVoteChoice::ABSTAIN &&
+        !policy.allowAbstain()) {
+        return "GovernanceVoteRecord policy check: ABSTAIN is not allowed.";
+    }
+    return "";
 }
 
 std::string GovernanceVoteRecord::serialize() const {
@@ -113,11 +151,12 @@ std::string GovernanceVoteRecord::serialize() const {
         << "voteId=" << m_voteId
         << ";governanceProposalId=" << m_governanceProposalId
         << ";voterId=" << m_voterId
-        << ";choice=" << governanceVoteChoiceToString(m_choice)
-        << ";votingPower=" << m_votingPower
-        << ";votedAtBlock=" << m_votedAtBlock
+        << ";choice=" << governanceVoteChoiceToString(m_voteChoice)
+        << ";votingPowerRaw=" << m_votingPower.rawUnits()
+        << ";castAtBlock=" << m_castAtBlock
+        << ";votingPowerSource=" << m_votingPowerSource
+        << ";voteProof=" << m_voteProof
         << ";policyVersion=" << m_policyVersion
-        << ";valid=" << (m_valid ? "1" : "0")
         << "}";
     return oss.str();
 }

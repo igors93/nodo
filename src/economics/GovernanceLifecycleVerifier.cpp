@@ -1,6 +1,7 @@
 #include "economics/GovernanceLifecycleVerifier.hpp"
 
 #include "economics/GovernanceDecisionAudit.hpp"
+#include "economics/GovernanceTallyReport.hpp"
 #include "economics/GovernanceVoteSetAudit.hpp"
 
 #include <utility>
@@ -70,6 +71,7 @@ bool sameTally(
            left.yesVotingPower() == right.yesVotingPower() &&
            left.noVotingPower() == right.noVotingPower() &&
            left.abstainVotingPower() == right.abstainVotingPower() &&
+           left.voteCount() == right.voteCount() &&
            left.yesVoteCount() == right.yesVoteCount() &&
            left.noVoteCount() == right.noVoteCount() &&
            left.abstainVoteCount() == right.abstainVoteCount() &&
@@ -93,9 +95,9 @@ GovernanceLifecycleVerificationResult GovernanceLifecycleVerifier::verify(
     }
 
     const GovernanceVoteSetAuditResult voteAudit =
-        GovernanceVoteSetAudit::auditVotes(
-            lifecycle.votingPolicy(),
+        GovernanceVoteSetAudit::audit(
             lifecycle.proposalEnvelope().governanceProposalId(),
+            lifecycle.votingPolicy(),
             lifecycle.voteEvidenceList()
         );
 
@@ -107,7 +109,17 @@ GovernanceLifecycleVerificationResult GovernanceLifecycleVerifier::verify(
         );
     }
 
-    if (!sameTally(voteAudit.tallyReport(), lifecycle.tallyReport())) {
+    const GovernanceTallyReport rebuiltTally =
+        GovernanceTallyReport::build(voteAudit, lifecycle.votingPolicy());
+    if (!rebuiltTally.isValid()) {
+        return GovernanceLifecycleVerificationResult::rejected(
+            GovernanceLifecycleVerificationStatus::TALLY_MISMATCH,
+            "GovernanceLifecycleVerifier: rebuilt tally is invalid: " +
+            rebuiltTally.rejectionReason()
+        );
+    }
+
+    if (!sameTally(rebuiltTally, lifecycle.tallyReport())) {
         return GovernanceLifecycleVerificationResult::rejected(
             GovernanceLifecycleVerificationStatus::TALLY_MISMATCH,
             "GovernanceLifecycleVerifier: stored tally does not match rebuilt tally."

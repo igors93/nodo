@@ -1,6 +1,7 @@
 #include "economics/GovernanceDecisionAudit.hpp"
 
 #include "economics/GovernanceDecisionBuilder.hpp"
+#include "economics/GovernanceTallyReport.hpp"
 #include "economics/GovernanceVoteSetAudit.hpp"
 
 #include <utility>
@@ -17,6 +18,8 @@ std::string governanceDecisionAuditStatusToString(
             return "VOTE_AUDIT_FAILED";
         case GovernanceDecisionAuditStatus::DECISION_REBUILD_FAILED:
             return "DECISION_REBUILD_FAILED";
+        case GovernanceDecisionAuditStatus::INVALID_DECISION:
+            return "INVALID_DECISION";
         case GovernanceDecisionAuditStatus::DECISION_ID_MISMATCH:
             return "DECISION_ID_MISMATCH";
         case GovernanceDecisionAuditStatus::DECISION_STATUS_MISMATCH:
@@ -74,10 +77,34 @@ GovernanceDecisionAuditResult GovernanceDecisionAudit::auditDecision(
     const std::vector<GovernanceVoteEvidence>& voteEvidenceList,
     const GovernanceDecisionRecord& storedDecision
 ) {
+    if (!envelope.isValid()) {
+        return GovernanceDecisionAuditResult::rejected(
+            GovernanceDecisionAuditStatus::DECISION_REBUILD_FAILED,
+            "GovernanceDecisionAudit: envelope is invalid: " +
+            envelope.rejectionReason()
+        );
+    }
+
+    if (!votingPolicy.isValid()) {
+        return GovernanceDecisionAuditResult::rejected(
+            GovernanceDecisionAuditStatus::DECISION_REBUILD_FAILED,
+            "GovernanceDecisionAudit: voting policy is invalid: " +
+            votingPolicy.rejectionReason()
+        );
+    }
+
+    if (!storedDecision.isValid()) {
+        return GovernanceDecisionAuditResult::rejected(
+            GovernanceDecisionAuditStatus::INVALID_DECISION,
+            "GovernanceDecisionAudit: stored decision is invalid: " +
+            storedDecision.rejectionReason()
+        );
+    }
+
     const GovernanceVoteSetAuditResult voteAudit =
-        GovernanceVoteSetAudit::auditVotes(
-            votingPolicy,
+        GovernanceVoteSetAudit::audit(
             envelope.governanceProposalId(),
+            votingPolicy,
             voteEvidenceList
         );
 
@@ -88,11 +115,21 @@ GovernanceDecisionAuditResult GovernanceDecisionAudit::auditDecision(
         );
     }
 
+    const GovernanceTallyReport rebuiltTally =
+        GovernanceTallyReport::build(voteAudit, votingPolicy);
+    if (!rebuiltTally.isValid()) {
+        return GovernanceDecisionAuditResult::rejected(
+            GovernanceDecisionAuditStatus::DECISION_REBUILD_FAILED,
+            "GovernanceDecisionAudit: tally rebuild failed: " +
+            rebuiltTally.rejectionReason()
+        );
+    }
+
     const GovernanceDecisionBuildResult rebuild =
         GovernanceDecisionBuilder::buildDecision(
             envelope,
             votingPolicy,
-            voteAudit.tallyReport(),
+            rebuiltTally,
             storedDecision.decidedAtBlock(),
             storedDecision.decisionMaker()
         );
@@ -130,16 +167,16 @@ GovernanceDecisionAuditResult GovernanceDecisionAudit::auditDecision(
             "GovernanceDecisionAudit: decision status mismatch."
         );
     }
-    if (rebuilt.decisionProof() != storedDecision.decisionProof()) {
-        return GovernanceDecisionAuditResult::rejected(
-            GovernanceDecisionAuditStatus::DECISION_PROOF_MISMATCH,
-            "GovernanceDecisionAudit: decision proof mismatch."
-        );
-    }
     if (rebuilt.policyVersion() != storedDecision.policyVersion()) {
         return GovernanceDecisionAuditResult::rejected(
             GovernanceDecisionAuditStatus::DECISION_POLICY_VERSION_MISMATCH,
             "GovernanceDecisionAudit: policy version mismatch."
+        );
+    }
+    if (rebuilt.decisionProof() != storedDecision.decisionProof()) {
+        return GovernanceDecisionAuditResult::rejected(
+            GovernanceDecisionAuditStatus::DECISION_PROOF_MISMATCH,
+            "GovernanceDecisionAudit: decision proof mismatch."
         );
     }
     if (rebuilt.decidedAtBlock() != storedDecision.decidedAtBlock()) {

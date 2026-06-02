@@ -1,6 +1,8 @@
 #ifndef NODO_ECONOMICS_GOVERNANCE_VOTING_POLICY_HPP
 #define NODO_ECONOMICS_GOVERNANCE_VOTING_POLICY_HPP
 
+#include "utils/Amount.hpp"
+
 #include <cstdint>
 #include <string>
 
@@ -12,31 +14,32 @@ public:
 
     GovernanceVotingPolicy(
         std::string policyVersion,
-        std::uint64_t quorumThresholdPower,
-        std::uint64_t approvalThresholdPower,
+        utils::Amount quorumVotingPower,
+        std::uint32_t approvalThresholdBasisPoints,
+        utils::Amount minimumVotingPower,
         bool allowAbstain,
-        bool requireVoteProof
+        bool allowVoteReplacement
     );
 
     const std::string& policyVersion() const;
-    std::uint64_t quorumThresholdPower() const;
-    std::uint64_t approvalThresholdPower() const;
+    utils::Amount quorumVotingPower() const;
+    std::uint32_t approvalThresholdBasisPoints() const;
+    utils::Amount minimumVotingPower() const;
     bool allowAbstain() const;
-    bool requireVoteProof() const;
+    bool allowVoteReplacement() const;
 
     bool isValid() const;
-    const std::string& rejectionReason() const;
+    std::string rejectionReason() const;
 
     std::string serialize() const;
 
 private:
     std::string m_policyVersion;
-    std::uint64_t m_quorumThresholdPower;
-    std::uint64_t m_approvalThresholdPower;
+    utils::Amount m_quorumVotingPower;
+    std::uint32_t m_approvalThresholdBasisPoints;
+    utils::Amount m_minimumVotingPower;
     bool m_allowAbstain;
-    bool m_requireVoteProof;
-    bool m_valid;
-    std::string m_rejectionReason;
+    bool m_allowVoteReplacement;
 };
 
 } // namespace nodo::economics

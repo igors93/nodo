@@ -1,7 +1,6 @@
 #ifndef NODO_ECONOMICS_GOVERNANCE_VOTE_SET_AUDIT_HPP
 #define NODO_ECONOMICS_GOVERNANCE_VOTE_SET_AUDIT_HPP
 
-#include "economics/GovernanceTallyReport.hpp"
 #include "economics/GovernanceVoteEvidence.hpp"
 #include "economics/GovernanceVotingPolicy.hpp"
 
@@ -18,10 +17,10 @@ enum class GovernanceVoteSetAuditStatus {
     INVALID_VOTE_EVIDENCE,
     PROPOSAL_MISMATCH,
     POLICY_VERSION_MISMATCH,
+    DUPLICATE_EVIDENCE_ID,
     DUPLICATE_VOTE_ID,
     DUPLICATE_VOTER,
-    ABSTAIN_NOT_ALLOWED,
-    TALLY_BUILD_FAILED
+    REPLACEMENT_NOT_IMPLEMENTED
 };
 
 std::string governanceVoteSetAuditStatusToString(
@@ -32,7 +31,9 @@ class GovernanceVoteSetAuditResult {
 public:
     GovernanceVoteSetAuditResult();
 
-    static GovernanceVoteSetAuditResult accepted(GovernanceTallyReport tallyReport);
+    static GovernanceVoteSetAuditResult accepted(
+        std::vector<GovernanceVoteEvidence> canonicalVotes
+    );
 
     static GovernanceVoteSetAuditResult rejected(
         GovernanceVoteSetAuditStatus status,
@@ -41,21 +42,28 @@ public:
     );
 
     bool accepted() const;
+    bool isValid() const;
     GovernanceVoteSetAuditStatus status() const;
     const std::string& reason() const;
     std::size_t failedAtIndex() const;
-    const GovernanceTallyReport& tallyReport() const;
+    const std::vector<GovernanceVoteEvidence>& canonicalVotes() const;
 
 private:
     bool m_accepted;
     GovernanceVoteSetAuditStatus m_status;
     std::string m_reason;
     std::size_t m_failedAtIndex;
-    GovernanceTallyReport m_tallyReport;
+    std::vector<GovernanceVoteEvidence> m_canonicalVotes;
 };
 
 class GovernanceVoteSetAudit {
 public:
+    static GovernanceVoteSetAuditResult audit(
+        const std::string& governanceProposalId,
+        const GovernanceVotingPolicy& votingPolicy,
+        const std::vector<GovernanceVoteEvidence>& voteEvidenceList
+    );
+
     static GovernanceVoteSetAuditResult auditVotes(
         const GovernanceVotingPolicy& votingPolicy,
         const std::string& governanceProposalId,

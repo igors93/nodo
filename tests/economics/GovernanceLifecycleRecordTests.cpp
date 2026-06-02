@@ -11,6 +11,7 @@ using nodo::economics::GovernanceLifecycleRecord;
 using nodo::tests::fixtures::validGovernancePolicy;
 using nodo::tests::fixtures::validLifecycle;
 using nodo::tests::fixtures::validVotingPolicy;
+using nodo::utils::Amount;
 
 void testValidLifecycleAccepted() {
     const GovernanceLifecycleRecord lifecycle = validLifecycle();
@@ -57,7 +58,14 @@ void testPolicyVersionMismatchRejected() {
         "lifecycle-policy-mismatch",
         base.proposalEnvelope(),
         validGovernancePolicy(),
-        nodo::economics::GovernanceVotingPolicy("governance-v2", 100, 60, true, true),
+        nodo::economics::GovernanceVotingPolicy(
+            "governance-v2",
+            Amount::fromRawUnits(100),
+            6000,
+            Amount::fromRawUnits(1),
+            true,
+            false
+        ),
         base.voteEvidenceList(),
         base.tallyReport(),
         base.decisionRecord(),

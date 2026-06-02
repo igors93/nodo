@@ -1,6 +1,11 @@
 #ifndef NODO_ECONOMICS_GOVERNANCE_TALLY_REPORT_HPP
 #define NODO_ECONOMICS_GOVERNANCE_TALLY_REPORT_HPP
 
+#include "economics/GovernanceVoteSetAudit.hpp"
+#include "economics/GovernanceVotingPolicy.hpp"
+#include "utils/Amount.hpp"
+
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -17,24 +22,33 @@ public:
         std::uint64_t yesVotingPower,
         std::uint64_t noVotingPower,
         std::uint64_t abstainVotingPower,
-        std::uint64_t yesVoteCount,
-        std::uint64_t noVoteCount,
-        std::uint64_t abstainVoteCount,
+        std::uint64_t yesCount,
+        std::uint64_t noCount,
+        std::uint64_t abstainCount,
         bool quorumMet,
         bool approvalThresholdMet,
         bool approved,
         std::string tallyProof
     );
 
+    static GovernanceTallyReport build(
+        const GovernanceVoteSetAuditResult& auditResult,
+        const GovernanceVotingPolicy& votingPolicy
+    );
+
     const std::string& governanceProposalId() const;
     const std::string& policyVersion() const;
-    std::uint64_t totalVotingPower() const;
-    std::uint64_t yesVotingPower() const;
-    std::uint64_t noVotingPower() const;
-    std::uint64_t abstainVotingPower() const;
-    std::uint64_t yesVoteCount() const;
-    std::uint64_t noVoteCount() const;
-    std::uint64_t abstainVoteCount() const;
+    utils::Amount totalVotingPower() const;
+    utils::Amount yesVotingPower() const;
+    utils::Amount noVotingPower() const;
+    utils::Amount abstainVotingPower() const;
+    std::size_t voteCount() const;
+    std::size_t yesCount() const;
+    std::size_t noCount() const;
+    std::size_t abstainCount() const;
+    std::size_t yesVoteCount() const;
+    std::size_t noVoteCount() const;
+    std::size_t abstainVoteCount() const;
     bool quorumMet() const;
     bool approvalThresholdMet() const;
     bool approved() const;
@@ -52,9 +66,9 @@ public:
         std::uint64_t yesVotingPower,
         std::uint64_t noVotingPower,
         std::uint64_t abstainVotingPower,
-        std::uint64_t yesVoteCount,
-        std::uint64_t noVoteCount,
-        std::uint64_t abstainVoteCount,
+        std::uint64_t yesCount,
+        std::uint64_t noCount,
+        std::uint64_t abstainCount,
         bool quorumMet,
         bool approvalThresholdMet,
         bool approved
@@ -63,13 +77,14 @@ public:
 private:
     std::string m_governanceProposalId;
     std::string m_policyVersion;
-    std::uint64_t m_totalVotingPower;
-    std::uint64_t m_yesVotingPower;
-    std::uint64_t m_noVotingPower;
-    std::uint64_t m_abstainVotingPower;
-    std::uint64_t m_yesVoteCount;
-    std::uint64_t m_noVoteCount;
-    std::uint64_t m_abstainVoteCount;
+    utils::Amount m_totalVotingPower;
+    utils::Amount m_yesVotingPower;
+    utils::Amount m_noVotingPower;
+    utils::Amount m_abstainVotingPower;
+    std::size_t m_voteCount;
+    std::size_t m_yesCount;
+    std::size_t m_noCount;
+    std::size_t m_abstainCount;
     bool m_quorumMet;
     bool m_approvalThresholdMet;
     bool m_approved;

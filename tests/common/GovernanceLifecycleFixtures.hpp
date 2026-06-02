@@ -10,6 +10,7 @@
 #include "economics/TreasurySpendValidator.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -61,7 +62,14 @@ inline economics::GovernancePolicy validGovernancePolicy() {
 }
 
 inline economics::GovernanceVotingPolicy validVotingPolicy() {
-    return economics::GovernanceVotingPolicy("governance-v1", 100, 60, true, true);
+    return economics::GovernanceVotingPolicy(
+        "governance-v1",
+        utils::Amount::fromRawUnits(100),
+        6000,
+        utils::Amount::fromRawUnits(1),
+        true,
+        false
+    );
 }
 
 inline economics::GovernanceProposalEnvelope validEnvelope(
@@ -84,26 +92,42 @@ inline economics::GovernanceVoteEvidence voteEvidence(
     const std::string& voterId,
     economics::GovernanceVoteChoice choice,
     std::uint64_t votingPower,
+    const std::string& proposalId = "prop-001",
     const std::string& governanceProposalId = "gov-prop-001",
-    std::uint64_t votedAtBlock = 12
+    std::uint64_t castAtBlock = 12
 ) {
+    const economics::GovernanceVotingPolicy votingPolicy = validVotingPolicy();
+    const std::string proof = economics::GovernanceVoteProof::build(
+        governanceProposalId,
+        voterId,
+        choice,
+        utils::Amount::fromRawUnits(static_cast<std::int64_t>(votingPower)),
+        castAtBlock,
+        votingPolicy.policyVersion()
+    );
+
     economics::GovernanceVoteRecord record(
         voteId,
         governanceProposalId,
         voterId,
         choice,
-        votingPower,
-        votedAtBlock,
-        "governance-v1"
+        utils::Amount::fromRawUnits(static_cast<std::int64_t>(votingPower)),
+        castAtBlock,
+        "validator-stake",
+        proof,
+        votingPolicy.policyVersion()
     );
 
     return economics::GovernanceVoteEvidence(
-        record,
-        economics::GovernanceVoteProof::build(record)
+        "evidence-" + voteId,
+        validEnvelope(proposalId, governanceProposalId),
+        votingPolicy,
+        std::move(record)
     );
 }
 
 inline std::vector<economics::GovernanceVoteEvidence> validVotes(
+    const std::string& proposalId = "prop-001",
     const std::string& governanceProposalId = "gov-prop-001"
 ) {
     return {
@@ -112,6 +136,7 @@ inline std::vector<economics::GovernanceVoteEvidence> validVotes(
             "validator-a",
             economics::GovernanceVoteChoice::YES,
             60,
+            proposalId,
             governanceProposalId
         ),
         voteEvidence(
@@ -119,6 +144,7 @@ inline std::vector<economics::GovernanceVoteEvidence> validVotes(
             "validator-b",
             economics::GovernanceVoteChoice::NO,
             20,
+            proposalId,
             governanceProposalId
         ),
         voteEvidence(
@@ -126,6 +152,7 @@ inline std::vector<economics::GovernanceVoteEvidence> validVotes(
             "validator-c",
             economics::GovernanceVoteChoice::ABSTAIN,
             20,
+            proposalId,
             governanceProposalId
         )
     };
@@ -144,21 +171,25 @@ inline economics::GovernanceLifecycleRecord validLifecycle(
     const economics::GovernanceProposalEnvelope envelope =
         validEnvelope(proposalId, governanceProposalId);
     std::vector<economics::GovernanceVoteEvidence> votes =
-        validVotes(governanceProposalId);
+        validVotes(proposalId, governanceProposalId);
 
     const economics::GovernanceVoteSetAuditResult voteAudit =
-        economics::GovernanceVoteSetAudit::auditVotes(
-            votingPolicy,
+        economics::GovernanceVoteSetAudit::audit(
             governanceProposalId,
+            votingPolicy,
             votes
         );
     assert(voteAudit.accepted());
+
+    const economics::GovernanceTallyReport tally =
+        economics::GovernanceTallyReport::build(voteAudit, votingPolicy);
+    assert(tally.isValid());
 
     const economics::GovernanceDecisionBuildResult decisionBuild =
         economics::GovernanceDecisionBuilder::buildDecision(
             envelope,
             votingPolicy,
-            voteAudit.tallyReport(),
+            tally,
             decidedAtBlock,
             "governance-node"
         );
@@ -170,7 +201,7 @@ inline economics::GovernanceLifecycleRecord validLifecycle(
         governancePolicy,
         votingPolicy,
         std::move(votes),
-        voteAudit.tallyReport(),
+        tally,
         decisionBuild.decisionRecord(),
         5,
         decidedAtBlock

@@ -38,9 +38,11 @@ public:
     );
 
     bool built() const;
+    bool isBuilt() const;
     GovernanceDecisionBuildStatus status() const;
     const std::string& reason() const;
     const GovernanceDecisionRecord& decisionRecord() const;
+    const GovernanceDecisionRecord& decision() const;
 
 private:
     bool m_built;

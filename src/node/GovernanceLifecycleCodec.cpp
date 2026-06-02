@@ -2,6 +2,7 @@
 
 #include "economics/GovernanceDecisionBuilder.hpp"
 
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -23,6 +24,20 @@ std::uint64_t parseU64(
             "' is not a valid uint64: " + value
         );
     }
+}
+
+std::uint32_t parseU32(
+    const std::string& value,
+    const std::string& field
+) {
+    const std::uint64_t parsed = parseU64(value, field);
+    if (parsed > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::runtime_error(
+            "GovernanceLifecycleCodec: field '" + field +
+            "' exceeds uint32: " + value
+        );
+    }
+    return static_cast<std::uint32_t>(parsed);
 }
 
 std::int64_t parseI64(
@@ -133,10 +148,11 @@ void addLifecycleAllowed(
 
     const std::string vp = prefix + "votingPolicy.";
     allowed.insert(vp + "policyVersion");
-    allowed.insert(vp + "quorumThresholdPower");
-    allowed.insert(vp + "approvalThresholdPower");
+    allowed.insert(vp + "quorumVotingPowerRawUnits");
+    allowed.insert(vp + "approvalThresholdBasisPoints");
+    allowed.insert(vp + "minimumVotingPowerRawUnits");
     allowed.insert(vp + "allowAbstain");
-    allowed.insert(vp + "requireVoteProof");
+    allowed.insert(vp + "allowVoteReplacement");
 
     const std::string ep = prefix + "proposalEnvelope.";
     allowed.insert(ep + "governanceProposalId");
@@ -154,12 +170,14 @@ void addLifecycleAllowed(
     for (std::size_t i = 0; i < voteCount; ++i) {
         const std::string votePrefix =
             prefix + "vote." + std::to_string(i) + ".";
+        allowed.insert(votePrefix + "evidenceId");
         allowed.insert(votePrefix + "voteId");
         allowed.insert(votePrefix + "governanceProposalId");
         allowed.insert(votePrefix + "voterId");
         allowed.insert(votePrefix + "choice");
-        allowed.insert(votePrefix + "votingPower");
-        allowed.insert(votePrefix + "votedAtBlock");
+        allowed.insert(votePrefix + "votingPowerRawUnits");
+        allowed.insert(votePrefix + "castAtBlock");
+        allowed.insert(votePrefix + "votingPowerSource");
         allowed.insert(votePrefix + "policyVersion");
         allowed.insert(votePrefix + "voteProof");
     }
@@ -167,13 +185,13 @@ void addLifecycleAllowed(
     const std::string tp = prefix + "tally.";
     allowed.insert(tp + "governanceProposalId");
     allowed.insert(tp + "policyVersion");
-    allowed.insert(tp + "totalVotingPower");
-    allowed.insert(tp + "yesVotingPower");
-    allowed.insert(tp + "noVotingPower");
-    allowed.insert(tp + "abstainVotingPower");
-    allowed.insert(tp + "yesVoteCount");
-    allowed.insert(tp + "noVoteCount");
-    allowed.insert(tp + "abstainVoteCount");
+    allowed.insert(tp + "totalVotingPowerRawUnits");
+    allowed.insert(tp + "yesVotingPowerRawUnits");
+    allowed.insert(tp + "noVotingPowerRawUnits");
+    allowed.insert(tp + "abstainVotingPowerRawUnits");
+    allowed.insert(tp + "yesCount");
+    allowed.insert(tp + "noCount");
+    allowed.insert(tp + "abstainCount");
     allowed.insert(tp + "quorumMet");
     allowed.insert(tp + "approvalThresholdMet");
     allowed.insert(tp + "approved");
@@ -286,17 +304,21 @@ void GovernanceLifecycleCodec::appendFields(
     const std::string vpp = prefix + "votingPolicy.";
     fields.emplace_back(vpp + "policyVersion", vp.policyVersion());
     fields.emplace_back(
-        vpp + "quorumThresholdPower",
-        std::to_string(vp.quorumThresholdPower())
+        vpp + "quorumVotingPowerRawUnits",
+        std::to_string(vp.quorumVotingPower().rawUnits())
     );
     fields.emplace_back(
-        vpp + "approvalThresholdPower",
-        std::to_string(vp.approvalThresholdPower())
+        vpp + "approvalThresholdBasisPoints",
+        std::to_string(vp.approvalThresholdBasisPoints())
+    );
+    fields.emplace_back(
+        vpp + "minimumVotingPowerRawUnits",
+        std::to_string(vp.minimumVotingPower().rawUnits())
     );
     fields.emplace_back(vpp + "allowAbstain", vp.allowAbstain() ? "1" : "0");
     fields.emplace_back(
-        vpp + "requireVoteProof",
-        vp.requireVoteProof() ? "1" : "0"
+        vpp + "allowVoteReplacement",
+        vp.allowVoteReplacement() ? "1" : "0"
     );
 
     const economics::GovernanceProposalEnvelope& envelope =
@@ -330,6 +352,7 @@ void GovernanceLifecycleCodec::appendFields(
         const economics::GovernanceVoteRecord& vote = evidence.voteRecord();
         const std::string votePrefix =
             prefix + "vote." + std::to_string(i) + ".";
+        fields.emplace_back(votePrefix + "evidenceId", evidence.evidenceId());
         fields.emplace_back(votePrefix + "voteId", vote.voteId());
         fields.emplace_back(
             votePrefix + "governanceProposalId",
@@ -338,18 +361,22 @@ void GovernanceLifecycleCodec::appendFields(
         fields.emplace_back(votePrefix + "voterId", vote.voterId());
         fields.emplace_back(
             votePrefix + "choice",
-            economics::governanceVoteChoiceToString(vote.choice())
+            economics::governanceVoteChoiceToString(vote.voteChoice())
         );
         fields.emplace_back(
-            votePrefix + "votingPower",
-            std::to_string(vote.votingPower())
+            votePrefix + "votingPowerRawUnits",
+            std::to_string(vote.votingPower().rawUnits())
         );
         fields.emplace_back(
-            votePrefix + "votedAtBlock",
-            std::to_string(vote.votedAtBlock())
+            votePrefix + "castAtBlock",
+            std::to_string(vote.castAtBlock())
+        );
+        fields.emplace_back(
+            votePrefix + "votingPowerSource",
+            vote.votingPowerSource()
         );
         fields.emplace_back(votePrefix + "policyVersion", vote.policyVersion());
-        fields.emplace_back(votePrefix + "voteProof", evidence.voteProof());
+        fields.emplace_back(votePrefix + "voteProof", vote.voteProof());
     }
 
     const economics::GovernanceTallyReport& tally = lifecycle.tallyReport();
@@ -357,27 +384,24 @@ void GovernanceLifecycleCodec::appendFields(
     fields.emplace_back(tp + "governanceProposalId", tally.governanceProposalId());
     fields.emplace_back(tp + "policyVersion", tally.policyVersion());
     fields.emplace_back(
-        tp + "totalVotingPower",
-        std::to_string(tally.totalVotingPower())
+        tp + "totalVotingPowerRawUnits",
+        std::to_string(tally.totalVotingPower().rawUnits())
     );
     fields.emplace_back(
-        tp + "yesVotingPower",
-        std::to_string(tally.yesVotingPower())
+        tp + "yesVotingPowerRawUnits",
+        std::to_string(tally.yesVotingPower().rawUnits())
     );
     fields.emplace_back(
-        tp + "noVotingPower",
-        std::to_string(tally.noVotingPower())
+        tp + "noVotingPowerRawUnits",
+        std::to_string(tally.noVotingPower().rawUnits())
     );
     fields.emplace_back(
-        tp + "abstainVotingPower",
-        std::to_string(tally.abstainVotingPower())
+        tp + "abstainVotingPowerRawUnits",
+        std::to_string(tally.abstainVotingPower().rawUnits())
     );
-    fields.emplace_back(tp + "yesVoteCount", std::to_string(tally.yesVoteCount()));
-    fields.emplace_back(tp + "noVoteCount", std::to_string(tally.noVoteCount()));
-    fields.emplace_back(
-        tp + "abstainVoteCount",
-        std::to_string(tally.abstainVoteCount())
-    );
+    fields.emplace_back(tp + "yesCount", std::to_string(tally.yesCount()));
+    fields.emplace_back(tp + "noCount", std::to_string(tally.noCount()));
+    fields.emplace_back(tp + "abstainCount", std::to_string(tally.abstainCount()));
     fields.emplace_back(tp + "quorumMet", tally.quorumMet() ? "1" : "0");
     fields.emplace_back(
         tp + "approvalThresholdMet",
@@ -442,21 +466,25 @@ economics::GovernanceLifecycleRecord GovernanceLifecycleCodec::decodeFromDocumen
 
     const economics::GovernanceVotingPolicy votingPolicy(
         doc.requireField(prefix + "votingPolicy.policyVersion"),
-        parseU64(
-            doc.requireField(prefix + "votingPolicy.quorumThresholdPower"),
-            prefix + "votingPolicy.quorumThresholdPower"
+        utils::Amount::fromRawUnits(parseI64(
+            doc.requireField(prefix + "votingPolicy.quorumVotingPowerRawUnits"),
+            prefix + "votingPolicy.quorumVotingPowerRawUnits"
+        )),
+        parseU32(
+            doc.requireField(prefix + "votingPolicy.approvalThresholdBasisPoints"),
+            prefix + "votingPolicy.approvalThresholdBasisPoints"
         ),
-        parseU64(
-            doc.requireField(prefix + "votingPolicy.approvalThresholdPower"),
-            prefix + "votingPolicy.approvalThresholdPower"
-        ),
+        utils::Amount::fromRawUnits(parseI64(
+            doc.requireField(prefix + "votingPolicy.minimumVotingPowerRawUnits"),
+            prefix + "votingPolicy.minimumVotingPowerRawUnits"
+        )),
         parseBool(
             doc.requireField(prefix + "votingPolicy.allowAbstain"),
             prefix + "votingPolicy.allowAbstain"
         ),
         parseBool(
-            doc.requireField(prefix + "votingPolicy.requireVoteProof"),
-            prefix + "votingPolicy.requireVoteProof"
+            doc.requireField(prefix + "votingPolicy.allowVoteReplacement"),
+            prefix + "votingPolicy.allowVoteReplacement"
         )
     );
 
@@ -497,19 +525,23 @@ economics::GovernanceLifecycleRecord GovernanceLifecycleCodec::decodeFromDocumen
             doc.requireField(votePrefix + "governanceProposalId"),
             doc.requireField(votePrefix + "voterId"),
             choice,
+            utils::Amount::fromRawUnits(parseI64(
+                doc.requireField(votePrefix + "votingPowerRawUnits"),
+                votePrefix + "votingPowerRawUnits"
+            )),
             parseU64(
-                doc.requireField(votePrefix + "votingPower"),
-                votePrefix + "votingPower"
+                doc.requireField(votePrefix + "castAtBlock"),
+                votePrefix + "castAtBlock"
             ),
-            parseU64(
-                doc.requireField(votePrefix + "votedAtBlock"),
-                votePrefix + "votedAtBlock"
-            ),
+            doc.requireField(votePrefix + "votingPowerSource"),
+            doc.requireField(votePrefix + "voteProof"),
             doc.requireField(votePrefix + "policyVersion")
         );
         votes.emplace_back(
-            std::move(record),
-            doc.requireField(votePrefix + "voteProof")
+            doc.requireField(votePrefix + "evidenceId"),
+            envelope,
+            votingPolicy,
+            std::move(record)
         );
     }
 
@@ -517,19 +549,25 @@ economics::GovernanceLifecycleRecord GovernanceLifecycleCodec::decodeFromDocumen
     economics::GovernanceTallyReport tally(
         doc.requireField(tp + "governanceProposalId"),
         doc.requireField(tp + "policyVersion"),
-        parseU64(doc.requireField(tp + "totalVotingPower"), tp + "totalVotingPower"),
-        parseU64(doc.requireField(tp + "yesVotingPower"), tp + "yesVotingPower"),
-        parseU64(doc.requireField(tp + "noVotingPower"), tp + "noVotingPower"),
         parseU64(
-            doc.requireField(tp + "abstainVotingPower"),
-            tp + "abstainVotingPower"
+            doc.requireField(tp + "totalVotingPowerRawUnits"),
+            tp + "totalVotingPowerRawUnits"
         ),
-        parseU64(doc.requireField(tp + "yesVoteCount"), tp + "yesVoteCount"),
-        parseU64(doc.requireField(tp + "noVoteCount"), tp + "noVoteCount"),
         parseU64(
-            doc.requireField(tp + "abstainVoteCount"),
-            tp + "abstainVoteCount"
+            doc.requireField(tp + "yesVotingPowerRawUnits"),
+            tp + "yesVotingPowerRawUnits"
         ),
+        parseU64(
+            doc.requireField(tp + "noVotingPowerRawUnits"),
+            tp + "noVotingPowerRawUnits"
+        ),
+        parseU64(
+            doc.requireField(tp + "abstainVotingPowerRawUnits"),
+            tp + "abstainVotingPowerRawUnits"
+        ),
+        parseU64(doc.requireField(tp + "yesCount"), tp + "yesCount"),
+        parseU64(doc.requireField(tp + "noCount"), tp + "noCount"),
+        parseU64(doc.requireField(tp + "abstainCount"), tp + "abstainCount"),
         parseBool(doc.requireField(tp + "quorumMet"), tp + "quorumMet"),
         parseBool(
             doc.requireField(tp + "approvalThresholdMet"),

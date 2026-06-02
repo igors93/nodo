@@ -56,6 +56,7 @@ GovernanceDecisionBuildResult GovernanceDecisionBuildResult::rejected(
 }
 
 bool GovernanceDecisionBuildResult::built() const { return m_built; }
+bool GovernanceDecisionBuildResult::isBuilt() const { return m_built; }
 GovernanceDecisionBuildStatus GovernanceDecisionBuildResult::status() const {
     return m_status;
 }
@@ -63,6 +64,9 @@ const std::string& GovernanceDecisionBuildResult::reason() const {
     return m_reason;
 }
 const GovernanceDecisionRecord& GovernanceDecisionBuildResult::decisionRecord() const {
+    return m_decisionRecord;
+}
+const GovernanceDecisionRecord& GovernanceDecisionBuildResult::decision() const {
     return m_decisionRecord;
 }
 
@@ -116,6 +120,13 @@ GovernanceDecisionBuildResult GovernanceDecisionBuilder::buildDecision(
         return GovernanceDecisionBuildResult::rejected(
             GovernanceDecisionBuildStatus::INVALID_DECISION_INPUT,
             "GovernanceDecisionBuilder: decidedAtBlock and decisionMaker are required."
+        );
+    }
+
+    if (decidedAtBlock < envelope.submittedAtBlock()) {
+        return GovernanceDecisionBuildResult::rejected(
+            GovernanceDecisionBuildStatus::INVALID_DECISION_INPUT,
+            "GovernanceDecisionBuilder: decidedAtBlock is before proposal submission."
         );
     }
 
@@ -176,7 +187,7 @@ std::string GovernanceDecisionBuilder::buildDecisionProof(
     std::uint64_t decidedAtBlock,
     const std::string& decisionMaker
 ) {
-    return "governance-decision:"
+    return "governance-decision-v1:"
         + governanceProposalId + ":"
         + decisionId + ":"
         + governanceDecisionStatusToString(decisionStatus) + ":"

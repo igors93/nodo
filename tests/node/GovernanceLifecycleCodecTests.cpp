@@ -14,6 +14,13 @@ using nodo::economics::GovernanceLifecycleVerifier;
 using nodo::node::GovernanceLifecycleCodec;
 using nodo::tests::fixtures::validLifecycle;
 
+void removeLine(std::string& encoded, const std::string& field) {
+    const std::size_t pos = encoded.find(field + "=");
+    assert(pos != std::string::npos);
+    const std::size_t lineEnd = encoded.find('\n', pos);
+    encoded.erase(pos, lineEnd - pos + 1);
+}
+
 void testRoundTripValidLifecycle() {
     const auto lifecycle = validLifecycle();
     const std::string encoded = GovernanceLifecycleCodec::encode(lifecycle);
@@ -25,11 +32,59 @@ void testRoundTripValidLifecycle() {
 
 void testMissingVoteFieldRejected() {
     std::string encoded = GovernanceLifecycleCodec::encode(validLifecycle());
-    const std::string field = "vote.0.voteProof=";
-    const std::size_t pos = encoded.find(field);
-    assert(pos != std::string::npos);
-    const std::size_t lineEnd = encoded.find('\n', pos);
-    encoded.erase(pos, lineEnd - pos + 1);
+    removeLine(encoded, "vote.0.voteProof");
+
+    bool threw = false;
+    try {
+        (void)GovernanceLifecycleCodec::decode(encoded);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void testMissingProposalEnvelopeRejected() {
+    std::string encoded = GovernanceLifecycleCodec::encode(validLifecycle());
+    removeLine(encoded, "proposalEnvelope.governanceProposalId");
+
+    bool threw = false;
+    try {
+        (void)GovernanceLifecycleCodec::decode(encoded);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void testMissingVotingPolicyRejected() {
+    std::string encoded = GovernanceLifecycleCodec::encode(validLifecycle());
+    removeLine(encoded, "votingPolicy.minimumVotingPowerRawUnits");
+
+    bool threw = false;
+    try {
+        (void)GovernanceLifecycleCodec::decode(encoded);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void testMissingTallyFieldRejected() {
+    std::string encoded = GovernanceLifecycleCodec::encode(validLifecycle());
+    removeLine(encoded, "tally.tallyProof");
+
+    bool threw = false;
+    try {
+        (void)GovernanceLifecycleCodec::decode(encoded);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void testMissingDecisionFieldRejected() {
+    std::string encoded = GovernanceLifecycleCodec::encode(validLifecycle());
+    removeLine(encoded, "decision.decisionProof");
 
     bool threw = false;
     try {
@@ -69,8 +124,8 @@ void testVStyleSchemaRejected() {
 
 void testTamperedPersistedLifecycleRejectedByVerifier() {
     std::string encoded = GovernanceLifecycleCodec::encode(validLifecycle());
-    const std::string from = "tally.yesVotingPower=60\n";
-    const std::string to = "tally.yesVotingPower=61\n";
+    const std::string from = "tally.yesVotingPowerRawUnits=60\n";
+    const std::string to = "tally.yesVotingPowerRawUnits=61\n";
     const std::size_t pos = encoded.find(from);
     assert(pos != std::string::npos);
     encoded.replace(pos, from.size(), to);
@@ -89,6 +144,10 @@ void testTamperedPersistedLifecycleRejectedByVerifier() {
 int main() {
     testRoundTripValidLifecycle();
     testMissingVoteFieldRejected();
+    testMissingProposalEnvelopeRejected();
+    testMissingVotingPolicyRejected();
+    testMissingTallyFieldRejected();
+    testMissingDecisionFieldRejected();
     testUnexpectedFieldRejected();
     testVStyleSchemaRejected();
     testTamperedPersistedLifecycleRejectedByVerifier();

@@ -40,6 +40,7 @@ using nodo::tests::fixtures::validTreasury;
 using nodo::tests::fixtures::validTreasuryProposal;
 using nodo::tests::fixtures::validVotes;
 using nodo::tests::fixtures::validVotingPolicy;
+using nodo::tests::fixtures::voteEvidence;
 using nodo::utils::Amount;
 
 TreasuryExecutionEvidence evidenceWithLifecycle(
@@ -162,11 +163,18 @@ void testForgedVoteProofRejected() {
         "gov-prop-001",
         "validator-a",
         GovernanceVoteChoice::YES,
-        60,
+        Amount::fromRawUnits(60),
         12,
+        "validator-stake",
+        "forged-proof",
         "governance-v1"
     );
-    votes[0] = GovernanceVoteEvidence(forgedRecord, "forged-proof");
+    votes[0] = GovernanceVoteEvidence(
+        "evidence-vote-001",
+        nodo::tests::fixtures::validEnvelope(),
+        validVotingPolicy(),
+        forgedRecord
+    );
 
     const auto lifecycle = GovernanceLifecycleRecord(
         "lifecycle-forged-vote",
@@ -191,10 +199,12 @@ void testTamperedTallyRejected() {
     const GovernanceTallyReport tamperedTally(
         lifecycle.tallyReport().governanceProposalId(),
         lifecycle.tallyReport().policyVersion(),
-        lifecycle.tallyReport().totalVotingPower(),
+        static_cast<std::uint64_t>(lifecycle.tallyReport().totalVotingPower().rawUnits()),
         59,
-        lifecycle.tallyReport().noVotingPower(),
-        lifecycle.tallyReport().abstainVotingPower() + 1,
+        static_cast<std::uint64_t>(lifecycle.tallyReport().noVotingPower().rawUnits()),
+        static_cast<std::uint64_t>(
+            lifecycle.tallyReport().abstainVotingPower().rawUnits() + 1
+        ),
         lifecycle.tallyReport().yesVoteCount(),
         lifecycle.tallyReport().noVoteCount(),
         lifecycle.tallyReport().abstainVoteCount(),
@@ -204,10 +214,16 @@ void testTamperedTallyRejected() {
         GovernanceTallyReport::buildTallyProof(
             lifecycle.tallyReport().governanceProposalId(),
             lifecycle.tallyReport().policyVersion(),
-            lifecycle.tallyReport().totalVotingPower(),
+            static_cast<std::uint64_t>(
+                lifecycle.tallyReport().totalVotingPower().rawUnits()
+            ),
             59,
-            lifecycle.tallyReport().noVotingPower(),
-            lifecycle.tallyReport().abstainVotingPower() + 1,
+            static_cast<std::uint64_t>(
+                lifecycle.tallyReport().noVotingPower().rawUnits()
+            ),
+            static_cast<std::uint64_t>(
+                lifecycle.tallyReport().abstainVotingPower().rawUnits() + 1
+            ),
             lifecycle.tallyReport().yesVoteCount(),
             lifecycle.tallyReport().noVoteCount(),
             lifecycle.tallyReport().abstainVoteCount(),
