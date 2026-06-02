@@ -44,14 +44,54 @@ private:
  * status so that an operator knows exactly what must be fixed before the
  * node can participate.
  */
+class TestnetReadinessCheckerConfig {
+public:
+    TestnetReadinessCheckerConfig();
+
+    TestnetReadinessCheckerConfig(
+        std::size_t connectedPeers,
+        bool genesisVerified,
+        std::uint64_t finalizedHeight,
+        bool governanceLifecycleVerifierWired,
+        bool defenseModeInactive,
+        bool legacyPathsBlockedOnOfficialNetworks,
+        bool treasuryReportConsistencyVerified
+    );
+
+    std::size_t connectedPeers() const;
+    bool genesisVerified() const;
+    std::uint64_t finalizedHeight() const;
+    bool governanceLifecycleVerifierWired() const;
+    bool defenseModeInactive() const;
+    bool legacyPathsBlockedOnOfficialNetworks() const;
+    bool treasuryReportConsistencyVerified() const;
+
+private:
+    std::size_t m_connectedPeers;
+    bool m_genesisVerified;
+    std::uint64_t m_finalizedHeight;
+    bool m_governanceLifecycleVerifierWired;
+    bool m_defenseModeInactive;
+    bool m_legacyPathsBlockedOnOfficialNetworks;
+    bool m_treasuryReportConsistencyVerified;
+};
+
 class TestnetReadinessChecker {
 public:
+    // Legacy signature for backward compatibility with existing callers.
     static std::vector<ReadinessDiagnostic> check(
         const config::NetworkParameters& params,
         const crypto::StoredKeyMetadata& validatorKey,
         std::size_t connectedPeers,
         bool genesisVerified,
         std::uint64_t finalizedHeight
+    );
+
+    // Extended signature with P0 gates.
+    static std::vector<ReadinessDiagnostic> checkWithP0Gates(
+        const config::NetworkParameters& params,
+        const crypto::StoredKeyMetadata& validatorKey,
+        const TestnetReadinessCheckerConfig& config
     );
 
     static ReadinessStatus summarize(

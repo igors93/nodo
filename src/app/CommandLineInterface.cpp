@@ -406,12 +406,25 @@ CommandLineResult CommandLineInterface::execute(
         }
 
         if (options.command == "demo") {
+            // The demo command is restricted to localnet only. It runs an
+            // educational blockchain foundation demonstration that does not
+            // go through the official RuntimeBlockPipeline and therefore
+            // cannot produce protocol-valid state for any official network.
+            if (options.networkName != "localnet") {
+                return CommandLineResult::failure(
+                    CommandLineStatus::COMMAND_FAILED,
+                    "The 'demo' command is a localnet-only educational demonstration "
+                    "and cannot run on network '" + options.networkName + "'. "
+                    "It does not produce protocol-valid state for official networks.\n"
+                );
+            }
+
             const int demoStatus =
                 runBlockchainFoundationDemo();
 
             if (demoStatus == 0) {
                 return CommandLineResult::success(
-                    "Nodo demo completed successfully.\n"
+                    "Nodo demo completed successfully (localnet educational mode only).\n"
                 );
             }
 
@@ -676,11 +689,11 @@ std::string CommandLineInterface::helpText() {
         "  nodo testnet readiness [--network localnet|testnet-candidate] [--data-dir PATH] [--key-id ID]\n"
         "  nodo diagnostics [--network localnet|testnet-candidate] [--data-dir PATH] [--key-id ID]\n"
         "\n"
-        "Compatibility commands:\n"
-        "  nodo demo\n"
-        "  nodo reload [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
-        "  nodo submit-demo-transaction [--data-dir PATH]\n"
-        "  nodo produce-demo-block [--data-dir PATH]\n"
+        "Localnet-only commands (not valid on official networks):\n"
+        "  nodo demo              Educational blockchain foundation demo. Does not produce protocol-valid state.\n"
+        "  nodo reload ...        Deprecated alias for 'nodo node reload'.\n"
+        "  nodo submit-demo-transaction ...  Deprecated alias for 'nodo tx submit'.\n"
+        "  nodo produce-demo-block ...       Deprecated alias for 'nodo block produce'.\n"
         "\n"
         "Options:\n"
         "  --data-dir PATH      Node data directory. Default: .nodo\n"
@@ -1773,8 +1786,12 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
     }
 
     // Persist epoch treasury report after successful finalization.
-    // All current artifacts have empty treasury sections (no real spends yet).
-    // Task 10 will wire the full artifact spend sequence into this path.
+    // The report reflects all treasury spend records in the finalized artifact.
+    // Blocks produced through this path currently carry an empty treasury section
+    // because no treasury spend pipeline is wired here. An empty report is the
+    // canonical correct state when no spend records exist. When real treasury
+    // spends are added to the block pipeline, this section must derive the report
+    // from the actual spend records in the artifact's treasury section, not from {}.
     {
         const economics::EpochTreasuryReport treasuryReport =
             economics::EpochTreasuryReport::fromSpendRecords(0, {});

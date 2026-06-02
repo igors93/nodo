@@ -37,15 +37,50 @@ std::string ReadinessDiagnostic::serialize() const {
            "] " + m_checkName + ": " + m_detail;
 }
 
-std::vector<ReadinessDiagnostic> TestnetReadinessChecker::check(
+TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig()
+    : m_connectedPeers(0),
+      m_genesisVerified(false),
+      m_finalizedHeight(0),
+      m_governanceLifecycleVerifierWired(false),
+      m_defenseModeInactive(true),
+      m_legacyPathsBlockedOnOfficialNetworks(false),
+      m_treasuryReportConsistencyVerified(false) {}
+
+TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
+    std::size_t connectedPeers,
+    bool genesisVerified,
+    std::uint64_t finalizedHeight,
+    bool governanceLifecycleVerifierWired,
+    bool defenseModeInactive,
+    bool legacyPathsBlockedOnOfficialNetworks,
+    bool treasuryReportConsistencyVerified
+)
+    : m_connectedPeers(connectedPeers),
+      m_genesisVerified(genesisVerified),
+      m_finalizedHeight(finalizedHeight),
+      m_governanceLifecycleVerifierWired(governanceLifecycleVerifierWired),
+      m_defenseModeInactive(defenseModeInactive),
+      m_legacyPathsBlockedOnOfficialNetworks(legacyPathsBlockedOnOfficialNetworks),
+      m_treasuryReportConsistencyVerified(treasuryReportConsistencyVerified) {}
+
+std::size_t TestnetReadinessCheckerConfig::connectedPeers() const { return m_connectedPeers; }
+bool TestnetReadinessCheckerConfig::genesisVerified() const { return m_genesisVerified; }
+std::uint64_t TestnetReadinessCheckerConfig::finalizedHeight() const { return m_finalizedHeight; }
+bool TestnetReadinessCheckerConfig::governanceLifecycleVerifierWired() const { return m_governanceLifecycleVerifierWired; }
+bool TestnetReadinessCheckerConfig::defenseModeInactive() const { return m_defenseModeInactive; }
+bool TestnetReadinessCheckerConfig::legacyPathsBlockedOnOfficialNetworks() const { return m_legacyPathsBlockedOnOfficialNetworks; }
+bool TestnetReadinessCheckerConfig::treasuryReportConsistencyVerified() const { return m_treasuryReportConsistencyVerified; }
+
+namespace {
+
+void addBaseChecks(
+    std::vector<ReadinessDiagnostic>& checks,
     const config::NetworkParameters& params,
     const crypto::StoredKeyMetadata& validatorKey,
     std::size_t connectedPeers,
     bool genesisVerified,
     std::uint64_t finalizedHeight
 ) {
-    std::vector<ReadinessDiagnostic> checks;
-
     // Check 1: Network parameters are valid.
     {
         const bool ok = params.isValid();
@@ -107,7 +142,97 @@ std::vector<ReadinessDiagnostic> TestnetReadinessChecker::check(
         detail << "Finalized height is " << finalizedHeight << ".";
         checks.emplace_back("chain_initialized", true, detail.str());
     }
+}
 
+void addP0Gates(
+    std::vector<ReadinessDiagnostic>& checks,
+    const config::NetworkParameters& params,
+    const TestnetReadinessCheckerConfig& config
+) {
+    // P0 gate 1: Governance lifecycle verifier must be integrated in critical paths.
+    // After Task 15, this is always true for the current build. This gate exists
+    // so that if the integration is ever removed, testnet readiness fails.
+    {
+        const bool ok = config.governanceLifecycleVerifierWired();
+        checks.emplace_back(
+            "governance_lifecycle_verifier_wired",
+            ok,
+            ok ? "Governance lifecycle verifier is integrated in treasury approval path."
+               : "Governance lifecycle verifier is NOT integrated. Treasury approvals "
+                 "cannot be produced without verified transition history."
+        );
+    }
+
+    // P0 gate 2: Defense mode must be INACTIVE to start on official networks.
+    {
+        const bool isOfficial = crypto::KeyEncryptionPolicy::isOfficialNetwork(params.networkName());
+        const bool ok = !isOfficial || config.defenseModeInactive();
+        checks.emplace_back(
+            "defense_mode_inactive",
+            ok,
+            ok ? "Defense mode is INACTIVE."
+               : "Defense mode is ACTIVE. A chain audit is required before this node "
+                 "can participate in '" + params.networkName() + "'."
+        );
+    }
+
+    // P0 gate 3: Legacy/demo paths must not produce blocks on official networks.
+    {
+        const bool isOfficial = crypto::KeyEncryptionPolicy::isOfficialNetwork(params.networkName());
+        const bool ok = !isOfficial || config.legacyPathsBlockedOnOfficialNetworks();
+        checks.emplace_back(
+            "legacy_paths_blocked_on_official_network",
+            ok,
+            ok ? "Legacy and demo CLI paths are blocked on official networks."
+               : "Legacy or demo paths can produce blocks on this official network. "
+                 "Block the 'demo' command and any bypass routes before starting."
+        );
+    }
+
+    // P0 gate 4: Treasury report consistency must be verified when finalized blocks exist.
+    {
+        const bool hasBlocks = config.finalizedHeight() > 0;
+        const bool ok = !hasBlocks || config.treasuryReportConsistencyVerified();
+        checks.emplace_back(
+            "treasury_report_consistent",
+            ok,
+            ok ? (hasBlocks ? "Treasury report is consistent with finalized artifacts."
+                            : "No finalized blocks; treasury report check skipped.")
+               : "Treasury report has NOT been verified against finalized artifacts. "
+                 "Run chain audit before starting."
+        );
+    }
+}
+
+} // namespace
+
+std::vector<ReadinessDiagnostic> TestnetReadinessChecker::check(
+    const config::NetworkParameters& params,
+    const crypto::StoredKeyMetadata& validatorKey,
+    std::size_t connectedPeers,
+    bool genesisVerified,
+    std::uint64_t finalizedHeight
+) {
+    std::vector<ReadinessDiagnostic> checks;
+    addBaseChecks(checks, params, validatorKey, connectedPeers, genesisVerified, finalizedHeight);
+    return checks;
+}
+
+std::vector<ReadinessDiagnostic> TestnetReadinessChecker::checkWithP0Gates(
+    const config::NetworkParameters& params,
+    const crypto::StoredKeyMetadata& validatorKey,
+    const TestnetReadinessCheckerConfig& config
+) {
+    std::vector<ReadinessDiagnostic> checks;
+    addBaseChecks(
+        checks,
+        params,
+        validatorKey,
+        config.connectedPeers(),
+        config.genesisVerified(),
+        config.finalizedHeight()
+    );
+    addP0Gates(checks, params, config);
     return checks;
 }
 
