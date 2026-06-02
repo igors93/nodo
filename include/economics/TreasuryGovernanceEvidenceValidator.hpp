@@ -18,6 +18,7 @@ enum class GovernanceEvidenceValidationStatus {
     DECISION_NOT_APPROVED,
     REVIEW_PERIOD_NOT_SATISFIED,
     DECISION_PROOF_REQUIRED,
+    INVALID_GOVERNANCE_LIFECYCLE,
     APPROVAL_PROOF_MISMATCH,
     APPROVAL_ID_MISMATCH,
     APPROVAL_APPROVER_MISMATCH,
@@ -49,18 +50,18 @@ private:
 
 /*
  * TreasuryGovernanceEvidenceValidator verifies that the TreasuryApproval
- * embedded in evidence was produced by GovernanceApprovalBridge and not
- * forged directly.
+ * embedded in evidence was produced from a verified governance lifecycle and
+ * not forged directly.
  *
  * Security principle:
- * The validator re-runs GovernanceApprovalBridge with the governance context
- * stored in the evidence and compares the reproduced TreasuryApproval against
- * the actual approval. A mismatch on any field proves the approval was not
- * produced by the official bridge.
+ * The validator re-runs GovernanceApprovalBridge with the lifecycle stored in
+ * evidence and compares the reproduced TreasuryApproval against the actual
+ * approval. A mismatch on any field proves the approval was not produced by
+ * vote-derived governance evidence.
  *
  * Checks performed:
- *   - evidence carries a GovernanceApprovalContext;
- *   - the bridge accepts the governance context;
+ *   - evidence carries a GovernanceApprovalContext with a lifecycle;
+ *   - the bridge accepts the verified lifecycle;
  *   - the reproduced approval matches the stored approval on all fields:
  *     approvalId, proposalId, approvedAtBlock, approver, approvalProof.
  */

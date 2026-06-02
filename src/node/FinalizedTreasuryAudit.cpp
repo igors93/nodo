@@ -77,7 +77,8 @@ FinalizedTreasuryAuditResult FinalizedTreasuryAudit::auditArtifacts(
                 allSpends.push_back(ev.spendRecord());
             }
         } else {
-            // Legacy section with spend records only.
+            // Only empty sections reach this branch; non-empty spend-only
+            // sections are rejected by FinalizedTreasurySectionValidator.
             for (const auto& rec : section.spendRecords()) {
                 allSpends.push_back(rec);
             }

@@ -1,5 +1,6 @@
 #include "economics/GovernanceApprovalBridge.hpp"
 
+#include "economics/GovernanceLifecycleVerifier.hpp"
 #include "economics/TreasuryApprovalProof.hpp"
 
 #include <utility>
@@ -26,6 +27,8 @@ std::string governanceApprovalBridgeStatusToString(GovernanceApprovalBridgeStatu
             return "REVIEW_PERIOD_NOT_SATISFIED";
         case GovernanceApprovalBridgeStatus::DECISION_PROOF_REQUIRED:
             return "DECISION_PROOF_REQUIRED";
+        case GovernanceApprovalBridgeStatus::INVALID_LIFECYCLE:
+            return "INVALID_LIFECYCLE";
         default:
             return "UNKNOWN";
     }
@@ -65,7 +68,8 @@ const TreasuryApproval& GovernanceApprovalBridgeResult::treasuryApproval() const
     return m_treasuryApproval;
 }
 
-GovernanceApprovalBridgeResult GovernanceApprovalBridge::produceTreasuryApproval(
+GovernanceApprovalBridgeResult
+GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
     const GovernancePolicy& policy,
     const GovernanceProposalEnvelope& envelope,
     const GovernanceDecisionRecord& decision
@@ -185,6 +189,28 @@ GovernanceApprovalBridgeResult GovernanceApprovalBridge::produceTreasuryApproval
     );
 
     return GovernanceApprovalBridgeResult::accepted(std::move(approval));
+}
+
+GovernanceApprovalBridgeResult
+GovernanceApprovalBridge::produceTreasuryApprovalFromVerifiedLifecycle(
+    const GovernanceLifecycleRecord& lifecycle
+) {
+    const GovernanceLifecycleVerificationResult verification =
+        GovernanceLifecycleVerifier::verify(lifecycle);
+
+    if (!verification.verified()) {
+        return GovernanceApprovalBridgeResult::rejected(
+            GovernanceApprovalBridgeStatus::INVALID_LIFECYCLE,
+            "GovernanceApprovalBridge: lifecycle verification failed: " +
+            verification.reason()
+        );
+    }
+
+    return produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
+        lifecycle.governancePolicy(),
+        lifecycle.proposalEnvelope(),
+        lifecycle.decisionRecord()
+    );
 }
 
 } // namespace nodo::economics

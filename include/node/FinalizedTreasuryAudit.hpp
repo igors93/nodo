@@ -55,9 +55,8 @@ private:
  *   - evidence is validated first;
  *   - replay protection runs across all evidence in the artifact sequence;
  *   - spend records are derived from evidence for the report.
- * When only legacy spend records are present (no evidence):
- *   - spend records are validated and summed directly;
- *   - a warning is embedded in the reason field of the result.
+ * Legacy spend-only non-empty sections are rejected by
+ * FinalizedTreasurySectionValidator before report rebuild.
  */
 class FinalizedTreasuryAudit {
 public:

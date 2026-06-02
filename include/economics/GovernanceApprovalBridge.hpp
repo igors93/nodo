@@ -2,6 +2,7 @@
 #define NODO_ECONOMICS_GOVERNANCE_APPROVAL_BRIDGE_HPP
 
 #include "economics/GovernanceDecisionRecord.hpp"
+#include "economics/GovernanceLifecycleRecord.hpp"
 #include "economics/GovernancePolicy.hpp"
 #include "economics/GovernanceProposalEnvelope.hpp"
 #include "economics/TreasuryApproval.hpp"
@@ -19,7 +20,8 @@ enum class GovernanceApprovalBridgeStatus {
     PROPOSAL_MISMATCH,
     DECISION_NOT_APPROVED,
     REVIEW_PERIOD_NOT_SATISFIED,
-    DECISION_PROOF_REQUIRED
+    DECISION_PROOF_REQUIRED,
+    INVALID_LIFECYCLE
 };
 
 std::string governanceApprovalBridgeStatusToString(GovernanceApprovalBridgeStatus status);
@@ -47,11 +49,11 @@ private:
 
 /*
  * GovernanceApprovalBridge is the only authorized path for producing a
- * TreasuryApproval from governance evidence.
+ * production TreasuryApproval from verified governance lifecycle evidence.
  *
  * Security principle:
- * No TreasuryApproval may be produced outside this bridge for use in
- * production treasury execution. The bridge verifies:
+ * No TreasuryApproval may be produced outside the verified-lifecycle path for
+ * use in production treasury execution. The production bridge verifies:
  *   - all three inputs are individually valid;
  *   - policy versions are consistent across policy, envelope, and decision;
  *   - the decision references the same governance proposal as the envelope;
@@ -66,7 +68,15 @@ private:
  */
 class GovernanceApprovalBridge {
 public:
-    static GovernanceApprovalBridgeResult produceTreasuryApproval(
+    static GovernanceApprovalBridgeResult
+    produceTreasuryApprovalFromVerifiedLifecycle(
+        const GovernanceLifecycleRecord& lifecycle
+    );
+
+    // Kept only so old structural bridge behavior can be tested and proven
+    // rejected by production validators. Do not call from production code.
+    static GovernanceApprovalBridgeResult
+    produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         const GovernancePolicy& policy,
         const GovernanceProposalEnvelope& envelope,
         const GovernanceDecisionRecord& decision

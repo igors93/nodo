@@ -246,6 +246,16 @@ std::filesystem::path NodeDataDirectoryConfig::runtimeDirectoryPath() const {
     return m_rootPath / "runtime";
 }
 
+std::filesystem::path NodeDataDirectoryConfig::governanceLifecycleDirectoryPath() const {
+    return m_rootPath / "runtime" / "governance_lifecycle";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::governanceLifecyclePath(
+    const std::string& lifecycleId
+) const {
+    return governanceLifecycleDirectoryPath() / (lifecycleId + ".govlife");
+}
+
 std::filesystem::path NodeDataDirectoryConfig::epochMonetaryReportPath() const {
     return m_rootPath / "runtime" / "epoch_monetary_report.nodo";
 }
@@ -916,6 +926,9 @@ void NodeDataDirectory::ensureDirectoryTree(
     std::filesystem::create_directories(directoryConfig.peersDirectoryPath());
     std::filesystem::create_directories(directoryConfig.mempoolDirectoryPath());
     std::filesystem::create_directories(directoryConfig.runtimeDirectoryPath());
+    std::filesystem::create_directories(
+        directoryConfig.governanceLifecycleDirectoryPath()
+    );
 }
 
 void NodeDataDirectory::writeTextFile(

@@ -1,5 +1,7 @@
 #include "node/FinalizedTreasuryExecutionAudit.hpp"
 
+#include "economics/TreasuryExecutionValidator.hpp"
+
 #include <set>
 #include <utility>
 
@@ -17,6 +19,10 @@ std::string treasuryExecutionAuditStatusToString(TreasuryExecutionAuditStatus st
             return "DUPLICATE_SPEND_ID";
         case TreasuryExecutionAuditStatus::DUPLICATE_EVIDENCE_ID:
             return "DUPLICATE_EVIDENCE_ID";
+        case TreasuryExecutionAuditStatus::DUPLICATE_LIFECYCLE_ID:
+            return "DUPLICATE_LIFECYCLE_ID";
+        case TreasuryExecutionAuditStatus::DUPLICATE_GOVERNANCE_PROPOSAL_ID:
+            return "DUPLICATE_GOVERNANCE_PROPOSAL_ID";
         case TreasuryExecutionAuditStatus::INVALID_EVIDENCE:
             return "INVALID_EVIDENCE";
         default:
@@ -67,6 +73,8 @@ TreasuryExecutionAuditResult FinalizedTreasuryExecutionAudit::auditEvidence(
     std::set<std::string> proposalIds;
     std::set<std::string> approvalIds;
     std::set<std::string> spendIds;
+    std::set<std::string> lifecycleIds;
+    std::set<std::string> governanceProposalIds;
 
     for (std::size_t i = 0; i < evidenceList.size(); ++i) {
         const auto& evidence = evidenceList[i];
@@ -76,6 +84,18 @@ TreasuryExecutionAuditResult FinalizedTreasuryExecutionAudit::auditEvidence(
                 TreasuryExecutionAuditStatus::INVALID_EVIDENCE,
                 "FinalizedTreasuryExecutionAudit: evidence[" + std::to_string(i) +
                 "] is invalid: " + evidence.rejectionReason(),
+                i
+            );
+        }
+
+        const economics::TreasuryExecutionValidationResult executionValidation =
+            economics::TreasuryExecutionValidator::validateEvidence(evidence);
+
+        if (!executionValidation.isAccepted()) {
+            return TreasuryExecutionAuditResult::rejected(
+                TreasuryExecutionAuditStatus::INVALID_EVIDENCE,
+                "FinalizedTreasuryExecutionAudit: evidence[" + std::to_string(i) +
+                "] failed execution validation: " + executionValidation.reason(),
                 i
             );
         }
@@ -96,6 +116,31 @@ TreasuryExecutionAuditResult FinalizedTreasuryExecutionAudit::auditEvidence(
                 evidence.proposal().proposalId() + "' at index " + std::to_string(i) + ".",
                 i
             );
+        }
+
+        if (evidence.hasGovernanceContext()) {
+            const auto& lifecycle =
+                evidence.governanceContext().governanceLifecycle;
+
+            if (!lifecycleIds.insert(lifecycle.lifecycleId()).second) {
+                return TreasuryExecutionAuditResult::rejected(
+                    TreasuryExecutionAuditStatus::DUPLICATE_LIFECYCLE_ID,
+                    "FinalizedTreasuryExecutionAudit: duplicate lifecycleId='" +
+                    lifecycle.lifecycleId() + "' at index " + std::to_string(i) + ".",
+                    i
+                );
+            }
+
+            const std::string& governanceProposalId =
+                lifecycle.proposalEnvelope().governanceProposalId();
+            if (!governanceProposalIds.insert(governanceProposalId).second) {
+                return TreasuryExecutionAuditResult::rejected(
+                    TreasuryExecutionAuditStatus::DUPLICATE_GOVERNANCE_PROPOSAL_ID,
+                    "FinalizedTreasuryExecutionAudit: duplicate governanceProposalId='" +
+                    governanceProposalId + "' at index " + std::to_string(i) + ".",
+                    i
+                );
+            }
         }
 
         if (!approvalIds.insert(evidence.approval().approvalId()).second) {

@@ -106,6 +106,7 @@ std::string GovernanceDecisionRecord::serialize() const {
         << ";decisionStatus=" << governanceDecisionStatusToString(m_decisionStatus)
         << ";decidedAtBlock=" << m_decidedAtBlock
         << ";decisionMaker=" << m_decisionMaker
+        << ";decisionProof=" << m_decisionProof
         << ";policyVersion=" << m_policyVersion
         << ";valid=" << (m_valid ? "1" : "0")
         << "}";

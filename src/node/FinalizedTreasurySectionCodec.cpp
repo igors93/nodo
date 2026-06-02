@@ -1,6 +1,7 @@
 #include "node/FinalizedTreasurySectionCodec.hpp"
 
 #include "economics/TreasurySpendRecord.hpp"
+#include "node/GovernanceLifecycleCodec.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 
 #include <set>
@@ -211,6 +212,13 @@ economics::TreasuryExecutionEvidence decodeEvidence(
             doc.requireField(sp + "balanceAfterRawUnits"), sp + "balanceAfterRawUnits"))
     );
 
+    economics::GovernanceApprovalContext governanceContext;
+    governanceContext.governanceLifecycle =
+        GovernanceLifecycleCodec::decodeFromDocument(
+            doc,
+            p + "governanceLifecycle."
+        );
+
     economics::TreasuryExecutionEvidence evidence(
         evidenceId,
         std::move(proposal),
@@ -220,7 +228,8 @@ economics::TreasuryExecutionEvidence decodeEvidence(
         blockHeight,
         utils::Amount::fromRawUnits(epochSpentRaw),
         std::move(spend),
-        createdAt
+        createdAt,
+        std::move(governanceContext)
     );
 
     if (!evidence.isValid()) {
@@ -233,6 +242,7 @@ economics::TreasuryExecutionEvidence decodeEvidence(
 }
 
 void addEvidenceFields(
+    const serialization::KeyValueFileDocument& doc,
     std::set<std::string>& allowed,
     std::size_t index,
     const std::string& prefix
@@ -290,6 +300,12 @@ void addEvidenceFields(
     allowed.insert(sp + "epoch");
     allowed.insert(sp + "balanceBeforeRawUnits");
     allowed.insert(sp + "balanceAfterRawUnits");
+
+    GovernanceLifecycleCodec::addAllowedFields(
+        doc,
+        p + "governanceLifecycle.",
+        allowed
+    );
 }
 
 void appendEvidenceFields(
@@ -366,6 +382,18 @@ void appendEvidenceFields(
                         std::to_string(ev.spendRecord().treasuryBalanceBefore().rawUnits()));
     fields.emplace_back(sp + "balanceAfterRawUnits",
                         std::to_string(ev.spendRecord().treasuryBalanceAfter().rawUnits()));
+
+    if (!ev.hasGovernanceContext()) {
+        throw std::invalid_argument(
+            "FinalizedTreasurySectionCodec: evidence must carry governance lifecycle context."
+        );
+    }
+
+    GovernanceLifecycleCodec::appendFields(
+        ev.governanceContext().governanceLifecycle,
+        p + "governanceLifecycle.",
+        fields
+    );
 }
 
 } // namespace
@@ -423,7 +451,7 @@ FinalizedTreasurySection FinalizedTreasurySectionCodec::decode(
         std::set<std::string> allowed;
         allowed.insert("evidenceCount");
         for (std::size_t i = 0; i < count; ++i) {
-            addEvidenceFields(allowed, i, "evidence.");
+            addEvidenceFields(doc, allowed, i, "evidence.");
         }
         doc.requireOnlyFields(allowed);
 

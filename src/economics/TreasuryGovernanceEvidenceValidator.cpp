@@ -30,6 +30,8 @@ std::string governanceEvidenceValidationStatusToString(
             return "REVIEW_PERIOD_NOT_SATISFIED";
         case GovernanceEvidenceValidationStatus::DECISION_PROOF_REQUIRED:
             return "DECISION_PROOF_REQUIRED";
+        case GovernanceEvidenceValidationStatus::INVALID_GOVERNANCE_LIFECYCLE:
+            return "INVALID_GOVERNANCE_LIFECYCLE";
         case GovernanceEvidenceValidationStatus::APPROVAL_PROOF_MISMATCH:
             return "APPROVAL_PROOF_MISMATCH";
         case GovernanceEvidenceValidationStatus::APPROVAL_ID_MISMATCH:
@@ -91,6 +93,8 @@ static GovernanceEvidenceValidationStatus mapBridgeStatus(
             return GovernanceEvidenceValidationStatus::REVIEW_PERIOD_NOT_SATISFIED;
         case GovernanceApprovalBridgeStatus::DECISION_PROOF_REQUIRED:
             return GovernanceEvidenceValidationStatus::DECISION_PROOF_REQUIRED;
+        case GovernanceApprovalBridgeStatus::INVALID_LIFECYCLE:
+            return GovernanceEvidenceValidationStatus::INVALID_GOVERNANCE_LIFECYCLE;
         default:
             return GovernanceEvidenceValidationStatus::MISSING_GOVERNANCE_CONTEXT;
     }
@@ -111,12 +115,11 @@ GovernanceEvidenceValidationResult TreasuryGovernanceEvidenceValidator::validate
 
     const auto& ctx = evidence.governanceContext();
 
-    // 2. Re-run the bridge to reproduce the expected TreasuryApproval.
-    const auto bridgeResult = GovernanceApprovalBridge::produceTreasuryApproval(
-        ctx.governancePolicy,
-        ctx.governanceProposalEnvelope,
-        ctx.governanceDecisionRecord
-    );
+    // 2. Re-run the lifecycle bridge to reproduce the expected TreasuryApproval.
+    const auto bridgeResult =
+        GovernanceApprovalBridge::produceTreasuryApprovalFromVerifiedLifecycle(
+            ctx.governanceLifecycle
+        );
 
     if (!bridgeResult.isAccepted()) {
         return GovernanceEvidenceValidationResult::rejected(

@@ -1,14 +1,18 @@
 #include "economics/TreasuryGovernanceEvidenceValidator.hpp"
+
+#include "../common/GovernanceLifecycleFixtures.hpp"
+
 #include "economics/GovernanceApprovalBridge.hpp"
-#include "economics/GovernanceDecisionRecord.hpp"
-#include "economics/GovernancePolicy.hpp"
-#include "economics/GovernanceProposalEnvelope.hpp"
+#include "economics/GovernanceDecisionBuilder.hpp"
+#include "economics/GovernanceVoteProof.hpp"
 #include "economics/TreasuryApprovalProof.hpp"
 #include "economics/TreasuryExecutionEvidence.hpp"
 #include "economics/TreasurySpendValidator.hpp"
 
 #include <cassert>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -17,301 +21,296 @@ using nodo::economics::GovernanceApprovalContext;
 using nodo::economics::GovernanceDecisionRecord;
 using nodo::economics::GovernanceDecisionStatus;
 using nodo::economics::GovernanceEvidenceValidationStatus;
-using nodo::economics::GovernancePolicy;
-using nodo::economics::GovernanceProposalEnvelope;
-using nodo::economics::TreasuryAccount;
+using nodo::economics::GovernanceLifecycleRecord;
+using nodo::economics::GovernanceTallyReport;
+using nodo::economics::GovernanceVoteChoice;
+using nodo::economics::GovernanceVoteEvidence;
+using nodo::economics::GovernanceVoteProof;
+using nodo::economics::GovernanceVoteRecord;
 using nodo::economics::TreasuryApproval;
 using nodo::economics::TreasuryApprovalProof;
 using nodo::economics::TreasuryExecutionEvidence;
 using nodo::economics::TreasuryGovernanceEvidenceValidator;
-using nodo::economics::TreasuryPolicy;
-using nodo::economics::TreasuryProposal;
+using nodo::tests::fixtures::approvalFromLifecycle;
+using nodo::tests::fixtures::validExecutionEvidence;
+using nodo::tests::fixtures::validGovernancePolicy;
+using nodo::tests::fixtures::validLifecycle;
+using nodo::tests::fixtures::validSpendPolicy;
+using nodo::tests::fixtures::validTreasury;
+using nodo::tests::fixtures::validTreasuryProposal;
+using nodo::tests::fixtures::validVotes;
+using nodo::tests::fixtures::validVotingPolicy;
 using nodo::utils::Amount;
 
-// ---- Shared fixture helpers ----
-
-TreasuryAccount validTreasury(Amount balance = Amount::fromRawUnits(1000000)) {
-    return TreasuryAccount("treasury-main", "nodo-treasury-addr", balance, 0, false, "");
-}
-
-TreasuryPolicy validSpendPolicy() {
-    return TreasuryPolicy(
-        "treasury-policy-v1",
-        Amount::fromRawUnits(500000), Amount::fromRawUnits(100000),
-        5, true, false
-    );
-}
-
-TreasuryProposal validTreasuryProposal(
-    const std::string& id = "prop-001"
+TreasuryExecutionEvidence evidenceWithLifecycle(
+    const GovernanceLifecycleRecord& lifecycle,
+    const TreasuryApproval& approval,
+    const std::string& evidenceId = "ev-custom"
 ) {
-    return TreasuryProposal(
-        id, "recipient-addr",
-        Amount::fromRawUnits(50000),
-        "fund validator", 1, 0, "proposer-node"
-    );
-}
-
-GovernancePolicy validGovPolicy() {
-    return GovernancePolicy("governance-v1", 10, 5, true, false);
-}
-
-GovernanceProposalEnvelope validEnvelope(
-    const std::string& proposalId = "prop-001"
-) {
-    return GovernanceProposalEnvelope(
-        "gov-prop-001", "TREASURY_SPEND",
-        validTreasuryProposal(proposalId),
-        5, "submitter-node", "governance-v1", "hash-abc123"
-    );
-}
-
-GovernanceDecisionRecord validDecision() {
-    // decidedAtBlock=20 >= submittedAtBlock=5 + reviewPeriod=10 = 15 → satisfied
-    return GovernanceDecisionRecord(
-        "decision-001", "gov-prop-001", "TREASURY_SPEND",
-        GovernanceDecisionStatus::APPROVED,
-        20, "governance-node", "decision-proof-xyz", "governance-v1"
-    );
-}
-
-// Build a full governance-backed evidence using the canonical bridge path.
-TreasuryExecutionEvidence buildGovernanceBackedEvidence(
-    const std::string& evidenceId = "ev-001",
-    const std::string& proposalId = "prop-001"
-) {
-    const auto proposal = validTreasuryProposal(proposalId);
-    const auto spendPolicy = validSpendPolicy();
-    const auto treasury = validTreasury();
-    const auto govPolicy = validGovPolicy();
-
-    const GovernanceProposalEnvelope envelope(
-        "gov-prop-001", "TREASURY_SPEND",
-        proposal, 5, "submitter-node", "governance-v1", "hash-abc123"
-    );
-    const auto decision = validDecision();
-
-    // Run bridge to get the official approval.
-    const auto bridgeResult = GovernanceApprovalBridge::produceTreasuryApproval(
-        govPolicy, envelope, decision
-    );
-    assert(bridgeResult.isAccepted());
-    const TreasuryApproval& approval = bridgeResult.treasuryApproval();
-
-    // Run spend validator to get the matching spend record.
+    const auto proposal = lifecycle.proposalEnvelope().treasuryProposal();
     const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
-        treasury, spendPolicy, proposal, approval,
-        10, Amount::fromRawUnits(0)
+        validTreasury(),
+        validSpendPolicy(),
+        proposal,
+        approval,
+        10,
+        Amount::fromRawUnits(0)
     );
     assert(spendResult.accepted());
 
-    GovernanceApprovalContext ctx;
-    ctx.governancePolicy = govPolicy;
-    ctx.governanceProposalEnvelope = envelope;
-    ctx.governanceDecisionRecord = decision;
+    GovernanceApprovalContext context;
+    context.governanceLifecycle = lifecycle;
 
     return TreasuryExecutionEvidence(
         evidenceId,
-        proposal, approval, spendPolicy,
-        treasury, 10, Amount::fromRawUnits(0),
+        proposal,
+        approval,
+        validSpendPolicy(),
+        validTreasury(),
+        10,
+        Amount::fromRawUnits(0),
         spendResult.spendRecord(),
         1900000001,
-        std::move(ctx)
+        std::move(context)
     );
 }
 
-// ---- Tests ----
-
-void testEvidenceWithBridgeApprovalAccepted() {
-    const auto ev = buildGovernanceBackedEvidence();
-    assert(ev.hasGovernanceContext());
-
-    const auto result = TreasuryGovernanceEvidenceValidator::validateGovernanceContext(ev);
+void testValidLifecycleBackedApprovalAccepted() {
+    const auto evidence = validExecutionEvidence();
+    const auto result =
+        TreasuryGovernanceEvidenceValidator::validateGovernanceContext(evidence);
     assert(result.isAccepted());
     assert(result.status() == GovernanceEvidenceValidationStatus::ACCEPTED);
-    assert(result.reason().empty());
 }
 
-void testEvidenceWithoutGovernanceContextRejected() {
-    // Build evidence using the legacy constructor (no governance context).
+void testDirectApprovalRejected() {
     const auto proposal = validTreasuryProposal();
     const TreasuryApproval directApproval(
-        "appr-001", "prop-001", 3, "governance-node", "manual-proof"
+        "appr-001",
+        proposal.proposalId(),
+        3,
+        "governance-node",
+        "manual-proof"
     );
     const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
-        validTreasury(), validSpendPolicy(), proposal, directApproval,
-        10, Amount::fromRawUnits(0)
+        validTreasury(),
+        validSpendPolicy(),
+        proposal,
+        directApproval,
+        10,
+        Amount::fromRawUnits(0)
     );
     assert(spendResult.accepted());
 
-    const TreasuryExecutionEvidence ev(
-        "ev-legacy",
-        proposal, directApproval, validSpendPolicy(),
-        validTreasury(), 10, Amount::fromRawUnits(0),
+    const TreasuryExecutionEvidence evidence(
+        "ev-direct",
+        proposal,
+        directApproval,
+        validSpendPolicy(),
+        validTreasury(),
+        10,
+        Amount::fromRawUnits(0),
         spendResult.spendRecord(),
         1900000001
-        // no governance context
     );
 
-    const auto result = TreasuryGovernanceEvidenceValidator::validateGovernanceContext(ev);
+    const auto result =
+        TreasuryGovernanceEvidenceValidator::validateGovernanceContext(evidence);
     assert(!result.isAccepted());
     assert(result.status() == GovernanceEvidenceValidationStatus::MISSING_GOVERNANCE_CONTEXT);
 }
 
-void testEvidenceWithForgedApprovalProofRejected() {
-    const auto proposal = validTreasuryProposal();
-    const auto spendPolicy = validSpendPolicy();
-    const auto treasury = validTreasury();
-    const auto govPolicy = validGovPolicy();
-    const auto envelope = validEnvelope();
-    const auto decision = validDecision();
-
-    // Build the correct bridge approval, then tamper the proof.
-    const auto bridgeResult = GovernanceApprovalBridge::produceTreasuryApproval(
-        govPolicy, envelope, decision
+void testOldBridgeOnlyApprovalRejectedInProduction() {
+    const GovernanceDecisionRecord manualDecision(
+        "manual-decision",
+        "gov-prop-001",
+        "TREASURY_SPEND",
+        GovernanceDecisionStatus::APPROVED,
+        20,
+        "governance-node",
+        "manual-proof",
+        "governance-v1"
     );
+
+    const auto bridgeResult =
+        GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
+            validGovernancePolicy(),
+            nodo::tests::fixtures::validEnvelope(),
+            manualDecision
+        );
     assert(bridgeResult.isAccepted());
 
-    const TreasuryApproval forgedApproval(
-        bridgeResult.treasuryApproval().approvalId(),
-        bridgeResult.treasuryApproval().proposalId(),
-        bridgeResult.treasuryApproval().approvedAtBlock(),
-        bridgeResult.treasuryApproval().approver(),
-        "forged-proof-tampered"  // tampered proof
+    GovernanceApprovalContext context;
+    context.governanceLifecycle = validLifecycle();
+    const TreasuryExecutionEvidence evidence = evidenceWithLifecycle(
+        context.governanceLifecycle,
+        bridgeResult.treasuryApproval(),
+        "ev-old-bridge"
     );
 
-    const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
-        treasury, spendPolicy, proposal, forgedApproval,
-        10, Amount::fromRawUnits(0)
-    );
-    assert(spendResult.accepted());
-
-    GovernanceApprovalContext ctx;
-    ctx.governancePolicy = govPolicy;
-    ctx.governanceProposalEnvelope = envelope;
-    ctx.governanceDecisionRecord = decision;
-
-    const TreasuryExecutionEvidence ev(
-        "ev-forged",
-        proposal, forgedApproval, spendPolicy,
-        treasury, 10, Amount::fromRawUnits(0),
-        spendResult.spendRecord(),
-        1900000001,
-        std::move(ctx)
-    );
-
-    const auto result = TreasuryGovernanceEvidenceValidator::validateGovernanceContext(ev);
+    const auto result =
+        TreasuryGovernanceEvidenceValidator::validateGovernanceContext(evidence);
     assert(!result.isAccepted());
-    assert(result.status() == GovernanceEvidenceValidationStatus::APPROVAL_PROOF_MISMATCH);
-}
-
-void testEvidenceWithRejectedDecisionRejected() {
-    const auto proposal = validTreasuryProposal();
-    const auto spendPolicy = validSpendPolicy();
-    const auto treasury = validTreasury();
-    const auto govPolicy = validGovPolicy();
-    const auto envelope = validEnvelope();
-
-    const GovernanceDecisionRecord rejectedDecision(
-        "decision-001", "gov-prop-001", "TREASURY_SPEND",
-        GovernanceDecisionStatus::REJECTED,
-        20, "governance-node", "decision-proof-xyz", "governance-v1"
-    );
-
-    // We must still build a technically-valid approval for the spend validator.
-    // We use a direct approval (forged from bridge inputs but with rejected decision proof).
-    const std::string approvalProof = TreasuryApprovalProof::build(
-        "gov-prop-001", "prop-001", "decision-001", "governance-v1", 20
-    );
-    const TreasuryApproval approval(
-        "gov-approval:decision-001", "prop-001", 20, "governance-node", approvalProof
-    );
-
-    const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
-        treasury, spendPolicy, proposal, approval,
-        10, Amount::fromRawUnits(0)
-    );
-    assert(spendResult.accepted());
-
-    GovernanceApprovalContext ctx;
-    ctx.governancePolicy = govPolicy;
-    ctx.governanceProposalEnvelope = envelope;
-    ctx.governanceDecisionRecord = rejectedDecision;
-
-    const TreasuryExecutionEvidence ev(
-        "ev-rejected-dec",
-        proposal, approval, spendPolicy,
-        treasury, 10, Amount::fromRawUnits(0),
-        spendResult.spendRecord(),
-        1900000001,
-        std::move(ctx)
-    );
-
-    const auto result = TreasuryGovernanceEvidenceValidator::validateGovernanceContext(ev);
-    assert(!result.isAccepted());
-    assert(result.status() == GovernanceEvidenceValidationStatus::DECISION_NOT_APPROVED);
-}
-
-void testEvidenceWithDifferentProposalRejected() {
-    // The governance context references a different treasury proposal than the evidence.
-    const auto proposal = validTreasuryProposal("prop-001");
-    const auto spendPolicy = validSpendPolicy();
-    const auto treasury = validTreasury();
-    const auto govPolicy = validGovPolicy();
-
-    // Envelope references "prop-999" but the evidence carries "prop-001".
-    const GovernanceProposalEnvelope wrongEnvelope(
-        "gov-prop-001", "TREASURY_SPEND",
-        validTreasuryProposal("prop-999"),  // different proposalId
-        5, "submitter-node", "governance-v1", "hash-abc123"
-    );
-    const auto decision = validDecision();
-
-    const auto bridgeResult = GovernanceApprovalBridge::produceTreasuryApproval(
-        govPolicy, wrongEnvelope, decision
-    );
-    // Bridge produces approval for prop-999.
-    assert(bridgeResult.isAccepted());
-    assert(bridgeResult.treasuryApproval().proposalId() == "prop-999");
-
-    // Build a "prop-001" approval manually that matches the bridge proof structure
-    // but with the wrong proposalId — this won't match what the validator expects.
-    // Actually: the bridge returned approval for prop-999. If we use it with prop-001
-    // evidence, the evidence structural validator will reject it (proposalId mismatch).
-    // Use a valid approval for prop-001 but with governance context referencing prop-999.
-    const auto& bridgeApproval = bridgeResult.treasuryApproval();
-    // We need a spend-validator-accepted approval for prop-001.
-    const TreasuryApproval proposalOneApproval(
-        "gov-approval:decision-001", "prop-001", 20, "governance-node",
-        bridgeApproval.approvalProof()  // wrong proof (built for prop-999)
-    );
-
-    const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
-        treasury, spendPolicy, proposal, proposalOneApproval,
-        10, Amount::fromRawUnits(0)
-    );
-    assert(spendResult.accepted());
-
-    GovernanceApprovalContext ctx;
-    ctx.governancePolicy = govPolicy;
-    ctx.governanceProposalEnvelope = wrongEnvelope;
-    ctx.governanceDecisionRecord = decision;
-
-    const TreasuryExecutionEvidence ev(
-        "ev-mismatch",
-        proposal, proposalOneApproval, spendPolicy,
-        treasury, 10, Amount::fromRawUnits(0),
-        spendResult.spendRecord(),
-        1900000001,
-        std::move(ctx)
-    );
-
-    const auto result = TreasuryGovernanceEvidenceValidator::validateGovernanceContext(ev);
-    assert(!result.isAccepted());
-    // The proof computed by bridge for prop-999 does not match what the
-    // bridge would compute for prop-001, so proof mismatch is expected.
     assert(result.status() == GovernanceEvidenceValidationStatus::APPROVAL_PROOF_MISMATCH ||
-           result.status() == GovernanceEvidenceValidationStatus::APPROVAL_PROPOSAL_MISMATCH);
+           result.status() == GovernanceEvidenceValidationStatus::APPROVAL_ID_MISMATCH);
+}
+
+void testForgedVoteProofRejected() {
+    auto votes = validVotes();
+    const GovernanceVoteRecord forgedRecord(
+        "vote-001",
+        "gov-prop-001",
+        "validator-a",
+        GovernanceVoteChoice::YES,
+        60,
+        12,
+        "governance-v1"
+    );
+    votes[0] = GovernanceVoteEvidence(forgedRecord, "forged-proof");
+
+    const auto lifecycle = GovernanceLifecycleRecord(
+        "lifecycle-forged-vote",
+        nodo::tests::fixtures::validEnvelope(),
+        validGovernancePolicy(),
+        validVotingPolicy(),
+        votes,
+        validLifecycle().tallyReport(),
+        validLifecycle().decisionRecord(),
+        5,
+        20
+    );
+    assert(!lifecycle.isValid());
+    const auto bridgeResult =
+        GovernanceApprovalBridge::produceTreasuryApprovalFromVerifiedLifecycle(lifecycle);
+    assert(!bridgeResult.isAccepted());
+    assert(bridgeResult.status() == nodo::economics::GovernanceApprovalBridgeStatus::INVALID_LIFECYCLE);
+}
+
+void testTamperedTallyRejected() {
+    const auto lifecycle = validLifecycle();
+    const GovernanceTallyReport tamperedTally(
+        lifecycle.tallyReport().governanceProposalId(),
+        lifecycle.tallyReport().policyVersion(),
+        lifecycle.tallyReport().totalVotingPower(),
+        59,
+        lifecycle.tallyReport().noVotingPower(),
+        lifecycle.tallyReport().abstainVotingPower() + 1,
+        lifecycle.tallyReport().yesVoteCount(),
+        lifecycle.tallyReport().noVoteCount(),
+        lifecycle.tallyReport().abstainVoteCount(),
+        true,
+        false,
+        false,
+        GovernanceTallyReport::buildTallyProof(
+            lifecycle.tallyReport().governanceProposalId(),
+            lifecycle.tallyReport().policyVersion(),
+            lifecycle.tallyReport().totalVotingPower(),
+            59,
+            lifecycle.tallyReport().noVotingPower(),
+            lifecycle.tallyReport().abstainVotingPower() + 1,
+            lifecycle.tallyReport().yesVoteCount(),
+            lifecycle.tallyReport().noVoteCount(),
+            lifecycle.tallyReport().abstainVoteCount(),
+            true,
+            false,
+            false
+        )
+    );
+    assert(tamperedTally.isValid());
+
+    const GovernanceLifecycleRecord tamperedLifecycle(
+        "lifecycle-tampered-tally",
+        lifecycle.proposalEnvelope(),
+        lifecycle.governancePolicy(),
+        lifecycle.votingPolicy(),
+        lifecycle.voteEvidenceList(),
+        tamperedTally,
+        lifecycle.decisionRecord(),
+        lifecycle.createdAtBlock(),
+        lifecycle.finalizedAtBlock()
+    );
+    assert(tamperedLifecycle.isValid());
+
+    const TreasuryExecutionEvidence evidence =
+        evidenceWithLifecycle(tamperedLifecycle, approvalFromLifecycle(lifecycle));
+    const auto result =
+        TreasuryGovernanceEvidenceValidator::validateGovernanceContext(evidence);
+    assert(!result.isAccepted());
+    assert(result.status() == GovernanceEvidenceValidationStatus::INVALID_GOVERNANCE_LIFECYCLE);
+}
+
+void testTamperedDecisionRejected() {
+    const auto lifecycle = validLifecycle();
+    const GovernanceDecisionRecord tamperedDecision(
+        lifecycle.decisionRecord().decisionId(),
+        lifecycle.decisionRecord().governanceProposalId(),
+        lifecycle.decisionRecord().proposalType(),
+        GovernanceDecisionStatus::REJECTED,
+        lifecycle.decisionRecord().decidedAtBlock(),
+        lifecycle.decisionRecord().decisionMaker(),
+        lifecycle.decisionRecord().decisionProof(),
+        lifecycle.decisionRecord().policyVersion()
+    );
+
+    const GovernanceLifecycleRecord tamperedLifecycle(
+        "lifecycle-tampered-decision",
+        lifecycle.proposalEnvelope(),
+        lifecycle.governancePolicy(),
+        lifecycle.votingPolicy(),
+        lifecycle.voteEvidenceList(),
+        lifecycle.tallyReport(),
+        tamperedDecision,
+        lifecycle.createdAtBlock(),
+        lifecycle.finalizedAtBlock()
+    );
+    assert(tamperedLifecycle.isValid());
+
+    const TreasuryExecutionEvidence evidence =
+        evidenceWithLifecycle(tamperedLifecycle, approvalFromLifecycle(lifecycle));
+    const auto result =
+        TreasuryGovernanceEvidenceValidator::validateGovernanceContext(evidence);
+    assert(!result.isAccepted());
+    assert(result.status() == GovernanceEvidenceValidationStatus::INVALID_GOVERNANCE_LIFECYCLE);
+}
+
+void testApprovalForDifferentTreasuryProposalRejected() {
+    const auto lifecycle = validLifecycle();
+    const auto approval = approvalFromLifecycle(lifecycle);
+
+    GovernanceApprovalContext context;
+    context.governanceLifecycle = lifecycle;
+
+    const auto proposal = validTreasuryProposal("prop-999");
+    const TreasuryApproval mismatchedApproval(
+        approval.approvalId(),
+        proposal.proposalId(),
+        approval.approvedAtBlock(),
+        approval.approver(),
+        approval.approvalProof()
+    );
+    const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
+        validTreasury(),
+        validSpendPolicy(),
+        proposal,
+        mismatchedApproval,
+        10,
+        Amount::fromRawUnits(0)
+    );
+    assert(spendResult.accepted());
+
+    const TreasuryExecutionEvidence evidence(
+        "ev-proposal-mismatch",
+        proposal,
+        mismatchedApproval,
+        validSpendPolicy(),
+        validTreasury(),
+        10,
+        Amount::fromRawUnits(0),
+        spendResult.spendRecord(),
+        1900000001,
+        std::move(context)
+    );
+    assert(!evidence.isValid());
 }
 
 void testStatusToString() {
@@ -319,21 +318,20 @@ void testStatusToString() {
     assert(governanceEvidenceValidationStatusToString(
                GovernanceEvidenceValidationStatus::ACCEPTED) == "ACCEPTED");
     assert(governanceEvidenceValidationStatusToString(
-               GovernanceEvidenceValidationStatus::MISSING_GOVERNANCE_CONTEXT) ==
-           "MISSING_GOVERNANCE_CONTEXT");
-    assert(governanceEvidenceValidationStatusToString(
-               GovernanceEvidenceValidationStatus::APPROVAL_PROOF_MISMATCH) ==
-           "APPROVAL_PROOF_MISMATCH");
+               GovernanceEvidenceValidationStatus::INVALID_GOVERNANCE_LIFECYCLE) ==
+           "INVALID_GOVERNANCE_LIFECYCLE");
 }
 
 } // namespace
 
 int main() {
-    testEvidenceWithBridgeApprovalAccepted();
-    testEvidenceWithoutGovernanceContextRejected();
-    testEvidenceWithForgedApprovalProofRejected();
-    testEvidenceWithRejectedDecisionRejected();
-    testEvidenceWithDifferentProposalRejected();
+    testValidLifecycleBackedApprovalAccepted();
+    testDirectApprovalRejected();
+    testOldBridgeOnlyApprovalRejectedInProduction();
+    testForgedVoteProofRejected();
+    testTamperedTallyRejected();
+    testTamperedDecisionRejected();
+    testApprovalForDifferentTreasuryProposalRejected();
     testStatusToString();
     return 0;
 }

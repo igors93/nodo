@@ -1,9 +1,7 @@
 #ifndef NODO_ECONOMICS_TREASURY_EXECUTION_EVIDENCE_HPP
 #define NODO_ECONOMICS_TREASURY_EXECUTION_EVIDENCE_HPP
 
-#include "economics/GovernanceDecisionRecord.hpp"
-#include "economics/GovernancePolicy.hpp"
-#include "economics/GovernanceProposalEnvelope.hpp"
+#include "economics/GovernanceLifecycleRecord.hpp"
 #include "economics/TreasuryAccount.hpp"
 #include "economics/TreasuryApproval.hpp"
 #include "economics/TreasuryPolicy.hpp"
@@ -17,16 +15,13 @@
 namespace nodo::economics {
 
 /*
- * GovernanceApprovalContext carries the governance lifecycle inputs that
- * were used to produce the TreasuryApproval embedded in evidence. Any node
- * can re-run GovernanceApprovalBridge with these inputs to reproduce the
- * approval and compare it against the stored approval, proving the approval
- * was not forged outside the official bridge.
+ * GovernanceApprovalContext carries the verified governance lifecycle used to
+ * produce the TreasuryApproval embedded in evidence. Any node can rebuild the
+ * tally and decision from votes, re-run GovernanceApprovalBridge, and compare
+ * the reproduced approval against the stored approval.
  */
 struct GovernanceApprovalContext {
-    GovernancePolicy governancePolicy;
-    GovernanceProposalEnvelope governanceProposalEnvelope;
-    GovernanceDecisionRecord governanceDecisionRecord;
+    GovernanceLifecycleRecord governanceLifecycle;
 };
 
 /*
@@ -44,7 +39,7 @@ struct GovernanceApprovalContext {
  *   - the timelock was respected;
  *   - the execution block matches;
  *   - the epoch is correct;
- *   - the approval was produced by GovernanceApprovalBridge (governanceContext).
+ *   - the approval was produced from a verified governance lifecycle.
  *
  * Any field mismatch between proposal, approval, policy, and spendRecord makes
  * the evidence structurally invalid and must cause artifact rejection.
@@ -52,7 +47,7 @@ struct GovernanceApprovalContext {
  * Production path:
  * Evidence must carry a GovernanceApprovalContext so that
  * TreasuryGovernanceEvidenceValidator can prove the TreasuryApproval was
- * produced by GovernanceApprovalBridge and not forged directly.
+ * produced by verified votes, tally, decision, and bridge output.
  */
 class TreasuryExecutionEvidence {
 public:

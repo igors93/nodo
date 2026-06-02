@@ -227,6 +227,16 @@ void TreasuryExecutionEvidence::validate() const {
         return;
     }
 
+    if (m_hasGovernanceContext &&
+        m_governanceContext.governanceLifecycle.proposalEnvelope()
+                .treasuryProposal().proposalId() != m_proposal.proposalId()) {
+        m_valid = false;
+        m_rejectionReason =
+            "TreasuryExecutionEvidence: governance lifecycle treasury proposal "
+            "does not match evidence proposal.";
+        return;
+    }
+
     // Verify treasury balance before matches spend record.
     if (m_spendRecord.treasuryBalanceBefore() != m_treasuryAccountBefore.balance()) {
         m_valid = false;
@@ -256,9 +266,8 @@ std::string TreasuryExecutionEvidence::serialize() const {
         << ";spend=" << m_spendRecord.serialize();
 
     if (m_hasGovernanceContext) {
-        oss << ";governancePolicy=" << m_governanceContext.governancePolicy.serialize()
-            << ";governanceEnvelope=" << m_governanceContext.governanceProposalEnvelope.serialize()
-            << ";governanceDecision=" << m_governanceContext.governanceDecisionRecord.serialize();
+        oss << ";governanceLifecycle="
+            << m_governanceContext.governanceLifecycle.serialize();
     }
 
     oss << "}";

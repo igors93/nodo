@@ -4,6 +4,7 @@
 #include "economics/GovernanceDecisionRecord.hpp"
 #include "economics/TreasuryApprovalProof.hpp"
 #include "economics/TreasuryProposal.hpp"
+#include "../common/GovernanceLifecycleFixtures.hpp"
 #include "utils/Amount.hpp"
 
 #include <cassert>
@@ -19,6 +20,7 @@ using nodo::economics::GovernancePolicy;
 using nodo::economics::GovernanceProposalEnvelope;
 using nodo::economics::TreasuryApprovalProof;
 using nodo::economics::TreasuryProposal;
+using nodo::tests::fixtures::validLifecycle;
 using nodo::utils::Amount;
 
 GovernancePolicy validPolicy() {
@@ -66,7 +68,7 @@ GovernanceDecisionRecord validApprovedDecision(
 // ---- Positive tests ----
 
 void testValidBridgeProducesTreasuryApproval() {
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), validApprovedDecision()
     );
     assert(result.isAccepted());
@@ -83,10 +85,10 @@ void testValidBridgeProducesTreasuryApproval() {
 }
 
 void testApprovalProofIsDeterministic() {
-    const auto r1 = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto r1 = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), validApprovedDecision()
     );
-    const auto r2 = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto r2 = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), validApprovedDecision()
     );
     assert(r1.isAccepted());
@@ -96,7 +98,7 @@ void testApprovalProofIsDeterministic() {
 }
 
 void testApprovalProofMatchesTreasuryApprovalProof() {
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), validApprovedDecision()
     );
     assert(result.isAccepted());
@@ -107,6 +109,16 @@ void testApprovalProofMatchesTreasuryApprovalProof() {
     assert(result.treasuryApproval().approvalProof() == expected);
 }
 
+void testVerifiedLifecycleProducesTreasuryApproval() {
+    const auto lifecycle = validLifecycle();
+    const auto result =
+        GovernanceApprovalBridge::produceTreasuryApprovalFromVerifiedLifecycle(lifecycle);
+    assert(result.isAccepted());
+    assert(result.treasuryApproval().proposalId() == "prop-001");
+    assert(result.treasuryApproval().approvalId() ==
+           "gov-approval:" + lifecycle.decisionRecord().decisionId());
+}
+
 // ---- Rejection tests ----
 
 void testRejectedDecisionCannotProduceApproval() {
@@ -115,7 +127,7 @@ void testRejectedDecisionCannotProduceApproval() {
         GovernanceDecisionStatus::REJECTED,
         20, "governance-node", "decision-proof-xyz", "governance-v1"
     );
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), rejected
     );
     assert(!result.isAccepted());
@@ -128,7 +140,7 @@ void testExpiredDecisionCannotProduceApproval() {
         GovernanceDecisionStatus::EXPIRED,
         20, "governance-node", "", "governance-v1"
     );
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), expired
     );
     assert(!result.isAccepted());
@@ -140,7 +152,7 @@ void testPolicyVersionMismatchEnvelopeRejected() {
         "gov-prop-001", "TREASURY_SPEND", validTreasuryProposal(),
         5, "submitter-node", "governance-v2", "hash-abc123"
     );
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), wrongVersionEnvelope, validApprovedDecision()
     );
     assert(!result.isAccepted());
@@ -153,7 +165,7 @@ void testPolicyVersionMismatchDecisionRejected() {
         GovernanceDecisionStatus::APPROVED,
         20, "governance-node", "decision-proof-xyz", "governance-v2"
     );
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), wrongVersionDecision
     );
     assert(!result.isAccepted());
@@ -166,7 +178,7 @@ void testProposalIdMismatchRejected() {
         GovernanceDecisionStatus::APPROVED,
         20, "governance-node", "decision-proof-xyz", "governance-v1"
     );
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), wrongProposalDecision
     );
     assert(!result.isAccepted());
@@ -176,7 +188,7 @@ void testProposalIdMismatchRejected() {
 void testReviewPeriodNotSatisfiedRejected() {
     // submittedAtBlock=5, reviewPeriod=10, so decidedAtBlock must be >= 15.
     // decidedAtBlock=14 should be rejected.
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), validApprovedDecision(14)
     );
     assert(!result.isAccepted());
@@ -185,7 +197,7 @@ void testReviewPeriodNotSatisfiedRejected() {
 
 void testExactlyAtReviewPeriodBoundaryAccepted() {
     // submittedAtBlock=5 + reviewPeriod=10 = 15, decidedAtBlock=15 → exactly satisfied
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), validApprovedDecision(15)
     );
     assert(result.isAccepted());
@@ -199,7 +211,7 @@ void testDecisionProofRequiredWhenPolicyRequires() {
         "governance-v1"
     );
     // policy.requireDecisionProof = true (validPolicy())
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), noProofDecision
     );
     assert(!result.isAccepted());
@@ -213,7 +225,7 @@ void testDecisionProofNotRequiredWhenPolicyDoesNot() {
         GovernanceDecisionStatus::APPROVED,
         20, "governance-node", "", "governance-v1"
     );
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         noProofPolicy, validEnvelope(), noProofDecision
     );
     assert(result.isAccepted());
@@ -221,7 +233,7 @@ void testDecisionProofNotRequiredWhenPolicyDoesNot() {
 
 void testInvalidPolicyRejected() {
     const GovernancePolicy invalid;  // default-constructed = invalid
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         invalid, validEnvelope(), validApprovedDecision()
     );
     assert(!result.isAccepted());
@@ -230,7 +242,7 @@ void testInvalidPolicyRejected() {
 
 void testInvalidEnvelopeRejected() {
     const GovernanceProposalEnvelope invalid;  // default-constructed = invalid
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), invalid, validApprovedDecision()
     );
     assert(!result.isAccepted());
@@ -239,7 +251,7 @@ void testInvalidEnvelopeRejected() {
 
 void testInvalidDecisionRejected() {
     const GovernanceDecisionRecord invalid;  // default-constructed = invalid
-    const auto result = GovernanceApprovalBridge::produceTreasuryApproval(
+    const auto result = GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionForTestsOnly(
         validPolicy(), validEnvelope(), invalid
     );
     assert(!result.isAccepted());
@@ -264,6 +276,7 @@ int main() {
     testValidBridgeProducesTreasuryApproval();
     testApprovalProofIsDeterministic();
     testApprovalProofMatchesTreasuryApprovalProof();
+    testVerifiedLifecycleProducesTreasuryApproval();
     testRejectedDecisionCannotProduceApproval();
     testExpiredDecisionCannotProduceApproval();
     testPolicyVersionMismatchEnvelopeRejected();

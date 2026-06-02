@@ -41,6 +41,10 @@ public:
     std::filesystem::path peersDirectoryPath() const;
     std::filesystem::path mempoolDirectoryPath() const;
     std::filesystem::path runtimeDirectoryPath() const;
+    std::filesystem::path governanceLifecycleDirectoryPath() const;
+    std::filesystem::path governanceLifecyclePath(
+        const std::string& lifecycleId
+    ) const;
     std::filesystem::path epochMonetaryReportPath() const;
     std::filesystem::path epochTreasuryReportPath() const;
 
