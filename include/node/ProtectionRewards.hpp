@@ -2,6 +2,7 @@
 #define NODO_NODE_PROTECTION_REWARDS_HPP
 
 #include "node/ProtectionTreasury.hpp"
+#include "node/RewardCategory.hpp"
 #include "node/SecurityScore.hpp"
 #include "node/ValidatorNetworkPolicy.hpp"
 #include "node/ValidatorRiskAssessment.hpp"
@@ -148,6 +149,25 @@ private:
     std::string m_sourceBudgetDigest;
 };
 
+/*
+ * RewardEvidenceAuditResult reports whether protection reward settlements
+ * satisfy evidence requirements. Chain audit calls this to prevent
+ * evidence-free reward issuance.
+ */
+class RewardEvidenceAuditResult {
+public:
+    RewardEvidenceAuditResult();
+    static RewardEvidenceAuditResult passed();
+    static RewardEvidenceAuditResult failed(std::string reason);
+
+    bool isPassed() const;
+    const std::string& reason() const;
+
+private:
+    bool m_passed;
+    std::string m_reason;
+};
+
 class ProtectionRewards {
 public:
     static constexpr const char* PROTECTION_WORK_REASON =
@@ -204,6 +224,21 @@ public:
     static bool sameSummary(
         const ProtectionRewardSummary& left,
         const ProtectionRewardSummary& right
+    );
+
+    // Derive the reward category from a settlement record.
+    // PROTECTION when earned > 0 and no deferred portion.
+    // DEFERRED_PROTECTION when deferred > 0.
+    // REJECTED when earned == 0 and deferred == 0 but planned > 0.
+    static RewardCategory categoryForSettlement(
+        const ProtectionRewardSettlement& settlement
+    );
+
+    // Validate that all protection reward settlements in a block carry
+    // verifiable evidence (sourceWorkDigest). Returns failed if any
+    // settlement lacks evidence.
+    static RewardEvidenceAuditResult auditSettlementEvidence(
+        const std::vector<ProtectionRewardSettlement>& settlements
     );
 };
 

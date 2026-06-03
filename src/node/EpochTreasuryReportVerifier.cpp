@@ -106,6 +106,20 @@ EpochTreasuryVerificationResult EpochTreasuryReportVerifier::verify(
         );
     }
 
+    // Digest comparison: when both reports carry a digest, compare them first.
+    // This catches same-total/same-count mismatches where recipients, proposals,
+    // or amounts differ. The rebuilt report always has a digest (from records);
+    // the persisted report may be an older format with an empty digest.
+    if (!persisted.spendRecordsDigest().empty() &&
+        !rebuilt.spendRecordsDigest().empty() &&
+        persisted.spendRecordsDigest() != rebuilt.spendRecordsDigest()) {
+        return EpochTreasuryVerificationResult::fieldMismatch(
+            "treasury report spendRecordsDigest mismatch: "
+            "persisted=" + persisted.spendRecordsDigest() +
+            " rebuilt=" + rebuilt.spendRecordsDigest()
+        );
+    }
+
     // Record-level comparison when both reports carry individual records.
     if (persisted.hasSpendRecords() && rebuilt.hasSpendRecords()) {
         const auto& pRecords = persisted.spendRecords();

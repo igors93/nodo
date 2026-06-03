@@ -700,4 +700,70 @@ bool ProtectionRewards::sameSummary(
     return left.serialize() == right.serialize();
 }
 
+// ---- RewardEvidenceAuditResult ----
+
+RewardEvidenceAuditResult::RewardEvidenceAuditResult()
+    : m_passed(false),
+      m_reason("Uninitialized.") {}
+
+RewardEvidenceAuditResult RewardEvidenceAuditResult::passed() {
+    RewardEvidenceAuditResult r;
+    r.m_passed = true;
+    r.m_reason = "";
+    return r;
+}
+
+RewardEvidenceAuditResult RewardEvidenceAuditResult::failed(std::string reason) {
+    RewardEvidenceAuditResult r;
+    r.m_passed = false;
+    r.m_reason = std::move(reason);
+    return r;
+}
+
+bool RewardEvidenceAuditResult::isPassed() const { return m_passed; }
+const std::string& RewardEvidenceAuditResult::reason() const { return m_reason; }
+
+// ---- ProtectionRewards category and evidence audit ----
+
+RewardCategory ProtectionRewards::categoryForSettlement(
+    const ProtectionRewardSettlement& settlement
+) {
+    if (!settlement.isValid()) {
+        return RewardCategory::REJECTED;
+    }
+    if (settlement.deferredReward().rawUnits() > 0) {
+        return RewardCategory::DEFERRED_PROTECTION;
+    }
+    if (settlement.earnedReward().rawUnits() > 0) {
+        return RewardCategory::PROTECTION;
+    }
+    // plannedReward > 0 but neither earned nor deferred: rejected.
+    return RewardCategory::REJECTED;
+}
+
+RewardEvidenceAuditResult ProtectionRewards::auditSettlementEvidence(
+    const std::vector<ProtectionRewardSettlement>& settlements
+) {
+    for (const auto& s : settlements) {
+        if (!s.isValid()) {
+            return RewardEvidenceAuditResult::failed(
+                "protection reward settlement for validator '" +
+                s.validatorAddress() + "' is invalid: " + s.serialize()
+            );
+        }
+        // sourceWorkDigest is required by isValid(), but we enforce it
+        // explicitly here so the audit produces a specific message.
+        if (s.sourceWorkDigest().empty()) {
+            return RewardEvidenceAuditResult::failed(
+                "protection reward settlement for validator '" +
+                s.validatorAddress() +
+                "' at block " + std::to_string(s.blockHeight()) +
+                " has empty sourceWorkDigest — protection rewards require "
+                "verifiable work evidence"
+            );
+        }
+    }
+    return RewardEvidenceAuditResult::passed();
+}
+
 } // namespace nodo::node

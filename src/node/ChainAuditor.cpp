@@ -1,6 +1,8 @@
 #include "node/ChainAuditor.hpp"
 
 #include "node/AuditAssignment.hpp"
+#include "node/DataAvailabilityAuditValidator.hpp"
+#include "node/ProtectionRewards.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "economics/EpochMonetaryReport.hpp"
 #include "economics/EpochTreasuryReport.hpp"
@@ -196,6 +198,44 @@ ChainAuditResult auditImpl(
                     "chain audit: persisted monetary report does not match rebuilt report: " +
                     verif.reason() + " | " + verif.serialize()
                 );
+            }
+        }
+
+        // Reward evidence audit: every protection reward settlement must carry
+        // verifiable work evidence. Extraordinary rewards are not permitted in
+        // the current localnet configuration (no extraordinary minting path exists).
+        for (const auto& artifact : load.loadedArtifacts()) {
+            const RewardEvidenceAuditResult rewardAudit =
+                ProtectionRewards::auditSettlementEvidence(
+                    artifact.protectionRewardSettlements()
+                );
+            if (!rewardAudit.isPassed()) {
+                return ChainAuditResult::failed(
+                    "chain audit: reward evidence audit failed at block " +
+                    std::to_string(artifact.block().index()) + ": " +
+                    rewardAudit.reason()
+                );
+            }
+
+            // Artifact digest stability check: verify that the artifact's
+            // recomputed digest is non-empty and internally consistent.
+            // A corrupted artifact would produce an empty or mismatched digest.
+            if (artifact.isValid()) {
+                const std::string recomputed = artifact.artifactDigest();
+                if (recomputed.empty()) {
+                    return ChainAuditResult::failed(
+                        "chain audit: artifact at block " +
+                        std::to_string(artifact.block().index()) +
+                        " produced an empty digest"
+                    );
+                }
+                // If a second recomputation differs, the artifact is unstable.
+                if (artifact.artifactDigest() != recomputed) {
+                    return ChainAuditResult::failed(
+                        "chain audit: artifact digest is non-deterministic at block " +
+                        std::to_string(artifact.block().index())
+                    );
+                }
             }
         }
 

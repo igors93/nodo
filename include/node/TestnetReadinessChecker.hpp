@@ -55,7 +55,8 @@ public:
         bool governanceLifecycleVerifierWired,
         bool defenseModeInactive,
         bool legacyPathsBlockedOnOfficialNetworks,
-        bool treasuryReportConsistencyVerified
+        bool treasuryReportConsistencyVerified,
+        bool evidenceCaptureHealthy = true
     );
 
     std::size_t connectedPeers() const;
@@ -65,6 +66,7 @@ public:
     bool defenseModeInactive() const;
     bool legacyPathsBlockedOnOfficialNetworks() const;
     bool treasuryReportConsistencyVerified() const;
+    bool evidenceCaptureHealthy() const;
 
 private:
     std::size_t m_connectedPeers;
@@ -74,6 +76,7 @@ private:
     bool m_defenseModeInactive;
     bool m_legacyPathsBlockedOnOfficialNetworks;
     bool m_treasuryReportConsistencyVerified;
+    bool m_evidenceCaptureHealthy;
 };
 
 class TestnetReadinessChecker {

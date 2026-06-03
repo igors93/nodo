@@ -32,12 +32,12 @@ public:
 
     // Reconstruct from stored fields (used on reload). The caller must verify
     // the reconstructed report against the canonical sequence.
-    // Individual records are not stored on reload — they are always re-derived
-    // from finalized artifacts during verification.
+    // spendRecordsDigest may be empty for reports written before the digest was introduced.
     static EpochTreasuryReport fromStoredFields(
         std::uint64_t epoch,
         utils::Amount treasurySpendTotal,
-        std::size_t spendRecordCount
+        std::size_t spendRecordCount,
+        std::string spendRecordsDigest = ""
     );
 
     std::uint64_t epoch() const;
@@ -52,6 +52,12 @@ public:
     // built from fromStoredFields() (loaded from persisted storage).
     bool hasSpendRecords() const;
 
+    // Returns a deterministic SHA-256 digest of the ordered canonical spend records.
+    // Empty string when the report was built from stored totals only.
+    // Two reports with the same total/count but different recipients, proposals,
+    // or amounts will produce different digests.
+    const std::string& spendRecordsDigest() const;
+
     bool isValid() const;
     const std::string& rejectionReason() const;
 
@@ -62,6 +68,7 @@ private:
     utils::Amount m_treasurySpendTotal;
     std::size_t m_spendRecordCount;
     std::vector<TreasurySpendRecord> m_spendRecords;
+    std::string m_spendRecordsDigest;
     bool m_hasSpendRecords;
     bool m_valid;
     std::string m_rejectionReason;

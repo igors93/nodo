@@ -18,7 +18,8 @@ const std::string kSchemaId = "NODO_EPOCH_TREASURY_REPORT";
 const std::set<std::string> kAllowedFields = {
     "epoch",
     "treasurySpendTotalRawUnits",
-    "spendRecordCount"
+    "spendRecordCount",
+    "spendRecordsDigest"
 };
 
 std::string readFile(const std::filesystem::path& path) {
@@ -99,6 +100,8 @@ std::string EpochTreasuryReportStore::encode(
     fields.emplace_back("treasurySpendTotalRawUnits",
                         std::to_string(report.treasurySpendTotal().rawUnits()));
     fields.emplace_back("spendRecordCount",          std::to_string(report.spendRecordCount()));
+    fields.emplace_back("spendRecordsDigest",
+                        report.spendRecordsDigest().empty() ? "none" : report.spendRecordsDigest());
 
     return serialization::KeyValueFileCodec::serialize(kSchemaId, fields);
 }
@@ -121,10 +124,21 @@ economics::EpochTreasuryReport EpochTreasuryReportStore::decode(
         );
     }
 
+    // spendRecordsDigest is optional for backwards compatibility with reports
+    // written before the digest field was introduced.
+    std::string digest;
+    try {
+        const std::string& raw = doc.requireField("spendRecordsDigest");
+        digest = (raw == "none") ? "" : raw;
+    } catch (...) {
+        // Field absent in old format — leave digest empty.
+    }
+
     const auto report = economics::EpochTreasuryReport::fromStoredFields(
         epoch,
         utils::Amount::fromRawUnits(totalRaw),
-        static_cast<std::size_t>(count)
+        static_cast<std::size_t>(count),
+        std::move(digest)
     );
 
     if (!report.isValid()) {

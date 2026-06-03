@@ -44,7 +44,8 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig()
       m_governanceLifecycleVerifierWired(false),
       m_defenseModeInactive(true),
       m_legacyPathsBlockedOnOfficialNetworks(false),
-      m_treasuryReportConsistencyVerified(false) {}
+      m_treasuryReportConsistencyVerified(false),
+      m_evidenceCaptureHealthy(true) {}
 
 TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
     std::size_t connectedPeers,
@@ -53,7 +54,8 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
     bool governanceLifecycleVerifierWired,
     bool defenseModeInactive,
     bool legacyPathsBlockedOnOfficialNetworks,
-    bool treasuryReportConsistencyVerified
+    bool treasuryReportConsistencyVerified,
+    bool evidenceCaptureHealthy
 )
     : m_connectedPeers(connectedPeers),
       m_genesisVerified(genesisVerified),
@@ -61,7 +63,8 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
       m_governanceLifecycleVerifierWired(governanceLifecycleVerifierWired),
       m_defenseModeInactive(defenseModeInactive),
       m_legacyPathsBlockedOnOfficialNetworks(legacyPathsBlockedOnOfficialNetworks),
-      m_treasuryReportConsistencyVerified(treasuryReportConsistencyVerified) {}
+      m_treasuryReportConsistencyVerified(treasuryReportConsistencyVerified),
+      m_evidenceCaptureHealthy(evidenceCaptureHealthy) {}
 
 std::size_t TestnetReadinessCheckerConfig::connectedPeers() const { return m_connectedPeers; }
 bool TestnetReadinessCheckerConfig::genesisVerified() const { return m_genesisVerified; }
@@ -70,6 +73,7 @@ bool TestnetReadinessCheckerConfig::governanceLifecycleVerifierWired() const { r
 bool TestnetReadinessCheckerConfig::defenseModeInactive() const { return m_defenseModeInactive; }
 bool TestnetReadinessCheckerConfig::legacyPathsBlockedOnOfficialNetworks() const { return m_legacyPathsBlockedOnOfficialNetworks; }
 bool TestnetReadinessCheckerConfig::treasuryReportConsistencyVerified() const { return m_treasuryReportConsistencyVerified; }
+bool TestnetReadinessCheckerConfig::evidenceCaptureHealthy() const { return m_evidenceCaptureHealthy; }
 
 namespace {
 
@@ -193,6 +197,21 @@ void addProtocolSafetyGates(
                             : "No finalized blocks; treasury report check skipped.")
                : "Treasury report has NOT been verified against finalized artifacts. "
                  "Run chain audit before starting."
+        );
+    }
+
+    // Protocol evidence capture must be healthy or intentionally disabled.
+    // A node whose evidence store is unavailable or has persistent failures
+    // must be visible to the operator before the node participates.
+    {
+        const bool ok = config.evidenceCaptureHealthy();
+        checks.emplace_back(
+            "evidence_capture_available",
+            ok,
+            ok ? "Protocol evidence capture is healthy or intentionally disabled."
+               : "Protocol evidence capture is unhealthy: the evidence store is "
+                 "unavailable or has recent persistence failures. Repair the store "
+                 "before starting."
         );
     }
 }

@@ -1,6 +1,7 @@
 #include "app/CommandLineInterface.hpp"
 
 #include "app/DemoScenario.hpp"
+#include "app/ProtocolCommandPolicy.hpp"
 #include "config/NetworkProfileRegistry.hpp"
 #include "core/GenesisVerifier.hpp"
 #include "core/TransactionBuilder.hpp"
@@ -407,20 +408,24 @@ CommandLineResult CommandLineInterface::execute(
             );
         }
 
-        if (options.command == "demo") {
-            // The demo command is restricted to localnet only. It runs an
-            // educational blockchain foundation demonstration that does not
-            // go through the official RuntimeBlockPipeline and therefore
-            // cannot produce protocol-valid state for any official network.
-            if (options.networkName != "localnet") {
+        // Central command safety policy check. Must happen before any execution,
+        // including the demo command, so that official networks are always rejected
+        // through the shared policy rather than per-command ad hoc logic.
+        {
+            const std::string policyBlock =
+                ProtocolCommandPolicy::blockingReason(
+                    options.command,
+                    options.networkName
+                );
+            if (!policyBlock.empty()) {
                 return CommandLineResult::failure(
                     CommandLineStatus::COMMAND_FAILED,
-                    "The 'demo' command is a localnet-only educational demonstration "
-                    "and cannot run on network '" + options.networkName + "'. "
-                    "It does not produce protocol-valid state for official networks.\n"
+                    policyBlock + "\n"
                 );
             }
+        }
 
+        if (options.command == "demo") {
             const int demoStatus =
                 runBlockchainFoundationDemo();
 
@@ -1118,7 +1123,8 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
             readinessCtx.governanceLifecycleIntegrated,
             readinessCtx.defenseModeInactive,
             readinessCtx.legacyCommandsBlocked,
-            readinessCtx.treasuryReportVerified
+            readinessCtx.treasuryReportVerified,
+            readinessCtx.evidenceCaptureHealthy
         );
         checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
             params,
@@ -1518,17 +1524,6 @@ CommandLineResult CommandLineInterface::executeValidatorList(
 CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
     const CommandLineOptions& options
 ) {
-    // Legacy alias 'submit-demo-transaction' is blocked on official networks.
-    // On localnet it redirects to the canonical 'tx submit' path.
-    if (options.command == "submit-demo-transaction" &&
-        config::NetworkProfileRegistry::isOfficialNetwork(options.networkName)) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Legacy command 'submit-demo-transaction' is not permitted on official "
-            "network '" + options.networkName + "'. Use: nodo tx submit\n"
-        );
-    }
-
     const node::NodeDataDirectoryConfig directoryConfig(
         options.dataDirectory
     );
@@ -1729,17 +1724,6 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
 CommandLineResult CommandLineInterface::executeProduceDemoBlock(
     const CommandLineOptions& options
 ) {
-    // Legacy alias 'produce-demo-block' is blocked on official networks.
-    // On localnet it redirects to the canonical 'block produce' path.
-    if (options.command == "produce-demo-block" &&
-        config::NetworkProfileRegistry::isOfficialNetwork(options.networkName)) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Legacy command 'produce-demo-block' is not permitted on official "
-            "network '" + options.networkName + "'. Use: nodo block produce\n"
-        );
-    }
-
     const node::NodeDataDirectoryConfig directoryConfig(
         options.dataDirectory
     );
