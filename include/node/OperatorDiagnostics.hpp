@@ -2,6 +2,7 @@
 #define NODO_NODE_OPERATOR_DIAGNOSTICS_HPP
 
 #include "config/NetworkParameters.hpp"
+#include "node/EvidenceCaptureHealth.hpp"
 
 #include <cstdint>
 #include <string>
@@ -23,7 +24,8 @@ public:
         bool genesisVerified,
         bool keyPolicyPassed,
         std::string readinessStatus,
-        std::vector<std::string> warnings
+        std::vector<std::string> warnings,
+        EvidenceCaptureHealth evidenceHealth
     );
 
     const std::string& networkName() const;
@@ -36,6 +38,7 @@ public:
     bool keyPolicyPassed() const;
     const std::string& readinessStatus() const;
     const std::vector<std::string>& warnings() const;
+    const EvidenceCaptureHealth& evidenceHealth() const;
 
     std::string serialize() const;
 
@@ -50,6 +53,7 @@ private:
     bool m_keyPolicyPassed;
     std::string m_readinessStatus;
     std::vector<std::string> m_warnings;
+    EvidenceCaptureHealth m_evidenceHealth;
 };
 
 /*
@@ -65,7 +69,8 @@ public:
         std::size_t connectedPeers,
         bool genesisVerified,
         bool keyPolicyPassed,
-        const std::vector<std::string>& warnings
+        const std::vector<std::string>& warnings,
+        EvidenceCaptureHealth evidenceHealth = EvidenceCaptureHealth()
     );
 };
 

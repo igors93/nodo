@@ -10,6 +10,7 @@ RuntimeSafetyState::RuntimeSafetyState()
       m_activationHeight(0),
       m_activationReason(""),
       m_evidenceId(""),
+      m_governanceProposalId(""),
       m_lastChainAuditHeight(0),
       m_exitRequiresChainAudit(true),
       m_updatedAt(0),
@@ -23,6 +24,7 @@ RuntimeSafetyState::RuntimeSafetyState(
     std::uint64_t activationHeight,
     std::string activationReason,
     std::string evidenceId,
+    std::string governanceProposalId,
     std::uint64_t lastChainAuditHeight,
     bool exitRequiresChainAudit,
     std::int64_t updatedAt
@@ -32,6 +34,7 @@ RuntimeSafetyState::RuntimeSafetyState(
       m_activationHeight(activationHeight),
       m_activationReason(std::move(activationReason)),
       m_evidenceId(std::move(evidenceId)),
+      m_governanceProposalId(std::move(governanceProposalId)),
       m_lastChainAuditHeight(lastChainAuditHeight),
       m_exitRequiresChainAudit(exitRequiresChainAudit),
       m_updatedAt(updatedAt),
@@ -57,6 +60,10 @@ const std::string& RuntimeSafetyState::activationReason() const {
 
 const std::string& RuntimeSafetyState::evidenceId() const {
     return m_evidenceId;
+}
+
+const std::string& RuntimeSafetyState::governanceProposalId() const {
+    return m_governanceProposalId;
 }
 
 std::uint64_t RuntimeSafetyState::lastChainAuditHeight() const {
@@ -93,6 +100,7 @@ std::string RuntimeSafetyState::serialize() const {
         << ";activationHeight=" << m_activationHeight
         << ";activationReason=" << m_activationReason
         << ";evidenceId=" << m_evidenceId
+        << ";governanceProposalId=" << m_governanceProposalId
         << ";lastChainAuditHeight=" << m_lastChainAuditHeight
         << ";exitRequiresChainAudit=" << (m_exitRequiresChainAudit ? "true" : "false")
         << ";updatedAt=" << m_updatedAt
@@ -107,10 +115,19 @@ RuntimeSafetyState RuntimeSafetyState::newNodeDefault() {
         0,
         "",
         "",
+        "",
         0,
         true,
         0
     );
+}
+
+static bool isCriticalTrigger(economics::DefenseModeTrigger trigger) {
+    return trigger == economics::DefenseModeTrigger::SUPPLY_DIVERGENCE ||
+           trigger == economics::DefenseModeTrigger::DOUBLE_SIGN_MASS_EVENT ||
+           trigger == economics::DefenseModeTrigger::UNAUTHORIZED_TREASURY_SPEND_ATTEMPT ||
+           trigger == economics::DefenseModeTrigger::CHAIN_AUDIT_FAILURE ||
+           trigger == economics::DefenseModeTrigger::STORAGE_CORRUPTION;
 }
 
 void RuntimeSafetyState::validate() const {
@@ -123,7 +140,6 @@ void RuntimeSafetyState::validate() const {
     }
 
     if (m_defenseMode == economics::DefenseModeState::ACTIVE) {
-        // Active defense mode must carry a verifiable safety context.
         if (m_activationHeight == 0) {
             m_valid = false;
             m_rejectionReason =
@@ -140,6 +156,26 @@ void RuntimeSafetyState::validate() const {
             m_valid = false;
             m_rejectionReason =
                 "updatedAt must be positive when defense mode is ACTIVE";
+            return;
+        }
+
+        // Critical triggers require a traceable evidence or audit reference.
+        if (isCriticalTrigger(m_activationTrigger) && m_evidenceId.empty()) {
+            m_valid = false;
+            m_rejectionReason =
+                "evidenceId must not be empty for critical trigger '" +
+                economics::defenseModeTriggerToString(m_activationTrigger) +
+                "' when defense mode is ACTIVE";
+            return;
+        }
+
+        // Governance-triggered activation requires a governance proposal context.
+        if (m_activationTrigger == economics::DefenseModeTrigger::GOVERNANCE_VOTED &&
+            m_governanceProposalId.empty()) {
+            m_valid = false;
+            m_rejectionReason =
+                "governanceProposalId must not be empty for GOVERNANCE_VOTED "
+                "trigger when defense mode is ACTIVE";
             return;
         }
     } else {

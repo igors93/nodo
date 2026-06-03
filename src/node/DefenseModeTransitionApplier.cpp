@@ -100,6 +100,7 @@ DefenseModeTransitionApplyResult DefenseModeTransitionApplier::applyActivation(
         transition.blockHeight(),
         transition.reason(),
         transition.evidenceId(),
+        transition.governanceProposalId(),
         currentState.isValid() ? currentState.lastChainAuditHeight() : 0,
         true, // exit requires chain audit by default
         updatedAt
@@ -160,9 +161,10 @@ DefenseModeTransitionApplyResult DefenseModeTransitionApplier::applyExit(
     const RuntimeSafetyState newState(
         economics::DefenseModeState::INACTIVE,
         transition.trigger(),
-        0, // activationHeight zero when INACTIVE
+        0,  // activationHeight zero when INACTIVE
         "", // activationReason empty when INACTIVE
         "", // evidenceId empty when INACTIVE
+        "", // governanceProposalId empty when INACTIVE
         transition.chainAuditHeight(),
         currentState.isValid() ? currentState.exitRequiresChainAudit() : true,
         updatedAt

@@ -175,6 +175,7 @@ const std::set<std::string> kAllowedFields = {
     "activationHeight",
     "activationReason",
     "evidenceId",
+    "governanceProposalId",
     "lastChainAuditHeight",
     "exitRequiresChainAudit",
     "updatedAt"
@@ -262,6 +263,8 @@ RuntimeSafetyStateWriteResult RuntimeSafetyStateStore::write(
                  encodeOptional(state.activationReason())},
                 {"evidenceId",
                  encodeOptional(state.evidenceId())},
+                {"governanceProposalId",
+                 encodeOptional(state.governanceProposalId())},
                 {"lastChainAuditHeight",
                  std::to_string(state.lastChainAuditHeight())},
                 {"exitRequiresChainAudit",
@@ -333,6 +336,8 @@ RuntimeSafetyStateReadResult RuntimeSafetyStateStore::read(
             decodeOptional(doc.requireField("activationReason"));
         const std::string evidenceId =
             decodeOptional(doc.requireField("evidenceId"));
+        const std::string governanceProposalId =
+            decodeOptional(doc.requireField("governanceProposalId"));
         const std::uint64_t lastChainAuditHeight =
             parseUint64Field(doc, "lastChainAuditHeight");
         const bool exitRequiresChainAudit =
@@ -346,6 +351,7 @@ RuntimeSafetyStateReadResult RuntimeSafetyStateStore::read(
             activationHeight,
             activationReason,
             evidenceId,
+            governanceProposalId,
             lastChainAuditHeight,
             exitRequiresChainAudit,
             updatedAt

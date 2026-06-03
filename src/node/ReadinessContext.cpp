@@ -1,5 +1,6 @@
 #include "node/ReadinessContext.hpp"
 
+#include "app/ProtocolCommandPolicy.hpp"
 #include "config/NetworkProfileRegistry.hpp"
 #include "crypto/KeyEncryptionPolicy.hpp"
 #include "economics/GovernanceApprovalBridge.hpp"
@@ -9,21 +10,6 @@
 
 namespace nodo::node {
 
-// --- LegacyCommandPolicy ---
-// Returns true if legacy command blocking is enforced for this network.
-// On official networks, produce-demo-block and submit-demo-transaction are
-// blocked in the CLI dispatcher; this function makes that enforcement explicit.
-static bool legacyCommandBlockingEnforced(
-    const config::NetworkParameters& params
-) {
-    // Non-official networks do not require legacy command blocking for readiness.
-    // Official networks enforce blocking via the CLI dispatcher at all call sites.
-    // This is a compile-time invariant verified by the CLI implementation.
-    (void)params;
-    return true;
-}
-
-// --- GovernanceLifecyclePolicy ---
 // Returns true if governance lifecycle verification is integrated in the
 // treasury approval path. This is a compile-time invariant: GovernanceApprovalBridge
 // is always integrated in production builds.
@@ -43,9 +29,11 @@ ReadinessContextBuilder::ReadinessContextBuilder(
       m_validatorKey(validatorKey),
       m_context()
 {
-    // Set policy-driven facts that are compile-time verified.
+    // Set policy-driven facts using the shared ProtocolCommandPolicy.
     m_context.legacyCommandsBlocked =
-        legacyCommandBlockingEnforced(networkParams);
+        app::ProtocolCommandPolicy::legacyCommandBlockingEnforced(
+            networkParams.networkName()
+        );
     m_context.governanceLifecycleIntegrated =
         governanceLifecycleVerificationIntegrated();
 
@@ -124,6 +112,27 @@ ReadinessContextBuilder& ReadinessContextBuilder::withKeyPolicyResult(
     bool passed
 ) {
     m_context.keyPolicyPassed = passed;
+    return *this;
+}
+
+ReadinessContextBuilder& ReadinessContextBuilder::withEvidenceCaptureHealth(
+    const EvidenceCaptureHealth& health
+) {
+    m_context.evidenceCaptureDisabled =
+        (health.status() == EvidenceCaptureStatus::DISABLED);
+
+    if (health.status() == EvidenceCaptureStatus::DISABLED) {
+        // Intentionally disabled: acceptable, not a readiness failure.
+        m_context.evidenceCaptureHealthy = true;
+    } else if (health.isHealthy()) {
+        m_context.evidenceCaptureHealthy = true;
+    } else {
+        m_context.evidenceCaptureHealthy = false;
+        m_context.warnings.push_back(
+            "evidence capture unhealthy: " + health.serialize()
+        );
+    }
+
     return *this;
 }
 

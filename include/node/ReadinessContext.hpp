@@ -3,6 +3,7 @@
 
 #include "config/NetworkParameters.hpp"
 #include "crypto/KeyStore.hpp"
+#include "node/EvidenceCaptureHealth.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/RuntimeSafetyStateStore.hpp"
 
@@ -36,6 +37,10 @@ struct ReadinessContext {
     bool governanceLifecycleIntegrated = false;
     bool legacyCommandsBlocked = false;
     bool keyPolicyPassed = false;
+    // Evidence capture health: true if healthy or intentionally disabled.
+    // false means required capture store is unavailable or has recent failures.
+    bool evidenceCaptureHealthy = true;
+    bool evidenceCaptureDisabled = false;
     std::vector<std::string> warnings;
 };
 
@@ -72,6 +77,12 @@ public:
 
     // Derive key policy result.
     ReadinessContextBuilder& withKeyPolicyResult(bool passed);
+
+    // Derive evidence capture health from a live GossipMesh or a health snapshot.
+    // Call with DISABLED health when no gossip mesh is available (headless audits).
+    ReadinessContextBuilder& withEvidenceCaptureHealth(
+        const EvidenceCaptureHealth& health
+    );
 
     // Add a warning message.
     ReadinessContextBuilder& addWarning(std::string warning);

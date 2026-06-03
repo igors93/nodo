@@ -106,6 +106,88 @@ EpochTreasuryVerificationResult EpochTreasuryReportVerifier::verify(
         );
     }
 
+    // Record-level comparison when both reports carry individual records.
+    if (persisted.hasSpendRecords() && rebuilt.hasSpendRecords()) {
+        const auto& pRecords = persisted.spendRecords();
+        const auto& rRecords = rebuilt.spendRecords();
+
+        // Detect duplicate spend identifiers in the rebuilt set.
+        for (std::size_t i = 0; i < rRecords.size(); ++i) {
+            for (std::size_t j = i + 1; j < rRecords.size(); ++j) {
+                if (rRecords[i].spendId() == rRecords[j].spendId()) {
+                    return EpochTreasuryVerificationResult::fieldMismatch(
+                        "duplicate spend identifier in rebuilt report: " +
+                        rRecords[i].spendId()
+                    );
+                }
+            }
+        }
+
+        // Per-record identity comparison in canonical order.
+        for (std::size_t i = 0; i < pRecords.size() && i < rRecords.size(); ++i) {
+            const auto& p = pRecords[i];
+            const auto& r = rRecords[i];
+
+            if (p.spendId() != r.spendId()) {
+                return EpochTreasuryVerificationResult::fieldMismatch(
+                    "spend record at index " + std::to_string(i) +
+                    " spendId mismatch: persisted=" + p.spendId() +
+                    " rebuilt=" + r.spendId()
+                );
+            }
+            if (p.proposalId() != r.proposalId()) {
+                return EpochTreasuryVerificationResult::fieldMismatch(
+                    "spend record at index " + std::to_string(i) +
+                    " proposalId mismatch: persisted=" + p.proposalId() +
+                    " rebuilt=" + r.proposalId()
+                );
+            }
+            if (p.recipientAddress() != r.recipientAddress()) {
+                return EpochTreasuryVerificationResult::fieldMismatch(
+                    "spend record at index " + std::to_string(i) +
+                    " recipientAddress mismatch: persisted=" + p.recipientAddress() +
+                    " rebuilt=" + r.recipientAddress()
+                );
+            }
+            if (p.amount() != r.amount()) {
+                return EpochTreasuryVerificationResult::fieldMismatch(
+                    "spend record at index " + std::to_string(i) +
+                    " amount mismatch: persisted=" +
+                    std::to_string(p.amount().rawUnits()) +
+                    " rebuilt=" + std::to_string(r.amount().rawUnits())
+                );
+            }
+            if (p.executedAtBlock() != r.executedAtBlock()) {
+                return EpochTreasuryVerificationResult::fieldMismatch(
+                    "spend record at index " + std::to_string(i) +
+                    " executedAtBlock mismatch: persisted=" +
+                    std::to_string(p.executedAtBlock()) +
+                    " rebuilt=" + std::to_string(r.executedAtBlock())
+                );
+            }
+            if (p.epoch() != r.epoch()) {
+                return EpochTreasuryVerificationResult::fieldMismatch(
+                    "spend record at index " + std::to_string(i) +
+                    " epoch mismatch: persisted=" + std::to_string(p.epoch()) +
+                    " rebuilt=" + std::to_string(r.epoch())
+                );
+            }
+        }
+    } else if (rebuilt.hasSpendRecords()) {
+        // Only the rebuilt side has records. Detect duplicates in it.
+        const auto& rRecords = rebuilt.spendRecords();
+        for (std::size_t i = 0; i < rRecords.size(); ++i) {
+            for (std::size_t j = i + 1; j < rRecords.size(); ++j) {
+                if (rRecords[i].spendId() == rRecords[j].spendId()) {
+                    return EpochTreasuryVerificationResult::fieldMismatch(
+                        "duplicate spend identifier in rebuilt report: " +
+                        rRecords[i].spendId()
+                    );
+                }
+            }
+        }
+    }
+
     return EpochTreasuryVerificationResult::match();
 }
 

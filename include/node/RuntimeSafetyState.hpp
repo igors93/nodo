@@ -28,6 +28,7 @@ public:
         std::uint64_t activationHeight,
         std::string activationReason,
         std::string evidenceId,
+        std::string governanceProposalId,
         std::uint64_t lastChainAuditHeight,
         bool exitRequiresChainAudit,
         std::int64_t updatedAt
@@ -38,6 +39,7 @@ public:
     std::uint64_t activationHeight() const;
     const std::string& activationReason() const;
     const std::string& evidenceId() const;
+    const std::string& governanceProposalId() const;
     std::uint64_t lastChainAuditHeight() const;
     bool exitRequiresChainAudit() const;
     std::int64_t updatedAt() const;
@@ -56,6 +58,7 @@ private:
     std::uint64_t m_activationHeight;
     std::string m_activationReason;
     std::string m_evidenceId;
+    std::string m_governanceProposalId;
     std::uint64_t m_lastChainAuditHeight;
     bool m_exitRequiresChainAudit;
     std::int64_t m_updatedAt;

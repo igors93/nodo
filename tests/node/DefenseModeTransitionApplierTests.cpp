@@ -37,6 +37,7 @@ RuntimeSafetyState activeState() {
         50,
         "chain audit failed",
         "ev-001",
+        "",    // governanceProposalId empty (CHAIN_AUDIT_FAILURE is not GOVERNANCE_VOTED)
         0,
         true,
         1900000001

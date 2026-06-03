@@ -113,6 +113,40 @@ bool TreasuryReportDeriver::verifyConsistency(
     if (persisted.spendRecordCount() != derived.spendRecordCount()) {
         return false;
     }
+
+    // Record-level comparison when both reports have individual records.
+    if (persisted.hasSpendRecords() && derived.hasSpendRecords()) {
+        const auto& pRecords = persisted.spendRecords();
+        const auto& dRecords = derived.spendRecords();
+
+        if (pRecords.size() != dRecords.size()) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < pRecords.size(); ++i) {
+            const auto& p = pRecords[i];
+            const auto& d = dRecords[i];
+            if (p.spendId() != d.spendId() ||
+                p.proposalId() != d.proposalId() ||
+                p.recipientAddress() != d.recipientAddress() ||
+                p.amount() != d.amount() ||
+                p.executedAtBlock() != d.executedAtBlock() ||
+                p.epoch() != d.epoch()) {
+                return false;
+            }
+        }
+    } else if (derived.hasSpendRecords()) {
+        // The derived report has records. Check for duplicates in the derived set.
+        const auto& dRecords = derived.spendRecords();
+        for (std::size_t i = 0; i < dRecords.size(); ++i) {
+            for (std::size_t j = i + 1; j < dRecords.size(); ++j) {
+                if (dRecords[i].spendId() == dRecords[j].spendId()) {
+                    return false;
+                }
+            }
+        }
+    }
+
     return true;
 }
 

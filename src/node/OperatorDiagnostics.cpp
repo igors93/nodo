@@ -22,7 +22,8 @@ OperatorDiagnosticsReport::OperatorDiagnosticsReport(
     bool genesisVerified,
     bool keyPolicyPassed,
     std::string readinessStatus,
-    std::vector<std::string> warnings
+    std::vector<std::string> warnings,
+    EvidenceCaptureHealth evidenceHealth
 )
     : m_networkName(std::move(networkName)),
       m_chainId(std::move(chainId)),
@@ -33,7 +34,8 @@ OperatorDiagnosticsReport::OperatorDiagnosticsReport(
       m_genesisVerified(genesisVerified),
       m_keyPolicyPassed(keyPolicyPassed),
       m_readinessStatus(std::move(readinessStatus)),
-      m_warnings(std::move(warnings)) {}
+      m_warnings(std::move(warnings)),
+      m_evidenceHealth(std::move(evidenceHealth)) {}
 
 const std::string& OperatorDiagnosticsReport::networkName() const { return m_networkName; }
 const std::string& OperatorDiagnosticsReport::chainId() const { return m_chainId; }
@@ -45,6 +47,7 @@ bool OperatorDiagnosticsReport::genesisVerified() const { return m_genesisVerifi
 bool OperatorDiagnosticsReport::keyPolicyPassed() const { return m_keyPolicyPassed; }
 const std::string& OperatorDiagnosticsReport::readinessStatus() const { return m_readinessStatus; }
 const std::vector<std::string>& OperatorDiagnosticsReport::warnings() const { return m_warnings; }
+const EvidenceCaptureHealth& OperatorDiagnosticsReport::evidenceHealth() const { return m_evidenceHealth; }
 
 std::string OperatorDiagnosticsReport::serialize() const {
     std::ostringstream oss;
@@ -57,7 +60,8 @@ std::string OperatorDiagnosticsReport::serialize() const {
         << "  peers=" << m_connectedPeers << "\n"
         << "  genesisVerified=" << (m_genesisVerified ? "yes" : "no") << "\n"
         << "  keyPolicyPassed=" << (m_keyPolicyPassed ? "yes" : "no") << "\n"
-        << "  readiness=" << m_readinessStatus << "\n";
+        << "  readiness=" << m_readinessStatus << "\n"
+        << "  evidenceCapture=" << m_evidenceHealth.serialize() << "\n";
     for (const auto& w : m_warnings) {
         oss << "  WARNING: " << w << "\n";
     }
@@ -72,7 +76,8 @@ OperatorDiagnosticsReport OperatorDiagnostics::collect(
     std::size_t connectedPeers,
     bool genesisVerified,
     bool keyPolicyPassed,
-    const std::vector<std::string>& warnings
+    const std::vector<std::string>& warnings,
+    EvidenceCaptureHealth evidenceHealth
 ) {
     return OperatorDiagnosticsReport(
         params.networkName(),
@@ -84,7 +89,8 @@ OperatorDiagnosticsReport OperatorDiagnostics::collect(
         genesisVerified,
         keyPolicyPassed,
         keyPolicyPassed && genesisVerified && connectedPeers > 0 ? "READY" : "NOT_READY",
-        warnings
+        warnings,
+        std::move(evidenceHealth)
     );
 }
 

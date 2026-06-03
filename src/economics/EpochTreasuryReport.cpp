@@ -10,6 +10,7 @@ EpochTreasuryReport::EpochTreasuryReport()
     : m_epoch(0),
       m_treasurySpendTotal(utils::Amount::fromRawUnits(0)),
       m_spendRecordCount(0),
+      m_hasSpendRecords(false),
       m_valid(false),
       m_rejectionReason("EpochTreasuryReport: default-constructed.") {}
 
@@ -42,6 +43,8 @@ EpochTreasuryReport EpochTreasuryReport::fromSpendRecords(
     }
 
     r.m_treasurySpendTotal = utils::Amount::fromRawUnits(runningTotal);
+    r.m_spendRecords = spendRecords;
+    r.m_hasSpendRecords = true;
     r.m_valid = true;
     return r;
 }
@@ -55,6 +58,7 @@ EpochTreasuryReport EpochTreasuryReport::fromStoredFields(
     r.m_epoch = epoch;
     r.m_treasurySpendTotal = treasurySpendTotal;
     r.m_spendRecordCount = spendRecordCount;
+    r.m_hasSpendRecords = false;
     r.m_rejectionReason = "";
     r.m_valid = true;
     return r;
@@ -63,6 +67,8 @@ EpochTreasuryReport EpochTreasuryReport::fromStoredFields(
 std::uint64_t EpochTreasuryReport::epoch() const { return m_epoch; }
 utils::Amount EpochTreasuryReport::treasurySpendTotal() const { return m_treasurySpendTotal; }
 std::size_t EpochTreasuryReport::spendRecordCount() const { return m_spendRecordCount; }
+const std::vector<TreasurySpendRecord>& EpochTreasuryReport::spendRecords() const { return m_spendRecords; }
+bool EpochTreasuryReport::hasSpendRecords() const { return m_hasSpendRecords; }
 bool EpochTreasuryReport::isValid() const { return m_valid; }
 const std::string& EpochTreasuryReport::rejectionReason() const { return m_rejectionReason; }
 

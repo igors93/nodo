@@ -45,6 +45,7 @@ void testWriteInvalidStateReturnsInvalidState() {
         99,  // non-zero activationHeight while INACTIVE is invalid
         "reason",
         "",
+        "",
         0,
         true,
         1900000001
@@ -87,6 +88,7 @@ void testRoundTripActiveState() {
         50,
         "chain audit failed",
         "ev-audit-001",
+        "",    // governanceProposalId empty for non-governance trigger
         45,
         true,
         1900000099
@@ -157,6 +159,7 @@ void testActiveDefenseModeRequiresReason() {
         10,
         "",  // empty reason is invalid for ACTIVE
         "",
+        "",
         0,
         true,
         1900000001
@@ -175,6 +178,7 @@ void testActiveDefenseModeRequiresActivationHeight() {
         DefenseModeTrigger::OPERATOR_DECLARED,
         0,  // zero activation height is invalid for ACTIVE
         "some reason",
+        "",
         "",
         0,
         true,
