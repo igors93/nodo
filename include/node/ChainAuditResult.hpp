@@ -1,7 +1,10 @@
 #ifndef NODO_NODE_CHAIN_AUDIT_RESULT_HPP
 #define NODO_NODE_CHAIN_AUDIT_RESULT_HPP
 
+#include "node/AuditAssignment.hpp"
+
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace nodo::node {
@@ -47,6 +50,11 @@ public:
     std::size_t loadedMempoolTransactionCount() const;
     std::size_t validatorCount() const;
 
+    // The latest deterministic audit assignment computed from the last finalized
+    // artifact. Populated by auditLoadedRuntime when finalized blocks exist.
+    const std::optional<AuditAssignment>& latestAuditAssignment() const;
+    void setAuditAssignment(AuditAssignment assignment);
+
     std::string serialize() const;
     std::string toHumanReadableString() const;
 
@@ -61,6 +69,7 @@ private:
     std::size_t m_loadedBlockCount;
     std::size_t m_loadedMempoolTransactionCount;
     std::size_t m_validatorCount;
+    std::optional<AuditAssignment> m_latestAuditAssignment;
 };
 
 } // namespace nodo::node

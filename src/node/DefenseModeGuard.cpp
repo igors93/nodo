@@ -58,6 +58,18 @@ DefenseGateResult DefenseModeGuard::checkExtraordinaryMint(
     return DefenseGateResult::allowed();
 }
 
+DefenseGateResult DefenseModeGuard::checkExtraordinaryReward(
+    economics::DefenseModeState state,
+    const economics::DefenseModePolicy& policy
+) {
+    if (state == economics::DefenseModeState::ACTIVE && policy.blockExtraordinaryRewards()) {
+        return DefenseGateResult::blocked(
+            "DefenseModeGuard: extraordinary reward is blocked while defense mode is ACTIVE."
+        );
+    }
+    return DefenseGateResult::allowed();
+}
+
 DefenseGateResult DefenseModeGuard::checkGovernanceApproval(
     economics::DefenseModeState state
 ) {

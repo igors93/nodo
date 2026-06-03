@@ -51,6 +51,11 @@ public:
         const economics::DefenseModePolicy& policy
     );
 
+    static DefenseGateResult checkExtraordinaryReward(
+        economics::DefenseModeState state,
+        const economics::DefenseModePolicy& policy
+    );
+
     static DefenseGateResult checkGovernanceApproval(
         economics::DefenseModeState state
     );

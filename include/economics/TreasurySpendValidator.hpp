@@ -1,6 +1,7 @@
 #ifndef NODO_ECONOMICS_TREASURY_SPEND_VALIDATOR_HPP
 #define NODO_ECONOMICS_TREASURY_SPEND_VALIDATOR_HPP
 
+#include "economics/DefenseModeState.hpp"
 #include "economics/TreasuryAccount.hpp"
 #include "economics/TreasuryApproval.hpp"
 #include "economics/TreasuryPolicy.hpp"
@@ -15,6 +16,7 @@ namespace nodo::economics {
 
 enum class TreasurySpendStatus {
     ACCEPTED,
+    DEFENSE_MODE_ACTIVE,
     INVALID_TREASURY,
     INVALID_POLICY,
     INVALID_PROPOSAL,
@@ -67,7 +69,18 @@ private:
  */
 class TreasurySpendValidator {
 public:
+    /*
+     * Validate a treasury spend against policy, authorization chain, limits,
+     * and the current defense mode state.
+     *
+     * defenseModeState / defenseModePolicy are live-gate parameters: they block
+     * NEW spends when defense mode is ACTIVE. Historical replay validators must
+     * pass DefenseModeState::INACTIVE to avoid retroactively invalidating
+     * spends that were authorized before defense mode was activated.
+     */
     static TreasurySpendValidationResult validateSpend(
+        DefenseModeState defenseModeState,
+        const DefenseModePolicy& defenseModePolicy,
         const TreasuryAccount& treasury,
         const TreasuryPolicy& policy,
         const TreasuryProposal& proposal,

@@ -111,6 +111,14 @@ std::size_t ChainAuditResult::validatorCount() const {
     return m_validatorCount;
 }
 
+const std::optional<AuditAssignment>& ChainAuditResult::latestAuditAssignment() const {
+    return m_latestAuditAssignment;
+}
+
+void ChainAuditResult::setAuditAssignment(AuditAssignment assignment) {
+    m_latestAuditAssignment = std::move(assignment);
+}
+
 std::string ChainAuditResult::serialize() const {
     std::ostringstream oss;
 

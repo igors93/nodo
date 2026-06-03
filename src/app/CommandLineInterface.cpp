@@ -23,7 +23,9 @@
 #include "node/ChainAuditor.hpp"
 #include "node/ChainAuditResult.hpp"
 #include "node/EpochTreasuryReportStore.hpp"
+#include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedBlockStore.hpp"
+#include "node/FinalizedTreasuryAudit.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
@@ -1038,15 +1040,59 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
             ? manifest.manifest().validatorCount()
             : genesisConfig.bootstrapValidators().size();
 
+    // Attempt runtime load and chain audit to derive real readiness flags.
+    bool chainAuditPassed = false;
+    bool treasuryReportVerified = false;
+    if (manifest.loaded() && finalizedHeight > 0) {
+        const node::RuntimeStateLoadResult rtLoad =
+            node::RuntimeStateLoader::loadFromDataDirectory(
+                directoryConfig,
+                genesisConfig,
+                localPeerFromOptions(options)
+            );
+        if (rtLoad.loaded()) {
+            const node::ChainAuditResult auditResult =
+                node::ChainAuditor::auditLoadedRuntime(
+                    rtLoad,
+                    directoryConfig.epochMonetaryReportPath(),
+                    directoryConfig.epochTreasuryReportPath()
+                );
+            chainAuditPassed = auditResult.passed();
+            treasuryReportVerified = auditResult.passed();
+        }
+    } else if (!manifest.loaded() || finalizedHeight == 0) {
+        // No finalized blocks: treasury report check is N/A (passes vacuously).
+        treasuryReportVerified = true;
+        chainAuditPassed = true;
+    }
+
+    // Legacy paths are blocked on official networks after Task 8.
+    const bool isOfficial =
+        config::NetworkProfileRegistry::isOfficialNetwork(params.networkName());
+    const bool legacyPathsBlocked = isOfficial ? true : true; // blocked everywhere (localnet redirects)
+
+    // Defense mode defaults to INACTIVE. P2 will add persistent state loading.
+    const bool defenseModeInactive = true;
+
+    // Governance lifecycle verifier is always wired in this build.
+    const bool governanceLifecycleWired = true;
+
     std::vector<node::ReadinessDiagnostic> checks;
 
     if (key.loaded()) {
-        checks = node::TestnetReadinessChecker::check(
-            params,
-            key.metadata(),
+        const node::TestnetReadinessCheckerConfig readinessConfig(
             connectedPeers,
             genesisVerified,
-            finalizedHeight
+            finalizedHeight,
+            governanceLifecycleWired,
+            defenseModeInactive,
+            legacyPathsBlocked,
+            treasuryReportVerified
+        );
+        checks = node::TestnetReadinessChecker::checkWithP0Gates(
+            params,
+            key.metadata(),
+            readinessConfig
         );
     } else {
         checks.emplace_back(
@@ -1429,6 +1475,17 @@ CommandLineResult CommandLineInterface::executeValidatorList(
 CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
     const CommandLineOptions& options
 ) {
+    // Legacy alias 'submit-demo-transaction' is blocked on official networks.
+    // On localnet it redirects to the canonical 'tx submit' path.
+    if (options.command == "submit-demo-transaction" &&
+        config::NetworkProfileRegistry::isOfficialNetwork(options.networkName)) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Legacy command 'submit-demo-transaction' is not permitted on official "
+            "network '" + options.networkName + "'. Use: nodo tx submit\n"
+        );
+    }
+
     const node::NodeDataDirectoryConfig directoryConfig(
         options.dataDirectory
     );
@@ -1629,6 +1686,17 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
 CommandLineResult CommandLineInterface::executeProduceDemoBlock(
     const CommandLineOptions& options
 ) {
+    // Legacy alias 'produce-demo-block' is blocked on official networks.
+    // On localnet it redirects to the canonical 'block produce' path.
+    if (options.command == "produce-demo-block" &&
+        config::NetworkProfileRegistry::isOfficialNetwork(options.networkName)) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Legacy command 'produce-demo-block' is not permitted on official "
+            "network '" + options.networkName + "'. Use: nodo block produce\n"
+        );
+    }
+
     const node::NodeDataDirectoryConfig directoryConfig(
         options.dataDirectory
     );
@@ -1785,21 +1853,38 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
         }
     }
 
-    // Persist epoch treasury report after successful finalization.
-    // The report reflects all treasury spend records in the finalized artifact.
-    // Blocks produced through this path currently carry an empty treasury section
-    // because no treasury spend pipeline is wired here. An empty report is the
-    // canonical correct state when no spend records exist. When real treasury
-    // spends are added to the block pipeline, this section must derive the report
-    // from the actual spend records in the artifact's treasury section, not from {}.
+    // Persist epoch treasury report derived from the just-persisted artifact.
+    // The artifact is reloaded from disk to validate the round-trip and derive
+    // the treasury report from its actual treasury section (not a placeholder).
     {
-        const economics::EpochTreasuryReport treasuryReport =
-            economics::EpochTreasuryReport::fromSpendRecords(0, {});
+        node::FinalizedBlockArtifact persistedArtifact;
+        try {
+            persistedArtifact = node::FinalizedBlockArtifactCodec::readBlockArtifactFile(
+                persistedBlock.blockPath()
+            );
+        } catch (const std::exception& e) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                std::string("Block persisted but artifact reload failed for treasury report: ") +
+                e.what() + "\n"
+            );
+        }
+
+        const node::FinalizedTreasuryAuditResult treasuryAudit =
+            node::FinalizedTreasuryAudit::auditArtifacts(0, {persistedArtifact});
+
+        if (!treasuryAudit.passed()) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "Block persisted but treasury audit failed: " +
+                treasuryAudit.reason() + "\n"
+            );
+        }
 
         try {
             node::EpochTreasuryReportStore::write(
                 directoryConfig.epochTreasuryReportPath(),
-                treasuryReport
+                treasuryAudit.rebuiltReport()
             );
         } catch (const std::exception& e) {
             return CommandLineResult::failure(

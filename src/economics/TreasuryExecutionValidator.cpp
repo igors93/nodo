@@ -69,8 +69,12 @@ TreasuryExecutionValidationResult TreasuryExecutionValidator::validateEvidence(
     }
 
     // 2. Recompute the spend through TreasurySpendValidator.
+    // Defense mode is a live gate for new spends; it must not retroactively
+    // invalidate spends recorded in evidence before defense mode was activated.
     const TreasurySpendValidationResult spendResult =
         TreasurySpendValidator::validateSpend(
+            DefenseModeState::INACTIVE,
+            DefenseModePolicy::defaultPolicy(),
             evidence.treasuryAccountBefore(),
             evidence.policy(),
             evidence.proposal(),

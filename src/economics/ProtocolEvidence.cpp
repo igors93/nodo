@@ -62,28 +62,56 @@ ProtocolEvidence::ProtocolEvidence(
       m_valid(false),
       m_rejectionReason("")
 {
+    constexpr std::size_t kMaxIdLen     = 128;
+    constexpr std::size_t kMaxDigestLen = 128;
+    constexpr std::size_t kMaxReasonLen = 512;
+
     if (m_evidenceId.empty()) {
         m_rejectionReason = "ProtocolEvidence: evidenceId must not be empty.";
+        return;
+    }
+    if (m_evidenceId.size() > kMaxIdLen) {
+        m_rejectionReason = "ProtocolEvidence: evidenceId exceeds maximum length.";
         return;
     }
     if (m_subjectId.empty()) {
         m_rejectionReason = "ProtocolEvidence: subjectId must not be empty.";
         return;
     }
+    if (m_subjectId.size() > kMaxIdLen) {
+        m_rejectionReason = "ProtocolEvidence: subjectId exceeds maximum length.";
+        return;
+    }
     if (m_sourceId.empty()) {
         m_rejectionReason = "ProtocolEvidence: sourceId must not be empty.";
+        return;
+    }
+    if (m_sourceId.size() > kMaxIdLen) {
+        m_rejectionReason = "ProtocolEvidence: sourceId exceeds maximum length.";
         return;
     }
     if (m_ruleId.empty()) {
         m_rejectionReason = "ProtocolEvidence: ruleId must not be empty.";
         return;
     }
+    if (m_ruleId.size() > kMaxIdLen) {
+        m_rejectionReason = "ProtocolEvidence: ruleId exceeds maximum length.";
+        return;
+    }
     if (m_payloadDigest.empty()) {
         m_rejectionReason = "ProtocolEvidence: payloadDigest must not be empty.";
         return;
     }
+    if (m_payloadDigest.size() > kMaxDigestLen) {
+        m_rejectionReason = "ProtocolEvidence: payloadDigest exceeds maximum length.";
+        return;
+    }
     if (m_reason.empty()) {
         m_rejectionReason = "ProtocolEvidence: reason must not be empty.";
+        return;
+    }
+    if (m_reason.size() > kMaxReasonLen) {
+        m_rejectionReason = "ProtocolEvidence: reason exceeds maximum length.";
         return;
     }
     m_valid = true;
@@ -121,6 +149,12 @@ std::string ProtocolEvidence::serialize() const {
 
 namespace {
 
+// Known field names in canonical serialization order.
+const std::string kKnownFields[] = {
+    "evidenceId", "evidenceType", "subjectId", "sourceId",
+    "blockHeight", "epoch", "ruleId", "payloadDigest", "reason", "createdAt"
+};
+
 std::map<std::string, std::string> parseProtocolEvidenceFields(
     const std::string& serialized
 ) {
@@ -145,6 +179,25 @@ std::map<std::string, std::string> parseProtocolEvidenceFields(
             );
         }
         const std::string key = inner.substr(pos, eq - pos);
+
+        // Reject unknown fields.
+        bool known = false;
+        for (const auto& k : kKnownFields) {
+            if (k == key) { known = true; break; }
+        }
+        if (!known) {
+            throw std::invalid_argument(
+                "ProtocolEvidence::deserialize: unknown field '" + key + "'."
+            );
+        }
+
+        // Reject duplicate fields.
+        if (fields.count(key) > 0) {
+            throw std::invalid_argument(
+                "ProtocolEvidence::deserialize: duplicate field '" + key + "'."
+            );
+        }
+
         const std::size_t semi = inner.find(';', eq + 1);
         const std::string val = (semi == std::string::npos)
             ? inner.substr(eq + 1)
@@ -177,17 +230,30 @@ ProtocolEvidence ProtocolEvidence::deserialize(const std::string& serialized) {
         );
     }
 
+    std::uint64_t blockHeight = 0;
+    std::uint64_t epoch = 0;
+    std::int64_t createdAt = 0;
+    try {
+        blockHeight = std::stoull(get("blockHeight"));
+        epoch       = std::stoull(get("epoch"));
+        createdAt   = std::stoll(get("createdAt"));
+    } catch (const std::exception& e) {
+        throw std::invalid_argument(
+            std::string("ProtocolEvidence::deserialize: invalid numeric field: ") + e.what()
+        );
+    }
+
     return ProtocolEvidence(
         get("evidenceId"),
         evidenceType,
         get("subjectId"),
         get("sourceId"),
-        std::stoull(get("blockHeight")),
-        std::stoull(get("epoch")),
+        blockHeight,
+        epoch,
         get("ruleId"),
         get("payloadDigest"),
         get("reason"),
-        std::stoll(get("createdAt"))
+        createdAt
     );
 }
 

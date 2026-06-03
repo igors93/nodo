@@ -1,5 +1,9 @@
 #include "p2p/GossipMesh.hpp"
 
+#include "crypto/hash.h"
+#include "economics/ProtocolEvidence.hpp"
+#include "storage/ProtocolEvidenceStore.hpp"
+
 #include <sstream>
 #include <utility>
 
@@ -151,12 +155,29 @@ GossipMesh::GossipMesh(
     Transport& transport
 ) : m_config(std::move(config)),
     m_transport(transport),
+    m_evidenceStore(nullptr),
     m_peerRegistry(),
     m_outboundQueue(1024),
     m_inboundValidator(),
     m_rateLimiter(),
     m_inbox(),
-    m_invalidMessagesByPeer() {}
+    m_invalidMessagesByPeer(),
+    m_lastEvidenceAt() {}
+
+GossipMesh::GossipMesh(
+    GossipMeshConfig config,
+    Transport& transport,
+    storage::ProtocolEvidenceStore* evidenceStore
+) : m_config(std::move(config)),
+    m_transport(transport),
+    m_evidenceStore(evidenceStore),
+    m_peerRegistry(),
+    m_outboundQueue(1024),
+    m_inboundValidator(),
+    m_rateLimiter(),
+    m_inbox(),
+    m_invalidMessagesByPeer(),
+    m_lastEvidenceAt() {}
 
 const GossipMeshConfig& GossipMesh::config() const { return m_config; }
 PeerRegistry& GossipMesh::peerRegistry() { return m_peerRegistry; }
@@ -297,13 +318,13 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
         }
 
         if (!message->isValid()) {
-            recordInvalidMessage(message->fromNodeId(), "Invalid transport message.");
+            recordInvalidMessage(message->fromNodeId(), "Invalid transport message.", now);
             ++rejected;
             continue;
         }
 
         if (!m_rateLimiter.shouldAllow(message->fromNodeId(), now)) {
-            recordInvalidMessage(message->fromNodeId(), "Peer exceeded message rate limit.");
+            recordInvalidMessage(message->fromNodeId(), "Peer exceeded message rate limit.", now);
             ++rejected;
             continue;
         }
@@ -318,7 +339,7 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
             );
 
         if (!validation.accepted()) {
-            recordInvalidMessage(message->fromNodeId(), validation.reason());
+            recordInvalidMessage(message->fromNodeId(), validation.reason(), now);
             ++rejected;
             continue;
         }
@@ -355,7 +376,8 @@ bool GossipMesh::shouldQuarantinePeer(const std::string& nodeId) const {
 
 void GossipMesh::recordInvalidMessage(
     const std::string& nodeId,
-    const std::string& reason
+    const std::string& reason,
+    std::int64_t now
 ) {
     if (nodeId.empty()) {
         return;
@@ -363,8 +385,76 @@ void GossipMesh::recordInvalidMessage(
 
     m_invalidMessagesByPeer[nodeId] += 1;
 
+    const PeerMetadata* peerMeta = m_peerRegistry.peer(nodeId);
+    const bool wasQuarantinedBefore = peerMeta != nullptr && peerMeta->quarantined();
+
     if (shouldQuarantinePeer(nodeId) && m_peerRegistry.contains(nodeId)) {
         m_peerRegistry.quarantinePeer(nodeId, reason);
+    }
+
+    if (m_evidenceStore == nullptr || m_config.localNodeId().empty()) {
+        return;
+    }
+
+    // Determine evidence type from context.
+    economics::ProtocolEvidenceType evidenceType;
+    std::string ruleId;
+    if (!wasQuarantinedBefore && shouldQuarantinePeer(nodeId)) {
+        evidenceType = economics::ProtocolEvidenceType::P2P_PEER_QUARANTINED;
+        ruleId = "p2p.quarantine.threshold";
+    } else if (reason.find("rate limit") != std::string::npos) {
+        evidenceType = economics::ProtocolEvidenceType::P2P_RATE_LIMIT_EXCEEDED;
+        ruleId = "p2p.rate-limit";
+    } else {
+        evidenceType = economics::ProtocolEvidenceType::P2P_INVALID_MESSAGE;
+        ruleId = "p2p.inbound-validation";
+    }
+
+    // Coalescing: skip if evidence of this type was already recorded for this
+    // peer within the last 60 seconds to prevent evidence DoS.
+    const std::pair<std::string, std::string> coalescingKey = {nodeId, ruleId};
+    const auto lastIt = m_lastEvidenceAt.find(coalescingKey);
+    constexpr std::int64_t kCoalescingWindowSeconds = 60;
+    if (lastIt != m_lastEvidenceAt.end() &&
+        now - lastIt->second < kCoalescingWindowSeconds) {
+        return;
+    }
+    m_lastEvidenceAt[coalescingKey] = now;
+
+    // Build a stable payload digest from the reason string.
+    char digestBuf[NODO_HASH_BUFFER_SIZE] = {};
+    nodo_hash_string(reason.c_str(), digestBuf, NODO_HASH_BUFFER_SIZE);
+    const std::string payloadDigest(digestBuf);
+
+    // Evidence id encodes subject, type, and timestamp to be unique per event.
+    const std::string evidenceIdRaw =
+        "p2p-evidence:" + nodeId + ":" + ruleId + ":" + std::to_string(now);
+    char idBuf[NODO_HASH_BUFFER_SIZE] = {};
+    nodo_hash_string(evidenceIdRaw.c_str(), idBuf, NODO_HASH_BUFFER_SIZE);
+    const std::string evidenceId(idBuf);
+
+    const economics::ProtocolEvidence evidence(
+        evidenceId,
+        evidenceType,
+        nodeId,
+        m_config.localNodeId(),
+        0,   // blockHeight unknown at P2P layer
+        0,   // epoch unknown at P2P layer
+        ruleId,
+        payloadDigest,
+        reason.substr(0, 512),
+        now
+    );
+
+    if (!evidence.isValid()) {
+        return;
+    }
+
+    try {
+        m_evidenceStore->save(evidence);
+    } catch (...) {
+        // Evidence store failure is logged but does not crash the mesh.
+        // The invalid message counter above already tracks the violation in memory.
     }
 }
 

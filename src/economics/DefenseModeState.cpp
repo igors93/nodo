@@ -32,27 +32,31 @@ std::string defenseModeTriggerToString(DefenseModeTrigger trigger) {
 DefenseModePolicy::DefenseModePolicy()
     : m_blockTreasurySpend(true),
       m_blockExtraordinaryMint(true),
+      m_blockExtraordinaryRewards(true),
       m_requireChainAuditBeforeExit(true),
       m_allowNormalTransactions(true) {}
 
 DefenseModePolicy::DefenseModePolicy(
     bool blockTreasurySpend,
     bool blockExtraordinaryMint,
+    bool blockExtraordinaryRewards,
     bool requireChainAuditBeforeExit,
     bool allowNormalTransactions
 )
     : m_blockTreasurySpend(blockTreasurySpend),
       m_blockExtraordinaryMint(blockExtraordinaryMint),
+      m_blockExtraordinaryRewards(blockExtraordinaryRewards),
       m_requireChainAuditBeforeExit(requireChainAuditBeforeExit),
       m_allowNormalTransactions(allowNormalTransactions) {}
 
 bool DefenseModePolicy::blockTreasurySpend() const { return m_blockTreasurySpend; }
 bool DefenseModePolicy::blockExtraordinaryMint() const { return m_blockExtraordinaryMint; }
+bool DefenseModePolicy::blockExtraordinaryRewards() const { return m_blockExtraordinaryRewards; }
 bool DefenseModePolicy::requireChainAuditBeforeExit() const { return m_requireChainAuditBeforeExit; }
 bool DefenseModePolicy::allowNormalTransactions() const { return m_allowNormalTransactions; }
 
 DefenseModePolicy DefenseModePolicy::defaultPolicy() {
-    return DefenseModePolicy(true, true, true, true);
+    return DefenseModePolicy(true, true, true, true, true);
 }
 
 } // namespace nodo::economics

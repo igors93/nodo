@@ -32,6 +32,8 @@ std::string treasurySpendStatusToString(TreasurySpendStatus status) {
             return "EPOCH_LIMIT_EXCEEDED";
         case TreasurySpendStatus::EPOCH_SPEND_OVERFLOW:
             return "EPOCH_SPEND_OVERFLOW";
+        case TreasurySpendStatus::DEFENSE_MODE_ACTIVE:
+            return "DEFENSE_MODE_ACTIVE";
         case TreasurySpendStatus::TREASURY_LOCKED:
             return "TREASURY_LOCKED";
         default:
@@ -90,6 +92,8 @@ std::string TreasurySpendValidationResult::serialize() const {
 }
 
 TreasurySpendValidationResult TreasurySpendValidator::validateSpend(
+    DefenseModeState defenseModeState,
+    const DefenseModePolicy& defenseModePolicy,
     const TreasuryAccount& treasury,
     const TreasuryPolicy& policy,
     const TreasuryProposal& proposal,
@@ -97,6 +101,14 @@ TreasurySpendValidationResult TreasurySpendValidator::validateSpend(
     std::uint64_t currentBlockHeight,
     utils::Amount epochSpentSoFar
 ) {
+    if (defenseModeState == DefenseModeState::ACTIVE &&
+        defenseModePolicy.blockTreasurySpend()) {
+        return TreasurySpendValidationResult::rejected(
+            TreasurySpendStatus::DEFENSE_MODE_ACTIVE,
+            "treasury spend is blocked while defense mode is ACTIVE"
+        );
+    }
+
     if (!treasury.isValid()) {
         return TreasurySpendValidationResult::rejected(
             TreasurySpendStatus::INVALID_TREASURY,

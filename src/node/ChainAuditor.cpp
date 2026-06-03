@@ -1,5 +1,6 @@
 #include "node/ChainAuditor.hpp"
 
+#include "node/AuditAssignment.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "economics/EpochMonetaryReport.hpp"
 #include "economics/EpochTreasuryReport.hpp"
@@ -241,7 +242,7 @@ ChainAuditResult auditImpl(
         }
     }
 
-    return ChainAuditResult::passed(
+    ChainAuditResult result = ChainAuditResult::passed(
         manifest.networkName(),
         cryptoContext.networkProfile(),
         manifest.latestBlockHeight(),
@@ -251,6 +252,37 @@ ChainAuditResult auditImpl(
         load.loadedMempoolTransactionCount(),
         manifest.validatorCount()
     );
+
+    // Compute a deterministic audit assignment for the latest artifact.
+    // Seed = previous block hash (already-finalized data) to prevent manipulation.
+    // An empty or insufficient validator set produces no assignment (not an error).
+    const auto& artifacts = load.loadedArtifacts();
+    if (!artifacts.empty()) {
+        const FinalizedBlockArtifact& latest = artifacts.back();
+        const std::string seedDigest = manifest.latestBlockHash();
+        const std::vector<std::string> validatorAddresses =
+            runtime.validatorRegistry().activeValidatorAddresses();
+
+        if (!seedDigest.empty() && !validatorAddresses.empty()) {
+            const std::string assignmentId =
+                "chain-audit-assignment:" + seedDigest;
+            const AuditAssignment assignment =
+                AuditAssignmentCalculator::buildAssignment(
+                    assignmentId,
+                    manifest.latestBlockHeight(),
+                    0,
+                    AuditAssignmentTargetType::BLOCK_ARTIFACT,
+                    latest.artifactDigest(),
+                    seedDigest,
+                    validatorAddresses
+                );
+            if (assignment.isValid()) {
+                result.setAuditAssignment(std::move(assignment));
+            }
+        }
+    }
+
+    return result;
 }
 
 } // namespace

@@ -11,6 +11,8 @@
 
 namespace {
 
+using nodo::economics::DefenseModePolicy;
+using nodo::economics::DefenseModeState;
 using nodo::economics::TreasuryAccount;
 using nodo::economics::TreasuryApproval;
 using nodo::economics::TreasuryPolicy;
@@ -18,6 +20,10 @@ using nodo::economics::TreasuryProposal;
 using nodo::economics::TreasurySpendStatus;
 using nodo::economics::TreasurySpendValidator;
 using nodo::utils::Amount;
+
+// Helper: pass through inactive defense mode for tests that do not exercise it.
+const DefenseModeState kInactive = DefenseModeState::INACTIVE;
+const DefenseModePolicy kDefaultPolicy = DefenseModePolicy::defaultPolicy();
 
 TreasuryAccount validTreasury(
     Amount balance = Amount::fromRawUnits(1000000),
@@ -62,6 +68,7 @@ TreasuryApproval validApproval(const std::string& proposalId = "prop-001") {
 // Zero maxSpendPerProposal blocks all spending — not treated as unlimited.
 void testZeroProposalLimitRejects() {
     const auto result = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(),
         validPolicy(Amount::fromRawUnits(500000), Amount::fromRawUnits(0)),
         validProposal(Amount::fromRawUnits(1)),  // even 1 raw unit is blocked
@@ -76,6 +83,7 @@ void testZeroProposalLimitRejects() {
 // Zero maxSpendPerEpoch blocks all spending — not treated as unlimited.
 void testZeroEpochLimitRejects() {
     const auto result = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(),
         validPolicy(Amount::fromRawUnits(0), Amount::fromRawUnits(100000)),
         validProposal(Amount::fromRawUnits(1)),
@@ -90,6 +98,7 @@ void testZeroEpochLimitRejects() {
 // Non-zero limits allow valid spend within limits.
 void testNonZeroLimitsAllowValidSpend() {
     const auto result = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(),
         validPolicy(Amount::fromRawUnits(100000), Amount::fromRawUnits(50000)),
         validProposal(Amount::fromRawUnits(30000)),
@@ -104,6 +113,7 @@ void testNonZeroLimitsAllowValidSpend() {
 // Proposal amount above maxSpendPerProposal is rejected.
 void testProposalAboveLimitRejects() {
     const auto result = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(),
         validPolicy(Amount::fromRawUnits(500000), Amount::fromRawUnits(10000)),
         validProposal(Amount::fromRawUnits(10001)),  // 10001 > 10000
@@ -118,6 +128,7 @@ void testProposalAboveLimitRejects() {
 // epochSpentSoFar + proposal.amount > maxSpendPerEpoch is rejected.
 void testEpochTotalAboveLimitRejects() {
     const auto result = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(),
         validPolicy(Amount::fromRawUnits(100000), Amount::fromRawUnits(100000)),
         validProposal(Amount::fromRawUnits(60000)),
@@ -142,6 +153,7 @@ void testTimelockOverflowRejected() {
         false
     );
     const auto result = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(),
         overflowPolicy,
         validProposal(Amount::fromRawUnits(50000), 1),
@@ -161,6 +173,7 @@ void testEpochSpendOverflowRejected() {
     const Amount step    = Amount::fromRawUnits(200);  // nearMax + step overflows
 
     const auto result = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(Amount::fromRawUnits(maxI64)),
         validPolicy(
             Amount::fromRawUnits(maxI64),  // epoch limit irrelevant — overflow is caught first
@@ -182,6 +195,7 @@ void testLargeSafeValuesWork() {
     const Amount spendAmount = Amount::fromRawUnits(300000000);
 
     const auto result = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(bigBalance),
         validPolicy(bigLimit, bigLimit),
         validProposal(spendAmount),
@@ -196,10 +210,12 @@ void testLargeSafeValuesWork() {
 // Deterministic spend id: same inputs produce the same id.
 void testSpendIdIsDeterministic() {
     const auto r1 = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(), validPolicy(), validProposal(), validApproval(),
         10, Amount::fromRawUnits(0)
     );
     const auto r2 = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(), validPolicy(), validProposal(), validApproval(),
         10, Amount::fromRawUnits(0)
     );
@@ -210,10 +226,12 @@ void testSpendIdIsDeterministic() {
 // Different executedAtBlock changes the spend id.
 void testDifferentBlockChangesId() {
     const auto r1 = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(), validPolicy(), validProposal(), validApproval(),
         10, Amount::fromRawUnits(0)
     );
     const auto r2 = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(), validPolicy(), validProposal(), validApproval(),
         11, Amount::fromRawUnits(0)
     );
@@ -224,11 +242,13 @@ void testDifferentBlockChangesId() {
 // Different proposal amount changes the spend id.
 void testDifferentAmountChangesId() {
     const auto r1 = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(), validPolicy(),
         validProposal(Amount::fromRawUnits(10000)), validApproval(),
         10, Amount::fromRawUnits(0)
     );
     const auto r2 = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(), validPolicy(),
         validProposal(Amount::fromRawUnits(20000)), validApproval(),
         10, Amount::fromRawUnits(0)
@@ -248,10 +268,12 @@ void testDifferentRecipientChangesId() {
         "purpose", 1, 0, "proposer"
     );
     const auto r1 = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(), validPolicy(), prop1, validApproval("prop-001"),
         10, Amount::fromRawUnits(0)
     );
     const auto r2 = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(), validPolicy(), prop2, validApproval("prop-001"),
         10, Amount::fromRawUnits(0)
     );
@@ -270,10 +292,12 @@ void testDifferentEpochChangesId() {
         "purpose", 1, 1, "proposer"
     );
     const auto r1 = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(), validPolicy(), prop1, validApproval("prop-001"),
         10, Amount::fromRawUnits(0)
     );
     const auto r2 = TreasurySpendValidator::validateSpend(
+        kInactive, kDefaultPolicy,
         validTreasury(), validPolicy(), prop2, validApproval("prop-001"),
         10, Amount::fromRawUnits(0)
     );

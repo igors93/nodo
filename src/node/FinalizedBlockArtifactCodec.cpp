@@ -1,5 +1,6 @@
 #include "node/FinalizedBlockArtifactCodec.hpp"
 
+#include "crypto/hash.h"
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/QuorumCertificate.hpp"
 #include "node/FinalizedArtifactSchema.hpp"
@@ -1793,6 +1794,19 @@ std::string FinalizedBlockArtifact::serialize() const {
         << "}";
 
     return oss.str();
+}
+
+std::string FinalizedBlockArtifact::artifactDigest() const {
+    // Canonical input: block hash + post state root + supply delta serialization.
+    // This captures the three primary identifiers that make an artifact unique.
+    const std::string blockHash =
+        (m_block.has_value() && m_block->isValid()) ? m_block->hash() : "INVALID";
+    const std::string canonical =
+        "artifact:" + blockHash + ":" + m_postStateRoot + ":" + m_supplyDelta.serialize();
+
+    char buf[NODO_HASH_BUFFER_SIZE] = {};
+    nodo_hash_string(canonical.c_str(), buf, NODO_HASH_BUFFER_SIZE);
+    return std::string(buf);
 }
 
 core::Block FinalizedBlockArtifactCodec::readBlockFile(

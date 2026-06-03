@@ -46,12 +46,14 @@ public:
     DefenseModePolicy(
         bool blockTreasurySpend,
         bool blockExtraordinaryMint,
+        bool blockExtraordinaryRewards,
         bool requireChainAuditBeforeExit,
         bool allowNormalTransactions
     );
 
     bool blockTreasurySpend() const;
     bool blockExtraordinaryMint() const;
+    bool blockExtraordinaryRewards() const;
     bool requireChainAuditBeforeExit() const;
     bool allowNormalTransactions() const;
 
@@ -61,6 +63,7 @@ public:
 private:
     bool m_blockTreasurySpend;
     bool m_blockExtraordinaryMint;
+    bool m_blockExtraordinaryRewards;
     bool m_requireChainAuditBeforeExit;
     bool m_allowNormalTransactions;
 };

@@ -11,7 +11,12 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
+
+namespace nodo::storage {
+class ProtocolEvidenceStore;
+} // namespace nodo::storage
 
 namespace nodo::p2p {
 
@@ -83,6 +88,13 @@ public:
         Transport& transport
     );
 
+    // Optional overload: wire in an evidence store to persist protocol violations.
+    GossipMesh(
+        GossipMeshConfig config,
+        Transport& transport,
+        storage::ProtocolEvidenceStore* evidenceStore
+    );
+
     const GossipMeshConfig& config() const;
     PeerRegistry& peerRegistry();
     const PeerRegistry& peerRegistry() const;
@@ -130,12 +142,15 @@ public:
 private:
     GossipMeshConfig m_config;
     Transport& m_transport;
+    storage::ProtocolEvidenceStore* m_evidenceStore;
     PeerRegistry m_peerRegistry;
     OutboundMessageQueue m_outboundQueue;
     InboundMessageValidator m_inboundValidator;
     PeerRateLimiter m_rateLimiter;
     GossipInbox m_inbox;
     std::map<std::string, std::size_t> m_invalidMessagesByPeer;
+    // Coalescing: tracks (nodeId, ruleId) -> last evidence timestamp (seconds).
+    std::map<std::pair<std::string, std::string>, std::int64_t> m_lastEvidenceAt;
 
     bool shouldQuarantinePeer(
         const std::string& nodeId
@@ -143,7 +158,8 @@ private:
 
     void recordInvalidMessage(
         const std::string& nodeId,
-        const std::string& reason
+        const std::string& reason,
+        std::int64_t now = 0
     );
 };
 
