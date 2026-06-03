@@ -1,6 +1,7 @@
 #ifndef NODO_P2P_GOSSIP_MESH_HPP
 #define NODO_P2P_GOSSIP_MESH_HPP
 
+#include "node/EvidenceCaptureHealth.hpp"
 #include "p2p/InboundMessageValidator.hpp"
 #include "p2p/OutboundMessageQueue.hpp"
 #include "p2p/PeerRegistry.hpp"
@@ -139,6 +140,10 @@ public:
         std::int64_t now
     ) const;
 
+    // Returns a snapshot of the current evidence capture health.
+    // Use this to surface persistence failures through operator diagnostics.
+    const node::EvidenceCaptureHealth& evidenceCaptureHealth() const;
+
 private:
     GossipMeshConfig m_config;
     Transport& m_transport;
@@ -151,6 +156,7 @@ private:
     std::map<std::string, std::size_t> m_invalidMessagesByPeer;
     // Coalescing: tracks (nodeId, ruleId) -> last evidence timestamp (seconds).
     std::map<std::pair<std::string, std::string>, std::int64_t> m_lastEvidenceAt;
+    node::EvidenceCaptureHealth m_evidenceCaptureHealth;
 
     bool shouldQuarantinePeer(
         const std::string& nodeId

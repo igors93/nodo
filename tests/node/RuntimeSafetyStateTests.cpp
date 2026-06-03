@@ -11,19 +11,17 @@ namespace {
 using nodo::economics::DefenseModeState;
 using nodo::economics::DefenseModeTrigger;
 using nodo::node::RuntimeSafetyState;
+using nodo::node::RuntimeSafetyStateReadStatus;
 using nodo::node::RuntimeSafetyStateStore;
 
-// Construct a temp path for testing.
 std::filesystem::path tempSafetyStatePath() {
     return std::filesystem::temp_directory_path() /
            "nodo_test_runtime_safety_state.nodo";
 }
 
 void cleanup() {
-    const auto path = tempSafetyStatePath();
-    if (std::filesystem::exists(path)) {
-        std::filesystem::remove(path);
-    }
+    std::error_code ec;
+    std::filesystem::remove(tempSafetyStatePath(), ec);
 }
 
 // Default-constructed state is valid with INACTIVE defense mode.
@@ -74,17 +72,48 @@ void testInactiveStateWithActivationHeightIsInvalid() {
     assert(!state.rejectionReason().empty());
 }
 
+// ACTIVE state without reason is invalid.
+void testActiveStateWithoutReasonIsInvalid() {
+    const RuntimeSafetyState state(
+        DefenseModeState::ACTIVE,
+        DefenseModeTrigger::OPERATOR_DECLARED,
+        10,
+        "",  // empty reason is invalid for ACTIVE
+        "",
+        0,
+        true,
+        1900000001
+    );
+    assert(!state.isValid());
+}
+
+// ACTIVE state without activationHeight is invalid.
+void testActiveStateWithoutActivationHeightIsInvalid() {
+    const RuntimeSafetyState state(
+        DefenseModeState::ACTIVE,
+        DefenseModeTrigger::OPERATOR_DECLARED,
+        0,  // zero activationHeight is invalid for ACTIVE
+        "reason",
+        "",
+        0,
+        true,
+        1900000001
+    );
+    assert(!state.isValid());
+}
+
 // Persist and reload correctly.
 void testRoundTripDefaultState() {
     cleanup();
     const auto path = tempSafetyStatePath();
     const RuntimeSafetyState original = RuntimeSafetyState::newNodeDefault();
-    RuntimeSafetyStateStore::write(path, original);
+    const auto writeResult = RuntimeSafetyStateStore::write(path, original);
+    assert(writeResult.isWritten());
     const auto loaded = RuntimeSafetyStateStore::read(path);
-    assert(loaded.has_value());
-    assert(loaded->defenseMode() == DefenseModeState::INACTIVE);
-    assert(loaded->activationHeight() == 0);
-    assert(loaded->exitRequiresChainAudit());
+    assert(loaded.isLoaded());
+    assert(loaded.state().defenseMode() == DefenseModeState::INACTIVE);
+    assert(loaded.state().activationHeight() == 0);
+    assert(loaded.state().exitRequiresChainAudit());
     cleanup();
 }
 
@@ -102,20 +131,21 @@ void testRoundTripActiveState() {
         true,
         1900000042
     );
-    RuntimeSafetyStateStore::write(path, original);
+    const auto writeResult = RuntimeSafetyStateStore::write(path, original);
+    assert(writeResult.isWritten());
     const auto loaded = RuntimeSafetyStateStore::read(path);
-    assert(loaded.has_value());
-    assert(loaded->defenseMode() == DefenseModeState::ACTIVE);
-    assert(loaded->activationTrigger() == DefenseModeTrigger::SUPPLY_DIVERGENCE);
-    assert(loaded->activationHeight() == 100);
-    assert(loaded->activationReason() == "supply divergence detected");
-    assert(loaded->evidenceId() == "ev-supply-001");
-    assert(loaded->updatedAt() == 1900000042);
+    assert(loaded.isLoaded());
+    assert(loaded.state().defenseMode() == DefenseModeState::ACTIVE);
+    assert(loaded.state().activationTrigger() == DefenseModeTrigger::SUPPLY_DIVERGENCE);
+    assert(loaded.state().activationHeight() == 100);
+    assert(loaded.state().activationReason() == "supply divergence detected");
+    assert(loaded.state().evidenceId() == "ev-supply-001");
+    assert(loaded.state().updatedAt() == 1900000042);
     cleanup();
 }
 
-// Corrupt file returns nullopt (not a crash).
-void testCorruptFileReturnsNullopt() {
+// Corrupt file returns failure status (not loaded, not missing).
+void testCorruptFileReturnsFailure() {
     cleanup();
     const auto path = tempSafetyStatePath();
     {
@@ -123,28 +153,23 @@ void testCorruptFileReturnsNullopt() {
         f << "this is not a valid safety state file\n";
     }
     const auto loaded = RuntimeSafetyStateStore::read(path);
-    assert(!loaded.has_value());
+    assert(!loaded.isLoaded());
+    assert(!loaded.isMissing());
+    assert(loaded.isFailure());
     cleanup();
 }
 
-// Missing file does not throw — caller checks existence before calling read().
-void testMissingFileDoesNotExist() {
-    cleanup();
-    const auto path = tempSafetyStatePath();
-    assert(!std::filesystem::exists(path));
-}
-
-// Readiness check logic: ACTIVE defense mode on missing file (new node) defaults
-// to INACTIVE and passes readiness.
-void testNewNodeHasNoSafetyStateFile() {
+// Missing file returns MISSING status.
+void testMissingFileReturnsMissing() {
     cleanup();
     const auto path = tempSafetyStatePath();
-    // No file → no safety state → caller treats as INACTIVE (new node default).
-    const bool fileExists = std::filesystem::exists(path);
-    assert(!fileExists);
+    const auto loaded = RuntimeSafetyStateStore::read(path);
+    assert(!loaded.isLoaded());
+    assert(loaded.isMissing());
+    assert(loaded.status() == RuntimeSafetyStateReadStatus::MISSING);
 }
 
-// Readiness check logic: corrupt file must cause defenseModeInactive = false.
+// Readiness logic: corrupt file means fail closed (isFailure=true, not isMissing).
 void testCorruptFileFailsReadiness() {
     cleanup();
     const auto path = tempSafetyStatePath();
@@ -153,8 +178,8 @@ void testCorruptFileFailsReadiness() {
         f << "GARBAGE\nno valid schema\n";
     }
     const auto loaded = RuntimeSafetyStateStore::read(path);
-    // read() returns nullopt → caller must treat as unsafe.
-    assert(!loaded.has_value());
+    assert(loaded.isFailure());
+    // Callers must NOT treat this as INACTIVE (defenseModeInactive = false).
     cleanup();
 }
 
@@ -164,11 +189,12 @@ int main() {
     testNewNodeDefaultIsInactiveAndValid();
     testActiveStateIsValid();
     testInactiveStateWithActivationHeightIsInvalid();
+    testActiveStateWithoutReasonIsInvalid();
+    testActiveStateWithoutActivationHeightIsInvalid();
     testRoundTripDefaultState();
     testRoundTripActiveState();
-    testCorruptFileReturnsNullopt();
-    testMissingFileDoesNotExist();
-    testNewNodeHasNoSafetyStateFile();
+    testCorruptFileReturnsFailure();
+    testMissingFileReturnsMissing();
     testCorruptFileFailsReadiness();
     return 0;
 }

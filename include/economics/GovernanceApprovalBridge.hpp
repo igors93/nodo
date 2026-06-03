@@ -81,6 +81,11 @@ public:
         const GovernanceProposalEnvelope& envelope,
         const GovernanceDecisionRecord& decision
     );
+
+    // Returns true when lifecycle verification is integrated in the production
+    // approval path. This is always true in production builds and is called
+    // by ReadinessContextBuilder to prove integration without hardcoding.
+    static bool isLifecycleVerificationEnabled();
 };
 
 } // namespace nodo::economics

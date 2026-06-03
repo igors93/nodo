@@ -18,7 +18,6 @@
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signer.hpp"
 #include "crypto/SignatureBundle.hpp"
-#include "economics/DefenseModeState.hpp"
 #include "economics/EpochTreasuryReport.hpp"
 #include "economics/MonetaryPolicy.hpp"
 #include "node/ChainAuditor.hpp"
@@ -36,7 +35,7 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeMonetaryReportService.hpp"
-#include "node/RuntimeSafetyStateStore.hpp"
+#include "node/ReadinessContext.hpp"
 #include "node/RuntimeStateLoader.hpp"
 #include "node/TestnetReadinessChecker.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
@@ -1050,7 +1049,7 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
             ? manifest.manifest().validatorCount()
             : genesisConfig.bootstrapValidators().size();
 
-    // Attempt runtime load and chain audit to derive real readiness flags.
+    // Attempt runtime load and chain audit to derive real chain safety facts.
     bool chainAuditPassed = false;
     bool treasuryReportVerified = false;
     if (manifest.loaded() && finalizedHeight > 0) {
@@ -1070,47 +1069,56 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
             chainAuditPassed = auditResult.passed();
             treasuryReportVerified = auditResult.passed();
         }
-    } else if (!manifest.loaded() || finalizedHeight == 0) {
-        // No finalized blocks: treasury report check is N/A (passes vacuously).
-        treasuryReportVerified = true;
+    } else {
+        // No finalized blocks yet: chain audit and treasury report are vacuously valid.
         chainAuditPassed = true;
+        treasuryReportVerified = true;
     }
 
-    // Legacy and demo paths are blocked on official networks.
-    const bool legacyPathsBlocked = true;
+    // Build the readiness context from real runtime inspection.
+    const crypto::StoredKeyMetadata keyMetadata =
+        key.loaded() ? key.metadata() : crypto::StoredKeyMetadata();
+    node::ReadinessContextBuilder ctxBuilder(
+        directoryConfig, params, keyMetadata
+    );
+    ctxBuilder
+        .withManifest(manifest)
+        .withGenesisVerified(genesisVerified)
+        .withChainAuditResult(chainAuditPassed, treasuryReportVerified)
+        .withSafetyState()
+        .withKeyPolicyResult(keyPolicyPassed);
 
-    // Load defense mode from persistent safety state; fail closed if state is corrupt.
-    bool defenseModeInactive = true;
-    {
-        const std::filesystem::path safetyStatePath =
-            directoryConfig.runtimeSafetyStatePath();
-        if (std::filesystem::exists(safetyStatePath)) {
-            const auto safetyState =
-                node::RuntimeSafetyStateStore::read(safetyStatePath);
-            if (!safetyState.has_value()) {
-                defenseModeInactive = false; // corrupt state: treat as unsafe
-            } else {
-                defenseModeInactive =
-                    (safetyState->defenseMode() ==
-                     economics::DefenseModeState::INACTIVE);
+    for (const auto& w : warnings) {
+        ctxBuilder.addWarning(w);
+    }
+
+    const node::ReadinessContext readinessCtx = ctxBuilder.build();
+
+    // Propagate any safety state warnings back to warnings list.
+    for (const auto& w : readinessCtx.warnings) {
+        bool alreadyPresent = false;
+        for (const auto& existing : warnings) {
+            if (existing == w) {
+                alreadyPresent = true;
+                break;
             }
         }
+        if (!alreadyPresent) {
+            warnings.push_back(w);
+        }
     }
-
-    // Governance lifecycle verifier is integrated in the treasury approval path.
-    const bool governanceLifecycleWired = true;
 
     std::vector<node::ReadinessDiagnostic> checks;
 
     if (key.loaded()) {
         const node::TestnetReadinessCheckerConfig readinessConfig(
-            connectedPeers,
-            genesisVerified,
-            finalizedHeight,
-            governanceLifecycleWired,
-            defenseModeInactive,
-            legacyPathsBlocked,
-            treasuryReportVerified
+            readinessCtx.connectedPeers,
+            readinessCtx.genesisVerified,
+            readinessCtx.finalizedHeight,
+            readinessCtx.governanceLifecycleIntegrated,
+            readinessCtx.defenseModeInactive,
+            readinessCtx.legacyCommandsBlocked,
+            readinessCtx.treasuryReportVerified
         );
         checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
             params,
@@ -1154,11 +1162,12 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
            << "Network: " << params.networkName() << "\n"
            << "Chain id: " << params.chainId() << "\n"
            << "Protocol: " << params.protocolVersion() << "\n"
-           << "Genesis verified: " << (genesisVerified ? "yes" : "no") << "\n"
-           << "Key policy passed: " << (keyPolicyPassed ? "yes" : "no") << "\n"
-           << "Peers: " << connectedPeers << "\n"
+           << "Genesis verified: " << (readinessCtx.genesisVerified ? "yes" : "no") << "\n"
+           << "Key policy passed: " << (readinessCtx.keyPolicyPassed ? "yes" : "no") << "\n"
+           << "Defense mode: " << (readinessCtx.defenseModeInactive ? "INACTIVE" : "ACTIVE or UNKNOWN") << "\n"
+           << "Peers: " << readinessCtx.connectedPeers << "\n"
            << "Validators: " << validatorCount << "\n"
-           << "Finalized height: " << finalizedHeight << "\n"
+           << "Finalized height: " << readinessCtx.finalizedHeight << "\n"
            << "Readiness: " << node::readinessStatusToString(status) << "\n";
 
     for (const node::ReadinessDiagnostic& check : checks) {

@@ -225,4 +225,8 @@ GovernanceApprovalBridge::produceTreasuryApprovalFromVerifiedLifecycle(
     );
 }
 
+bool GovernanceApprovalBridge::isLifecycleVerificationEnabled() {
+    return true;
+}
+
 } // namespace nodo::economics

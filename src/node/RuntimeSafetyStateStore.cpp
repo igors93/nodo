@@ -2,8 +2,9 @@
 
 #include "economics/DefenseModeState.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
+#include "storage/AtomicFile.hpp"
 
-#include <fstream>
+#include <filesystem>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -11,6 +12,158 @@
 #include <vector>
 
 namespace nodo::node {
+
+// ---- RuntimeSafetyStateReadResult ----
+
+std::string runtimeSafetyStateReadStatusToString(
+    RuntimeSafetyStateReadStatus status
+) {
+    switch (status) {
+        case RuntimeSafetyStateReadStatus::LOADED:          return "LOADED";
+        case RuntimeSafetyStateReadStatus::MISSING:         return "MISSING";
+        case RuntimeSafetyStateReadStatus::MALFORMED:       return "MALFORMED";
+        case RuntimeSafetyStateReadStatus::INVALID:         return "INVALID";
+        case RuntimeSafetyStateReadStatus::SCHEMA_MISMATCH: return "SCHEMA_MISMATCH";
+        case RuntimeSafetyStateReadStatus::IO_FAILURE:      return "IO_FAILURE";
+        default:                                            return "UNKNOWN";
+    }
+}
+
+RuntimeSafetyStateReadResult::RuntimeSafetyStateReadResult()
+    : m_status(RuntimeSafetyStateReadStatus::MISSING),
+      m_reason(""),
+      m_state() {}
+
+RuntimeSafetyStateReadResult RuntimeSafetyStateReadResult::loaded(
+    RuntimeSafetyState state
+) {
+    RuntimeSafetyStateReadResult r;
+    r.m_status = RuntimeSafetyStateReadStatus::LOADED;
+    r.m_state = std::move(state);
+    return r;
+}
+
+RuntimeSafetyStateReadResult RuntimeSafetyStateReadResult::missing() {
+    RuntimeSafetyStateReadResult r;
+    r.m_status = RuntimeSafetyStateReadStatus::MISSING;
+    return r;
+}
+
+RuntimeSafetyStateReadResult RuntimeSafetyStateReadResult::malformed(
+    std::string reason
+) {
+    RuntimeSafetyStateReadResult r;
+    r.m_status = RuntimeSafetyStateReadStatus::MALFORMED;
+    r.m_reason = std::move(reason);
+    return r;
+}
+
+RuntimeSafetyStateReadResult RuntimeSafetyStateReadResult::invalid(
+    std::string reason
+) {
+    RuntimeSafetyStateReadResult r;
+    r.m_status = RuntimeSafetyStateReadStatus::INVALID;
+    r.m_reason = std::move(reason);
+    return r;
+}
+
+RuntimeSafetyStateReadResult RuntimeSafetyStateReadResult::schemaMismatch(
+    std::string reason
+) {
+    RuntimeSafetyStateReadResult r;
+    r.m_status = RuntimeSafetyStateReadStatus::SCHEMA_MISMATCH;
+    r.m_reason = std::move(reason);
+    return r;
+}
+
+RuntimeSafetyStateReadResult RuntimeSafetyStateReadResult::ioFailure(
+    std::string reason
+) {
+    RuntimeSafetyStateReadResult r;
+    r.m_status = RuntimeSafetyStateReadStatus::IO_FAILURE;
+    r.m_reason = std::move(reason);
+    return r;
+}
+
+bool RuntimeSafetyStateReadResult::isLoaded() const {
+    return m_status == RuntimeSafetyStateReadStatus::LOADED;
+}
+
+bool RuntimeSafetyStateReadResult::isMissing() const {
+    return m_status == RuntimeSafetyStateReadStatus::MISSING;
+}
+
+bool RuntimeSafetyStateReadResult::isFailure() const {
+    return m_status != RuntimeSafetyStateReadStatus::LOADED &&
+           m_status != RuntimeSafetyStateReadStatus::MISSING;
+}
+
+RuntimeSafetyStateReadStatus RuntimeSafetyStateReadResult::status() const {
+    return m_status;
+}
+
+const std::string& RuntimeSafetyStateReadResult::reason() const {
+    return m_reason;
+}
+
+const RuntimeSafetyState& RuntimeSafetyStateReadResult::state() const {
+    return m_state;
+}
+
+// ---- RuntimeSafetyStateWriteResult ----
+
+std::string runtimeSafetyStateWriteStatusToString(
+    RuntimeSafetyStateWriteStatus status
+) {
+    switch (status) {
+        case RuntimeSafetyStateWriteStatus::WRITTEN:       return "WRITTEN";
+        case RuntimeSafetyStateWriteStatus::INVALID_STATE: return "INVALID_STATE";
+        case RuntimeSafetyStateWriteStatus::IO_FAILURE:    return "IO_FAILURE";
+        default:                                           return "UNKNOWN";
+    }
+}
+
+RuntimeSafetyStateWriteResult::RuntimeSafetyStateWriteResult()
+    : m_status(RuntimeSafetyStateWriteStatus::IO_FAILURE),
+      m_reason("") {}
+
+RuntimeSafetyStateWriteResult RuntimeSafetyStateWriteResult::written() {
+    RuntimeSafetyStateWriteResult r;
+    r.m_status = RuntimeSafetyStateWriteStatus::WRITTEN;
+    return r;
+}
+
+RuntimeSafetyStateWriteResult RuntimeSafetyStateWriteResult::invalidState(
+    std::string reason
+) {
+    RuntimeSafetyStateWriteResult r;
+    r.m_status = RuntimeSafetyStateWriteStatus::INVALID_STATE;
+    r.m_reason = std::move(reason);
+    return r;
+}
+
+RuntimeSafetyStateWriteResult RuntimeSafetyStateWriteResult::ioFailure(
+    std::string reason
+) {
+    RuntimeSafetyStateWriteResult r;
+    r.m_status = RuntimeSafetyStateWriteStatus::IO_FAILURE;
+    r.m_reason = std::move(reason);
+    return r;
+}
+
+bool RuntimeSafetyStateWriteResult::isWritten() const {
+    return m_status == RuntimeSafetyStateWriteStatus::WRITTEN;
+}
+
+RuntimeSafetyStateWriteStatus RuntimeSafetyStateWriteResult::status() const {
+    return m_status;
+}
+
+const std::string& RuntimeSafetyStateWriteResult::reason() const {
+    return m_reason;
+}
+
+// ---- RuntimeSafetyStateStore ----
 
 namespace {
 
@@ -27,67 +180,31 @@ const std::set<std::string> kAllowedFields = {
     "updatedAt"
 };
 
-std::string readFileContents(const std::filesystem::path& path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        throw std::runtime_error(
-            "RuntimeSafetyStateStore: cannot open file: " + path.string()
-        );
-    }
-    std::ostringstream oss;
-    oss << file.rdbuf();
-    return oss.str();
+// Codec rejects empty string values; use "none" as sentinel for optional fields.
+std::string encodeOptional(const std::string& value) {
+    return value.empty() ? "none" : value;
 }
 
-void writeFileContents(
-    const std::filesystem::path& path,
-    const std::string& contents
-) {
-    std::ofstream file(path);
-    if (!file.is_open()) {
-        throw std::runtime_error(
-            "RuntimeSafetyStateStore: cannot write file: " + path.string()
-        );
-    }
-    file << contents;
-    if (!file.good()) {
-        throw std::runtime_error(
-            "RuntimeSafetyStateStore: write error: " + path.string()
-        );
-    }
+std::string decodeOptional(const std::string& raw) {
+    return (raw == "none") ? "" : raw;
 }
 
-std::uint64_t parseUint64(
+std::uint64_t parseUint64Field(
     const serialization::KeyValueFileDocument& doc,
     const std::string& key
 ) {
     const std::string& raw = doc.requireField(key);
-    try {
-        return static_cast<std::uint64_t>(std::stoull(raw));
-    } catch (const std::exception&) {
-        throw std::runtime_error(
-            "RuntimeSafetyStateStore: field '" + key +
-            "' is not a valid uint64: " + raw
-        );
-    }
+    return static_cast<std::uint64_t>(std::stoull(raw));
 }
 
-std::int64_t parseInt64(
+std::int64_t parseInt64Field(
     const serialization::KeyValueFileDocument& doc,
     const std::string& key
 ) {
-    const std::string& raw = doc.requireField(key);
-    try {
-        return std::stoll(raw);
-    } catch (const std::exception&) {
-        throw std::runtime_error(
-            "RuntimeSafetyStateStore: field '" + key +
-            "' is not a valid int64: " + raw
-        );
-    }
+    return std::stoll(doc.requireField(key));
 }
 
-bool parseBool(
+bool parseBoolField(
     const serialization::KeyValueFileDocument& doc,
     const std::string& key
 ) {
@@ -95,97 +212,133 @@ bool parseBool(
     if (raw == "true") return true;
     if (raw == "false") return false;
     throw std::runtime_error(
-        "RuntimeSafetyStateStore: field '" + key +
-        "' is not a valid bool: " + raw
+        "RuntimeSafetyStateStore: field '" + key + "' is not a valid bool"
+    );
+}
+
+economics::DefenseModeTrigger parseTrigger(const std::string& s) {
+    if (s == "SUPPLY_DIVERGENCE")
+        return economics::DefenseModeTrigger::SUPPLY_DIVERGENCE;
+    if (s == "DOUBLE_SIGN_MASS_EVENT")
+        return economics::DefenseModeTrigger::DOUBLE_SIGN_MASS_EVENT;
+    if (s == "UNAUTHORIZED_TREASURY_SPEND_ATTEMPT")
+        return economics::DefenseModeTrigger::UNAUTHORIZED_TREASURY_SPEND_ATTEMPT;
+    if (s == "CHAIN_AUDIT_FAILURE")
+        return economics::DefenseModeTrigger::CHAIN_AUDIT_FAILURE;
+    if (s == "STORAGE_CORRUPTION")
+        return economics::DefenseModeTrigger::STORAGE_CORRUPTION;
+    if (s == "OPERATOR_DECLARED")
+        return economics::DefenseModeTrigger::OPERATOR_DECLARED;
+    if (s == "GOVERNANCE_VOTED")
+        return economics::DefenseModeTrigger::GOVERNANCE_VOTED;
+    throw std::runtime_error(
+        "RuntimeSafetyStateStore: unknown activationTrigger: " + s
     );
 }
 
 } // namespace
 
-// Codec rejects empty string values; use "none" as sentinel for optional fields.
-static std::string encodeOptional(const std::string& value) {
-    return value.empty() ? "none" : value;
-}
-
-static std::string decodeOptional(const std::string& raw) {
-    return (raw == "none") ? "" : raw;
-}
-
-void RuntimeSafetyStateStore::write(
+RuntimeSafetyStateWriteResult RuntimeSafetyStateStore::write(
     const std::filesystem::path& path,
     const RuntimeSafetyState& state
 ) {
-    const std::string contents = serialization::KeyValueFileCodec::serialize(
-        kSchemaId,
-        {
-            {"defenseMode",
-             economics::defenseModeStateToString(state.defenseMode())},
-            {"activationTrigger",
-             economics::defenseModeTriggerToString(state.activationTrigger())},
-            {"activationHeight",
-             std::to_string(state.activationHeight())},
-            {"activationReason",
-             encodeOptional(state.activationReason())},
-            {"evidenceId",
-             encodeOptional(state.evidenceId())},
-            {"lastChainAuditHeight",
-             std::to_string(state.lastChainAuditHeight())},
-            {"exitRequiresChainAudit",
-             state.exitRequiresChainAudit() ? "true" : "false"},
-            {"updatedAt",
-             std::to_string(state.updatedAt())}
-        }
-    );
-    writeFileContents(path, contents);
+    if (!state.isValid()) {
+        return RuntimeSafetyStateWriteResult::invalidState(
+            "cannot write invalid RuntimeSafetyState: " + state.rejectionReason()
+        );
+    }
+
+    try {
+        const std::string contents = serialization::KeyValueFileCodec::serialize(
+            kSchemaId,
+            {
+                {"defenseMode",
+                 economics::defenseModeStateToString(state.defenseMode())},
+                {"activationTrigger",
+                 economics::defenseModeTriggerToString(state.activationTrigger())},
+                {"activationHeight",
+                 std::to_string(state.activationHeight())},
+                {"activationReason",
+                 encodeOptional(state.activationReason())},
+                {"evidenceId",
+                 encodeOptional(state.evidenceId())},
+                {"lastChainAuditHeight",
+                 std::to_string(state.lastChainAuditHeight())},
+                {"exitRequiresChainAudit",
+                 state.exitRequiresChainAudit() ? "true" : "false"},
+                {"updatedAt",
+                 std::to_string(state.updatedAt())}
+            }
+        );
+        storage::AtomicFile::writeTextFile(path, contents);
+        return RuntimeSafetyStateWriteResult::written();
+    } catch (const std::exception& e) {
+        return RuntimeSafetyStateWriteResult::ioFailure(
+            std::string("RuntimeSafetyStateStore: write failed: ") + e.what()
+        );
+    }
 }
 
-std::optional<RuntimeSafetyState> RuntimeSafetyStateStore::read(
+RuntimeSafetyStateReadResult RuntimeSafetyStateStore::read(
     const std::filesystem::path& path
 ) {
-    try {
-        const std::string contents = readFileContents(path);
-        const serialization::KeyValueFileDocument doc =
-            serialization::KeyValueFileCodec::parse(contents, kSchemaId);
+    if (!std::filesystem::exists(path)) {
+        return RuntimeSafetyStateReadResult::missing();
+    }
 
+    std::string contents;
+    try {
+        contents = storage::AtomicFile::readTextFile(path);
+    } catch (const std::exception& e) {
+        return RuntimeSafetyStateReadResult::ioFailure(
+            std::string("RuntimeSafetyStateStore: cannot read file: ") + e.what()
+        );
+    }
+
+    serialization::KeyValueFileDocument doc;
+    try {
+        doc = serialization::KeyValueFileCodec::parse(contents, kSchemaId);
+    } catch (const std::exception& e) {
+        // Wrong schema version or malformed key-value structure.
+        const std::string msg = e.what();
+        if (msg.find("version") != std::string::npos ||
+            msg.find("schema") != std::string::npos ||
+            msg.find("Schema") != std::string::npos) {
+            return RuntimeSafetyStateReadResult::schemaMismatch(
+                std::string("RuntimeSafetyStateStore: schema mismatch: ") + msg
+            );
+        }
+        return RuntimeSafetyStateReadResult::malformed(
+            std::string("RuntimeSafetyStateStore: malformed file: ") + msg
+        );
+    }
+
+    try {
         doc.requireOnlyFields(kAllowedFields);
 
         economics::DefenseModeState defenseMode;
         if (!economics::defenseModeStateFromString(
                 doc.requireField("defenseMode"), defenseMode)) {
-            return std::nullopt;
+            return RuntimeSafetyStateReadResult::malformed(
+                "RuntimeSafetyStateStore: unknown defenseMode value"
+            );
         }
 
-        // activationTrigger: parse string to enum.
-        const std::string triggerStr = doc.requireField("activationTrigger");
-        economics::DefenseModeTrigger trigger =
-            economics::DefenseModeTrigger::OPERATOR_DECLARED;
-        if (triggerStr == "SUPPLY_DIVERGENCE") {
-            trigger = economics::DefenseModeTrigger::SUPPLY_DIVERGENCE;
-        } else if (triggerStr == "DOUBLE_SIGN_MASS_EVENT") {
-            trigger = economics::DefenseModeTrigger::DOUBLE_SIGN_MASS_EVENT;
-        } else if (triggerStr == "UNAUTHORIZED_TREASURY_SPEND_ATTEMPT") {
-            trigger = economics::DefenseModeTrigger::UNAUTHORIZED_TREASURY_SPEND_ATTEMPT;
-        } else if (triggerStr == "CHAIN_AUDIT_FAILURE") {
-            trigger = economics::DefenseModeTrigger::CHAIN_AUDIT_FAILURE;
-        } else if (triggerStr == "STORAGE_CORRUPTION") {
-            trigger = economics::DefenseModeTrigger::STORAGE_CORRUPTION;
-        } else if (triggerStr == "OPERATOR_DECLARED") {
-            trigger = economics::DefenseModeTrigger::OPERATOR_DECLARED;
-        } else if (triggerStr == "GOVERNANCE_VOTED") {
-            trigger = economics::DefenseModeTrigger::GOVERNANCE_VOTED;
-        } else {
-            return std::nullopt;
-        }
+        const economics::DefenseModeTrigger trigger =
+            parseTrigger(doc.requireField("activationTrigger"));
 
-        const std::uint64_t activationHeight = parseUint64(doc, "activationHeight");
+        const std::uint64_t activationHeight =
+            parseUint64Field(doc, "activationHeight");
         const std::string activationReason =
             decodeOptional(doc.requireField("activationReason"));
         const std::string evidenceId =
             decodeOptional(doc.requireField("evidenceId"));
         const std::uint64_t lastChainAuditHeight =
-            parseUint64(doc, "lastChainAuditHeight");
-        const bool exitRequiresChainAudit = parseBool(doc, "exitRequiresChainAudit");
-        const std::int64_t updatedAt = parseInt64(doc, "updatedAt");
+            parseUint64Field(doc, "lastChainAuditHeight");
+        const bool exitRequiresChainAudit =
+            parseBoolField(doc, "exitRequiresChainAudit");
+        const std::int64_t updatedAt =
+            parseInt64Field(doc, "updatedAt");
 
         RuntimeSafetyState state(
             defenseMode,
@@ -199,13 +352,18 @@ std::optional<RuntimeSafetyState> RuntimeSafetyStateStore::read(
         );
 
         if (!state.isValid()) {
-            return std::nullopt;
+            return RuntimeSafetyStateReadResult::invalid(
+                "RuntimeSafetyStateStore: loaded state is invalid: " +
+                state.rejectionReason()
+            );
         }
 
-        return state;
+        return RuntimeSafetyStateReadResult::loaded(std::move(state));
 
-    } catch (const std::exception&) {
-        return std::nullopt;
+    } catch (const std::exception& e) {
+        return RuntimeSafetyStateReadResult::malformed(
+            std::string("RuntimeSafetyStateStore: field parse error: ") + e.what()
+        );
     }
 }
 

@@ -259,6 +259,26 @@ DefenseModeTransitionResult DefenseModeTransitionValidator::validateActivation(
         );
     }
 
+    // Critical triggers require evidence or a chain audit reference so that
+    // activation can be independently verified.
+    const bool isCriticalTrigger =
+        record.trigger() == DefenseModeTrigger::SUPPLY_DIVERGENCE ||
+        record.trigger() == DefenseModeTrigger::DOUBLE_SIGN_MASS_EVENT ||
+        record.trigger() == DefenseModeTrigger::UNAUTHORIZED_TREASURY_SPEND_ATTEMPT ||
+        record.trigger() == DefenseModeTrigger::CHAIN_AUDIT_FAILURE ||
+        record.trigger() == DefenseModeTrigger::STORAGE_CORRUPTION;
+
+    if (isCriticalTrigger &&
+        record.evidenceId().empty() &&
+        record.chainAuditHeight() == 0) {
+        return DefenseModeTransitionResult::rejected(
+            DefenseModeTransitionStatus::MISSING_EVIDENCE_FOR_ACTIVATION,
+            "critical trigger '" +
+            defenseModeTriggerToString(record.trigger()) +
+            "' requires non-empty evidenceId or non-zero chainAuditHeight"
+        );
+    }
+
     return DefenseModeTransitionResult::accepted();
 }
 

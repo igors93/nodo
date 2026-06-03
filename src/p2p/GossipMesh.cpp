@@ -4,6 +4,8 @@
 #include "economics/ProtocolEvidence.hpp"
 #include "storage/ProtocolEvidenceStore.hpp"
 
+#include <stdexcept>
+
 #include <sstream>
 #include <utility>
 
@@ -162,7 +164,11 @@ GossipMesh::GossipMesh(
     m_rateLimiter(),
     m_inbox(),
     m_invalidMessagesByPeer(),
-    m_lastEvidenceAt() {}
+    m_lastEvidenceAt(),
+    m_evidenceCaptureHealth()
+{
+    m_evidenceCaptureHealth.markUnavailable();
+}
 
 GossipMesh::GossipMesh(
     GossipMeshConfig config,
@@ -177,12 +183,21 @@ GossipMesh::GossipMesh(
     m_rateLimiter(),
     m_inbox(),
     m_invalidMessagesByPeer(),
-    m_lastEvidenceAt() {}
+    m_lastEvidenceAt(),
+    m_evidenceCaptureHealth()
+{
+    if (evidenceStore == nullptr) {
+        m_evidenceCaptureHealth.markUnavailable();
+    }
+}
 
 const GossipMeshConfig& GossipMesh::config() const { return m_config; }
 PeerRegistry& GossipMesh::peerRegistry() { return m_peerRegistry; }
 const PeerRegistry& GossipMesh::peerRegistry() const { return m_peerRegistry; }
 const GossipInbox& GossipMesh::inbox() const { return m_inbox; }
+const node::EvidenceCaptureHealth& GossipMesh::evidenceCaptureHealth() const {
+    return m_evidenceCaptureHealth;
+}
 
 PeerRegistryResult GossipMesh::registerPeer(PeerMetadata peer) {
     if (!m_config.isValid()) {
@@ -452,9 +467,13 @@ void GossipMesh::recordInvalidMessage(
 
     try {
         m_evidenceStore->save(evidence);
+        m_evidenceCaptureHealth.recordSuccess();
+    } catch (const std::exception& e) {
+        // Evidence store failure is tracked through diagnostics but does not crash
+        // the mesh. The invalid message counter above tracks the violation in memory.
+        m_evidenceCaptureHealth.recordFailure(e.what(), now);
     } catch (...) {
-        // Evidence store failure is logged but does not crash the mesh.
-        // The invalid message counter above already tracks the violation in memory.
+        m_evidenceCaptureHealth.recordFailure("unknown exception in evidence store", now);
     }
 }
 

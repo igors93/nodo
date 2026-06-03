@@ -116,20 +116,40 @@ RuntimeSafetyState RuntimeSafetyState::newNodeDefault() {
 void RuntimeSafetyState::validate() const {
     m_validated = true;
 
-    // A zero updatedAt is acceptable only for a new-node default (activationHeight=0).
     if (m_updatedAt < 0) {
         m_valid = false;
         m_rejectionReason = "updatedAt must not be negative";
         return;
     }
 
-    // activationHeight must be zero when defense mode is INACTIVE.
-    if (m_defenseMode == economics::DefenseModeState::INACTIVE &&
-        m_activationHeight != 0) {
-        m_valid = false;
-        m_rejectionReason =
-            "activationHeight must be zero when defense mode is INACTIVE";
-        return;
+    if (m_defenseMode == economics::DefenseModeState::ACTIVE) {
+        // Active defense mode must carry a verifiable safety context.
+        if (m_activationHeight == 0) {
+            m_valid = false;
+            m_rejectionReason =
+                "activationHeight must be non-zero when defense mode is ACTIVE";
+            return;
+        }
+        if (m_activationReason.empty()) {
+            m_valid = false;
+            m_rejectionReason =
+                "activationReason must not be empty when defense mode is ACTIVE";
+            return;
+        }
+        if (m_updatedAt <= 0) {
+            m_valid = false;
+            m_rejectionReason =
+                "updatedAt must be positive when defense mode is ACTIVE";
+            return;
+        }
+    } else {
+        // INACTIVE: activationHeight must be zero.
+        if (m_activationHeight != 0) {
+            m_valid = false;
+            m_rejectionReason =
+                "activationHeight must be zero when defense mode is INACTIVE";
+            return;
+        }
     }
 
     m_valid = true;
