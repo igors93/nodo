@@ -186,6 +186,9 @@ def known_required_manifest_fields() -> list[str]:
     """
     Manifest fields confirmed by existing test coverage.
     Removing any one of these must cause 'status' to fail.
+
+    NOTE: 'selectedNetwork' is intentionally absent — the manifest does not
+    store it under that name; network identity is derived from chainId/genesisConfigId.
     """
     return [
         "chainId",
@@ -194,7 +197,6 @@ def known_required_manifest_fields() -> list[str]:
         "latestBlockHash",
         "genesisConfigId",
         "latestStateRoot",
-        "selectedNetwork",
     ]
 
 
@@ -283,7 +285,12 @@ def unicode_payloads() -> list[tuple[str, str]]:
 
 
 def very_long_values(lengths: list[int] | None = None) -> list[tuple[str, str]]:
-    """Values of extreme length (should not crash or hang the binary)."""
+    """Values of extreme length (should not crash or hang the binary).
+
+    NOTE: Windows CreateProcess has a total command-line limit of ~32767 characters,
+    so the default cap is 4096 to stay safely within that budget.  Callers that
+    want to test OS-level rejection should use lengths <= 4096.
+    """
     if lengths is None:
-        lengths = [256, 1024, 4096, 65536]
+        lengths = [256, 1024, 4096]
     return [(f"len_{n}", "A" * n) for n in lengths]

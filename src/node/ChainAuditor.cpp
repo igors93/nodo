@@ -3,6 +3,7 @@
 #include "node/AuditAssignment.hpp"
 #include "node/DataAvailabilityAuditValidator.hpp"
 #include "node/ProtectionRewards.hpp"
+#include "crypto/KeyEncryptionPolicy.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "economics/EpochMonetaryReport.hpp"
 #include "economics/EpochTreasuryReport.hpp"
@@ -264,6 +265,21 @@ ChainAuditResult auditImpl(
             } catch (const std::exception& e) {
                 return ChainAuditResult::failed(
                     std::string("chain audit: treasury report decode failed: ") + e.what()
+                );
+            }
+
+            // Official networks must not accept treasury reports that are missing
+            // the spend records digest. A report without a digest can only be
+            // verified at total level, which hides changes to individual recipient
+            // addresses, proposal IDs, or payment amounts behind a matching sum.
+            if (crypto::KeyEncryptionPolicy::isOfficialNetwork(manifest.networkName()) &&
+                persistedTreasuryReport.spendRecordsDigest().empty()) {
+                return ChainAuditResult::failed(
+                    "chain audit: treasury report on official network '" +
+                    manifest.networkName() +
+                    "' is missing the spend records digest. "
+                    "The report must be regenerated with record-level verification "
+                    "before this node can participate on an official network."
                 );
             }
 

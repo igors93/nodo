@@ -166,6 +166,56 @@ void testRejectsManifestStateRootMismatch() {
     );
 }
 
+// Regression guard: a clean genesis runtime must always produce a stable
+// artifact digest. If this test fails it means the artifact digest
+// computation regressed to non-deterministic or empty output.
+void testArtifactDigestIsStableOnCleanRuntime() {
+    const node::RuntimeStateLoadResult load = loadedRuntime();
+
+    const node::ChainAuditResult result =
+        node::ChainAuditor::auditLoadedRuntime(load);
+
+    requireCondition(
+        result.passed(),
+        "Clean genesis runtime must pass chain audit (artifact digest regression guard)."
+    );
+}
+
+// Verifies that a loader failure propagates intact through the chain auditor.
+// Ensures neither the auditor nor the loader silently swallows the reason.
+void testLoaderRejectionPreservesReason() {
+    const std::string expectedReason = "storage-corruption-sentinel";
+    const node::RuntimeStateLoadResult rejected =
+        node::RuntimeStateLoadResult::rejected(
+            node::RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+            expectedReason
+        );
+
+    const node::ChainAuditResult result =
+        node::ChainAuditor::auditLoadedRuntime(rejected);
+
+    requireCondition(
+        !result.passed(),
+        "Chain auditor must propagate loader rejection as audit failure."
+    );
+    requireCondition(
+        result.reason().find(expectedReason) != std::string::npos,
+        "Chain auditor must preserve the original loader rejection reason."
+    );
+}
+
+// Verifies that the dev-mode path skips the monetary report requirement
+// without crashing and still produces a passed result on a clean genesis.
+void testDevModeAuditPassesOnCleanRuntime() {
+    const node::ChainAuditResult result =
+        node::ChainAuditor::auditLoadedRuntimeDevMode(loadedRuntime());
+
+    requireCondition(
+        result.passed(),
+        "Dev-mode audit must pass on a clean genesis runtime."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -174,6 +224,9 @@ int main() {
         testReportsLoaderFailure();
         testRejectsManifestRuntimeHeightMismatch();
         testRejectsManifestStateRootMismatch();
+        testArtifactDigestIsStableOnCleanRuntime();
+        testLoaderRejectionPreservesReason();
+        testDevModeAuditPassesOnCleanRuntime();
 
         std::cout << "Nodo chain auditor tests passed.\n";
         return 0;

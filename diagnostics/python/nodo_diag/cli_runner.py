@@ -133,6 +133,19 @@ def run_nodo(
             stderr=stderr + "\n[diagnostic] nodo command timed out",
         )
 
+    except (ValueError, OSError) as error:
+        # Windows CreateProcess rejects null bytes in argv (ValueError: embedded null character).
+        # Very long paths can also trigger OSError WinError 206 (filename too long).
+        # Treat both as a clean rejection — returncode 125 signals "OS refused to launch".
+        return NodoCliResult(
+            command=command,
+            cwd=str(root),
+            returncode=125,
+            duration_seconds=round(time.monotonic() - started, 3),
+            stdout="",
+            stderr=f"[diagnostic] OS refused to launch process: {error}",
+        )
+
 
 def assert_failed_with_text(
     result: NodoCliResult,

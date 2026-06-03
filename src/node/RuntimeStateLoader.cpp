@@ -290,6 +290,32 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             );
         }
 
+        // Enforce artifact digest integrity during reload.
+        // An empty digest means the artifact cannot produce a deterministic
+        // fingerprint — a sign of storage corruption or incomplete serialization.
+        // A non-deterministic digest (two calls yield different results) means
+        // the artifact's canonical form is unstable, which breaks availability
+        // challenge binding and chain audit assignments.
+        if (artifact.isValid()) {
+            const std::string firstDigest = artifact.artifactDigest();
+            if (firstDigest.empty()) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Failed to reload Nodo runtime: corrupted artifact at block " +
+                    std::to_string(height) +
+                    " produced an empty digest. Storage integrity cannot be verified."
+                );
+            }
+            if (artifact.artifactDigest() != firstDigest) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Failed to reload Nodo runtime: non-deterministic artifact digest at block " +
+                    std::to_string(height) +
+                    ". Storage integrity cannot be guaranteed."
+                );
+            }
+        }
+
         try {
             runtime.mutableSupplyState().applyFinalizedDelta(
                 artifact.supplyDelta()

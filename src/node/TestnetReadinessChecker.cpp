@@ -45,7 +45,8 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig()
       m_defenseModeInactive(true),
       m_legacyPathsBlockedOnOfficialNetworks(false),
       m_treasuryReportConsistencyVerified(false),
-      m_evidenceCaptureHealthy(true) {}
+      m_evidenceCaptureHealthy(true),
+      m_chainAuditCompleted(false) {}
 
 TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
     std::size_t connectedPeers,
@@ -55,7 +56,8 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
     bool defenseModeInactive,
     bool legacyPathsBlockedOnOfficialNetworks,
     bool treasuryReportConsistencyVerified,
-    bool evidenceCaptureHealthy
+    bool evidenceCaptureHealthy,
+    bool chainAuditCompleted
 )
     : m_connectedPeers(connectedPeers),
       m_genesisVerified(genesisVerified),
@@ -64,7 +66,8 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
       m_defenseModeInactive(defenseModeInactive),
       m_legacyPathsBlockedOnOfficialNetworks(legacyPathsBlockedOnOfficialNetworks),
       m_treasuryReportConsistencyVerified(treasuryReportConsistencyVerified),
-      m_evidenceCaptureHealthy(evidenceCaptureHealthy) {}
+      m_evidenceCaptureHealthy(evidenceCaptureHealthy),
+      m_chainAuditCompleted(chainAuditCompleted) {}
 
 std::size_t TestnetReadinessCheckerConfig::connectedPeers() const { return m_connectedPeers; }
 bool TestnetReadinessCheckerConfig::genesisVerified() const { return m_genesisVerified; }
@@ -74,6 +77,7 @@ bool TestnetReadinessCheckerConfig::defenseModeInactive() const { return m_defen
 bool TestnetReadinessCheckerConfig::legacyPathsBlockedOnOfficialNetworks() const { return m_legacyPathsBlockedOnOfficialNetworks; }
 bool TestnetReadinessCheckerConfig::treasuryReportConsistencyVerified() const { return m_treasuryReportConsistencyVerified; }
 bool TestnetReadinessCheckerConfig::evidenceCaptureHealthy() const { return m_evidenceCaptureHealthy; }
+bool TestnetReadinessCheckerConfig::chainAuditCompleted() const { return m_chainAuditCompleted; }
 
 namespace {
 
@@ -212,6 +216,26 @@ void addProtocolSafetyGates(
                : "Protocol evidence capture is unhealthy: the evidence store is "
                  "unavailable or has recent persistence failures. Repair the store "
                  "before starting."
+        );
+    }
+
+    // Chain audit must be completed on official networks when finalized blocks exist.
+    // Without a successful audit, supply continuity, monetary reports, reward evidence,
+    // and treasury integrity are unverified. A node that skipped audit may carry
+    // corrupted or inconsistent state into the network.
+    {
+        const bool isOfficial = crypto::KeyEncryptionPolicy::isOfficialNetwork(params.networkName());
+        const bool hasBlocks  = config.finalizedHeight() > 0;
+        const bool ok         = !isOfficial || !hasBlocks || config.chainAuditCompleted();
+        checks.emplace_back(
+            "chain_audit_completed",
+            ok,
+            ok ? (hasBlocks
+                      ? "Chain audit has been completed and all integrity checks passed."
+                      : "No finalized blocks; chain audit check skipped.")
+               : "Chain audit has NOT been completed for this official network with finalized blocks. "
+                 "Run 'nodo chain audit' before starting. An unaudited node must not "
+                 "join '" + params.networkName() + "'."
         );
     }
 }

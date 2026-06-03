@@ -1124,7 +1124,8 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
             readinessCtx.defenseModeInactive,
             readinessCtx.legacyCommandsBlocked,
             readinessCtx.treasuryReportVerified,
-            readinessCtx.evidenceCaptureHealthy
+            readinessCtx.evidenceCaptureHealthy,
+            readinessCtx.chainAuditPassed
         );
         checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
             params,
