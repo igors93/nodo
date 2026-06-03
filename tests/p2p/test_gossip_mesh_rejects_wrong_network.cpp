@@ -27,7 +27,7 @@ int main() {
     LoopbackTransport transportA(bus);
     LoopbackTransport transportB(bus);
 
-    GossipMeshConfig configB("node-b", "localnet", "chain-localnet", "1", 60, 1);
+    GossipMeshConfig configB("node-b", "localnet", "chain-localnet", "1", "test-genesis-v1", 60, 1);
     GossipMesh meshB(configB, transportB);
 
     assert(meshB.registerPeer(makePeer("node-a", 19001)).success());

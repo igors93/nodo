@@ -10,6 +10,8 @@ void testReportFieldsPopulated() {
     const auto params = nodo::config::NetworkParameters::developmentLocal();
     const auto report = nodo::node::OperatorDiagnostics::collect(
         params,
+        "test-genesis-id-v1",
+        "DEVELOPMENT_LOCAL",
         100,
         4,
         3,
@@ -20,6 +22,8 @@ void testReportFieldsPopulated() {
 
     assert(report.networkName() == "nodo-localnet");
     assert(report.chainId() == "nodo-localnet-1");
+    assert(report.genesisId() == "test-genesis-id-v1");
+    assert(report.networkClass() == "DEVELOPMENT_LOCAL");
     assert(report.finalizedHeight() == 100);
     assert(report.validatorCount() == 4);
     assert(report.connectedPeers() == 3);
@@ -31,7 +35,7 @@ void testReportFieldsPopulated() {
 void testReadinessStatusReady() {
     const auto params = nodo::config::NetworkParameters::developmentLocal();
     const auto report = nodo::node::OperatorDiagnostics::collect(
-        params, 1, 1, 1, true, true, {}
+        params, "genesis-id", "DEVELOPMENT_LOCAL", 1, 1, 1, true, true, {}
     );
     assert(report.readinessStatus() == "READY");
 }
@@ -39,7 +43,7 @@ void testReadinessStatusReady() {
 void testReadinessStatusNotReadyWhenGenesisNotVerified() {
     const auto params = nodo::config::NetworkParameters::developmentLocal();
     const auto report = nodo::node::OperatorDiagnostics::collect(
-        params, 1, 1, 1, false, true, {}
+        params, "genesis-id", "DEVELOPMENT_LOCAL", 1, 1, 1, false, true, {}
     );
     assert(report.readinessStatus() == "NOT_READY");
 }
@@ -47,7 +51,7 @@ void testReadinessStatusNotReadyWhenGenesisNotVerified() {
 void testReadinessStatusNotReadyWhenNoPeers() {
     const auto params = nodo::config::NetworkParameters::developmentLocal();
     const auto report = nodo::node::OperatorDiagnostics::collect(
-        params, 1, 1, 0, true, true, {}
+        params, "genesis-id", "DEVELOPMENT_LOCAL", 1, 1, 0, true, true, {}
     );
     assert(report.readinessStatus() == "NOT_READY");
 }
@@ -59,7 +63,7 @@ void testWarningsIncluded() {
         "genesis not fully verified"
     };
     const auto report = nodo::node::OperatorDiagnostics::collect(
-        params, 0, 0, 0, false, false, warnings
+        params, "genesis-id", "DEVELOPMENT_LOCAL", 0, 0, 0, false, false, warnings
     );
     assert(report.warnings().size() == 2);
 }
@@ -67,13 +71,15 @@ void testWarningsIncluded() {
 void testSerializeContainsKeyFields() {
     const auto params = nodo::config::NetworkParameters::developmentLocal();
     const auto report = nodo::node::OperatorDiagnostics::collect(
-        params, 42, 2, 1, true, true, {"test-warning"}
+        params, "my-genesis-id-v1", "DEVELOPMENT_LOCAL", 42, 2, 1, true, true, {"test-warning"}
     );
     const std::string s = report.serialize();
     assert(!s.empty());
     assert(s.find("nodo-localnet") != std::string::npos);
     assert(s.find("42") != std::string::npos);
     assert(s.find("test-warning") != std::string::npos);
+    assert(s.find("DEVELOPMENT_LOCAL") != std::string::npos);
+    assert(s.find("my-genesis-id-v1") != std::string::npos);
 }
 
 } // namespace

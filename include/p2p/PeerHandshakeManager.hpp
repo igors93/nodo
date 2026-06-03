@@ -20,6 +20,7 @@ public:
         std::string networkId,
         std::string chainId,
         std::string protocolVersion,
+        std::string genesisId,
         node::ChainStatusMessage chainStatus,
         std::int64_t createdAt
     );
@@ -28,6 +29,7 @@ public:
     const std::string& networkId() const;
     const std::string& chainId() const;
     const std::string& protocolVersion() const;
+    const std::string& genesisId() const;
     const node::ChainStatusMessage& chainStatus() const;
     std::int64_t createdAt() const;
 
@@ -39,6 +41,7 @@ private:
     std::string m_networkId;
     std::string m_chainId;
     std::string m_protocolVersion;
+    std::string m_genesisId;
     node::ChainStatusMessage m_chainStatus;
     std::int64_t m_createdAt;
 };

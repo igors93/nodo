@@ -16,6 +16,8 @@ OperatorDiagnosticsReport::OperatorDiagnosticsReport(
     std::string networkName,
     std::string chainId,
     std::string protocolVersion,
+    std::string genesisId,
+    std::string networkClass,
     std::uint64_t finalizedHeight,
     std::size_t validatorCount,
     std::size_t connectedPeers,
@@ -28,6 +30,8 @@ OperatorDiagnosticsReport::OperatorDiagnosticsReport(
     : m_networkName(std::move(networkName)),
       m_chainId(std::move(chainId)),
       m_protocolVersion(std::move(protocolVersion)),
+      m_genesisId(std::move(genesisId)),
+      m_networkClass(std::move(networkClass)),
       m_finalizedHeight(finalizedHeight),
       m_validatorCount(validatorCount),
       m_connectedPeers(connectedPeers),
@@ -40,6 +44,8 @@ OperatorDiagnosticsReport::OperatorDiagnosticsReport(
 const std::string& OperatorDiagnosticsReport::networkName() const { return m_networkName; }
 const std::string& OperatorDiagnosticsReport::chainId() const { return m_chainId; }
 const std::string& OperatorDiagnosticsReport::protocolVersion() const { return m_protocolVersion; }
+const std::string& OperatorDiagnosticsReport::genesisId() const { return m_genesisId; }
+const std::string& OperatorDiagnosticsReport::networkClass() const { return m_networkClass; }
 std::uint64_t OperatorDiagnosticsReport::finalizedHeight() const { return m_finalizedHeight; }
 std::size_t OperatorDiagnosticsReport::validatorCount() const { return m_validatorCount; }
 std::size_t OperatorDiagnosticsReport::connectedPeers() const { return m_connectedPeers; }
@@ -53,8 +59,10 @@ std::string OperatorDiagnosticsReport::serialize() const {
     std::ostringstream oss;
     oss << "OperatorDiagnostics{\n"
         << "  network=" << m_networkName << "\n"
+        << "  networkClass=" << m_networkClass << "\n"
         << "  chainId=" << m_chainId << "\n"
         << "  protocol=" << m_protocolVersion << "\n"
+        << "  genesisId=" << (m_genesisId.empty() ? "(none)" : m_genesisId) << "\n"
         << "  finalizedHeight=" << m_finalizedHeight << "\n"
         << "  validators=" << m_validatorCount << "\n"
         << "  peers=" << m_connectedPeers << "\n"
@@ -71,6 +79,8 @@ std::string OperatorDiagnosticsReport::serialize() const {
 
 OperatorDiagnosticsReport OperatorDiagnostics::collect(
     const config::NetworkParameters& params,
+    const std::string& genesisId,
+    const std::string& networkClass,
     std::uint64_t finalizedHeight,
     std::size_t validatorCount,
     std::size_t connectedPeers,
@@ -83,6 +93,8 @@ OperatorDiagnosticsReport OperatorDiagnostics::collect(
         params.networkName(),
         params.chainId(),
         params.protocolVersion(),
+        genesisId,
+        networkClass,
         finalizedHeight,
         validatorCount,
         connectedPeers,

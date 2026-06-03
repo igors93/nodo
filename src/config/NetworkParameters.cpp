@@ -13,6 +13,15 @@
 
 namespace nodo::config {
 
+std::string networkClassToString(NetworkClass nc) {
+    switch (nc) {
+        case NetworkClass::DEVELOPMENT_LOCAL:  return "DEVELOPMENT_LOCAL";
+        case NetworkClass::STAGING_CANDIDATE:  return "STAGING_CANDIDATE";
+        case NetworkClass::LOCKED_PRODUCTION:  return "LOCKED_PRODUCTION";
+        default:                               return "UNKNOWN";
+    }
+}
+
 namespace {
 
 bool isSafeScalar(
@@ -189,6 +198,16 @@ const std::string& NetworkParameters::signatureAlgorithm() const {
 
 const std::string& NetworkParameters::storageFormatVersion() const {
     return m_storageFormatVersion;
+}
+
+NetworkClass NetworkParameters::networkClass() const {
+    if (m_networkName == "nodo-localnet" || m_networkName == "localnet") {
+        return NetworkClass::DEVELOPMENT_LOCAL;
+    }
+    if (m_networkName == "nodo-testnet-candidate" || m_networkName == "testnet-candidate") {
+        return NetworkClass::STAGING_CANDIDATE;
+    }
+    return NetworkClass::LOCKED_PRODUCTION;
 }
 
 bool NetworkParameters::isValid() const {

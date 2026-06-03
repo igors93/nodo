@@ -27,6 +27,9 @@ namespace nodo::node {
 struct ReadinessContext {
     std::size_t connectedPeers = 0;
     bool genesisVerified = false;
+    bool genesisRegistered = false;
+    std::string genesisId;
+    std::string networkClass;
     std::uint64_t finalizedHeight = 0;
     bool chainAuditPassed = false;
     bool monetaryReportVerified = false;
@@ -59,6 +62,15 @@ public:
     // Derive peer and chain facts from the loaded manifest.
     ReadinessContextBuilder& withManifest(
         const NodeDataDirectoryReadResult& manifest
+    );
+
+    // Derive genesis facts: verified flag, registered flag, genesis ID, and
+    // network class. Call after the genesis has been resolved and verified.
+    ReadinessContextBuilder& withGenesisFacts(
+        bool verified,
+        bool registered,
+        const std::string& genesisId,
+        const std::string& networkClass
     );
 
     // Derive genesis verification from the result of GenesisVerifier.

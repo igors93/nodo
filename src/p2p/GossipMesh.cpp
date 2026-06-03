@@ -41,6 +41,7 @@ GossipMeshConfig::GossipMeshConfig()
       m_networkId(""),
       m_chainId(""),
       m_protocolVersion(""),
+      m_genesisId(""),
       m_defaultTtlSeconds(0),
       m_invalidMessageQuarantineThreshold(0) {}
 
@@ -49,12 +50,14 @@ GossipMeshConfig::GossipMeshConfig(
     std::string networkId,
     std::string chainId,
     std::string protocolVersion,
+    std::string genesisId,
     std::uint32_t defaultTtlSeconds,
     std::size_t invalidMessageQuarantineThreshold
 ) : m_localNodeId(std::move(localNodeId)),
     m_networkId(std::move(networkId)),
     m_chainId(std::move(chainId)),
     m_protocolVersion(std::move(protocolVersion)),
+    m_genesisId(std::move(genesisId)),
     m_defaultTtlSeconds(defaultTtlSeconds),
     m_invalidMessageQuarantineThreshold(invalidMessageQuarantineThreshold) {}
 
@@ -62,6 +65,7 @@ const std::string& GossipMeshConfig::localNodeId() const { return m_localNodeId;
 const std::string& GossipMeshConfig::networkId() const { return m_networkId; }
 const std::string& GossipMeshConfig::chainId() const { return m_chainId; }
 const std::string& GossipMeshConfig::protocolVersion() const { return m_protocolVersion; }
+const std::string& GossipMeshConfig::genesisId() const { return m_genesisId; }
 std::uint32_t GossipMeshConfig::defaultTtlSeconds() const { return m_defaultTtlSeconds; }
 std::size_t GossipMeshConfig::invalidMessageQuarantineThreshold() const { return m_invalidMessageQuarantineThreshold; }
 
@@ -70,6 +74,7 @@ bool GossipMeshConfig::isValid() const {
            isSafeScalar(m_networkId) &&
            isSafeScalar(m_chainId) &&
            isSafeScalar(m_protocolVersion) &&
+           !m_genesisId.empty() &&
            m_defaultTtlSeconds > 0 &&
            m_defaultTtlSeconds <= 3600 &&
            m_invalidMessageQuarantineThreshold > 0;

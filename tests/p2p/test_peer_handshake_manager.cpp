@@ -7,8 +7,9 @@ using namespace nodo::node;
 using namespace nodo::p2p;
 
 int main() {
-    GossipMeshConfig localConfig("node-a", "localnet", "chain-localnet", "1", 60, 2);
-    GossipMeshConfig remoteConfig("node-b", "localnet", "chain-localnet", "1", 60, 2);
+    const std::string sharedGenesisId = "localnet-genesis-test-v1";
+    GossipMeshConfig localConfig("node-a", "localnet", "chain-localnet", "1", sharedGenesisId, 60, 2);
+    GossipMeshConfig remoteConfig("node-b", "localnet", "chain-localnet", "1", sharedGenesisId, 60, 2);
 
     PeerMetadata remotePeer(
         "node-b",
@@ -41,7 +42,7 @@ int main() {
 
     assert(accepted.accepted());
 
-    GossipMeshConfig wrongChain("node-a", "localnet", "other-chain", "1", 60, 2);
+    GossipMeshConfig wrongChain("node-a", "localnet", "other-chain", "1", sharedGenesisId, 60, 2);
     const PeerHandshakeResult rejected =
         PeerHandshakeManager::validateHello(wrongChain, hello, 1001);
 

@@ -46,7 +46,9 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig()
       m_legacyPathsBlockedOnOfficialNetworks(false),
       m_treasuryReportConsistencyVerified(false),
       m_evidenceCaptureHealthy(true),
-      m_chainAuditCompleted(false) {}
+      m_chainAuditCompleted(false),
+      m_genesisRegistered(false),
+      m_networkClass("") {}
 
 TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
     std::size_t connectedPeers,
@@ -57,7 +59,9 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
     bool legacyPathsBlockedOnOfficialNetworks,
     bool treasuryReportConsistencyVerified,
     bool evidenceCaptureHealthy,
-    bool chainAuditCompleted
+    bool chainAuditCompleted,
+    bool genesisRegistered,
+    std::string networkClass
 )
     : m_connectedPeers(connectedPeers),
       m_genesisVerified(genesisVerified),
@@ -67,7 +71,9 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
       m_legacyPathsBlockedOnOfficialNetworks(legacyPathsBlockedOnOfficialNetworks),
       m_treasuryReportConsistencyVerified(treasuryReportConsistencyVerified),
       m_evidenceCaptureHealthy(evidenceCaptureHealthy),
-      m_chainAuditCompleted(chainAuditCompleted) {}
+      m_chainAuditCompleted(chainAuditCompleted),
+      m_genesisRegistered(genesisRegistered),
+      m_networkClass(std::move(networkClass)) {}
 
 std::size_t TestnetReadinessCheckerConfig::connectedPeers() const { return m_connectedPeers; }
 bool TestnetReadinessCheckerConfig::genesisVerified() const { return m_genesisVerified; }
@@ -78,6 +84,8 @@ bool TestnetReadinessCheckerConfig::legacyPathsBlockedOnOfficialNetworks() const
 bool TestnetReadinessCheckerConfig::treasuryReportConsistencyVerified() const { return m_treasuryReportConsistencyVerified; }
 bool TestnetReadinessCheckerConfig::evidenceCaptureHealthy() const { return m_evidenceCaptureHealthy; }
 bool TestnetReadinessCheckerConfig::chainAuditCompleted() const { return m_chainAuditCompleted; }
+bool TestnetReadinessCheckerConfig::genesisRegistered() const { return m_genesisRegistered; }
+const std::string& TestnetReadinessCheckerConfig::networkClass() const { return m_networkClass; }
 
 namespace {
 
@@ -151,6 +159,36 @@ void addProtocolSafetyGates(
     const config::NetworkParameters& params,
     const TestnetReadinessCheckerConfig& config
 ) {
+    // Every network that runs a runtime must have an explicitly registered genesis.
+    // A missing or placeholder genesis is a hard failure, not a warning.
+    {
+        const bool ok = config.genesisRegistered();
+        checks.emplace_back(
+            "genesis_registered",
+            ok,
+            ok ? "Network has a registered genesis configuration."
+               : "Network does not have a registered genesis. "
+                 "Only networks with an explicit registered genesis can start a runtime. "
+                 "Check the GenesisRegistry for this network profile."
+        );
+    }
+
+    // Official networks must not use development-local network class.
+    // A DEVELOPMENT_LOCAL node must not join a staging or production network.
+    {
+        const bool isOfficial = crypto::KeyEncryptionPolicy::isOfficialNetwork(params.networkName());
+        const bool isDev = config.networkClass() == "DEVELOPMENT_LOCAL";
+        const bool ok = !isOfficial || !isDev;
+        checks.emplace_back(
+            "network_class_appropriate",
+            ok,
+            ok ? "Network class '" + config.networkClass() + "' is appropriate for " + params.networkName() + "."
+               : "Network class DEVELOPMENT_LOCAL cannot be used on official network '" +
+                 params.networkName() + "'. "
+                 "Development-only profiles must not join official networks."
+        );
+    }
+
     // Governance lifecycle verifier must be integrated in critical paths.
     // This gate exists so that if the integration is ever removed, readiness fails.
     {

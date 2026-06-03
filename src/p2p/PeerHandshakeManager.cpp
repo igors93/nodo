@@ -10,6 +10,7 @@ PeerHelloMessage::PeerHelloMessage()
       m_networkId(""),
       m_chainId(""),
       m_protocolVersion(""),
+      m_genesisId(""),
       m_chainStatus(),
       m_createdAt(0) {}
 
@@ -18,12 +19,14 @@ PeerHelloMessage::PeerHelloMessage(
     std::string networkId,
     std::string chainId,
     std::string protocolVersion,
+    std::string genesisId,
     node::ChainStatusMessage chainStatus,
     std::int64_t createdAt
 ) : m_peer(std::move(peer)),
     m_networkId(std::move(networkId)),
     m_chainId(std::move(chainId)),
     m_protocolVersion(std::move(protocolVersion)),
+    m_genesisId(std::move(genesisId)),
     m_chainStatus(std::move(chainStatus)),
     m_createdAt(createdAt) {}
 
@@ -31,6 +34,7 @@ const PeerMetadata& PeerHelloMessage::peer() const { return m_peer; }
 const std::string& PeerHelloMessage::networkId() const { return m_networkId; }
 const std::string& PeerHelloMessage::chainId() const { return m_chainId; }
 const std::string& PeerHelloMessage::protocolVersion() const { return m_protocolVersion; }
+const std::string& PeerHelloMessage::genesisId() const { return m_genesisId; }
 const node::ChainStatusMessage& PeerHelloMessage::chainStatus() const { return m_chainStatus; }
 std::int64_t PeerHelloMessage::createdAt() const { return m_createdAt; }
 
@@ -39,6 +43,7 @@ bool PeerHelloMessage::isValid() const {
            !m_networkId.empty() &&
            !m_chainId.empty() &&
            !m_protocolVersion.empty() &&
+           !m_genesisId.empty() &&
            m_chainStatus.isValid() &&
            m_networkId == m_chainStatus.networkId() &&
            m_chainId == m_chainStatus.chainId() &&
@@ -53,6 +58,7 @@ std::string PeerHelloMessage::serialize() const {
            << ";networkId=" << m_networkId
            << ";chainId=" << m_chainId
            << ";protocolVersion=" << m_protocolVersion
+           << ";genesisId=" << m_genesisId
            << ";chainStatus=" << m_chainStatus.serialize()
            << ";createdAt=" << m_createdAt
            << "}";
@@ -99,6 +105,7 @@ NetworkEnvelope PeerHandshakeManager::createHelloEnvelope(
         config.networkId(),
         config.chainId(),
         config.protocolVersion(),
+        config.genesisId(),
         chainStatus,
         now
     );
@@ -146,8 +153,25 @@ PeerHandshakeResult PeerHandshakeManager::validateHello(
         envelope.protocolVersion() != config.protocolVersion()) {
         return PeerHandshakeResult(
             PeerHandshakeStatus::REJECTED,
-            "Peer hello network, chain, or protocol does not match."
+            "Peer hello network, chain, or protocol does not match local node: "
+            "expected network=" + config.networkId() +
+            " chain=" + config.chainId() +
+            " protocol=" + config.protocolVersion() + "."
         );
+    }
+
+    // Reject peers from a different genesis. Nodes on the same network and
+    // chain but with a divergent genesis history must not sync with each other.
+    if (!config.genesisId().empty()) {
+        const std::string expectedField = ";genesisId=" + config.genesisId() + ";";
+        const std::string& payload = envelope.payload();
+        if (payload.find(expectedField) == std::string::npos) {
+            return PeerHandshakeResult(
+                PeerHandshakeStatus::REJECTED,
+                "Peer hello genesis identity does not match local genesis '" +
+                config.genesisId() + "'."
+            );
+        }
     }
 
     if (envelope.senderNodeId() == config.localNodeId()) {

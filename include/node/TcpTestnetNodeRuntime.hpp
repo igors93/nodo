@@ -23,6 +23,7 @@ public:
         std::string networkId,
         std::string chainId,
         std::string protocolVersion,
+        std::string genesisId,
         std::filesystem::path dataDirectory,
         std::uint32_t defaultTtlSeconds,
         std::size_t invalidMessageQuarantineThreshold
@@ -34,6 +35,7 @@ public:
     const std::string& networkId() const;
     const std::string& chainId() const;
     const std::string& protocolVersion() const;
+    const std::string& genesisId() const;
     const std::filesystem::path& dataDirectory() const;
     std::uint32_t defaultTtlSeconds() const;
     std::size_t invalidMessageQuarantineThreshold() const;
@@ -48,6 +50,7 @@ private:
     std::string m_networkId;
     std::string m_chainId;
     std::string m_protocolVersion;
+    std::string m_genesisId;
     std::filesystem::path m_dataDirectory;
     std::uint32_t m_defaultTtlSeconds;
     std::size_t m_invalidMessageQuarantineThreshold;

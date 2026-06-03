@@ -57,7 +57,9 @@ public:
         bool legacyPathsBlockedOnOfficialNetworks,
         bool treasuryReportConsistencyVerified,
         bool evidenceCaptureHealthy = true,
-        bool chainAuditCompleted = false
+        bool chainAuditCompleted = false,
+        bool genesisRegistered = false,
+        std::string networkClass = ""
     );
 
     std::size_t connectedPeers() const;
@@ -69,6 +71,8 @@ public:
     bool treasuryReportConsistencyVerified() const;
     bool evidenceCaptureHealthy() const;
     bool chainAuditCompleted() const;
+    bool genesisRegistered() const;
+    const std::string& networkClass() const;
 
 private:
     std::size_t m_connectedPeers;
@@ -80,6 +84,8 @@ private:
     bool m_treasuryReportConsistencyVerified;
     bool m_evidenceCaptureHealthy;
     bool m_chainAuditCompleted;
+    bool m_genesisRegistered;
+    std::string m_networkClass;
 };
 
 class TestnetReadinessChecker {

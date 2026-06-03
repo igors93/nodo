@@ -18,6 +18,8 @@ public:
         std::string networkName,
         std::string chainId,
         std::string protocolVersion,
+        std::string genesisId,
+        std::string networkClass,
         std::uint64_t finalizedHeight,
         std::size_t validatorCount,
         std::size_t connectedPeers,
@@ -31,6 +33,8 @@ public:
     const std::string& networkName() const;
     const std::string& chainId() const;
     const std::string& protocolVersion() const;
+    const std::string& genesisId() const;
+    const std::string& networkClass() const;
     std::uint64_t finalizedHeight() const;
     std::size_t validatorCount() const;
     std::size_t connectedPeers() const;
@@ -46,6 +50,8 @@ private:
     std::string m_networkName;
     std::string m_chainId;
     std::string m_protocolVersion;
+    std::string m_genesisId;
+    std::string m_networkClass;
     std::uint64_t m_finalizedHeight;
     std::size_t m_validatorCount;
     std::size_t m_connectedPeers;
@@ -64,6 +70,8 @@ class OperatorDiagnostics {
 public:
     static OperatorDiagnosticsReport collect(
         const config::NetworkParameters& params,
+        const std::string& genesisId,
+        const std::string& networkClass,
         std::uint64_t finalizedHeight,
         std::size_t validatorCount,
         std::size_t connectedPeers,

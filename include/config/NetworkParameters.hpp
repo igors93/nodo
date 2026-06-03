@@ -13,6 +13,22 @@
 namespace nodo::config {
 
 /*
+ * NetworkClass classifies the intended operational scope of a network profile.
+ *
+ * Security principle:
+ * Code that is only safe on development networks must be guarded by network
+ * class rather than by a fragile string comparison. Readiness and key policy
+ * checks must also consult network class.
+ */
+enum class NetworkClass {
+    DEVELOPMENT_LOCAL,
+    STAGING_CANDIDATE,
+    LOCKED_PRODUCTION
+};
+
+std::string networkClassToString(NetworkClass nc);
+
+/*
  * NetworkParameters defines the immutable safety limits for one Nodo network.
  *
  * Security principle:
@@ -58,6 +74,9 @@ public:
     const std::string& storageFormatVersion() const;
 
     bool isValid() const;
+
+    // Derived from networkName. No storage overhead.
+    NetworkClass networkClass() const;
 
     std::string deterministicId() const;
     std::string serialize() const;

@@ -29,8 +29,9 @@ int main() {
     LoopbackTransport transportA(bus);
     LoopbackTransport transportB(bus);
 
-    GossipMeshConfig configA("node-a", "localnet", "chain-localnet", "1", 60, 2);
-    GossipMeshConfig configB("node-b", "localnet", "chain-localnet", "1", 60, 2);
+    const std::string genesisId = "test-genesis-v1";
+    GossipMeshConfig configA("node-a", "localnet", "chain-localnet", "1", genesisId, 60, 2);
+    GossipMeshConfig configB("node-b", "localnet", "chain-localnet", "1", genesisId, 60, 2);
 
     GossipMesh meshA(configA, transportA);
     GossipMesh meshB(configB, transportB);

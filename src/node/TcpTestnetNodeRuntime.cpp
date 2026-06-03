@@ -59,6 +59,7 @@ TcpTestnetNodeRuntimeConfig::TcpTestnetNodeRuntimeConfig()
       m_networkId(),
       m_chainId(),
       m_protocolVersion(),
+      m_genesisId(),
       m_dataDirectory(),
       m_defaultTtlSeconds(30),
       m_invalidMessageQuarantineThreshold(3) {}
@@ -70,6 +71,7 @@ TcpTestnetNodeRuntimeConfig::TcpTestnetNodeRuntimeConfig(
     std::string networkId,
     std::string chainId,
     std::string protocolVersion,
+    std::string genesisId,
     std::filesystem::path dataDirectory,
     std::uint32_t defaultTtlSeconds,
     std::size_t invalidMessageQuarantineThreshold
@@ -79,6 +81,7 @@ TcpTestnetNodeRuntimeConfig::TcpTestnetNodeRuntimeConfig(
     m_networkId(std::move(networkId)),
     m_chainId(std::move(chainId)),
     m_protocolVersion(std::move(protocolVersion)),
+    m_genesisId(std::move(genesisId)),
     m_dataDirectory(std::move(dataDirectory)),
     m_defaultTtlSeconds(defaultTtlSeconds),
     m_invalidMessageQuarantineThreshold(invalidMessageQuarantineThreshold) {}
@@ -89,6 +92,7 @@ std::uint16_t TcpTestnetNodeRuntimeConfig::port() const { return m_port; }
 const std::string& TcpTestnetNodeRuntimeConfig::networkId() const { return m_networkId; }
 const std::string& TcpTestnetNodeRuntimeConfig::chainId() const { return m_chainId; }
 const std::string& TcpTestnetNodeRuntimeConfig::protocolVersion() const { return m_protocolVersion; }
+const std::string& TcpTestnetNodeRuntimeConfig::genesisId() const { return m_genesisId; }
 const std::filesystem::path& TcpTestnetNodeRuntimeConfig::dataDirectory() const { return m_dataDirectory; }
 std::uint32_t TcpTestnetNodeRuntimeConfig::defaultTtlSeconds() const { return m_defaultTtlSeconds; }
 std::size_t TcpTestnetNodeRuntimeConfig::invalidMessageQuarantineThreshold() const { return m_invalidMessageQuarantineThreshold; }
@@ -103,6 +107,7 @@ bool TcpTestnetNodeRuntimeConfig::isValid() const {
            isSafeScalar(m_networkId) &&
            isSafeScalar(m_chainId) &&
            isSafeScalar(m_protocolVersion) &&
+           !m_genesisId.empty() &&
            !m_dataDirectory.empty() &&
            m_defaultTtlSeconds > 0 &&
            m_invalidMessageQuarantineThreshold > 0;
@@ -371,6 +376,7 @@ p2p::GossipMeshConfig TcpTestnetNodeRuntime::makeGossipConfig() const {
         m_config.networkId(),
         m_config.chainId(),
         m_config.protocolVersion(),
+        m_config.genesisId(),
         m_config.defaultTtlSeconds(),
         m_config.invalidMessageQuarantineThreshold()
     );

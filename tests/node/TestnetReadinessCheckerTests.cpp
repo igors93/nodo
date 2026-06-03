@@ -101,7 +101,9 @@ void testProtocolSafetyGatesPassOnLocalnet() {
         /*legacyPathsBlockedOnOfficial*/     true,
         /*treasuryReportConsistencyVerified*/true,
         /*evidenceCaptureHealthy*/           true,
-        /*chainAuditCompleted*/              false  // no blocks, so gate is skipped
+        /*chainAuditCompleted*/              false,
+        /*genesisRegistered*/                true,
+        /*networkClass*/                     "DEVELOPMENT_LOCAL"
     );
 
     const auto checks = nodo::node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -119,13 +121,15 @@ void testOfficialNetworkNotReadyWithoutChainAudit() {
     const nodo::node::TestnetReadinessCheckerConfig config(
         /*connectedPeers*/                   3,
         /*genesisVerified*/                  true,
-        /*finalizedHeight*/                  10,   // has finalized blocks
+        /*finalizedHeight*/                  10,
         /*governanceLifecycleVerifierWired*/ true,
         /*defenseModeInactive*/              true,
         /*legacyPathsBlockedOnOfficial*/     true,
         /*treasuryReportConsistencyVerified*/true,
         /*evidenceCaptureHealthy*/           true,
-        /*chainAuditCompleted*/              false  // audit not done
+        /*chainAuditCompleted*/              false,
+        /*genesisRegistered*/                true,
+        /*networkClass*/                     "STAGING_CANDIDATE"
     );
 
     const auto checks = nodo::node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -161,7 +165,9 @@ void testOfficialNetworkReadyWhenChainAuditCompleted() {
         /*legacyPathsBlockedOnOfficial*/     true,
         /*treasuryReportConsistencyVerified*/true,
         /*evidenceCaptureHealthy*/           true,
-        /*chainAuditCompleted*/              true   // audit done
+        /*chainAuditCompleted*/              true,
+        /*genesisRegistered*/                true,
+        /*networkClass*/                     "STAGING_CANDIDATE"
     );
 
     const auto checks = nodo::node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -184,13 +190,15 @@ void testChainAuditGateSkippedWithNoBlocks() {
     const nodo::node::TestnetReadinessCheckerConfig config(
         /*connectedPeers*/                   3,
         /*genesisVerified*/                  true,
-        /*finalizedHeight*/                  0,    // no finalized blocks
+        /*finalizedHeight*/                  0,
         /*governanceLifecycleVerifierWired*/ true,
         /*defenseModeInactive*/              true,
         /*legacyPathsBlockedOnOfficial*/     true,
         /*treasuryReportConsistencyVerified*/true,
         /*evidenceCaptureHealthy*/           true,
-        /*chainAuditCompleted*/              false  // not done, but no blocks
+        /*chainAuditCompleted*/              false,
+        /*genesisRegistered*/                true,
+        /*networkClass*/                     "STAGING_CANDIDATE"
     );
 
     const auto checks = nodo::node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -219,7 +227,9 @@ void testEvidenceCaptureUnhealthyBlocksReadiness() {
         /*legacyPathsBlockedOnOfficial*/     true,
         /*treasuryReportConsistencyVerified*/true,
         /*evidenceCaptureHealthy*/           false, // unhealthy
-        /*chainAuditCompleted*/              false
+        /*chainAuditCompleted*/              false,
+        /*genesisRegistered*/                true,
+        /*networkClass*/                     "DEVELOPMENT_LOCAL"
     );
 
     const auto checks = nodo::node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -235,7 +245,7 @@ void testProtocolSafetyGateNamesArePresent() {
     const auto key    = makeKey("localnet");
 
     const nodo::node::TestnetReadinessCheckerConfig config(
-        3, true, 0, true, true, true, true, true, false
+        3, true, 0, true, true, true, true, true, false, true, "DEVELOPMENT_LOCAL"
     );
 
     const auto checks = nodo::node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -243,6 +253,8 @@ void testProtocolSafetyGateNamesArePresent() {
     );
 
     const std::vector<std::string> expectedGates = {
+        "genesis_registered",
+        "network_class_appropriate",
         "governance_lifecycle_verifier_wired",
         "defense_mode_inactive",
         "legacy_paths_blocked_on_official_network",

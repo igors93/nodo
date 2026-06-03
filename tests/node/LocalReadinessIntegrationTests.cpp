@@ -238,7 +238,9 @@ void testLocalReadinessPassesWithFinalizedBlocks() {
         true,             // legacyPathsBlockedOnOfficialNetworks
         audit.passed(),   // treasuryReportConsistencyVerified
         true,             // evidenceCaptureHealthy
-        audit.passed()    // chainAuditCompleted
+        audit.passed(),   // chainAuditCompleted
+        true,             // genesisRegistered
+        "DEVELOPMENT_LOCAL"
     );
 
     const auto checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -296,7 +298,9 @@ void testLocalReadinessFailsOnArtifactCorruption() {
         true,
         false,  // treasuryReportConsistencyVerified — failed because reload failed
         true,
-        false   // chainAuditCompleted — failed
+        false,  // chainAuditCompleted — failed
+        true,   // genesisRegistered
+        "DEVELOPMENT_LOCAL"
     );
 
     const auto checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -323,7 +327,9 @@ void testEvidenceCaptureUnhealthyBlocksReadiness() {
         true,
         true,
         false, // evidenceCaptureHealthy = UNHEALTHY
-        false
+        false,
+        true,  // genesisRegistered
+        "DEVELOPMENT_LOCAL"
     );
 
     const auto checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -353,7 +359,8 @@ void testOfficialNetworkRequiresChainAuditWhileLocalDoesNot() {
         node::TestnetReadinessCheckerConfig localConfig(
             1, true, 10,
             true, true, true, true, true,
-            false  // chainAuditCompleted = false
+            false,  // chainAuditCompleted = false
+            true, "DEVELOPMENT_LOCAL"
         );
 
         const auto checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -376,7 +383,8 @@ void testOfficialNetworkRequiresChainAuditWhileLocalDoesNot() {
         node::TestnetReadinessCheckerConfig officialConfig(
             1, true, 10,
             true, true, true, true, true,
-            false  // chainAuditCompleted = false
+            false,  // chainAuditCompleted = false
+            true, "STAGING_CANDIDATE"
         );
 
         const auto checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -408,7 +416,8 @@ void testTreasuryMismatchBlocksReadiness() {
         true, true, true,
         false,  // treasuryReportConsistencyVerified = false
         true,
-        false
+        false,
+        true, "DEVELOPMENT_LOCAL"
     );
 
     const auto checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
@@ -508,7 +517,8 @@ void testReadinessDiagnosticsHaveNonEmptyNames() {
     const auto key = makeValidatorKeyMetadata("localnet");
 
     node::TestnetReadinessCheckerConfig config(
-        1, true, 0, true, true, true, true, true, false
+        1, true, 0, true, true, true, true, true, false,
+        true, "DEVELOPMENT_LOCAL"
     );
 
     const auto checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(

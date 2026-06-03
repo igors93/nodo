@@ -62,7 +62,11 @@ void testP0GatesAllPassOnLocalnet() {
         true,   // governanceLifecycleVerifierWired
         true,   // defenseModeInactive
         true,   // legacyPathsBlockedOnOfficialNetworks
-        true    // treasuryReportConsistencyVerified
+        true,   // treasuryReportConsistencyVerified
+        true,   // evidenceCaptureHealthy
+        false,  // chainAuditCompleted
+        true,   // genesisRegistered
+        "DEVELOPMENT_LOCAL"  // networkClass
     );
     const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         localnetParams(), makeKey(), config
@@ -76,7 +80,8 @@ void testGovernanceLifecycleVerifierNotWiredFails() {
     const TestnetReadinessCheckerConfig config(
         1, true, 0,
         false,  // governanceLifecycleVerifierWired = false
-        true, true, true
+        true, true, true, true, false,
+        true, "DEVELOPMENT_LOCAL"
     );
     const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         localnetParams(), makeKey(), config
@@ -98,7 +103,8 @@ void testDefenseModeActiveFailsOnOfficialNetwork() {
         1, true, 0,
         true,
         false,  // defenseModeInactive = false (defense is ACTIVE)
-        true, true
+        true, true, true, false,
+        true, "STAGING_CANDIDATE"
     );
     const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         testnetCandidateParams(), makeKey("testnet-candidate"), config
@@ -119,7 +125,8 @@ void testDefenseModeActiveOkOnLocalnet() {
     const TestnetReadinessCheckerConfig config(
         1, true, 0, true,
         false,  // defense mode active
-        true, true
+        true, true, true, false,
+        true, "DEVELOPMENT_LOCAL"
     );
     const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         localnetParams(), makeKey(), config
@@ -138,7 +145,9 @@ void testTreasuryReportNotVerifiedFailsWhenBlocksExist() {
     const TestnetReadinessCheckerConfig config(
         1, true, 5,  // finalizedHeight=5 means blocks exist
         true, true, true,
-        false   // treasuryReportConsistencyVerified = false
+        false,  // treasuryReportConsistencyVerified = false
+        true, false,
+        true, "DEVELOPMENT_LOCAL"
     );
     const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         localnetParams(), makeKey(), config
@@ -151,7 +160,9 @@ void testTreasuryReportNotVerifiedOkAtGenesis() {
     const TestnetReadinessCheckerConfig config(
         1, true, 0,  // finalizedHeight=0
         true, true, true,
-        false   // treasuryReportConsistencyVerified = false
+        false,  // treasuryReportConsistencyVerified = false
+        true, false,
+        true, "DEVELOPMENT_LOCAL"
     );
     const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         localnetParams(), makeKey(), config
@@ -166,6 +177,27 @@ void testTreasuryReportNotVerifiedOkAtGenesis() {
     assert(found);
 }
 
+void testGenesisNotRegisteredFails() {
+    const TestnetReadinessCheckerConfig config(
+        1, true, 0, true, true, true, true, true, false,
+        false,  // genesisRegistered = false
+        "STAGING_CANDIDATE"
+    );
+    const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
+        testnetCandidateParams(), makeKey("testnet-candidate"), config
+    );
+    const auto status = TestnetReadinessChecker::summarize(checks);
+    assert(status == ReadinessStatus::NOT_READY);
+
+    bool foundCheck = false;
+    for (const auto& c : checks) {
+        if (c.checkName() == "genesis_registered" && !c.passed()) {
+            foundCheck = true;
+        }
+    }
+    assert(foundCheck);
+}
+
 } // namespace
 
 int main() {
@@ -176,5 +208,6 @@ int main() {
     testDefenseModeActiveOkOnLocalnet();
     testTreasuryReportNotVerifiedFailsWhenBlocksExist();
     testTreasuryReportNotVerifiedOkAtGenesis();
+    testGenesisNotRegisteredFails();
     return 0;
 }

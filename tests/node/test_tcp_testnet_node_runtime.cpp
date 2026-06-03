@@ -12,6 +12,8 @@ int main() {
 
     std::filesystem::remove_all(root);
 
+    const std::string genesisId = "nodo-localnet-genesis-v1";
+
     node::TcpTestnetNodeRuntime nodeA(
         node::TcpTestnetNodeRuntimeConfig(
             "node-a",
@@ -20,6 +22,7 @@ int main() {
             "nodo-localnet",
             "localnet-chain",
             "1.0.0",
+            genesisId,
             root / "node-a",
             30,
             3
@@ -34,6 +37,7 @@ int main() {
             "nodo-localnet",
             "localnet-chain",
             "1.0.0",
+            genesisId,
             root / "node-b",
             30,
             3

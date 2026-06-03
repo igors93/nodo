@@ -2,19 +2,17 @@
 
 #include "app/DemoScenario.hpp"
 #include "app/ProtocolCommandPolicy.hpp"
+#include "config/GenesisRegistry.hpp"
 #include "config/NetworkProfileRegistry.hpp"
-#include "core/GenesisVerifier.hpp"
+#include "node/RuntimeStartupService.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
-#include "crypto/AddressDerivation.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/Ed25519SignatureProvider.hpp"
-#include "crypto/KeyPair.hpp"
 #include "crypto/KeyStore.hpp"
-#include "crypto/PrivateKey.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signer.hpp"
@@ -40,7 +38,6 @@
 #include "node/RuntimeStateLoader.hpp"
 #include "node/TestnetReadinessChecker.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
-#include "storage/StorageSchemaVersion.hpp"
 #include "utils/Amount.hpp"
 
 #include <chrono>
@@ -60,34 +57,12 @@ std::int64_t nowUnixSeconds() {
     ).count();
 }
 
-crypto::PublicKey developmentValidatorKey(
-    const std::string& seed
-) {
-    return crypto::KeyPair::createDeterministicBls12381KeyPair(seed).publicKey();
-}
-
-crypto::PublicKey developmentUserKey(
-    const std::string& seed
-) {
-    return crypto::KeyPair::createDeterministicEd25519KeyPair(seed).publicKey();
-}
-
 std::string defaultLocalnetUserKeyId() {
     return "local-user";
 }
 
 std::string defaultLocalnetUserKeySeed() {
     return "nodo-localnet-user-key-v1";
-}
-
-std::string defaultTestnetCandidateUserKeySeed() {
-    return "nodo-testnet-candidate-user-key-v1";
-}
-
-std::string testnetCandidateValidatorKeySeed(
-    std::size_t index
-) {
-    return "nodo-testnet-candidate-validator-key-v1-" + std::to_string(index);
 }
 
 bool isOption(
@@ -108,130 +83,10 @@ bool isCommandGroup(
            value == "testnet";
 }
 
-bool isTestnetCandidateNetwork(
-    const std::string& networkName
-) {
-    return networkName == "testnet-candidate" ||
-           networkName == "nodo-testnet-candidate";
-}
-
 config::NetworkParameters networkParametersForOptions(
     const CommandLineOptions& options
 ) {
     return config::NetworkProfileRegistry::get(options.networkName);
-}
-
-std::optional<std::string> networkProfileRejection(
-    const config::NetworkParameters& params
-) {
-    if (!params.isValid()) {
-        return "Network profile parameters are invalid.";
-    }
-
-    if (config::NetworkProfileRegistry::isMainnetLocked(params.networkName())) {
-        return "Network profile '" + params.networkName() +
-               "' is blocked: mainnet is not ready for runtime startup.";
-    }
-
-    if (params.chainId().empty() ||
-        params.networkName().empty() ||
-        params.protocolVersion().empty()) {
-        return "Network profile identity fields are incomplete.";
-    }
-
-    if (params.quorumThresholdNumerator() == 0 ||
-        params.quorumThresholdDenominator() == 0 ||
-        params.quorumThresholdNumerator() > params.quorumThresholdDenominator()) {
-        return "Network profile quorum parameters are invalid.";
-    }
-
-    if (params.finalityDepth() == 0) {
-        return "Network profile finality depth is invalid.";
-    }
-
-    if (config::NetworkProfileRegistry::isOfficialNetwork(params.networkName()) &&
-        params.minimumFeeRawUnits() == 0) {
-        return "Official network profile must define a non-zero minimum fee.";
-    }
-
-    if (params.storageFormatVersion() != "NODO_STORAGE_V2" ||
-        !storage::StorageSchemaVersion::currentNodeDataDirectorySchema()
-            .isSupportedNodeDataDirectoryVersion()) {
-        return "Network profile storage schema is unsupported by this runtime.";
-    }
-
-    return std::nullopt;
-}
-
-config::GenesisConfig genesisConfigForNetwork(
-    const std::string& networkName
-) {
-    const config::NetworkParameters params =
-        config::NetworkProfileRegistry::get(networkName);
-
-    if (params.networkName() == config::NetworkParameters::developmentLocal().networkName()) {
-        return config::GenesisConfig(
-            params,
-            1900000000,
-            {
-                config::BootstrapValidatorConfig(
-                    developmentValidatorKey(CommandLineInterface::defaultLocalnetKeySeed()),
-                    1,
-                    1,
-                    "cli-localnet-validator"
-                )
-            },
-            {
-                config::GenesisAccountConfig(
-                    crypto::AddressDerivation::deriveFromPublicKey(
-                        developmentUserKey(defaultLocalnetUserKeySeed())
-                    ).value(),
-                    utils::Amount::fromRawUnits(1000000000000),
-                    0
-                )
-            },
-            "nodo-cli-localnet-genesis"
-        );
-    }
-
-    if (isTestnetCandidateNetwork(networkName)) {
-        std::vector<config::BootstrapValidatorConfig> validators;
-        validators.reserve(params.minimumValidatorCount());
-
-        for (std::size_t index = 0;
-             index < params.minimumValidatorCount();
-             ++index) {
-            validators.emplace_back(
-                developmentValidatorKey(testnetCandidateValidatorKeySeed(index)),
-                1,
-                1,
-                "cli-testnet-candidate-validator-" + std::to_string(index)
-            );
-        }
-
-        return config::GenesisConfig(
-            params,
-            1900000000,
-            validators,
-            {
-                config::GenesisAccountConfig(
-                    crypto::AddressDerivation::deriveFromPublicKey(
-                        developmentUserKey(defaultTestnetCandidateUserKeySeed())
-                    ).value(),
-                    utils::Amount::fromRawUnits(1000000000000),
-                    0
-                )
-            },
-            "nodo-cli-testnet-candidate-genesis"
-        );
-    }
-
-    return config::GenesisConfig(
-        params,
-        1900000000,
-        {},
-        "nodo-cli-mainnet-placeholder-genesis"
-    );
 }
 
 CommandLineResult validateSelectedNetwork(
@@ -247,33 +102,13 @@ CommandLineResult validateSelectedNetwork(
     const config::NetworkParameters params =
         networkParametersForOptions(options);
 
-    const std::optional<std::string> rejected =
-        networkProfileRejection(params);
+    const node::StartupValidationResult profileCheck =
+        node::RuntimeStartupService::validateNetworkProfile(params);
 
-    if (rejected.has_value()) {
+    if (!profileCheck.valid()) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
-            *rejected + "\n"
-        );
-    }
-
-    return CommandLineResult::success("");
-}
-
-CommandLineResult validateGenesisForStartup(
-    const config::GenesisConfig& genesisConfig
-) {
-    const core::GenesisVerificationResult verified =
-        core::GenesisVerifier::verify(genesisConfig);
-
-    if (!verified.isValid()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Genesis verification failed: " +
-                core::genesisVerificationStatusToString(verified.status()) +
-                ": " +
-                verified.reason() +
-                "\n"
+            profileCheck.reason() + "\n"
         );
     }
 
@@ -287,18 +122,13 @@ std::optional<std::string> manifestNetworkMismatch(
     const config::NetworkParameters selected =
         networkParametersForOptions(options);
 
-    if (manifest.networkName() != selected.networkName() ||
-        manifest.chainId() != selected.chainId() ||
-        manifest.protocolVersion() != selected.protocolVersion()) {
-        return "Data directory belongs to network '" +
-               manifest.networkName() +
-               "' with chain id '" +
-               manifest.chainId() +
-               "', but command selected network '" +
-               selected.networkName() +
-               "' with chain id '" +
-               selected.chainId() +
-               "'.";
+    const node::StartupValidationResult compatCheck =
+        node::RuntimeStartupService::validateDataDirectoryCompatibility(
+            manifest, selected
+        );
+
+    if (!compatCheck.valid()) {
+        return compatCheck.reason();
     }
 
     return std::nullopt;
@@ -712,7 +542,9 @@ std::string CommandLineInterface::helpText() {
 }
 
 config::GenesisConfig CommandLineInterface::developmentGenesisConfig() {
-    return genesisConfigForNetwork("localnet");
+    const config::GenesisLookupResult result =
+        config::GenesisRegistry::get("localnet");
+    return result.found() ? result.genesis() : config::GenesisConfig();
 }
 
 std::string CommandLineInterface::defaultLocalnetKeyId() {
@@ -741,15 +573,17 @@ p2p::PeerInfo CommandLineInterface::localPeerFromOptions(
 CommandLineResult CommandLineInterface::executeInit(
     const CommandLineOptions& options
 ) {
-    const config::GenesisConfig genesisConfig =
-        genesisConfigForNetwork(options.networkName);
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    const CommandLineResult genesisValidation =
-        validateGenesisForStartup(genesisConfig);
-
-    if (!genesisValidation.success()) {
-        return genesisValidation;
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
     }
+
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
     const node::NodeDataDirectoryInitResult result =
         node::NodeDataDirectory::initialize(
@@ -870,15 +704,17 @@ CommandLineResult CommandLineInterface::executeInspect(
 CommandLineResult CommandLineInterface::executeReload(
     const CommandLineOptions& options
 ) {
-    const config::GenesisConfig genesisConfig =
-        genesisConfigForNetwork(options.networkName);
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    const CommandLineResult genesisValidation =
-        validateGenesisForStartup(genesisConfig);
-
-    if (!genesisValidation.success()) {
-        return genesisValidation;
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
     }
+
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
     const node::RuntimeStateLoadResult load =
         node::RuntimeStateLoader::loadFromDataDirectory(
@@ -916,15 +752,17 @@ CommandLineResult CommandLineInterface::executeChainAudit(
         options.dataDirectory
     );
 
-    const config::GenesisConfig genesisConfig =
-        genesisConfigForNetwork(options.networkName);
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    const CommandLineResult genesisValidation =
-        validateGenesisForStartup(genesisConfig);
-
-    if (!genesisValidation.success()) {
-        return genesisValidation;
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
     }
+
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
     const node::RuntimeStateLoadResult load =
         node::RuntimeStateLoader::loadFromDataDirectory(
@@ -963,14 +801,20 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
         options.dataDirectory
     );
 
-    const config::GenesisConfig genesisConfig =
-        genesisConfigForNetwork(options.networkName);
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
     const config::NetworkParameters params =
         genesisConfig.networkParameters();
-
-    const CommandLineResult genesisValidation =
-        validateGenesisForStartup(genesisConfig);
 
     const node::NodeDataDirectoryReadResult manifest =
         node::NodeDataDirectory::loadManifest(directoryConfig);
@@ -1026,12 +870,7 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
         );
     }
 
-    const bool genesisVerified =
-        genesisValidation.success();
-
-    if (!genesisVerified) {
-        warnings.push_back(genesisValidation.message());
-    }
+    const bool genesisVerified = true; // resolveAndVerify() already verified
 
     const std::size_t connectedPeers =
         manifest.loaded() ? manifest.manifest().peerCount() : 0;
@@ -1078,7 +917,12 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
     );
     ctxBuilder
         .withManifest(manifest)
-        .withGenesisVerified(genesisVerified)
+        .withGenesisFacts(
+            genesisVerified,
+            config::GenesisRegistry::hasRegisteredGenesis(options.networkName),
+            genesisConfig.deterministicId(),
+            config::networkClassToString(params.networkClass())
+        )
         .withChainAuditResult(chainAuditPassed, treasuryReportVerified)
         .withSafetyState()
         .withKeyPolicyResult(keyPolicyPassed);
@@ -1115,7 +959,9 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
             readinessCtx.legacyCommandsBlocked,
             readinessCtx.treasuryReportVerified,
             readinessCtx.evidenceCaptureHealthy,
-            readinessCtx.chainAuditPassed
+            readinessCtx.chainAuditPassed,
+            readinessCtx.genesisRegistered,
+            readinessCtx.networkClass
         );
         checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
             params,
@@ -1188,14 +1034,20 @@ CommandLineResult CommandLineInterface::executeDiagnostics(
         options.dataDirectory
     );
 
-    const config::GenesisConfig genesisConfig =
-        genesisConfigForNetwork(options.networkName);
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
     const config::NetworkParameters params =
         genesisConfig.networkParameters();
-
-    const CommandLineResult genesisValidation =
-        validateGenesisForStartup(genesisConfig);
 
     const node::NodeDataDirectoryReadResult manifest =
         node::NodeDataDirectory::loadManifest(directoryConfig);
@@ -1250,13 +1102,6 @@ CommandLineResult CommandLineInterface::executeDiagnostics(
         );
     }
 
-    const bool genesisVerified =
-        genesisValidation.success();
-
-    if (!genesisVerified) {
-        warnings.push_back(genesisValidation.message());
-    }
-
     if (!manifest.loaded()) {
         warnings.push_back("Node data directory is not initialized: " + manifest.reason());
     }
@@ -1264,11 +1109,13 @@ CommandLineResult CommandLineInterface::executeDiagnostics(
     const node::OperatorDiagnosticsReport report =
         node::OperatorDiagnostics::collect(
             params,
+            genesisConfig.deterministicId(),
+            config::networkClassToString(params.networkClass()),
             manifest.loaded() ? manifest.manifest().latestBlockHeight() : 0,
             manifest.loaded() ? manifest.manifest().validatorCount()
                               : genesisConfig.bootstrapValidators().size(),
             manifest.loaded() ? manifest.manifest().peerCount() : 0,
-            genesisVerified,
+            true, // resolveAndVerify() already verified genesis
             keyPolicyPassed,
             warnings
         );
@@ -1470,15 +1317,17 @@ CommandLineResult CommandLineInterface::executeKeysList(
 CommandLineResult CommandLineInterface::executeValidatorList(
     const CommandLineOptions& options
 ) {
-    const config::GenesisConfig genesisConfig =
-        genesisConfigForNetwork(options.networkName);
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    const CommandLineResult genesisValidation =
-        validateGenesisForStartup(genesisConfig);
-
-    if (!genesisValidation.success()) {
-        return genesisValidation;
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
     }
+
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
     const node::RuntimeStateLoadResult load =
         node::RuntimeStateLoader::loadFromDataDirectory(
@@ -1519,15 +1368,17 @@ CommandLineResult CommandLineInterface::executeSubmitTransaction(
         options.dataDirectory
     );
 
-    const config::GenesisConfig genesisConfig =
-        genesisConfigForNetwork(options.networkName);
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    const CommandLineResult genesisValidation =
-        validateGenesisForStartup(genesisConfig);
-
-    if (!genesisValidation.success()) {
-        return genesisValidation;
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
     }
+
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
     const node::NodeDataDirectoryReadResult manifest =
         node::NodeDataDirectory::loadManifest(directoryConfig);
@@ -1715,15 +1566,17 @@ CommandLineResult CommandLineInterface::executeProduceBlock(
         options.dataDirectory
     );
 
-    const config::GenesisConfig genesisConfig =
-        genesisConfigForNetwork(options.networkName);
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    const CommandLineResult genesisValidation =
-        validateGenesisForStartup(genesisConfig);
-
-    if (!genesisValidation.success()) {
-        return genesisValidation;
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
     }
+
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
     const node::RuntimeStateLoadResult load =
         node::RuntimeStateLoader::loadFromDataDirectory(

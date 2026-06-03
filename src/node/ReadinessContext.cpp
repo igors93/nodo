@@ -57,6 +57,19 @@ ReadinessContextBuilder& ReadinessContextBuilder::withManifest(
     return *this;
 }
 
+ReadinessContextBuilder& ReadinessContextBuilder::withGenesisFacts(
+    bool verified,
+    bool registered,
+    const std::string& genesisId,
+    const std::string& networkClass
+) {
+    m_context.genesisVerified = verified;
+    m_context.genesisRegistered = registered;
+    m_context.genesisId = genesisId;
+    m_context.networkClass = networkClass;
+    return *this;
+}
+
 ReadinessContextBuilder& ReadinessContextBuilder::withGenesisVerified(
     bool verified
 ) {
