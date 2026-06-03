@@ -4,17 +4,6 @@
 
 namespace nodo::app {
 
-namespace {
-
-bool isLegacyOrDemoCommand(const std::string& command) {
-    return command == "demo" ||
-           command == "produce-demo-block" ||
-           command == "submit-demo-transaction" ||
-           command == "reload";
-}
-
-} // namespace
-
 bool ProtocolCommandPolicy::isCommandAllowed(
     const std::string& command,
     const std::string& networkName
@@ -30,10 +19,10 @@ std::string ProtocolCommandPolicy::blockingReason(
         return "";
     }
 
-    if (isLegacyOrDemoCommand(command)) {
-        return "Command '" + command + "' is not permitted on official network '" +
-               networkName + "'. Legacy and demo commands are blocked on official networks. "
-               "Use the canonical protocol commands.";
+    if (command == "demo") {
+        return "Command 'demo' is not permitted on official network '" +
+               networkName + "'. The demo command is localnet-only and does not produce "
+               "protocol-valid state. Use the canonical protocol commands.";
     }
 
     return "";
@@ -42,8 +31,6 @@ std::string ProtocolCommandPolicy::blockingReason(
 bool ProtocolCommandPolicy::legacyCommandBlockingEnforced(
     const std::string& networkName
 ) {
-    // Official networks always enforce blocking via this policy.
-    // Non-official networks (localnet) redirect legacy commands to canonical handlers.
     return config::NetworkProfileRegistry::isOfficialNetwork(networkName);
 }
 

@@ -7,46 +7,48 @@ namespace {
 
 using nodo::app::ProtocolCommandPolicy;
 
-// Test 7 (item 3): Official network rejects unsafe legacy commands.
-void testOfficialNetworkRejectsLegacyCommands() {
-    assert(!ProtocolCommandPolicy::isCommandAllowed("produce-demo-block", "testnet-candidate"));
-    assert(!ProtocolCommandPolicy::isCommandAllowed("submit-demo-transaction", "testnet-candidate"));
+// Official network rejects the demo command.
+void testOfficialNetworkRejectsDemoCommand() {
     assert(!ProtocolCommandPolicy::isCommandAllowed("demo", "testnet-candidate"));
-    assert(!ProtocolCommandPolicy::isCommandAllowed("reload", "testnet-candidate"));
+    assert(!ProtocolCommandPolicy::isCommandAllowed("demo", "mainnet"));
 }
 
-// Test 8 (item 3): Local development network allows canonical handlers.
-void testLocalnetAllowsCanonicalCommands() {
+// Official network allows canonical commands.
+void testOfficialNetworkAllowsCanonicalCommands() {
+    assert(ProtocolCommandPolicy::isCommandAllowed("block produce", "testnet-candidate"));
+    assert(ProtocolCommandPolicy::isCommandAllowed("tx submit", "testnet-candidate"));
+    assert(ProtocolCommandPolicy::isCommandAllowed("chain audit", "testnet-candidate"));
+    assert(ProtocolCommandPolicy::isCommandAllowed("node reload", "testnet-candidate"));
+}
+
+// Local development network allows all commands including demo.
+void testLocalnetAllowsAllCommands() {
+    assert(ProtocolCommandPolicy::isCommandAllowed("demo", "localnet"));
     assert(ProtocolCommandPolicy::isCommandAllowed("block produce", "localnet"));
     assert(ProtocolCommandPolicy::isCommandAllowed("tx submit", "localnet"));
     assert(ProtocolCommandPolicy::isCommandAllowed("chain audit", "localnet"));
     assert(ProtocolCommandPolicy::isCommandAllowed("testnet readiness", "localnet"));
+    assert(ProtocolCommandPolicy::isCommandAllowed("node reload", "localnet"));
 }
 
-// Test 8: Local development aliases call canonical handlers on localnet (not blocked).
-void testLocalnetAllowsLegacyAliasesAsRedirects() {
-    // On localnet, legacy aliases are allowed (they redirect to canonical paths).
-    assert(ProtocolCommandPolicy::isCommandAllowed("produce-demo-block", "localnet"));
-    assert(ProtocolCommandPolicy::isCommandAllowed("submit-demo-transaction", "localnet"));
-}
-
-// Blocking reason is non-empty for blocked commands.
-void testBlockingReasonNonEmptyWhenBlocked() {
+// Blocking reason is non-empty for blocked demo command.
+void testBlockingReasonNonEmptyForDemo() {
     const std::string reason =
-        ProtocolCommandPolicy::blockingReason("produce-demo-block", "testnet-candidate");
+        ProtocolCommandPolicy::blockingReason("demo", "testnet-candidate");
     assert(!reason.empty());
-    assert(reason.find("produce-demo-block") != std::string::npos);
+    assert(reason.find("demo") != std::string::npos);
     assert(reason.find("testnet-candidate") != std::string::npos);
 }
 
-// Blocking reason is empty when not blocked.
+// Blocking reason is empty when command is allowed.
 void testBlockingReasonEmptyWhenAllowed() {
     assert(ProtocolCommandPolicy::blockingReason("chain audit", "testnet-candidate").empty());
-    assert(ProtocolCommandPolicy::blockingReason("produce-demo-block", "localnet").empty());
+    assert(ProtocolCommandPolicy::blockingReason("demo", "localnet").empty());
+    assert(ProtocolCommandPolicy::blockingReason("block produce", "testnet-candidate").empty());
 }
 
-// legacyCommandBlockingEnforced for official vs non-official.
-void testLegacyBlockingEnforcedForOfficialNetworks() {
+// legacyCommandBlockingEnforced reflects official vs non-official network.
+void testBlockingEnforcedForOfficialNetworks() {
     assert(ProtocolCommandPolicy::legacyCommandBlockingEnforced("testnet-candidate"));
     assert(!ProtocolCommandPolicy::legacyCommandBlockingEnforced("localnet"));
 }
@@ -54,11 +56,11 @@ void testLegacyBlockingEnforcedForOfficialNetworks() {
 } // namespace
 
 int main() {
-    testOfficialNetworkRejectsLegacyCommands();
-    testLocalnetAllowsCanonicalCommands();
-    testLocalnetAllowsLegacyAliasesAsRedirects();
-    testBlockingReasonNonEmptyWhenBlocked();
+    testOfficialNetworkRejectsDemoCommand();
+    testOfficialNetworkAllowsCanonicalCommands();
+    testLocalnetAllowsAllCommands();
+    testBlockingReasonNonEmptyForDemo();
     testBlockingReasonEmptyWhenAllowed();
-    testLegacyBlockingEnforcedForOfficialNetworks();
+    testBlockingEnforcedForOfficialNetworks();
     return 0;
 }

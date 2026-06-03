@@ -14,7 +14,7 @@ Commit trail context:
   - "Add Python diagnostics for CLI safety and storage corruption"
 
 Categories:
-  1. CLI safety regressions: demo commands must remain blocked on official networks
+  1. CLI safety regressions: demo command must remain blocked on official networks
   2. Monetary audit continuity: reload must not silently drop monetary fields
   3. Runtime state integrity: reload + status must agree
   4. Storage corruption detection: manifest validation must remain strict
@@ -46,31 +46,22 @@ class CliSafetyRegressions(NodoBaseTest):
     If any of these break, the official network safety gate has been weakened.
     """
 
-    BLOCKED_COMMANDS = [
-        "demo",
-        "reload",
-        "submit-demo-transaction",
-        "produce-demo-block",
-    ]
-
-    def test_demo_commands_still_blocked_on_testnet_candidate(self) -> None:
-        for command in self.BLOCKED_COMMANDS:
-            with self.subTest(command=command):
-                with tempfile.TemporaryDirectory(prefix="nodo_reg_demo_tc_") as tmp:
-                    result = run_nodo(
-                        [
-                            command,
-                            "--network", "testnet-candidate",
-                            "--data-dir", str(Path(tmp) / "node-data"),
-                        ],
-                        repo_root=self.repo_root,
-                        timeout_seconds=30,
-                    )
-                    self.assertFailedWithText(
-                        result,
-                        "not permitted on official network",
-                        msg=f"Regression: command '{command}' is no longer blocked on testnet-candidate",
-                    )
+    def test_demo_command_still_blocked_on_testnet_candidate(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="nodo_reg_demo_tc_") as tmp:
+            result = run_nodo(
+                [
+                    "demo",
+                    "--network", "testnet-candidate",
+                    "--data-dir", str(Path(tmp) / "node-data"),
+                ],
+                repo_root=self.repo_root,
+                timeout_seconds=30,
+            )
+            self.assertFailedWithText(
+                result,
+                "not permitted on official network",
+                msg="Regression: demo command is no longer blocked on testnet-candidate",
+            )
 
     def test_testnet_readiness_still_requires_key_id(self) -> None:
         """Guard: readiness gate must not have been silently removed."""

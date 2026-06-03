@@ -460,8 +460,7 @@ CommandLineResult CommandLineInterface::execute(
             return executeInspect(options);
         }
 
-        if (options.command == "reload" ||
-            options.command == "node reload") {
+        if (options.command == "node reload") {
             return executeReload(options);
         }
 
@@ -477,14 +476,12 @@ CommandLineResult CommandLineInterface::execute(
             return executeDiagnostics(options);
         }
 
-        if (options.command == "produce-demo-block" ||
-            options.command == "block produce") {
-            return executeProduceDemoBlock(options);
+        if (options.command == "block produce") {
+            return executeProduceBlock(options);
         }
 
-        if (options.command == "submit-demo-transaction" ||
-            options.command == "tx submit") {
-            return executeSubmitDemoTransaction(options);
+        if (options.command == "tx submit") {
+            return executeSubmitTransaction(options);
         }
 
         if (options.command == "keys create") {
@@ -698,9 +695,6 @@ std::string CommandLineInterface::helpText() {
         "\n"
         "Localnet-only commands (not valid on official networks):\n"
         "  nodo demo              Educational blockchain foundation demo. Does not produce protocol-valid state.\n"
-        "  nodo reload ...        Deprecated alias for 'nodo node reload'.\n"
-        "  nodo submit-demo-transaction ...  Deprecated alias for 'nodo tx submit'.\n"
-        "  nodo produce-demo-block ...       Deprecated alias for 'nodo block produce'.\n"
         "\n"
         "Options:\n"
         "  --data-dir PATH      Node data directory. Default: .nodo\n"
@@ -903,10 +897,6 @@ CommandLineResult CommandLineInterface::executeReload(
     }
 
     std::ostringstream output;
-
-    if (options.command == "reload") {
-        output << "Deprecated command: use nodo node reload.\n";
-    }
 
     output << "Nodo runtime reloaded.\n"
            << "Data directory: " << options.dataDirectory.string() << "\n"
@@ -1522,7 +1512,7 @@ CommandLineResult CommandLineInterface::executeValidatorList(
     return CommandLineResult::success(output.str());
 }
 
-CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
+CommandLineResult CommandLineInterface::executeSubmitTransaction(
     const CommandLineOptions& options
 ) {
     const node::NodeDataDirectoryConfig directoryConfig(
@@ -1707,10 +1697,6 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
 
     std::ostringstream output;
 
-    if (options.command == "submit-demo-transaction") {
-        output << "Deprecated command: use nodo tx submit.\n";
-    }
-
     output << "Nodo transaction submitted.\n"
            << "Key id: " << key.keyId() << "\n"
            << "From: " << transaction.fromAddress() << "\n"
@@ -1722,7 +1708,7 @@ CommandLineResult CommandLineInterface::executeSubmitDemoTransaction(
     return CommandLineResult::success(output.str());
 }
 
-CommandLineResult CommandLineInterface::executeProduceDemoBlock(
+CommandLineResult CommandLineInterface::executeProduceBlock(
     const CommandLineOptions& options
 ) {
     const node::NodeDataDirectoryConfig directoryConfig(
@@ -1932,10 +1918,6 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
         );
 
     std::ostringstream output;
-
-    if (options.command == "produce-demo-block") {
-        output << "Deprecated command: use nodo block produce.\n";
-    }
 
     output << "Nodo block finalized and persisted.\n"
            << "Block height: " << pipeline.block().index() << "\n"

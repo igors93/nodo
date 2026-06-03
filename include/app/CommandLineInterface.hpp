@@ -128,11 +128,11 @@ private:
         const CommandLineOptions& options
     );
 
-    static CommandLineResult executeProduceDemoBlock(
+    static CommandLineResult executeProduceBlock(
         const CommandLineOptions& options
     );
 
-    static CommandLineResult executeSubmitDemoTransaction(
+    static CommandLineResult executeSubmitTransaction(
         const CommandLineOptions& options
     );
 };

@@ -202,37 +202,28 @@ class NetworkDemoCommandIsolationScenarios(NodoBaseTest):
                     self.assertFailedWithText(result, "not permitted on official network")
                     self.assertNotTimedOut(result)
 
-    def test_produce_demo_block_blocked_on_official_networks(self) -> None:
+    def test_block_produce_allowed_on_official_networks_at_policy_level(self) -> None:
+        """block produce is a canonical command and must not be blocked by policy."""
         for network in official_networks():
             with self.subTest(network=network):
-                with tempfile.TemporaryDirectory(prefix="nodo_ni_prodemo_") as tmp:
+                with tempfile.TemporaryDirectory(prefix="nodo_ni_blockprod_") as tmp:
                     result = run_nodo(
                         [
-                            "produce-demo-block",
+                            "block",
+                            "produce",
                             "--network", network,
                             "--data-dir", str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
                     )
-                    self.assertFailedWithText(result, "not permitted on official network")
-                    self.assertNotTimedOut(result)
-
-    def test_submit_demo_transaction_blocked_on_official_networks(self) -> None:
-        for network in official_networks():
-            with self.subTest(network=network):
-                with tempfile.TemporaryDirectory(prefix="nodo_ni_subdemo_") as tmp:
-                    result = run_nodo(
-                        [
-                            "submit-demo-transaction",
-                            "--network", network,
-                            "--data-dir", str(Path(tmp) / "node-data"),
-                        ],
-                        repo_root=self.repo_root,
-                        timeout_seconds=30,
-                    )
-                    self.assertFailedWithText(result, "not permitted on official network")
-                    self.assertNotTimedOut(result)
+                    # Policy does not block canonical commands; any failure is an
+                    # I/O or state error, not a policy rejection.
+                    if not result.succeeded:
+                        self.assertFalse(
+                            "not permitted on official network" in (result.stderr or ""),
+                            "Canonical 'block produce' must not be blocked by policy."
+                        )
 
 
 if __name__ == "__main__":

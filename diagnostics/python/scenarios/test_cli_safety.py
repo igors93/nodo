@@ -44,39 +44,6 @@ class CliSafetyScenarios(unittest.TestCase):
 
         assert_failed_with_text(result, "not permitted on official network")
 
-    def test_reload_legacy_alias_is_blocked_on_testnet_candidate(self) -> None:
-        result = self.run_with_temp_data_dir(
-            [
-                "reload",
-                "--network",
-                "testnet-candidate",
-            ]
-        )
-
-        assert_failed_with_text(result, "not permitted on official network")
-
-    def test_submit_demo_transaction_is_blocked_on_testnet_candidate(self) -> None:
-        result = self.run_with_temp_data_dir(
-            [
-                "submit-demo-transaction",
-                "--network",
-                "testnet-candidate",
-            ]
-        )
-
-        assert_failed_with_text(result, "not permitted on official network")
-
-    def test_produce_demo_block_is_blocked_on_testnet_candidate(self) -> None:
-        result = self.run_with_temp_data_dir(
-            [
-                "produce-demo-block",
-                "--network",
-                "testnet-candidate",
-            ]
-        )
-
-        assert_failed_with_text(result, "not permitted on official network")
-
     def test_testnet_readiness_requires_key_id(self) -> None:
         result = self.run_with_temp_data_dir(
             [

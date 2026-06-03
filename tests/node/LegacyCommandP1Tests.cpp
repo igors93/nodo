@@ -1,4 +1,4 @@
-// P1 tests: Legacy command blocking behavior verified through config NetworkProfileRegistry.
+// P1 tests: Official network classification verified through NetworkProfileRegistry.
 #include "config/NetworkProfileRegistry.hpp"
 
 #include <cassert>
@@ -8,18 +8,18 @@ namespace {
 
 using nodo::config::NetworkProfileRegistry;
 
-// Test 28: testnet-candidate is an official network (legacy commands blocked).
+// Test 28: testnet-candidate is an official network (demo command blocked).
 void testTestnetCandidateIsOfficial() {
     assert(NetworkProfileRegistry::isOfficialNetwork("testnet-candidate"));
 }
 
-// Test 29: localnet is NOT an official network (legacy commands allowed as redirects).
+// Test 29: localnet is NOT an official network (all commands allowed).
 void testLocalnetIsNotOfficial() {
     assert(!NetworkProfileRegistry::isOfficialNetwork("localnet"));
 }
 
-// Test 30: mainnet is blocked (expected behavior — mainnet not reachable).
-void testMainnetIsBlocked() {
+// Test 30: mainnet is an official network.
+void testMainnetIsOfficial() {
     assert(NetworkProfileRegistry::isOfficialNetwork("mainnet"));
 }
 
@@ -28,6 +28,6 @@ void testMainnetIsBlocked() {
 int main() {
     testTestnetCandidateIsOfficial();
     testLocalnetIsNotOfficial();
-    testMainnetIsBlocked();
+    testMainnetIsOfficial();
     return 0;
 }

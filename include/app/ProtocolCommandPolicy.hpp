@@ -10,11 +10,9 @@ namespace nodo::app {
  * command may execute on a given network.
  *
  * Security principle:
- * Commands that produce transactions, blocks, state, keys, treasury effects,
- * or runtime safety state changes must be approved by this policy before
- * execution. Legacy and demo commands that bypass the official runtime pipeline
- * must be blocked on official networks at the policy level, not at the
- * individual call site.
+ * The demo command does not produce protocol-valid state and must be blocked
+ * on official networks at the policy level so the check is never scattered
+ * across individual call sites.
  *
  * Both the CLI dispatcher and ReadinessContextBuilder consult this policy so
  * that readiness reflects the same enforcement that the dispatcher applies.
@@ -22,7 +20,6 @@ namespace nodo::app {
 class ProtocolCommandPolicy {
 public:
     // Returns true if the command is allowed to execute on the given network.
-    // Blocks demo and legacy alias commands on official networks.
     static bool isCommandAllowed(
         const std::string& command,
         const std::string& networkName
@@ -34,8 +31,8 @@ public:
         const std::string& networkName
     );
 
-    // Returns true if legacy command blocking is enforced for the given network.
-    // Official networks always enforce blocking; localnet does not require it.
+    // Returns true if demo command blocking is enforced for the given network.
+    // Official networks enforce blocking; localnet does not.
     static bool legacyCommandBlockingEnforced(
         const std::string& networkName
     );
