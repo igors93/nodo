@@ -47,6 +47,7 @@ public:
     ) const;
     std::filesystem::path epochMonetaryReportPath() const;
     std::filesystem::path epochTreasuryReportPath() const;
+    std::filesystem::path runtimeSafetyStatePath() const;
 
     bool isValid() const;
 

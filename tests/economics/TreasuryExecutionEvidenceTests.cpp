@@ -58,6 +58,8 @@ TreasurySpendRecord buildValidSpendRecord(
     Amount balance = Amount::fromRawUnits(1000000)
 ) {
     const auto result = nodo::economics::TreasurySpendValidator::validateSpend(
+        nodo::economics::DefenseModeState::INACTIVE,
+        nodo::economics::DefenseModePolicy::defaultPolicy(),
         validTreasury(balance),
         validPolicy(),
         validProposal(),

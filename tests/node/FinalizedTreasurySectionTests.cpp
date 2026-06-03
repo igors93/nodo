@@ -4,6 +4,7 @@
 
 #include "../common/GovernanceLifecycleFixtures.hpp"
 
+#include "economics/DefenseModeState.hpp"
 #include "economics/TreasuryExecutionEvidence.hpp"
 #include "economics/TreasurySpendRecord.hpp"
 #include "economics/TreasurySpendValidator.hpp"
@@ -132,6 +133,8 @@ void testValidatorRejectsEvidenceWithoutGovernanceContext() {
         "manual-proof"
     );
     const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
+        nodo::economics::DefenseModeState::INACTIVE,
+        nodo::economics::DefenseModePolicy::defaultPolicy(),
         validTreasury(),
         validSpendPolicy(),
         proposal,

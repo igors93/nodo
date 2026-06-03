@@ -50,6 +50,8 @@ TreasuryExecutionEvidence evidenceWithLifecycle(
 ) {
     const auto proposal = lifecycle.proposalEnvelope().treasuryProposal();
     const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
+        nodo::economics::DefenseModeState::INACTIVE,
+        nodo::economics::DefenseModePolicy::defaultPolicy(),
         validTreasury(),
         validSpendPolicy(),
         proposal,
@@ -94,6 +96,8 @@ void testDirectApprovalRejected() {
         "manual-proof"
     );
     const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
+        nodo::economics::DefenseModeState::INACTIVE,
+        nodo::economics::DefenseModePolicy::defaultPolicy(),
         validTreasury(),
         validSpendPolicy(),
         proposal,
@@ -306,20 +310,28 @@ void testTamperedDecisionRejected() {
 
 void testApprovalForDifferentTreasuryProposalRejected() {
     const auto lifecycle = validLifecycle();
-    const auto approval = approvalFromLifecycle(lifecycle);
+    const auto lifecycleApproval = approvalFromLifecycle(lifecycle);
 
     GovernanceApprovalContext context;
     context.governanceLifecycle = lifecycle;
 
+    // Proposal for a different treasury proposal (not what the lifecycle approved).
     const auto proposal = validTreasuryProposal("prop-999");
+
+    // Construct an approval that references prop-999 (forged to bypass the spend validator).
     const TreasuryApproval mismatchedApproval(
-        approval.approvalId(),
-        proposal.proposalId(),
-        approval.approvedAtBlock(),
-        approval.approver(),
-        approval.approvalProof()
+        lifecycleApproval.approvalId(),
+        proposal.proposalId(),       // "prop-999"
+        lifecycleApproval.approvedAtBlock(),
+        lifecycleApproval.approver(),
+        lifecycleApproval.approvalProof()
     );
+
+    // Use mismatchedApproval (proposalId="prop-999") with proposal (prop-999) so
+    // the spend validator accepts it (IDs match).
     const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
+        nodo::economics::DefenseModeState::INACTIVE,
+        nodo::economics::DefenseModePolicy::defaultPolicy(),
         validTreasury(),
         validSpendPolicy(),
         proposal,
@@ -329,6 +341,9 @@ void testApprovalForDifferentTreasuryProposalRejected() {
     );
     assert(spendResult.accepted());
 
+    // Evidence carries the governance context (lifecycle for prop-001) but the
+    // evidence proposal is prop-999.  TreasuryExecutionEvidence::validate() detects
+    // this governance-lifecycle / evidence-proposal mismatch and rejects the evidence.
     const TreasuryExecutionEvidence evidence(
         "ev-proposal-mismatch",
         proposal,

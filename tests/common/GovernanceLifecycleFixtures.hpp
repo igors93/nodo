@@ -287,6 +287,8 @@ inline economics::TreasuryExecutionEvidence validExecutionEvidence(
 
     const economics::TreasurySpendValidationResult spendResult =
         economics::TreasurySpendValidator::validateSpend(
+            economics::DefenseModeState::INACTIVE,
+            economics::DefenseModePolicy::defaultPolicy(),
             treasury,
             spendPolicy,
             proposal,

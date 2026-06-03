@@ -264,6 +264,10 @@ std::filesystem::path NodeDataDirectoryConfig::epochTreasuryReportPath() const {
     return m_rootPath / "runtime" / "epoch_treasury_report.nodo";
 }
 
+std::filesystem::path NodeDataDirectoryConfig::runtimeSafetyStatePath() const {
+    return m_rootPath / "runtime" / "safety_state.nodo";
+}
+
 bool NodeDataDirectoryConfig::isValid() const {
     return isSafePath(m_rootPath);
 }

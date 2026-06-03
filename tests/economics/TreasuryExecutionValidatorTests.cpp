@@ -45,6 +45,8 @@ void testMissingGovernanceContextRejected() {
         "manual-proof"
     );
     const auto spendResult = nodo::economics::TreasurySpendValidator::validateSpend(
+        nodo::economics::DefenseModeState::INACTIVE,
+        nodo::economics::DefenseModePolicy::defaultPolicy(),
         validTreasury(),
         validSpendPolicy(),
         proposal,

@@ -78,7 +78,7 @@ private:
 
 class TestnetReadinessChecker {
 public:
-    // Legacy signature for backward compatibility with existing callers.
+    // Base checks only: network parameters, key policy, genesis, peers, finalized height.
     static std::vector<ReadinessDiagnostic> check(
         const config::NetworkParameters& params,
         const crypto::StoredKeyMetadata& validatorKey,
@@ -87,8 +87,9 @@ public:
         std::uint64_t finalizedHeight
     );
 
-    // Extended signature with P0 gates.
-    static std::vector<ReadinessDiagnostic> checkWithP0Gates(
+    // Full protocol safety checks: base checks plus defense mode, governance,
+    // legacy path enforcement, and treasury report consistency.
+    static std::vector<ReadinessDiagnostic> checkWithProtocolSafetyGates(
         const config::NetworkParameters& params,
         const crypto::StoredKeyMetadata& validatorKey,
         const TestnetReadinessCheckerConfig& config

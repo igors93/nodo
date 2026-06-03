@@ -48,7 +48,7 @@ void testActiveBlocksGovernanceApproval() {
 
 void testCustomPolicyCanAllowTreasurySpend() {
     // A policy that does NOT block treasury spend.
-    const DefenseModePolicy policy(false, true, true, true);
+    const DefenseModePolicy policy(false, true, true, true, true);
     const auto result = DefenseModeGuard::checkTreasurySpend(DefenseModeState::ACTIVE, policy);
     assert(result.isAllowed());
 }

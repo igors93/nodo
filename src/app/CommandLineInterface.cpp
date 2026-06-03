@@ -18,6 +18,7 @@
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signer.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "economics/DefenseModeState.hpp"
 #include "economics/EpochTreasuryReport.hpp"
 #include "economics/MonetaryPolicy.hpp"
 #include "node/ChainAuditor.hpp"
@@ -35,6 +36,7 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeMonetaryReportService.hpp"
+#include "node/RuntimeSafetyStateStore.hpp"
 #include "node/RuntimeStateLoader.hpp"
 #include "node/TestnetReadinessChecker.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
@@ -42,6 +44,7 @@
 #include "utils/Amount.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -109,9 +112,7 @@ bool isTestnetCandidateNetwork(
     const std::string& networkName
 ) {
     return networkName == "testnet-candidate" ||
-           networkName == "nodo-testnet-candidate" ||
-           networkName == "testnet" ||
-           networkName == "nodo-testnet";
+           networkName == "nodo-testnet-candidate";
 }
 
 config::NetworkParameters networkParametersForOptions(
@@ -992,6 +993,15 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
         }
     }
 
+    if (config::NetworkProfileRegistry::isOfficialNetwork(options.networkName) &&
+        !options.keyIdProvided) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Official network readiness requires --key-id. "
+            "Do not default to localnet development keys.\n"
+        );
+    }
+
     const std::string validatorKeyId =
         options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
 
@@ -1066,15 +1076,28 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
         chainAuditPassed = true;
     }
 
-    // Legacy paths are blocked on official networks after Task 8.
-    const bool isOfficial =
-        config::NetworkProfileRegistry::isOfficialNetwork(params.networkName());
-    const bool legacyPathsBlocked = isOfficial ? true : true; // blocked everywhere (localnet redirects)
+    // Legacy and demo paths are blocked on official networks.
+    const bool legacyPathsBlocked = true;
 
-    // Defense mode defaults to INACTIVE. P2 will add persistent state loading.
-    const bool defenseModeInactive = true;
+    // Load defense mode from persistent safety state; fail closed if state is corrupt.
+    bool defenseModeInactive = true;
+    {
+        const std::filesystem::path safetyStatePath =
+            directoryConfig.runtimeSafetyStatePath();
+        if (std::filesystem::exists(safetyStatePath)) {
+            const auto safetyState =
+                node::RuntimeSafetyStateStore::read(safetyStatePath);
+            if (!safetyState.has_value()) {
+                defenseModeInactive = false; // corrupt state: treat as unsafe
+            } else {
+                defenseModeInactive =
+                    (safetyState->defenseMode() ==
+                     economics::DefenseModeState::INACTIVE);
+            }
+        }
+    }
 
-    // Governance lifecycle verifier is always wired in this build.
+    // Governance lifecycle verifier is integrated in the treasury approval path.
     const bool governanceLifecycleWired = true;
 
     std::vector<node::ReadinessDiagnostic> checks;
@@ -1089,7 +1112,7 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
             legacyPathsBlocked,
             treasuryReportVerified
         );
-        checks = node::TestnetReadinessChecker::checkWithP0Gates(
+        checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
             params,
             key.metadata(),
             readinessConfig
@@ -1181,6 +1204,15 @@ CommandLineResult CommandLineInterface::executeDiagnostics(
                 *mismatch + "\n"
             );
         }
+    }
+
+    if (config::NetworkProfileRegistry::isOfficialNetwork(options.networkName) &&
+        !options.keyIdProvided) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Official network diagnostics requires --key-id. "
+            "Do not default to localnet development keys.\n"
+        );
     }
 
     const std::string validatorKeyId =
@@ -1350,7 +1382,9 @@ CommandLineResult CommandLineInterface::executeKeysCreate(
 
     std::ostringstream output;
 
-    output << "Nodo key created.\n";
+    output << "Nodo development key created.\n"
+           << "WARNING: this is a deterministic localnet-only development key. "
+           << "Do not use it for custody, production validators, treasury, or mainnet.\n";
 
     for (const crypto::KeyStoreCreateResult& created : createdKeys) {
         output << "Key id: " << created.metadata().keyId() << "\n"
@@ -1782,7 +1816,9 @@ CommandLineResult CommandLineInterface::executeProduceDemoBlock(
         node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             runtime,
             node::RuntimeBlockPipelineConfig(
-                100,
+                static_cast<std::size_t>(
+                    genesisConfig.networkParameters().maxTransactionsPerBlock()
+                ),
                 1,
                 1,
                 options.timestamp + 20

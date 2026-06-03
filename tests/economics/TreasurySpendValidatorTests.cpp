@@ -1,4 +1,5 @@
 #include "economics/TreasurySpendValidator.hpp"
+#include "economics/DefenseModeState.hpp"
 #include "economics/TreasuryAccount.hpp"
 #include "economics/TreasuryApproval.hpp"
 #include "economics/TreasuryPolicy.hpp"
@@ -10,6 +11,8 @@
 
 namespace {
 
+using nodo::economics::DefenseModePolicy;
+using nodo::economics::DefenseModeState;
 using nodo::economics::TreasuryAccount;
 using nodo::economics::TreasuryApproval;
 using nodo::economics::TreasuryPolicy;
@@ -64,6 +67,8 @@ TreasuryApproval validApproval(
 // Valid spend is accepted.
 void testValidSpendAccepted() {
     const auto result = TreasurySpendValidator::validateSpend(
+        DefenseModeState::INACTIVE,
+        DefenseModePolicy::defaultPolicy(),
         validTreasury(),
         validPolicy(),
         validProposal(),
@@ -81,6 +86,8 @@ void testValidSpendAccepted() {
 void testMissingApprovalRejectedWhenRequired() {
     const TreasuryApproval badApproval;  // default-constructed, invalid
     const auto result = TreasurySpendValidator::validateSpend(
+        DefenseModeState::INACTIVE,
+        DefenseModePolicy::defaultPolicy(),
         validTreasury(),
         validPolicy(Amount::fromRawUnits(500000), Amount::fromRawUnits(100000), 5, true),
         validProposal(),
@@ -99,6 +106,8 @@ void testApprovalMismatchRejected() {
         "governance-node", "proof-xyz"
     );
     const auto result = TreasurySpendValidator::validateSpend(
+        DefenseModeState::INACTIVE,
+        DefenseModePolicy::defaultPolicy(),
         validTreasury(),
         validPolicy(),
         validProposal(),
@@ -114,6 +123,8 @@ void testApprovalMismatchRejected() {
 void testTimelockNotSatisfiedRejected() {
     // proposal.createdAtBlock=1, timelock=5 -> unlockAt=6, but currentBlock=5.
     const auto result = TreasurySpendValidator::validateSpend(
+        DefenseModeState::INACTIVE,
+        DefenseModePolicy::defaultPolicy(),
         validTreasury(),
         validPolicy(Amount::fromRawUnits(500000), Amount::fromRawUnits(100000), 5),
         validProposal(Amount::fromRawUnits(50000), 1),
@@ -128,6 +139,8 @@ void testTimelockNotSatisfiedRejected() {
 // Insufficient treasury balance is rejected.
 void testInsufficientBalanceRejected() {
     const auto result = TreasurySpendValidator::validateSpend(
+        DefenseModeState::INACTIVE,
+        DefenseModePolicy::defaultPolicy(),
         validTreasury(Amount::fromRawUnits(100)),  // only 100 raw units
         validPolicy(),
         validProposal(Amount::fromRawUnits(50000)),  // asks for 50000
@@ -143,6 +156,8 @@ void testInsufficientBalanceRejected() {
 void testProposalLimitExceededRejected() {
     // maxSpendPerProposal = 1000, proposal.amount = 50000.
     const auto result = TreasurySpendValidator::validateSpend(
+        DefenseModeState::INACTIVE,
+        DefenseModePolicy::defaultPolicy(),
         validTreasury(),
         validPolicy(Amount::fromRawUnits(500000), Amount::fromRawUnits(1000)),
         validProposal(Amount::fromRawUnits(50000)),
@@ -158,6 +173,8 @@ void testProposalLimitExceededRejected() {
 void testEpochLimitExceededRejected() {
     // maxSpendPerEpoch = 60000, epochSpentSoFar = 40000, proposal = 50000 -> total 90000 > 60000.
     const auto result = TreasurySpendValidator::validateSpend(
+        DefenseModeState::INACTIVE,
+        DefenseModePolicy::defaultPolicy(),
         validTreasury(),
         validPolicy(Amount::fromRawUnits(60000), Amount::fromRawUnits(100000)),
         validProposal(Amount::fromRawUnits(50000)),
@@ -172,6 +189,8 @@ void testEpochLimitExceededRejected() {
 // Locked treasury is rejected.
 void testLockedTreasuryRejected() {
     const auto result = TreasurySpendValidator::validateSpend(
+        DefenseModeState::INACTIVE,
+        DefenseModePolicy::defaultPolicy(),
         validTreasury(Amount::fromRawUnits(1000000), true),  // locked
         validPolicy(Amount::fromRawUnits(500000), Amount::fromRawUnits(100000),
                     5, true, false),  // allowSpendingWhenLocked=false
@@ -190,6 +209,8 @@ void testAcceptedSpendRecordBalanceAfterCorrect() {
     const Amount proposalAmount  = Amount::fromRawUnits(30000);
 
     const auto result = TreasurySpendValidator::validateSpend(
+        DefenseModeState::INACTIVE,
+        DefenseModePolicy::defaultPolicy(),
         validTreasury(treasuryBalance),
         validPolicy(),
         validProposal(proposalAmount),
@@ -201,6 +222,22 @@ void testAcceptedSpendRecordBalanceAfterCorrect() {
     assert(result.spendRecord().treasuryBalanceBefore() == treasuryBalance);
     assert(result.spendRecord().treasuryBalanceAfter() ==
            Amount::fromRawUnits(treasuryBalance.rawUnits() - proposalAmount.rawUnits()));
+}
+
+// Defense mode ACTIVE blocks treasury spend via the central validator.
+void testDefenseModeBlocksTreasurySpend() {
+    const auto result = TreasurySpendValidator::validateSpend(
+        DefenseModeState::ACTIVE,
+        DefenseModePolicy::defaultPolicy(),
+        validTreasury(),
+        validPolicy(),
+        validProposal(),
+        validApproval(),
+        10,
+        Amount::fromRawUnits(0)
+    );
+    assert(!result.accepted());
+    assert(result.status() == TreasurySpendStatus::DEFENSE_MODE_ACTIVE);
 }
 
 } // namespace
@@ -215,5 +252,6 @@ int main() {
     testEpochLimitExceededRejected();
     testLockedTreasuryRejected();
     testAcceptedSpendRecordBalanceAfterCorrect();
+    testDefenseModeBlocksTreasurySpend();
     return 0;
 }

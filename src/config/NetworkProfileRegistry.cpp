@@ -9,8 +9,6 @@ bool NetworkProfileRegistry::isKnown(const std::string& networkName) {
            networkName == "nodo-localnet" ||
            networkName == "testnet-candidate" ||
            networkName == "nodo-testnet-candidate" ||
-           networkName == "testnet" ||
-           networkName == "nodo-testnet" ||
            networkName == "mainnet" ||
            networkName == "nodo-mainnet";
 }
@@ -41,9 +39,7 @@ NetworkParameters NetworkProfileRegistry::get(const std::string& networkName) {
         return NetworkParameters::developmentLocal();
     }
     if (networkName == "testnet-candidate" ||
-        networkName == "nodo-testnet-candidate" ||
-        networkName == "testnet" ||
-        networkName == "nodo-testnet") {
+        networkName == "nodo-testnet-candidate") {
         return NetworkParameters::testnetCandidate();
     }
     if (networkName == "mainnet" || networkName == "nodo-mainnet") {

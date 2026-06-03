@@ -40,9 +40,9 @@ bool PeerRateLimiter::shouldAllow(const std::string& nodeId, std::int64_t now) {
 }
 
 void PeerRateLimiter::recordInvalidMessage(const std::string& nodeId, std::int64_t now) {
-    // An invalid message still counts toward the rate limit window.
-    // This prevents an attacker from flooding with invalid messages that don't
-    // normally increment the counter.
+    // Invalid messages are more dangerous than normal traffic, so they consume
+    // extra budget in the same fixed window.
+    shouldAllow(nodeId, now);
     shouldAllow(nodeId, now);
 }
 

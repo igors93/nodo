@@ -2,6 +2,7 @@
 
 #include "crypto/hash.h"
 
+#include <cstddef>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -11,6 +12,7 @@ namespace nodo::p2p {
 namespace {
 
 constexpr std::int64_t DEFAULT_TTL_SECONDS = 120;
+constexpr std::size_t MAX_PEER_MESSAGE_PAYLOAD_BYTES = 1024 * 1024;
 
 bool isSafeIdentifier(
     const std::string& value
@@ -220,6 +222,7 @@ bool PeerMessage::isValid() const {
 
     if (m_type == PeerMessageType::UNKNOWN ||
         m_payload.empty() ||
+        m_payload.size() > MAX_PEER_MESSAGE_PAYLOAD_BYTES ||
         m_createdAt <= 0 ||
         m_ttlSeconds <= 0) {
         return false;

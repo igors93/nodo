@@ -81,7 +81,6 @@ void addBaseChecks(
     bool genesisVerified,
     std::uint64_t finalizedHeight
 ) {
-    // Check 1: Network parameters are valid.
     {
         const bool ok = params.isValid();
         checks.emplace_back(
@@ -92,7 +91,6 @@ void addBaseChecks(
         );
     }
 
-    // Check 2: Key policy — no localnet-only key on official networks.
     {
         const bool isOfficial = crypto::KeyEncryptionPolicy::isOfficialNetwork(params.networkName());
         const bool keyOk = !isOfficial || !validatorKey.isLocalnetOnly();
@@ -105,7 +103,6 @@ void addBaseChecks(
         );
     }
 
-    // Check 3: mainnet is not accessible.
     {
         const bool notMainnet = !crypto::KeyEncryptionPolicy::isMainnetBlocked(params.networkName());
         checks.emplace_back(
@@ -116,7 +113,6 @@ void addBaseChecks(
         );
     }
 
-    // Check 4: Genesis has been verified.
     {
         checks.emplace_back(
             "genesis_verified",
@@ -126,7 +122,6 @@ void addBaseChecks(
         );
     }
 
-    // Check 5: At least one connected peer.
     {
         const bool hasPeers = connectedPeers > 0;
         std::ostringstream detail;
@@ -136,7 +131,6 @@ void addBaseChecks(
         checks.emplace_back("peers_connected", hasPeers, detail.str());
     }
 
-    // Check 6: Node has at least genesis block.
     {
         std::ostringstream detail;
         detail << "Finalized height is " << finalizedHeight << ".";
@@ -144,14 +138,13 @@ void addBaseChecks(
     }
 }
 
-void addP0Gates(
+void addProtocolSafetyGates(
     std::vector<ReadinessDiagnostic>& checks,
     const config::NetworkParameters& params,
     const TestnetReadinessCheckerConfig& config
 ) {
-    // P0 gate 1: Governance lifecycle verifier must be integrated in critical paths.
-    // After Task 15, this is always true for the current build. This gate exists
-    // so that if the integration is ever removed, testnet readiness fails.
+    // Governance lifecycle verifier must be integrated in critical paths.
+    // This gate exists so that if the integration is ever removed, readiness fails.
     {
         const bool ok = config.governanceLifecycleVerifierWired();
         checks.emplace_back(
@@ -163,7 +156,7 @@ void addP0Gates(
         );
     }
 
-    // P0 gate 2: Defense mode must be INACTIVE to start on official networks.
+    // Defense mode must be INACTIVE to start on official networks.
     {
         const bool isOfficial = crypto::KeyEncryptionPolicy::isOfficialNetwork(params.networkName());
         const bool ok = !isOfficial || config.defenseModeInactive();
@@ -176,7 +169,7 @@ void addP0Gates(
         );
     }
 
-    // P0 gate 3: Legacy/demo paths must not produce blocks on official networks.
+    // Legacy and demo paths must not produce blocks on official networks.
     {
         const bool isOfficial = crypto::KeyEncryptionPolicy::isOfficialNetwork(params.networkName());
         const bool ok = !isOfficial || config.legacyPathsBlockedOnOfficialNetworks();
@@ -189,7 +182,7 @@ void addP0Gates(
         );
     }
 
-    // P0 gate 4: Treasury report consistency must be verified when finalized blocks exist.
+    // Treasury report consistency must be verified when finalized blocks exist.
     {
         const bool hasBlocks = config.finalizedHeight() > 0;
         const bool ok = !hasBlocks || config.treasuryReportConsistencyVerified();
@@ -218,7 +211,7 @@ std::vector<ReadinessDiagnostic> TestnetReadinessChecker::check(
     return checks;
 }
 
-std::vector<ReadinessDiagnostic> TestnetReadinessChecker::checkWithP0Gates(
+std::vector<ReadinessDiagnostic> TestnetReadinessChecker::checkWithProtocolSafetyGates(
     const config::NetworkParameters& params,
     const crypto::StoredKeyMetadata& validatorKey,
     const TestnetReadinessCheckerConfig& config
@@ -232,7 +225,7 @@ std::vector<ReadinessDiagnostic> TestnetReadinessChecker::checkWithP0Gates(
         config.genesisVerified(),
         config.finalizedHeight()
     );
-    addP0Gates(checks, params, config);
+    addProtocolSafetyGates(checks, params, config);
     return checks;
 }
 

@@ -102,18 +102,14 @@ void testSelectValidatorEmptyList() {
     assert(v.empty());
 }
 
-void testBuildAssignmentNoValidatorsThrows() {
-    bool threw = false;
-    try {
-        AuditAssignmentCalculator::buildAssignment(
-            "assign", 1, 0,
-            AuditAssignmentTargetType::TREASURY_SECTION,
-            "target", "seed", {}
-        );
-    } catch (...) {
-        threw = true;
-    }
-    assert(threw);
+void testBuildAssignmentNoValidatorsReturnsInvalid() {
+    // Empty validator set produces an invalid assignment (no throw).
+    const AuditAssignment a = AuditAssignmentCalculator::buildAssignment(
+        "assign", 1, 0,
+        AuditAssignmentTargetType::TREASURY_SECTION,
+        "target", "seed", {}
+    );
+    assert(!a.isValid());
 }
 
 void testBuildAssignmentValid() {
@@ -144,7 +140,7 @@ int main() {
     testProofChangesWithInputs();
     testSelectValidatorDeterministic();
     testSelectValidatorEmptyList();
-    testBuildAssignmentNoValidatorsThrows();
+    testBuildAssignmentNoValidatorsReturnsInvalid();
     testBuildAssignmentValid();
     testTargetTypeToString();
     return 0;

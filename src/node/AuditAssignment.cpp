@@ -151,9 +151,9 @@ AuditAssignment AuditAssignmentCalculator::buildAssignment(
     const std::vector<std::string>& validatorAddresses
 ) {
     if (validatorAddresses.empty()) {
-        throw std::invalid_argument(
-            "AuditAssignmentCalculator::buildAssignment: no validators available."
-        );
+        // Return a default-constructed (invalid) assignment rather than throwing,
+        // so callers can detect the failure without exception handling.
+        return AuditAssignment();
     }
 
     const std::string validatorAddress = selectValidator(

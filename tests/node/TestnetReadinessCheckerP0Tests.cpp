@@ -64,7 +64,7 @@ void testP0GatesAllPassOnLocalnet() {
         true,   // legacyPathsBlockedOnOfficialNetworks
         true    // treasuryReportConsistencyVerified
     );
-    const auto checks = TestnetReadinessChecker::checkWithP0Gates(
+    const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         localnetParams(), makeKey(), config
     );
     assert(!checks.empty());
@@ -78,7 +78,7 @@ void testGovernanceLifecycleVerifierNotWiredFails() {
         false,  // governanceLifecycleVerifierWired = false
         true, true, true
     );
-    const auto checks = TestnetReadinessChecker::checkWithP0Gates(
+    const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         localnetParams(), makeKey(), config
     );
     const auto status = TestnetReadinessChecker::summarize(checks);
@@ -100,7 +100,7 @@ void testDefenseModeActiveFailsOnOfficialNetwork() {
         false,  // defenseModeInactive = false (defense is ACTIVE)
         true, true
     );
-    const auto checks = TestnetReadinessChecker::checkWithP0Gates(
+    const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         testnetCandidateParams(), makeKey("testnet-candidate"), config
     );
     const auto status = TestnetReadinessChecker::summarize(checks);
@@ -121,7 +121,7 @@ void testDefenseModeActiveOkOnLocalnet() {
         false,  // defense mode active
         true, true
     );
-    const auto checks = TestnetReadinessChecker::checkWithP0Gates(
+    const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         localnetParams(), makeKey(), config
     );
     // On localnet (non-official), defense mode active is not a fatal failure.
@@ -140,7 +140,7 @@ void testTreasuryReportNotVerifiedFailsWhenBlocksExist() {
         true, true, true,
         false   // treasuryReportConsistencyVerified = false
     );
-    const auto checks = TestnetReadinessChecker::checkWithP0Gates(
+    const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         localnetParams(), makeKey(), config
     );
     const auto status = TestnetReadinessChecker::summarize(checks);
@@ -153,7 +153,7 @@ void testTreasuryReportNotVerifiedOkAtGenesis() {
         true, true, true,
         false   // treasuryReportConsistencyVerified = false
     );
-    const auto checks = TestnetReadinessChecker::checkWithP0Gates(
+    const auto checks = TestnetReadinessChecker::checkWithProtocolSafetyGates(
         localnetParams(), makeKey(), config
     );
     bool found = false;

@@ -47,9 +47,10 @@ void testDefaultPolicyBlocksEconomicActions() {
 }
 
 void testCustomPolicy() {
-    const DefenseModePolicy policy(false, true, true, false);
+    const DefenseModePolicy policy(false, true, true, true, false);
     assert(!policy.blockTreasurySpend());
     assert(policy.blockExtraordinaryMint());
+    assert(policy.blockExtraordinaryRewards());
     assert(policy.requireChainAuditBeforeExit());
     assert(!policy.allowNormalTransactions());
 }
