@@ -5,6 +5,11 @@
 #include <stdexcept>
 #include <system_error>
 
+#if defined(__unix__) || defined(__APPLE__)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 namespace nodo::storage {
 
 namespace {
@@ -80,6 +85,18 @@ void AtomicFile::writeTextFile(
                     + temporaryPath.string()
                 );
             }
+
+#if defined(__unix__) || defined(__APPLE__)
+            const int fd = ::open(
+                temporaryPath.c_str(),
+                O_RDONLY
+            );
+
+            if (fd >= 0) {
+                ::fsync(fd);
+                ::close(fd);
+            }
+#endif
         }
 
         std::error_code renameError;
@@ -90,39 +107,31 @@ void AtomicFile::writeTextFile(
             renameError
         );
 
-        if (!renameError) {
-            return;
-        }
-
-        std::error_code copyError;
-
-        std::filesystem::copy_file(
-            temporaryPath,
-            path,
-            std::filesystem::copy_options::overwrite_existing,
-            copyError
-        );
-
-        if (copyError) {
-            std::error_code cleanupError;
-            std::filesystem::remove(
-                temporaryPath,
-                cleanupError
-            );
-
+        if (renameError) {
             throw std::runtime_error(
                 "Atomic file replacement failed: "
                 + renameError.message()
-                + "; fallback copy failed: "
-                + copyError.message()
             );
         }
 
-        std::error_code cleanupError;
-        std::filesystem::remove(
-            temporaryPath,
-            cleanupError
-        );
+#if defined(__unix__) || defined(__APPLE__)
+        {
+            const std::filesystem::path dirPath =
+                path.parent_path().empty()
+                    ? std::filesystem::path(".")
+                    : path.parent_path();
+
+            const int dirFd = ::open(
+                dirPath.c_str(),
+                O_RDONLY
+            );
+
+            if (dirFd >= 0) {
+                ::fsync(dirFd);
+                ::close(dirFd);
+            }
+        }
+#endif
     } catch (...) {
         std::error_code cleanupError;
         std::filesystem::remove(

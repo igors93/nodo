@@ -13,6 +13,25 @@ namespace {
 
 constexpr std::size_t MAX_EXPLICIT_INPUT_COIN_LOTS = 128;
 constexpr std::size_t MAX_COIN_LOT_ID_LENGTH = 256;
+constexpr std::size_t MIN_ADDRESS_LENGTH = 1;
+constexpr std::size_t MAX_ADDRESS_LENGTH = 256;
+
+bool isSafeTransactionAddress(const std::string& address) {
+    if (address.size() < MIN_ADDRESS_LENGTH ||
+        address.size() > MAX_ADDRESS_LENGTH) {
+        return false;
+    }
+
+    for (const char c : address) {
+        if (c == ';' || c == '=' || c == '{' || c == '}' ||
+            c == '[' || c == ']' || c == ',' ||
+            c == '\n' || c == '\r' || c == '\t' || c == ' ') {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 std::string extractField(
     const std::string& serialized,
@@ -513,6 +532,11 @@ bool Transaction::isStructurallyValid(
 
     if (m_type == TransactionType::TRANSFER) {
         if (m_fromAddress.empty() || m_toAddress.empty()) {
+            return false;
+        }
+
+        if (!isSafeTransactionAddress(m_fromAddress) ||
+            !isSafeTransactionAddress(m_toAddress)) {
             return false;
         }
 

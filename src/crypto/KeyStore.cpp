@@ -11,6 +11,10 @@
 #include <stdexcept>
 #include <utility>
 
+#if defined(__unix__) || defined(__APPLE__)
+#include <sys/stat.h>
+#endif
+
 namespace nodo::crypto {
 
 namespace {
@@ -478,6 +482,10 @@ KeyStoreCreateResult KeyStore::createLocalKey(
             )
         );
 
+#if defined(__unix__) || defined(__APPLE__)
+        ::chmod(path.c_str(), S_IRUSR | S_IWUSR);
+#endif
+
         writeIndex(keysDirectory);
 
         return KeyStoreCreateResult::created(
@@ -514,6 +522,23 @@ KeyStoreLoadResult KeyStore::loadKey(
     }
 
     try {
+#if defined(__unix__) || defined(__APPLE__)
+        {
+            struct ::stat info{};
+            if (::stat(path.c_str(), &info) == 0) {
+                const mode_t publicBits = info.st_mode & (S_IRWXG | S_IRWXO);
+                if (publicBits != 0) {
+                    return KeyStoreLoadResult::rejected(
+                        KeyStoreStatus::INVALID_INPUT,
+                        "Key file has unsafe permissions (group/other access detected). "
+                        "This key store is localnet-only — it is not production custody. "
+                        "Fix permissions with: chmod 600 " + path.string()
+                    );
+                }
+            }
+        }
+#endif
+
         const KeyStoreLoadResult loaded =
             decodeKeyFile(
                 keyId,

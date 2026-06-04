@@ -4,6 +4,7 @@
 #include "economics/GovernanceLifecycleState.hpp"
 #include "economics/GovernanceLifecycleTransition.hpp"
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -47,6 +48,18 @@ public:
         const std::vector<GovernanceLifecycleTransition>& transitions,
         const std::string& expectedProposalId,
         const std::string& expectedPolicyVersion
+    );
+
+    /*
+     * Overload that enforces actor authorization.
+     * When authorizedActorIds is non-empty, every transition's actorId
+     * must be present in the set. An empty actorId is always rejected.
+     */
+    static GovernanceLifecycleTransitionAuditResult audit(
+        const std::vector<GovernanceLifecycleTransition>& transitions,
+        const std::string& expectedProposalId,
+        const std::string& expectedPolicyVersion,
+        const std::set<std::string>& authorizedActorIds
     );
 };
 

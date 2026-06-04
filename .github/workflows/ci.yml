@@ -32,7 +32,7 @@ jobs:
 
       - name: Install blst
         run: |
-          git clone https://github.com/supranational/blst.git /tmp/blst
+          git clone --depth 1 --branch v0.3.11 https://github.com/supranational/blst.git /tmp/blst
           cd /tmp/blst
           ./build.sh
           sudo cp bindings/blst.h /usr/local/include/

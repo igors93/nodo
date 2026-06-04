@@ -7,6 +7,121 @@
 
 namespace nodo::economics {
 
+namespace {
+
+GovernanceLifecycleTransitionAuditResult auditImpl(
+    const std::vector<GovernanceLifecycleTransition>& transitions,
+    const std::string& expectedProposalId,
+    const std::string& expectedPolicyVersion,
+    const std::set<std::string>* authorizedActorIds
+) {
+    if (transitions.empty()) {
+        return GovernanceLifecycleTransitionAuditResult::rejected(
+            "GovernanceLifecycleTransitionAudit: transition history must not be empty."
+        );
+    }
+
+    std::set<std::string> seenIds;
+    GovernanceLifecycleState currentState = GovernanceLifecycleState::DRAFT;
+    std::uint64_t prevBlock = 0;
+    std::string prevIdAtSameBlock;
+
+    for (std::size_t i = 0; i < transitions.size(); ++i) {
+        const GovernanceLifecycleTransition& t = transitions[i];
+
+        if (!t.isValid()) {
+            return GovernanceLifecycleTransitionAuditResult::rejected(
+                "GovernanceLifecycleTransitionAudit: transition[" +
+                std::to_string(i) + "] is invalid: " + t.rejectionReason()
+            );
+        }
+
+        if (t.governanceProposalId() != expectedProposalId) {
+            return GovernanceLifecycleTransitionAuditResult::rejected(
+                "GovernanceLifecycleTransitionAudit: transition[" +
+                std::to_string(i) + "] proposalId='" + t.governanceProposalId() +
+                "' does not match expected='" + expectedProposalId + "'."
+            );
+        }
+
+        if (t.policyVersion() != expectedPolicyVersion) {
+            return GovernanceLifecycleTransitionAuditResult::rejected(
+                "GovernanceLifecycleTransitionAudit: transition[" +
+                std::to_string(i) + "] policyVersion='" + t.policyVersion() +
+                "' does not match expected='" + expectedPolicyVersion + "'."
+            );
+        }
+
+        if (!seenIds.insert(t.transitionId()).second) {
+            return GovernanceLifecycleTransitionAuditResult::rejected(
+                "GovernanceLifecycleTransitionAudit: duplicate transitionId='" +
+                t.transitionId() + "' at index " + std::to_string(i) + "."
+            );
+        }
+
+        if (t.transitionBlock() < prevBlock) {
+            return GovernanceLifecycleTransitionAuditResult::rejected(
+                "GovernanceLifecycleTransitionAudit: transition[" +
+                std::to_string(i) + "] transitionBlock=" +
+                std::to_string(t.transitionBlock()) +
+                " is less than previous block=" + std::to_string(prevBlock) + "."
+            );
+        }
+        if (t.transitionBlock() == prevBlock && i > 0 &&
+            t.transitionId() <= prevIdAtSameBlock) {
+            return GovernanceLifecycleTransitionAuditResult::rejected(
+                "GovernanceLifecycleTransitionAudit: transition[" +
+                std::to_string(i) + "] at same block must have strictly greater transitionId."
+            );
+        }
+
+        if (t.fromState() != currentState) {
+            return GovernanceLifecycleTransitionAuditResult::rejected(
+                "GovernanceLifecycleTransitionAudit: transition[" +
+                std::to_string(i) + "] fromState='" +
+                governanceLifecycleStateToString(t.fromState()) +
+                "' does not match current rebuilt state='" +
+                governanceLifecycleStateToString(currentState) + "'."
+            );
+        }
+
+        if (!GovernanceLifecycleStateMachine::isAllowedTransition(
+                t.fromState(), t.toState())) {
+            return GovernanceLifecycleTransitionAuditResult::rejected(
+                "GovernanceLifecycleTransitionAudit: transition[" +
+                std::to_string(i) + "] from='" +
+                governanceLifecycleStateToString(t.fromState()) + "' to='" +
+                governanceLifecycleStateToString(t.toState()) +
+                "' is not an allowed transition."
+            );
+        }
+
+        if (authorizedActorIds != nullptr && !authorizedActorIds->empty()) {
+            if (t.actorId().empty()) {
+                return GovernanceLifecycleTransitionAuditResult::rejected(
+                    "GovernanceLifecycleTransitionAudit: transition[" +
+                    std::to_string(i) + "] has empty actorId."
+                );
+            }
+            if (authorizedActorIds->find(t.actorId()) == authorizedActorIds->end()) {
+                return GovernanceLifecycleTransitionAuditResult::rejected(
+                    "GovernanceLifecycleTransitionAudit: transition[" +
+                    std::to_string(i) + "] actorId='" + t.actorId() +
+                    "' is not in the authorized actors set."
+                );
+            }
+        }
+
+        prevIdAtSameBlock = (t.transitionBlock() == prevBlock) ? t.transitionId() : "";
+        prevBlock = t.transitionBlock();
+        currentState = t.toState();
+    }
+
+    return GovernanceLifecycleTransitionAuditResult::accepted(currentState);
+}
+
+} // namespace
+
 GovernanceLifecycleTransitionAuditResult::GovernanceLifecycleTransitionAuditResult()
     : m_accepted(false),
       m_finalState(GovernanceLifecycleState::DRAFT) {}
@@ -39,100 +154,16 @@ GovernanceLifecycleTransitionAuditResult GovernanceLifecycleTransitionAudit::aud
     const std::string& expectedProposalId,
     const std::string& expectedPolicyVersion
 ) {
-    if (transitions.empty()) {
-        return GovernanceLifecycleTransitionAuditResult::rejected(
-            "GovernanceLifecycleTransitionAudit: transition history must not be empty."
-        );
-    }
+    return auditImpl(transitions, expectedProposalId, expectedPolicyVersion, nullptr);
+}
 
-    std::set<std::string> seenIds;
-    GovernanceLifecycleState currentState = GovernanceLifecycleState::DRAFT;
-    std::uint64_t prevBlock = 0;
-    std::string prevIdAtSameBlock;
-
-    for (std::size_t i = 0; i < transitions.size(); ++i) {
-        const GovernanceLifecycleTransition& t = transitions[i];
-
-        // Structural validity (proof included).
-        if (!t.isValid()) {
-            return GovernanceLifecycleTransitionAuditResult::rejected(
-                "GovernanceLifecycleTransitionAudit: transition[" +
-                std::to_string(i) + "] is invalid: " + t.rejectionReason()
-            );
-        }
-
-        // Proposal binding.
-        if (t.governanceProposalId() != expectedProposalId) {
-            return GovernanceLifecycleTransitionAuditResult::rejected(
-                "GovernanceLifecycleTransitionAudit: transition[" +
-                std::to_string(i) + "] proposalId='" + t.governanceProposalId() +
-                "' does not match expected='" + expectedProposalId + "'."
-            );
-        }
-
-        // Policy version consistency.
-        if (t.policyVersion() != expectedPolicyVersion) {
-            return GovernanceLifecycleTransitionAuditResult::rejected(
-                "GovernanceLifecycleTransitionAudit: transition[" +
-                std::to_string(i) + "] policyVersion='" + t.policyVersion() +
-                "' does not match expected='" + expectedPolicyVersion + "'."
-            );
-        }
-
-        // No duplicate transitionId.
-        if (!seenIds.insert(t.transitionId()).second) {
-            return GovernanceLifecycleTransitionAuditResult::rejected(
-                "GovernanceLifecycleTransitionAudit: duplicate transitionId='" +
-                t.transitionId() + "' at index " + std::to_string(i) + "."
-            );
-        }
-
-        // Non-decreasing block order; within same block, transitionId must be lexicographically ordered.
-        if (t.transitionBlock() < prevBlock) {
-            return GovernanceLifecycleTransitionAuditResult::rejected(
-                "GovernanceLifecycleTransitionAudit: transition[" +
-                std::to_string(i) + "] transitionBlock=" +
-                std::to_string(t.transitionBlock()) +
-                " is less than previous block=" + std::to_string(prevBlock) + "."
-            );
-        }
-        if (t.transitionBlock() == prevBlock && i > 0 &&
-            t.transitionId() <= prevIdAtSameBlock) {
-            return GovernanceLifecycleTransitionAuditResult::rejected(
-                "GovernanceLifecycleTransitionAudit: transition[" +
-                std::to_string(i) + "] at same block must have strictly greater transitionId."
-            );
-        }
-
-        // fromState must match current rebuilt state.
-        if (t.fromState() != currentState) {
-            return GovernanceLifecycleTransitionAuditResult::rejected(
-                "GovernanceLifecycleTransitionAudit: transition[" +
-                std::to_string(i) + "] fromState='" +
-                governanceLifecycleStateToString(t.fromState()) +
-                "' does not match current rebuilt state='" +
-                governanceLifecycleStateToString(currentState) + "'."
-            );
-        }
-
-        // State machine allows this transition.
-        if (!GovernanceLifecycleStateMachine::isAllowedTransition(
-                t.fromState(), t.toState())) {
-            return GovernanceLifecycleTransitionAuditResult::rejected(
-                "GovernanceLifecycleTransitionAudit: transition[" +
-                std::to_string(i) + "] from='" +
-                governanceLifecycleStateToString(t.fromState()) + "' to='" +
-                governanceLifecycleStateToString(t.toState()) +
-                "' is not an allowed transition."
-            );
-        }
-
-        prevIdAtSameBlock = (t.transitionBlock() == prevBlock) ? t.transitionId() : "";
-        prevBlock = t.transitionBlock();
-        currentState = t.toState();
-    }
-
-    return GovernanceLifecycleTransitionAuditResult::accepted(currentState);
+GovernanceLifecycleTransitionAuditResult GovernanceLifecycleTransitionAudit::audit(
+    const std::vector<GovernanceLifecycleTransition>& transitions,
+    const std::string& expectedProposalId,
+    const std::string& expectedPolicyVersion,
+    const std::set<std::string>& authorizedActorIds
+) {
+    return auditImpl(transitions, expectedProposalId, expectedPolicyVersion, &authorizedActorIds);
 }
 
 } // namespace nodo::economics

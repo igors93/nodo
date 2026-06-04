@@ -15,6 +15,10 @@ Amount Amount::fromNodo(std::int64_t wholeNodo) {
         throw std::invalid_argument("Amount cannot be created from negative NODO value.");
     }
 
+    if (wholeNodo > INT64_MAX / UNITS_PER_NODO) {
+        throw std::overflow_error("Amount::fromNodo: value would overflow int64.");
+    }
+
     return Amount(wholeNodo * UNITS_PER_NODO);
 }
 

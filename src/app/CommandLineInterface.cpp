@@ -57,6 +57,68 @@ std::int64_t nowUnixSeconds() {
     ).count();
 }
 
+std::int64_t parseSignedInt64(
+    const std::string& option,
+    const std::string& value
+) {
+    if (value.empty()) {
+        throw std::invalid_argument(option + " value must not be empty.");
+    }
+
+    std::size_t pos = 0;
+    long long result = 0;
+
+    try {
+        result = std::stoll(value, &pos);
+    } catch (const std::out_of_range&) {
+        throw std::invalid_argument(option + " value out of range: " + value);
+    } catch (...) {
+        throw std::invalid_argument(option + " value is not a valid integer: " + value);
+    }
+
+    if (pos != value.size()) {
+        throw std::invalid_argument(
+            option + " value contains non-numeric characters: " + value
+        );
+    }
+
+    return static_cast<std::int64_t>(result);
+}
+
+std::uint64_t parseUnsignedInt64(
+    const std::string& option,
+    const std::string& value
+) {
+    if (value.empty()) {
+        throw std::invalid_argument(option + " value must not be empty.");
+    }
+
+    if (!value.empty() && value[0] == '-') {
+        throw std::invalid_argument(
+            option + " requires a non-negative integer, got: " + value
+        );
+    }
+
+    std::size_t pos = 0;
+    unsigned long long result = 0;
+
+    try {
+        result = std::stoull(value, &pos);
+    } catch (const std::out_of_range&) {
+        throw std::invalid_argument(option + " value out of range: " + value);
+    } catch (...) {
+        throw std::invalid_argument(option + " value is not a valid integer: " + value);
+    }
+
+    if (pos != value.size()) {
+        throw std::invalid_argument(
+            option + " value contains non-numeric characters: " + value
+        );
+    }
+
+    return static_cast<std::uint64_t>(result);
+}
+
 std::string defaultLocalnetUserKeyId() {
     return "local-user";
 }
@@ -459,7 +521,12 @@ CommandLineOptions CommandLineInterface::parse(
             }
 
             options.amountRaw =
-                std::stoll(args[index + 1]);
+                parseSignedInt64("--amount", args[index + 1]);
+
+            if (options.amountRaw < 0) {
+                throw std::invalid_argument("--amount must be non-negative.");
+            }
+
             index += 2;
             continue;
         }
@@ -470,7 +537,12 @@ CommandLineOptions CommandLineInterface::parse(
             }
 
             options.feeRaw =
-                std::stoll(args[index + 1]);
+                parseSignedInt64("--fee", args[index + 1]);
+
+            if (options.feeRaw < 0) {
+                throw std::invalid_argument("--fee must be non-negative.");
+            }
+
             index += 2;
             continue;
         }
@@ -481,9 +553,7 @@ CommandLineOptions CommandLineInterface::parse(
             }
 
             options.nonce =
-                static_cast<std::uint64_t>(
-                    std::stoull(args[index + 1])
-                );
+                parseUnsignedInt64("--nonce", args[index + 1]);
             index += 2;
             continue;
         }
@@ -494,10 +564,7 @@ CommandLineOptions CommandLineInterface::parse(
             }
 
             options.timestamp =
-                static_cast<std::int64_t>(
-                    std::stoll(args[index + 1])
-                );
-
+                parseSignedInt64("--timestamp", args[index + 1]);
             index += 2;
             continue;
         }

@@ -107,13 +107,19 @@ void testVerifyRejectsForgedProof() {
     ));
 }
 
-void testProofContainsExpectedPrefix() {
+void testProofIsHexDigest() {
     const auto p = GovernanceTransitionProof::build(
         "gov-prop-001", "trans-001",
         GovernanceLifecycleState::DRAFT, GovernanceLifecycleState::SUBMITTED,
         5, "actor", "v1"
     );
-    assert(p.find("governance-transition:") == 0);
+    assert(p.size() == 64 && "Proof must be a 64-char SHA-256 hex digest");
+    for (const char c : p) {
+        assert(
+            (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+            && "Proof must contain only lowercase hex characters"
+        );
+    }
 }
 
 } // namespace
@@ -125,6 +131,6 @@ int main() {
     testChangingBlockChangesProof();
     testChangingActorChangesProof();
     testVerifyRejectsForgedProof();
-    testProofContainsExpectedPrefix();
+    testProofIsHexDigest();
     return 0;
 }

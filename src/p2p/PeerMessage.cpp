@@ -1,7 +1,9 @@
 #include "p2p/PeerMessage.hpp"
 
 #include "crypto/hash.h"
+#include "crypto/Hex.hpp"
 
+#include <cctype>
 #include <cstddef>
 #include <sstream>
 #include <stdexcept>
@@ -54,6 +56,59 @@ std::string hashString(
     return std::string(output);
 }
 
+std::string hexEncodePayload(const std::string& payload) {
+    return nodo::crypto::hexEncode(
+        reinterpret_cast<const unsigned char*>(payload.data()),
+        payload.size()
+    );
+}
+
+bool isValidEndpoint(const std::string& endpoint) {
+    if (endpoint.empty()) {
+        return false;
+    }
+
+    const std::size_t colon = endpoint.rfind(':');
+    if (colon == std::string::npos || colon == 0) {
+        return false;
+    }
+
+    const std::string host = endpoint.substr(0, colon);
+    const std::string portStr = endpoint.substr(colon + 1);
+
+    if (host.empty() || portStr.empty()) {
+        return false;
+    }
+
+    for (const char c : portStr) {
+        if (c < '0' || c > '9') {
+            return false;
+        }
+    }
+
+    try {
+        const long port = std::stol(portStr);
+        if (port < 1 || port > 65535) {
+            return false;
+        }
+    } catch (...) {
+        return false;
+    }
+
+    for (const char c : host) {
+        const bool allowed =
+            (c >= 'a' && c <= 'z') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '.' || c == '_';
+        if (!allowed) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 } // namespace
 
 PeerInfo::PeerInfo()
@@ -98,7 +153,7 @@ std::int64_t PeerInfo::lastSeenAt() const {
 
 bool PeerInfo::isValid() const {
     return isSafeIdentifier(m_peerId) &&
-           isSafeIdentifier(m_endpoint) &&
+           isValidEndpoint(m_endpoint) &&
            isSafeIdentifier(m_protocolVersion) &&
            m_lastSeenAt > 0;
 }
@@ -247,7 +302,7 @@ std::string PeerMessage::serialize() const {
         << ";toPeerId=" << m_toPeerId
         << ";createdAt=" << m_createdAt
         << ";ttlSeconds=" << m_ttlSeconds
-        << ";payload=" << m_payload
+        << ";payloadHex=" << hexEncodePayload(m_payload)
         << "}";
 
     return oss.str();
@@ -267,7 +322,7 @@ std::string PeerMessage::computeMessageId(
         << ";fromPeerId=" << fromPeerId
         << ";toPeerId=" << toPeerId
         << ";createdAt=" << createdAt
-        << ";payload=" << payload
+        << ";payloadHex=" << hexEncodePayload(payload)
         << "}";
 
     return hashString(oss.str());

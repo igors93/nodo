@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+BLST_VERSION="v0.3.11"
 BLST_REPOSITORY_URL="https://github.com/supranational/blst.git"
-BLST_ARCHIVE_URL="https://github.com/supranational/blst/archive/refs/heads/master.tar.gz"
+BLST_ARCHIVE_URL="https://github.com/supranational/blst/archive/refs/tags/${BLST_VERSION}.tar.gz"
 INSTALL_PREFIX="${BLST_INSTALL_PREFIX:-"$HOME/.nodo/deps/blst"}"
 
 if [ -z "${HOME:-}" ]; then
@@ -29,7 +30,7 @@ trap cleanup EXIT
 
 download_blst() {
     if command -v git >/dev/null 2>&1; then
-        git clone --depth 1 "$BLST_REPOSITORY_URL" "$SOURCE_DIR"
+        git clone --depth 1 --branch "$BLST_VERSION" "$BLST_REPOSITORY_URL" "$SOURCE_DIR"
         return
     fi
 
