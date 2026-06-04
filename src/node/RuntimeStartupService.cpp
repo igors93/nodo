@@ -125,20 +125,50 @@ StartupValidationResult RuntimeStartupService::verifyGenesis(
 
 StartupValidationResult RuntimeStartupService::validateDataDirectoryCompatibility(
     const NodeRuntimeManifest& manifest,
-    const config::NetworkParameters& params
+    const config::GenesisConfig& genesis
 ) {
+    const config::NetworkParameters& params = genesis.networkParameters();
+    const std::string registeredGenesisId = genesis.deterministicId();
+
     if (manifest.networkName() != params.networkName() ||
         manifest.chainId() != params.chainId() ||
         manifest.protocolVersion() != params.protocolVersion()) {
         return StartupValidationResult::failed(
             "Data directory belongs to network '" +
             manifest.networkName() +
-            "' with chain id '" +
-            manifest.chainId() +
-            "', but command selected network '" +
+            "' (chain='" + manifest.chainId() +
+            "', protocol='" + manifest.protocolVersion() +
+            "'), but command selected network '" +
             params.networkName() +
-            "' with chain id '" +
-            params.chainId() + "'."
+            "' (chain='" + params.chainId() +
+            "', protocol='" + params.protocolVersion() + "')."
+        );
+    }
+
+    // Genesis identity must match. A directory initialized from a different genesis
+    // cannot be reused for a different genesis on the same network name and chain id.
+    if (!registeredGenesisId.empty() &&
+        !manifest.genesisConfigId().empty() &&
+        manifest.genesisConfigId() != registeredGenesisId) {
+        return StartupValidationResult::failed(
+            "Data directory genesis id '" + manifest.genesisConfigId() +
+            "' does not match registered genesis id '" + registeredGenesisId +
+            "' for network '" + params.networkName() +
+            "'. Directory: cannot be used with a different genesis."
+        );
+    }
+
+    if (registeredGenesisId.empty()) {
+        return StartupValidationResult::failed(
+            "Registered genesis id is empty for network '" +
+            params.networkName() + "'. Cannot verify data directory genesis identity."
+        );
+    }
+
+    if (manifest.genesisConfigId().empty()) {
+        return StartupValidationResult::failed(
+            "Data directory manifest has no genesis id stored. "
+            "Directory may be corrupted or initialized by an incompatible version."
         );
     }
 

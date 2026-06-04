@@ -59,7 +59,14 @@ public:
         bool evidenceCaptureHealthy = true,
         bool chainAuditCompleted = false,
         bool genesisRegistered = false,
-        std::string networkClass = ""
+        std::string networkClass = "",
+        std::string registeredGenesisId = "",
+        std::string manifestGenesisId = "",
+        bool finalityVerificationActive = false,
+        bool peerCompatibilityPassed = true,
+        bool latestImportSucceeded = true,
+        std::string latestImportRejectionReason = "",
+        bool defenseRestrictionsActive = false
     );
 
     std::size_t connectedPeers() const;
@@ -73,6 +80,13 @@ public:
     bool chainAuditCompleted() const;
     bool genesisRegistered() const;
     const std::string& networkClass() const;
+    const std::string& registeredGenesisId() const;
+    const std::string& manifestGenesisId() const;
+    bool finalityVerificationActive() const;
+    bool peerCompatibilityPassed() const;
+    bool latestImportSucceeded() const;
+    const std::string& latestImportRejectionReason() const;
+    bool defenseRestrictionsActive() const;
 
 private:
     std::size_t m_connectedPeers;
@@ -86,6 +100,13 @@ private:
     bool m_chainAuditCompleted;
     bool m_genesisRegistered;
     std::string m_networkClass;
+    std::string m_registeredGenesisId;
+    std::string m_manifestGenesisId;
+    bool m_finalityVerificationActive;
+    bool m_peerCompatibilityPassed;
+    bool m_latestImportSucceeded;
+    std::string m_latestImportRejectionReason;
+    bool m_defenseRestrictionsActive;
 };
 
 class TestnetReadinessChecker {

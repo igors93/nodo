@@ -65,10 +65,11 @@ public:
     );
 
     // Validate that the data directory's stored network identity is compatible
-    // with the selected genesis. Returns invalid() on mismatch.
+    // with the selected genesis. Checks network name, chain id, protocol version,
+    // and genesis id. Returns invalid() on any mismatch.
     static StartupValidationResult validateDataDirectoryCompatibility(
         const NodeRuntimeManifest& manifest,
-        const config::NetworkParameters& params
+        const config::GenesisConfig& genesis
     );
 
     // Combined check: resolves genesis, validates profile, and verifies genesis.

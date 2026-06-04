@@ -12,7 +12,7 @@ int main() {
 
     std::filesystem::remove_all(root);
 
-    const std::string genesisId = "nodo-localnet-genesis-v1";
+    const std::string genesisId = "nodo-localnet-genesis";
 
     node::TcpTestnetNodeRuntime nodeA(
         node::TcpTestnetNodeRuntimeConfig(

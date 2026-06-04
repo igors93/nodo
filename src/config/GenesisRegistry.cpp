@@ -20,15 +20,15 @@ crypto::PublicKey deterministicUserKey(const std::string& seed) {
 }
 
 std::string localnetUserKeySeed() {
-    return "nodo-localnet-user-key-v1";
+    return "nodo-localnet-user-seed";
 }
 
 std::string testnetCandidateUserKeySeed() {
-    return "nodo-testnet-candidate-user-key-v1";
+    return "nodo-testnet-candidate-user-seed";
 }
 
 std::string testnetCandidateValidatorKeySeed(std::size_t index) {
-    return "nodo-testnet-candidate-validator-key-v1-" + std::to_string(index);
+    return "nodo-testnet-candidate-validator-seed-" + std::to_string(index);
 }
 
 GenesisConfig buildLocalnetGenesis() {
@@ -44,7 +44,7 @@ GenesisConfig buildLocalnetGenesis() {
         1900000000,
         {
             BootstrapValidatorConfig(
-                deterministicValidatorKey("nodo-localnet-validator-key-v1"),
+                deterministicValidatorKey("nodo-localnet-validator-seed"),
                 1,
                 1,
                 "localnet-genesis-validator"
@@ -57,7 +57,7 @@ GenesisConfig buildLocalnetGenesis() {
                 0
             )
         },
-        "nodo-localnet-genesis-v1"
+        "nodo-localnet-genesis"
     );
 }
 
@@ -92,7 +92,7 @@ GenesisConfig buildTestnetCandidateGenesis() {
                 0
             )
         },
-        "nodo-testnet-candidate-genesis-v1"
+        "nodo-testnet-candidate-genesis"
     );
 }
 

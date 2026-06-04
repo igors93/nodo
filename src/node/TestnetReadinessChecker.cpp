@@ -48,7 +48,14 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig()
       m_evidenceCaptureHealthy(true),
       m_chainAuditCompleted(false),
       m_genesisRegistered(false),
-      m_networkClass("") {}
+      m_networkClass(""),
+      m_registeredGenesisId(""),
+      m_manifestGenesisId(""),
+      m_finalityVerificationActive(false),
+      m_peerCompatibilityPassed(true),
+      m_latestImportSucceeded(true),
+      m_latestImportRejectionReason(""),
+      m_defenseRestrictionsActive(false) {}
 
 TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
     std::size_t connectedPeers,
@@ -61,7 +68,14 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
     bool evidenceCaptureHealthy,
     bool chainAuditCompleted,
     bool genesisRegistered,
-    std::string networkClass
+    std::string networkClass,
+    std::string registeredGenesisId,
+    std::string manifestGenesisId,
+    bool finalityVerificationActive,
+    bool peerCompatibilityPassed,
+    bool latestImportSucceeded,
+    std::string latestImportRejectionReason,
+    bool defenseRestrictionsActive
 )
     : m_connectedPeers(connectedPeers),
       m_genesisVerified(genesisVerified),
@@ -73,7 +87,14 @@ TestnetReadinessCheckerConfig::TestnetReadinessCheckerConfig(
       m_evidenceCaptureHealthy(evidenceCaptureHealthy),
       m_chainAuditCompleted(chainAuditCompleted),
       m_genesisRegistered(genesisRegistered),
-      m_networkClass(std::move(networkClass)) {}
+      m_networkClass(std::move(networkClass)),
+      m_registeredGenesisId(std::move(registeredGenesisId)),
+      m_manifestGenesisId(std::move(manifestGenesisId)),
+      m_finalityVerificationActive(finalityVerificationActive),
+      m_peerCompatibilityPassed(peerCompatibilityPassed),
+      m_latestImportSucceeded(latestImportSucceeded),
+      m_latestImportRejectionReason(std::move(latestImportRejectionReason)),
+      m_defenseRestrictionsActive(defenseRestrictionsActive) {}
 
 std::size_t TestnetReadinessCheckerConfig::connectedPeers() const { return m_connectedPeers; }
 bool TestnetReadinessCheckerConfig::genesisVerified() const { return m_genesisVerified; }
@@ -86,6 +107,13 @@ bool TestnetReadinessCheckerConfig::evidenceCaptureHealthy() const { return m_ev
 bool TestnetReadinessCheckerConfig::chainAuditCompleted() const { return m_chainAuditCompleted; }
 bool TestnetReadinessCheckerConfig::genesisRegistered() const { return m_genesisRegistered; }
 const std::string& TestnetReadinessCheckerConfig::networkClass() const { return m_networkClass; }
+const std::string& TestnetReadinessCheckerConfig::registeredGenesisId() const { return m_registeredGenesisId; }
+const std::string& TestnetReadinessCheckerConfig::manifestGenesisId() const { return m_manifestGenesisId; }
+bool TestnetReadinessCheckerConfig::finalityVerificationActive() const { return m_finalityVerificationActive; }
+bool TestnetReadinessCheckerConfig::peerCompatibilityPassed() const { return m_peerCompatibilityPassed; }
+bool TestnetReadinessCheckerConfig::latestImportSucceeded() const { return m_latestImportSucceeded; }
+const std::string& TestnetReadinessCheckerConfig::latestImportRejectionReason() const { return m_latestImportRejectionReason; }
+bool TestnetReadinessCheckerConfig::defenseRestrictionsActive() const { return m_defenseRestrictionsActive; }
 
 namespace {
 
@@ -274,6 +302,74 @@ void addProtocolSafetyGates(
                : "Chain audit has NOT been completed for this official network with finalized blocks. "
                  "Run 'nodo chain audit' before starting. An unaudited node must not "
                  "join '" + params.networkName() + "'."
+        );
+    }
+
+    // Genesis compatibility: manifest genesis id must match the registered genesis id.
+    // A data directory from a different genesis cannot be used for this network.
+    {
+        const bool hasIds = !config.registeredGenesisId().empty() &&
+                            !config.manifestGenesisId().empty();
+        const bool match  = !hasIds ||
+                            config.manifestGenesisId() == config.registeredGenesisId();
+        checks.emplace_back(
+            "genesis_compatibility",
+            match,
+            match ? (hasIds
+                        ? "Manifest genesis id matches registered genesis id."
+                        : "Genesis id comparison skipped (ids not provided).")
+                  : "Data directory genesis id '" + config.manifestGenesisId() +
+                    "' does not match registered genesis id '" +
+                    config.registeredGenesisId() + "'. "
+                    "This data directory belongs to a different genesis and cannot "
+                    "be used for '" + params.networkName() + "'."
+        );
+    }
+
+    // Peer compatibility: recent peer handshakes must have passed genesis and
+    // network checks. A node that cannot establish compatible peers is not ready.
+    {
+        const bool hasPeers = config.connectedPeers() > 0;
+        const bool ok       = !hasPeers || config.peerCompatibilityPassed();
+        checks.emplace_back(
+            "peer_compatibility",
+            ok,
+            ok ? (hasPeers
+                     ? "Connected peers passed genesis and network compatibility checks."
+                     : "No connected peers; peer compatibility check skipped.")
+               : "One or more connected peers failed genesis or network compatibility. "
+                 "Ensure peers are on the same chain and genesis before participating."
+        );
+    }
+
+    // Latest artifact import: the most recent sync import must have succeeded
+    // if it was attempted. A node whose last import failed may be in an
+    // inconsistent state relative to the network.
+    {
+        const bool ok = config.latestImportSucceeded();
+        const std::string& reason = config.latestImportRejectionReason();
+        checks.emplace_back(
+            "latest_import_succeeded",
+            ok,
+            ok ? "Latest artifact import succeeded."
+               : "Latest artifact import failed: " +
+                 (reason.empty() ? "unknown reason" : reason) +
+                 ". Resolve the import failure before participating in sync."
+        );
+    }
+
+    // Defense-mode economic restrictions: if active, extraordinary economic
+    // actions are blocked. The node must expose this clearly so operators can
+    // decide whether the restriction is acceptable before network participation.
+    {
+        const bool ok = !config.defenseRestrictionsActive();
+        checks.emplace_back(
+            "defense_mode_economic_restrictions",
+            ok,
+            ok ? "No active defense-mode economic restrictions."
+               : "Defense-mode economic restrictions are active. Extraordinary rewards, "
+                 "mint, and treasury spend are blocked. Confirm chain audit before "
+                 "participating in '" + params.networkName() + "'."
         );
     }
 }

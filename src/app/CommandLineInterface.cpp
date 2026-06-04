@@ -62,7 +62,7 @@ std::string defaultLocalnetUserKeyId() {
 }
 
 std::string defaultLocalnetUserKeySeed() {
-    return "nodo-localnet-user-key-v1";
+    return "nodo-localnet-user-seed";
 }
 
 bool isOption(
@@ -119,12 +119,17 @@ std::optional<std::string> manifestNetworkMismatch(
     const node::NodeRuntimeManifest& manifest,
     const CommandLineOptions& options
 ) {
-    const config::NetworkParameters selected =
-        networkParametersForOptions(options);
+    const config::GenesisLookupResult lookup =
+        node::RuntimeStartupService::resolveGenesis(options.networkName);
+
+    if (!lookup.found()) {
+        return "Cannot resolve genesis for network '" + options.networkName +
+               "': " + lookup.reason();
+    }
 
     const node::StartupValidationResult compatCheck =
         node::RuntimeStartupService::validateDataDirectoryCompatibility(
-            manifest, selected
+            manifest, lookup.genesis()
         );
 
     if (!compatCheck.valid()) {
@@ -552,7 +557,7 @@ std::string CommandLineInterface::defaultLocalnetKeyId() {
 }
 
 std::string CommandLineInterface::defaultLocalnetKeySeed() {
-    return "nodo-localnet-validator-key-v1";
+    return "nodo-localnet-validator-seed";
 }
 
 p2p::PeerInfo CommandLineInterface::localPeerFromOptions(
@@ -1106,17 +1111,30 @@ CommandLineResult CommandLineInterface::executeDiagnostics(
         warnings.push_back("Node data directory is not initialized: " + manifest.reason());
     }
 
+    const std::string registeredGenesisId = genesisConfig.deterministicId();
+    const std::string manifestGenesisId =
+        manifest.loaded() ? manifest.manifest().genesisConfigId() : "";
+    const bool genesisCompatible =
+        manifestGenesisId.empty() ||
+        manifestGenesisId == registeredGenesisId;
+
     const node::OperatorDiagnosticsReport report =
         node::OperatorDiagnostics::collect(
             params,
-            genesisConfig.deterministicId(),
+            registeredGenesisId,
+            manifestGenesisId,
             config::networkClassToString(params.networkClass()),
             manifest.loaded() ? manifest.manifest().latestBlockHeight() : 0,
+            manifest.loaded() ? manifest.manifest().latestBlockHash() : "",
             manifest.loaded() ? manifest.manifest().validatorCount()
                               : genesisConfig.bootstrapValidators().size(),
             manifest.loaded() ? manifest.manifest().peerCount() : 0,
             true, // resolveAndVerify() already verified genesis
+            genesisCompatible,
             keyPolicyPassed,
+            "",   // latestImportStatus not tracked at CLI level
+            "",   // latestImportRejectionReason
+            false, // defenseRestrictionsActive requires runtime
             warnings
         );
 

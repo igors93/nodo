@@ -5,6 +5,49 @@
 
 namespace nodo::p2p {
 
+namespace {
+
+// Extracts the value of a named field from a serialized key=value payload
+// produced by PeerHelloMessage::serialize(). Fields are delimited by ';'.
+// Nested brace groups (e.g., peer={...}) are skipped over so that a ';'
+// inside a nested block does not terminate the value prematurely.
+//
+// Returns the extracted value, or an empty string if the field is absent.
+std::string extractSerializedField(
+    const std::string& payload,
+    const std::string& fieldName
+) {
+    const std::string prefix = ";" + fieldName + "=";
+    const auto startPos = payload.find(prefix);
+    if (startPos == std::string::npos) {
+        return "";
+    }
+    const auto valueStart = startPos + prefix.size();
+    std::size_t depth = 0;
+    std::size_t pos = valueStart;
+    while (pos < payload.size()) {
+        const char c = payload[pos];
+        if (c == '{') {
+            ++depth;
+        } else if (c == '}') {
+            if (depth == 0) break;
+            --depth;
+        } else if (c == ';' && depth == 0) {
+            break;
+        }
+        ++pos;
+    }
+    return payload.substr(valueStart, pos - valueStart);
+}
+
+// Returns true if the payload string looks structurally like a PeerHelloMessage.
+bool hasHelloMessageWrapper(const std::string& payload) {
+    return payload.rfind("PeerHelloMessage{", 0) == 0 &&
+           payload.back() == '}';
+}
+
+} // namespace
+
 PeerHelloMessage::PeerHelloMessage()
     : m_peer(),
       m_networkId(""),
@@ -160,16 +203,33 @@ PeerHandshakeResult PeerHandshakeManager::validateHello(
         );
     }
 
-    // Reject peers from a different genesis. Nodes on the same network and
-    // chain but with a divergent genesis history must not sync with each other.
-    if (!config.genesisId().empty()) {
-        const std::string expectedField = ";genesisId=" + config.genesisId() + ";";
+    // Parse and validate genesis identity. The payload must be a well-formed
+    // PeerHelloMessage serialization so genesis id is extracted as a discrete
+    // field, not matched as a substring of arbitrary payload content.
+    {
         const std::string& payload = envelope.payload();
-        if (payload.find(expectedField) == std::string::npos) {
+
+        if (!hasHelloMessageWrapper(payload)) {
             return PeerHandshakeResult(
                 PeerHandshakeStatus::REJECTED,
-                "Peer hello genesis identity does not match local genesis '" +
-                config.genesisId() + "'."
+                "Peer hello payload is not a valid PeerHelloMessage structure."
+            );
+        }
+
+        const std::string peerGenesisId = extractSerializedField(payload, "genesisId");
+
+        if (peerGenesisId.empty()) {
+            return PeerHandshakeResult(
+                PeerHandshakeStatus::REJECTED,
+                "Peer hello payload is missing the genesisId field."
+            );
+        }
+
+        if (!config.genesisId().empty() && peerGenesisId != config.genesisId()) {
+            return PeerHandshakeResult(
+                PeerHandshakeStatus::REJECTED,
+                "Peer hello genesis id '" + peerGenesisId +
+                "' does not match local genesis '" + config.genesisId() + "'."
             );
         }
     }
