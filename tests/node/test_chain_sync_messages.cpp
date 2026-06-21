@@ -1,6 +1,8 @@
 #include "node/ChainSyncMessages.hpp"
+#include "node/BlockSyncHandler.hpp"
 
 #include <cassert>
+#include <string>
 #include <vector>
 
 int main() {
@@ -34,6 +36,14 @@ int main() {
 
     assert(request.isValid());
     assert(request.serialize().find("NetworkBlockSyncRequest") != std::string::npos);
+
+    assert(nodo::node::BlockSyncHandler::deserializeBlockList(
+        "NODO_BLOCK_LIST_V1\ncount=1abc\nBlock{}\n"
+    ).empty());
+
+    assert(nodo::node::BlockSyncHandler::deserializeBlockList(
+        "NODO_BLOCK_LIST_V1\ncount=2\nBlock{}\n"
+    ).empty());
 
     return 0;
 }

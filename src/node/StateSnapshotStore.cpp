@@ -6,6 +6,34 @@
 
 namespace nodo::node {
 
+namespace {
+
+bool parseUint64Strict(const std::string& value, std::uint64_t& out) {
+    if (value.empty()) {
+        return false;
+    }
+
+    for (const char c : value) {
+        if (c < '0' || c > '9') {
+            return false;
+        }
+    }
+
+    try {
+        std::size_t parsedCharacters = 0;
+        const unsigned long long parsed = std::stoull(value, &parsedCharacters);
+        if (parsedCharacters != value.size()) {
+            return false;
+        }
+        out = static_cast<std::uint64_t>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+} // namespace
+
 StateSnapshotStore::StateSnapshotStore(std::filesystem::path snapshotPath)
     : m_path(std::move(snapshotPath))
 {}
@@ -94,11 +122,12 @@ std::uint64_t StateSnapshotStore::snapshotHeight() const {
 
     if (!std::getline(in, heightLine)) return 0;
 
-    try {
-        return std::stoull(heightLine);
-    } catch (...) {
+    std::uint64_t parsedHeight = 0;
+    if (!parseUint64Strict(heightLine, parsedHeight)) {
         return 0;
     }
+
+    return parsedHeight;
 }
 
 std::filesystem::path StateSnapshotStore::path() const {

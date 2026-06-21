@@ -3,6 +3,7 @@
 #include "serialization/KeyValueFileCodec.hpp"
 
 #include <fstream>
+#include <limits>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -55,7 +56,23 @@ std::uint64_t requireUint64(
 ) {
     const std::string& raw = doc.requireField(key);
     try {
-        return std::stoull(raw);
+        if (raw.empty()) {
+            throw std::invalid_argument("empty");
+        }
+        for (const char c : raw) {
+            if (c < '0' || c > '9') {
+                throw std::invalid_argument("malformed");
+            }
+        }
+        std::size_t parsedCharacters = 0;
+        const unsigned long long parsed = std::stoull(raw, &parsedCharacters);
+        if (parsedCharacters != raw.size() ||
+            parsed > static_cast<unsigned long long>(
+                std::numeric_limits<std::uint64_t>::max()
+            )) {
+            throw std::invalid_argument("malformed");
+        }
+        return static_cast<std::uint64_t>(parsed);
     } catch (const std::exception&) {
         throw std::runtime_error(
             "EpochTreasuryReportStore: field '" + key +
@@ -70,7 +87,24 @@ std::int64_t requireInt64(
 ) {
     const std::string& raw = doc.requireField(key);
     try {
-        return std::stoll(raw);
+        if (raw.empty()) {
+            throw std::invalid_argument("empty");
+        }
+        for (std::size_t index = 0; index < raw.size(); ++index) {
+            const char c = raw[index];
+            if (c == '-' && index == 0 && raw.size() > 1) {
+                continue;
+            }
+            if (c < '0' || c > '9') {
+                throw std::invalid_argument("malformed");
+            }
+        }
+        std::size_t parsedCharacters = 0;
+        const long long parsed = std::stoll(raw, &parsedCharacters);
+        if (parsedCharacters != raw.size()) {
+            throw std::invalid_argument("malformed");
+        }
+        return static_cast<std::int64_t>(parsed);
     } catch (const std::exception&) {
         throw std::runtime_error(
             "EpochTreasuryReportStore: field '" + key +
@@ -121,6 +155,11 @@ economics::EpochTreasuryReport EpochTreasuryReportStore::decode(
     if (totalRaw < 0) {
         throw std::runtime_error(
             "EpochTreasuryReportStore: treasurySpendTotalRawUnits must not be negative"
+        );
+    }
+    if (count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        throw std::runtime_error(
+            "EpochTreasuryReportStore: spendRecordCount exceeds size_t range"
         );
     }
 

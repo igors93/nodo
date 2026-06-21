@@ -195,14 +195,57 @@ std::uint64_t parseUint64Field(
     const std::string& key
 ) {
     const std::string& raw = doc.requireField(key);
-    return static_cast<std::uint64_t>(std::stoull(raw));
+    if (raw.empty()) {
+        throw std::runtime_error(
+            "RuntimeSafetyStateStore: field '" + key + "' is empty"
+        );
+    }
+    for (const char c : raw) {
+        if (c < '0' || c > '9') {
+            throw std::runtime_error(
+                "RuntimeSafetyStateStore: field '" + key + "' is not a valid uint64"
+            );
+        }
+    }
+    std::size_t parsedCharacters = 0;
+    const unsigned long long parsed = std::stoull(raw, &parsedCharacters);
+    if (parsedCharacters != raw.size()) {
+        throw std::runtime_error(
+            "RuntimeSafetyStateStore: field '" + key + "' is not a valid uint64"
+        );
+    }
+    return static_cast<std::uint64_t>(parsed);
 }
 
 std::int64_t parseInt64Field(
     const serialization::KeyValueFileDocument& doc,
     const std::string& key
 ) {
-    return std::stoll(doc.requireField(key));
+    const std::string& raw = doc.requireField(key);
+    if (raw.empty()) {
+        throw std::runtime_error(
+            "RuntimeSafetyStateStore: field '" + key + "' is empty"
+        );
+    }
+    for (std::size_t index = 0; index < raw.size(); ++index) {
+        const char c = raw[index];
+        if (c == '-' && index == 0 && raw.size() > 1) {
+            continue;
+        }
+        if (c < '0' || c > '9') {
+            throw std::runtime_error(
+                "RuntimeSafetyStateStore: field '" + key + "' is not a valid int64"
+            );
+        }
+    }
+    std::size_t parsedCharacters = 0;
+    const long long parsed = std::stoll(raw, &parsedCharacters);
+    if (parsedCharacters != raw.size()) {
+        throw std::runtime_error(
+            "RuntimeSafetyStateStore: field '" + key + "' is not a valid int64"
+        );
+    }
+    return static_cast<std::int64_t>(parsed);
 }
 
 bool parseBoolField(

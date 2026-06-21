@@ -21,6 +21,32 @@ void removeLine(std::string& encoded, const std::string& field) {
     encoded.erase(pos, lineEnd - pos + 1);
 }
 
+void replaceFieldValue(
+    std::string& encoded,
+    const std::string& field,
+    const std::string& value
+) {
+    const std::string prefix = field + "=";
+    const std::size_t pos = encoded.find(prefix);
+    assert(pos != std::string::npos);
+    const std::size_t lineEnd = encoded.find('\n', pos);
+    assert(lineEnd != std::string::npos);
+    encoded.replace(pos, lineEnd - pos, prefix + value);
+}
+
+void appendFieldValueSuffix(
+    std::string& encoded,
+    const std::string& field,
+    const std::string& suffix
+) {
+    const std::string prefix = field + "=";
+    const std::size_t pos = encoded.find(prefix);
+    assert(pos != std::string::npos);
+    const std::size_t lineEnd = encoded.find('\n', pos);
+    assert(lineEnd != std::string::npos);
+    encoded.insert(lineEnd, suffix);
+}
+
 void testRoundTripValidLifecycle() {
     const auto lifecycle = validLifecycle();
     const std::string encoded = GovernanceLifecycleCodec::encode(lifecycle);
@@ -124,11 +150,33 @@ void testVStyleSchemaRejected() {
 
 void testTamperedPersistedLifecycleRejectedByVerifier() {
     std::string encoded = GovernanceLifecycleCodec::encode(validLifecycle());
-    const std::string from = "tally.yesVotingPowerRawUnits=60\n";
-    const std::string to = "tally.yesVotingPowerRawUnits=61\n";
-    const std::size_t pos = encoded.find(from);
-    assert(pos != std::string::npos);
-    encoded.replace(pos, from.size(), to);
+    replaceFieldValue(encoded, "tally.yesVotingPowerRawUnits", "61");
+
+    bool threw = false;
+    try {
+        (void)GovernanceLifecycleCodec::decode(encoded);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void testPartialNumericCreatedBlockRejected() {
+    std::string encoded = GovernanceLifecycleCodec::encode(validLifecycle());
+    appendFieldValueSuffix(encoded, "createdAtBlock", "abc");
+
+    bool threw = false;
+    try {
+        (void)GovernanceLifecycleCodec::decode(encoded);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void testPartialNumericTallyRejected() {
+    std::string encoded = GovernanceLifecycleCodec::encode(validLifecycle());
+    appendFieldValueSuffix(encoded, "tally.yesVotingPowerRawUnits", "abc");
 
     bool threw = false;
     try {
@@ -151,5 +199,7 @@ int main() {
     testUnexpectedFieldRejected();
     testVStyleSchemaRejected();
     testTamperedPersistedLifecycleRejectedByVerifier();
+    testPartialNumericCreatedBlockRejected();
+    testPartialNumericTallyRejected();
     return 0;
 }

@@ -103,6 +103,40 @@ void testMissingFieldRejected() {
     assert(threw);
 }
 
+void testPartialNumericEpochRejected() {
+    std::string encoded = EpochTreasuryReportStore::encode(zeroReport());
+    const std::string target = "epoch=0\n";
+    const std::string replacement = "epoch=0abc\n";
+    const std::size_t pos = encoded.find(target);
+    assert(pos != std::string::npos);
+    encoded.replace(pos, target.size(), replacement);
+
+    bool threw = false;
+    try {
+        (void)EpochTreasuryReportStore::decode(encoded);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void testPartialNumericSpendCountRejected() {
+    std::string encoded = EpochTreasuryReportStore::encode(zeroReport());
+    const std::string target = "spendRecordCount=0\n";
+    const std::string replacement = "spendRecordCount=0abc\n";
+    const std::size_t pos = encoded.find(target);
+    assert(pos != std::string::npos);
+    encoded.replace(pos, target.size(), replacement);
+
+    bool threw = false;
+    try {
+        (void)EpochTreasuryReportStore::decode(encoded);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
 // Matching persisted vs rebuilt report passes verification.
 void testMatchingReportsPassed() {
     const auto rebuilt = EpochTreasuryReport::fromSpendRecords(0, {});
@@ -172,6 +206,8 @@ int main() {
     testFileWriteReadRoundTrip();
     testVStyleSchemaRejected();
     testMissingFieldRejected();
+    testPartialNumericEpochRejected();
+    testPartialNumericSpendCountRejected();
     testMatchingReportsPassed();
     testTamperedTotalFails();
     testTamperedCountFails();

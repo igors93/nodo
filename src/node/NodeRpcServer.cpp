@@ -4,14 +4,23 @@
 #include "core/LedgerRecord.hpp"
 #include "core/State.hpp"
 #include "core/Transaction.hpp"
+#include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "crypto/CryptoSuiteId.hpp"
+#include "crypto/PublicKey.hpp"
+#include "crypto/Signature.hpp"
+#include "crypto/SignatureBundle.hpp"
+#include "crypto/SigningDomain.hpp"
 #include "mempool/Mempool.hpp"
+#include "serialization/KeyValueFileCodec.hpp"
 #include "utils/Amount.hpp"
 
 #include <cerrno>
 #include <chrono>
 #include <cstring>
 #include <netinet/in.h>
+#include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -28,6 +37,19 @@ namespace nodo::node {
 
 namespace {
 
+const std::string kRpcSubmitSchemaId =
+    "NODO_RPC_TRANSACTION_SUBMISSION_V1";
+
+const std::set<std::string> kRpcSubmitFields = {
+    "transaction",
+    "publicKeyAlgorithm",
+    "publicKeyMaterial",
+    "signatureSuite",
+    "signatureDomain",
+    "signatureHex",
+    "signatureCreatedAt"
+};
+
 std::string jsonString(const std::string& s) {
     std::string out;
     out.reserve(s.size() + 2);
@@ -42,6 +64,188 @@ std::string jsonString(const std::string& s) {
     }
     out += '"';
     return out;
+}
+
+bool sendAll(int fd, const std::string& data) {
+    const char* cursor = data.data();
+    std::size_t remaining = data.size();
+
+    while (remaining > 0) {
+        const ssize_t sent = ::send(fd, cursor, remaining, 0);
+        if (sent <= 0) {
+            return false;
+        }
+
+        cursor += sent;
+        remaining -= static_cast<std::size_t>(sent);
+    }
+
+    return true;
+}
+
+bool parseUint64Strict(const std::string& value, std::uint64_t& out) {
+    if (value.empty()) {
+        return false;
+    }
+
+    for (const char c : value) {
+        if (c < '0' || c > '9') {
+            return false;
+        }
+    }
+
+    try {
+        std::size_t parsedCharacters = 0;
+        const unsigned long long parsed = std::stoull(value, &parsedCharacters);
+        if (parsedCharacters != value.size()) {
+            return false;
+        }
+        out = static_cast<std::uint64_t>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+std::int64_t parseInt64Strict(
+    const std::string& value,
+    const std::string& field
+) {
+    if (value.empty()) {
+        throw std::invalid_argument("empty field: " + field);
+    }
+
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        const char c = value[index];
+        if (c == '-' && index == 0 && value.size() > 1) {
+            continue;
+        }
+        if (c < '0' || c > '9') {
+            throw std::invalid_argument("malformed integer field: " + field);
+        }
+    }
+
+    std::size_t parsedCharacters = 0;
+    const long long parsed = std::stoll(value, &parsedCharacters);
+    if (parsedCharacters != value.size()) {
+        throw std::invalid_argument("malformed integer field: " + field);
+    }
+
+    return static_cast<std::int64_t>(parsed);
+}
+
+std::string extractSerializedSignatureBundle(
+    const std::string& serializedTransaction
+) {
+    const std::string marker = ";signatureBundle=";
+    const std::size_t markerPosition =
+        serializedTransaction.rfind(marker);
+
+    if (markerPosition == std::string::npos ||
+        serializedTransaction.empty() ||
+        serializedTransaction.back() != '}') {
+        throw std::invalid_argument(
+            "Serialized transaction is missing signatureBundle."
+        );
+    }
+
+    const std::size_t bundleStart = markerPosition + marker.size();
+    if (bundleStart >= serializedTransaction.size() - 1) {
+        throw std::invalid_argument(
+            "Serialized transaction has an empty signatureBundle."
+        );
+    }
+
+    return serializedTransaction.substr(
+        bundleStart,
+        serializedTransaction.size() - bundleStart - 1
+    );
+}
+
+core::Transaction parseSignedTransactionSubmission(
+    const std::string& body
+) {
+    const serialization::KeyValueFileDocument fields =
+        serialization::KeyValueFileCodec::parse(body, kRpcSubmitSchemaId);
+
+    fields.requireOnlyFields(kRpcSubmitFields);
+
+    const std::string transactionText =
+        fields.requireField("transaction");
+
+    core::Transaction transaction =
+        core::Transaction::deserializeForStateReplay(transactionText);
+
+    const crypto::CryptoAlgorithm algorithm =
+        crypto::cryptoAlgorithmFromString(
+            fields.requireField("publicKeyAlgorithm")
+        );
+
+    if (crypto::cryptoAlgorithmToString(algorithm) !=
+        fields.requireField("publicKeyAlgorithm")) {
+        throw std::invalid_argument("Unknown public key algorithm.");
+    }
+
+    const crypto::PublicKey publicKey(
+        algorithm,
+        fields.requireField("publicKeyMaterial")
+    );
+
+    if (!publicKey.isValid()) {
+        throw std::invalid_argument("Invalid public key material.");
+    }
+
+    const crypto::CryptoSuiteId suite =
+        crypto::cryptoSuiteIdFromString(
+            fields.requireField("signatureSuite")
+        );
+
+    if (!crypto::isSupportedCryptoSuite(suite)) {
+        throw std::invalid_argument("Unsupported signature suite.");
+    }
+
+    const crypto::SigningDomain domain =
+        crypto::signingDomainFromString(
+            fields.requireField("signatureDomain")
+        );
+
+    if (domain == crypto::SigningDomain::UNKNOWN) {
+        throw std::invalid_argument("Unknown signature domain.");
+    }
+
+    crypto::SignatureBundle signatureBundle;
+    signatureBundle.addSignature(
+        crypto::Signature(
+            suite,
+            domain,
+            algorithm,
+            publicKey,
+            fields.requireField("signatureHex"),
+            parseInt64Strict(
+                fields.requireField("signatureCreatedAt"),
+                "signatureCreatedAt"
+            )
+        )
+    );
+
+    const std::string embeddedBundle =
+        extractSerializedSignatureBundle(transactionText);
+
+    if (embeddedBundle != signatureBundle.serialize()) {
+        throw std::invalid_argument(
+            "Submitted signature does not match the embedded transaction signatureBundle."
+        );
+    }
+
+    transaction.attachSignatureBundle(signatureBundle);
+
+    if (transaction.serialize() != transactionText) {
+        throw std::invalid_argument(
+            "Submitted transaction is not canonical."
+        );
+    }
+
+    return transaction;
 }
 
 } // anonymous namespace
@@ -174,13 +378,23 @@ void NodeRpcServer::handleClient(int clientFd) {
     std::string method, path, body;
     if (!parseRequestLine(request, method, path, body)) {
         const std::string resp = httpResponse(400, jsonError("Bad request"));
-        ::send(clientFd, resp.c_str(), resp.size(), 0);
+        (void)sendAll(clientFd, resp);
         return;
     }
 
-    const auto [statusCode, responseBody] = dispatch(method, path, body);
+    std::pair<int, std::string> response;
+    try {
+        response = dispatch(method, path, body);
+    } catch (const std::exception& e) {
+        response = {
+            500,
+            jsonError(std::string("Internal RPC error: ") + e.what())
+        };
+    }
+
+    const auto [statusCode, responseBody] = response;
     const std::string resp = httpResponse(statusCode, responseBody);
-    ::send(clientFd, resp.c_str(), resp.size(), 0);
+    (void)sendAll(clientFd, resp);
 }
 
 bool NodeRpcServer::parseRequestLine(
@@ -324,9 +538,7 @@ std::string NodeRpcServer::handleStatus() const {
 
 std::string NodeRpcServer::handleBlock(const std::string& heightStr) const {
     std::uint64_t height = 0;
-    try {
-        height = std::stoull(heightStr);
-    } catch (...) {
+    if (!parseUint64Strict(heightStr, height)) {
         return jsonError("Invalid height: " + heightStr);
     }
 
@@ -443,9 +655,29 @@ std::string NodeRpcServer::handleSubmit(const std::string& body) {
         return jsonError("Empty request body");
     }
 
-    core::Transaction tx = core::Transaction::deserializeForStateReplay(body);
-    if (tx.id().empty()) {
-        return jsonError("Failed to deserialize transaction");
+    std::optional<core::Transaction> parsedTx;
+    try {
+        parsedTx = [&]() {
+            if (body.rfind(kRpcSubmitSchemaId, 0) == 0) {
+                return parseSignedTransactionSubmission(body);
+            }
+
+            if (body.rfind("Transaction{", 0) == 0) {
+                throw std::invalid_argument(
+                    "Raw Transaction serialization is not self-contained for RPC submit; "
+                    "send a NODO_RPC_TRANSACTION_SUBMISSION_V1 envelope with public key material."
+                );
+            }
+
+            throw std::invalid_argument("Unsupported submit payload schema.");
+        }();
+    } catch (const std::exception& e) {
+        return jsonError(std::string("Invalid submit payload: ") + e.what());
+    }
+
+    const core::Transaction& tx = parsedTx.value();
+    if (tx.id().empty() || !tx.hasSignatureBundle()) {
+        return jsonError("Failed to deserialize signed transaction");
     }
 
     const std::int64_t now =

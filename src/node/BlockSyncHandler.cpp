@@ -5,6 +5,7 @@
 #include "p2p/NetworkEnvelope.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -58,12 +59,25 @@ std::string extractField(const std::string& text, const std::string& key) {
     return text.substr(valueStart, i - valueStart);
 }
 
-std::uint64_t parseUint64(const std::string& value, std::uint64_t fallback = 0) {
-    if (value.empty()) return fallback;
+std::optional<std::uint64_t> parseUint64(const std::string& value) {
+    if (value.empty()) return std::nullopt;
+    for (const char c : value) {
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+    }
     try {
-        return static_cast<std::uint64_t>(std::stoull(value));
+        std::size_t parsedCharacters = 0;
+        const unsigned long long parsed = std::stoull(value, &parsedCharacters);
+        if (parsedCharacters != value.size() ||
+            parsed > static_cast<unsigned long long>(
+                std::numeric_limits<std::uint64_t>::max()
+            )) {
+            return std::nullopt;
+        }
+        return static_cast<std::uint64_t>(parsed);
     } catch (...) {
-        return fallback;
+        return std::nullopt;
     }
 }
 
@@ -85,9 +99,15 @@ ParsedSyncRequest parseSyncRequest(const std::string& payload) {
 
     const std::string fromHeightStr = extractField(payload, "fromHeight");
     const std::string maxBlocksStr  = extractField(payload, "maxBlocks");
+    const std::optional<std::uint64_t> fromHeight = parseUint64(fromHeightStr);
+    const std::optional<std::uint64_t> maxBlocks = parseUint64(maxBlocksStr);
 
-    out.fromHeight = parseUint64(fromHeightStr);
-    out.maxBlocks  = parseUint64(maxBlocksStr);
+    if (!fromHeight.has_value() || !maxBlocks.has_value()) {
+        return {};
+    }
+
+    out.fromHeight = fromHeight.value();
+    out.maxBlocks  = maxBlocks.value();
     out.valid      = !out.requesterId.empty() && out.maxBlocks > 0;
 
     return out;
@@ -146,11 +166,19 @@ std::vector<core::Block> BlockSyncHandler::deserializeBlockList(
     );
     std::uint64_t expectedCount = 0;
     if (countLine.rfind(kCountPrefix, 0) == 0) {
-        try {
-            expectedCount = std::stoull(countLine.substr(kCountPrefix.size()));
-        } catch (...) {}
+        const std::optional<std::uint64_t> parsedCount =
+            parseUint64(countLine.substr(kCountPrefix.size()));
+        if (!parsedCount.has_value()) {
+            return result;
+        }
+        expectedCount = parsedCount.value();
     }
     if (expectedCount == 0) return result;
+    if (expectedCount > static_cast<std::uint64_t>(
+            std::numeric_limits<std::size_t>::max()
+        )) {
+        return result;
+    }
 
     // Split by block separator.
     const std::string blocksStr = payload.substr(secondNewline + 1);
@@ -166,13 +194,23 @@ std::vector<core::Block> BlockSyncHandler::deserializeBlockList(
         pos = sepPos + kBlockSeparator.size();
     }
 
+    if (chunks.size() != static_cast<std::size_t>(expectedCount)) {
+        return {};
+    }
+
     result.reserve(chunks.size());
     for (const auto& chunk : chunks) {
-        if (chunk.empty()) continue;
+        if (chunk.empty()) return {};
         auto block = tryDeserializeBlock(chunk);
         if (block.has_value()) {
             result.push_back(std::move(block.value()));
+        } else {
+            return {};
         }
+    }
+
+    if (result.size() != static_cast<std::size_t>(expectedCount)) {
+        return {};
     }
 
     return result;

@@ -125,6 +125,49 @@ void testDeserializeRejectsUnknownEvidenceType() {
     assert(threw);
 }
 
+void testRejectsUnsafeSerializedReasonDelimiter() {
+    const ProtocolEvidence e(
+        "evid-001", ProtocolEvidenceType::P2P_INVALID_MESSAGE,
+        "subject", "source", 0, 0, "rule", "digest",
+        "reason;injectedField=value", 0
+    );
+    assert(!e.isValid());
+}
+
+void testDeserializeRejectsBlockHeightWithTrailingText() {
+    std::string serialized = validEvidence().serialize();
+    const std::string target = "blockHeight=100";
+    const std::string replacement = "blockHeight=100abc";
+    const std::size_t pos = serialized.find(target);
+    assert(pos != std::string::npos);
+    serialized.replace(pos, target.size(), replacement);
+
+    bool threw = false;
+    try {
+        ProtocolEvidence::deserialize(serialized);
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void testDeserializeRejectsCreatedAtWithTrailingText() {
+    std::string serialized = validEvidence().serialize();
+    const std::string target = "createdAt=1000000";
+    const std::string replacement = "createdAt=1000000abc";
+    const std::size_t pos = serialized.find(target);
+    assert(pos != std::string::npos);
+    serialized.replace(pos, target.size(), replacement);
+
+    bool threw = false;
+    try {
+        ProtocolEvidence::deserialize(serialized);
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
 } // namespace
 
 int main() {
@@ -136,5 +179,8 @@ int main() {
     testDeserializeRejectsUnknownField();
     testDeserializeRejectsDuplicateField();
     testDeserializeRejectsUnknownEvidenceType();
+    testRejectsUnsafeSerializedReasonDelimiter();
+    testDeserializeRejectsBlockHeightWithTrailingText();
+    testDeserializeRejectsCreatedAtWithTrailingText();
     return 0;
 }

@@ -58,6 +58,11 @@ void testParseInvalidPortIgnored() {
     assert(peers.empty());
 }
 
+void testParsePortWithTrailingTextIgnored() {
+    const auto peers = nodo::p2p::BootstrapPeerList::parseFromLines({"host:9000abc"});
+    assert(peers.empty());
+}
+
 } // namespace
 
 int main() {
@@ -68,5 +73,6 @@ int main() {
     testParseFromLines();
     testParseEmptyLines();
     testParseInvalidPortIgnored();
+    testParsePortWithTrailingTextIgnored();
     return 0;
 }

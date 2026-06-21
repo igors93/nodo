@@ -1,9 +1,42 @@
 #include "p2p/BootstrapPeerList.hpp"
 
+#include <cstdint>
 #include <fstream>
+#include <limits>
 #include <sstream>
 
 namespace nodo::p2p {
+
+namespace {
+
+bool parsePortStrict(const std::string& value, std::uint16_t& out) {
+    if (value.empty()) {
+        return false;
+    }
+
+    for (const char current : value) {
+        if (current < '0' || current > '9') {
+            return false;
+        }
+    }
+
+    try {
+        std::size_t parsedCharacters = 0;
+        const unsigned long long parsed = std::stoull(value, &parsedCharacters);
+        if (parsedCharacters != value.size() ||
+            parsed == 0 ||
+            parsed > std::numeric_limits<std::uint16_t>::max()) {
+            return false;
+        }
+
+        out = static_cast<std::uint16_t>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+} // namespace
 
 bool BootstrapPeerList::isValidPeer(const PeerEndpoint& endpoint) {
     return endpoint.isValid();
@@ -45,15 +78,13 @@ std::vector<PeerEndpoint> BootstrapPeerList::parseFromLines(
         if (host.empty() || portStr.empty()) {
             continue;
         }
-        try {
-            const int port = std::stoi(portStr);
-            if (port <= 0 || port > 65535) {
-                continue;
-            }
-            result.emplace_back(host, static_cast<std::uint16_t>(port));
-        } catch (...) {
+
+        std::uint16_t port = 0;
+        if (!parsePortStrict(portStr, port)) {
             continue;
         }
+
+        result.emplace_back(host, port);
     }
     return result;
 }

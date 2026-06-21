@@ -11,6 +11,7 @@
 #include "utils/Amount.hpp"
 
 #include <cassert>
+#include <exception>
 #include <string>
 #include <utility>
 #include <vector>
@@ -197,6 +198,45 @@ void testCodecRoundTripsLifecycleEvidenceSection() {
     assert(validation.passed());
 }
 
+void testCodecRejectsPartialNumericCount() {
+    const FinalizedTreasurySection section;
+    std::string encoded = FinalizedTreasurySectionCodec::encode(section);
+    const std::string target = "spendRecordCount=0\n";
+    const std::string replacement = "spendRecordCount=0abc\n";
+    const std::size_t pos = encoded.find(target);
+    assert(pos != std::string::npos);
+    encoded.replace(pos, target.size(), replacement);
+
+    bool threw = false;
+    try {
+        (void)FinalizedTreasurySectionCodec::decode(encoded);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void testCodecRejectsPartialNumericSpendAmount() {
+    std::vector<TreasurySpendRecord> records;
+    records.push_back(validRecord("spend-001", 4000, 100000));
+    const FinalizedTreasurySection section(std::move(records));
+    std::string encoded = FinalizedTreasurySectionCodec::encode(section);
+    const std::string target = "spend.0.amountRawUnits=4000\n";
+    const std::string replacement =
+        "spend.0.amountRawUnits=4000abc\n";
+    const std::size_t pos = encoded.find(target);
+    assert(pos != std::string::npos);
+    encoded.replace(pos, target.size(), replacement);
+
+    bool threw = false;
+    try {
+        (void)FinalizedTreasurySectionCodec::decode(encoded);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
 } // namespace
 
 int main() {
@@ -212,5 +252,7 @@ int main() {
     testCodecRoundTripsEmptySection();
     testCodecRoundTripsLegacySection();
     testCodecRoundTripsLifecycleEvidenceSection();
+    testCodecRejectsPartialNumericCount();
+    testCodecRejectsPartialNumericSpendAmount();
     return 0;
 }

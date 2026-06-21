@@ -149,6 +149,32 @@ void testCorruptStateIsFailure() {
     cleanup();
 }
 
+void testPartialNumericActivationHeightIsMalformed() {
+    cleanup();
+    const RuntimeSafetyState original = RuntimeSafetyState::newNodeDefault();
+    RuntimeSafetyStateStore::write(tempPath(), original);
+
+    {
+        std::ifstream in(tempPath());
+        std::string contents(
+            (std::istreambuf_iterator<char>(in)),
+            std::istreambuf_iterator<char>()
+        );
+        const std::string target = "activationHeight=0\n";
+        const std::string replacement = "activationHeight=0abc\n";
+        const std::size_t pos = contents.find(target);
+        assert(pos != std::string::npos);
+        contents.replace(pos, target.size(), replacement);
+
+        std::ofstream out(tempPath(), std::ios::trunc);
+        out << contents;
+    }
+
+    const auto result = RuntimeSafetyStateStore::read(tempPath());
+    assert(result.status() == RuntimeSafetyStateReadStatus::MALFORMED);
+    cleanup();
+}
+
 // Active defense mode requires non-empty activation reason.
 void testActiveDefenseModeRequiresReason() {
     cleanup();
@@ -215,6 +241,7 @@ int main() {
     testMalformedFileReturnsMalformed();
     testSchemaMismatchReturnsSchemaError();
     testCorruptStateIsFailure();
+    testPartialNumericActivationHeightIsMalformed();
     testActiveDefenseModeRequiresReason();
     testActiveDefenseModeRequiresActivationHeight();
     testStatusToString();

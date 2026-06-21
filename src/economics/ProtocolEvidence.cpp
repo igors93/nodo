@@ -1,11 +1,90 @@
 #include "economics/ProtocolEvidence.hpp"
 
+#include <limits>
 #include <map>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
 
 namespace nodo::economics {
+
+namespace {
+
+bool isSerializationSafeValue(const std::string& value) {
+    if (value.empty()) {
+        return false;
+    }
+
+    for (const char c : value) {
+        if (c == ';' ||
+            c == '{' ||
+            c == '}' ||
+            c == '[' ||
+            c == ']' ||
+            c == '\n' ||
+            c == '\r' ||
+            c == '\t') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::uint64_t parseU64Strict(
+    const std::string& value,
+    const std::string& field
+) {
+    if (value.empty()) {
+        throw std::invalid_argument("empty " + field);
+    }
+
+    for (const char c : value) {
+        if (c < '0' || c > '9') {
+            throw std::invalid_argument("malformed " + field);
+        }
+    }
+
+    std::size_t parsedCharacters = 0;
+    const unsigned long long parsed = std::stoull(value, &parsedCharacters);
+    if (parsedCharacters != value.size() ||
+        parsed > static_cast<unsigned long long>(
+            std::numeric_limits<std::uint64_t>::max()
+        )) {
+        throw std::invalid_argument("malformed " + field);
+    }
+
+    return static_cast<std::uint64_t>(parsed);
+}
+
+std::int64_t parseI64Strict(
+    const std::string& value,
+    const std::string& field
+) {
+    if (value.empty()) {
+        throw std::invalid_argument("empty " + field);
+    }
+
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        const char c = value[index];
+        if (c == '-' && index == 0 && value.size() > 1) {
+            continue;
+        }
+        if (c < '0' || c > '9') {
+            throw std::invalid_argument("malformed " + field);
+        }
+    }
+
+    std::size_t parsedCharacters = 0;
+    const long long parsed = std::stoll(value, &parsedCharacters);
+    if (parsedCharacters != value.size()) {
+        throw std::invalid_argument("malformed " + field);
+    }
+
+    return static_cast<std::int64_t>(parsed);
+}
+
+} // namespace
 
 std::string protocolEvidenceTypeToString(ProtocolEvidenceType type) {
     switch (type) {
@@ -74,12 +153,20 @@ ProtocolEvidence::ProtocolEvidence(
         m_rejectionReason = "ProtocolEvidence: evidenceId exceeds maximum length.";
         return;
     }
+    if (!isSerializationSafeValue(m_evidenceId)) {
+        m_rejectionReason = "ProtocolEvidence: evidenceId contains unsafe serialization characters.";
+        return;
+    }
     if (m_subjectId.empty()) {
         m_rejectionReason = "ProtocolEvidence: subjectId must not be empty.";
         return;
     }
     if (m_subjectId.size() > kMaxIdLen) {
         m_rejectionReason = "ProtocolEvidence: subjectId exceeds maximum length.";
+        return;
+    }
+    if (!isSerializationSafeValue(m_subjectId)) {
+        m_rejectionReason = "ProtocolEvidence: subjectId contains unsafe serialization characters.";
         return;
     }
     if (m_sourceId.empty()) {
@@ -90,12 +177,20 @@ ProtocolEvidence::ProtocolEvidence(
         m_rejectionReason = "ProtocolEvidence: sourceId exceeds maximum length.";
         return;
     }
+    if (!isSerializationSafeValue(m_sourceId)) {
+        m_rejectionReason = "ProtocolEvidence: sourceId contains unsafe serialization characters.";
+        return;
+    }
     if (m_ruleId.empty()) {
         m_rejectionReason = "ProtocolEvidence: ruleId must not be empty.";
         return;
     }
     if (m_ruleId.size() > kMaxIdLen) {
         m_rejectionReason = "ProtocolEvidence: ruleId exceeds maximum length.";
+        return;
+    }
+    if (!isSerializationSafeValue(m_ruleId)) {
+        m_rejectionReason = "ProtocolEvidence: ruleId contains unsafe serialization characters.";
         return;
     }
     if (m_payloadDigest.empty()) {
@@ -106,12 +201,20 @@ ProtocolEvidence::ProtocolEvidence(
         m_rejectionReason = "ProtocolEvidence: payloadDigest exceeds maximum length.";
         return;
     }
+    if (!isSerializationSafeValue(m_payloadDigest)) {
+        m_rejectionReason = "ProtocolEvidence: payloadDigest contains unsafe serialization characters.";
+        return;
+    }
     if (m_reason.empty()) {
         m_rejectionReason = "ProtocolEvidence: reason must not be empty.";
         return;
     }
     if (m_reason.size() > kMaxReasonLen) {
         m_rejectionReason = "ProtocolEvidence: reason exceeds maximum length.";
+        return;
+    }
+    if (!isSerializationSafeValue(m_reason)) {
+        m_rejectionReason = "ProtocolEvidence: reason contains unsafe serialization characters.";
         return;
     }
     m_valid = true;
@@ -234,16 +337,16 @@ ProtocolEvidence ProtocolEvidence::deserialize(const std::string& serialized) {
     std::uint64_t epoch = 0;
     std::int64_t createdAt = 0;
     try {
-        blockHeight = std::stoull(get("blockHeight"));
-        epoch       = std::stoull(get("epoch"));
-        createdAt   = std::stoll(get("createdAt"));
+        blockHeight = parseU64Strict(get("blockHeight"), "blockHeight");
+        epoch       = parseU64Strict(get("epoch"), "epoch");
+        createdAt   = parseI64Strict(get("createdAt"), "createdAt");
     } catch (const std::exception& e) {
         throw std::invalid_argument(
             std::string("ProtocolEvidence::deserialize: invalid numeric field: ") + e.what()
         );
     }
 
-    return ProtocolEvidence(
+    ProtocolEvidence evidence(
         get("evidenceId"),
         evidenceType,
         get("subjectId"),
@@ -255,6 +358,21 @@ ProtocolEvidence ProtocolEvidence::deserialize(const std::string& serialized) {
         get("reason"),
         createdAt
     );
+
+    if (!evidence.isValid()) {
+        throw std::invalid_argument(
+            "ProtocolEvidence::deserialize: decoded evidence is invalid: " +
+            evidence.rejectionReason()
+        );
+    }
+
+    if (evidence.serialize() != serialized) {
+        throw std::invalid_argument(
+            "ProtocolEvidence::deserialize: non-canonical serialization."
+        );
+    }
+
+    return evidence;
 }
 
 } // namespace nodo::economics

@@ -19,7 +19,20 @@ std::uint64_t parseU64(
     const std::string& field
 ) {
     try {
-        return std::stoull(value);
+        if (value.empty()) {
+            throw std::invalid_argument("empty");
+        }
+        for (const char c : value) {
+            if (c < '0' || c > '9') {
+                throw std::invalid_argument("malformed");
+            }
+        }
+        std::size_t parsedCharacters = 0;
+        const unsigned long long parsed = std::stoull(value, &parsedCharacters);
+        if (parsedCharacters != value.size()) {
+            throw std::invalid_argument("malformed");
+        }
+        return static_cast<std::uint64_t>(parsed);
     } catch (const std::exception&) {
         throw std::runtime_error(
             "GovernanceLifecycleCodec: field '" + field +
@@ -47,7 +60,24 @@ std::int64_t parseI64(
     const std::string& field
 ) {
     try {
-        return std::stoll(value);
+        if (value.empty()) {
+            throw std::invalid_argument("empty");
+        }
+        for (std::size_t index = 0; index < value.size(); ++index) {
+            const char c = value[index];
+            if (c == '-' && index == 0 && value.size() > 1) {
+                continue;
+            }
+            if (c < '0' || c > '9') {
+                throw std::invalid_argument("malformed");
+            }
+        }
+        std::size_t parsedCharacters = 0;
+        const long long parsed = std::stoll(value, &parsedCharacters);
+        if (parsedCharacters != value.size()) {
+            throw std::invalid_argument("malformed");
+        }
+        return static_cast<std::int64_t>(parsed);
     } catch (const std::exception&) {
         throw std::runtime_error(
             "GovernanceLifecycleCodec: field '" + field +

@@ -177,6 +177,61 @@ void testMissingFieldRejected() {
     assert(threw);
 }
 
+void testPartialNumericEpochRejected() {
+    const auto policy = testPolicy();
+    std::string encoded = nodo::node::EpochMonetaryReportStore::encode(buildReport());
+    const std::string target = "epoch=0\n";
+    const std::string replacement = "epoch=0abc\n";
+    const auto pos = encoded.find(target);
+    assert(pos != std::string::npos);
+    encoded.replace(pos, target.size(), replacement);
+
+    bool threw = false;
+    try {
+        (void)nodo::node::EpochMonetaryReportStore::decode(encoded, policy);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void testPartialNumericSupplyRejected() {
+    const auto policy = testPolicy();
+    std::string encoded = nodo::node::EpochMonetaryReportStore::encode(buildReport());
+    const std::string target = "startingSupplyRawUnits=500000\n";
+    const std::string replacement = "startingSupplyRawUnits=500000abc\n";
+    const auto pos = encoded.find(target);
+    assert(pos != std::string::npos);
+    encoded.replace(pos, target.size(), replacement);
+
+    bool threw = false;
+    try {
+        (void)nodo::node::EpochMonetaryReportStore::decode(encoded, policy);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void testOverflowingSupplyArithmeticRejected() {
+    const auto policy = testPolicy();
+    std::string encoded = nodo::node::EpochMonetaryReportStore::encode(buildReport());
+    const std::string target = "totalMintedRawUnits=0\n";
+    const std::string replacement =
+        "totalMintedRawUnits=9223372036854775807\n";
+    const auto pos = encoded.find(target);
+    assert(pos != std::string::npos);
+    encoded.replace(pos, target.size(), replacement);
+
+    bool threw = false;
+    try {
+        (void)nodo::node::EpochMonetaryReportStore::decode(encoded, policy);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
 } // namespace
 
 int main() {
@@ -187,5 +242,8 @@ int main() {
     testWrongSchemaRejected();
     testTamperedBurnedRejected();
     testMissingFieldRejected();
+    testPartialNumericEpochRejected();
+    testPartialNumericSupplyRejected();
+    testOverflowingSupplyArithmeticRejected();
     return 0;
 }

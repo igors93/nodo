@@ -3,6 +3,7 @@
 #include "economics/SupplyAudit.hpp"
 
 #include <climits>
+#include <limits>
 #include <sstream>
 #include <utility>
 
@@ -142,8 +143,17 @@ EpochMonetaryReport EpochMonetaryReport::fromStoredFields(
     }
 
     // startingSupply + totalMinted - totalBurned must equal endingSupply.
+    if (totalMinted.rawUnits() >
+        std::numeric_limits<std::int64_t>::max() - startingSupply.rawUnits()) {
+        report.m_rejectionReason =
+            "EpochMonetaryReport::fromStoredFields: arithmetic overflow.";
+        return report;
+    }
+
+    const std::int64_t mintedSupply =
+        startingSupply.rawUnits() + totalMinted.rawUnits();
     const std::int64_t computedEnding =
-        startingSupply.rawUnits() + totalMinted.rawUnits() - totalBurned.rawUnits();
+        mintedSupply - totalBurned.rawUnits();
     if (computedEnding != endingSupply.rawUnits()) {
         report.m_rejectionReason =
             "EpochMonetaryReport::fromStoredFields: arithmetic mismatch: "

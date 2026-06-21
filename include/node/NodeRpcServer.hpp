@@ -27,7 +27,7 @@ namespace nodo::node {
  *   GET  /validators            — list of active validator addresses
  *   GET  /peers                — list of known peers
  *   GET  /mempool              — current mempool transaction count and top txs
- *   POST /submit               — admit a serialized transaction to the mempool
+ *   POST /submit               — admit a signed transaction submission envelope
  *
  * Error responses use HTTP 4xx with a JSON body:
  *   {"error": "<message>"}

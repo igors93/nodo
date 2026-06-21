@@ -3,6 +3,7 @@
 #include "serialization/KeyValueFileCodec.hpp"
 
 #include <fstream>
+#include <limits>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -64,7 +65,24 @@ std::int64_t requireInt64(
 ) {
     const std::string& raw = doc.requireField(key);
     try {
-        return std::stoll(raw);
+        if (raw.empty()) {
+            throw std::invalid_argument("empty");
+        }
+        for (std::size_t index = 0; index < raw.size(); ++index) {
+            const char c = raw[index];
+            if (c == '-' && index == 0 && raw.size() > 1) {
+                continue;
+            }
+            if (c < '0' || c > '9') {
+                throw std::invalid_argument("malformed");
+            }
+        }
+        std::size_t parsedCharacters = 0;
+        const long long parsed = std::stoll(raw, &parsedCharacters);
+        if (parsedCharacters != raw.size()) {
+            throw std::invalid_argument("malformed");
+        }
+        return static_cast<std::int64_t>(parsed);
     } catch (const std::exception&) {
         throw std::runtime_error(
             "EpochMonetaryReportStore: field '" + key + "' is not a valid integer: " + raw
@@ -78,12 +96,54 @@ std::uint64_t requireUint64(
 ) {
     const std::string& raw = doc.requireField(key);
     try {
-        return std::stoull(raw);
+        if (raw.empty()) {
+            throw std::invalid_argument("empty");
+        }
+        for (const char c : raw) {
+            if (c < '0' || c > '9') {
+                throw std::invalid_argument("malformed");
+            }
+        }
+        std::size_t parsedCharacters = 0;
+        const unsigned long long parsed = std::stoull(raw, &parsedCharacters);
+        if (parsedCharacters != raw.size() ||
+            parsed > static_cast<unsigned long long>(
+                std::numeric_limits<std::uint64_t>::max()
+            )) {
+            throw std::invalid_argument("malformed");
+        }
+        return static_cast<std::uint64_t>(parsed);
     } catch (const std::exception&) {
         throw std::runtime_error(
             "EpochMonetaryReportStore: field '" + key + "' is not a valid unsigned integer: " + raw
         );
     }
+}
+
+void requireNonNegativeAmountRaw(
+    std::int64_t value,
+    const std::string& key
+) {
+    if (value < 0) {
+        throw std::runtime_error(
+            "EpochMonetaryReportStore: field '" + key + "' must not be negative"
+        );
+    }
+}
+
+std::int64_t checkedEndingSupply(
+    std::int64_t startingRaw,
+    std::int64_t mintedRaw,
+    std::int64_t burnedRaw
+) {
+    if (mintedRaw > std::numeric_limits<std::int64_t>::max() - startingRaw) {
+        throw std::runtime_error(
+            "EpochMonetaryReportStore: persisted report arithmetic overflow"
+        );
+    }
+
+    const std::int64_t mintedSupply = startingRaw + mintedRaw;
+    return mintedSupply - burnedRaw;
 }
 
 } // namespace
@@ -139,10 +199,19 @@ economics::EpochMonetaryReport EpochMonetaryReportStore::decode(
     const std::uint64_t burnCount   = requireUint64(doc, "burnRecordCount");
     const std::string   policyVer   = doc.requireField("policyVersion");
 
+    requireNonNegativeAmountRaw(startingRaw, "startingSupplyRawUnits");
+    requireNonNegativeAmountRaw(endingRaw, "endingSupplyRawUnits");
+    requireNonNegativeAmountRaw(mintedRaw, "totalMintedRawUnits");
+    requireNonNegativeAmountRaw(burnedRaw, "totalBurnedRawUnits");
+
     // Rebuild a consistent report from the fields. The arithmetic invariant:
     // startingSupply + totalMinted - totalBurned == endingSupply
     // is verified here so a tampered file is detected immediately.
-    const std::int64_t computedEnding = startingRaw + mintedRaw - burnedRaw;
+    const std::int64_t computedEnding = checkedEndingSupply(
+        startingRaw,
+        mintedRaw,
+        burnedRaw
+    );
     if (computedEnding != endingRaw) {
         throw std::runtime_error(
             "EpochMonetaryReportStore: persisted report fails arithmetic check: "
@@ -158,6 +227,14 @@ economics::EpochMonetaryReport EpochMonetaryReportStore::decode(
         throw std::runtime_error(
             "EpochMonetaryReportStore: policyVersion mismatch: "
             "stored=" + policyVer + " expected=" + policy.policyVersion()
+        );
+    }
+
+    if (deltaCount > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max()) ||
+        mintCount > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max()) ||
+        burnCount > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        throw std::runtime_error(
+            "EpochMonetaryReportStore: persisted count exceeds size_t range"
         );
     }
 
