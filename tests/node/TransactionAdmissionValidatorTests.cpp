@@ -101,7 +101,9 @@ crypto::KeyStoreLoadResult createAndLoadKey(
 core::Transaction buildTransaction(
     const crypto::KeyPair& keyPair,
     const crypto::SignatureProvider& provider,
-    std::int64_t feeRawUnits
+    std::int64_t feeRawUnits,
+    std::uint64_t nonce = 1,
+    std::int64_t timestamp = kTimestamp + 10
 ) {
     const crypto::Signer signer(
         keyPair,
@@ -113,8 +115,8 @@ core::Transaction buildTransaction(
             "nodo-localnet-recipient",
             utils::Amount::fromRawUnits(1000),
             utils::Amount::fromRawUnits(feeRawUnits),
-            1,
-            kTimestamp + 10
+            nonce,
+            timestamp
         ),
         signer
     );
@@ -358,6 +360,72 @@ void testRejectsRuntimeSubmissionWithInsufficientBalance() {
     clean(path);
 }
 
+void testAcceptsRuntimeQueuedNonceWhenReservedBalanceIsSufficient() {
+    const std::filesystem::path path =
+        tempPath();
+
+    clean(path);
+
+    const crypto::KeyStoreLoadResult key =
+        createAndLoadKey(
+            path,
+            "local-user",
+            "admission-test-seed"
+        );
+
+    const crypto::Ed25519SignatureProvider provider;
+    const core::Transaction pending =
+        buildTransaction(
+            key.keyPair(),
+            provider,
+            100,
+            1,
+            kTimestamp + 20
+        );
+    const core::Transaction queued =
+        buildTransaction(
+            key.keyPair(),
+            provider,
+            100,
+            2,
+            kTimestamp + 21
+        );
+
+    mempool::Mempool mempool;
+    requireCondition(
+        mempool.admitTransaction(
+            pending,
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            kTimestamp + 22
+        ).accepted(),
+        "Pending nonce fixture should enter mempool."
+    );
+
+    const node::TransactionAdmissionResult result =
+        node::TransactionAdmissionValidator::validateRuntimeSubmission(
+            queued,
+            key.metadata(),
+            localnetWithMinimumFee(100),
+            accountStateFor(
+                key.metadata().address(),
+                2200,
+                0
+            ),
+            mempool,
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            provider
+        );
+
+    requireCondition(
+        result.accepted(),
+        "Runtime admission should accept queued nonce when balance covers the queue."
+    );
+
+    clean(path);
+}
+
 } // namespace
 
 int main() {
@@ -367,6 +435,7 @@ int main() {
         testRejectsTransactionSignedByDifferentKey();
         testAcceptsRuntimeSubmissionWithSufficientBalance();
         testRejectsRuntimeSubmissionWithInsufficientBalance();
+        testAcceptsRuntimeQueuedNonceWhenReservedBalanceIsSufficient();
 
         std::cout << "Nodo transaction admission validator tests passed.\n";
         return 0;

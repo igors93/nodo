@@ -63,6 +63,12 @@ TransactionAdmissionResult rejectIfSenderCannotPay(
     return TransactionAdmissionResult::acceptedResult();
 }
 
+utils::Amount transactionDebit(
+    const core::Transaction& transaction
+) {
+    return transaction.amount() + transaction.fee();
+}
+
 } // namespace
 
 std::string transactionAdmissionStatusToString(
@@ -268,28 +274,6 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateRuntimeSubmiss
         );
     }
 
-    const std::vector<core::Transaction> pendingTransactions =
-        mempool.transactionsForBlock(
-            mempool.size()
-        );
-
-    for (const core::Transaction& pending : pendingTransactions) {
-        if (pending.fromAddress() == transaction.fromAddress() &&
-            pending.nonce() == transaction.nonce()) {
-            return TransactionAdmissionResult::rejected(
-                TransactionAdmissionStatus::CONFLICTING_NONCE,
-                "A transaction with the same sender nonce is already pending."
-            );
-        }
-
-        if (pending.fromAddress() == transaction.fromAddress()) {
-            return TransactionAdmissionResult::rejected(
-                TransactionAdmissionStatus::FUTURE_NONCE,
-                "A pending transaction already exists for this sender; per-account nonce queues are not implemented."
-            );
-        }
-    }
-
     if (!accountStateView.hasAccount(transaction.fromAddress())) {
         return TransactionAdmissionResult::rejected(
             TransactionAdmissionStatus::INVALID_TRANSACTION,
@@ -314,14 +298,43 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateRuntimeSubmiss
         );
     }
 
-    const std::uint64_t expectedNonce =
-        sender.nonce() + 1;
+    utils::Amount reservedByPendingSenderTransactions =
+        utils::Amount::fromRawUnits(0);
 
-    if (transaction.nonce() != expectedNonce) {
-        return TransactionAdmissionResult::rejected(
-            TransactionAdmissionStatus::FUTURE_NONCE,
-            "Transaction nonce is in the future and no per-account queue is available."
+    const std::vector<core::Transaction> pendingTransactions =
+        mempool.transactionsForBlock(
+            mempool.size()
         );
+
+    for (const core::Transaction& pending : pendingTransactions) {
+        if (pending.fromAddress() != transaction.fromAddress()) {
+            continue;
+        }
+
+        if (pending.nonce() == transaction.nonce()) {
+            return TransactionAdmissionResult::rejected(
+                TransactionAdmissionStatus::CONFLICTING_NONCE,
+                "A transaction with the same sender nonce is already pending."
+            );
+        }
+
+        if (pending.nonce() <= sender.nonce()) {
+            return TransactionAdmissionResult::rejected(
+                TransactionAdmissionStatus::OLD_NONCE,
+                "A pending sender transaction has already-expired nonce."
+            );
+        }
+
+        try {
+            reservedByPendingSenderTransactions =
+                reservedByPendingSenderTransactions +
+                transactionDebit(pending);
+        } catch (const std::exception& error) {
+            return TransactionAdmissionResult::rejected(
+                TransactionAdmissionStatus::INVALID_TRANSACTION,
+                std::string("Pending sender debit is invalid: ") + error.what()
+            );
+        }
     }
 
     const TransactionAdmissionResult balance =
@@ -332,6 +345,24 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateRuntimeSubmiss
 
     if (!balance.accepted()) {
         return balance;
+    }
+
+    try {
+        const utils::Amount totalReserved =
+            reservedByPendingSenderTransactions +
+            transactionDebit(transaction);
+
+        if (sender.balance() < totalReserved) {
+            return TransactionAdmissionResult::rejected(
+                TransactionAdmissionStatus::INSUFFICIENT_BALANCE,
+                "Sender balance cannot cover all queued pending transactions."
+            );
+        }
+    } catch (const std::exception& error) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::INVALID_TRANSACTION,
+            std::string("Queued sender debit is invalid: ") + error.what()
+        );
     }
 
     return TransactionAdmissionResult::acceptedResult();

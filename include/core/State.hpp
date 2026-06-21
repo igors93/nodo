@@ -2,6 +2,7 @@
 #define NODO_CORE_STATE_HPP
 
 #include "core/Account.hpp"
+#include "core/AccountStateView.hpp"
 #include "core/CoinLot.hpp"
 #include "core/CoinLotRegistry.hpp"
 #include "core/Transaction.hpp"
@@ -43,6 +44,14 @@ public:
     const std::vector<economics::MintRecord>& mintRecords() const;
     const std::vector<economics::GenesisRewardRecord>& genesisRewardRecords() const;
     const std::vector<CoinLot>& coinLots() const;
+
+    /*
+     * Builds the account-state view used by state-root verification.
+     *
+     * Balances are derived from CoinLots, while nonces come from Account replay
+     * state. This keeps snapshot roots aligned with runtime validation.
+     */
+    AccountStateView accountStateView() const;
 
     /*
      * Builds a registry view from the currently reconstructed coin lots.
@@ -111,6 +120,12 @@ public:
      * migration can happen safely without breaking existing chain fixtures.
      */
     bool isSupplyAuditable() const;
+
+    std::string serialize() const;
+
+    static State deserialize(
+        const std::string& serialized
+    );
 
 private:
     std::uint64_t m_currentBlockIndex;

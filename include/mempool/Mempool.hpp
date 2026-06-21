@@ -1,6 +1,7 @@
 #ifndef NODO_MEMPOOL_MEMPOOL_HPP
 #define NODO_MEMPOOL_MEMPOOL_HPP
 
+#include "core/AccountStateView.hpp"
 #include "core/Transaction.hpp"
 #include "crypto/CryptoPolicy.hpp"
 
@@ -157,6 +158,18 @@ public:
 
     std::vector<core::Transaction> transactionsForBlock(
         std::size_t maxCount
+    ) const;
+
+    /*
+     * Select transactions that are executable from the supplied account state.
+     *
+     * This keeps per-account nonce queues safe: future nonce transactions can
+     * wait in the mempool, but block production only receives contiguous nonces
+     * starting at the sender's next state nonce.
+     */
+    std::vector<core::Transaction> transactionsForBlock(
+        std::size_t maxCount,
+        const core::AccountStateView& accountStateView
     ) const;
 
     std::size_t size() const;

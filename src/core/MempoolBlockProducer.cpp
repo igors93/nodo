@@ -227,9 +227,12 @@ std::string BlockProductionResult::serialize() const {
     return oss.str();
 }
 
-BlockProductionResult MempoolBlockProducer::produceCandidateBlock(
+namespace {
+
+BlockProductionResult produceCandidateBlockImpl(
     const Blockchain& blockchain,
     const mempool::Mempool& mempool,
+    const AccountStateView* accountStateView,
     const crypto::CryptoPolicy& policy,
     crypto::SecurityContext context,
     const BlockProductionConfig& config,
@@ -267,9 +270,14 @@ BlockProductionResult MempoolBlockProducer::produceCandidateBlock(
     }
 
     std::vector<Transaction> transactions =
-        mempool.transactionsForBlock(
-            config.maxTransactionsPerBlock()
-        );
+        accountStateView == nullptr
+            ? mempool.transactionsForBlock(
+                  config.maxTransactionsPerBlock()
+              )
+            : mempool.transactionsForBlock(
+                  config.maxTransactionsPerBlock(),
+                  *accountStateView
+              );
 
     if (transactions.empty()) {
         return BlockProductionResult::rejected(
@@ -341,6 +349,47 @@ BlockProductionResult MempoolBlockProducer::produceCandidateBlock(
     return BlockProductionResult::produced(
         block,
         plan
+    );
+}
+
+} // namespace
+
+BlockProductionResult MempoolBlockProducer::produceCandidateBlock(
+    const Blockchain& blockchain,
+    const mempool::Mempool& mempool,
+    const crypto::CryptoPolicy& policy,
+    crypto::SecurityContext context,
+    const BlockProductionConfig& config,
+    std::int64_t timestamp
+) {
+    return produceCandidateBlockImpl(
+        blockchain,
+        mempool,
+        nullptr,
+        policy,
+        context,
+        config,
+        timestamp
+    );
+}
+
+BlockProductionResult MempoolBlockProducer::produceCandidateBlock(
+    const Blockchain& blockchain,
+    const mempool::Mempool& mempool,
+    const AccountStateView& accountStateView,
+    const crypto::CryptoPolicy& policy,
+    crypto::SecurityContext context,
+    const BlockProductionConfig& config,
+    std::int64_t timestamp
+) {
+    return produceCandidateBlockImpl(
+        blockchain,
+        mempool,
+        &accountStateView,
+        policy,
+        context,
+        config,
+        timestamp
     );
 }
 

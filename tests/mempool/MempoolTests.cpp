@@ -1,4 +1,6 @@
 #include "mempool/Mempool.hpp"
+#include "core/AccountState.hpp"
+#include "core/AccountStateView.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
@@ -21,6 +23,8 @@ namespace {
 
 using nodo::core::Transaction;
 using nodo::core::TransactionType;
+using nodo::core::AccountState;
+using nodo::core::AccountStateView;
 using nodo::crypto::CryptoAlgorithm;
 using nodo::crypto::CryptoPolicy;
 using nodo::crypto::Ed25519SignatureProvider;
@@ -222,7 +226,7 @@ void testLowFeeRejected() {
     );
 }
 
-void testSameSenderNonceIsRejected() {
+void testSameSenderNonceCanBeReplacedByHigherFee() {
     Mempool mempool(
         MempoolConfig(
             10,
@@ -264,7 +268,7 @@ void testSameSenderNonceIsRejected() {
         "Low-fee transaction should be accepted first."
     );
 
-    const auto conflict =
+    const auto replacement =
         mempool.admitTransaction(
             highFee,
             CryptoPolicy::developmentPolicy(),
@@ -273,19 +277,19 @@ void testSameSenderNonceIsRejected() {
         );
 
     requireCondition(
-        conflict.status() == MempoolAdmissionStatus::CONFLICTING_NONCE,
-        "Transaction with same sender nonce should be rejected."
+        replacement.status() == MempoolAdmissionStatus::REPLACED,
+        "Higher-fee transaction with same sender nonce should replace the old one."
     );
 
     requireCondition(
-        mempool.contains(lowFee.id()) &&
-        !mempool.contains(highFee.id()),
-        "Mempool should keep the original transaction only."
+        !mempool.contains(lowFee.id()) &&
+        mempool.contains(highFee.id()),
+        "Mempool should keep the replacement transaction only."
     );
 
     requireCondition(
         mempool.size() == 1U,
-        "Rejected sender nonce conflict should keep mempool size stable."
+        "Sender nonce replacement should keep mempool size stable."
     );
 }
 
@@ -404,6 +408,99 @@ void testTransactionsForBlockAreFeeOrdered() {
     );
 }
 
+void testTransactionsForBlockWithAccountStateRespectsNonceOrder() {
+    Mempool mempool;
+
+    const Transaction nonceEightHighFee =
+        signedTransfer(
+            "nonce-eight",
+            "igor",
+            "ana",
+            1000,
+            900,
+            8,
+            kTimestamp + 70
+        );
+
+    const Transaction nonceSevenLowFee =
+        signedTransfer(
+            "nonce-seven",
+            "igor",
+            "ana",
+            1000,
+            100,
+            7,
+            kTimestamp + 71
+        );
+
+    const Transaction nonceTenGap =
+        signedTransfer(
+            "nonce-ten",
+            "igor",
+            "ana",
+            1000,
+            1000,
+            10,
+            kTimestamp + 72
+        );
+
+    requireCondition(
+        mempool.admitTransaction(
+            nonceEightHighFee,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            kTimestamp + 73
+        ).accepted(),
+        "Future nonce transaction should enter the queue."
+    );
+
+    requireCondition(
+        mempool.admitTransaction(
+            nonceSevenLowFee,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            kTimestamp + 74
+        ).accepted(),
+        "Ready nonce transaction should enter the queue."
+    );
+
+    requireCondition(
+        mempool.admitTransaction(
+            nonceTenGap,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            kTimestamp + 75
+        ).accepted(),
+        "Gapped future nonce transaction should enter but wait."
+    );
+
+    AccountStateView view;
+    requireCondition(
+        view.putAccount(
+            AccountState(
+                "igor",
+                Amount::fromRawUnits(100000),
+                6
+            )
+        ),
+        "Account state fixture should be valid."
+    );
+
+    const std::vector<Transaction> selected =
+        mempool.transactionsForBlock(3, view);
+
+    requireCondition(
+        selected.size() == 2U,
+        "Only contiguous executable nonces should be selected."
+    );
+
+    requireCondition(
+        selected[0].id() == nonceSevenLowFee.id() &&
+        selected[1].id() == nonceEightHighFee.id(),
+        "Nonce-aware selection should execute sender transactions in nonce order."
+    );
+}
+
 void testPruneExpiredTransactions() {
     Mempool mempool(
         MempoolConfig(
@@ -456,9 +553,10 @@ int main() {
         testAdmitValidTransaction();
         testDuplicateTransactionIsSafeNoOp();
         testLowFeeRejected();
-        testSameSenderNonceIsRejected();
+        testSameSenderNonceCanBeReplacedByHigherFee();
         testCapacityLimit();
         testTransactionsForBlockAreFeeOrdered();
+        testTransactionsForBlockWithAccountStateRespectsNonceOrder();
         testPruneExpiredTransactions();
 
         std::cout << "Nodo mempool tests passed.\n";

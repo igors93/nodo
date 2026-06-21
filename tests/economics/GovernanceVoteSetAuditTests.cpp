@@ -5,6 +5,7 @@
 #include "economics/GovernanceVoteProof.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,23 +29,25 @@ GovernanceVoteEvidence makeEvidence(
     const std::string& voteId,
     const std::string& voterId,
     const GovernanceVotingPolicy& policy = validVotingPolicy(),
-    const std::string& governanceProposalId = "gov-prop-001"
+    const std::string& governanceProposalId = "gov-prop-001",
+    GovernanceVoteChoice choice = GovernanceVoteChoice::YES,
+    std::uint64_t castAtBlock = 12
 ) {
     const std::string proof = GovernanceVoteProof::build(
         governanceProposalId,
         voterId,
-        GovernanceVoteChoice::YES,
+        choice,
         Amount::fromRawUnits(50),
-        12,
+        castAtBlock,
         policy.policyVersion()
     );
     GovernanceVoteRecord record(
         voteId,
         governanceProposalId,
         voterId,
-        GovernanceVoteChoice::YES,
+        choice,
         Amount::fromRawUnits(50),
-        12,
+        castAtBlock,
         "validator-stake",
         proof,
         policy.policyVersion()
@@ -140,14 +143,31 @@ void testReplacementFlagBehaviorExplicit() {
         true
     );
     const std::vector<GovernanceVoteEvidence> votes = {
-        makeEvidence("evidence-001", "vote-001", "validator-a", replacementPolicy),
-        makeEvidence("evidence-002", "vote-002", "validator-a", replacementPolicy)
+        makeEvidence(
+            "evidence-001",
+            "vote-001",
+            "validator-a",
+            replacementPolicy,
+            "gov-prop-001",
+            GovernanceVoteChoice::NO,
+            12
+        ),
+        makeEvidence(
+            "evidence-002",
+            "vote-002",
+            "validator-a",
+            replacementPolicy,
+            "gov-prop-001",
+            GovernanceVoteChoice::YES,
+            13
+        )
     };
     const auto result =
         GovernanceVoteSetAudit::audit("gov-prop-001", replacementPolicy, votes);
-    assert(!result.accepted());
-    assert(result.status() ==
-           GovernanceVoteSetAuditStatus::REPLACEMENT_NOT_IMPLEMENTED);
+    assert(result.accepted());
+    assert(result.canonicalVotes().size() == 1);
+    assert(result.canonicalVotes()[0].voteRecord().voteId() == "vote-002");
+    assert(result.canonicalVotes()[0].voteRecord().voteChoice() == GovernanceVoteChoice::YES);
 }
 
 } // namespace

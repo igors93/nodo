@@ -1,6 +1,7 @@
 #ifndef NODO_SERIALIZATION_PROTOCOL_MESSAGE_CODEC_HPP
 #define NODO_SERIALIZATION_PROTOCOL_MESSAGE_CODEC_HPP
 
+#include "core/Block.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 
@@ -63,6 +64,30 @@ public:
 
     static std::string hashNetworkBlockSyncRequest(
         const node::NetworkBlockSyncRequest& request
+    );
+
+    static std::vector<unsigned char> encodeBlockList(
+        const std::vector<core::Block>& blocks
+    );
+
+    static std::vector<core::Block> decodeBlockList(
+        const std::vector<unsigned char>& bytes
+    );
+
+    static std::string hashBlockList(
+        const std::vector<core::Block>& blocks
+    );
+
+    static std::vector<unsigned char> encodeRoundAdvanceMessage(
+        const node::RoundAdvanceMessage& message
+    );
+
+    static node::RoundAdvanceMessage decodeRoundAdvanceMessage(
+        const std::vector<unsigned char>& bytes
+    );
+
+    static std::string hashRoundAdvanceMessage(
+        const node::RoundAdvanceMessage& message
     );
 };
 

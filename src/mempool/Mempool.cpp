@@ -1,11 +1,46 @@
 #include "mempool/Mempool.hpp"
 
 #include <algorithm>
+#include <limits>
+#include <map>
+#include <set>
 #include <sstream>
 #include <utility>
 #include <vector>
 
 namespace nodo::mempool {
+
+namespace {
+
+std::vector<MempoolEntry> sortedEntriesByPriority(
+    const std::map<std::string, MempoolEntry>& entriesById
+) {
+    std::vector<MempoolEntry> entries;
+
+    for (const auto& [_, entry] : entriesById) {
+        entries.push_back(entry);
+    }
+
+    std::sort(
+        entries.begin(),
+        entries.end(),
+        [](const MempoolEntry& left, const MempoolEntry& right) {
+            if (left.priorityFeeRaw() != right.priorityFeeRaw()) {
+                return left.priorityFeeRaw() > right.priorityFeeRaw();
+            }
+
+            if (left.acceptedAt() != right.acceptedAt()) {
+                return left.acceptedAt() < right.acceptedAt();
+            }
+
+            return left.transaction().id() < right.transaction().id();
+        }
+    );
+
+    return entries;
+}
+
+} // namespace
 
 MempoolConfig::MempoolConfig()
     : m_maxTransactions(5000),
@@ -270,9 +305,54 @@ MempoolAdmissionResult Mempool::admitTransaction(
         m_transactionIdBySenderNonce.find(senderNonce);
 
     if (existingByNonce != m_transactionIdBySenderNonce.end()) {
-        return MempoolAdmissionResult::rejected(
-            MempoolAdmissionStatus::CONFLICTING_NONCE,
-            "Another transaction with the same sender nonce is already in mempool."
+        const std::string existingTransactionId =
+            existingByNonce->second;
+        auto existingEntry =
+            m_entriesById.find(existingTransactionId);
+        if (existingEntry == m_entriesById.end()) {
+            return MempoolAdmissionResult::rejected(
+                MempoolAdmissionStatus::INVALID_TRANSACTION,
+                "Mempool nonce index is inconsistent."
+            );
+        }
+
+        if (!m_config.replaceByHigherFee()) {
+            return MempoolAdmissionResult::rejected(
+                MempoolAdmissionStatus::CONFLICTING_NONCE,
+                "Another transaction with the same sender nonce is already in mempool."
+            );
+        }
+
+        if (transaction.fee().rawUnits() <= existingEntry->second.priorityFeeRaw()) {
+            return MempoolAdmissionResult::rejected(
+                MempoolAdmissionStatus::CONFLICTING_NONCE,
+                "Replacement transaction must pay a strictly higher fee."
+            );
+        }
+
+        const std::string replacedTransactionId =
+            existingTransactionId;
+        removeIndexesForEntry(existingEntry->second);
+        m_entriesById.erase(existingEntry);
+
+        MempoolEntry replacement(
+            transaction,
+            acceptedAt
+        );
+
+        m_transactionIdBySenderNonce.emplace(
+            replacement.senderNonceKey(),
+            transaction.id()
+        );
+
+        m_entriesById.emplace(
+            transaction.id(),
+            replacement
+        );
+
+        return MempoolAdmissionResult::replaced(
+            transaction.id(),
+            replacedTransactionId
         );
     }
 
@@ -364,27 +444,8 @@ std::size_t Mempool::pruneExpired(
 std::vector<core::Transaction> Mempool::transactionsForBlock(
     std::size_t maxCount
 ) const {
-    std::vector<MempoolEntry> entries;
-
-    for (const auto& [_, entry] : m_entriesById) {
-        entries.push_back(entry);
-    }
-
-    std::sort(
-        entries.begin(),
-        entries.end(),
-        [](const MempoolEntry& left, const MempoolEntry& right) {
-            if (left.priorityFeeRaw() != right.priorityFeeRaw()) {
-                return left.priorityFeeRaw() > right.priorityFeeRaw();
-            }
-
-            if (left.acceptedAt() != right.acceptedAt()) {
-                return left.acceptedAt() < right.acceptedAt();
-            }
-
-            return left.transaction().id() < right.transaction().id();
-        }
-    );
+    const std::vector<MempoolEntry> entries =
+        sortedEntriesByPriority(m_entriesById);
 
     std::vector<core::Transaction> transactions;
 
@@ -394,6 +455,70 @@ std::vector<core::Transaction> Mempool::transactionsForBlock(
         }
 
         transactions.push_back(entry.transaction());
+    }
+
+    return transactions;
+}
+
+std::vector<core::Transaction> Mempool::transactionsForBlock(
+    std::size_t maxCount,
+    const core::AccountStateView& accountStateView
+) const {
+    if (maxCount == 0 || !accountStateView.isValid()) {
+        return {};
+    }
+
+    const std::vector<MempoolEntry> entries =
+        sortedEntriesByPriority(m_entriesById);
+
+    std::map<std::string, std::uint64_t> nextNonceBySender;
+    std::set<std::string> selectedTransactionIds;
+    std::vector<core::Transaction> transactions;
+
+    bool selectedInPass = true;
+    while (selectedInPass && transactions.size() < maxCount) {
+        selectedInPass = false;
+
+        for (const auto& entry : entries) {
+            const core::Transaction& transaction =
+                entry.transaction();
+
+            if (selectedTransactionIds.find(transaction.id()) !=
+                selectedTransactionIds.end()) {
+                continue;
+            }
+
+            auto nextNonce =
+                nextNonceBySender.find(transaction.fromAddress());
+            if (nextNonce == nextNonceBySender.end()) {
+                if (!accountStateView.hasAccount(transaction.fromAddress())) {
+                    continue;
+                }
+
+                const core::AccountState account =
+                    accountStateView.accountOrDefault(
+                        transaction.fromAddress()
+                    );
+                if (account.nonce() == std::numeric_limits<std::uint64_t>::max()) {
+                    continue;
+                }
+
+                nextNonce = nextNonceBySender.emplace(
+                    transaction.fromAddress(),
+                    account.nonce() + 1
+                ).first;
+            }
+
+            if (transaction.nonce() != nextNonce->second) {
+                continue;
+            }
+
+            transactions.push_back(transaction);
+            selectedTransactionIds.insert(transaction.id());
+            ++nextNonce->second;
+            selectedInPass = true;
+            break;
+        }
     }
 
     return transactions;
@@ -416,6 +541,10 @@ bool Mempool::isValid(
     }
 
     if (m_entriesById.size() != m_transactionIdBySenderNonce.size()) {
+        return false;
+    }
+
+    if (m_entriesById.size() > m_config.maxTransactions()) {
         return false;
     }
 

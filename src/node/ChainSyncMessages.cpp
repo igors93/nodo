@@ -169,4 +169,43 @@ std::string NetworkBlockSyncRequest::serialize() const {
     return output.str();
 }
 
+RoundAdvanceMessage::RoundAdvanceMessage()
+    : m_height(0),
+      m_round(0),
+      m_proposerAddress(""),
+      m_createdAt(0) {}
+
+RoundAdvanceMessage::RoundAdvanceMessage(
+    std::uint64_t height,
+    std::uint64_t round,
+    std::string proposerAddress,
+    std::int64_t createdAt
+) : m_height(height),
+    m_round(round),
+    m_proposerAddress(std::move(proposerAddress)),
+    m_createdAt(createdAt) {}
+
+std::uint64_t RoundAdvanceMessage::height() const { return m_height; }
+std::uint64_t RoundAdvanceMessage::round() const { return m_round; }
+const std::string& RoundAdvanceMessage::proposerAddress() const { return m_proposerAddress; }
+std::int64_t RoundAdvanceMessage::createdAt() const { return m_createdAt; }
+
+bool RoundAdvanceMessage::isValid() const {
+    return m_height > 0 &&
+           m_round > 0 &&
+           isSafeScalar(m_proposerAddress) &&
+           m_createdAt > 0;
+}
+
+std::string RoundAdvanceMessage::serialize() const {
+    std::ostringstream output;
+    output << "RoundAdvanceMessage{"
+           << "height=" << m_height
+           << ";round=" << m_round
+           << ";proposerAddress=" << m_proposerAddress
+           << ";createdAt=" << m_createdAt
+           << "}";
+    return output.str();
+}
+
 } // namespace nodo::node

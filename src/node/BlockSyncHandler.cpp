@@ -1,8 +1,10 @@
 #include "node/BlockSyncHandler.hpp"
 
 #include "core/Block.hpp"
+#include "crypto/Hex.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "p2p/NetworkEnvelope.hpp"
+#include "serialization/ProtocolMessageCodec.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -20,19 +22,8 @@ namespace {
 static const std::string kBlockListHeader     = "NODO_BLOCK_LIST_V1";
 static const std::string kBlockSeparator      = "\n---NODO_BLOCK_SEP---\n";
 static const std::string kCountPrefix         = "count=";
-
-// ---------------------------------------------------------------------------
-// NetworkBlockSyncRequest parsing
-//
-// TODO: NetworkBlockSyncRequest::deserialize(const std::string&) does not
-// exist yet. Until it is added, we parse the serialized form produced by
-// NetworkBlockSyncRequest::serialize() by hand.
-//
-// Serialized form (from ChainSyncMessages.cpp):
-//   NetworkBlockSyncRequest{requesterNodeId=<id>;locator=BlockLocator{fromHeight=<h>;maxBlocks=<m>;knownAncestorHashes=[<h1>,...]};createdAt=<t>}
-//
-// We only extract fromHeight and maxBlocks for the serving logic.
-// ---------------------------------------------------------------------------
+static const std::string kCanonicalPayloadPrefix =
+    "NODO_CANONICAL_PROTOCOL_HEX_V1:";
 
 std::string extractField(const std::string& text, const std::string& key) {
     const std::string prefix = key + "=";
@@ -88,7 +79,60 @@ struct ParsedSyncRequest {
     std::uint64_t maxBlocks  = 0;
 };
 
-ParsedSyncRequest parseSyncRequest(const std::string& payload) {
+std::string wrapCanonicalPayload(
+    const std::vector<unsigned char>& bytes
+) {
+    return kCanonicalPayloadPrefix + crypto::hexEncode(bytes);
+}
+
+std::optional<std::vector<unsigned char>> unwrapCanonicalPayload(
+    const std::string& payload
+) {
+    if (payload.rfind(kCanonicalPayloadPrefix, 0) != 0) {
+        return std::nullopt;
+    }
+
+    const std::string hex =
+        payload.substr(kCanonicalPayloadPrefix.size());
+    if (!crypto::isHexString(hex)) {
+        return std::nullopt;
+    }
+
+    try {
+        return crypto::hexDecode(hex);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+ParsedSyncRequest parseCanonicalSyncRequest(const std::string& payload) {
+    const std::optional<std::vector<unsigned char>> bytes =
+        unwrapCanonicalPayload(payload);
+    if (!bytes.has_value()) {
+        return {};
+    }
+
+    try {
+        const NetworkBlockSyncRequest request =
+            serialization::ProtocolMessageCodec::decodeNetworkBlockSyncRequest(
+                bytes.value()
+            );
+        if (!request.isValid()) {
+            return {};
+        }
+
+        ParsedSyncRequest parsed;
+        parsed.valid = true;
+        parsed.requesterId = request.requesterNodeId();
+        parsed.fromHeight = request.locator().fromHeight();
+        parsed.maxBlocks = request.locator().maxBlocks();
+        return parsed;
+    } catch (...) {
+        return {};
+    }
+}
+
+ParsedSyncRequest parseLegacySyncRequest(const std::string& payload) {
     // Quick structural check
     if (payload.rfind("NetworkBlockSyncRequest{", 0) != 0) {
         return {};
@@ -113,6 +157,15 @@ ParsedSyncRequest parseSyncRequest(const std::string& payload) {
     return out;
 }
 
+ParsedSyncRequest parseSyncRequest(const std::string& payload) {
+    const ParsedSyncRequest canonical = parseCanonicalSyncRequest(payload);
+    if (canonical.valid) {
+        return canonical;
+    }
+
+    return parseLegacySyncRequest(payload);
+}
+
 std::optional<core::Block> tryDeserializeBlock(const std::string& payload) {
     return core::Block::deserialize(payload);
 }
@@ -126,18 +179,13 @@ std::optional<core::Block> tryDeserializeBlock(const std::string& payload) {
 std::string BlockSyncHandler::serializeBlockList(
     const std::vector<core::Block>& blocks
 ) {
-    std::ostringstream oss;
-    oss << kBlockListHeader << "\n"
-        << kCountPrefix << blocks.size() << "\n";
-
-    for (std::size_t i = 0; i < blocks.size(); ++i) {
-        if (i > 0) {
-            oss << kBlockSeparator;
-        }
-        oss << blocks[i].serialize();
+    try {
+        return wrapCanonicalPayload(
+            serialization::ProtocolMessageCodec::encodeBlockList(blocks)
+        );
+    } catch (...) {
+        return "";
     }
-
-    return oss.str();
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +196,18 @@ std::vector<core::Block> BlockSyncHandler::deserializeBlockList(
     const std::string& payload
 ) {
     std::vector<core::Block> result;
+
+    const std::optional<std::vector<unsigned char>> canonicalBytes =
+        unwrapCanonicalPayload(payload);
+    if (canonicalBytes.has_value()) {
+        try {
+            return serialization::ProtocolMessageCodec::decodeBlockList(
+                canonicalBytes.value()
+            );
+        } catch (...) {
+            return {};
+        }
+    }
 
     // Check header.
     if (payload.rfind(kBlockListHeader, 0) != 0) return result;
@@ -300,7 +360,11 @@ p2p::GossipDeliveryReport BlockSyncHandler::requestBlocks(
 
     return gossip.broadcast(
         p2p::NetworkMessageType::BLOCK_REQUEST,
-        request.serialize(),
+        wrapCanonicalPayload(
+            serialization::ProtocolMessageCodec::encodeNetworkBlockSyncRequest(
+                request
+            )
+        ),
         now
     );
 }

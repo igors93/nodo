@@ -89,6 +89,32 @@ private:
     std::int64_t m_createdAt;
 };
 
+class RoundAdvanceMessage {
+public:
+    RoundAdvanceMessage();
+
+    RoundAdvanceMessage(
+        std::uint64_t height,
+        std::uint64_t round,
+        std::string proposerAddress,
+        std::int64_t createdAt
+    );
+
+    std::uint64_t height() const;
+    std::uint64_t round() const;
+    const std::string& proposerAddress() const;
+    std::int64_t createdAt() const;
+
+    bool isValid() const;
+    std::string serialize() const;
+
+private:
+    std::uint64_t m_height;
+    std::uint64_t m_round;
+    std::string m_proposerAddress;
+    std::int64_t m_createdAt;
+};
+
 } // namespace nodo::node
 
 #endif

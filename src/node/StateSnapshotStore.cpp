@@ -1,8 +1,13 @@
 #include "node/StateSnapshotStore.hpp"
 
+#include "core/StateRootCalculator.hpp"
+
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
+#include <system_error>
+#include <utility>
 
 namespace nodo::node {
 
@@ -39,63 +44,127 @@ StateSnapshotStore::StateSnapshotStore(std::filesystem::path snapshotPath)
 {}
 
 bool StateSnapshotStore::save(
-    const core::State& /*state*/,
-    std::uint64_t /*blockHeight*/
+    const core::State& state,
+    std::uint64_t blockHeight
 ) {
-    // TODO: State::serialize() is not yet implemented.
-    // When State gains a serialize() method, implement save() as:
-    //
-    //   const std::string content =
-    //       std::string(HEADER) + "\n" +
-    //       std::to_string(blockHeight) + "\n" +
-    //       state.serialize();
-    //
-    //   const std::filesystem::path tmp = std::filesystem::path(m_path).replace_extension(".tmp");
-    //   {
-    //       std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-    //       if (!out) return false;
-    //       out << content;
-    //       if (!out) return false;
-    //   }
-    //   std::filesystem::rename(tmp, m_path);
-    //   return true;
-    //
-    // Until then, this is a no-op and callers must use ChainStateRebuilder as fallback.
-    return false;
+    if (state.currentBlockIndex() != blockHeight) {
+        return false;
+    }
+
+    try {
+        const std::string serializedState = state.serialize();
+        const std::string stateRoot =
+            core::StateRootCalculator::calculateAccountStateRoot(
+                state.accountStateView()
+            );
+
+        if (stateRoot.empty()) {
+            return false;
+        }
+
+        const std::filesystem::path parent = m_path.parent_path();
+        if (!parent.empty()) {
+            std::error_code createError;
+            std::filesystem::create_directories(parent, createError);
+            if (createError) {
+                return false;
+            }
+        }
+
+        std::filesystem::path tmp = m_path;
+        tmp += ".tmp";
+
+        {
+            std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+            if (!out) {
+                return false;
+            }
+
+            out << HEADER << "\n"
+                << blockHeight << "\n"
+                << stateRoot << "\n"
+                << serializedState;
+
+            if (!out) {
+                std::error_code removeError;
+                std::filesystem::remove(tmp, removeError);
+                return false;
+            }
+        }
+
+        std::error_code renameError;
+        std::filesystem::rename(tmp, m_path, renameError);
+        if (renameError) {
+            std::error_code removeError;
+            std::filesystem::remove(tmp, removeError);
+            return false;
+        }
+
+        return true;
+    } catch (...) {
+        std::filesystem::path tmp = m_path;
+        tmp += ".tmp";
+        std::error_code removeError;
+        std::filesystem::remove(tmp, removeError);
+        return false;
+    }
 }
 
 std::optional<core::State> StateSnapshotStore::load(
-    std::uint64_t /*expectedHeight*/
+    std::uint64_t expectedHeight
 ) const {
-    // TODO: State::deserialize() is not yet implemented.
-    // When State gains a static deserialize(const std::string&) method,
-    // implement load() as:
-    //
-    //   if (!std::filesystem::exists(m_path)) return std::nullopt;
-    //
-    //   std::ifstream in(m_path, std::ios::binary);
-    //   if (!in) return std::nullopt;
-    //
-    //   std::string headerLine, heightLine;
-    //   if (!std::getline(in, headerLine)) return std::nullopt;
-    //   if (headerLine != HEADER) return std::nullopt;
-    //
-    //   if (!std::getline(in, heightLine)) return std::nullopt;
-    //   std::uint64_t parsedHeight = 0;
-    //   try {
-    //       parsedHeight = std::stoull(heightLine);
-    //   } catch (...) {
-    //       return std::nullopt;
-    //   }
-    //
-    //   if (parsedHeight != expectedHeight) return std::nullopt;
-    //
-    //   std::ostringstream rest;
-    //   rest << in.rdbuf();
-    //   return core::State::deserialize(rest.str());
-    //
-    // Until then, return nullopt so callers fall back to ChainStateRebuilder.
-    return std::nullopt;
+    if (!std::filesystem::exists(m_path)) {
+        return std::nullopt;
+    }
+
+    try {
+        std::ifstream in(m_path, std::ios::binary);
+        if (!in) {
+            return std::nullopt;
+        }
+
+        std::string headerLine;
+        std::string heightLine;
+        std::string storedStateRoot;
+        if (!std::getline(in, headerLine)) return std::nullopt;
+        if (headerLine != std::string(HEADER)) return std::nullopt;
+        if (!std::getline(in, heightLine)) return std::nullopt;
+        if (!std::getline(in, storedStateRoot)) return std::nullopt;
+        if (storedStateRoot.empty()) return std::nullopt;
+
+        std::uint64_t parsedHeight = 0;
+        if (!parseUint64Strict(heightLine, parsedHeight)) {
+            return std::nullopt;
+        }
+        if (parsedHeight != expectedHeight) {
+            return std::nullopt;
+        }
+
+        std::ostringstream serializedState;
+        serializedState << in.rdbuf();
+        if (!serializedState || serializedState.str().empty()) {
+            return std::nullopt;
+        }
+
+        core::State state =
+            core::State::deserialize(serializedState.str());
+
+        if (state.currentBlockIndex() != parsedHeight) {
+            return std::nullopt;
+        }
+
+        const std::string calculatedRoot =
+            core::StateRootCalculator::calculateAccountStateRoot(
+                state.accountStateView()
+            );
+        if (calculatedRoot.empty() || calculatedRoot != storedStateRoot) {
+            return std::nullopt;
+        }
+
+        return state;
+    } catch (...) {
+        return std::nullopt;
+    }
 }
 
 bool StateSnapshotStore::exists() const {

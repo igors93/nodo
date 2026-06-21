@@ -1746,10 +1746,23 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
+    core::StateTransitionPreviewContext productionPreviewContext;
+    try {
+        productionPreviewContext =
+            previewContextForRuntime(runtime);
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::BLOCK_PRODUCTION_FAILED,
+            std::string("Unable to rebuild account state for mempool selection: ")
+            + error.what()
+        );
+    }
+
     const core::BlockProductionResult production =
         core::MempoolBlockProducer::produceCandidateBlock(
             runtime.blockchain(),
             runtime.mempool(),
+            productionPreviewContext.accountStateView(),
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             core::BlockProductionConfig(

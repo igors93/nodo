@@ -3,13 +3,23 @@
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
+#include "crypto/Hex.hpp"
+#include "node/ChainSyncMessages.hpp"
 #include "node/DoubleVoteDetector.hpp"
 #include "p2p/NetworkEnvelope.hpp"
+#include "serialization/ProtocolMessageCodec.hpp"
 
 #include <chrono>
 #include <thread>
 
 namespace nodo::consensus {
+
+namespace {
+
+static const std::string kCanonicalPayloadPrefix =
+    "NODO_CANONICAL_PROTOCOL_HEX_V1:";
+
+} // namespace
 
 ConsensusEventLoop::ConsensusEventLoop(
     node::NodeRuntime&               runtime,
@@ -242,15 +252,25 @@ bool ConsensusEventLoop::tryFinalizeBlock(
 
 void ConsensusEventLoop::broadcastRoundAdvancement(std::int64_t now) {
     const auto& state = m_runtime.consensusRoundManager().currentState();
-    const core::Blockchain& chain = m_runtime.blockchain();
-    const std::uint64_t height =
-        chain.empty() ? 0 : chain.latestBlock().index();
 
-    // Serialize a minimal round-advance notification as a CHAIN_STATUS payload.
+    const node::RoundAdvanceMessage message(
+        state.height(),
+        state.round(),
+        state.proposerAddress(),
+        now
+    );
+
+    if (!message.isValid()) {
+        return;
+    }
+
     const std::string payload =
-        "NODO_ROUND_ADVANCE{height=" + std::to_string(height)
-        + ";round=" + std::to_string(state.round())
-        + ";proposer=" + state.proposerAddress() + "}";
+        kCanonicalPayloadPrefix +
+        crypto::hexEncode(
+            serialization::ProtocolMessageCodec::encodeRoundAdvanceMessage(
+                message
+            )
+        );
 
     m_gossip.broadcast(
         p2p::NetworkMessageType::CHAIN_STATUS,

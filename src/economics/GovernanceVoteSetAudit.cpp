@@ -1,6 +1,7 @@
 #include "economics/GovernanceVoteSetAudit.hpp"
 
 #include <algorithm>
+#include <map>
 #include <set>
 #include <utility>
 
@@ -134,7 +135,7 @@ GovernanceVoteSetAuditResult GovernanceVoteSetAudit::audit(
 
     std::set<std::string> evidenceIds;
     std::set<std::string> voteIds;
-    std::set<std::string> voterIds;
+    std::map<std::string, GovernanceVoteEvidence> canonicalByVoter;
 
     for (std::size_t i = 0; i < voteEvidenceList.size(); ++i) {
         const GovernanceVoteEvidence& evidence = voteEvidenceList[i];
@@ -199,23 +200,45 @@ GovernanceVoteSetAuditResult GovernanceVoteSetAudit::audit(
             );
         }
 
-        if (!voterIds.insert(vote.voterId()).second) {
-            if (votingPolicy.allowVoteReplacement()) {
+        auto existingVoteForVoter =
+            canonicalByVoter.find(vote.voterId());
+        if (existingVoteForVoter == canonicalByVoter.end()) {
+            canonicalByVoter.emplace(
+                vote.voterId(),
+                evidence
+            );
+        } else {
+            if (!votingPolicy.allowVoteReplacement()) {
                 return GovernanceVoteSetAuditResult::rejected(
-                    GovernanceVoteSetAuditStatus::REPLACEMENT_NOT_IMPLEMENTED,
-                    "GovernanceVoteSetAudit: vote replacement is not implemented.",
+                    GovernanceVoteSetAuditStatus::DUPLICATE_VOTER,
+                    "GovernanceVoteSetAudit: duplicate voterId '" + vote.voterId() + "'.",
                     i
                 );
             }
-            return GovernanceVoteSetAuditResult::rejected(
-                GovernanceVoteSetAuditStatus::DUPLICATE_VOTER,
-                "GovernanceVoteSetAudit: duplicate voterId '" + vote.voterId() + "'.",
-                i
-            );
+
+            const std::uint64_t existingCastAtBlock =
+                existingVoteForVoter->second.voteRecord().castAtBlock();
+            if (vote.castAtBlock() == existingCastAtBlock) {
+                return GovernanceVoteSetAuditResult::rejected(
+                    GovernanceVoteSetAuditStatus::DUPLICATE_VOTER,
+                    "GovernanceVoteSetAudit: same voter replacement at the same block is ambiguous.",
+                    i
+                );
+            }
+
+            if (vote.castAtBlock() > existingCastAtBlock) {
+                existingVoteForVoter->second = evidence;
+            }
         }
     }
 
-    std::vector<GovernanceVoteEvidence> canonical = voteEvidenceList;
+    std::vector<GovernanceVoteEvidence> canonical;
+    canonical.reserve(canonicalByVoter.size());
+    for (const auto& [ignored, evidence] : canonicalByVoter) {
+        (void)ignored;
+        canonical.push_back(evidence);
+    }
+
     std::sort(
         canonical.begin(),
         canonical.end(),
