@@ -1,0 +1,108 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Nodo - Proof of Protection Blockchain</title>
+  <desc id="desc">Conceptual banner showing validators, auditable state, encrypted delivery, and evidence-backed security.</desc>
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="45%" r="70%">
+      <stop offset="0%" stop-color="#123A4A"/>
+      <stop offset="46%" stop-color="#0B1720"/>
+      <stop offset="100%" stop-color="#060A0F"/>
+    </radialGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#66E8FF"/>
+      <stop offset="100%" stop-color="#18A7C9"/>
+    </linearGradient>
+    <linearGradient id="emerald" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7CFFBF"/>
+      <stop offset="100%" stop-color="#16B879"/>
+    </linearGradient>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.2  0 0 0 0 0.9  0 0 0 0 1  0 0 0 0.75 0"/>
+      <feBlend in="SourceGraphic" mode="screen"/>
+    </filter>
+    <filter id="greenGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.1  0 0 0 0 1  0 0 0 0 0.62  0 0 0 0.7 0"/>
+      <feBlend in="SourceGraphic" mode="screen"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bgGlow)"/>
+
+  <g opacity="0.18" stroke="#7BE9FF" stroke-width="1">
+    <path d="M0 164H1600"/>
+    <path d="M0 312H1600"/>
+    <path d="M0 460H1600"/>
+    <path d="M0 608H1600"/>
+    <path d="M0 756H1600"/>
+    <path d="M166 0V900"/>
+    <path d="M354 0V900"/>
+    <path d="M542 0V900"/>
+    <path d="M730 0V900"/>
+    <path d="M918 0V900"/>
+    <path d="M1106 0V900"/>
+    <path d="M1294 0V900"/>
+    <path d="M1482 0V900"/>
+  </g>
+
+  <g opacity="0.28" stroke="#2BFFB1" stroke-width="2">
+    <path d="M415 642L540 560L667 646L795 548L930 642L1062 552L1190 642"/>
+    <path d="M540 560L540 432L667 350L795 432L930 350L1062 432L1062 552"/>
+    <path d="M667 350L795 238L930 350"/>
+  </g>
+
+  <g filter="url(#softGlow)">
+    <circle cx="800" cy="442" r="180" stroke="url(#cyan)" stroke-width="3" opacity="0.9"/>
+    <circle cx="800" cy="442" r="112" stroke="#48DFFF" stroke-width="2" opacity="0.5"/>
+    <path d="M800 242L973 342V542L800 642L627 542V342L800 242Z" stroke="url(#cyan)" stroke-width="5" fill="#07141C" fill-opacity="0.62"/>
+    <path d="M800 292L930 367V517L800 592L670 517V367L800 292Z" stroke="#8EEFFF" stroke-width="2" opacity="0.65"/>
+    <path d="M800 242V292M973 342L930 367M973 542L930 517M800 642V592M627 542L670 517M627 342L670 367" stroke="#8EEFFF" stroke-width="2" opacity="0.8"/>
+  </g>
+
+  <g filter="url(#greenGlow)">
+    <circle cx="627" cy="342" r="15" fill="url(#emerald)"/>
+    <circle cx="973" cy="342" r="15" fill="url(#emerald)"/>
+    <circle cx="973" cy="542" r="15" fill="url(#emerald)"/>
+    <circle cx="627" cy="542" r="15" fill="url(#emerald)"/>
+    <circle cx="800" cy="242" r="16" fill="url(#emerald)"/>
+    <circle cx="800" cy="642" r="16" fill="url(#emerald)"/>
+  </g>
+
+  <g>
+    <path d="M405 440C500 372 588 368 679 417" stroke="#68E8FF" stroke-width="3" stroke-linecap="round" stroke-dasharray="10 16" opacity="0.85"/>
+    <path d="M921 417C1012 368 1100 372 1195 440" stroke="#68E8FF" stroke-width="3" stroke-linecap="round" stroke-dasharray="10 16" opacity="0.85"/>
+    <rect x="700" y="394" width="200" height="116" rx="18" fill="#081821" stroke="#7BE9FF" stroke-width="3"/>
+    <path d="M704 401L800 466L896 401" stroke="#7BE9FF" stroke-width="3"/>
+    <path d="M704 505L770 452M896 505L830 452" stroke="#2BFFB1" stroke-width="2" opacity="0.75"/>
+    <circle cx="405" cy="440" r="24" fill="#07141C" stroke="#2BFFB1" stroke-width="3"/>
+    <circle cx="1195" cy="440" r="24" fill="#07141C" stroke="#2BFFB1" stroke-width="3"/>
+  </g>
+
+  <g font-family="Inter, Segoe UI, Arial, sans-serif" text-anchor="middle">
+    <text x="800" y="116" fill="#F2FBFF" font-size="76" font-weight="800" letter-spacing="1">Nodo</text>
+    <text x="800" y="166" fill="#86EFFF" font-size="30" font-weight="600">Proof of Protection Blockchain</text>
+  </g>
+
+  <g font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">
+    <rect x="172" y="252" width="250" height="58" rx="18" fill="#091923" stroke="#245E70"/>
+    <text x="297" y="289" fill="#B9F6FF" text-anchor="middle">Auditable State</text>
+    <rect x="1178" y="252" width="250" height="58" rx="18" fill="#091923" stroke="#245E70"/>
+    <text x="1303" y="289" fill="#B9F6FF" text-anchor="middle">Validator Finality</text>
+    <rect x="168" y="608" width="270" height="58" rx="18" fill="#091923" stroke="#1E6B50"/>
+    <text x="303" y="645" fill="#BFFFE1" text-anchor="middle">Encrypted Delivery</text>
+    <rect x="1148" y="608" width="306" height="58" rx="18" fill="#091923" stroke="#1E6B50"/>
+    <text x="1301" y="645" fill="#BFFFE1" text-anchor="middle">Evidence-Backed Security</text>
+  </g>
+
+  <g opacity="0.72" stroke="#6FEAFF" stroke-width="2">
+    <path d="M297 310L405 440"/>
+    <path d="M1303 310L1195 440"/>
+    <path d="M303 608L405 440"/>
+    <path d="M1301 608L1195 440"/>
+  </g>
+
+  <g font-family="Inter, Segoe UI, Arial, sans-serif" text-anchor="middle">
+    <text x="800" y="786" fill="#E8FBFF" font-size="28" font-weight="700">Verifiable protection, rebuildable state, and cryptographic evidence for every critical action.</text>
+    <text x="800" y="829" fill="#7BA7B5" font-size="19">Experimental C++20 blockchain foundation - pre-mainnet - security-first by design</text>
+  </g>
+</svg>
