@@ -12,6 +12,7 @@
 #include "privacy/PrivateAccountingRecord.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace nodo::serialization {
@@ -120,6 +121,7 @@ public:
     bool isValid() const;
 
     std::string serialize() const;
+    static std::optional<LedgerRecord> deserialize(const std::string& text);
 
 private:
     friend class nodo::serialization::LedgerRecordCodec;

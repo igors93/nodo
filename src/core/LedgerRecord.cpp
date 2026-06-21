@@ -2,6 +2,7 @@
 
 #include "crypto/hash.h"
 
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -472,6 +473,65 @@ std::string LedgerRecord::computeDerivedSourceId(
     const std::string& payloadHash
 ) {
     return sourcePrefix + "_" + payloadHash;
+}
+
+} // namespace nodo::core
+
+namespace {
+
+// Extracts the value of 'key=' from text, handling nested {[]} depth.
+// Stops at ';' or '}' or ']' at depth 0.
+std::string extractLedgerField(const std::string& text, const std::string& key) {
+    const std::string needle = key + "=";
+    const auto pos = text.find(needle);
+    if (pos == std::string::npos) return "";
+    const auto start = pos + needle.size();
+    int depth = 0;
+    std::size_t i = start;
+    while (i < text.size()) {
+        const char c = text[i];
+        if (c == '{' || c == '[') ++depth;
+        else if (c == '}' || c == ']') {
+            if (depth == 0) break;
+            --depth;
+        } else if (c == ';' && depth == 0) {
+            break;
+        }
+        ++i;
+    }
+    return text.substr(start, i - start);
+}
+
+} // anonymous namespace
+
+namespace nodo::core {
+
+std::optional<LedgerRecord> LedgerRecord::deserialize(const std::string& text) {
+    if (text.rfind("LedgerRecord{", 0) != 0) return std::nullopt;
+
+    const std::string id          = extractLedgerField(text, "id");
+    const std::string typeStr     = extractLedgerField(text, "type");
+    const std::string sourceId    = extractLedgerField(text, "sourceId");
+    const std::string payloadHash = extractLedgerField(text, "payloadHash");
+    const std::string tsStr       = extractLedgerField(text, "timestamp");
+    const std::string payload     = extractLedgerField(text, "payload");
+
+    if (id.empty() || typeStr.empty() || tsStr.empty()) return std::nullopt;
+
+    std::int64_t timestamp = 0;
+    try { timestamp = std::stoll(tsStr); } catch (...) { return std::nullopt; }
+    if (timestamp <= 0) return std::nullopt;
+
+    LedgerRecordType type;
+    try { type = ledgerRecordTypeFromString(typeStr); } catch (...) { return std::nullopt; }
+
+    try {
+        return LedgerRecord::fromPersistedFields(
+            id, type, sourceId, payload, payloadHash, timestamp
+        );
+    } catch (...) {
+        return std::nullopt;
+    }
 }
 
 } // namespace nodo::core

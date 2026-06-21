@@ -96,8 +96,6 @@ StakingApplyResult StakingTransactionApplier::apply(
             );
         }
 
-        economics::StakeAccount updated = stake;
-        updated.applySlash(utils::Amount()); // ensure valid state
         // Increase bonded amount by adding to a copy.
         // StakeAccount doesn't expose a direct "add" — we reconstruct.
         economics::StakeAccount next(
@@ -130,8 +128,9 @@ StakingApplyResult StakingTransactionApplier::apply(
         );
     }
 
-    const std::int64_t availableRaw =
-        stake.bondedAmount().rawUnits() - stake.slashedAmount().rawUnits();
+    const std::int64_t bondedRaw  = stake.bondedAmount().rawUnits();
+    const std::int64_t slashedRaw = stake.slashedAmount().rawUnits();
+    const std::int64_t availableRaw = (bondedRaw > slashedRaw) ? (bondedRaw - slashedRaw) : 0;
 
     if (tx.amount().rawUnits() > availableRaw) {
         return StakingApplyResult::rejected(

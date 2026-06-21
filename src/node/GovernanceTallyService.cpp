@@ -116,9 +116,10 @@ GovernanceTallyResult GovernanceTallyService::tally(
         const double quorum   = static_cast<double>(total)  / static_cast<double>(eligible);
         const double approval = static_cast<double>(yes)    / static_cast<double>(total);
 
-        if (quorum < QUORUM_THRESHOLD) {
+        static constexpr double kEpsilon = 1e-9;
+        if (quorum < QUORUM_THRESHOLD - kEpsilon) {
             outcome = economics::GovernanceLifecycleState::EXPIRED;
-        } else if (approval > APPROVAL_THRESHOLD) {
+        } else if (approval > APPROVAL_THRESHOLD - kEpsilon) {
             outcome = economics::GovernanceLifecycleState::DECIDED_APPROVED;
         } else {
             outcome = economics::GovernanceLifecycleState::DECIDED_REJECTED;

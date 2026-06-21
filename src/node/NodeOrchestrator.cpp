@@ -195,8 +195,17 @@ void NodeOrchestrator::tick(std::int64_t now) {
     );
 
     // 6. If peer is ahead of us, request missing blocks.
+    // Only trust peers that have completed handshake (non-empty peerId and endpoint).
+    // Also guard against height-spoofing attacks by capping the look-ahead window.
+    static constexpr std::uint64_t kMaxSyncLookAhead = 10000;
     const auto peers = m_runtime->peerManager().peers();
     for (const auto& peer : peers) {
+        // Skip peers that have not completed the handshake.
+        if (peer.peerId().empty() || peer.endpoint().empty()) continue;
+
+        // Ignore implausibly large claimed heights (height-spoofing protection).
+        if (peer.latestKnownHeight() > localHeight + kMaxSyncLookAhead) continue;
+
         if (peer.latestKnownHeight() > localHeight + 1) {
             BlockSyncHandler::requestBlocks(
                 gossip,
@@ -366,34 +375,15 @@ bool NodeOrchestrator::startRpc() {
     }
 }
 
+void NodeOrchestrator::setLocalSigner(crypto::Signer signer) {
+    m_localSigner = std::move(signer);
+}
+
 bool NodeOrchestrator::produceBlock(
     std::uint64_t height,
     std::uint64_t round,
     std::int64_t  now
 ) {
-    // We need a local Signer. For testnet, the Signer is built from the
-    // validator's key pair. The caller must ensure the key was loaded.
-    // If no signer is available, skip production silently.
-    // TODO: inject crypto::Signer via NodeOrchestratorConfig for non-testnet.
-
-    // Build a minimal Signer from the local validator address.
-    // In production this would use KeyStore to load the private key.
-    // For testnet, RuntimeBlockPipeline is called with a development signer.
-    // This stub triggers the pipeline and is sufficient for integration tests.
-
-    RuntimeBlockPipelineConfig pipelineConfig(
-        m_config.maxBlockTransactions(),
-        0,      // minTransactions: 0 allows empty blocks (heartbeat blocks)
-        round,
-        now
-    );
-
-    // The signer must be injected — we use the local validator address as a
-    // placeholder. In a full implementation, NodeOrchestratorConfig must carry
-    // a crypto::KeyPair for the local validator.
-    // The compilation guard below ensures this stub won't silently produce
-    // corrupt blocks without a real key.
-    //
     // For now: if the runtime has no validators, skip.
     if (m_runtime->validatorRegistry().activeCount() == 0) return false;
 
@@ -409,13 +399,21 @@ bool NodeOrchestrator::produceBlock(
 
     if (expectedProposer != m_config.localValidatorAddress()) return false;
 
-    // NOTE: RuntimeBlockPipeline requires a crypto::Signer with the private key.
-    // The orchestrator needs it injected at construction time in a full setup.
-    // This method returns false without a real signer — wire via setLocalSigner().
-    //
-    // To keep the build clean without an injected signer, we return false here.
-    // Integration tests use RuntimeBlockPipeline directly with a known test signer.
-    return false;
+    if (!m_localSigner.has_value()) return false;
+
+    RuntimeBlockPipelineConfig pipelineConfig(
+        m_config.maxBlockTransactions(),
+        0,
+        round,
+        now
+    );
+
+    const auto result = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        *m_runtime,
+        pipelineConfig,
+        m_localSigner.value()
+    );
+    return result.status() == RuntimeBlockPipelineStatus::FINALIZED;
 }
 
 ChainStatusMessage NodeOrchestrator::currentChainStatus() const {

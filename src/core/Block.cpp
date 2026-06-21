@@ -1,7 +1,9 @@
 #include "core/Block.hpp"
 
+#include "core/LedgerRecord.hpp"
 #include "crypto/hash.h"
 
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -164,6 +166,111 @@ std::string Block::hashString(const std::string& value) {
     nodo_hash_string(value.c_str(), output, sizeof(output));
 
     return std::string(output);
+}
+
+// static
+std::optional<Block> Block::deserialize(const std::string& text) {
+    if (text.rfind("Block{", 0) != 0) return std::nullopt;
+
+    // Extract top-level fields.
+    auto extractField = [&](const std::string& key) -> std::string {
+        const std::string needle = key + "=";
+        const auto pos = text.find(needle);
+        if (pos == std::string::npos) return "";
+        const auto start = pos + needle.size();
+        int depth = 0;
+        std::size_t i = start;
+        while (i < text.size()) {
+            const char c = text[i];
+            if (c == '{' || c == '[') ++depth;
+            else if (c == '}' || c == ']') {
+                if (depth == 0) break;
+                --depth;
+            } else if (c == ';' && depth == 0) {
+                break;
+            }
+            ++i;
+        }
+        return text.substr(start, i - start);
+    };
+
+    const std::string indexStr    = extractField("index");
+    const std::string prevHash    = extractField("previousHash");
+    const std::string storedHash  = extractField("hash");
+    const std::string tsStr       = extractField("timestamp");
+    const std::string payload     = extractField("payload");
+
+    if (indexStr.empty() || prevHash.empty() || tsStr.empty() || payload.empty())
+        return std::nullopt;
+
+    std::uint64_t index = 0;
+    std::int64_t  timestamp = 0;
+    try {
+        index     = static_cast<std::uint64_t>(std::stoull(indexStr));
+        timestamp = std::stoll(tsStr);
+    } catch (...) {
+        return std::nullopt;
+    }
+
+    // Extract the records array from inside the payload (BlockHeader{...;records=[...]}).
+    const std::string recordsKey = "records=[";
+    const auto recPos = payload.find(recordsKey);
+    if (recPos == std::string::npos) return std::nullopt;
+
+    const auto arrayStart = recPos + recordsKey.size();
+    // Find the matching ']' for the records array.
+    int depth = 0;
+    std::size_t arrayEnd = arrayStart;
+    while (arrayEnd < payload.size()) {
+        const char c = payload[arrayEnd];
+        if (c == '[') ++depth;
+        else if (c == ']') {
+            if (depth == 0) break;
+            --depth;
+        }
+        ++arrayEnd;
+    }
+    const std::string arrayContent = payload.substr(arrayStart, arrayEnd - arrayStart);
+
+    // Split arrayContent into individual LedgerRecord strings by tracking brace depth.
+    std::vector<LedgerRecord> records;
+    std::size_t i = 0;
+    while (i < arrayContent.size()) {
+        // Skip commas and whitespace between records.
+        while (i < arrayContent.size() &&
+               (arrayContent[i] == ',' || arrayContent[i] == ' ')) {
+            ++i;
+        }
+        if (i >= arrayContent.size()) break;
+        if (arrayContent.substr(i, 13) != "LedgerRecord{") break;
+
+        const std::size_t start = i;
+        int d = 0;
+        while (i < arrayContent.size()) {
+            const char c = arrayContent[i];
+            if (c == '{') ++d;
+            else if (c == '}') {
+                --d;
+                if (d == 0) { ++i; break; }
+            }
+            ++i;
+        }
+
+        auto rec = LedgerRecord::deserialize(arrayContent.substr(start, i - start));
+        if (!rec.has_value()) return std::nullopt;
+        records.push_back(std::move(rec.value()));
+    }
+
+    if (records.empty()) return std::nullopt;
+
+    try {
+        Block block(index, prevHash, std::move(records), timestamp);
+        // Verify hash integrity.
+        if (!storedHash.empty() && block.hash() != storedHash) return std::nullopt;
+        return block;
+    } catch (...) {
+        return std::nullopt;
+    }
 }
 
 } // namespace nodo::core

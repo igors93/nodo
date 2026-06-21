@@ -4,6 +4,7 @@
 #include "core/LedgerRecord.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -53,6 +54,12 @@ public:
      * This includes the final block hash.
      */
     std::string serialize() const;
+
+    /*
+     * Reconstruct a Block from its serialized form produced by serialize().
+     * Returns nullopt if the payload is malformed or hash verification fails.
+     */
+    static std::optional<Block> deserialize(const std::string& text);
 
 private:
     std::uint64_t m_index;

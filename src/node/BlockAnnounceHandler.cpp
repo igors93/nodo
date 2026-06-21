@@ -1,5 +1,6 @@
 #include "node/BlockAnnounceHandler.hpp"
 
+#include "core/Block.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 
 #include <optional>
@@ -9,14 +10,8 @@ namespace nodo::node {
 
 namespace {
 
-// TODO: Block::deserialize(const std::string& payload) does not exist yet.
-// Until it is implemented, this function returns std::nullopt (decode failure).
-// When Block gains a static deserialize() method, replace this stub with a
-// real call:
-//   return core::Block::deserialize(payload);
-std::optional<core::Block> decodeBlock(const std::string& /*payload*/) {
-    // TODO: implement Block::deserialize and call it here
-    return std::nullopt;
+std::optional<core::Block> decodeBlock(const std::string& payload) {
+    return core::Block::deserialize(payload);
 }
 
 bool blockAlreadyKnown(

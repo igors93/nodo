@@ -6,6 +6,7 @@
 #include "consensus/EvidencePool.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureProvider.hpp"
+#include "crypto/Signer.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRpcServer.hpp"
 #include "node/NodeRuntime.hpp"
@@ -145,6 +146,14 @@ public:
 
     bool isRunning() const;
 
+    // ---- Block production signer ------------------------------------------
+
+    /*
+     * Inject the local validator signer used for block production.
+     * Must be called before the consensus loop starts proposing blocks.
+     */
+    void setLocalSigner(crypto::Signer signer);
+
     // ---- Single tick (usable from tests without a background thread) ------
 
     /*
@@ -176,6 +185,7 @@ private:
     consensus::EvidencePool                  m_evidencePool;
 
     std::atomic<bool> m_running;
+    std::optional<crypto::Signer> m_localSigner;
 
     // ---- Internal startup helpers ----------------------------------------
 

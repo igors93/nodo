@@ -1,5 +1,6 @@
 #include "node/BlockSyncHandler.hpp"
 
+#include "core/Block.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 
@@ -92,13 +93,8 @@ ParsedSyncRequest parseSyncRequest(const std::string& payload) {
     return out;
 }
 
-// TODO: Block::deserialize(const std::string& payload) does not exist yet.
-// This stub always returns nullopt. Replace with a real call once the method
-// is added to core::Block:
-//   return core::Block::deserialize(payload);
-std::optional<core::Block> tryDeserializeBlock(const std::string& /*payload*/) {
-    // TODO: implement Block::deserialize and call it here
-    return std::nullopt;
+std::optional<core::Block> tryDeserializeBlock(const std::string& payload) {
+    return core::Block::deserialize(payload);
 }
 
 } // namespace
@@ -131,11 +127,55 @@ std::string BlockSyncHandler::serializeBlockList(
 std::vector<core::Block> BlockSyncHandler::deserializeBlockList(
     const std::string& payload
 ) {
-    // TODO: Block::deserialize does not exist yet, so this always returns an
-    // empty vector.  Once Block::deserialize is implemented, parse the header,
-    // split by kBlockSeparator, and call tryDeserializeBlock() for each chunk.
-    (void)payload;
-    return {};
+    std::vector<core::Block> result;
+
+    // Check header.
+    if (payload.rfind(kBlockListHeader, 0) != 0) return result;
+
+    // Find first newline (after header line).
+    const auto firstNewline = payload.find('\n');
+    if (firstNewline == std::string::npos) return result;
+
+    // Find second newline (after count= line).
+    const auto secondNewline = payload.find('\n', firstNewline + 1);
+    if (secondNewline == std::string::npos) return result;
+
+    // Parse expected count.
+    const std::string countLine = payload.substr(
+        firstNewline + 1, secondNewline - firstNewline - 1
+    );
+    std::uint64_t expectedCount = 0;
+    if (countLine.rfind(kCountPrefix, 0) == 0) {
+        try {
+            expectedCount = std::stoull(countLine.substr(kCountPrefix.size()));
+        } catch (...) {}
+    }
+    if (expectedCount == 0) return result;
+
+    // Split by block separator.
+    const std::string blocksStr = payload.substr(secondNewline + 1);
+    std::vector<std::string> chunks;
+    std::size_t pos = 0;
+    while (true) {
+        const auto sepPos = blocksStr.find(kBlockSeparator, pos);
+        if (sepPos == std::string::npos) {
+            chunks.push_back(blocksStr.substr(pos));
+            break;
+        }
+        chunks.push_back(blocksStr.substr(pos, sepPos - pos));
+        pos = sepPos + kBlockSeparator.size();
+    }
+
+    result.reserve(chunks.size());
+    for (const auto& chunk : chunks) {
+        if (chunk.empty()) continue;
+        auto block = tryDeserializeBlock(chunk);
+        if (block.has_value()) {
+            result.push_back(std::move(block.value()));
+        }
+    }
+
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +217,7 @@ void BlockSyncHandler::serveRequests(
             if (block.index() < fromHeight) {
                 continue;
             }
-            if (toSend.size() >= maxToSend) {
+            if (toSend.size() >= static_cast<std::size_t>(maxToSend)) {
                 break;
             }
             toSend.push_back(block);

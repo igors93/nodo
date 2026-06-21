@@ -80,6 +80,10 @@ void ConsensusEventLoop::runLoop() {
 ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     ConsensusTickResult result = drainVotesAndCollect(now);
 
+    // Guard: do not access consensus round manager state if the blockchain
+    // is empty (genesis not yet committed).
+    if (m_runtime.blockchain().empty()) return result;
+
     // TASK 1: If this node is the designated proposer for the current
     // height+round and no block exists at that height yet, trigger local
     // block production before attempting quorum assembly.

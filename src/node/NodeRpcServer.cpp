@@ -231,17 +231,16 @@ std::string NodeRpcServer::jsonError(const std::string& message) {
 }
 
 std::string NodeRpcServer::pathSegment(const std::string& path, int index) {
-    int pos = 0;
+    std::size_t pos = 0;
     int seg = -1;
-    while (pos < static_cast<int>(path.size())) {
-        std::size_t slash = path.find('/', static_cast<std::size_t>(pos));
+    while (pos < path.size()) {
+        std::size_t slash = path.find('/', pos);
         if (slash == std::string::npos) slash = path.size();
         if (seg == index) {
-            return path.substr(static_cast<std::size_t>(pos),
-                               slash - static_cast<std::size_t>(pos));
+            return path.substr(pos, slash - pos);
         }
         ++seg;
-        pos = static_cast<int>(slash) + 1;
+        pos = slash + 1;
     }
     return "";
 }

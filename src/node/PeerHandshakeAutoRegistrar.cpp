@@ -99,8 +99,15 @@ p2p::PeerMetadata parsePeerFromHelloPayload(
         extractNestedField(peerBlock, "lastSeenAt"), now
     );
 
-    // Clamp: firstSeenAt must be <= lastSeenAt for PeerMetadata::isValid().
-    if (firstSeenAt <= 0) firstSeenAt = now;
+    // Clamp: reject obviously invalid or future timestamps.
+    // Only overwrite when out of range; valid timestamps pass through unchanged.
+    static constexpr std::int64_t TIMESTAMP_TOLERANCE_SECONDS = 300; // 5 minutes
+    if (firstSeenAt <= 0 || firstSeenAt > now + TIMESTAMP_TOLERANCE_SECONDS) {
+        firstSeenAt = now;
+    }
+    if (lastSeenAt <= 0 || lastSeenAt > now + TIMESTAMP_TOLERANCE_SECONDS) {
+        lastSeenAt = now;
+    }
     if (lastSeenAt < firstSeenAt) lastSeenAt = firstSeenAt;
 
     return p2p::PeerMetadata(
