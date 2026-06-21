@@ -1,6 +1,10 @@
 <h1 align="center">Nodo</h1>
 
 <p align="center">
+  <img src="assets/nodo-readme-hero.svg" alt="Nodo - Proof of Protection Blockchain" />
+</p>
+
+<p align="center">
   Security-first blockchain infrastructure for verifiable protection, auditable economics, controlled treasury execution, governance evidence, and rebuildable state.
 </p>
 
