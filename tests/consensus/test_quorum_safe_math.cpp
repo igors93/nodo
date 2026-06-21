@@ -43,5 +43,21 @@ int main() {
 
     assert(all == std::numeric_limits<std::uint64_t>::max());
 
+    const std::uint64_t maxValidators =
+        std::numeric_limits<std::uint64_t>::max();
+
+    const std::uint64_t twoThirdsOfMax =
+        QuorumCertificateBuilder::requiredVoteCount(
+            maxValidators,
+            2,
+            3
+        );
+
+    const std::uint64_t expectedTwoThirdsOfMax =
+        (maxValidators / 3) * 2 +
+        (((maxValidators % 3) * 2 + 2) / 3);
+
+    assert(twoThirdsOfMax == expectedTwoThirdsOfMax);
+
     return 0;
 }

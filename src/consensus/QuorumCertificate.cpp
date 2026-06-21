@@ -555,10 +555,20 @@ std::uint64_t QuorumCertificateBuilder::requiredVoteCount(
         throw std::invalid_argument("Invalid quorum threshold parameters.");
     }
 
-    return (
-        activeValidatorCount * thresholdNumerator +
-        thresholdDenominator - 1
-    ) / thresholdDenominator;
+    const unsigned __int128 scaledVotes =
+        static_cast<unsigned __int128>(activeValidatorCount) *
+        static_cast<unsigned __int128>(thresholdNumerator);
+
+    const unsigned __int128 roundedVotes =
+        scaledVotes +
+        static_cast<unsigned __int128>(thresholdDenominator) -
+        1;
+
+    const unsigned __int128 requiredVotes =
+        roundedVotes /
+        static_cast<unsigned __int128>(thresholdDenominator);
+
+    return static_cast<std::uint64_t>(requiredVotes);
 }
 
 QuorumCertificateBuildResult QuorumCertificateBuilder::buildFromVotes(

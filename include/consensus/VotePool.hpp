@@ -60,6 +60,39 @@ private:
     std::uint64_t m_round;
 };
 
+class VotePoolQuorumProgress {
+public:
+    VotePoolQuorumProgress();
+
+    VotePoolQuorumProgress(
+        std::uint64_t blockIndex,
+        std::string blockHash,
+        std::uint64_t round,
+        std::uint64_t acceptedVoteCount,
+        std::uint64_t requiredVoteCount,
+        std::uint64_t activeValidatorCount
+    );
+
+    std::uint64_t blockIndex() const;
+    const std::string& blockHash() const;
+    std::uint64_t round() const;
+    std::uint64_t acceptedVoteCount() const;
+    std::uint64_t requiredVoteCount() const;
+    std::uint64_t activeValidatorCount() const;
+
+    bool isValid() const;
+    bool canCertify() const;
+    std::string serialize() const;
+
+private:
+    std::uint64_t m_blockIndex;
+    std::string m_blockHash;
+    std::uint64_t m_round;
+    std::uint64_t m_acceptedVoteCount;
+    std::uint64_t m_requiredVoteCount;
+    std::uint64_t m_activeValidatorCount;
+};
+
 class VotePool {
 public:
     VotePool();
@@ -78,20 +111,23 @@ public:
         std::uint64_t round
     ) const;
 
+    VotePoolQuorumProgress quorumProgressForBlock(
+        std::uint64_t blockIndex,
+        const std::string& blockHash,
+        std::uint64_t round,
+        std::uint64_t activeValidatorCount,
+        std::uint64_t thresholdNumerator,
+        std::uint64_t thresholdDenominator
+    ) const;
+
     bool hasConflictingVote(
         const std::string& validatorAddress,
         std::uint64_t blockIndex,
         std::uint64_t round
     ) const;
 
-    // Returns all votes that were detected as double-votes (same
-    // validator+height+round, different block hash). Used by DoubleVoteDetector
-    // to submit slashing evidence to the EvidencePool.
     const std::vector<ValidatorVoteRecord>& conflictingVotes() const;
 
-    // Returns a pointer to the first accepted vote from the given validator at
-    // (blockIndex, round), or nullptr if no such vote exists. Used by
-    // DoubleVoteDetector to form a DoubleVoteEvidence pair.
     const ValidatorVoteRecord* firstVoteForValidator(
         const std::string& validatorAddress,
         std::uint64_t blockIndex,

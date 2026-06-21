@@ -74,6 +74,33 @@ int main() {
     assert(pool.totalVoteCount() == 1);
     assert(pool.voteCountForBlock(1, "block-hash-A", 1) == 1);
 
+    const auto partialProgress =
+        pool.quorumProgressForBlock(1, "block-hash-A", 1, 3, 2, 3);
+
+    assert(partialProgress.isValid());
+    assert(partialProgress.acceptedVoteCount() == 1);
+    assert(partialProgress.requiredVoteCount() == 2);
+    assert(!partialProgress.canCertify());
+
+    const auto secondAccepted = pool.submitVote(
+        makeVote(
+            "validator-B",
+            "block-hash-A",
+            nodo::consensus::ValidatorVoteDecision::APPROVE
+        )
+    );
+
+    assert(secondAccepted.accepted());
+    assert(pool.totalVoteCount() == 2);
+
+    const auto quorumProgress =
+        pool.quorumProgressForBlock(1, "block-hash-A", 1, 3, 2, 3);
+
+    assert(quorumProgress.isValid());
+    assert(quorumProgress.acceptedVoteCount() == 2);
+    assert(quorumProgress.requiredVoteCount() == 2);
+    assert(quorumProgress.canCertify());
+
     const auto duplicate = pool.submitVote(vote);
     assert(duplicate.duplicate());
 
@@ -87,7 +114,7 @@ int main() {
     );
 
     assert(replaySameSlot.duplicate());
-    assert(pool.totalVoteCount() == 1);
+    assert(pool.totalVoteCount() == 2);
 
     const auto conflicting = pool.submitVote(
         makeVote(
