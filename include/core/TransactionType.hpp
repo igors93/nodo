@@ -20,7 +20,11 @@ enum class TransactionType {
     VALIDATOR_REGISTER,
     VALIDATOR_VOTE,
     PENALTY,
-    BURN
+    BURN,
+    STAKE_DEPOSIT,
+    STAKE_WITHDRAW,
+    GOVERNANCE_PROPOSE,
+    GOVERNANCE_VOTE
 };
 
 std::string transactionTypeToString(TransactionType type);
@@ -29,6 +33,8 @@ TransactionType transactionTypeFromString(const std::string& value);
 bool isMintTransaction(TransactionType type);
 bool isSecurityLockTransaction(TransactionType type);
 bool requiresUserSignature(TransactionType type);
+bool isStakingTransaction(TransactionType type);
+bool isGovernanceTransaction(TransactionType type);
 
 } // namespace nodo::core
 

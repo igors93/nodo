@@ -269,6 +269,18 @@ std::string transactionTypeToString(TransactionType type) {
         case TransactionType::BURN:
             return "BURN";
 
+        case TransactionType::STAKE_DEPOSIT:
+            return "STAKE_DEPOSIT";
+
+        case TransactionType::STAKE_WITHDRAW:
+            return "STAKE_WITHDRAW";
+
+        case TransactionType::GOVERNANCE_PROPOSE:
+            return "GOVERNANCE_PROPOSE";
+
+        case TransactionType::GOVERNANCE_VOTE:
+            return "GOVERNANCE_VOTE";
+
         default:
             return "UNKNOWN";
     }
@@ -307,6 +319,22 @@ TransactionType transactionTypeFromString(const std::string& value) {
         return TransactionType::BURN;
     }
 
+    if (value == "STAKE_DEPOSIT") {
+        return TransactionType::STAKE_DEPOSIT;
+    }
+
+    if (value == "STAKE_WITHDRAW") {
+        return TransactionType::STAKE_WITHDRAW;
+    }
+
+    if (value == "GOVERNANCE_PROPOSE") {
+        return TransactionType::GOVERNANCE_PROPOSE;
+    }
+
+    if (value == "GOVERNANCE_VOTE") {
+        return TransactionType::GOVERNANCE_VOTE;
+    }
+
     throw std::invalid_argument("Unknown TransactionType: " + value);
 }
 
@@ -325,7 +353,21 @@ bool requiresUserSignature(TransactionType type) {
            type == TransactionType::UNLOCK_SECURITY ||
            type == TransactionType::VALIDATOR_REGISTER ||
            type == TransactionType::VALIDATOR_VOTE ||
-           type == TransactionType::BURN;
+           type == TransactionType::BURN ||
+           type == TransactionType::STAKE_DEPOSIT ||
+           type == TransactionType::STAKE_WITHDRAW ||
+           type == TransactionType::GOVERNANCE_PROPOSE ||
+           type == TransactionType::GOVERNANCE_VOTE;
+}
+
+bool isStakingTransaction(TransactionType type) {
+    return type == TransactionType::STAKE_DEPOSIT ||
+           type == TransactionType::STAKE_WITHDRAW;
+}
+
+bool isGovernanceTransaction(TransactionType type) {
+    return type == TransactionType::GOVERNANCE_PROPOSE ||
+           type == TransactionType::GOVERNANCE_VOTE;
 }
 
 Transaction::Transaction(

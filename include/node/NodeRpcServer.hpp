@@ -1,0 +1,101 @@
+#ifndef NODO_NODE_NODE_RPC_SERVER_HPP
+#define NODO_NODE_NODE_RPC_SERVER_HPP
+
+#include "node/NodeRuntime.hpp"
+
+#include <atomic>
+#include <cstdint>
+#include <string>
+#include <thread>
+
+namespace nodo::node {
+
+/*
+ * NodeRpcServer is a minimal HTTP/JSON server that exposes node state for
+ * operators, dashboards and integration tests.
+ *
+ * Transport: POSIX TCP sockets, single-threaded accept loop.
+ * Protocol:  Plain HTTP/1.0 with JSON response bodies.
+ * Auth:      None — bind to loopback by default.
+ *
+ * Endpoints (all read-only except /submit):
+ *   GET  /status               — node height, round, peer count, mempool size
+ *   GET  /block/{height}       — serialized block at given height
+ *   GET  /tx/{txId}            — ledger record with matching id or sourceId
+ *   GET  /account/{address}    — balance and nonce for address
+ *   GET  /validators            — list of active validator addresses
+ *   GET  /peers                — list of known peers
+ *   GET  /mempool              — current mempool transaction count and top txs
+ *   POST /submit               — admit a serialized transaction to the mempool
+ *
+ * Error responses use HTTP 4xx with a JSON body:
+ *   {"error": "<message>"}
+ */
+class NodeRpcServer {
+public:
+    static constexpr std::uint16_t DEFAULT_PORT    = 8545;
+    static constexpr std::size_t   MAX_REQUEST_LEN = 65536;
+
+    NodeRpcServer(
+        NodeRuntime&       runtime,
+        std::uint16_t      port    = DEFAULT_PORT,
+        const std::string& bindAddr = "127.0.0.1"
+    );
+
+    ~NodeRpcServer();
+
+    void start();
+    void stop();
+    bool isRunning() const;
+
+    std::uint16_t port() const;
+
+private:
+    NodeRuntime&     m_runtime;
+    std::uint16_t    m_port;
+    std::string      m_bindAddr;
+    std::atomic<bool> m_running;
+    std::thread      m_thread;
+    int              m_serverFd;
+
+    void runLoop();
+    void handleClient(int clientFd);
+
+    // Returns (statusCode, responseBody).
+    std::pair<int, std::string> dispatch(
+        const std::string& method,
+        const std::string& path,
+        const std::string& body
+    );
+
+    // --- route handlers ---
+    std::string handleStatus() const;
+    std::string handleBlock(const std::string& heightStr) const;
+    std::string handleTx(const std::string& txId) const;
+    std::string handleAccount(const std::string& address) const;
+    std::string handleValidators() const;
+    std::string handlePeers() const;
+    std::string handleMempool() const;
+    std::string handleSubmit(const std::string& body);
+
+    // --- HTTP helpers ---
+    static std::string httpResponse(
+        int statusCode,
+        const std::string& body
+    );
+
+    static std::string jsonError(const std::string& message);
+
+    static bool parseRequestLine(
+        const std::string& request,
+        std::string& outMethod,
+        std::string& outPath,
+        std::string& outBody
+    );
+
+    static std::string pathSegment(const std::string& path, int index);
+};
+
+} // namespace nodo::node
+
+#endif

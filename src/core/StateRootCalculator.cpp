@@ -1,8 +1,9 @@
 #include "core/StateRootCalculator.hpp"
 
-#include "crypto/hash.h"
+#include "core/MerkleTree.hpp"
 
 #include <sstream>
+#include <vector>
 
 namespace nodo::core {
 
@@ -13,41 +14,40 @@ std::string StateRootCalculator::calculateAccountStateRoot(
         return "";
     }
 
-    char output[NODO_HASH_BUFFER_SIZE] = {0};
+    // Build one leaf payload per account: "address:balance:nonce".
+    // Leaves are sorted by address inside MerkleTree::buildRoot so the
+    // result is deterministic regardless of insertion order.
+    const std::vector<AccountState> accounts = view.accounts();
 
-    const std::string payload =
-        canonicalAccountStatePayload(view);
+    std::vector<std::string> leafPayloads;
+    leafPayloads.reserve(accounts.size());
 
-    nodo_hash_string(
-        payload.c_str(),
-        output,
-        sizeof(output)
-    );
+    for (const auto& account : accounts) {
+        std::ostringstream oss;
+        oss << "NODO_ACCOUNT_LEAF_V2{"
+            << "address=" << account.address()
+            << ";balance=" << account.balance().rawUnits()
+            << ";nonce=" << account.nonce()
+            << "}";
+        leafPayloads.push_back(oss.str());
+    }
 
-    return std::string(output);
+    return MerkleTree::buildRoot(std::move(leafPayloads));
 }
 
 std::string StateRootCalculator::canonicalAccountStatePayload(
     const AccountStateView& view
 ) {
-    std::ostringstream oss;
-
-    oss << "NODO_ACCOUNT_STATE_ROOT_V1{"
-        << "accountCount=" << view.accounts().size()
-        << ";accounts=[";
-
-    const std::vector<AccountState> accounts =
-        view.accounts();
-
-    for (std::size_t index = 0; index < accounts.size(); ++index) {
-        if (index != 0) {
-            oss << ",";
-        }
-
-        oss << accounts[index].serialize();
+    if (!view.isValid()) {
+        return "";
     }
 
-    oss << "]}";
+    std::ostringstream oss;
+    oss << "NODO_ACCOUNT_STATE_ROOT_V2{";
+
+    const std::vector<AccountState> accounts = view.accounts();
+    oss << "accountCount=" << accounts.size() << ";merkleRoot="
+        << calculateAccountStateRoot(view) << "}";
 
     return oss.str();
 }

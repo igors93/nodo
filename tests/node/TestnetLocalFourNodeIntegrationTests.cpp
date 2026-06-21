@@ -209,7 +209,7 @@ void testFourNodesInitializeFromSharedGenesis() {
             "Node " + n.id + " must initialize from shared genesis."
         );
         require(
-            init.manifest().genesisConfigId() == genesis.genesisId(),
+            init.manifest().genesisConfigId() == genesis.deterministicId(),
             "Node " + n.id + " genesis id must match shared genesis."
         );
         require(
