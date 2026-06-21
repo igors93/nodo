@@ -79,6 +79,12 @@ public:
     std::size_t totalCount() const;
     std::size_t countForType(NetworkMessageType type) const;
     std::vector<NetworkEnvelope> messagesForType(NetworkMessageType type) const;
+
+    // Removes and returns all messages of the given type.
+    std::vector<NetworkEnvelope> drain(NetworkMessageType type);
+    // Removes and returns all messages, grouped by type (flattened).
+    std::vector<NetworkEnvelope> drainAll();
+
     std::string serialize() const;
 
 private:
@@ -142,6 +148,10 @@ public:
         const std::string& nodeId,
         std::int64_t now
     ) const;
+
+    // Drains (removes and returns) all messages of the given type from the inbox.
+    // Use instead of inbox().messagesForType() to avoid replay on each tick.
+    std::vector<NetworkEnvelope> drainInbox(NetworkMessageType type);
 
     // Returns a snapshot of the current evidence capture health.
     // Use this to surface persistence failures through operator diagnostics.

@@ -145,6 +145,25 @@ bool VotePool::hasConflictingVote(
     return false;
 }
 
+const std::vector<ValidatorVoteRecord>& VotePool::conflictingVotes() const {
+    return m_conflictingVotes;
+}
+
+const ValidatorVoteRecord* VotePool::firstVoteForValidator(
+    const std::string& validatorAddress,
+    std::uint64_t blockIndex,
+    std::uint64_t round
+) const {
+    // The key format mirrors validatorHeightRoundKey().
+    const std::string key =
+        validatorAddress + "#" + std::to_string(blockIndex) + "#" + std::to_string(round);
+    const auto it = m_voteByValidatorHeightRound.find(key);
+    if (it == m_voteByValidatorHeightRound.end()) {
+        return nullptr;
+    }
+    return &it->second;
+}
+
 std::size_t VotePool::totalVoteCount() const {
     return m_voteByValidatorHeightRound.size();
 }

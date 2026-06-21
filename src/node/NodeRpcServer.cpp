@@ -56,6 +56,21 @@ NodeRpcServer::NodeRpcServer(
     const std::string& bindAddr
 )
     : m_runtime(runtime)
+    , m_gossip(nullptr)
+    , m_port(port)
+    , m_bindAddr(bindAddr)
+    , m_running(false)
+    , m_serverFd(-1)
+{}
+
+NodeRpcServer::NodeRpcServer(
+    NodeRuntime&       runtime,
+    p2p::GossipMesh&   gossip,
+    std::uint16_t      port,
+    const std::string& bindAddr
+)
+    : m_runtime(runtime)
+    , m_gossip(&gossip)
     , m_port(port)
     , m_bindAddr(bindAddr)
     , m_running(false)
@@ -434,16 +449,29 @@ std::string NodeRpcServer::handleSubmit(const std::string& body) {
         return jsonError("Failed to deserialize transaction");
     }
 
+    const std::int64_t now =
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+
     const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
     const mempool::MempoolAdmissionResult result =
         m_runtime.mutableMempool().admitTransaction(
             tx,
             policy,
             crypto::SecurityContext::USER_TRANSACTION,
-            std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::system_clock::now().time_since_epoch()
-            ).count()
+            now
         );
+
+    // Broadcast to peers if gossip is wired in and the transaction was accepted.
+    if (m_gossip != nullptr &&
+        result.status() == mempool::MempoolAdmissionStatus::ACCEPTED) {
+        m_gossip->broadcast(
+            p2p::NetworkMessageType::TRANSACTION_ANNOUNCE,
+            body,
+            now
+        );
+    }
 
     std::ostringstream oss;
     oss << "{"

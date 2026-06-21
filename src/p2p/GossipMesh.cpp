@@ -140,6 +140,32 @@ std::vector<NetworkEnvelope> GossipInbox::messagesForType(NetworkMessageType typ
     return found->second;
 }
 
+std::vector<NetworkEnvelope> GossipInbox::drain(NetworkMessageType type) {
+    const auto found = m_messagesByType.find(type);
+
+    if (found == m_messagesByType.end()) {
+        return {};
+    }
+
+    std::vector<NetworkEnvelope> messages = std::move(found->second);
+    m_messagesByType.erase(found);
+    return messages;
+}
+
+std::vector<NetworkEnvelope> GossipInbox::drainAll() {
+    std::vector<NetworkEnvelope> all;
+
+    for (auto& [type, messages] : m_messagesByType) {
+        (void)type;
+        all.insert(all.end(),
+                   std::make_move_iterator(messages.begin()),
+                   std::make_move_iterator(messages.end()));
+    }
+
+    m_messagesByType.clear();
+    return all;
+}
+
 std::string GossipInbox::serialize() const {
     std::ostringstream output;
     output << "GossipInbox{totalCount=" << totalCount() << ";types=[";
@@ -200,6 +226,11 @@ const GossipMeshConfig& GossipMesh::config() const { return m_config; }
 PeerRegistry& GossipMesh::peerRegistry() { return m_peerRegistry; }
 const PeerRegistry& GossipMesh::peerRegistry() const { return m_peerRegistry; }
 const GossipInbox& GossipMesh::inbox() const { return m_inbox; }
+
+std::vector<NetworkEnvelope> GossipMesh::drainInbox(NetworkMessageType type) {
+    return m_inbox.drain(type);
+}
+
 const node::EvidenceCaptureHealth& GossipMesh::evidenceCaptureHealth() const {
     return m_evidenceCaptureHealth;
 }

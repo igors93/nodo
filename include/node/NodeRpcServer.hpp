@@ -2,6 +2,7 @@
 #define NODO_NODE_NODE_RPC_SERVER_HPP
 
 #include "node/NodeRuntime.hpp"
+#include "p2p/GossipMesh.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -42,6 +43,14 @@ public:
         const std::string& bindAddr = "127.0.0.1"
     );
 
+    // Overload that also wires a GossipMesh for broadcasting submitted transactions.
+    NodeRpcServer(
+        NodeRuntime&       runtime,
+        p2p::GossipMesh&   gossip,
+        std::uint16_t      port    = DEFAULT_PORT,
+        const std::string& bindAddr = "127.0.0.1"
+    );
+
     ~NodeRpcServer();
 
     void start();
@@ -51,12 +60,13 @@ public:
     std::uint16_t port() const;
 
 private:
-    NodeRuntime&     m_runtime;
-    std::uint16_t    m_port;
-    std::string      m_bindAddr;
-    std::atomic<bool> m_running;
-    std::thread      m_thread;
-    int              m_serverFd;
+    NodeRuntime&       m_runtime;
+    p2p::GossipMesh*   m_gossip;   // optional; nullptr means no gossip broadcast
+    std::uint16_t      m_port;
+    std::string        m_bindAddr;
+    std::atomic<bool>  m_running;
+    std::thread        m_thread;
+    int                m_serverFd;
 
     void runLoop();
     void handleClient(int clientFd);

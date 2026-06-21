@@ -2,6 +2,7 @@
 #define NODO_CONSENSUS_CONSENSUS_EVENT_LOOP_HPP
 
 #include "consensus/BlockFinalizer.hpp"
+#include "consensus/EvidencePool.hpp"
 #include "consensus/QuorumCertificate.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "consensus/VotePool.hpp"
@@ -65,6 +66,10 @@ public:
      */
     using FinalizedCallback = std::function<void(const FinalizedBlockRecord&)>;
 
+    // Callback: called when this node is the proposer for (height, round).
+    // Should produce and finalize a block. Returns true if block was produced.
+    using BlockProducerCallback = std::function<bool(std::uint64_t height, std::uint64_t round, std::int64_t now)>;
+
     ConsensusEventLoop(
         node::NodeRuntime&           runtime,
         p2p::GossipMesh&             gossip,
@@ -79,6 +84,28 @@ public:
      * Must be set before start().
      */
     void setFinalizedCallback(FinalizedCallback cb);
+
+    /*
+     * Register a callback to invoke when this node is the designated proposer
+     * for the current (height, round). The callback should call
+     * RuntimeBlockPipeline::produceAndFinalizeNextBlock(). Must be set before
+     * start() to enable local block production.
+     */
+    void setBlockProducerCallback(BlockProducerCallback cb);
+
+    /*
+     * Identify this node's validator address so that ProposerSchedule can
+     * determine whether local block production is required. Must be set before
+     * start() if block production is desired.
+     */
+    void setLocalValidatorAddress(const std::string& address);
+
+    /*
+     * Wire an EvidencePool so that double-votes detected in the VotePool are
+     * automatically forwarded as SlashingEvidence. Optional: if not set, double-
+     * vote detection is skipped. Must be set before start().
+     */
+    void setEvidencePool(EvidencePool* pool);
 
     /*
      * Start the background consensus thread with the given tick interval.
@@ -113,6 +140,10 @@ private:
     const crypto::SignatureProvider& m_provider;
 
     FinalizedCallback    m_onFinalized;
+    BlockProducerCallback m_blockProducer;
+    std::string           m_localValidatorAddress;
+    EvidencePool*         m_evidencePool = nullptr;
+
     std::atomic<bool>    m_running;
     std::thread          m_thread;
     std::int64_t         m_tickIntervalMs;
@@ -130,6 +161,10 @@ private:
         std::int64_t now,
         ConsensusTickResult& result
     );
+
+    // Broadcasts a CHAIN_STATUS message to peers announcing the new round.
+    // Called after advanceConsensusRoundIfTimedOut() returns true.
+    void broadcastRoundAdvancement(std::int64_t now);
 };
 
 } // namespace nodo::consensus
