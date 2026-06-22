@@ -52,9 +52,6 @@ bool SignatureBundle::isValidForPolicy(
         return false;
     }
 
-    bool hasClassic = false;
-    bool hasPostQuantum = false;
-
     for (const auto& signature : m_signatures) {
         if (!signature.isValid()) {
             return false;
@@ -67,21 +64,6 @@ bool SignatureBundle::isValidForPolicy(
         if (!isSigningDomainAllowedForContext(signature.domain(), context)) {
             return false;
         }
-
-        if (isClassicAlgorithm(signature.algorithm())) {
-            hasClassic = true;
-        }
-
-        if (isPostQuantumAlgorithm(signature.algorithm())) {
-            hasPostQuantum = true;
-        }
-    }
-
-    /*
-     * In future policies, critical operations may require hybrid signatures.
-     */
-    if (policy.requiresHybridSignature(context)) {
-        return hasClassic && hasPostQuantum;
     }
 
     return true;

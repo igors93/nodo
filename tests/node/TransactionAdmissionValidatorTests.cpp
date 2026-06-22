@@ -50,7 +50,7 @@ config::NetworkParameters localnetWithMinimumFee(
 ) {
     return config::NetworkParameters(
         "nodo-localnet-admission-test",
-        "nodo-localnet",
+        "localnet",
         "nodo/0.1",
         60,
         1,

@@ -1,4 +1,4 @@
-#include "app/CommandLineInterface.hpp"
+#include "config/GenesisRegistry.hpp"
 #include "node/ChainAuditor.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RuntimeStateLoader.hpp"
@@ -35,7 +35,7 @@ p2p::PeerInfo localPeer() {
 
 node::RuntimeStateLoadResult loadedRuntime() {
     const config::GenesisConfig genesis =
-        app::CommandLineInterface::developmentGenesisConfig();
+        config::GenesisRegistry::get("localnet").genesis();
 
     const node::NodeRuntimeStartResult start =
         node::NodeRuntimeFactory::startFromGenesis(

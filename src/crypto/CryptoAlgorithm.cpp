@@ -1,5 +1,7 @@
 #include "crypto/CryptoAlgorithm.hpp"
 
+#include <stdexcept>
+
 namespace nodo::crypto {
 
 std::string cryptoAlgorithmToString(CryptoAlgorithm algorithm) {
@@ -15,15 +17,6 @@ std::string cryptoAlgorithmToString(CryptoAlgorithm algorithm) {
 
         case CryptoAlgorithm::BLS12_381:
             return "BLS12_381";
-
-        case CryptoAlgorithm::POST_QUANTUM_ML_DSA:
-            return "POST_QUANTUM_ML_DSA";
-
-        case CryptoAlgorithm::POST_QUANTUM_SLH_DSA:
-            return "POST_QUANTUM_SLH_DSA";
-
-        case CryptoAlgorithm::HYBRID_CLASSIC_AND_POST_QUANTUM:
-            return "HYBRID_CLASSIC_AND_POST_QUANTUM";
 
         default:
             return "UNKNOWN";
@@ -47,19 +40,7 @@ CryptoAlgorithm cryptoAlgorithmFromString(const std::string& value) {
         return CryptoAlgorithm::BLS12_381;
     }
 
-    if (value == "POST_QUANTUM_ML_DSA") {
-        return CryptoAlgorithm::POST_QUANTUM_ML_DSA;
-    }
-
-    if (value == "POST_QUANTUM_SLH_DSA") {
-        return CryptoAlgorithm::POST_QUANTUM_SLH_DSA;
-    }
-
-    if (value == "HYBRID_CLASSIC_AND_POST_QUANTUM") {
-        return CryptoAlgorithm::HYBRID_CLASSIC_AND_POST_QUANTUM;
-    }
-
-    return CryptoAlgorithm::HYBRID_CLASSIC_AND_POST_QUANTUM;
+    throw std::invalid_argument("Unknown CryptoAlgorithm: " + value);
 }
 
 bool isClassicAlgorithm(CryptoAlgorithm algorithm) {
@@ -69,11 +50,6 @@ bool isClassicAlgorithm(CryptoAlgorithm algorithm) {
 
 bool isValidatorAlgorithm(CryptoAlgorithm algorithm) {
     return algorithm == CryptoAlgorithm::BLS12_381;
-}
-
-bool isPostQuantumAlgorithm(CryptoAlgorithm algorithm) {
-    return algorithm == CryptoAlgorithm::POST_QUANTUM_ML_DSA ||
-           algorithm == CryptoAlgorithm::POST_QUANTUM_SLH_DSA;
 }
 
 bool isDevelopmentOnlyAlgorithm(CryptoAlgorithm algorithm) {

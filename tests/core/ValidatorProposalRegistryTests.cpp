@@ -417,31 +417,6 @@ void testRegistryRejectsProposalForDifferentChainTip() {
     requireCondition(registry.entries().empty(), "Wrong-tip proposal should not be stored.");
 }
 
-void testRegistryRejectsSingleBlsSignatureUnderFutureHybridPolicy() {
-    Blockchain blockchain = baseBlockchain();
-    ValidatorProposalRegistry registry;
-    const Bls12381SignatureProvider provider;
-
-    const SignedProtectionBlockProposal signedProposal =
-        signedProposalFor(
-            blockchain,
-            "nodo1validatorA",
-            "registry-production-policy",
-            kTimestamp + 90,
-            kTimestamp + 91
-        );
-
-    const auto result = registry.registerSignedProposal(
-        signedProposal,
-        blockchain,
-        CryptoPolicy::futureHybridPolicy(),
-        provider
-    );
-
-    requireCondition(result.status() == ValidatorProposalRegistrationStatus::INVALID_SIGNATURE, "Future hybrid policy should reject single BLS signature.");
-    requireCondition(registry.entries().empty(), "Rejected signature should not be stored.");
-}
-
 } // namespace
 
 int main() {
@@ -452,7 +427,6 @@ int main() {
         testDifferentValidatorsCanRegisterCompetingProposals();
         testRegistryRejectsInvalidSignatureBeforeConflictCheck();
         testRegistryRejectsProposalForDifferentChainTip();
-        testRegistryRejectsSingleBlsSignatureUnderFutureHybridPolicy();
 
         std::cout << "Nodo validator proposal registry tests passed.\n";
         return 0;

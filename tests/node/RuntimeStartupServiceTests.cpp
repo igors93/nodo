@@ -53,7 +53,11 @@ void testValidateTestnetCandidateProfileValid() {
 }
 
 void testValidateMainnetProfileBlocked() {
-    const NetworkParameters params = NetworkParameters::mainnetPlaceholder();
+    const NetworkParameters params(
+        "nodo-mainnet-1", "mainnet", "nodo/0.1",
+        600, 7, 2, 3, 250, 256, 10000, 10000, 15, 6,
+        "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2"
+    );
     const StartupValidationResult result =
         RuntimeStartupService::validateNetworkProfile(params);
     assert(!result.valid());

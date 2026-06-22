@@ -30,20 +30,7 @@ enum class CryptoAlgorithm {
     /*
      * Validator consensus signatures.
      */
-    BLS12_381,
-
-    /*
-     * Algoritmos pós-quânticos planejados para o futuro.
-     */
-    POST_QUANTUM_ML_DSA,
-    POST_QUANTUM_SLH_DSA,
-
-    /*
-     * Representa uma exigência de assinatura híbrida.
-     * Na prática, o SignatureBundle deve conter uma assinatura clássica
-     * e uma assinatura pós-quântica.
-     */
-    HYBRID_CLASSIC_AND_POST_QUANTUM
+    BLS12_381
 };
 
 std::string cryptoAlgorithmToString(CryptoAlgorithm algorithm);
@@ -51,7 +38,6 @@ CryptoAlgorithm cryptoAlgorithmFromString(const std::string& value);
 
 bool isClassicAlgorithm(CryptoAlgorithm algorithm);
 bool isValidatorAlgorithm(CryptoAlgorithm algorithm);
-bool isPostQuantumAlgorithm(CryptoAlgorithm algorithm);
 bool isDevelopmentOnlyAlgorithm(CryptoAlgorithm algorithm);
 
 } // namespace nodo::crypto

@@ -30,13 +30,13 @@ nodo::crypto::StoredKeyMetadata makeKey(const std::string& networkProfile) {
 
 void testLocalnetKeyApprovedOnLocalnet() {
     const auto key = makeKey("localnet");
-    const auto result = nodo::node::ProductionKeySafetyGate::check(key, "nodo-localnet");
+    const auto result = nodo::node::ProductionKeySafetyGate::check(key, "localnet");
     assert(result.isApproved());
 }
 
 void testLocalnetKeyRejectedOnTestnet() {
     const auto key = makeKey("localnet");
-    const auto result = nodo::node::ProductionKeySafetyGate::check(key, "nodo-testnet-candidate");
+    const auto result = nodo::node::ProductionKeySafetyGate::check(key, "testnet-candidate");
     assert(!result.isApproved());
     assert(result.status() ==
            nodo::node::KeySafetyStatus::REJECTED_PLAINTEXT_ON_OFFICIAL_NETWORK);
@@ -50,7 +50,7 @@ void testLocalnetKeyRejectedOnTestnetByName() {
 
 void testMainnetAlwaysRejected() {
     // Even a testnet-capable key must be rejected on mainnet.
-    const auto key = makeKey("nodo-testnet-candidate");
+    const auto key = makeKey("testnet-candidate");
     const auto result = nodo::node::ProductionKeySafetyGate::check(key, "mainnet");
     assert(!result.isApproved());
     assert(result.status() == nodo::node::KeySafetyStatus::REJECTED_MAINNET_NOT_READY);
@@ -58,17 +58,16 @@ void testMainnetAlwaysRejected() {
 
 void testMainnetRejectedWithLocalnetKey() {
     const auto key = makeKey("localnet");
-    const auto result = nodo::node::ProductionKeySafetyGate::check(key, "nodo-mainnet");
+    const auto result = nodo::node::ProductionKeySafetyGate::check(key, "mainnet");
     assert(!result.isApproved());
     assert(result.status() == nodo::node::KeySafetyStatus::REJECTED_MAINNET_NOT_READY);
 }
 
 void testNetworkMismatchRejected() {
     // Key bound to testnet-candidate, but trying to start on a different official network.
-    const auto key = makeKey("nodo-testnet-candidate");
+    const auto key = makeKey("testnet-candidate");
     const auto result = nodo::node::ProductionKeySafetyGate::check(key, "nodo-other-network");
-    // nodo-other-network is not mainnet, not official, so no mismatch unless profile differs.
-    // Key profile="nodo-testnet-candidate", target="nodo-other-network" → mismatch.
+    // Key profile="testnet-candidate", target="nodo-other-network" → mismatch.
     assert(!result.isApproved());
     assert(result.status() == nodo::node::KeySafetyStatus::REJECTED_NETWORK_MISMATCH);
 }

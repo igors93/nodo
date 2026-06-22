@@ -37,28 +37,17 @@ public:
      */
     static CryptoPolicy developmentPolicy();
 
-    /*
-     * Política futura: exigirá assinatura híbrida em operações críticas.
-     */
-    static CryptoPolicy futureHybridPolicy();
-
     bool isAlgorithmAllowed(
         CryptoAlgorithm algorithm,
         SecurityContext context
     ) const;
 
-    bool requiresHybridSignature(SecurityContext context) const;
-
     bool developmentMode() const;
 
 private:
-    CryptoPolicy(
-        bool developmentMode,
-        bool requireHybridForCriticalOperations
-    );
+    explicit CryptoPolicy(bool developmentMode);
 
     bool m_developmentMode;
-    bool m_requireHybridForCriticalOperations;
 };
 
 } // namespace nodo::crypto

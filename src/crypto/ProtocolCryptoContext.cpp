@@ -11,24 +11,20 @@ namespace {
 bool isLocalnetName(
     const std::string& networkName
 ) {
-    return networkName == "localnet" ||
-           networkName == "nodo-localnet";
+    return networkName == "localnet";
 }
 
 bool isTestnetName(
     const std::string& networkName
 ) {
     return networkName == "testnet" ||
-           networkName == "nodo-testnet" ||
-           networkName == "testnet-candidate" ||
-           networkName == "nodo-testnet-candidate";
+           networkName == "testnet-candidate";
 }
 
 bool isMainnetName(
     const std::string& networkName
 ) {
-    return networkName == "mainnet" ||
-           networkName == "nodo-mainnet";
+    return networkName == "mainnet";
 }
 
 } // namespace
@@ -65,7 +61,7 @@ ProtocolCryptoContext ProtocolCryptoContext::testnet() {
     return ProtocolCryptoContext(
         ProtocolNetworkProfile::TESTNET,
         "testnet",
-        CryptoPolicy::futureHybridPolicy(),
+        CryptoPolicy::developmentPolicy(),
         false,
         true,
         "testnet requires a production-safe signature provider."
@@ -76,7 +72,7 @@ ProtocolCryptoContext ProtocolCryptoContext::mainnet() {
     return ProtocolCryptoContext(
         ProtocolNetworkProfile::MAINNET,
         "mainnet",
-        CryptoPolicy::futureHybridPolicy(),
+        CryptoPolicy::developmentPolicy(),
         false,
         true,
         "mainnet requires a production-safe signature provider."

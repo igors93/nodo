@@ -68,18 +68,18 @@ void testLocalnetContextIsExplicitAndValid() {
     );
 }
 
-void testNetworkNameMappingAcceptsNodoLocalnet() {
+void testNetworkNameMappingAcceptsLocalnet() {
     const nodo::crypto::ProtocolCryptoContext context =
-        nodo::crypto::ProtocolCryptoContext::fromNetworkName("nodo-localnet");
+        nodo::crypto::ProtocolCryptoContext::fromNetworkName("localnet");
 
     requireCondition(
         context.isValid(),
-        "nodo-localnet should map to a valid localnet crypto context."
+        "localnet should map to a valid localnet crypto context."
     );
 
     requireCondition(
         context.profile() == nodo::crypto::ProtocolNetworkProfile::LOCALNET,
-        "nodo-localnet should map to the localnet profile."
+        "localnet should map to the localnet profile."
     );
 }
 
@@ -168,7 +168,7 @@ void testUnknownNetworkIsRejected() {
 int main() {
     try {
         testLocalnetContextIsExplicitAndValid();
-        testNetworkNameMappingAcceptsNodoLocalnet();
+        testNetworkNameMappingAcceptsLocalnet();
         testTestnetRefusesTemporaryProvider();
         testMainnetRefusesTemporaryProvider();
         testUnknownNetworkIsRejected();

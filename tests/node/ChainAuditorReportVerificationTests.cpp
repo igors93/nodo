@@ -1,4 +1,4 @@
-#include "app/CommandLineInterface.hpp"
+#include "config/GenesisRegistry.hpp"
 #include "economics/BurnRecord.hpp"
 #include "economics/MonetaryPolicy.hpp"
 #include "economics/SupplyDelta.hpp"
@@ -40,7 +40,7 @@ p2p::PeerInfo localPeer() {
 
 node::RuntimeStateLoadResult genesisLoad() {
     const config::GenesisConfig genesis =
-        app::CommandLineInterface::developmentGenesisConfig();
+        config::GenesisRegistry::get("localnet").genesis();
 
     const node::NodeRuntimeStartResult start =
         node::NodeRuntimeFactory::startFromGenesis(
@@ -68,7 +68,7 @@ node::RuntimeStateLoadResult genesisLoad() {
 // Build a RuntimeStateLoadResult with one finalized supply delta injected.
 node::RuntimeStateLoadResult genesisLoadWithOneDelta() {
     const config::GenesisConfig genesis =
-        app::CommandLineInterface::developmentGenesisConfig();
+        config::GenesisRegistry::get("localnet").genesis();
 
     const node::NodeRuntimeStartResult start =
         node::NodeRuntimeFactory::startFromGenesis(
@@ -156,7 +156,7 @@ void testNormalAuditPassesWithMatchingReport() {
     assert(finalizedDeltas.size() == 1);
 
     const config::GenesisConfig genesis =
-        app::CommandLineInterface::developmentGenesisConfig();
+        config::GenesisRegistry::get("localnet").genesis();
     const Amount genesisSupply = node::MonetaryFirewall::genesisSupply(genesis);
     const MonetaryPolicy policy = MonetaryPolicy::localnetDefault(
         genesis.networkParameters().chainId(), genesisSupply
@@ -180,7 +180,7 @@ void testNormalAuditFailsTamperedReport() {
     const auto& finalizedDeltas = load.runtime().supplyState().finalizedDeltas();
 
     const config::GenesisConfig genesis =
-        app::CommandLineInterface::developmentGenesisConfig();
+        config::GenesisRegistry::get("localnet").genesis();
     const Amount genesisSupply = node::MonetaryFirewall::genesisSupply(genesis);
     const MonetaryPolicy policy = MonetaryPolicy::localnetDefault(
         genesis.networkParameters().chainId(), genesisSupply

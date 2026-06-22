@@ -80,7 +80,6 @@ public:
 
     static std::string helpText();
 
-    static config::GenesisConfig developmentGenesisConfig();
     static std::string defaultLocalnetKeyId();
     static std::string defaultLocalnetKeySeed();
     static p2p::PeerInfo localPeerFromOptions(

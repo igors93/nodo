@@ -8,32 +8,21 @@ namespace {
 using nodo::config::GenesisLookupResult;
 using nodo::config::GenesisRegistry;
 
-void testLocalnetGenesisFoFound() {
+void testLocalnetGenesisFound() {
     const GenesisLookupResult result = GenesisRegistry::get("localnet");
     assert(result.found());
     assert(!result.genesis().deterministicId().empty());
-    assert(result.genesis().networkParameters().networkName() == "nodo-localnet");
+    assert(result.genesis().networkParameters().networkName() == "localnet");
     assert(!result.genesis().bootstrapValidators().empty());
     assert(!result.genesis().genesisAccounts().empty());
-}
-
-void testLocalnetCanonicalNameFound() {
-    const GenesisLookupResult result = GenesisRegistry::get("nodo-localnet");
-    assert(result.found());
-    assert(result.genesis().networkParameters().networkName() == "nodo-localnet");
 }
 
 void testTestnetCandidateFound() {
     const GenesisLookupResult result = GenesisRegistry::get("testnet-candidate");
     assert(result.found());
     assert(!result.genesis().deterministicId().empty());
-    assert(result.genesis().networkParameters().networkName() == "nodo-testnet-candidate");
+    assert(result.genesis().networkParameters().networkName() == "testnet-candidate");
     assert(!result.genesis().bootstrapValidators().empty());
-}
-
-void testTestnetCandidateCanonicalName() {
-    const GenesisLookupResult result = GenesisRegistry::get("nodo-testnet-candidate");
-    assert(result.found());
 }
 
 void testMainnetMissing() {
@@ -52,7 +41,6 @@ void testUnknownNetworkMissing() {
 
 void testHasRegisteredGenesis() {
     assert(GenesisRegistry::hasRegisteredGenesis("localnet"));
-    assert(GenesisRegistry::hasRegisteredGenesis("nodo-localnet"));
     assert(GenesisRegistry::hasRegisteredGenesis("testnet-candidate"));
     assert(!GenesisRegistry::hasRegisteredGenesis("mainnet"));
     assert(!GenesisRegistry::hasRegisteredGenesis("unknown"));
@@ -89,10 +77,8 @@ void testLocalnetAndTestnetGenesisAreDifferent() {
 } // namespace
 
 int main() {
-    testLocalnetGenesisFoFound();
-    testLocalnetCanonicalNameFound();
+    testLocalnetGenesisFound();
     testTestnetCandidateFound();
-    testTestnetCandidateCanonicalName();
     testMainnetMissing();
     testUnknownNetworkMissing();
     testHasRegisteredGenesis();

@@ -54,6 +54,11 @@ public:
     // Returns the deterministic genesis ID for a network without constructing
     // the full genesis. Returns empty string if not registered.
     static std::string registeredGenesisId(const std::string& networkName);
+
+    // Deterministic seed used to derive the localnet user account keypair.
+    // Exposed so callers can locate or create the matching key without
+    // duplicating the literal string.
+    static std::string localnetUserKeySeed();
 };
 
 } // namespace nodo::config

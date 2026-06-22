@@ -19,10 +19,6 @@ crypto::PublicKey deterministicUserKey(const std::string& seed) {
     return crypto::KeyPair::createDeterministicEd25519KeyPair(seed).publicKey();
 }
 
-std::string localnetUserKeySeed() {
-    return "nodo-localnet-user-seed";
-}
-
 std::string testnetCandidateUserKeySeed() {
     return "nodo-testnet-candidate-user-seed";
 }
@@ -36,7 +32,7 @@ GenesisConfig buildLocalnetGenesis() {
 
     const std::string userAddress =
         crypto::AddressDerivation::deriveFromPublicKey(
-            deterministicUserKey(localnetUserKeySeed())
+            deterministicUserKey(GenesisRegistry::localnetUserKeySeed())
         ).value();
 
     return GenesisConfig(
@@ -97,11 +93,11 @@ GenesisConfig buildTestnetCandidateGenesis() {
 }
 
 bool isLocalnetName(const std::string& name) {
-    return name == "localnet" || name == "nodo-localnet";
+    return name == "localnet";
 }
 
 bool isTestnetCandidateName(const std::string& name) {
-    return name == "testnet-candidate" || name == "nodo-testnet-candidate";
+    return name == "testnet-candidate";
 }
 
 } // namespace
@@ -154,7 +150,7 @@ GenesisLookupResult GenesisRegistry::get(const std::string& networkName) {
         return GenesisLookupResult::found(buildTestnetCandidateGenesis());
     }
 
-    if (networkName == "mainnet" || networkName == "nodo-mainnet") {
+    if (networkName == "mainnet") {
         return GenesisLookupResult::missing(
             "mainnet does not have a registered genesis in this build. "
             "mainnet startup is not permitted until an audited genesis configuration is registered."
@@ -177,6 +173,10 @@ std::string GenesisRegistry::registeredGenesisId(const std::string& networkName)
         return "";
     }
     return result.genesis().deterministicId();
+}
+
+std::string GenesisRegistry::localnetUserKeySeed() {
+    return "nodo-localnet-user-seed";
 }
 
 } // namespace nodo::config

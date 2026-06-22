@@ -210,30 +210,6 @@ void testSignatureBundleRejectsWrongMessage() {
     );
 }
 
-void testProductionPolicyRejectsLegacyFakeSignature() {
-    const CryptoPolicy policy = CryptoPolicy::futureHybridPolicy();
-
-    SignatureBundle bundle;
-    bundle.addSignature(
-        Signature(
-            CryptoSuiteId::NODO_CRYPTO_SUITE_V1,
-            SigningDomain::USER_TRANSACTION,
-            CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
-            developmentPublicKey(),
-            "0123456789abcdef",
-            kTestTimestamp
-        )
-    );
-
-    requireCondition(
-        !bundle.isValidForPolicy(
-            policy,
-            SecurityContext::USER_TRANSACTION
-        ),
-        "Production policy accepted a legacy fake signature."
-    );
-}
-
 void testSignatureRejectsUnsafeHex() {
     const Signature invalidSignature(
         CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
@@ -257,7 +233,6 @@ int main() {
         testEd25519ProviderRejectsTamperedSignatureHex();
         testSignatureBundleUsesProviderBoundary();
         testSignatureBundleRejectsWrongMessage();
-        testProductionPolicyRejectsLegacyFakeSignature();
         testSignatureRejectsUnsafeHex();
 
         std::cout << "Nodo signature provider tests passed.\n";

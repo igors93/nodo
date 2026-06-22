@@ -99,10 +99,6 @@ core::LedgerRecordType LedgerRecordCodec::parseLedgerRecordType(
         return core::LedgerRecordType::TRANSACTION;
     }
 
-    if (value == "PRIVATE_ACCOUNTING") {
-        return core::LedgerRecordType::PRIVATE_ACCOUNTING;
-    }
-
     if (value == "VALIDATION_WORK") {
         return core::LedgerRecordType::VALIDATION_WORK;
     }
@@ -174,12 +170,6 @@ void LedgerRecordCodec::assertSafePayloadPrefixForType(
         case core::LedgerRecordType::TRANSACTION:
             if (payload.rfind("Transaction{", 0) != 0) {
                 throw std::invalid_argument("TRANSACTION LedgerRecord payload type mismatch.");
-            }
-            return;
-
-        case core::LedgerRecordType::PRIVATE_ACCOUNTING:
-            if (payload.rfind("PrivateAccountingRecord{", 0) != 0) {
-                throw std::invalid_argument("PRIVATE_ACCOUNTING LedgerRecord payload type mismatch.");
             }
             return;
 

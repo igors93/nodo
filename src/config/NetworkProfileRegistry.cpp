@@ -6,44 +6,40 @@ namespace nodo::config {
 
 bool NetworkProfileRegistry::isKnown(const std::string& networkName) {
     return networkName == "localnet" ||
-           networkName == "nodo-localnet" ||
            networkName == "testnet-candidate" ||
-           networkName == "nodo-testnet-candidate" ||
-           networkName == "mainnet" ||
-           networkName == "nodo-mainnet";
+           networkName == "mainnet";
 }
 
 bool NetworkProfileRegistry::isOfficialNetwork(const std::string& networkName) {
     return networkName == "testnet-candidate" ||
-           networkName == "nodo-testnet-candidate" ||
            networkName == "testnet" ||
-           networkName == "nodo-testnet" ||
-           networkName == "mainnet" ||
-           networkName == "nodo-mainnet";
+           networkName == "mainnet";
 }
 
 bool NetworkProfileRegistry::isMainnetLocked(const std::string& networkName) {
-    return networkName == "mainnet" || networkName == "nodo-mainnet";
+    return networkName == "mainnet";
 }
 
 std::vector<std::string> NetworkProfileRegistry::knownProfiles() {
     return {
-        "nodo-localnet",
-        "nodo-testnet-candidate",
-        "nodo-mainnet"
+        "localnet",
+        "testnet-candidate",
+        "mainnet"
     };
 }
 
 NetworkParameters NetworkProfileRegistry::get(const std::string& networkName) {
-    if (networkName == "localnet" || networkName == "nodo-localnet") {
+    if (networkName == "localnet") {
         return NetworkParameters::developmentLocal();
     }
-    if (networkName == "testnet-candidate" ||
-        networkName == "nodo-testnet-candidate") {
+    if (networkName == "testnet-candidate") {
         return NetworkParameters::testnetCandidate();
     }
-    if (networkName == "mainnet" || networkName == "nodo-mainnet") {
-        return NetworkParameters::mainnetPlaceholder();
+    if (networkName == "mainnet") {
+        throw std::invalid_argument(
+            "mainnet network profile is not available in this build. "
+            "mainnet startup requires an audited genesis and production crypto providers."
+        );
     }
     throw std::invalid_argument("Unknown network profile: " + networkName);
 }

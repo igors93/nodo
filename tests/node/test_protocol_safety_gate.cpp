@@ -19,7 +19,7 @@ int main() {
 
     const nodo::config::NetworkParameters testnet(
         "nodo-testnet-1",
-        "nodo-testnet",
+        "testnet-candidate",
         "nodo/0.1",
         60,
         1,

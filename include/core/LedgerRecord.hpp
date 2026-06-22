@@ -9,7 +9,6 @@
 #include "economics/ValidationWorkRecord.hpp"
 #include "economics/ValidatorPenaltyRecord.hpp"
 #include "economics/ValidatorScoreRecord.hpp"
-#include "privacy/PrivateAccountingRecord.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -31,7 +30,6 @@ namespace nodo::core {
 enum class LedgerRecordType {
     MINT,
     TRANSACTION,
-    PRIVATE_ACCOUNTING,
     VALIDATION_WORK,
     VALIDATOR_SCORE,
     PROTECTION_EPOCH,
@@ -63,11 +61,6 @@ public:
         const Transaction& transaction,
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context,
-        std::int64_t timestamp
-    );
-
-    static LedgerRecord fromPrivateAccountingRecord(
-        const privacy::PrivateAccountingRecord& privateAccountingRecord,
         std::int64_t timestamp
     );
 

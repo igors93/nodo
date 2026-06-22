@@ -10,10 +10,6 @@ void testLocalnetAcceptsPlaintext() {
         nodo::crypto::KeyEncryptionLevel::PLAINTEXT,
         "localnet"
     ));
-    assert(nodo::crypto::KeyEncryptionPolicy::isAcceptable(
-        nodo::crypto::KeyEncryptionLevel::PLAINTEXT,
-        "nodo-localnet"
-    ));
 }
 
 void testTestnetRejectsPlaintext() {
@@ -23,11 +19,7 @@ void testTestnetRejectsPlaintext() {
     ));
     assert(!nodo::crypto::KeyEncryptionPolicy::isAcceptable(
         nodo::crypto::KeyEncryptionLevel::PLAINTEXT,
-        "nodo-testnet"
-    ));
-    assert(!nodo::crypto::KeyEncryptionPolicy::isAcceptable(
-        nodo::crypto::KeyEncryptionLevel::PLAINTEXT,
-        "nodo-testnet-candidate"
+        "testnet-candidate"
     ));
 }
 
@@ -38,7 +30,7 @@ void testTestnetAcceptsTestnetSafe() {
     ));
     assert(nodo::crypto::KeyEncryptionPolicy::isAcceptable(
         nodo::crypto::KeyEncryptionLevel::TESTNET_SAFE,
-        "nodo-testnet-candidate"
+        "testnet-candidate"
     ));
 }
 
@@ -47,22 +39,16 @@ void testMainnetAlwaysBlocked() {
         nodo::crypto::KeyEncryptionLevel::TESTNET_SAFE,
         "mainnet"
     ));
-    assert(!nodo::crypto::KeyEncryptionPolicy::isAcceptable(
-        nodo::crypto::KeyEncryptionLevel::TESTNET_SAFE,
-        "nodo-mainnet"
-    ));
     assert(nodo::crypto::KeyEncryptionPolicy::isMainnetBlocked("mainnet"));
-    assert(nodo::crypto::KeyEncryptionPolicy::isMainnetBlocked("nodo-mainnet"));
     assert(!nodo::crypto::KeyEncryptionPolicy::isMainnetBlocked("testnet"));
     assert(!nodo::crypto::KeyEncryptionPolicy::isMainnetBlocked("localnet"));
 }
 
 void testOfficialNetworkDetection() {
     assert(nodo::crypto::KeyEncryptionPolicy::isOfficialNetwork("testnet"));
+    assert(nodo::crypto::KeyEncryptionPolicy::isOfficialNetwork("testnet-candidate"));
     assert(nodo::crypto::KeyEncryptionPolicy::isOfficialNetwork("mainnet"));
-    assert(nodo::crypto::KeyEncryptionPolicy::isOfficialNetwork("nodo-testnet-candidate"));
     assert(!nodo::crypto::KeyEncryptionPolicy::isOfficialNetwork("localnet"));
-    assert(!nodo::crypto::KeyEncryptionPolicy::isOfficialNetwork("nodo-localnet"));
 }
 
 void testToString() {

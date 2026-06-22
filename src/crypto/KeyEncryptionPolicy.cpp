@@ -14,11 +14,10 @@ std::string keyEncryptionLevelToString(KeyEncryptionLevel level) {
 KeyEncryptionLevel KeyEncryptionPolicy::requiredLevelForNetwork(
     const std::string& networkName
 ) {
-    if (networkName == "localnet" || networkName == "nodo-localnet") {
+    if (networkName == "localnet") {
         return KeyEncryptionLevel::PLAINTEXT;
     }
-    if (networkName == "testnet" || networkName == "nodo-testnet" ||
-        networkName == "testnet-candidate" || networkName == "nodo-testnet-candidate") {
+    if (networkName == "testnet" || networkName == "testnet-candidate") {
         return KeyEncryptionLevel::TESTNET_SAFE;
     }
     // mainnet and any unknown profile: require TESTNET_SAFE as minimum.
@@ -40,18 +39,15 @@ bool KeyEncryptionPolicy::isAcceptable(
 bool KeyEncryptionPolicy::isMainnetBlocked(
     const std::string& networkName
 ) {
-    return networkName == "mainnet" || networkName == "nodo-mainnet";
+    return networkName == "mainnet";
 }
 
 bool KeyEncryptionPolicy::isOfficialNetwork(
     const std::string& networkName
 ) {
     return networkName == "testnet" ||
-           networkName == "nodo-testnet" ||
            networkName == "testnet-candidate" ||
-           networkName == "nodo-testnet-candidate" ||
-           networkName == "mainnet" ||
-           networkName == "nodo-mainnet";
+           networkName == "mainnet";
 }
 
 } // namespace nodo::crypto

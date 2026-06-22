@@ -19,7 +19,6 @@ StateRebuildReport::StateRebuildReport()
       m_mintRecordCount(0),
       m_genesisRewardRecordCount(0),
       m_transactionRecordCount(0),
-      m_privateAccountingRecordCount(0),
       m_protectionMetadataRecordCount(0),
       m_validatorPenaltyRecordCount(0) {}
 
@@ -49,10 +48,6 @@ std::size_t StateRebuildReport::genesisRewardRecordCount() const {
 
 std::size_t StateRebuildReport::transactionRecordCount() const {
     return m_transactionRecordCount;
-}
-
-std::size_t StateRebuildReport::privateAccountingRecordCount() const {
-    return m_privateAccountingRecordCount;
 }
 
 std::size_t StateRebuildReport::protectionMetadataRecordCount() const {
@@ -88,10 +83,6 @@ void StateRebuildReport::incrementTransactionRecordCount() {
     ++m_transactionRecordCount;
 }
 
-void StateRebuildReport::incrementPrivateAccountingRecordCount() {
-    ++m_privateAccountingRecordCount;
-}
-
 void StateRebuildReport::incrementProtectionMetadataRecordCount() {
     ++m_protectionMetadataRecordCount;
 }
@@ -111,7 +102,6 @@ std::string StateRebuildReport::serialize() const {
         << ";mintRecordCount=" << m_mintRecordCount
         << ";genesisRewardRecordCount=" << m_genesisRewardRecordCount
         << ";transactionRecordCount=" << m_transactionRecordCount
-        << ";privateAccountingRecordCount=" << m_privateAccountingRecordCount
         << ";protectionMetadataRecordCount=" << m_protectionMetadataRecordCount
         << ";validatorPenaltyRecordCount=" << m_validatorPenaltyRecordCount
         << "}";
@@ -156,8 +146,6 @@ StateRebuildReport ChainStateRebuilder::auditBlockchain(
                 report.incrementGenesisRewardRecordCount();
             } else if (record.type() == LedgerRecordType::TRANSACTION) {
                 report.incrementTransactionRecordCount();
-            } else if (record.type() == LedgerRecordType::PRIVATE_ACCOUNTING) {
-                report.incrementPrivateAccountingRecordCount();
             } else if (record.type() == LedgerRecordType::VALIDATOR_PENALTY) {
                 report.incrementValidatorPenaltyRecordCount();
             } else if (record.type() == LedgerRecordType::VALIDATION_WORK ||
@@ -172,40 +160,6 @@ StateRebuildReport ChainStateRebuilder::auditBlockchain(
     }
 
     return report;
-}
-
-State ChainStateRebuilder::rebuildStateFromMintRecords(
-    const Blockchain& blockchain
-) {
-    StateRebuildReport report = auditBlockchain(blockchain);
-
-    if (!report.success()) {
-        throw std::logic_error(
-            "Cannot rebuild State from invalid Blockchain: "
-            + report.failureReason()
-        );
-    }
-
-    State rebuiltState;
-
-    for (const auto& block : blockchain.blocks()) {
-        for (const auto& record : block.records()) {
-            if (record.type() != LedgerRecordType::MINT) {
-                continue;
-            }
-
-            economics::MintRecord mintRecord =
-                economics::MintRecord::deserialize(record.payload());
-
-            rebuiltState.applyMintRecord(mintRecord);
-        }
-    }
-
-    if (!rebuiltState.isSupplyAuditable()) {
-        throw std::logic_error("Rebuilt State failed supply audit.");
-    }
-
-    return rebuiltState;
 }
 
 State ChainStateRebuilder::rebuildStateFromGenesisRewardRecords(
@@ -298,8 +252,7 @@ State ChainStateRebuilder::rebuildStateFromLedgerRecords(
                 continue;
             }
 
-            if (record.type() == LedgerRecordType::PRIVATE_ACCOUNTING ||
-                record.type() == LedgerRecordType::VALIDATION_WORK ||
+            if (record.type() == LedgerRecordType::VALIDATION_WORK ||
                 record.type() == LedgerRecordType::VALIDATOR_SCORE ||
                 record.type() == LedgerRecordType::PROTECTION_EPOCH ||
                 record.type() == LedgerRecordType::VALIDATOR_PENALTY) {

@@ -22,7 +22,11 @@ void testTestnetCandidateIsStaging() {
 }
 
 void testMainnetIsLockedProduction() {
-    const NetworkParameters params = NetworkParameters::mainnetPlaceholder();
+    const NetworkParameters params(
+        "nodo-mainnet-1", "mainnet", "nodo/0.1",
+        600, 7, 2, 3, 250, 256, 10000, 10000, 15, 6,
+        "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2"
+    );
     assert(params.networkClass() == NetworkClass::LOCKED_PRODUCTION);
     assert(networkClassToString(params.networkClass()) == "LOCKED_PRODUCTION");
 }

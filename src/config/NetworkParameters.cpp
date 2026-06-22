@@ -201,10 +201,10 @@ const std::string& NetworkParameters::storageFormatVersion() const {
 }
 
 NetworkClass NetworkParameters::networkClass() const {
-    if (m_networkName == "nodo-localnet" || m_networkName == "localnet") {
+    if (m_networkName == "localnet") {
         return NetworkClass::DEVELOPMENT_LOCAL;
     }
-    if (m_networkName == "nodo-testnet-candidate" || m_networkName == "testnet-candidate") {
+    if (m_networkName == "testnet-candidate") {
         return NetworkClass::STAGING_CANDIDATE;
     }
     return NetworkClass::LOCKED_PRODUCTION;
@@ -273,7 +273,7 @@ std::string NetworkParameters::serialize() const {
 NetworkParameters NetworkParameters::developmentLocal() {
     return NetworkParameters(
         "nodo-localnet-1",
-        "nodo-localnet",
+        "localnet",
         "nodo/0.1",
         60,
         1,
@@ -293,7 +293,7 @@ NetworkParameters NetworkParameters::developmentLocal() {
 NetworkParameters NetworkParameters::testnetCandidate() {
     return NetworkParameters(
         "nodo-testnet-1",
-        "nodo-testnet-candidate",
+        "testnet-candidate",
         "nodo/0.1",
         300,
         4,
@@ -305,26 +305,6 @@ NetworkParameters NetworkParameters::testnetCandidate() {
         1000,
         30,
         3,
-        "NODO_CRYPTO_SUITE_V1",
-        "NODO_STORAGE_V2"
-    );
-}
-
-NetworkParameters NetworkParameters::mainnetPlaceholder() {
-    return NetworkParameters(
-        "nodo-mainnet-1",
-        "nodo-mainnet",
-        "nodo/0.1",
-        600,
-        7,
-        2,
-        3,
-        250,
-        256,
-        10000,
-        10000,
-        15,
-        6,
         "NODO_CRYPTO_SUITE_V1",
         "NODO_STORAGE_V2"
     );

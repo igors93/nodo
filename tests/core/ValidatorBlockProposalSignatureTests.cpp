@@ -366,35 +366,6 @@ void testSignaturePayloadCommitsToValidatorAndBlock() {
     );
 }
 
-void testSingleBlsSignatureRejectedByFutureHybridPolicy() {
-    Blockchain blockchain =
-        baseBlockchain();
-
-    const ProtectionBlockProposal proposal =
-        proposalFor(blockchain);
-
-    const SignedProtectionBlockProposal signedProposal =
-        ValidatorBlockProposalSigner::signProposal(
-            proposal,
-            "nodo1validatorA",
-            validatorPublicKey(),
-            validatorPrivateKey(),
-            kTimestamp + 70,
-            Bls12381SignatureProvider()
-        );
-
-    const Bls12381SignatureProvider provider;
-
-    requireCondition(
-        !signedProposal.isValidForBlockchain(
-            blockchain,
-            CryptoPolicy::futureHybridPolicy(),
-            provider
-        ),
-        "Future hybrid policy must reject a single BLS validator signature."
-    );
-}
-
 void testInvalidSignatureInputsAreRejected() {
     Blockchain blockchain =
         baseBlockchain();
@@ -451,7 +422,6 @@ int main() {
         testSignatureCannotBeReusedOnDifferentProposal();
         testSignatureCannotBeReusedOnDifferentChainTip();
         testSignaturePayloadCommitsToValidatorAndBlock();
-        testSingleBlsSignatureRejectedByFutureHybridPolicy();
         testInvalidSignatureInputsAreRejected();
 
         std::cout << "Nodo validator block proposal signature tests passed.\n";

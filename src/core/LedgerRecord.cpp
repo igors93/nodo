@@ -15,8 +15,6 @@ std::string ledgerRecordTypeToString(LedgerRecordType type) {
             return "MINT";
         case LedgerRecordType::TRANSACTION:
             return "TRANSACTION";
-        case LedgerRecordType::PRIVATE_ACCOUNTING:
-            return "PRIVATE_ACCOUNTING";
         case LedgerRecordType::VALIDATION_WORK:
             return "VALIDATION_WORK";
         case LedgerRecordType::VALIDATOR_SCORE:
@@ -41,10 +39,6 @@ LedgerRecordType ledgerRecordTypeFromString(
 
     if (value == "TRANSACTION") {
         return LedgerRecordType::TRANSACTION;
-    }
-
-    if (value == "PRIVATE_ACCOUNTING") {
-        return LedgerRecordType::PRIVATE_ACCOUNTING;
     }
 
     if (value == "VALIDATION_WORK") {
@@ -169,38 +163,6 @@ LedgerRecord LedgerRecord::fromTransaction(
         recordId,
         LedgerRecordType::TRANSACTION,
         transaction.id(),
-        payload,
-        payloadHash,
-        timestamp
-    );
-}
-
-LedgerRecord LedgerRecord::fromPrivateAccountingRecord(
-    const privacy::PrivateAccountingRecord& privateAccountingRecord,
-    std::int64_t timestamp
-) {
-    if (!privateAccountingRecord.isValid()) {
-        throw std::invalid_argument("Invalid PrivateAccountingRecord rejected by LedgerRecord.");
-    }
-
-    if (timestamp <= 0) {
-        throw std::invalid_argument("LedgerRecord timestamp must be positive.");
-    }
-
-    const std::string payload = privateAccountingRecord.serialize();
-    const std::string payloadHash = hashPayload(payload);
-
-    const std::string recordId = computeRecordId(
-        LedgerRecordType::PRIVATE_ACCOUNTING,
-        privateAccountingRecord.id(),
-        payloadHash,
-        timestamp
-    );
-
-    return LedgerRecord(
-        recordId,
-        LedgerRecordType::PRIVATE_ACCOUNTING,
-        privateAccountingRecord.id(),
         payload,
         payloadHash,
         timestamp

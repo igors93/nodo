@@ -1,7 +1,5 @@
 #include "app/CommandLineInterface.hpp"
 
-#include "app/DemoScenario.hpp"
-#include "app/ProtocolCommandPolicy.hpp"
 #include "config/GenesisRegistry.hpp"
 #include "config/NetworkProfileRegistry.hpp"
 #include "node/RuntimeStartupService.hpp"
@@ -124,7 +122,7 @@ std::string defaultLocalnetUserKeyId() {
 }
 
 std::string defaultLocalnetUserKeySeed() {
-    return "nodo-localnet-user-seed";
+    return config::GenesisRegistry::localnetUserKeySeed();
 }
 
 bool isOption(
@@ -302,39 +300,6 @@ CommandLineResult CommandLineInterface::execute(
             options.command == "help") {
             return CommandLineResult::success(
                 helpText()
-            );
-        }
-
-        // Central command safety policy check. Must happen before any execution,
-        // including the demo command, so that official networks are always rejected
-        // through the shared policy rather than per-command ad hoc logic.
-        {
-            const std::string policyBlock =
-                ProtocolCommandPolicy::blockingReason(
-                    options.command,
-                    options.networkName
-                );
-            if (!policyBlock.empty()) {
-                return CommandLineResult::failure(
-                    CommandLineStatus::COMMAND_FAILED,
-                    policyBlock + "\n"
-                );
-            }
-        }
-
-        if (options.command == "demo") {
-            const int demoStatus =
-                runBlockchainFoundationDemo();
-
-            if (demoStatus == 0) {
-                return CommandLineResult::success(
-                    "Nodo demo completed successfully (localnet educational mode only).\n"
-                );
-            }
-
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Nodo demo failed.\n"
             );
         }
 
@@ -595,9 +560,6 @@ std::string CommandLineInterface::helpText() {
         "  nodo testnet readiness [--network localnet|testnet-candidate] [--data-dir PATH] [--key-id ID]\n"
         "  nodo diagnostics [--network localnet|testnet-candidate] [--data-dir PATH] [--key-id ID]\n"
         "\n"
-        "Localnet-only commands (not valid on official networks):\n"
-        "  nodo demo              Educational blockchain foundation demo. Does not produce protocol-valid state.\n"
-        "\n"
         "Options:\n"
         "  --data-dir PATH      Node data directory. Default: .nodo\n"
         "  --network NAME       Network profile: localnet or testnet-candidate. mainnet is blocked.\n"
@@ -611,12 +573,6 @@ std::string CommandLineInterface::helpText() {
         "  --fee RAW_UNITS      Transfer fee for tx submit. Default: 100\n"
         "  --nonce VALUE        Transaction nonce for tx submit. Default: next account nonce\n"
         "  --timestamp SECONDS  Deterministic timestamp override for tests.\n";
-}
-
-config::GenesisConfig CommandLineInterface::developmentGenesisConfig() {
-    const config::GenesisLookupResult result =
-        config::GenesisRegistry::get("localnet");
-    return result.found() ? result.genesis() : config::GenesisConfig();
 }
 
 std::string CommandLineInterface::defaultLocalnetKeyId() {

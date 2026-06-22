@@ -26,7 +26,7 @@ void testReportFieldsPopulated() {
         {}
     );
 
-    assert(report.networkName() == "nodo-localnet");
+    assert(report.networkName() == "localnet");
     assert(report.chainId() == "nodo-localnet-1");
     assert(report.registeredGenesisId() == "test-genesis-id");
     assert(report.manifestGenesisId() == "test-genesis-id");
@@ -101,7 +101,7 @@ void testSerializeContainsKeyFields() {
     );
     const std::string s = report.serialize();
     assert(!s.empty());
-    assert(s.find("nodo-localnet") != std::string::npos);
+    assert(s.find("localnet") != std::string::npos);
     assert(s.find("42") != std::string::npos);
     assert(s.find("test-warning") != std::string::npos);
     assert(s.find("DEVELOPMENT_LOCAL") != std::string::npos);

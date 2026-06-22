@@ -69,7 +69,7 @@ bool ProtocolSafetyGate::isLocalDevelopmentNetwork(
     const config::NetworkParameters& networkParameters
 ) {
     return networkParameters.isValid() &&
-           networkParameters.networkName() == "nodo-localnet" &&
+           networkParameters.networkName() == "localnet" &&
            networkParameters.chainId().find("localnet") != std::string::npos;
 }
 

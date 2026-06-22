@@ -158,7 +158,7 @@ void testNetworkProfileSelectionAndMainnetLock() {
 
     requireCondition(
         localInit.success() &&
-        localInit.message().find("Network: nodo-localnet") != std::string::npos,
+        localInit.message().find("Network: localnet") != std::string::npos,
         "Localnet network profile should initialize explicitly."
     );
 
@@ -193,7 +193,7 @@ void testNetworkProfileSelectionAndMainnetLock() {
 
     requireCondition(
         testnetInit.success() &&
-        testnetInit.message().find("Network: nodo-testnet-candidate") != std::string::npos,
+        testnetInit.message().find("Network: testnet-candidate") != std::string::npos,
         "Testnet-candidate network profile should initialize with its canonical profile."
     );
 
@@ -410,7 +410,7 @@ void testOfficialNetworkKeySafetyAndDiagnostics() {
 
     requireCondition(
         diagnostics.success() &&
-        diagnostics.message().find("network=nodo-testnet-candidate") != std::string::npos &&
+        diagnostics.message().find("network=testnet-candidate") != std::string::npos &&
         diagnostics.message().find("genesisVerified=yes") != std::string::npos &&
         diagnostics.message().find("keyPolicyPassed=no") != std::string::npos &&
         diagnostics.message().find("readiness=NOT_READY") != std::string::npos,

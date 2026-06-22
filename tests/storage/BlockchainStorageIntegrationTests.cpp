@@ -17,12 +17,6 @@
 
 #include "economics/MintRecord.hpp"
 
-#include "privacy/PrivacyCommitment.hpp"
-#include "privacy/PrivacyNullifier.hpp"
-#include "privacy/PrivateAccountingLedger.hpp"
-#include "privacy/PrivateAccountingLedgerRebuilder.hpp"
-#include "privacy/PrivateAccountingRecord.hpp"
-
 #include "storage/BlockFileStore.hpp"
 #include "storage/BlockStorageIndex.hpp"
 #include "storage/BlockchainLoader.hpp"
@@ -66,14 +60,6 @@ using nodo::crypto::SigningDomain;
 
 using nodo::economics::MintReason;
 using nodo::economics::MintRecord;
-
-using nodo::privacy::PrivacyCommitment;
-using nodo::privacy::PrivacyCommitmentType;
-using nodo::privacy::PrivacyNullifier;
-using nodo::privacy::PrivacyNullifierType;
-using nodo::privacy::PrivateAccountingLedger;
-using nodo::privacy::PrivateAccountingLedgerRebuilder;
-using nodo::privacy::PrivateAccountingRecord;
 
 using nodo::storage::BlockFileStore;
 using nodo::storage::BlockIndexEntry;
@@ -247,88 +233,6 @@ Blockchain buildReferenceBlockchain() {
     );
 
     blockchain.addBlock(transferBlock);
-
-    PrivacyCommitment privateMintCommitment =
-        PrivacyCommitment::createDevelopmentCommitment(
-            PrivacyCommitmentType::MINT_COMMITMENT,
-            "igor",
-            Amount::fromNodo(1000),
-            "storage-integration-blinding-secret-001",
-            genesisMint.id(),
-            kBaseTimestamp + 8
-        );
-
-    PrivacyNullifier privateSpendNullifier =
-        PrivacyNullifier::createDevelopmentNullifier(
-            PrivacyNullifierType::SPEND_NULLIFIER,
-            privateMintCommitment.id(),
-            "storage-integration-owner-secret-igor-001",
-            "storage-integration-private-spend-context-001",
-            kBaseTimestamp + 9
-        );
-
-    PrivacyCommitment privateTransferOutputToAna =
-        PrivacyCommitment::createDevelopmentCommitment(
-            PrivacyCommitmentType::TRANSFER_OUTPUT_COMMITMENT,
-            "ana",
-            Amount::fromNodo(25),
-            "storage-integration-blinding-secret-ana-output-001",
-            privateSpendNullifier.id(),
-            kBaseTimestamp + 10
-        );
-
-    PrivacyCommitment privateTransferChangeToIgor =
-        PrivacyCommitment::createDevelopmentCommitment(
-            PrivacyCommitmentType::TRANSFER_OUTPUT_COMMITMENT,
-            "igor",
-            Amount::fromRawUnits(97499900000),
-            "storage-integration-blinding-secret-igor-change-001",
-            privateSpendNullifier.id(),
-            kBaseTimestamp + 11
-        );
-
-    PrivateAccountingRecord privateMintRecord =
-        PrivateAccountingRecord::createPrivateMintRecord(
-            std::vector<PrivacyCommitment>{privateMintCommitment},
-            Amount::fromNodo(1000),
-            "storage-integration-private-mint-audit-reference-001",
-            kBaseTimestamp + 12
-        );
-
-    PrivateAccountingRecord privateTransferRecord =
-        PrivateAccountingRecord::createPrivateTransferRecord(
-            std::vector<PrivacyNullifier>{privateSpendNullifier},
-            std::vector<PrivacyCommitment>{
-                privateTransferOutputToAna,
-                privateTransferChangeToIgor
-            },
-            "storage-integration-private-transfer-audit-reference-001",
-            kBaseTimestamp + 13
-        );
-
-    LedgerRecord privateMintLedgerRecord =
-        LedgerRecord::fromPrivateAccountingRecord(
-            privateMintRecord,
-            kBaseTimestamp + 14
-        );
-
-    LedgerRecord privateTransferLedgerRecord =
-        LedgerRecord::fromPrivateAccountingRecord(
-            privateTransferRecord,
-            kBaseTimestamp + 15
-        );
-
-    Block privateAccountingBlock(
-        2,
-        blockchain.latestBlock().hash(),
-        std::vector<LedgerRecord>{
-            privateMintLedgerRecord,
-            privateTransferLedgerRecord
-        },
-        kBaseTimestamp + 16
-    );
-
-    blockchain.addBlock(privateAccountingBlock);
 
     requireCondition(
         blockchain.isValid(),
@@ -631,27 +535,6 @@ void assertLoadedBlockchainMatchesReference(
         loadedPublicState.balanceOf(State::feePoolAddress()).toString() ==
             "0.00100000 NODO",
         "Loaded fee pool balance is incorrect."
-    );
-
-    PrivateAccountingLedger loadedPrivateLedger =
-        PrivateAccountingLedgerRebuilder::rebuildFromBlockchain(
-            loadedBlockchain
-        );
-
-    requireCondition(
-        loadedPrivateLedger.isValid(),
-        "Loaded private ledger is invalid."
-    );
-
-    requireCondition(
-        loadedPrivateLedger.size() == 2,
-        "Loaded private ledger record count is incorrect."
-    );
-
-    requireCondition(
-        loadedPrivateLedger.outstandingPrivateSupply().toString() ==
-            "1000.00000000 NODO",
-        "Loaded private outstanding supply is incorrect."
     );
 }
 
