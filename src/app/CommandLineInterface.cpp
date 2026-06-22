@@ -1,5 +1,6 @@
 #include "app/CommandLineInterface.hpp"
 
+#include "app/ProtocolCommandPolicy.hpp"
 #include "config/GenesisRegistry.hpp"
 #include "config/NetworkProfileRegistry.hpp"
 #include "node/RuntimeStartupService.hpp"
@@ -141,6 +142,15 @@ bool isCommandGroup(
            value == "keys" ||
            value == "validator" ||
            value == "testnet";
+}
+
+bool isLegacyDevelopmentCommand(
+    const std::string& command
+) {
+    return command == "demo" ||
+           command == "reload" ||
+           command == "submit-demo-transaction" ||
+           command == "produce-demo-block";
 }
 
 config::NetworkParameters networkParametersForOptions(
@@ -308,6 +318,16 @@ CommandLineResult CommandLineInterface::execute(
 
         if (!networkValidation.success()) {
             return networkValidation;
+        }
+
+        if (isLegacyDevelopmentCommand(options.command) &&
+            ProtocolCommandPolicy::legacyCommandBlockingEnforced(options.networkName)) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "Legacy development command '" + options.command +
+                    "' is not permitted on official network '" +
+                    options.networkName + "'.\n"
+            );
         }
 
         if (options.command == "init") {

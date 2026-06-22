@@ -29,6 +29,9 @@ public:
         bool genesisCompatible,
         bool keyPolicyPassed,
         std::string readinessStatus,
+        std::string latestImportStatus,
+        std::string latestImportRejectionReason,
+        bool defenseRestrictionsActive,
         std::vector<std::string> warnings,
         EvidenceCaptureHealth evidenceHealth
     );
@@ -49,6 +52,9 @@ public:
     bool genesisCompatible() const;
     bool keyPolicyPassed() const;
     const std::string& readinessStatus() const;
+    const std::string& latestImportStatus() const;
+    const std::string& latestImportRejectionReason() const;
+    bool defenseRestrictionsActive() const;
     const std::vector<std::string>& warnings() const;
     const EvidenceCaptureHealth& evidenceHealth() const;
 
@@ -72,6 +78,9 @@ private:
     bool m_genesisCompatible;
     bool m_keyPolicyPassed;
     std::string m_readinessStatus;
+    std::string m_latestImportStatus;
+    std::string m_latestImportRejectionReason;
+    bool m_defenseRestrictionsActive;
     std::vector<std::string> m_warnings;
     EvidenceCaptureHealth m_evidenceHealth;
 };
@@ -94,6 +103,9 @@ public:
         bool genesisVerified,
         bool genesisCompatible,
         bool keyPolicyPassed,
+        const std::string& latestImportStatus,
+        const std::string& latestImportRejectionReason,
+        bool defenseRestrictionsActive,
         const std::vector<std::string>& warnings,
         EvidenceCaptureHealth evidenceHealth = EvidenceCaptureHealth()
     );

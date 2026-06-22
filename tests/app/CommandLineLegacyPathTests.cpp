@@ -19,9 +19,7 @@ void testDemoCommandBlockedOnTestnetCandidate() {
     assert(!result.success());
     assert(result.status() == CommandLineStatus::COMMAND_FAILED);
     const std::string& msg = result.message();
-    assert(msg.find("localnet") != std::string::npos ||
-           msg.find("testnet-candidate") != std::string::npos ||
-           msg.find("demo") != std::string::npos);
+    assert(msg.find("not permitted on official network") != std::string::npos);
 }
 
 void testHelpTextContainsLocalnetOnlyLabel() {

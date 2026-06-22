@@ -1,6 +1,7 @@
 #include "node/OperatorDiagnostics.hpp"
 
 #include <sstream>
+#include <utility>
 
 namespace nodo::node {
 
@@ -11,7 +12,8 @@ OperatorDiagnosticsReport::OperatorDiagnosticsReport()
       m_genesisVerified(false),
       m_genesisCompatible(false),
       m_keyPolicyPassed(false),
-      m_readinessStatus("NOT_READY") {}
+      m_readinessStatus("NOT_READY"),
+      m_defenseRestrictionsActive(false) {}
 
 OperatorDiagnosticsReport::OperatorDiagnosticsReport(
     std::string networkName,
@@ -28,6 +30,9 @@ OperatorDiagnosticsReport::OperatorDiagnosticsReport(
     bool genesisCompatible,
     bool keyPolicyPassed,
     std::string readinessStatus,
+    std::string latestImportStatus,
+    std::string latestImportRejectionReason,
+    bool defenseRestrictionsActive,
     std::vector<std::string> warnings,
     EvidenceCaptureHealth evidenceHealth
 )
@@ -45,6 +50,9 @@ OperatorDiagnosticsReport::OperatorDiagnosticsReport(
       m_genesisCompatible(genesisCompatible),
       m_keyPolicyPassed(keyPolicyPassed),
       m_readinessStatus(std::move(readinessStatus)),
+      m_latestImportStatus(std::move(latestImportStatus)),
+      m_latestImportRejectionReason(std::move(latestImportRejectionReason)),
+      m_defenseRestrictionsActive(defenseRestrictionsActive),
       m_warnings(std::move(warnings)),
       m_evidenceHealth(std::move(evidenceHealth)) {}
 
@@ -63,6 +71,9 @@ bool OperatorDiagnosticsReport::genesisVerified() const { return m_genesisVerifi
 bool OperatorDiagnosticsReport::genesisCompatible() const { return m_genesisCompatible; }
 bool OperatorDiagnosticsReport::keyPolicyPassed() const { return m_keyPolicyPassed; }
 const std::string& OperatorDiagnosticsReport::readinessStatus() const { return m_readinessStatus; }
+const std::string& OperatorDiagnosticsReport::latestImportStatus() const { return m_latestImportStatus; }
+const std::string& OperatorDiagnosticsReport::latestImportRejectionReason() const { return m_latestImportRejectionReason; }
+bool OperatorDiagnosticsReport::defenseRestrictionsActive() const { return m_defenseRestrictionsActive; }
 const std::vector<std::string>& OperatorDiagnosticsReport::warnings() const { return m_warnings; }
 const EvidenceCaptureHealth& OperatorDiagnosticsReport::evidenceHealth() const { return m_evidenceHealth; }
 
@@ -83,6 +94,9 @@ std::string OperatorDiagnosticsReport::serialize() const {
         << "  genesisVerified=" << (m_genesisVerified ? "yes" : "no") << "\n"
         << "  keyPolicyPassed=" << (m_keyPolicyPassed ? "yes" : "no") << "\n"
         << "  readiness=" << m_readinessStatus << "\n"
+        << "  latestImportStatus=" << (m_latestImportStatus.empty() ? "(none)" : m_latestImportStatus) << "\n"
+        << "  latestImportRejectionReason=" << (m_latestImportRejectionReason.empty() ? "(none)" : m_latestImportRejectionReason) << "\n"
+        << "  defenseRestrictionsActive=" << (m_defenseRestrictionsActive ? "yes" : "no") << "\n"
         << "  evidenceCapture=" << m_evidenceHealth.serialize() << "\n";
     for (const auto& w : m_warnings) {
         oss << "  WARNING: " << w << "\n";

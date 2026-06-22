@@ -188,7 +188,12 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         NodeDataDirectory::loadManifest(directoryConfig);
 
     if (!manifestResult.loaded()) {
-        return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::NOT_INITIALIZED, manifestResult.reason());
+        const RuntimeStateLoadStatus status =
+            manifestResult.status() == NodeDataDirectoryReadStatus::INVALID_MANIFEST
+                ? RuntimeStateLoadStatus::MANIFEST_MISMATCH
+                : RuntimeStateLoadStatus::NOT_INITIALIZED;
+
+        return RuntimeStateLoadResult::rejected(status, manifestResult.reason());
     }
 
     const NodeRuntimeManifest manifest = manifestResult.manifest();

@@ -141,7 +141,7 @@ void testRejectsManifestStateRootMismatch() {
         validLoad.manifest().genesisConfigId(),
         validLoad.manifest().latestBlockHeight(),
         validLoad.manifest().latestBlockHash(),
-        "tampered-state-root",
+        "1111111111111111111111111111111111111111111111111111111111111111",
         validLoad.manifest().validatorCount(),
         validLoad.manifest().peerCount(),
         validLoad.manifest().createdAt(),

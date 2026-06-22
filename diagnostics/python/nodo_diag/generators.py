@@ -172,6 +172,9 @@ def all_demo_commands() -> list[str]:
     """CLI subcommands that are blocked on official networks."""
     return [
         "demo",
+        "reload",
+        "submit-demo-transaction",
+        "produce-demo-block",
     ]
 
 

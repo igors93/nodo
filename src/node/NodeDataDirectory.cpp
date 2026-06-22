@@ -49,6 +49,31 @@ bool isSafeScalar(
     return true;
 }
 
+bool isCanonicalHashString(
+    const std::string& value
+) {
+    if (value.size() != 64) {
+        return false;
+    }
+
+    bool hasNonZeroDigit = false;
+
+    for (const char current : value) {
+        const bool isDigit = current >= '0' && current <= '9';
+        const bool isLowerHex = current >= 'a' && current <= 'f';
+
+        if (!isDigit && !isLowerHex) {
+            return false;
+        }
+
+        if (current != '0') {
+            hasNonZeroDigit = true;
+        }
+    }
+
+    return hasNonZeroDigit;
+}
+
 bool isSafePath(
     const std::filesystem::path& path
 ) {
@@ -153,6 +178,24 @@ std::string parseString(
     }
 
     return found->second;
+}
+
+void requireSafeScalarField(
+    const std::string& key,
+    const std::string& value
+) {
+    if (!isSafeScalar(value)) {
+        throw std::invalid_argument("Manifest field is malformed: " + key);
+    }
+}
+
+void requireCanonicalHashField(
+    const std::string& key,
+    const std::string& value
+) {
+    if (!isCanonicalHashString(value)) {
+        throw std::invalid_argument("Manifest hash field is malformed: " + key);
+    }
 }
 
 std::int64_t minimumFeeRawUnits(
@@ -368,9 +411,9 @@ bool NodeRuntimeManifest::isValid() const {
     return isSafeScalar(m_chainId) &&
            isSafeScalar(m_networkName) &&
            isSafeScalar(m_protocolVersion) &&
-           isSafeScalar(m_genesisConfigId) &&
-           isSafeScalar(m_latestBlockHash) &&
-           isSafeScalar(m_latestStateRoot) &&
+           isCanonicalHashString(m_genesisConfigId) &&
+           isCanonicalHashString(m_latestBlockHash) &&
+           isCanonicalHashString(m_latestStateRoot) &&
            m_validatorCount > 0 &&
            m_createdAt > 0 &&
            m_updatedAt >= m_createdAt;
@@ -443,18 +486,49 @@ NodeRuntimeManifest NodeRuntimeManifest::fromFileContents(
     const std::map<std::string, std::string> fields =
         document.fields();
 
+    const std::string chainId = parseString(fields, "chainId");
+    const std::string networkName = parseString(fields, "networkName");
+    const std::string protocolVersion = parseString(fields, "protocolVersion");
+    const std::string genesisConfigId = parseString(fields, "genesisConfigId");
+    const std::uint64_t latestBlockHeight = parseU64(fields, "latestBlockHeight");
+    const std::string latestBlockHash = parseString(fields, "latestBlockHash");
+    const std::string latestStateRoot = parseString(fields, "latestStateRoot");
+    const std::uint64_t validatorCount = parseU64(fields, "validatorCount");
+    const std::uint64_t peerCount = parseU64(fields, "peerCount");
+    const std::int64_t createdAt = parseI64(fields, "createdAt");
+    const std::int64_t updatedAt = parseI64(fields, "updatedAt");
+
+    requireSafeScalarField("chainId", chainId);
+    requireSafeScalarField("networkName", networkName);
+    requireSafeScalarField("protocolVersion", protocolVersion);
+    requireCanonicalHashField("genesisConfigId", genesisConfigId);
+    requireCanonicalHashField("latestBlockHash", latestBlockHash);
+    requireCanonicalHashField("latestStateRoot", latestStateRoot);
+
+    if (validatorCount == 0) {
+        throw std::invalid_argument("Manifest numeric field must be positive: validatorCount");
+    }
+
+    if (createdAt <= 0) {
+        throw std::invalid_argument("Manifest numeric field must be positive: createdAt");
+    }
+
+    if (updatedAt < createdAt) {
+        throw std::invalid_argument("Manifest numeric field is inconsistent: updatedAt");
+    }
+
     NodeRuntimeManifest manifest(
-        parseString(fields, "chainId"),
-        parseString(fields, "networkName"),
-        parseString(fields, "protocolVersion"),
-        parseString(fields, "genesisConfigId"),
-        parseU64(fields, "latestBlockHeight"),
-        parseString(fields, "latestBlockHash"),
-        parseString(fields, "latestStateRoot"),
-        static_cast<std::size_t>(parseU64(fields, "validatorCount")),
-        static_cast<std::size_t>(parseU64(fields, "peerCount")),
-        parseI64(fields, "createdAt"),
-        parseI64(fields, "updatedAt")
+        chainId,
+        networkName,
+        protocolVersion,
+        genesisConfigId,
+        latestBlockHeight,
+        latestBlockHash,
+        latestStateRoot,
+        static_cast<std::size_t>(validatorCount),
+        static_cast<std::size_t>(peerCount),
+        createdAt,
+        updatedAt
     );
 
     if (!manifest.isValid()) {
