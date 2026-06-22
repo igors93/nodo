@@ -21,13 +21,15 @@ public:
         std::size_t maxTransactions,
         std::int64_t minimumFeeRaw,
         bool replaceByHigherFee,
-        std::int64_t maxTransactionAgeSeconds
+        std::int64_t maxTransactionAgeSeconds,
+        std::size_t maxMempoolSizeBytes = 50 * 1024 * 1024
     );
 
     std::size_t maxTransactions() const;
     std::int64_t minimumFeeRaw() const;
     bool replaceByHigherFee() const;
     std::int64_t maxTransactionAgeSeconds() const;
+    std::size_t maxMempoolSizeBytes() const;
 
     bool isValid() const;
 
@@ -36,6 +38,7 @@ private:
     std::int64_t m_minimumFeeRaw;
     bool m_replaceByHigherFee;
     std::int64_t m_maxTransactionAgeSeconds;
+    std::size_t m_maxMempoolSizeBytes;
 };
 
 class MempoolEntry {
@@ -181,11 +184,13 @@ public:
     ) const;
 
     std::string serialize() const;
+    std::size_t currentMempoolSizeBytes() const;
 
 private:
     MempoolConfig m_config;
     std::map<std::string, MempoolEntry> m_entriesById;
     std::map<std::string, std::string> m_transactionIdBySenderNonce;
+    std::size_t m_currentMempoolSizeBytes{0};
 
     static std::string senderNonceKey(
         const core::Transaction& transaction

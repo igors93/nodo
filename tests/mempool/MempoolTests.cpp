@@ -546,6 +546,105 @@ void testPruneExpiredTransactions() {
     );
 }
 
+void testMempoolSizeCapacityLimitAndEviction() {
+    const Transaction tx1 =
+        signedTransfer(
+            "size-1",
+            "igor",
+            "ana",
+            1000,
+            100,
+            1,
+            kTimestamp
+        );
+
+    const Transaction tx2 =
+        signedTransfer(
+            "size-2",
+            "ana",
+            "igor",
+            1000,
+            200,
+            1,
+            kTimestamp + 1
+        );
+
+    const Transaction tx3 =
+        signedTransfer(
+            "size-3",
+            "bob",
+            "charlie",
+            1000,
+            50,
+            1,
+            kTimestamp + 2
+        );
+
+    std::size_t size1 = tx1.serialize().size();
+    requireCondition(size1 > 0, "Serialized size of tx1 should be positive");
+
+    Mempool mempool(
+        MempoolConfig(
+            10,
+            0,
+            true,
+            3600,
+            size1 + 10
+        )
+    );
+
+    requireCondition(
+        mempool.admitTransaction(
+            tx1,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            kTimestamp + 10
+        ).accepted(),
+        "tx1 should be accepted"
+    );
+
+    requireCondition(
+        mempool.currentMempoolSizeBytes() == size1,
+        "Current size should equal tx1 size"
+    );
+
+    const auto result2 =
+        mempool.admitTransaction(
+            tx2,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            kTimestamp + 11
+        );
+
+    requireCondition(
+        result2.accepted(),
+        "tx2 should be accepted, causing tx1 eviction"
+    );
+
+    requireCondition(
+        !mempool.contains(tx1.id()),
+        "tx1 should be evicted from mempool"
+    );
+
+    requireCondition(
+        mempool.contains(tx2.id()),
+        "tx2 should be in mempool"
+    );
+
+    const auto result3 =
+        mempool.admitTransaction(
+            tx3,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            kTimestamp + 12
+        );
+
+    requireCondition(
+        result3.status() == MempoolAdmissionStatus::FEE_TOO_LOW,
+        "tx3 should be rejected with FEE_TOO_LOW because it cannot evict higher-fee tx2"
+    );
+}
+
 } // namespace
 
 int main() {
@@ -558,6 +657,7 @@ int main() {
         testTransactionsForBlockAreFeeOrdered();
         testTransactionsForBlockWithAccountStateRespectsNonceOrder();
         testPruneExpiredTransactions();
+        testMempoolSizeCapacityLimitAndEviction();
 
         std::cout << "Nodo mempool tests passed.\n";
         return 0;

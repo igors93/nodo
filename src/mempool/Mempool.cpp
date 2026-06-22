@@ -46,18 +46,21 @@ MempoolConfig::MempoolConfig()
     : m_maxTransactions(5000),
       m_minimumFeeRaw(0),
       m_replaceByHigherFee(true),
-      m_maxTransactionAgeSeconds(60 * 60) {}
+      m_maxTransactionAgeSeconds(60 * 60),
+      m_maxMempoolSizeBytes(50 * 1024 * 1024) {}
 
 MempoolConfig::MempoolConfig(
     std::size_t maxTransactions,
     std::int64_t minimumFeeRaw,
     bool replaceByHigherFee,
-    std::int64_t maxTransactionAgeSeconds
+    std::int64_t maxTransactionAgeSeconds,
+    std::size_t maxMempoolSizeBytes
 )
     : m_maxTransactions(maxTransactions),
       m_minimumFeeRaw(minimumFeeRaw),
       m_replaceByHigherFee(replaceByHigherFee),
-      m_maxTransactionAgeSeconds(maxTransactionAgeSeconds) {}
+      m_maxTransactionAgeSeconds(maxTransactionAgeSeconds),
+      m_maxMempoolSizeBytes(maxMempoolSizeBytes) {}
 
 std::size_t MempoolConfig::maxTransactions() const {
     return m_maxTransactions;
@@ -75,10 +78,15 @@ std::int64_t MempoolConfig::maxTransactionAgeSeconds() const {
     return m_maxTransactionAgeSeconds;
 }
 
+std::size_t MempoolConfig::maxMempoolSizeBytes() const {
+    return m_maxMempoolSizeBytes;
+}
+
 bool MempoolConfig::isValid() const {
     return m_maxTransactions > 0 &&
            m_minimumFeeRaw >= 0 &&
-           m_maxTransactionAgeSeconds > 0;
+           m_maxTransactionAgeSeconds > 0 &&
+           m_maxMempoolSizeBytes > 0;
 }
 
 MempoolEntry::MempoolEntry(
@@ -253,7 +261,12 @@ Mempool::Mempool(
 )
     : m_config(config),
       m_entriesById(),
-      m_transactionIdBySenderNonce() {}
+      m_transactionIdBySenderNonce(),
+      m_currentMempoolSizeBytes(0) {}
+
+std::size_t Mempool::currentMempoolSizeBytes() const {
+    return m_currentMempoolSizeBytes;
+}
 
 MempoolAdmissionResult Mempool::admitTransaction(
     const core::Transaction& transaction,
@@ -298,6 +311,52 @@ MempoolAdmissionResult Mempool::admitTransaction(
         );
     }
 
+    std::size_t incomingSize = transaction.serialize().size();
+    if (incomingSize > m_config.maxMempoolSizeBytes()) {
+        return MempoolAdmissionResult::rejected(
+            MempoolAdmissionStatus::CAPACITY_REACHED,
+            "Transaction size exceeds maximum mempool capacity."
+        );
+    }
+
+    // Eviction loop:
+    while (m_currentMempoolSizeBytes + incomingSize > m_config.maxMempoolSizeBytes()) {
+        if (m_entriesById.empty()) {
+            break;
+        }
+
+        std::string lowestFeeTxId;
+        std::int64_t lowestFee = std::numeric_limits<std::int64_t>::max();
+        std::int64_t oldestAge = 0;
+
+        for (const auto& [id, entry] : m_entriesById) {
+            std::int64_t fee = entry.priorityFeeRaw();
+            if (fee < lowestFee) {
+                lowestFee = fee;
+                lowestFeeTxId = id;
+                oldestAge = entry.acceptedAt();
+            } else if (fee == lowestFee) {
+                if (entry.acceptedAt() < oldestAge) {
+                    lowestFeeTxId = id;
+                    oldestAge = entry.acceptedAt();
+                }
+            }
+        }
+
+        if (lowestFeeTxId.empty()) {
+            break;
+        }
+
+        if (transaction.fee().rawUnits() <= lowestFee) {
+            return MempoolAdmissionResult::rejected(
+                MempoolAdmissionStatus::FEE_TOO_LOW,
+                "Mempool is full and incoming transaction fee is too low to trigger eviction."
+            );
+        }
+
+        removeTransaction(lowestFeeTxId);
+    }
+
     const std::string senderNonce =
         senderNonceKey(transaction);
 
@@ -332,6 +391,8 @@ MempoolAdmissionResult Mempool::admitTransaction(
 
         const std::string replacedTransactionId =
             existingTransactionId;
+        
+        m_currentMempoolSizeBytes -= existingEntry->second.transaction().serialize().size();
         removeIndexesForEntry(existingEntry->second);
         m_entriesById.erase(existingEntry);
 
@@ -349,6 +410,7 @@ MempoolAdmissionResult Mempool::admitTransaction(
             transaction.id(),
             replacement
         );
+        m_currentMempoolSizeBytes += incomingSize;
 
         return MempoolAdmissionResult::replaced(
             transaction.id(),
@@ -377,6 +439,7 @@ MempoolAdmissionResult Mempool::admitTransaction(
         transaction.id(),
         entry
     );
+    m_currentMempoolSizeBytes += incomingSize;
 
     return MempoolAdmissionResult::accepted(
         transaction.id()
@@ -412,6 +475,7 @@ bool Mempool::removeTransaction(
         return false;
     }
 
+    m_currentMempoolSizeBytes -= found->second.transaction().serialize().size();
     removeIndexesForEntry(found->second);
     m_entriesById.erase(found);
 
@@ -548,6 +612,7 @@ bool Mempool::isValid(
         return false;
     }
 
+    std::size_t calculatedSize = 0;
     for (const auto& [transactionId, entry] : m_entriesById) {
         if (transactionId != entry.transaction().id()) {
             return false;
@@ -567,6 +632,15 @@ bool Mempool::isValid(
             indexed->second != transactionId) {
             return false;
         }
+        calculatedSize += entry.transaction().serialize().size();
+    }
+
+    if (m_currentMempoolSizeBytes != calculatedSize) {
+        return false;
+    }
+
+    if (m_currentMempoolSizeBytes > m_config.maxMempoolSizeBytes()) {
+        return false;
     }
 
     return true;
