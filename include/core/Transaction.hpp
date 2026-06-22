@@ -81,6 +81,18 @@ public:
      */
     std::string signingPayload() const;
 
+    const std::string& chainId() const;
+
+    /*
+     * Binds a chain identifier to this transaction and recomputes the id.
+     *
+     * Security rule:
+     * All production transactions MUST call withChainId() before signing.
+     * Without a chain id the signing payload is identical across all network
+     * instances, enabling cross-chain replay attacks.
+     */
+    Transaction& withChainId(std::string chainId);
+
     /*
      * Full deterministic serialization.
      *
@@ -123,6 +135,7 @@ private:
     std::uint64_t m_nonce;
     std::int64_t m_timestamp;
     std::vector<std::string> m_inputCoinLotIds;
+    std::string m_chainId;
     crypto::SignatureBundle m_signatureBundle;
     bool m_hasSignatureBundle;
 };

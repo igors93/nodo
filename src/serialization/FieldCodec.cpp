@@ -12,14 +12,29 @@ std::string FieldCodec::extractField(
         throw std::invalid_argument("Field key cannot be empty.");
     }
 
-    const std::string prefix = key + "=";
-    const std::size_t start = serialized.find(prefix);
+    // A key is valid only when preceded by '{' (first field in an object) or
+    // ';' (subsequent fields). Matching key= anywhere inside the string would
+    // allow a value that contains the text ";otherKey=injected" to be returned
+    // for a different field lookup — a key-confusion injection vulnerability.
+    std::size_t keyPos = std::string::npos;
 
-    if (start == std::string::npos) {
+    const std::string withSemi  = ";" + key + "=";
+    const std::string withBrace = "{" + key + "=";
+
+    const std::size_t semiPos  = serialized.find(withSemi);
+    const std::size_t bracePos = serialized.find(withBrace);
+
+    if (semiPos != std::string::npos) {
+        keyPos = semiPos + 1; // skip the ';'
+    } else if (bracePos != std::string::npos) {
+        keyPos = bracePos + 1; // skip the '{'
+    }
+
+    if (keyPos == std::string::npos) {
         throw std::invalid_argument("Missing serialized field: " + key);
     }
 
-    const std::size_t valueStart = start + prefix.size();
+    const std::size_t valueStart = keyPos + key.size() + 1; // skip "key="
     std::size_t valueEnd = serialized.find(';', valueStart);
 
     if (valueEnd == std::string::npos) {

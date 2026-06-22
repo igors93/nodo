@@ -5,6 +5,7 @@
 #include "economics/StakeAccount.hpp"
 #include "utils/Amount.hpp"
 
+#include <set>
 #include <string>
 
 namespace nodo::node {
@@ -101,9 +102,10 @@ private:
  * SlashingExecutor applies a ValidatorPenaltyDecision to a StakeAccount.
  *
  * Idempotency guarantee:
- * The caller must track applied penaltyIds and pass alreadyApplied=true when
- * replaying state.  This executor does not maintain internal state — it is
- * the caller's responsibility to prevent double-application.
+ * The executor tracks all applied penaltyIds internally. Duplicate calls for
+ * the same penaltyId are detected and rejected automatically — callers no
+ * longer need to track applied ids themselves. This eliminates the former
+ * alreadyApplied flag that could be omitted, causing double-slashing.
  *
  * Security principle:
  * Slash amounts are capped at the current bondedAmount to prevent negative
@@ -113,12 +115,20 @@ private:
  */
 class SlashingExecutor {
 public:
-    static SlashingExecutionResult execute(
+    SlashingExecutor() = default;
+
+    SlashingExecutionResult execute(
         const consensus::ValidatorPenaltyDecision& decision,
         const economics::StakeAccount&             currentStake,
-        std::int64_t                               now,
-        bool                                       alreadyApplied = false
+        std::int64_t                               now
     );
+
+    bool isApplied(const std::string& penaltyId) const;
+
+    void reset();
+
+private:
+    std::set<std::string> m_appliedPenaltyIds;
 };
 
 } // namespace nodo::node

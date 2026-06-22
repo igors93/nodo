@@ -1,6 +1,7 @@
 #include "node/StateSnapshotStore.hpp"
 
 #include "core/StateRootCalculator.hpp"
+#include "crypto/hash.h"
 
 #include <filesystem>
 #include <fstream>
@@ -12,6 +13,12 @@
 namespace nodo::node {
 
 namespace {
+
+std::string hashStatePayload(const std::string& serialized) {
+    char output[NODO_HASH_BUFFER_SIZE] = {0};
+    nodo_hash_string(serialized.c_str(), output, sizeof(output));
+    return std::string(output);
+}
 
 bool parseUint64Strict(const std::string& value, std::uint64_t& out) {
     if (value.empty()) {
@@ -62,6 +69,11 @@ bool StateSnapshotStore::save(
             return false;
         }
 
+        // Full-state hash guards against tampering of any field not covered by
+        // the account root (e.g. validator registry jailed/tombstoned flags,
+        // slashed amounts, or applied transaction ids).
+        const std::string fullStateHash = hashStatePayload(serializedState);
+
         const std::filesystem::path parent = m_path.parent_path();
         if (!parent.empty()) {
             std::error_code createError;
@@ -83,6 +95,7 @@ bool StateSnapshotStore::save(
             out << HEADER << "\n"
                 << blockHeight << "\n"
                 << stateRoot << "\n"
+                << fullStateHash << "\n"
                 << serializedState;
 
             if (!out) {
@@ -126,11 +139,14 @@ std::optional<core::State> StateSnapshotStore::load(
         std::string headerLine;
         std::string heightLine;
         std::string storedStateRoot;
+        std::string storedFullStateHash;
         if (!std::getline(in, headerLine)) return std::nullopt;
         if (headerLine != std::string(HEADER)) return std::nullopt;
         if (!std::getline(in, heightLine)) return std::nullopt;
         if (!std::getline(in, storedStateRoot)) return std::nullopt;
         if (storedStateRoot.empty()) return std::nullopt;
+        if (!std::getline(in, storedFullStateHash)) return std::nullopt;
+        if (storedFullStateHash.empty()) return std::nullopt;
 
         std::uint64_t parsedHeight = 0;
         if (!parseUint64Strict(heightLine, parsedHeight)) {
@@ -158,6 +174,13 @@ std::optional<core::State> StateSnapshotStore::load(
                 state.accountStateView()
             );
         if (calculatedRoot.empty() || calculatedRoot != storedStateRoot) {
+            return std::nullopt;
+        }
+
+        // Verify the full-state hash to detect tampering in fields not covered
+        // by the account root (validator registry, economic state, etc.).
+        const std::string calculatedFullHash = hashStatePayload(serializedState.str());
+        if (calculatedFullHash.empty() || calculatedFullHash != storedFullStateHash) {
             return std::nullopt;
         }
 

@@ -2,7 +2,11 @@
 
 #include "serialization/CanonicalHash.hpp"
 
+#include <openssl/rand.h>
+
+#include <array>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace nodo::p2p {
@@ -11,6 +15,34 @@ namespace {
 
 constexpr const char* NONCE_DOMAIN = "NODO_ENCRYPTED_PEER_HANDSHAKE_NONCE_V1";
 constexpr const char* PROOF_DOMAIN = "NODO_ENCRYPTED_PEER_HANDSHAKE_PROOF_V1";
+constexpr std::size_t NONCE_BYTES  = 32;
+
+// Encode raw bytes as lowercase hex.
+std::string bytesToHex(const unsigned char* data, std::size_t len) {
+    static const char* digits = "0123456789abcdef";
+    std::string out;
+    out.reserve(len * 2);
+    for (std::size_t i = 0; i < len; ++i) {
+        out.push_back(digits[(data[i] >> 4) & 0x0f]);
+        out.push_back(digits[data[i] & 0x0f]);
+    }
+    return out;
+}
+
+// Generate a cryptographically random nonce using OpenSSL RAND_bytes.
+// The previous implementation derived the nonce from (nodeId, fingerprint,
+// timestamp) — all public or low-entropy inputs — making it predictable and
+// enabling session-ID collisions. A random nonce provides replay protection
+// that does not depend solely on the shared secret.
+std::string generateRandomNonceHex() {
+    std::array<unsigned char, NONCE_BYTES> buf{};
+    if (RAND_bytes(buf.data(), static_cast<int>(buf.size())) != 1) {
+        throw std::runtime_error(
+            "EncryptedPeerHandshake: RAND_bytes failed for nonce generation."
+        );
+    }
+    return bytesToHex(buf.data(), buf.size());
+}
 
 bool isSafeScalar(const std::string& value, std::size_t maxSize = 256) {
     if (value.empty() || value.size() > maxSize) {
@@ -229,10 +261,12 @@ EncryptedPeerHandshakeHello EncryptedPeerHandshakeManager::createHello(
     const std::string& publicKeyFingerprint,
     std::int64_t now
 ) {
-    const std::string nonceHex = hashText(
-        nodeId + "|" + publicKeyFingerprint + "|" + std::to_string(now),
-        NONCE_DOMAIN
-    );
+    // Use a cryptographically random nonce instead of a deterministic hash of
+    // public inputs. The previous hash(nodeId|fingerprint|timestamp) was
+    // precomputable by any observer who knew these public values, allowing nonce
+    // prediction and session-ID collision between handshakes that occur within
+    // the same wall-clock second.
+    const std::string nonceHex = generateRandomNonceHex();
 
     return EncryptedPeerHandshakeHello(
         nodeId,
@@ -253,11 +287,11 @@ EncryptedPeerHandshakeAccept EncryptedPeerHandshakeManager::createAccept(
         return EncryptedPeerHandshakeAccept();
     }
 
-    const std::string responderNonceHex = hashText(
-        responderNodeId + "|" + responderFingerprint + "|" +
-            hello.nonceHex() + "|" + std::to_string(now),
-        NONCE_DOMAIN
-    );
+    // Responder also uses a random nonce. Although it incorporates the
+    // initiator's nonceHex, the deterministic derivation was still predictable
+    // from public inputs. Independent randomness per side ensures each
+    // handshake side contributes fresh entropy.
+    const std::string responderNonceHex = generateRandomNonceHex();
 
     const std::string sessionId = EncryptedPeerSession::deriveSessionId(
         hello.nodeId(),

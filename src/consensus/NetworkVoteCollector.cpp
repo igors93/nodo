@@ -48,7 +48,11 @@ void NetworkVoteCollector::setCurrentRound(std::uint64_t height, std::uint64_t r
 std::uint64_t NetworkVoteCollector::currentHeight() const { return m_currentHeight; }
 std::uint64_t NetworkVoteCollector::currentRound() const { return m_currentRound; }
 
-VoteCollectResult NetworkVoteCollector::submitNetworkVote(const ValidatorVoteRecord& vote) {
+VoteCollectResult NetworkVoteCollector::submitNetworkVote(
+    const ValidatorVoteRecord& vote,
+    const crypto::CryptoPolicy& policy,
+    const crypto::SignatureProvider& provider
+) {
     if (vote.blockIndex() < m_currentHeight) {
         return VoteCollectResult(
             VoteCollectStatus::REJECTED_STALE_ROUND,
@@ -80,7 +84,7 @@ VoteCollectResult NetworkVoteCollector::submitNetworkVote(const ValidatorVoteRec
         );
     }
 
-    const VotePoolResult poolResult = m_pool.submitVote(vote);
+    const VotePoolResult poolResult = m_pool.submitVote(vote, policy, provider);
     if (poolResult.duplicate()) {
         return VoteCollectResult(
             VoteCollectStatus::REJECTED_REPLAY,

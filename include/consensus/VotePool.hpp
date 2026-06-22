@@ -97,7 +97,11 @@ class VotePool {
 public:
     VotePool();
 
-    VotePoolResult submitVote(const ValidatorVoteRecord& vote);
+    VotePoolResult submitVote(
+        const ValidatorVoteRecord& vote,
+        const crypto::CryptoPolicy& policy,
+        const crypto::SignatureProvider& provider
+    );
 
     std::vector<ValidatorVoteRecord> votesForBlock(
         std::uint64_t blockIndex,
@@ -145,7 +149,11 @@ private:
 
     static std::string validatorHeightRoundKey(const ValidatorVoteRecord& vote);
     static bool sameVoteDecision(const ValidatorVoteRecord& left, const ValidatorVoteRecord& right);
-    static bool isMinimallyValidVote(const ValidatorVoteRecord& vote);
+    static bool isMinimallyValidVote(
+        const ValidatorVoteRecord& vote,
+        const crypto::CryptoPolicy& policy,
+        const crypto::SignatureProvider& provider
+    );
 };
 
 class QuorumAssembly {

@@ -512,10 +512,29 @@ std::string Transaction::signingPayload() const {
     }
 
     oss << ";nonce=" << m_nonce
-        << ";timestamp=" << m_timestamp
-        << "}";
+        << ";timestamp=" << m_timestamp;
+
+    // Chain ID binds the transaction to a specific network, preventing
+    // cross-chain replay attacks. Production transactions MUST set this via
+    // withChainId() before signing.
+    if (!m_chainId.empty()) {
+        oss << ";chainId=" << m_chainId;
+    }
+
+    oss << "}";
 
     return oss.str();
+}
+
+const std::string& Transaction::chainId() const {
+    return m_chainId;
+}
+
+Transaction& Transaction::withChainId(std::string chainId) {
+    m_chainId = std::move(chainId);
+    // Recompute the deterministic id to reflect the new chain binding.
+    m_id = computeTransactionIdFromPayload(signingPayload());
+    return *this;
 }
 
 std::string Transaction::serialize() const {
@@ -595,6 +614,16 @@ bool Transaction::isStructurallyValid(
         if (!m_signatureBundle.isValidForPolicy(policy, context)) {
             return false;
         }
+    }
+
+    // Require a chain id for all non-development contexts to prevent
+    // cross-chain replay attacks. A transaction without a chain id can be
+    // replayed on any network instance that shares the same account addresses.
+    // Dev-mode policy (localnet) is exempt to keep test transactions simple.
+    if (context != crypto::SecurityContext::DEVELOPMENT_ONLY &&
+        !policy.developmentMode() &&
+        m_chainId.empty()) {
+        return false;
     }
 
     return true;

@@ -3,6 +3,8 @@
 
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "consensus/VotePool.hpp"
+#include "crypto/CryptoPolicy.hpp"
+#include "crypto/SignatureProvider.hpp"
 
 #include <cstdint>
 #include <string>
@@ -58,7 +60,11 @@ public:
     std::uint64_t currentHeight() const;
     std::uint64_t currentRound() const;
 
-    VoteCollectResult submitNetworkVote(const ValidatorVoteRecord& vote);
+    VoteCollectResult submitNetworkVote(
+        const ValidatorVoteRecord& vote,
+        const crypto::CryptoPolicy& policy,
+        const crypto::SignatureProvider& provider
+    );
 
     const VotePool& votePool() const;
 

@@ -58,11 +58,13 @@ int main() {
     assert(loaded.has_value());
     assert(loaded->serialize() == state.serialize());
 
-    std::ifstream in(path, std::ios::binary);
-    std::ostringstream contents;
-    contents << in.rdbuf();
-    std::string corrupted =
-        contents.str();
+    std::string corrupted;
+    {
+        std::ifstream in(path, std::ios::binary);
+        std::ostringstream contents;
+        contents << in.rdbuf();
+        corrupted = contents.str();
+    }
     const std::size_t rootLineStart =
         corrupted.find('\n', corrupted.find('\n') + 1) + 1;
     corrupted.replace(rootLineStart, 1, "x");

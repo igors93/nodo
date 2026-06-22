@@ -353,10 +353,10 @@ Signature Bls12381SignatureProvider::aggregateSignatures(
         throw std::invalid_argument("BLS aggregate signature input is invalid.");
     }
 
-    const Signature& first =
-        signatures.front();
+    const Signature& first = signatures.front();
 
-    blst_p2 aggregatePoint;
+    blst_p2 aggregateSigPoint;
+    blst_p1 aggregatePubKeyPoint;
     bool initialized = false;
 
     for (const Signature& signature : signatures) {
@@ -367,37 +367,57 @@ Signature Bls12381SignatureProvider::aggregateSignatures(
             throw std::invalid_argument("BLS aggregate signature contains incompatible signatures.");
         }
 
+        // Aggregate the signature points (G2).
         const std::vector<unsigned char> signatureBytes =
-            requireHexBytes(
-                signature.signatureHex(),
-                BLS_SIGNATURE_SIZE,
-                "BLS signature"
-            );
+            requireHexBytes(signature.signatureHex(), BLS_SIGNATURE_SIZE, "BLS signature");
 
-        blst_p2_affine affine;
-        if (blst_p2_uncompress(&affine, signatureBytes.data()) != BLST_SUCCESS ||
-            !blst_p2_affine_in_g2(&affine) ||
-            blst_p2_affine_is_inf(&affine)) {
-            throw std::invalid_argument("BLS aggregate signature contains an invalid point.");
+        blst_p2_affine sigAffine;
+        if (blst_p2_uncompress(&sigAffine, signatureBytes.data()) != BLST_SUCCESS ||
+            !blst_p2_affine_in_g2(&sigAffine) ||
+            blst_p2_affine_is_inf(&sigAffine)) {
+            throw std::invalid_argument("BLS aggregate signature contains an invalid signature point.");
+        }
+
+        // Aggregate the public key points (G1). The aggregate public key is
+        // required for correct pairing verification of the aggregate signature —
+        // storing only the first signer's key would yield a verification mismatch
+        // and enables identity spoofing in quorum accounting.
+        const std::vector<unsigned char> pubKeyBytes =
+            requireHexBytes(signature.publicKey().keyMaterial(), BLS_PUBLIC_KEY_SIZE, "BLS public key");
+
+        blst_p1_affine pubKeyAffine;
+        if (blst_p1_uncompress(&pubKeyAffine, pubKeyBytes.data()) != BLST_SUCCESS ||
+            !blst_p1_affine_in_g1(&pubKeyAffine)) {
+            throw std::invalid_argument("BLS aggregate signature contains an invalid public key point.");
         }
 
         if (!initialized) {
-            blst_p2_from_affine(&aggregatePoint, &affine);
+            blst_p2_from_affine(&aggregateSigPoint, &sigAffine);
+            blst_p1_from_affine(&aggregatePubKeyPoint, &pubKeyAffine);
             initialized = true;
         } else {
-            blst_p2_add_or_double_affine(&aggregatePoint, &aggregatePoint, &affine);
+            blst_p2_add_or_double_affine(&aggregateSigPoint, &aggregateSigPoint, &sigAffine);
+            blst_p1_add_or_double_affine(&aggregatePubKeyPoint, &aggregatePubKeyPoint, &pubKeyAffine);
         }
     }
 
-    std::array<unsigned char, BLS_SIGNATURE_SIZE> output = {};
-    blst_p2_compress(output.data(), &aggregatePoint);
+    std::array<unsigned char, BLS_SIGNATURE_SIZE> sigOutput = {};
+    blst_p2_compress(sigOutput.data(), &aggregateSigPoint);
+
+    std::array<unsigned char, BLS_PUBLIC_KEY_SIZE> pubKeyOutput = {};
+    blst_p1_compress(pubKeyOutput.data(), &aggregatePubKeyPoint);
+
+    const PublicKey aggregatePublicKey(
+        CryptoAlgorithm::BLS12_381,
+        hexEncode(pubKeyOutput.data(), pubKeyOutput.size())
+    );
 
     return Signature(
         first.suite(),
         first.domain(),
         CryptoAlgorithm::BLS12_381,
-        first.publicKey(),
-        hexEncode(output.data(), output.size()),
+        aggregatePublicKey,
+        hexEncode(sigOutput.data(), sigOutput.size()),
         createdAt
     );
 }

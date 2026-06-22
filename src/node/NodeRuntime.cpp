@@ -2,6 +2,7 @@
 
 #include "consensus/ProposerSchedule.hpp"
 #include "core/GenesisVerifier.hpp"
+#include "crypto/ProtocolCryptoContext.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 
@@ -465,7 +466,15 @@ consensus::ChainForkSummary NodeRuntime::chainSummary() const {
 consensus::VoteCollectResult NodeRuntime::submitConsensusVote(
     const consensus::ValidatorVoteRecord& vote
 ) {
-    return m_consensusRoundManager.submitVote(vote);
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::fromNetworkName(
+            m_config.genesisConfig().networkParameters().networkName()
+        );
+    return m_consensusRoundManager.submitVote(
+        vote,
+        cryptoContext.policy(),
+        cryptoContext.validatorSignatureProvider()
+    );
 }
 
 bool NodeRuntime::advanceConsensusRoundIfTimedOut(

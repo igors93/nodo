@@ -2,6 +2,7 @@
 
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoSuiteId.hpp"
+#include "crypto/ProtocolCryptoContext.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
 #include "crypto/SignatureBundle.hpp"
@@ -61,6 +62,7 @@ nodo::consensus::ValidatorVoteRecord makeVote(
 } // namespace
 
 int main() {
+    const nodo::crypto::ProtocolCryptoContext ctx = nodo::crypto::ProtocolCryptoContext::localnet();
     nodo::consensus::VotePool pool;
 
     const auto vote = makeVote(
@@ -69,7 +71,7 @@ int main() {
         nodo::consensus::ValidatorVoteDecision::APPROVE
     );
 
-    const auto accepted = pool.submitVote(vote);
+    const auto accepted = pool.submitVote(vote, ctx.policy(), ctx.validatorSignatureProvider());
     assert(accepted.accepted());
     assert(pool.totalVoteCount() == 1);
     assert(pool.voteCountForBlock(1, "block-hash-A", 1) == 1);
@@ -87,7 +89,8 @@ int main() {
             "validator-B",
             "block-hash-A",
             nodo::consensus::ValidatorVoteDecision::APPROVE
-        )
+        ),
+        ctx.policy(), ctx.validatorSignatureProvider()
     );
 
     assert(secondAccepted.accepted());
@@ -101,7 +104,7 @@ int main() {
     assert(quorumProgress.requiredVoteCount() == 2);
     assert(quorumProgress.canCertify());
 
-    const auto duplicate = pool.submitVote(vote);
+    const auto duplicate = pool.submitVote(vote, ctx.policy(), ctx.validatorSignatureProvider());
     assert(duplicate.duplicate());
 
     const auto replaySameSlot = pool.submitVote(
@@ -110,7 +113,8 @@ int main() {
             "block-hash-A",
             nodo::consensus::ValidatorVoteDecision::APPROVE,
             1001
-        )
+        ),
+        ctx.policy(), ctx.validatorSignatureProvider()
     );
 
     assert(replaySameSlot.duplicate());
@@ -121,7 +125,8 @@ int main() {
             "validator-A",
             "block-hash-B",
             nodo::consensus::ValidatorVoteDecision::APPROVE
-        )
+        ),
+        ctx.policy(), ctx.validatorSignatureProvider()
     );
 
     assert(conflicting.conflicting());

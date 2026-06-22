@@ -1,6 +1,8 @@
 #include "consensus/ConsensusRoundManager.hpp"
 
 #include "crypto/CryptoAlgorithm.hpp"
+#include "crypto/CryptoPolicy.hpp"
+#include "crypto/ProtocolCryptoContext.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
 #include "crypto/SignatureBundle.hpp"
@@ -61,8 +63,9 @@ void testVoteAcceptedForCurrentRound() {
     nodo::consensus::ConsensusRoundManager mgr;
     mgr.advanceToHeight(5, 1, "validator-a", 1000000);
 
+    const nodo::crypto::ProtocolCryptoContext ctx = nodo::crypto::ProtocolCryptoContext::localnet();
     const auto vote = makeVote("validator-x", 5, 1);
-    const auto result = mgr.submitVote(vote);
+    const auto result = mgr.submitVote(vote, ctx.policy(), ctx.validatorSignatureProvider());
     assert(result.accepted());
 }
 
@@ -70,8 +73,9 @@ void testVoteRejectedForStaleHeight() {
     nodo::consensus::ConsensusRoundManager mgr;
     mgr.advanceToHeight(5, 1, "validator-a", 1000000);
 
+    const nodo::crypto::ProtocolCryptoContext ctx = nodo::crypto::ProtocolCryptoContext::localnet();
     const auto staleVote = makeVote("validator-x", 4, 1);
-    const auto result = mgr.submitVote(staleVote);
+    const auto result = mgr.submitVote(staleVote, ctx.policy(), ctx.validatorSignatureProvider());
     assert(!result.accepted());
     assert(result.status() == nodo::consensus::VoteCollectStatus::REJECTED_STALE_ROUND);
 }
@@ -80,8 +84,9 @@ void testVoteRejectedForStaleRound() {
     nodo::consensus::ConsensusRoundManager mgr;
     mgr.advanceToHeight(5, 3, "validator-a", 1000000);
 
+    const nodo::crypto::ProtocolCryptoContext ctx = nodo::crypto::ProtocolCryptoContext::localnet();
     const auto staleVote = makeVote("validator-x", 5, 2);
-    const auto result = mgr.submitVote(staleVote);
+    const auto result = mgr.submitVote(staleVote, ctx.policy(), ctx.validatorSignatureProvider());
     assert(!result.accepted());
     assert(result.status() == nodo::consensus::VoteCollectStatus::REJECTED_STALE_ROUND);
 }
@@ -90,9 +95,10 @@ void testDuplicateVoteRejectedAsReplay() {
     nodo::consensus::ConsensusRoundManager mgr;
     mgr.advanceToHeight(5, 1, "validator-a", 1000000);
 
+    const nodo::crypto::ProtocolCryptoContext ctx = nodo::crypto::ProtocolCryptoContext::localnet();
     const auto vote = makeVote("validator-x", 5, 1);
-    const auto r1 = mgr.submitVote(vote);
-    const auto r2 = mgr.submitVote(vote);
+    const auto r1 = mgr.submitVote(vote, ctx.policy(), ctx.validatorSignatureProvider());
+    const auto r2 = mgr.submitVote(vote, ctx.policy(), ctx.validatorSignatureProvider());
 
     assert(r1.accepted());
     assert(!r2.accepted());

@@ -135,8 +135,12 @@ VotePool::VotePool()
       m_voteIds(),
       m_conflictingVotes() {}
 
-VotePoolResult VotePool::submitVote(const ValidatorVoteRecord& vote) {
-    if (!isMinimallyValidVote(vote)) {
+VotePoolResult VotePool::submitVote(
+    const ValidatorVoteRecord& vote,
+    const crypto::CryptoPolicy& policy,
+    const crypto::SignatureProvider& provider
+) {
+    if (!isMinimallyValidVote(vote, policy, provider)) {
         return VotePoolResult(VotePoolStatus::INVALID_VOTE, "Vote failed minimal pool validation.");
     }
 
@@ -293,14 +297,30 @@ bool VotePool::sameVoteDecision(const ValidatorVoteRecord& left, const Validator
            left.decision() == right.decision();
 }
 
-bool VotePool::isMinimallyValidVote(const ValidatorVoteRecord& vote) {
-    return !vote.validatorAddress().empty() &&
-           vote.blockIndex() > 0 &&
-           !vote.blockHash().empty() &&
-           !vote.previousHash().empty() &&
-           vote.round() > 0 &&
-           vote.decision() != ValidatorVoteDecision::UNKNOWN &&
-           vote.createdAt() > 0;
+bool VotePool::isMinimallyValidVote(
+    const ValidatorVoteRecord& vote,
+    const crypto::CryptoPolicy& policy,
+    const crypto::SignatureProvider& provider
+) {
+    if (vote.validatorAddress().empty() ||
+        vote.blockIndex() == 0 ||
+        vote.blockHash().empty() ||
+        vote.previousHash().empty() ||
+        vote.round() == 0 ||
+        vote.decision() == ValidatorVoteDecision::UNKNOWN ||
+        vote.createdAt() <= 0) {
+        return false;
+    }
+
+    // Verify the cryptographic signature before admitting the vote into the pool.
+    // This prevents fabricated votes from poisoning the conflict-detection and
+    // quorum-building state with unverified validator identities.
+    // Development mode skips crypto verification so localnet/test nodes can use
+    // deterministic key material without real BLS signatures.
+    if (policy.developmentMode()) {
+        return true;
+    }
+    return vote.verify(policy, provider);
 }
 
 QuorumCertificateBuildResult QuorumAssembly::tryBuildCertificate(

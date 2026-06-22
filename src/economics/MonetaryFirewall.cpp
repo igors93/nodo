@@ -1,5 +1,6 @@
 #include "economics/MonetaryFirewall.hpp"
 
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -184,7 +185,21 @@ MonetaryFirewallResult MonetaryFirewall::validate(
             );
         }
 
-        mintedPerAuth[authId] += mint.amount().rawUnits();
+        // Guard against integer overflow before accumulating. Without this check
+        // an attacker could craft N records whose individual amounts are each
+        // below maxMintAmount but whose sum wraps around int64_t, producing a
+        // negative total that incorrectly passes the limit check below.
+        const std::int64_t prevTotal = mintedPerAuth[authId];
+        const std::int64_t mintRaw   = mint.amount().rawUnits();
+        if (mintRaw > 0 &&
+            prevTotal > std::numeric_limits<std::int64_t>::max() - mintRaw) {
+            return MonetaryFirewallResult::rejected(
+                MonetaryFirewallStatus::MINT_AMOUNT_EXCEEDS_AUTHORIZATION,
+                "MonetaryFirewall: accumulated mint amount would overflow for "
+                "authorizationId='" + authId + "'."
+            );
+        }
+        mintedPerAuth[authId] = prevTotal + mintRaw;
     }
 
     // 6. Reject if total minted under any authorization exceeds maxMintAmount.

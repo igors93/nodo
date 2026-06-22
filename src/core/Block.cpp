@@ -1,12 +1,14 @@
 #include "core/Block.hpp"
 
 #include "core/LedgerRecord.hpp"
+#include "core/MerkleTree.hpp"
 #include "crypto/hash.h"
 
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace nodo::core {
 
@@ -122,19 +124,33 @@ std::string Block::headerPayload() const {
     /*
      * The order of these fields must remain stable.
      * Block hash depends on this exact representation.
+     *
+     * Records are committed via a Merkle root instead of concatenation.
+     * Direct concatenation with a ',' separator created a second-preimage
+     * risk: an address containing ',' could produce an ambiguous serialisation
+     * where two distinct record sets yield the same headerPayload string, and
+     * therefore the same block hash.  MerkleTree::buildRoot hashes each leaf
+     * independently with a domain-separated prefix, eliminating that ambiguity.
      */
+    std::vector<std::string> recordPayloads;
+    recordPayloads.reserve(m_records.size());
+    for (const auto& record : m_records) {
+        recordPayloads.push_back(record.serialize());
+    }
+    const std::string recordsMerkleRoot = MerkleTree::buildRoot(recordPayloads);
+
     oss << "BlockHeader{"
         << "index=" << m_index
         << ";previousHash=" << m_previousHash
         << ";timestamp=" << m_timestamp
+        << ";recordsMerkleRoot=" << recordsMerkleRoot
         << ";records=[";
 
     for (std::size_t i = 0; i < m_records.size(); ++i) {
         if (i > 0) {
             oss << ",";
         }
-
-        oss << m_records[i].serialize();
+        oss << recordPayloads[i];
     }
 
     oss << "]}";

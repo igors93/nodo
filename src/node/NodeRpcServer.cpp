@@ -18,16 +18,27 @@
 #include <cerrno>
 #include <chrono>
 #include <cstring>
-#include <netinet/in.h>
 #include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <sys/socket.h>
 #include <thread>
-#include <unistd.h>
-#include <arpa/inet.h>
+
+#ifdef _WIN32
+#  define WIN32_LEAN_AND_MEAN
+#  include <winsock2.h>
+#  include <ws2tcpip.h>
+   using platform_ssize_t = int;
+   namespace { int close_socket(int fd) { return static_cast<int>(::closesocket(static_cast<SOCKET>(fd))); } }
+#else
+#  include <arpa/inet.h>
+#  include <netinet/in.h>
+#  include <sys/socket.h>
+#  include <unistd.h>
+   using platform_ssize_t = ssize_t;
+   namespace { int close_socket(int fd) { return ::close(fd); } }
+#endif
 
 namespace nodo::node {
 
@@ -71,7 +82,7 @@ bool sendAll(int fd, const std::string& data) {
     std::size_t remaining = data.size();
 
     while (remaining > 0) {
-        const ssize_t sent = ::send(fd, cursor, remaining, 0);
+        const platform_ssize_t sent = ::send(fd, cursor, remaining, 0);
         if (sent <= 0) {
             return false;
         }
@@ -304,27 +315,27 @@ void NodeRpcServer::start() {
     }
 
     int yes = 1;
-    ::setsockopt(m_serverFd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    ::setsockopt(m_serverFd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&yes), sizeof(yes));
 
     struct sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port   = htons(m_port);
     if (::inet_pton(AF_INET, m_bindAddr.c_str(), &addr.sin_addr) <= 0) {
-        ::close(m_serverFd);
+        close_socket(m_serverFd);
         throw std::runtime_error(
             "NodeRpcServer: invalid bind address: " + m_bindAddr
         );
     }
 
     if (::bind(m_serverFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-        ::close(m_serverFd);
+        close_socket(m_serverFd);
         throw std::runtime_error(
             std::string("NodeRpcServer: bind() failed: ") + strerror(errno)
         );
     }
 
     if (::listen(m_serverFd, 16) < 0) {
-        ::close(m_serverFd);
+        close_socket(m_serverFd);
         throw std::runtime_error(
             std::string("NodeRpcServer: listen() failed: ") + strerror(errno)
         );
@@ -337,7 +348,7 @@ void NodeRpcServer::start() {
 void NodeRpcServer::stop() {
     m_running.store(false);
     if (m_serverFd >= 0) {
-        ::close(m_serverFd);
+        close_socket(m_serverFd);
         m_serverFd = -1;
     }
     if (m_thread.joinable()) {
@@ -359,7 +370,7 @@ void NodeRpcServer::runLoop() {
             continue;
         }
         handleClient(clientFd);
-        ::close(clientFd);
+        close_socket(clientFd);
     }
 }
 
@@ -369,7 +380,7 @@ void NodeRpcServer::runLoop() {
 
 void NodeRpcServer::handleClient(int clientFd) {
     char buf[MAX_REQUEST_LEN + 1];
-    ssize_t n = ::recv(clientFd, buf, MAX_REQUEST_LEN, 0);
+    platform_ssize_t n = ::recv(clientFd, buf, MAX_REQUEST_LEN, 0);
     if (n <= 0) return;
     buf[n] = '\0';
 

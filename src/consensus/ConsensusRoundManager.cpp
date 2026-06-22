@@ -75,8 +75,12 @@ bool ConsensusRoundManager::isCurrentRound(
     return m_state.height() == height && m_state.round() == round;
 }
 
-VoteCollectResult ConsensusRoundManager::submitVote(const ValidatorVoteRecord& vote) {
-    return m_voteCollector.submitNetworkVote(vote);
+VoteCollectResult ConsensusRoundManager::submitVote(
+    const ValidatorVoteRecord& vote,
+    const crypto::CryptoPolicy& policy,
+    const crypto::SignatureProvider& provider
+) {
+    return m_voteCollector.submitNetworkVote(vote, policy, provider);
 }
 
 bool ConsensusRoundManager::isTimeoutExpired(std::int64_t now) const {

@@ -3,6 +3,8 @@
 
 #include "consensus/NetworkVoteCollector.hpp"
 #include "consensus/RoundTimeout.hpp"
+#include "crypto/CryptoPolicy.hpp"
+#include "crypto/SignatureProvider.hpp"
 
 #include <cstdint>
 #include <string>
@@ -66,7 +68,11 @@ public:
 
     bool isCurrentRound(std::uint64_t height, std::uint64_t round) const;
 
-    VoteCollectResult submitVote(const ValidatorVoteRecord& vote);
+    VoteCollectResult submitVote(
+        const ValidatorVoteRecord& vote,
+        const crypto::CryptoPolicy& policy,
+        const crypto::SignatureProvider& provider
+    );
 
     bool isTimeoutExpired(std::int64_t now) const;
 

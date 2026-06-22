@@ -225,7 +225,11 @@ PeerHandshakeResult PeerHandshakeManager::validateHello(
             );
         }
 
-        if (!config.genesisId().empty() && peerGenesisId != config.genesisId()) {
+        // config.isValid() (checked above) already guarantees config.genesisId()
+        // is non-empty, so this comparison is always active. The previous guard
+        // (!config.genesisId().empty()) made enforcement opt-in, allowing peers
+        // from foreign chains to complete the handshake on mis-configured nodes.
+        if (peerGenesisId != config.genesisId()) {
             return PeerHandshakeResult(
                 PeerHandshakeStatus::REJECTED,
                 "Peer hello genesis id '" + peerGenesisId +

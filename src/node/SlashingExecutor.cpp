@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <sstream>
+#include <utility>
 
 namespace nodo::node {
 
@@ -132,11 +133,18 @@ std::string SlashingExecutionResult::serialize() const {
     return oss.str();
 }
 
+bool SlashingExecutor::isApplied(const std::string& penaltyId) const {
+    return m_appliedPenaltyIds.count(penaltyId) > 0;
+}
+
+void SlashingExecutor::reset() {
+    m_appliedPenaltyIds.clear();
+}
+
 SlashingExecutionResult SlashingExecutor::execute(
     const consensus::ValidatorPenaltyDecision& decision,
     const economics::StakeAccount&             currentStake,
-    std::int64_t                               now,
-    bool                                       alreadyApplied
+    std::int64_t                               now
 ) {
     if (!decision.isValid()) {
         return SlashingExecutionResult::rejected(
@@ -145,7 +153,9 @@ SlashingExecutionResult SlashingExecutor::execute(
         );
     }
 
-    if (alreadyApplied) {
+    // Internal idempotency guard — the executor itself tracks applied ids so
+    // callers cannot accidentally double-apply by omitting an alreadyApplied flag.
+    if (m_appliedPenaltyIds.count(decision.penaltyId()) > 0) {
         return SlashingExecutionResult::rejected(
             SlashingExecutionStatus::DUPLICATE,
             "Penalty " + decision.penaltyId() + " already applied."
@@ -219,6 +229,7 @@ SlashingExecutionResult SlashingExecutor::execute(
         now
     );
 
+    m_appliedPenaltyIds.insert(decision.penaltyId());
     return SlashingExecutionResult::applied(std::move(updated), std::move(record));
 }
 

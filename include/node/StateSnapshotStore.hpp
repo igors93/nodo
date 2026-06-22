@@ -15,12 +15,14 @@ namespace nodo::node {
  * finalized block so that restarts do not need to replay the full chain.
  *
  * File format:
- * NODO_STATE_SNAPSHOT_V1\n<blockHeight>\n<accountStateRoot>\n<serializedState>
+ * NODO_STATE_SNAPSHOT_V2\n<blockHeight>\n<accountStateRoot>\n<fullStateHash>\n<serializedState>
  *
- * Security: the snapshot is verified by block height, canonical State decoding
- * and account-state-root recomputation. If any check fails, the snapshot is
- * discarded and full rebuild is used. The snapshot is a cache; the chain blocks
- * are always the authoritative source.
+ * Security: the snapshot is verified by block height, canonical State decoding,
+ * account-state-root recomputation, AND a hash of the full serialized state.
+ * The full-state hash ensures that tampered validator registry or economic data
+ * (not covered by the account root) is detected at load time. If any check
+ * fails, the snapshot is discarded and full rebuild is used. The snapshot is a
+ * cache; the chain blocks are always the authoritative source.
  */
 class StateSnapshotStore {
 public:
@@ -46,7 +48,7 @@ public:
 private:
     std::filesystem::path m_path;
 
-    static constexpr const char* HEADER = "NODO_STATE_SNAPSHOT_V1";
+    static constexpr const char* HEADER = "NODO_STATE_SNAPSHOT_V2";
 };
 
 } // namespace nodo::node
