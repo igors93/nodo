@@ -10,28 +10,46 @@ InboundMessagePolicy::InboundMessagePolicy()
     : m_maxPayloadBytes(1024 * 1024),
       m_maxTtlSeconds(120),
       m_maxClockSkewSeconds(30),
-      m_maxMessagesPerPeerWindow(1000) {}
+      m_maxMessagesPerPeerWindow(1000),
+      m_peerWindowSeconds(60) {}
 
 InboundMessagePolicy::InboundMessagePolicy(
     std::size_t maxPayloadBytes,
     std::uint32_t maxTtlSeconds,
     std::int64_t maxClockSkewSeconds,
     std::size_t maxMessagesPerPeerWindow
+) : InboundMessagePolicy(
+        maxPayloadBytes,
+        maxTtlSeconds,
+        maxClockSkewSeconds,
+        maxMessagesPerPeerWindow,
+        maxTtlSeconds
+    ) {}
+
+InboundMessagePolicy::InboundMessagePolicy(
+    std::size_t maxPayloadBytes,
+    std::uint32_t maxTtlSeconds,
+    std::int64_t maxClockSkewSeconds,
+    std::size_t maxMessagesPerPeerWindow,
+    std::uint32_t peerWindowSeconds
 ) : m_maxPayloadBytes(maxPayloadBytes),
     m_maxTtlSeconds(maxTtlSeconds),
     m_maxClockSkewSeconds(maxClockSkewSeconds),
-    m_maxMessagesPerPeerWindow(maxMessagesPerPeerWindow) {}
+    m_maxMessagesPerPeerWindow(maxMessagesPerPeerWindow),
+    m_peerWindowSeconds(peerWindowSeconds) {}
 
 std::size_t InboundMessagePolicy::maxPayloadBytes() const { return m_maxPayloadBytes; }
 std::uint32_t InboundMessagePolicy::maxTtlSeconds() const { return m_maxTtlSeconds; }
 std::int64_t InboundMessagePolicy::maxClockSkewSeconds() const { return m_maxClockSkewSeconds; }
 std::size_t InboundMessagePolicy::maxMessagesPerPeerWindow() const { return m_maxMessagesPerPeerWindow; }
+std::uint32_t InboundMessagePolicy::peerWindowSeconds() const { return m_peerWindowSeconds; }
 
 bool InboundMessagePolicy::isValid() const {
     return m_maxPayloadBytes > 0 &&
            m_maxTtlSeconds > 0 &&
            m_maxClockSkewSeconds >= 0 &&
-           m_maxMessagesPerPeerWindow > 0;
+           m_maxMessagesPerPeerWindow > 0 &&
+           m_peerWindowSeconds > 0;
 }
 
 std::string inboundMessageStatusToString(InboundMessageStatus status) {
@@ -120,7 +138,7 @@ InboundMessageResult InboundMessageValidator::validate(
     if (peerWindow.windowStartedAt <= 0 ||
         now < peerWindow.windowStartedAt ||
         now - peerWindow.windowStartedAt >
-            static_cast<std::int64_t>(m_policy.maxTtlSeconds())) {
+            static_cast<std::int64_t>(m_policy.peerWindowSeconds())) {
         peerWindow.windowStartedAt = now;
         peerWindow.count = 0;
     }
@@ -177,7 +195,7 @@ void InboundMessageValidator::pruneExpiredState(std::int64_t now) {
         if (window.windowStartedAt <= 0 ||
             now < window.windowStartedAt ||
             now - window.windowStartedAt >
-                static_cast<std::int64_t>(m_policy.maxTtlSeconds())) {
+                static_cast<std::int64_t>(m_policy.peerWindowSeconds())) {
             iterator = m_messagesByPeerInWindow.erase(iterator);
         } else {
             ++iterator;

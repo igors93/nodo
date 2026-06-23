@@ -737,10 +737,17 @@ std::optional<TransportMessage> TcpTransport::poll(
     for (auto iterator = m_connectionsByPeer.begin();
          iterator != m_connectionsByPeer.end();) {
         const SocketHandle fd = iterator->second;
-        auto message = pollFd(fd, false);
+        PollFdResult result = pollFd(fd, false);
 
-        if (message.has_value()) {
-            return message;
+        if (result.status == PollFdResult::Status::MESSAGE) {
+            return result.message;
+        }
+
+        if (result.status == PollFdResult::Status::CLOSED) {
+            SocketHandle closedFd = fd;
+            closeSocket(closedFd);
+            iterator = m_connectionsByPeer.erase(iterator);
+            continue;
         }
 
         ++iterator;
@@ -749,12 +756,19 @@ std::optional<TransportMessage> TcpTransport::poll(
     for (auto iterator = m_unidentifiedInboundFds.begin();
          iterator != m_unidentifiedInboundFds.end();) {
         const SocketHandle fd = *iterator;
-        auto message = pollFd(fd, true);
+        PollFdResult result = pollFd(fd, true);
 
-        if (message.has_value()) {
-            rememberConnection(message->fromNodeId(), fd);
+        if (result.status == PollFdResult::Status::MESSAGE) {
+            rememberConnection(result.message->fromNodeId(), fd);
             iterator = m_unidentifiedInboundFds.erase(iterator);
-            return message;
+            return result.message;
+        }
+
+        if (result.status == PollFdResult::Status::CLOSED) {
+            SocketHandle closedFd = fd;
+            closeSocket(closedFd);
+            iterator = m_unidentifiedInboundFds.erase(iterator);
+            continue;
         }
 
         ++iterator;
@@ -830,19 +844,42 @@ TransportResult TcpTransport::acceptAvailableConnections() {
     );
 }
 
-std::optional<TransportMessage> TcpTransport::pollFd(
+TcpTransport::PollFdResult TcpTransport::PollFdResult::none() {
+    return PollFdResult{};
+}
+
+TcpTransport::PollFdResult TcpTransport::PollFdResult::closed() {
+    PollFdResult result;
+    result.status = Status::CLOSED;
+    return result;
+}
+
+TcpTransport::PollFdResult TcpTransport::PollFdResult::received(
+    TransportMessage message
+) {
+    PollFdResult result;
+    result.status = Status::MESSAGE;
+    result.message = std::move(message);
+    return result;
+}
+
+TcpTransport::PollFdResult TcpTransport::pollFd(
     SocketHandle fd,
     bool unidentified
 ) {
     (void)unidentified;
 
     if (fd == INVALID_FD || !socketHasReadableData(fd)) {
-        return std::nullopt;
+        return PollFdResult::none();
     }
 
     IoctlAvailableBytes availableBytes = 0;
-    if (socketAvailableBytes(fd, availableBytes) != 0 || availableBytes < 4) {
-        return std::nullopt;
+    if (socketAvailableBytes(fd, availableBytes) != 0) {
+        if (isInterruptedSocketError() || isWouldBlockSocketError()) {
+            return PollFdResult::none();
+        }
+
+        return PollFdResult::closed();
     }
 
     unsigned char header[4] = {0, 0, 0, 0};
@@ -852,34 +889,39 @@ std::optional<TransportMessage> TcpTransport::pollFd(
         static_cast<int>(sizeof(header)),
         MSG_PEEK
     );
-    if (peeked <= 0) {
-        return std::nullopt;
+    if (peeked == 0) {
+        return PollFdResult::closed();
+    }
+
+    if (peeked < 0) {
+        if (isInterruptedSocketError() || isWouldBlockSocketError()) {
+            return PollFdResult::none();
+        }
+
+        return PollFdResult::closed();
     }
 
     if (peeked < static_cast<int>(sizeof(header))) {
-        return std::nullopt;
+        return PollFdResult::none();
     }
 
     const std::uint32_t frameSize = decodeU32BigEndian(header);
     if (frameSize == 0 || frameSize > MAX_WIRE_FRAME_BYTES) {
-        closeFd(fd);
-        return std::nullopt;
+        return PollFdResult::closed();
     }
 
     if (availableBytes < static_cast<IoctlAvailableBytes>(sizeof(header) + frameSize)) {
-        return std::nullopt;
+        return PollFdResult::none();
     }
 
     unsigned char consumedHeader[4] = {0, 0, 0, 0};
     if (!readAll(fd, consumedHeader, sizeof(consumedHeader))) {
-        closeFd(fd);
-        return std::nullopt;
+        return PollFdResult::closed();
     }
 
     std::vector<unsigned char> frame(frameSize);
     if (!readAll(fd, frame.data(), frame.size())) {
-        closeFd(fd);
-        return std::nullopt;
+        return PollFdResult::closed();
     }
 
     try {
@@ -887,13 +929,12 @@ std::optional<TransportMessage> TcpTransport::pollFd(
             TcpTransportFrameCodec::decodeTransportMessage(frame);
 
         if (message.toNodeId() != m_localNodeId) {
-            return std::nullopt;
+            return PollFdResult::none();
         }
 
-        return message;
+        return PollFdResult::received(std::move(message));
     } catch (...) {
-        closeFd(fd);
-        return std::nullopt;
+        return PollFdResult::closed();
     }
 }
 

@@ -126,10 +126,21 @@ TransactionAdmissionResult validateTransactionAgainstRuntimeState(
         }
 
         if (pending.nonce() == transaction.nonce()) {
-            return TransactionAdmissionResult::rejected(
-                TransactionAdmissionStatus::CONFLICTING_NONCE,
-                "A transaction with the same sender nonce is already pending."
-            );
+            if (!mempool.replaceByHigherFee()) {
+                return TransactionAdmissionResult::rejected(
+                    TransactionAdmissionStatus::CONFLICTING_NONCE,
+                    "A transaction with the same sender nonce is already pending."
+                );
+            }
+
+            if (transaction.fee().rawUnits() <= pending.fee().rawUnits()) {
+                return TransactionAdmissionResult::rejected(
+                    TransactionAdmissionStatus::CONFLICTING_NONCE,
+                    "Replacement transaction must pay a strictly higher fee."
+                );
+            }
+
+            continue;
         }
 
         if (pending.nonce() <= sender.nonce()) {

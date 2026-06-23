@@ -177,6 +177,7 @@ public:
 
     std::size_t size() const;
     bool empty() const;
+    bool replaceByHigherFee() const;
 
     bool isValid(
         const crypto::CryptoPolicy& policy,

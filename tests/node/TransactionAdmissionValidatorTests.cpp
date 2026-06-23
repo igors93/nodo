@@ -426,6 +426,146 @@ void testAcceptsRuntimeQueuedNonceWhenReservedBalanceIsSufficient() {
     clean(path);
 }
 
+void testAcceptsRuntimeReplacementWhenHigherFeeIsAllowed() {
+    const std::filesystem::path path =
+        tempPath();
+
+    clean(path);
+
+    const crypto::KeyStoreLoadResult key =
+        createAndLoadKey(
+            path,
+            "local-user",
+            "admission-test-seed"
+        );
+
+    const crypto::Ed25519SignatureProvider provider;
+    const core::Transaction pending =
+        buildTransaction(
+            key.keyPair(),
+            provider,
+            100,
+            1,
+            kTimestamp + 20
+        );
+    const core::Transaction replacement =
+        buildTransaction(
+            key.keyPair(),
+            provider,
+            200,
+            1,
+            kTimestamp + 21
+        );
+
+    mempool::Mempool mempool;
+    requireCondition(
+        mempool.admitTransaction(
+            pending,
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            kTimestamp + 22
+        ).accepted(),
+        "Pending replacement fixture should enter mempool."
+    );
+
+    const node::TransactionAdmissionResult result =
+        node::TransactionAdmissionValidator::validateRuntimeSubmission(
+            replacement,
+            key.metadata(),
+            localnetWithMinimumFee(100),
+            accountStateFor(
+                key.metadata().address(),
+                1200,
+                0
+            ),
+            mempool,
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            provider
+        );
+
+    requireCondition(
+        result.accepted(),
+        "Runtime admission should allow higher-fee replacement when mempool policy allows it."
+    );
+
+    clean(path);
+}
+
+void testRejectsRuntimeReplacementWhenPolicyDisallowsIt() {
+    const std::filesystem::path path =
+        tempPath();
+
+    clean(path);
+
+    const crypto::KeyStoreLoadResult key =
+        createAndLoadKey(
+            path,
+            "local-user",
+            "admission-test-seed"
+        );
+
+    const crypto::Ed25519SignatureProvider provider;
+    const core::Transaction pending =
+        buildTransaction(
+            key.keyPair(),
+            provider,
+            100,
+            1,
+            kTimestamp + 20
+        );
+    const core::Transaction replacement =
+        buildTransaction(
+            key.keyPair(),
+            provider,
+            200,
+            1,
+            kTimestamp + 21
+        );
+
+    mempool::Mempool mempool(
+        mempool::MempoolConfig(
+            5000,
+            0,
+            false,
+            60 * 60
+        )
+    );
+    requireCondition(
+        mempool.admitTransaction(
+            pending,
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            kTimestamp + 22
+        ).accepted(),
+        "Pending no-replacement fixture should enter mempool."
+    );
+
+    const node::TransactionAdmissionResult result =
+        node::TransactionAdmissionValidator::validateRuntimeSubmission(
+            replacement,
+            key.metadata(),
+            localnetWithMinimumFee(100),
+            accountStateFor(
+                key.metadata().address(),
+                1200,
+                0
+            ),
+            mempool,
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            provider
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == node::TransactionAdmissionStatus::CONFLICTING_NONCE,
+        "Runtime admission should reject same-nonce replacement when mempool policy disallows it."
+    );
+
+    clean(path);
+}
+
 } // namespace
 
 int main() {
@@ -436,6 +576,8 @@ int main() {
         testAcceptsRuntimeSubmissionWithSufficientBalance();
         testRejectsRuntimeSubmissionWithInsufficientBalance();
         testAcceptsRuntimeQueuedNonceWhenReservedBalanceIsSufficient();
+        testAcceptsRuntimeReplacementWhenHigherFeeIsAllowed();
+        testRejectsRuntimeReplacementWhenPolicyDisallowsIt();
 
         std::cout << "Nodo transaction admission validator tests passed.\n";
         return 0;

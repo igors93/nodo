@@ -596,6 +596,10 @@ bool Mempool::empty() const {
     return m_entriesById.empty();
 }
 
+bool Mempool::replaceByHigherFee() const {
+    return m_config.replaceByHigherFee();
+}
+
 bool Mempool::isValid(
     const crypto::CryptoPolicy& policy,
     crypto::SecurityContext context

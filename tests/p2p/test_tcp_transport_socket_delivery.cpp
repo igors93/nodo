@@ -24,6 +24,23 @@ std::optional<p2p::TransportMessage> waitForMessage(
     return std::nullopt;
 }
 
+bool waitForDisconnect(
+    p2p::TcpTransport& transport,
+    const std::string& localNodeId,
+    const std::string& remoteNodeId
+) {
+    for (int attempt = 0; attempt < 500; ++attempt) {
+        (void)transport.poll(localNodeId);
+        if (!transport.connected(localNodeId, remoteNodeId)) {
+            return true;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    return false;
+}
+
 int main() {
     p2p::TcpTransport nodeA;
     p2p::TcpTransport nodeB;
@@ -94,6 +111,9 @@ int main() {
     assert(replyReceived->fromNodeId() == "node-b");
     assert(replyReceived->toNodeId() == "node-a");
     assert(replyReceived->envelope().payload() == "hello-node-a");
+
+    nodeA.closeAll();
+    assert(waitForDisconnect(nodeB, "node-b", "node-a"));
 
     std::cout << "tcp socket delivery tests passed\n";
     return 0;

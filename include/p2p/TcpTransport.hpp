@@ -94,8 +94,23 @@ private:
     std::map<std::string, SocketHandle> m_connectionsByPeer;
     std::vector<SocketHandle> m_unidentifiedInboundFds;
 
+    struct PollFdResult {
+        enum class Status {
+            NONE,
+            MESSAGE,
+            CLOSED
+        };
+
+        Status status{Status::NONE};
+        std::optional<TransportMessage> message{};
+
+        static PollFdResult none();
+        static PollFdResult closed();
+        static PollFdResult received(TransportMessage message);
+    };
+
     TransportResult acceptAvailableConnections();
-    std::optional<TransportMessage> pollFd(
+    PollFdResult pollFd(
         SocketHandle fd,
         bool unidentified
     );

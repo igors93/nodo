@@ -21,10 +21,19 @@ public:
         std::size_t maxMessagesPerPeerWindow
     );
 
+    InboundMessagePolicy(
+        std::size_t maxPayloadBytes,
+        std::uint32_t maxTtlSeconds,
+        std::int64_t maxClockSkewSeconds,
+        std::size_t maxMessagesPerPeerWindow,
+        std::uint32_t peerWindowSeconds
+    );
+
     std::size_t maxPayloadBytes() const;
     std::uint32_t maxTtlSeconds() const;
     std::int64_t maxClockSkewSeconds() const;
     std::size_t maxMessagesPerPeerWindow() const;
+    std::uint32_t peerWindowSeconds() const;
 
     bool isValid() const;
 
@@ -33,6 +42,7 @@ private:
     std::uint32_t m_maxTtlSeconds;
     std::int64_t m_maxClockSkewSeconds;
     std::size_t m_maxMessagesPerPeerWindow;
+    std::uint32_t m_peerWindowSeconds;
 };
 
 enum class InboundMessageStatus {
