@@ -32,10 +32,31 @@ bool StakingManager::initiateUnbond(const std::string& validatorAddress, uint64_
 void StakingManager::processUnbondingQueue(uint64_t currentBlock) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = std::remove_if(m_unbondingQueue.begin(), m_unbondingQueue.end(),
-        [currentBlock](const UnbondingRequest& req) {
-            return currentBlock >= req.unlockBlock;
+        [this, currentBlock](const UnbondingRequest& req) {
+            if (currentBlock >= req.unlockBlock) {
+                m_unlockedBalances[req.validatorAddress] += req.amount;
+                return true;
+            }
+            return false;
         });
     m_unbondingQueue.erase(it, m_unbondingQueue.end());
+}
+
+uint64_t StakingManager::getUnlockedBalance(const std::string& validatorAddress) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_unlockedBalances.find(validatorAddress);
+    return (it != m_unlockedBalances.end()) ? it->second : 0;
+}
+
+uint64_t StakingManager::claimUnlocked(const std::string& validatorAddress) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_unlockedBalances.find(validatorAddress);
+    if (it == m_unlockedBalances.end()) {
+        return 0;
+    }
+    const uint64_t amount = it->second;
+    m_unlockedBalances.erase(it);
+    return amount;
 }
 
 void StakingManager::jailValidator(const std::string& validatorAddress, uint64_t jailDurationBlocks, uint64_t currentBlock) {

@@ -26,6 +26,9 @@ public:
     bool initiateUnbond(const std::string& validatorAddress, uint64_t amount, uint64_t currentBlock);
     void processUnbondingQueue(uint64_t currentBlock);
 
+    uint64_t getUnlockedBalance(const std::string& validatorAddress) const;
+    uint64_t claimUnlocked(const std::string& validatorAddress);
+
     void jailValidator(const std::string& validatorAddress, uint64_t jailDurationBlocks, uint64_t currentBlock);
     void slashValidator(const std::string& validatorAddress, double slashFraction, uint64_t currentBlock);
     void unjailValidator(const std::string& validatorAddress, uint64_t currentBlock);
@@ -39,6 +42,7 @@ private:
     std::map<std::string, uint64_t> m_bondedStakes;
     std::map<std::string, uint64_t> m_jailedUntilBlock;
     std::vector<UnbondingRequest> m_unbondingQueue;
+    std::map<std::string, uint64_t> m_unlockedBalances;
     mutable std::mutex m_mutex;
 };
 

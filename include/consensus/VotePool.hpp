@@ -147,6 +147,9 @@ private:
     std::map<std::string, ValidatorVoteRecord> m_voteByValidatorHeightRound;
     std::set<std::string> m_voteIds;
     std::vector<ValidatorVoteRecord> m_conflictingVotes;
+    std::map<std::string, std::size_t> m_conflictingVoteCounts;
+
+    static constexpr std::size_t kMaxConflictingVotesPerKey = 10;
 
     static std::string validatorHeightRoundKey(const ValidatorVoteRecord& vote);
     static bool sameVoteDecision(const ValidatorVoteRecord& left, const ValidatorVoteRecord& right);

@@ -37,6 +37,8 @@ public:
     std::size_t size() const;
     std::size_t countForValidator(const std::string& validatorAddress) const;
 
+    void pruneOlderThan(std::int64_t cutoffTimestamp);
+
     bool isValid() const;
     std::string serialize() const;
 

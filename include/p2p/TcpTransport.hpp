@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -93,6 +94,7 @@ private:
     std::map<std::string, PeerEndpoint> m_peerEndpoints;
     std::map<std::string, SocketHandle> m_connectionsByPeer;
     std::vector<SocketHandle> m_unidentifiedInboundFds;
+    mutable std::mutex m_sendMutex;
 
     struct PollFdResult {
         enum class Status {

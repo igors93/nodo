@@ -230,13 +230,13 @@ bool StoredKeyMetadata::isValid() const {
         }
     }
 
-    bool nodeIdentValid = NodeIdentity(
+    bool nodeIdentValid = LocalNodeKeyIdentity(
         m_keyId,
         m_publicKey,
         m_address
     ).isValid();
     if (!nodeIdentValid) {
-        std::cout << "DEBUG isValid: failed NodeIdentity.isValid" << std::endl;
+        std::cout << "DEBUG isValid: failed LocalNodeKeyIdentity.isValid" << std::endl;
     }
     return nodeIdentValid;
 }

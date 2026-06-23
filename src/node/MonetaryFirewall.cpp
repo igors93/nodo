@@ -38,8 +38,12 @@ std::int64_t basisPointAmount(
     const std::int64_t wholePart =
         whole * static_cast<std::int64_t>(basisPoints);
 
-    const std::int64_t remainderPart =
-        (remainder * static_cast<std::int64_t>(basisPoints)) / 10000;
+    const std::int64_t bpSigned = static_cast<std::int64_t>(basisPoints);
+    const std::int64_t remainderProduct =
+        (bpSigned > 0 && remainder > std::numeric_limits<std::int64_t>::max() / bpSigned)
+            ? std::numeric_limits<std::int64_t>::max()
+            : remainder * bpSigned;
+    const std::int64_t remainderPart = remainderProduct / 10000;
 
     if (wholePart > std::numeric_limits<std::int64_t>::max() - remainderPart) {
         return std::numeric_limits<std::int64_t>::max();

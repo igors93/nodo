@@ -403,7 +403,7 @@ MempoolAdmissionResult Mempool::admitTransaction(
     while (projectedSize + incomingSize > m_config.maxMempoolSizeBytes()) {
         std::string lowestFeeTxId;
         std::int64_t lowestFee = std::numeric_limits<std::int64_t>::max();
-        std::int64_t oldestAcceptedAt = 0;
+        std::int64_t oldestAcceptedAt = std::numeric_limits<std::int64_t>::max();
         std::size_t lowestFeeTxSize = 0;
 
         for (const auto& [id, entry] : m_entriesById) {

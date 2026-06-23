@@ -94,6 +94,16 @@ std::size_t EvidencePool::countForValidator(
     return evidenceForValidator(validatorAddress).size();
 }
 
+void EvidencePool::pruneOlderThan(std::int64_t cutoffTimestamp) {
+    for (auto it = m_evidenceById.begin(); it != m_evidenceById.end(); ) {
+        if (it->second.createdAt() < cutoffTimestamp) {
+            it = m_evidenceById.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 bool EvidencePool::isValid() const {
     for (const auto& entry : m_evidenceById) {
         if (entry.first != entry.second.evidenceId() ||

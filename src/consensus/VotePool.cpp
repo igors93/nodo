@@ -163,7 +163,13 @@ VotePoolResult VotePool::submitVote(
             return VotePoolResult(VotePoolStatus::DUPLICATE, "Validator vote already exists in pool.");
         }
 
+        const auto countIt = m_conflictingVoteCounts.find(validatorKey);
+        const std::size_t count = (countIt != m_conflictingVoteCounts.end()) ? countIt->second : 0;
+        if (count >= kMaxConflictingVotesPerKey) {
+            return VotePoolResult(VotePoolStatus::CONFLICTING_VOTE, "Validator submitted a conflicting vote.");
+        }
         m_conflictingVotes.push_back(vote);
+        ++m_conflictingVoteCounts[validatorKey];
         return VotePoolResult(VotePoolStatus::CONFLICTING_VOTE, "Validator submitted a conflicting vote.");
     }
 

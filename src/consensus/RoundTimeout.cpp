@@ -1,5 +1,8 @@
 #include "consensus/RoundTimeout.hpp"
 
+#include <limits>
+#include <stdexcept>
+
 namespace nodo::consensus {
 
 RoundTimeout::RoundTimeout()
@@ -29,7 +32,11 @@ bool RoundTimeout::hasExpired(std::int64_t now) const {
 }
 
 std::int64_t RoundTimeout::expiresAt() const {
-    return m_startedAt + static_cast<std::int64_t>(m_timeoutSeconds);
+    const auto delta = static_cast<std::int64_t>(m_timeoutSeconds);
+    if (delta > 0 && m_startedAt > std::numeric_limits<std::int64_t>::max() - delta) {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+    return m_startedAt + delta;
 }
 
 bool RoundTimeout::isValid() const {

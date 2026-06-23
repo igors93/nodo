@@ -143,9 +143,12 @@ bool ParallelBlockSync::onHeadersReceived(
             }
         }
 
+        const bool isNew = m_pendingHeaders.find(height) == m_pendingHeaders.end();
         m_pendingHeaders[height] = serializedHeader;
         m_verifiedHeaders[height] = block.hash();
-        ++m_progress.headersDownloaded;
+        if (isNew) {
+            ++m_progress.headersDownloaded;
+        }
         ++height;
     }
 
@@ -173,8 +176,11 @@ bool ParallelBlockSync::onBodyReceived(
         return false;
     }
 
+    const bool isNew = m_pendingBodies.find(height) == m_pendingBodies.end();
     m_pendingBodies[height] = serializedBlock;
-    ++m_progress.bodiesDownloaded;
+    if (isNew) {
+        ++m_progress.bodiesDownloaded;
+    }
 
     updatePhase();
     return true;

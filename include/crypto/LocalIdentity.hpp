@@ -7,11 +7,11 @@
 
 namespace nodo::crypto {
 
-class NodeIdentity {
+class LocalNodeKeyIdentity {
 public:
-    NodeIdentity();
+    LocalNodeKeyIdentity();
 
-    NodeIdentity(
+    LocalNodeKeyIdentity(
         std::string keyId,
         PublicKey publicKey,
         std::string address
@@ -28,11 +28,11 @@ private:
     std::string m_address;
 };
 
-class ValidatorIdentity {
+class LocalValidatorKeyIdentity {
 public:
-    ValidatorIdentity();
+    LocalValidatorKeyIdentity();
 
-    ValidatorIdentity(
+    LocalValidatorKeyIdentity(
         std::string keyId,
         PublicKey publicKey,
         std::string validatorAddress

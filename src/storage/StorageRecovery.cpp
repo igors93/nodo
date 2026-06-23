@@ -65,6 +65,7 @@ StorageRecoveryResult StorageRecovery::quarantineTemporaryWrites(
 
     std::filesystem::create_directories(quarantine);
 
+    std::vector<std::filesystem::path> candidates;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(rootDirectory)) {
         if (!entry.is_regular_file() ||
             !AtomicFile::isTemporaryWriteFile(entry.path())) {
@@ -75,14 +76,18 @@ StorageRecoveryResult StorageRecovery::quarantineTemporaryWrites(
             continue;
         }
 
+        candidates.push_back(entry.path());
+    }
+
+    for (const auto& sourcePath : candidates) {
         std::filesystem::path target =
-            quarantine / entry.path().filename();
+            quarantine / sourcePath.filename();
 
         std::size_t suffix = 0;
         while (std::filesystem::exists(target)) {
             ++suffix;
             target = quarantine / (
-                entry.path().filename().string()
+                sourcePath.filename().string()
                 + "."
                 + std::to_string(suffix)
             );
@@ -90,7 +95,7 @@ StorageRecoveryResult StorageRecovery::quarantineTemporaryWrites(
 
         std::error_code renameError;
         std::filesystem::rename(
-            entry.path(),
+            sourcePath,
             target,
             renameError
         );

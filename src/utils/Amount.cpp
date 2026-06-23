@@ -8,7 +8,11 @@ namespace nodo::utils {
 
 Amount::Amount() : m_rawUnits(0) {}
 
-Amount::Amount(std::int64_t rawUnits) : m_rawUnits(rawUnits) {}
+Amount::Amount(std::int64_t rawUnits) : m_rawUnits(rawUnits) {
+    if (rawUnits < 0) {
+        throw std::invalid_argument("Amount cannot be created from negative raw units.");
+    }
+}
 
 Amount Amount::fromNodo(std::int64_t wholeNodo) {
     if (wholeNodo < 0) {

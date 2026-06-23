@@ -266,7 +266,6 @@ void PeerReconnectionPolicy::recordFailure(
     if (it == m_states.end()) return;
 
     auto& s = it->second;
-    ++s.attempts;
     s.nextRetryAt = now + backoffDelay(s.attempts);
 }
 

@@ -666,6 +666,8 @@ bool TcpTransport::connected(
 TransportResult TcpTransport::send(
     const TransportMessage& message
 ) {
+    std::lock_guard<std::mutex> sendLock(m_sendMutex);
+
     if (!message.isValid()) {
         return TransportResult(
             TransportStatus::INVALID_MESSAGE,
@@ -759,8 +761,15 @@ std::optional<TransportMessage> TcpTransport::poll(
         PollFdResult result = pollFd(fd, true);
 
         if (result.status == PollFdResult::Status::MESSAGE) {
-            rememberConnection(result.message->fromNodeId(), fd);
+            const std::string fromId = result.message->fromNodeId();
             iterator = m_unidentifiedInboundFds.erase(iterator);
+            if (isSafeNodeId(fromId)) {
+                rememberConnection(fromId, fd);
+            } else {
+                // nodeId is unsafe: close the socket to prevent fd leak.
+                SocketHandle closeFd = fd;
+                closeSocket(closeFd);
+            }
             return result.message;
         }
 

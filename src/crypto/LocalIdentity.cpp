@@ -7,12 +7,12 @@
 
 namespace nodo::crypto {
 
-NodeIdentity::NodeIdentity()
+LocalNodeKeyIdentity::LocalNodeKeyIdentity()
     : m_keyId(""),
       m_publicKey(),
       m_address("") {}
 
-NodeIdentity::NodeIdentity(
+LocalNodeKeyIdentity::LocalNodeKeyIdentity(
     std::string keyId,
     PublicKey publicKey,
     std::string address
@@ -21,19 +21,19 @@ NodeIdentity::NodeIdentity(
       m_publicKey(std::move(publicKey)),
       m_address(std::move(address)) {}
 
-const std::string& NodeIdentity::keyId() const {
+const std::string& LocalNodeKeyIdentity::keyId() const {
     return m_keyId;
 }
 
-const PublicKey& NodeIdentity::publicKey() const {
+const PublicKey& LocalNodeKeyIdentity::publicKey() const {
     return m_publicKey;
 }
 
-const std::string& NodeIdentity::address() const {
+const std::string& LocalNodeKeyIdentity::address() const {
     return m_address;
 }
 
-bool NodeIdentity::isValid() const {
+bool LocalNodeKeyIdentity::isValid() const {
     return !m_keyId.empty() &&
            m_publicKey.isValid() &&
            Address::fromString(m_address).isValid() &&
@@ -43,12 +43,12 @@ bool NodeIdentity::isValid() const {
            );
 }
 
-ValidatorIdentity::ValidatorIdentity()
+LocalValidatorKeyIdentity::LocalValidatorKeyIdentity()
     : m_keyId(""),
       m_publicKey(),
       m_validatorAddress("") {}
 
-ValidatorIdentity::ValidatorIdentity(
+LocalValidatorKeyIdentity::LocalValidatorKeyIdentity(
     std::string keyId,
     PublicKey publicKey,
     std::string validatorAddress
@@ -57,19 +57,19 @@ ValidatorIdentity::ValidatorIdentity(
       m_publicKey(std::move(publicKey)),
       m_validatorAddress(std::move(validatorAddress)) {}
 
-const std::string& ValidatorIdentity::keyId() const {
+const std::string& LocalValidatorKeyIdentity::keyId() const {
     return m_keyId;
 }
 
-const PublicKey& ValidatorIdentity::publicKey() const {
+const PublicKey& LocalValidatorKeyIdentity::publicKey() const {
     return m_publicKey;
 }
 
-const std::string& ValidatorIdentity::validatorAddress() const {
+const std::string& LocalValidatorKeyIdentity::validatorAddress() const {
     return m_validatorAddress;
 }
 
-bool ValidatorIdentity::isValid() const {
+bool LocalValidatorKeyIdentity::isValid() const {
     return !m_keyId.empty() &&
            m_publicKey.isValid() &&
            Address::fromString(m_validatorAddress).isValid() &&

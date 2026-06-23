@@ -380,6 +380,15 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
             continue;
         }
 
+        // Reject envelopes whose declared sender does not match the authenticated
+        // transport sender. Without this check, any connected peer can claim to be
+        // another node id and bypass per-sender rate limits.
+        if (message->envelope().senderNodeId() != message->fromNodeId()) {
+            recordInvalidMessage(message->fromNodeId(), "Envelope sender id does not match transport sender.", now);
+            ++rejected;
+            continue;
+        }
+
         const InboundMessageResult validation =
             m_inboundValidator.validate(
                 message->envelope(),
@@ -463,13 +472,33 @@ void GossipMesh::recordInvalidMessage(
 
     // Coalescing: skip if evidence of this type was already recorded for this
     // peer within the last 60 seconds to prevent evidence DoS.
+    constexpr std::int64_t kCoalescingWindowSeconds = 60;
+    constexpr std::size_t kMaxCoalescingEntries = 4096;
     const std::pair<std::string, std::string> coalescingKey = {nodeId, ruleId};
     const auto lastIt = m_lastEvidenceAt.find(coalescingKey);
-    constexpr std::int64_t kCoalescingWindowSeconds = 60;
     if (lastIt != m_lastEvidenceAt.end() &&
         now - lastIt->second < kCoalescingWindowSeconds) {
         return;
     }
+
+    // Evict stale entries when the table grows too large to prevent unbounded
+    // memory growth over long node uptimes.
+    if (m_lastEvidenceAt.size() >= kMaxCoalescingEntries) {
+        const std::int64_t cutoff = now - kCoalescingWindowSeconds;
+        auto it = m_lastEvidenceAt.begin();
+        while (it != m_lastEvidenceAt.end()) {
+            if (it->second < cutoff) {
+                it = m_lastEvidenceAt.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        // If still over limit after TTL eviction, remove oldest entries.
+        while (m_lastEvidenceAt.size() >= kMaxCoalescingEntries) {
+            m_lastEvidenceAt.erase(m_lastEvidenceAt.begin());
+        }
+    }
+
     m_lastEvidenceAt[coalescingKey] = now;
 
     // Build a stable payload digest from the reason string.

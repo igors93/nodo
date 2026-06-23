@@ -2,6 +2,7 @@
 
 #include "crypto/hash.h"
 
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -808,7 +809,11 @@ std::int64_t ValidatorPenaltyLedger::totalSlashAmountForValidator(
 ) const {
     std::int64_t total = 0;
     for (const auto& decision : decisionsForValidator(validatorAddress)) {
-        total += decision.slashAmountRawUnits();
+        const std::int64_t slash = decision.slashAmountRawUnits();
+        if (slash > 0 && total > std::numeric_limits<std::int64_t>::max() - slash) {
+            return std::numeric_limits<std::int64_t>::max();
+        }
+        total += slash;
     }
     return total;
 }

@@ -10,15 +10,14 @@ std::uint64_t SecurityWeight::calculateForCoinLot(
         return 0;
     }
 
-    const std::uint64_t amountInNodo =
-        static_cast<std::uint64_t>(
-            coinLot.amount().rawUnits() / utils::Amount::UNITS_PER_NODO
-        );
-
     const std::uint64_t multiplier =
         lockDurationMultiplier(currentBlock, coinLot.lockedUntilBlock());
 
-    return amountInNodo * multiplier;
+    // Multiply before dividing to preserve sub-1-NODO precision.
+    return static_cast<std::uint64_t>(
+        (coinLot.amount().rawUnits() * static_cast<std::int64_t>(multiplier))
+        / utils::Amount::UNITS_PER_NODO
+    );
 }
 
 std::uint64_t SecurityWeight::lockDurationMultiplier(

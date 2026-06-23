@@ -28,11 +28,16 @@ DiscoveryPeerInfo DiscoveryPeerInfo::deserialize(const std::string& serialized) 
         return DiscoveryPeerInfo{};
     }
     try {
+        const unsigned long tcp = std::stoul(parts[2]);
+        const unsigned long udp = std::stoul(parts[3]);
+        if (tcp == 0 || tcp > 65535 || udp == 0 || udp > 65535) {
+            return DiscoveryPeerInfo{};
+        }
         return DiscoveryPeerInfo{
             parts[0],
             parts[1],
-            static_cast<std::uint16_t>(std::stoul(parts[2])),
-            static_cast<std::uint16_t>(std::stoul(parts[3])),
+            static_cast<std::uint16_t>(tcp),
+            static_cast<std::uint16_t>(udp),
             0
         };
     } catch (...) {
@@ -241,8 +246,14 @@ void DiscoveryService::handleReceive(const asio::error_code& ec, std::size_t byt
 
             std::string type = fields["type"];
             std::string senderId = fields["senderId"];
-            std::uint16_t senderUdpPort = fields.count("senderUdpPort") ? static_cast<std::uint16_t>(std::stoul(fields["senderUdpPort"])) : 0;
-            std::uint16_t senderTcpPort = fields.count("senderTcpPort") ? static_cast<std::uint16_t>(std::stoul(fields["senderTcpPort"])) : 0;
+            auto parsePort = [](const std::string& s) -> std::uint16_t {
+                try {
+                    const unsigned long v = std::stoul(s);
+                    return (v > 0 && v <= 65535) ? static_cast<std::uint16_t>(v) : 0;
+                } catch (...) { return 0; }
+            };
+            std::uint16_t senderUdpPort = fields.count("senderUdpPort") ? parsePort(fields["senderUdpPort"]) : 0;
+            std::uint16_t senderTcpPort = fields.count("senderTcpPort") ? parsePort(fields["senderTcpPort"]) : 0;
 
             if (!senderId.empty() && senderId != m_localNodeId && senderUdpPort > 0) {
                 // Update routing table with sender info
