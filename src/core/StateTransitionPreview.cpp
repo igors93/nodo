@@ -1,5 +1,6 @@
 #include "core/StateTransitionPreview.hpp"
 
+#include "core/MerkleTree.hpp"
 #include "core/StateRootCalculator.hpp"
 #include "core/Transaction.hpp"
 
@@ -44,7 +45,9 @@ StateTransitionPreviewResult::StateTransitionPreviewResult()
       m_touchedAccounts(),
       m_transactionIds(),
       m_resultingAccounts(),
-      m_stateRoot("") {}
+      m_stateRoot(""),
+      m_receipts(),
+      m_receiptsRoot("") {}
 
 StateTransitionPreviewResult StateTransitionPreviewResult::valid(
     std::size_t processedTransactionCount,
@@ -52,7 +55,9 @@ StateTransitionPreviewResult StateTransitionPreviewResult::valid(
     std::vector<std::string> touchedAccounts,
     std::vector<std::string> transactionIds,
     std::vector<AccountState> resultingAccounts,
-    std::string stateRoot
+    std::string stateRoot,
+    std::vector<TransactionReceipt> receipts,
+    std::string receiptsRoot
 ) {
     StateTransitionPreviewResult result;
     result.m_status = StateTransitionPreviewStatus::VALID;
@@ -63,6 +68,8 @@ StateTransitionPreviewResult StateTransitionPreviewResult::valid(
     result.m_transactionIds = std::move(transactionIds);
     result.m_resultingAccounts = std::move(resultingAccounts);
     result.m_stateRoot = std::move(stateRoot);
+    result.m_receipts = std::move(receipts);
+    result.m_receiptsRoot = std::move(receiptsRoot);
     return result;
 }
 
@@ -114,6 +121,14 @@ const std::string& StateTransitionPreviewResult::stateRoot() const {
     return m_stateRoot;
 }
 
+const std::vector<TransactionReceipt>& StateTransitionPreviewResult::receipts() const {
+    return m_receipts;
+}
+
+const std::string& StateTransitionPreviewResult::receiptsRoot() const {
+    return m_receiptsRoot;
+}
+
 std::string StateTransitionPreviewResult::serialize() const {
     std::ostringstream oss;
 
@@ -126,6 +141,8 @@ std::string StateTransitionPreviewResult::serialize() const {
         << ";transactionCount=" << m_transactionIds.size()
         << ";resultingAccountCount=" << m_resultingAccounts.size()
         << ";stateRoot=" << m_stateRoot
+        << ";receiptCount=" << m_receipts.size()
+        << ";receiptsRoot=" << m_receiptsRoot
         << "}";
 
     return oss.str();
@@ -167,6 +184,7 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
     std::set<std::string> transactionIds;
     std::set<std::string> touchedAccountSet;
     std::vector<std::string> orderedTransactionIds;
+    std::vector<TransactionReceipt> receipts;
     AccountStateView workingAccountState =
         context.accountStateView();
     utils::Amount totalFee;
@@ -340,6 +358,21 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
 
                     touchedAccountSet.insert(context.feeRecipientAddress());
                 }
+
+                receipts.push_back(
+                    TransactionReceipt::applied(
+                        transaction.id(),
+                        transaction.fromAddress(),
+                        transaction.toAddress(),
+                        transaction.amount(),
+                        transaction.fee(),
+                        sender.nonce(),
+                        transaction.nonce(),
+                        StateRootCalculator::calculateAccountStateRoot(
+                            workingAccountState
+                        )
+                    )
+                );
             }
 
             totalFee = totalFee + transaction.fee();
@@ -356,6 +389,19 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
         }
     }
 
+    std::vector<std::string> receiptPayloads;
+    receiptPayloads.reserve(receipts.size());
+    for (const TransactionReceipt& receipt : receipts) {
+        if (!receipt.isValid()) {
+            return StateTransitionPreviewResult::rejected(
+                StateTransitionPreviewStatus::INVALID_TRANSACTION,
+                "State transition generated an invalid transaction receipt.",
+                processedTransactionCount
+            );
+        }
+        receiptPayloads.push_back(receipt.serialize());
+    }
+
     return StateTransitionPreviewResult::valid(
         processedTransactionCount,
         totalFee,
@@ -367,7 +413,9 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
         workingAccountState.accounts(),
         StateRootCalculator::calculateAccountStateRoot(
             workingAccountState
-        )
+        ),
+        std::move(receipts),
+        MerkleTree::buildRoot(receiptPayloads)
     );
 }
 

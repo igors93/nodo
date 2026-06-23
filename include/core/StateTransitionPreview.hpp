@@ -4,6 +4,7 @@
 #include "core/AccountState.hpp"
 #include "core/Block.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
+#include "core/TransactionReceipt.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstddef>
@@ -38,7 +39,9 @@ public:
         std::vector<std::string> touchedAccounts,
         std::vector<std::string> transactionIds,
         std::vector<AccountState> resultingAccounts,
-        std::string stateRoot
+        std::string stateRoot,
+        std::vector<TransactionReceipt> receipts,
+        std::string receiptsRoot
     );
 
     static StateTransitionPreviewResult rejected(
@@ -56,6 +59,8 @@ public:
     const std::vector<std::string>& transactionIds() const;
     const std::vector<AccountState>& resultingAccounts() const;
     const std::string& stateRoot() const;
+    const std::vector<TransactionReceipt>& receipts() const;
+    const std::string& receiptsRoot() const;
 
     std::string serialize() const;
 
@@ -68,6 +73,8 @@ private:
     std::vector<std::string> m_transactionIds;
     std::vector<AccountState> m_resultingAccounts;
     std::string m_stateRoot;
+    std::vector<TransactionReceipt> m_receipts;
+    std::string m_receiptsRoot;
 };
 
 class StateTransitionPreview {

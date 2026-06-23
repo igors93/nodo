@@ -929,7 +929,7 @@ TcpTransport::PollFdResult TcpTransport::pollFd(
             TcpTransportFrameCodec::decodeTransportMessage(frame);
 
         if (message.toNodeId() != m_localNodeId) {
-            return PollFdResult::none();
+            return PollFdResult::closed();
         }
 
         return PollFdResult::received(std::move(message));

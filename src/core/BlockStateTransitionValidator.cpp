@@ -1,6 +1,6 @@
 #include "core/BlockStateTransitionValidator.hpp"
 
-#include "core/StateTransitionPreview.hpp"
+#include "core/StateTransitionEngine.hpp"
 
 #include <sstream>
 #include <utility>
@@ -36,7 +36,8 @@ BlockValidationResult::BlockValidationResult()
     : m_status(BlockValidationStatus::INVALID_BLOCK),
       m_reason("Uninitialized block validation result."),
       m_stateRoot(""),
-      m_totalFee() {}
+      m_totalFee(),
+      m_receiptsRoot("") {}
 
 BlockValidationResult BlockValidationResult::valid() {
     return valid(
@@ -56,13 +57,15 @@ BlockValidationResult BlockValidationResult::valid(
 
 BlockValidationResult BlockValidationResult::valid(
     std::string stateRoot,
-    utils::Amount totalFee
+    utils::Amount totalFee,
+    std::string receiptsRoot
 ) {
     BlockValidationResult result;
     result.m_status = BlockValidationStatus::VALID;
     result.m_reason = "";
     result.m_stateRoot = std::move(stateRoot);
     result.m_totalFee = totalFee;
+    result.m_receiptsRoot = std::move(receiptsRoot);
     return result;
 }
 
@@ -92,6 +95,10 @@ utils::Amount BlockValidationResult::totalFee() const {
     return m_totalFee;
 }
 
+const std::string& BlockValidationResult::receiptsRoot() const {
+    return m_receiptsRoot;
+}
+
 bool BlockValidationResult::accepted() const {
     return m_status == BlockValidationStatus::VALID;
 }
@@ -104,6 +111,7 @@ std::string BlockValidationResult::serialize() const {
         << ";reason=" << m_reason
         << ";stateRoot=" << m_stateRoot
         << ";totalFeeRawUnits=" << m_totalFee.rawUnits()
+        << ";receiptsRoot=" << m_receiptsRoot
         << "}";
 
     return oss.str();
@@ -171,7 +179,7 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
     }
 
     const StateTransitionPreviewResult preview =
-        StateTransitionPreview::previewBlock(
+        StateTransitionEngine::executeBlock(
             candidateBlock,
             context
         );
@@ -221,7 +229,8 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
 
     return BlockValidationResult::valid(
         preview.stateRoot(),
-        preview.totalFee()
+        preview.totalFee(),
+        preview.receiptsRoot()
     );
 }
 

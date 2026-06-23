@@ -38,7 +38,8 @@ public:
 
     static BlockValidationResult valid(
         std::string stateRoot,
-        utils::Amount totalFee
+        utils::Amount totalFee,
+        std::string receiptsRoot = ""
     );
 
     static BlockValidationResult rejected(
@@ -50,6 +51,7 @@ public:
     const std::string& reason() const;
     const std::string& stateRoot() const;
     utils::Amount totalFee() const;
+    const std::string& receiptsRoot() const;
     bool accepted() const;
 
     std::string serialize() const;
@@ -59,6 +61,7 @@ private:
     std::string m_reason;
     std::string m_stateRoot;
     utils::Amount m_totalFee;
+    std::string m_receiptsRoot;
 };
 
 /*

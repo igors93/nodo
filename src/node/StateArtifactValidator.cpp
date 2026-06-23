@@ -1,6 +1,6 @@
 #include "node/StateArtifactValidator.hpp"
 
-#include "core/StateTransitionPreview.hpp"
+#include "core/StateTransitionEngine.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 
 #include <exception>
@@ -24,7 +24,7 @@ ArtifactValidationResult StateArtifactValidator::validate(
             );
 
         core::StateTransitionPreviewResult preview =
-            core::StateTransitionPreview::previewBlock(
+            core::StateTransitionEngine::executeBlock(
                 artifact.block(),
                 previewContext
             );

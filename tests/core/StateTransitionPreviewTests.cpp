@@ -1,5 +1,6 @@
 #include "core/Block.hpp"
 #include "core/LedgerRecord.hpp"
+#include "core/MerkleTree.hpp"
 #include "core/StateTransitionPreview.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
 #include "core/Transaction.hpp"
@@ -220,6 +221,15 @@ void testValidPreviewAppliesEconomicState() {
         result.processedTransactionCount() == 1 &&
         result.totalFee().rawUnits() == 10 &&
         !result.stateRoot().empty() &&
+        result.receipts().size() == 1 &&
+        result.receipts()[0].isValid() &&
+        result.receipts()[0].applied() &&
+        result.receipts()[0].senderNonceBefore() == 0 &&
+        result.receipts()[0].senderNonceAfter() == 1 &&
+        result.receipts()[0].stateRootAfter() == result.stateRoot() &&
+        result.receiptsRoot() == core::MerkleTree::buildRoot(
+            {result.receipts()[0].serialize()}
+        ) &&
         sender.balance().rawUnits() == 890 &&
         sender.nonce() == 1 &&
         recipient.balance().rawUnits() == 100 &&
