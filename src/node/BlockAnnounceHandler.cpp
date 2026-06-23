@@ -2,6 +2,7 @@
 
 #include "core/Block.hpp"
 #include "p2p/NetworkEnvelope.hpp"
+#include "serialization/BlockCodec.hpp"
 
 #include <optional>
 #include <sstream>
@@ -11,7 +12,11 @@ namespace nodo::node {
 namespace {
 
 std::optional<core::Block> decodeBlock(const std::string& payload) {
-    return core::Block::deserialize(payload);
+    try {
+        return serialization::BlockCodec::deserialize(payload);
+    } catch (...) {
+        return std::nullopt;
+    }
 }
 
 bool blockAlreadyKnown(
@@ -81,7 +86,7 @@ BlockAnnounceResult BlockAnnounceHandler::processEnvelope(
             BlockAnnounceStatus::DECODE_FAILED,
             0,
             "",
-            "Block::deserialize is not yet implemented; cannot decode BLOCK_ANNOUNCE payload."
+            "BLOCK_ANNOUNCE payload failed strict block decoding."
         };
     }
 

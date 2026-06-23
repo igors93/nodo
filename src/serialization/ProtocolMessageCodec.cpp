@@ -1,11 +1,13 @@
 #include "serialization/ProtocolMessageCodec.hpp"
 
+#include "serialization/BlockCodec.hpp"
 #include "serialization/CanonicalHash.hpp"
 #include "serialization/CanonicalReader.hpp"
 #include "serialization/CanonicalWriter.hpp"
 
 #include <optional>
 #include <stdexcept>
+#include <utility>
 
 namespace nodo::serialization {
 
@@ -288,12 +290,11 @@ std::vector<core::Block> ProtocolMessageCodec::decodeBlockList(
 
     for (std::uint32_t index = 0; index < blockCount; ++index) {
         const std::string serializedBlock = reader.readString();
-        const std::optional<core::Block> decoded =
-            core::Block::deserialize(serializedBlock);
-        if (!decoded.has_value() || !decoded->isValid()) {
+        core::Block decoded = BlockCodec::deserialize(serializedBlock);
+        if (!decoded.isValid()) {
             throw std::runtime_error("Canonical block list contains invalid block.");
         }
-        blocks.push_back(decoded.value());
+        blocks.push_back(std::move(decoded));
     }
 
     reader.requireFullyConsumed();

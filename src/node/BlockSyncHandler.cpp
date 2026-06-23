@@ -4,6 +4,7 @@
 #include "crypto/Hex.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "p2p/NetworkEnvelope.hpp"
+#include "serialization/BlockCodec.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
 
 #include <algorithm>
@@ -167,7 +168,11 @@ ParsedSyncRequest parseSyncRequest(const std::string& payload) {
 }
 
 std::optional<core::Block> tryDeserializeBlock(const std::string& payload) {
-    return core::Block::deserialize(payload);
+    try {
+        return serialization::BlockCodec::deserialize(payload);
+    } catch (...) {
+        return std::nullopt;
+    }
 }
 
 } // namespace

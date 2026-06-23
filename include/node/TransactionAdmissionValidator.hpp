@@ -83,6 +83,16 @@ public:
         crypto::SecurityContext context,
         const crypto::SignatureProvider& provider
     );
+
+    static TransactionAdmissionResult validateNetworkSubmission(
+        const core::Transaction& transaction,
+        const config::NetworkParameters& networkParameters,
+        const core::AccountStateView& accountStateView,
+        const mempool::Mempool& mempool,
+        const crypto::CryptoPolicy& policy,
+        crypto::SecurityContext context,
+        const crypto::SignatureProvider& provider
+    );
 };
 
 } // namespace nodo::node

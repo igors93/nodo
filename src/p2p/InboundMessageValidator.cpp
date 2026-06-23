@@ -1,6 +1,7 @@
 #include "p2p/InboundMessageValidator.hpp"
 
 #include <cstdlib>
+#include <limits>
 #include <utility>
 
 namespace nodo::p2p {
@@ -107,19 +108,42 @@ InboundMessageResult InboundMessageValidator::validate(
         return InboundMessageResult(InboundMessageStatus::CLOCK_SKEW, "Message timestamp is too far in the future.");
     }
 
+    pruneExpiredState(now);
+
     if (m_seenMessageIds.find(envelope.messageId()) != m_seenMessageIds.end()) {
         return InboundMessageResult(InboundMessageStatus::DUPLICATE_MESSAGE, "Duplicate message id.");
     }
 
-    const std::size_t peerCount =
+    PeerWindowCounter& peerWindow =
         m_messagesByPeerInWindow[envelope.senderNodeId()];
 
-    if (peerCount >= m_policy.maxMessagesPerPeerWindow()) {
+    if (peerWindow.windowStartedAt <= 0 ||
+        now < peerWindow.windowStartedAt ||
+        now - peerWindow.windowStartedAt >
+            static_cast<std::int64_t>(m_policy.maxTtlSeconds())) {
+        peerWindow.windowStartedAt = now;
+        peerWindow.count = 0;
+    }
+
+    if (peerWindow.count >= m_policy.maxMessagesPerPeerWindow()) {
         return InboundMessageResult(InboundMessageStatus::RATE_LIMITED, "Peer exceeded message window policy.");
     }
 
-    m_seenMessageIds.insert(envelope.messageId());
-    m_messagesByPeerInWindow[envelope.senderNodeId()] = peerCount + 1;
+    const std::int64_t ttlSeconds =
+        static_cast<std::int64_t>(envelope.ttlSeconds());
+    const std::int64_t ttlWithSkew =
+        m_policy.maxClockSkewSeconds() >
+                std::numeric_limits<std::int64_t>::max() - ttlSeconds
+            ? std::numeric_limits<std::int64_t>::max()
+            : ttlSeconds + m_policy.maxClockSkewSeconds();
+    const std::int64_t expiresAt =
+        envelope.createdAt() >
+                std::numeric_limits<std::int64_t>::max() - ttlWithSkew
+            ? std::numeric_limits<std::int64_t>::max()
+            : envelope.createdAt() + ttlWithSkew;
+
+    m_seenMessageIds[envelope.messageId()] = expiresAt;
+    ++peerWindow.count;
 
     return InboundMessageResult(InboundMessageStatus::ACCEPTED, "Inbound message accepted.");
 }
@@ -130,7 +154,35 @@ std::size_t InboundMessageValidator::seenMessageCount() const {
 
 std::size_t InboundMessageValidator::peerWindowCount(const std::string& senderNodeId) const {
     const auto found = m_messagesByPeerInWindow.find(senderNodeId);
-    return found == m_messagesByPeerInWindow.end() ? 0 : found->second;
+    return found == m_messagesByPeerInWindow.end() ? 0 : found->second.count;
+}
+
+void InboundMessageValidator::pruneExpiredState(std::int64_t now) {
+    if (now <= 0) {
+        return;
+    }
+
+    for (auto iterator = m_seenMessageIds.begin();
+         iterator != m_seenMessageIds.end();) {
+        if (iterator->second <= now) {
+            iterator = m_seenMessageIds.erase(iterator);
+        } else {
+            ++iterator;
+        }
+    }
+
+    for (auto iterator = m_messagesByPeerInWindow.begin();
+         iterator != m_messagesByPeerInWindow.end();) {
+        const PeerWindowCounter& window = iterator->second;
+        if (window.windowStartedAt <= 0 ||
+            now < window.windowStartedAt ||
+            now - window.windowStartedAt >
+                static_cast<std::int64_t>(m_policy.maxTtlSeconds())) {
+            iterator = m_messagesByPeerInWindow.erase(iterator);
+        } else {
+            ++iterator;
+        }
+    }
 }
 
 } // namespace nodo::p2p

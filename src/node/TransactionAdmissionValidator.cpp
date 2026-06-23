@@ -69,6 +69,119 @@ utils::Amount transactionDebit(
     return transaction.amount() + transaction.fee();
 }
 
+TransactionAdmissionResult validateTransactionAgainstRuntimeState(
+    const core::Transaction& transaction,
+    const core::AccountStateView& accountStateView,
+    const mempool::Mempool& mempool
+) {
+    if (!accountStateView.isValid()) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::INVALID_TRANSACTION,
+            "Current account state is invalid."
+        );
+    }
+
+    if (mempool.contains(transaction.id())) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::DUPLICATE_TRANSACTION,
+            "Transaction already exists in mempool."
+        );
+    }
+
+    if (!accountStateView.hasAccount(transaction.fromAddress())) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::INVALID_TRANSACTION,
+            "Transaction sender account does not exist in current state."
+        );
+    }
+
+    const core::AccountState sender =
+        accountStateView.accountOrDefault(transaction.fromAddress());
+
+    if (sender.nonce() == std::numeric_limits<std::uint64_t>::max()) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::OLD_NONCE,
+            "Current sender nonce cannot advance without overflow."
+        );
+    }
+
+    if (transaction.nonce() <= sender.nonce()) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::OLD_NONCE,
+            "Transaction nonce is older than current account state."
+        );
+    }
+
+    utils::Amount reservedByPendingSenderTransactions =
+        utils::Amount::fromRawUnits(0);
+
+    const std::vector<core::Transaction> pendingTransactions =
+        mempool.transactionsForBlock(
+            mempool.size()
+        );
+
+    for (const core::Transaction& pending : pendingTransactions) {
+        if (pending.fromAddress() != transaction.fromAddress()) {
+            continue;
+        }
+
+        if (pending.nonce() == transaction.nonce()) {
+            return TransactionAdmissionResult::rejected(
+                TransactionAdmissionStatus::CONFLICTING_NONCE,
+                "A transaction with the same sender nonce is already pending."
+            );
+        }
+
+        if (pending.nonce() <= sender.nonce()) {
+            return TransactionAdmissionResult::rejected(
+                TransactionAdmissionStatus::OLD_NONCE,
+                "A pending sender transaction has already-expired nonce."
+            );
+        }
+
+        try {
+            reservedByPendingSenderTransactions =
+                reservedByPendingSenderTransactions +
+                transactionDebit(pending);
+        } catch (const std::exception& error) {
+            return TransactionAdmissionResult::rejected(
+                TransactionAdmissionStatus::INVALID_TRANSACTION,
+                std::string("Pending sender debit is invalid: ") + error.what()
+            );
+        }
+    }
+
+    const TransactionAdmissionResult balance =
+        rejectIfSenderCannotPay(
+            transaction,
+            sender
+        );
+
+    if (!balance.accepted()) {
+        return balance;
+    }
+
+    try {
+        const utils::Amount totalReserved =
+            reservedByPendingSenderTransactions +
+            transactionDebit(transaction);
+
+        if (sender.balance() < totalReserved) {
+            return TransactionAdmissionResult::rejected(
+                TransactionAdmissionStatus::INSUFFICIENT_BALANCE,
+                "Sender balance cannot cover all queued pending transactions."
+            );
+        }
+    } catch (const std::exception& error) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::INVALID_TRANSACTION,
+            std::string("Queued sender debit is invalid: ") + error.what()
+        );
+    }
+
+    return TransactionAdmissionResult::acceptedResult();
+}
+
 } // namespace
 
 std::string transactionAdmissionStatusToString(
@@ -260,112 +373,73 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateRuntimeSubmiss
         return local;
     }
 
-    if (!accountStateView.isValid()) {
+    return validateTransactionAgainstRuntimeState(
+        transaction,
+        accountStateView,
+        mempool
+    );
+}
+
+TransactionAdmissionResult TransactionAdmissionValidator::validateNetworkSubmission(
+    const core::Transaction& transaction,
+    const config::NetworkParameters& networkParameters,
+    const core::AccountStateView& accountStateView,
+    const mempool::Mempool& mempool,
+    const crypto::CryptoPolicy& policy,
+    crypto::SecurityContext context,
+    const crypto::SignatureProvider& provider
+) {
+    if (!networkParameters.isValid()) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::INVALID_NETWORK,
+            "Network parameters are invalid."
+        );
+    }
+
+    if (!transaction.isStructurallyValid(
+            policy,
+            context
+        )) {
         return TransactionAdmissionResult::rejected(
             TransactionAdmissionStatus::INVALID_TRANSACTION,
-            "Current account state is invalid."
+            "Transaction structure is invalid."
         );
     }
 
-    if (mempool.contains(transaction.id())) {
+    const std::uint64_t minimumFee =
+        networkParameters.minimumFeeRawUnits();
+
+    if (minimumFee > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
         return TransactionAdmissionResult::rejected(
-            TransactionAdmissionStatus::DUPLICATE_TRANSACTION,
-            "Transaction already exists in mempool."
+            TransactionAdmissionStatus::INVALID_NETWORK,
+            "Network minimum fee exceeds supported Amount range."
         );
     }
 
-    if (!accountStateView.hasAccount(transaction.fromAddress())) {
+    if (transaction.fee().rawUnits() < static_cast<std::int64_t>(minimumFee)) {
         return TransactionAdmissionResult::rejected(
-            TransactionAdmissionStatus::INVALID_TRANSACTION,
-            "Transaction sender account does not exist in current state."
+            TransactionAdmissionStatus::BELOW_MINIMUM_FEE,
+            "Transaction fee is below the network minimum fee."
         );
     }
 
-    const core::AccountState sender =
-        accountStateView.accountOrDefault(transaction.fromAddress());
-
-    if (sender.nonce() == std::numeric_limits<std::uint64_t>::max()) {
+    if (!transaction.signatureBundle().verifyForPolicy(
+            transaction.signingPayload(),
+            policy,
+            context,
+            provider
+        )) {
         return TransactionAdmissionResult::rejected(
-            TransactionAdmissionStatus::OLD_NONCE,
-            "Current sender nonce cannot advance without overflow."
+            TransactionAdmissionStatus::INVALID_SIGNATURE,
+            "Transaction signature verification failed."
         );
     }
 
-    if (transaction.nonce() <= sender.nonce()) {
-        return TransactionAdmissionResult::rejected(
-            TransactionAdmissionStatus::OLD_NONCE,
-            "Transaction nonce is older than current account state."
-        );
-    }
-
-    utils::Amount reservedByPendingSenderTransactions =
-        utils::Amount::fromRawUnits(0);
-
-    const std::vector<core::Transaction> pendingTransactions =
-        mempool.transactionsForBlock(
-            mempool.size()
-        );
-
-    for (const core::Transaction& pending : pendingTransactions) {
-        if (pending.fromAddress() != transaction.fromAddress()) {
-            continue;
-        }
-
-        if (pending.nonce() == transaction.nonce()) {
-            return TransactionAdmissionResult::rejected(
-                TransactionAdmissionStatus::CONFLICTING_NONCE,
-                "A transaction with the same sender nonce is already pending."
-            );
-        }
-
-        if (pending.nonce() <= sender.nonce()) {
-            return TransactionAdmissionResult::rejected(
-                TransactionAdmissionStatus::OLD_NONCE,
-                "A pending sender transaction has already-expired nonce."
-            );
-        }
-
-        try {
-            reservedByPendingSenderTransactions =
-                reservedByPendingSenderTransactions +
-                transactionDebit(pending);
-        } catch (const std::exception& error) {
-            return TransactionAdmissionResult::rejected(
-                TransactionAdmissionStatus::INVALID_TRANSACTION,
-                std::string("Pending sender debit is invalid: ") + error.what()
-            );
-        }
-    }
-
-    const TransactionAdmissionResult balance =
-        rejectIfSenderCannotPay(
-            transaction,
-            sender
-        );
-
-    if (!balance.accepted()) {
-        return balance;
-    }
-
-    try {
-        const utils::Amount totalReserved =
-            reservedByPendingSenderTransactions +
-            transactionDebit(transaction);
-
-        if (sender.balance() < totalReserved) {
-            return TransactionAdmissionResult::rejected(
-                TransactionAdmissionStatus::INSUFFICIENT_BALANCE,
-                "Sender balance cannot cover all queued pending transactions."
-            );
-        }
-    } catch (const std::exception& error) {
-        return TransactionAdmissionResult::rejected(
-            TransactionAdmissionStatus::INVALID_TRANSACTION,
-            std::string("Queued sender debit is invalid: ") + error.what()
-        );
-    }
-
-    return TransactionAdmissionResult::acceptedResult();
+    return validateTransactionAgainstRuntimeState(
+        transaction,
+        accountStateView,
+        mempool
+    );
 }
 
 } // namespace nodo::node

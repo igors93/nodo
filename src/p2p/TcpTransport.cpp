@@ -51,6 +51,9 @@ using IoctlAvailableBytes = int;
 #endif
 
 constexpr int LISTEN_BACKLOG = 16;
+constexpr std::size_t MAX_UNIDENTIFIED_INBOUND_CONNECTIONS = 64;
+constexpr int TCP_CONNECT_TIMEOUT_MS = 1000;
+constexpr int TCP_IO_WAIT_TIMEOUT_MS = 250;
 constexpr std::uint32_t MAX_WIRE_FRAME_BYTES =
     static_cast<std::uint32_t>(TcpTransportFrameCodec::MAX_TCP_FRAME_BYTES);
 
@@ -70,6 +73,13 @@ bool isInterruptedSocketError() {
 
 bool isWouldBlockSocketError() {
     return WSAGetLastError() == WSAEWOULDBLOCK;
+}
+
+bool isConnectInProgressSocketError() {
+    const int error = WSAGetLastError();
+    return error == WSAEWOULDBLOCK ||
+           error == WSAEINPROGRESS ||
+           error == WSAEINVAL;
 }
 
 std::string lastSocketErrorMessage(const std::string& prefix) {
@@ -93,6 +103,21 @@ void closeSocket(SocketHandle& fd) {
 int socketAvailableBytes(SocketHandle fd, IoctlAvailableBytes& availableBytes) {
     return ioctlsocket(static_cast<SOCKET>(fd), FIONREAD, &availableBytes);
 }
+
+int socketOptionError(SocketHandle fd) {
+    int error = 0;
+    int length = sizeof(error);
+    if (getsockopt(
+            static_cast<SOCKET>(fd),
+            SOL_SOCKET,
+            SO_ERROR,
+            reinterpret_cast<char*>(&error),
+            &length
+        ) != 0) {
+        return WSAGetLastError();
+    }
+    return error;
+}
 #else
 bool startupSocketRuntime() {
     return true;
@@ -106,6 +131,10 @@ bool isInterruptedSocketError() {
 
 bool isWouldBlockSocketError() {
     return errno == EAGAIN || errno == EWOULDBLOCK;
+}
+
+bool isConnectInProgressSocketError() {
+    return errno == EINPROGRESS;
 }
 
 std::string lastSocketErrorMessage(const std::string& prefix) {
@@ -133,7 +162,63 @@ void closeSocket(SocketHandle& fd) {
 int socketAvailableBytes(SocketHandle fd, IoctlAvailableBytes& availableBytes) {
     return ::ioctl(fd, FIONREAD, &availableBytes);
 }
+
+int socketOptionError(SocketHandle fd) {
+    int error = 0;
+    socklen_t length = sizeof(error);
+    if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &length) != 0) {
+        return errno;
+    }
+    return error;
+}
 #endif
+
+bool waitForSocketReady(
+    SocketHandle fd,
+    bool writeReady,
+    int timeoutMs
+) {
+    while (true) {
+        fd_set readSet;
+        fd_set writeSet;
+        FD_ZERO(&readSet);
+        FD_ZERO(&writeSet);
+
+        if (writeReady) {
+            FD_SET(static_cast<NativeSocket>(fd), &writeSet);
+        } else {
+            FD_SET(static_cast<NativeSocket>(fd), &readSet);
+        }
+
+        timeval timeout;
+        timeout.tv_sec = timeoutMs / 1000;
+        timeout.tv_usec = (timeoutMs % 1000) * 1000;
+
+        const int result = select(
+#ifdef _WIN32
+            0,
+#else
+            fd + 1,
+#endif
+            writeReady ? nullptr : &readSet,
+            writeReady ? &writeSet : nullptr,
+            nullptr,
+            &timeout
+        );
+
+        if (result < 0 && isInterruptedSocketError()) {
+            continue;
+        }
+
+        if (result <= 0) {
+            return false;
+        }
+
+        return writeReady
+            ? FD_ISSET(static_cast<NativeSocket>(fd), &writeSet)
+            : FD_ISSET(static_cast<NativeSocket>(fd), &readSet);
+    }
+}
 
 std::uint32_t decodeU32BigEndian(const unsigned char* data) {
     return (static_cast<std::uint32_t>(data[0]) << 24) |
@@ -166,6 +251,10 @@ bool writeAll(SocketHandle fd, const unsigned char* data, std::size_t size) {
             if (isInterruptedSocketError()) {
                 continue;
             }
+            if (isWouldBlockSocketError() &&
+                waitForSocketReady(fd, true, TCP_IO_WAIT_TIMEOUT_MS)) {
+                continue;
+            }
             return false;
         }
 
@@ -192,6 +281,10 @@ bool readAll(SocketHandle fd, unsigned char* data, std::size_t size) {
 
         if (result < 0) {
             if (isInterruptedSocketError()) {
+                continue;
+            }
+            if (isWouldBlockSocketError() &&
+                waitForSocketReady(fd, false, TCP_IO_WAIT_TIMEOUT_MS)) {
                 continue;
             }
             return false;
@@ -473,6 +566,15 @@ TransportResult TcpTransport::connect(
         );
     }
 
+    if (!setNonBlocking(fd)) {
+        SocketHandle closeFd = fd;
+        closeSocket(closeFd);
+        return TransportResult(
+            TransportStatus::REJECTED,
+            lastSocketErrorMessage("Unable to set outbound TCP socket nonblocking")
+        );
+    }
+
     sockaddr_in address;
     std::memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
@@ -492,15 +594,38 @@ TransportResult TcpTransport::connect(
             reinterpret_cast<sockaddr*>(&address),
             static_cast<SocketLength>(sizeof(address))
         ) != 0) {
-        SocketHandle closeFd = fd;
-        closeSocket(closeFd);
-        return TransportResult(
-            TransportStatus::NOT_CONNECTED,
-            lastSocketErrorMessage("Unable to connect TCP peer")
-        );
+        if (!isConnectInProgressSocketError()) {
+            SocketHandle closeFd = fd;
+            closeSocket(closeFd);
+            return TransportResult(
+                TransportStatus::NOT_CONNECTED,
+                lastSocketErrorMessage("Unable to connect TCP peer")
+            );
+        }
+
+        if (!waitForSocketReady(fd, true, TCP_CONNECT_TIMEOUT_MS)) {
+            SocketHandle closeFd = fd;
+            closeSocket(closeFd);
+            return TransportResult(
+                TransportStatus::NOT_CONNECTED,
+                "TCP connect timed out."
+            );
+        }
+
+        const int socketError = socketOptionError(fd);
+        if (socketError != 0) {
+            SocketHandle closeFd = fd;
+            closeSocket(closeFd);
+            std::ostringstream reason;
+            reason << "Unable to connect TCP peer: socket error "
+                   << socketError;
+            return TransportResult(
+                TransportStatus::NOT_CONNECTED,
+                reason.str()
+            );
+        }
     }
 
-    (void)setNonBlocking(fd);
     rememberConnection(remoteNodeId, fd);
 
     return TransportResult(
@@ -683,7 +808,19 @@ TransportResult TcpTransport::acceptAvailableConnections() {
             );
         }
 
-        (void)setNonBlocking(fd);
+        if (!setNonBlocking(fd)) {
+            SocketHandle closeFd = fd;
+            closeSocket(closeFd);
+            continue;
+        }
+
+        if (m_unidentifiedInboundFds.size() >=
+            MAX_UNIDENTIFIED_INBOUND_CONNECTIONS) {
+            SocketHandle closeFd = fd;
+            closeSocket(closeFd);
+            continue;
+        }
+
         m_unidentifiedInboundFds.push_back(fd);
     }
 

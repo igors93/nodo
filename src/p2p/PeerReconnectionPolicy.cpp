@@ -1,9 +1,190 @@
 #include "p2p/PeerReconnectionPolicy.hpp"
 
 #include <algorithm>
+#include <limits>
+#include <optional>
 #include <sstream>
 
 namespace nodo::p2p {
+
+namespace {
+
+constexpr std::size_t MAX_PEER_EXCHANGE_ENTRIES = 128;
+
+bool isSafePeerExchangeScalar(
+    const std::string& value,
+    std::size_t maxSize
+) {
+    if (value.empty() || value.size() > maxSize) {
+        return false;
+    }
+
+    for (const char character : value) {
+        const bool allowed =
+            (character >= 'a' && character <= 'z') ||
+            (character >= 'A' && character <= 'Z') ||
+            (character >= '0' && character <= '9') ||
+            character == '_' ||
+            character == '-' ||
+            character == '.' ||
+            character == ':' ||
+            character == '/';
+
+        if (!allowed) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::optional<std::uint64_t> parsePeerExchangeUInt64(
+    const std::string& value
+) {
+    if (value.empty()) {
+        return std::nullopt;
+    }
+
+    for (const char character : value) {
+        if (character < '0' || character > '9') {
+            return std::nullopt;
+        }
+    }
+
+    try {
+        std::size_t parsedCharacters = 0;
+        const unsigned long long parsed =
+            std::stoull(value, &parsedCharacters);
+        if (parsedCharacters != value.size() ||
+            parsed > static_cast<unsigned long long>(
+                std::numeric_limits<std::uint64_t>::max()
+            )) {
+            return std::nullopt;
+        }
+        return static_cast<std::uint64_t>(parsed);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+std::string extractPeerExchangeField(
+    const std::string& text,
+    const std::string& key
+) {
+    const std::string prefix = key + "=";
+    const std::size_t start = text.find(prefix);
+    if (start == std::string::npos) {
+        return "";
+    }
+
+    const std::size_t valueStart = start + prefix.size();
+    int depth = 0;
+    std::size_t index = valueStart;
+
+    while (index < text.size()) {
+        const char current = text[index];
+        if (current == '{' || current == '[') {
+            ++depth;
+        } else if (current == '}' || current == ']') {
+            if (depth == 0) {
+                break;
+            }
+            --depth;
+        } else if (current == ';' && depth == 0) {
+            break;
+        }
+        ++index;
+    }
+
+    return text.substr(valueStart, index - valueStart);
+}
+
+std::optional<PeerEndpoint> parsePeerExchangeEndpoint(
+    const std::string& serialized
+) {
+    if (serialized.rfind("PeerEndpoint{", 0) != 0 ||
+        serialized.size() < 16 ||
+        serialized.back() != '}') {
+        return std::nullopt;
+    }
+
+    const std::string host =
+        extractPeerExchangeField(serialized, "host");
+    const std::string portText =
+        extractPeerExchangeField(serialized, "port");
+    const std::optional<std::uint64_t> port =
+        parsePeerExchangeUInt64(portText);
+
+    if (!isSafePeerExchangeScalar(host, 255) ||
+        !port.has_value() ||
+        port.value() == 0 ||
+        port.value() > std::numeric_limits<std::uint16_t>::max()) {
+        return std::nullopt;
+    }
+
+    PeerEndpoint endpoint(
+        host,
+        static_cast<std::uint16_t>(port.value())
+    );
+
+    if (!endpoint.isValid() ||
+        endpoint.serialize() != serialized) {
+        return std::nullopt;
+    }
+
+    return endpoint;
+}
+
+std::vector<std::string> splitPeerExchangeEntries(
+    const std::string& entriesText
+) {
+    std::vector<std::string> chunks;
+    std::size_t index = 0;
+
+    while (index < entriesText.size()) {
+        if (entriesText[index] == ',') {
+            ++index;
+            continue;
+        }
+
+        if (entriesText[index] != '{') {
+            return {};
+        }
+
+        const std::size_t start = index;
+        int depth = 0;
+        bool complete = false;
+
+        while (index < entriesText.size()) {
+            const char current = entriesText[index];
+            if (current == '{') {
+                ++depth;
+            } else if (current == '}') {
+                --depth;
+                if (depth == 0) {
+                    ++index;
+                    complete = true;
+                    break;
+                }
+            }
+            ++index;
+        }
+
+        if (!complete) {
+            return {};
+        }
+
+        chunks.push_back(entriesText.substr(start, index - start));
+
+        if (index < entriesText.size() && entriesText[index] != ',') {
+            return {};
+        }
+    }
+
+    return chunks;
+}
+
+} // namespace
 
 bool PeerReconnectionState::isReadyToRetry(std::int64_t now) const {
     if (quarantined) return false;
@@ -219,11 +400,82 @@ std::string PeerExchangeService::serializePayload(
 }
 
 std::vector<PeerExchangeEntry> PeerExchangeService::deserializePayload(
-    const std::string& /*serialized*/
+    const std::string& serialized
 ) {
-    // Minimal stub: full codec is defined in serialization layer.
-    // Returns empty vector on unsupported format.
-    return {};
+    if (serialized.rfind("NODO_PEER_EXCHANGE_V1{", 0) != 0 ||
+        serialized.size() < 25 ||
+        serialized.back() != '}') {
+        return {};
+    }
+
+    const std::string countText =
+        extractPeerExchangeField(serialized, "count");
+    const std::optional<std::uint64_t> count =
+        parsePeerExchangeUInt64(countText);
+
+    if (!count.has_value() ||
+        count.value() > MAX_PEER_EXCHANGE_ENTRIES) {
+        return {};
+    }
+
+    const std::string peersMarker = ";peers=[";
+    const std::size_t peersStart = serialized.find(peersMarker);
+    if (peersStart == std::string::npos ||
+        serialized.size() < peersStart + peersMarker.size() + 2 ||
+        serialized.substr(serialized.size() - 2) != "]}") {
+        return {};
+    }
+
+    const std::string entriesText =
+        serialized.substr(
+            peersStart + peersMarker.size(),
+            serialized.size() - (peersStart + peersMarker.size()) - 2
+        );
+
+    std::vector<std::string> chunks;
+    if (!entriesText.empty()) {
+        chunks = splitPeerExchangeEntries(entriesText);
+        if (chunks.empty()) {
+            return {};
+        }
+    }
+
+    if (chunks.size() != static_cast<std::size_t>(count.value())) {
+        return {};
+    }
+
+    std::vector<PeerExchangeEntry> entries;
+    entries.reserve(chunks.size());
+
+    for (const std::string& chunk : chunks) {
+        const std::string nodeId =
+            extractPeerExchangeField(chunk, "nodeId");
+        const std::string endpointText =
+            extractPeerExchangeField(chunk, "endpoint");
+        const std::string fingerprint =
+            extractPeerExchangeField(chunk, "fp");
+
+        const std::optional<PeerEndpoint> endpoint =
+            parsePeerExchangeEndpoint(endpointText);
+
+        if (!isSafePeerExchangeScalar(nodeId, 160) ||
+            !endpoint.has_value() ||
+            !isSafePeerExchangeScalar(fingerprint, 160)) {
+            return {};
+        }
+
+        entries.push_back({
+            nodeId,
+            endpoint->serialize(),
+            fingerprint
+        });
+    }
+
+    if (serializePayload(entries) != serialized) {
+        return {};
+    }
+
+    return entries;
 }
 
 } // namespace nodo::p2p

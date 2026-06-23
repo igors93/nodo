@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
-#include <set>
 #include <string>
 
 namespace nodo::p2p {
@@ -84,9 +83,16 @@ public:
     std::size_t peerWindowCount(const std::string& senderNodeId) const;
 
 private:
+    struct PeerWindowCounter {
+        std::int64_t windowStartedAt = 0;
+        std::size_t count = 0;
+    };
+
     InboundMessagePolicy m_policy;
-    std::set<std::string> m_seenMessageIds;
-    std::map<std::string, std::size_t> m_messagesByPeerInWindow;
+    std::map<std::string, std::int64_t> m_seenMessageIds;
+    std::map<std::string, PeerWindowCounter> m_messagesByPeerInWindow;
+
+    void pruneExpiredState(std::int64_t now);
 };
 
 } // namespace nodo::p2p

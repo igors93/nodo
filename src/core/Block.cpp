@@ -4,6 +4,7 @@
 #include "core/MerkleTree.hpp"
 #include "crypto/hash.h"
 
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -187,6 +188,7 @@ std::string Block::hashString(const std::string& value) {
 // static
 std::optional<Block> Block::deserialize(const std::string& text) {
     if (text.rfind("Block{", 0) != 0) return std::nullopt;
+    if (text.size() < 8 || text.back() != '}') return std::nullopt;
 
     // Extract top-level fields.
     auto extractField = [&](const std::string& key) -> std::string {
@@ -214,21 +216,58 @@ std::optional<Block> Block::deserialize(const std::string& text) {
     const std::string prevHash    = extractField("previousHash");
     const std::string storedHash  = extractField("hash");
     const std::string tsStr       = extractField("timestamp");
+    const std::string countStr    = extractField("recordCount");
     const std::string payload     = extractField("payload");
 
-    if (indexStr.empty() || prevHash.empty() || tsStr.empty() || payload.empty())
-        return std::nullopt;
-
-    std::uint64_t index = 0;
-    std::int64_t  timestamp = 0;
-    try {
-        index     = static_cast<std::uint64_t>(std::stoull(indexStr));
-        timestamp = std::stoll(tsStr);
-    } catch (...) {
+    if (indexStr.empty() ||
+        prevHash.empty() ||
+        storedHash.empty() ||
+        tsStr.empty() ||
+        countStr.empty() ||
+        payload.empty()) {
         return std::nullopt;
     }
 
+    std::uint64_t index = 0;
+    std::int64_t  timestamp = 0;
+    std::uint64_t recordCount = 0;
+    try {
+        std::size_t parsed = 0;
+        const unsigned long long parsedIndex = std::stoull(indexStr, &parsed);
+        if (parsed != indexStr.size() ||
+            parsedIndex > static_cast<unsigned long long>(
+                std::numeric_limits<std::uint64_t>::max()
+            )) {
+            return std::nullopt;
+        }
+        index = static_cast<std::uint64_t>(parsedIndex);
+
+        parsed = 0;
+        timestamp = std::stoll(tsStr, &parsed);
+        if (parsed != tsStr.size()) {
+            return std::nullopt;
+        }
+
+        parsed = 0;
+        const unsigned long long parsedRecordCount =
+            std::stoull(countStr, &parsed);
+        if (parsed != countStr.size() ||
+            parsedRecordCount > static_cast<unsigned long long>(
+                std::numeric_limits<std::uint64_t>::max()
+            )) {
+            return std::nullopt;
+        }
+        recordCount = static_cast<std::uint64_t>(parsedRecordCount);
+    } catch (...) {
+        return std::nullopt;
+    }
+    if (recordCount == 0) return std::nullopt;
+
     // Extract the records array from inside the payload (BlockHeader{...;records=[...]}).
+    if (payload.rfind("BlockHeader{", 0) != 0 || payload.size() < 16) {
+        return std::nullopt;
+    }
+
     const std::string recordsKey = "records=[";
     const auto recPos = payload.find(recordsKey);
     if (recPos == std::string::npos) return std::nullopt;
@@ -246,6 +285,12 @@ std::optional<Block> Block::deserialize(const std::string& text) {
         }
         ++arrayEnd;
     }
+    if (arrayEnd >= payload.size() ||
+        payload[arrayEnd] != ']' ||
+        arrayEnd + 2 != payload.size() ||
+        payload[arrayEnd + 1] != '}') {
+        return std::nullopt;
+    }
     const std::string arrayContent = payload.substr(arrayStart, arrayEnd - arrayStart);
 
     // Split arrayContent into individual LedgerRecord strings by tracking brace depth.
@@ -258,19 +303,25 @@ std::optional<Block> Block::deserialize(const std::string& text) {
             ++i;
         }
         if (i >= arrayContent.size()) break;
-        if (arrayContent.substr(i, 13) != "LedgerRecord{") break;
+        if (arrayContent.substr(i, 13) != "LedgerRecord{") return std::nullopt;
 
         const std::size_t start = i;
         int d = 0;
+        bool completeRecord = false;
         while (i < arrayContent.size()) {
             const char c = arrayContent[i];
             if (c == '{') ++d;
             else if (c == '}') {
                 --d;
-                if (d == 0) { ++i; break; }
+                if (d == 0) {
+                    ++i;
+                    completeRecord = true;
+                    break;
+                }
             }
             ++i;
         }
+        if (!completeRecord) return std::nullopt;
 
         auto rec = LedgerRecord::deserialize(arrayContent.substr(start, i - start));
         if (!rec.has_value()) return std::nullopt;
@@ -278,11 +329,20 @@ std::optional<Block> Block::deserialize(const std::string& text) {
     }
 
     if (records.empty()) return std::nullopt;
+    if (recordCount > static_cast<std::uint64_t>(
+            std::numeric_limits<std::size_t>::max()
+        )) {
+        return std::nullopt;
+    }
+    if (records.size() != static_cast<std::size_t>(recordCount)) {
+        return std::nullopt;
+    }
 
     try {
         Block block(index, prevHash, std::move(records), timestamp);
         // Verify hash integrity.
-        if (!storedHash.empty() && block.hash() != storedHash) return std::nullopt;
+        if (block.hash() != storedHash) return std::nullopt;
+        if (block.serialize() != text) return std::nullopt;
         return block;
     } catch (...) {
         return std::nullopt;

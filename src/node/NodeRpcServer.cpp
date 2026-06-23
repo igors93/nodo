@@ -7,17 +7,23 @@
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/CryptoSuiteId.hpp"
+#include "crypto/Address.hpp"
+#include "crypto/AddressDerivation.hpp"
+#include "crypto/ProtocolCryptoContext.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
 #include "crypto/SignatureBundle.hpp"
 #include "crypto/SigningDomain.hpp"
 #include "mempool/Mempool.hpp"
+#include "node/RuntimeAccountStateBuilder.hpp"
+#include "node/TransactionAdmissionValidator.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "utils/Amount.hpp"
 
 #include <cerrno>
 #include <chrono>
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -204,6 +210,15 @@ core::Transaction parseSignedTransactionSubmission(
 
     if (!publicKey.isValid()) {
         throw std::invalid_argument("Invalid public key material.");
+    }
+
+    if (!crypto::AddressDerivation::verifyAddressForPublicKey(
+            crypto::Address(transaction.fromAddress()),
+            publicKey
+        )) {
+        throw std::invalid_argument(
+            "Submitted public key does not derive the transaction sender address."
+        );
     }
 
     const crypto::CryptoSuiteId suite =
@@ -696,11 +711,61 @@ std::string NodeRpcServer::handleSubmit(const std::string& body) {
             std::chrono::system_clock::now().time_since_epoch()
         ).count();
 
-    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+    const config::GenesisConfig& genesisConfig =
+        m_runtime.config().genesisConfig();
+    const config::NetworkParameters& networkParameters =
+        genesisConfig.networkParameters();
+
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::fromNetworkName(
+            networkParameters.networkName()
+        );
+
+    if (!cryptoContext.isValid()) {
+        return jsonError(
+            "Runtime crypto context is invalid: " +
+            cryptoContext.rejectionReason()
+        );
+    }
+
+    if (networkParameters.minimumFeeRawUnits() >
+        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return jsonError("Network minimum fee exceeds supported Amount range.");
+    }
+
+    const core::AccountStateView accountState =
+        RuntimeAccountStateBuilder::accountStateViewAtTip(
+            genesisConfig,
+            m_runtime.blockchain(),
+            static_cast<std::int64_t>(
+                networkParameters.minimumFeeRawUnits()
+            )
+        );
+
+    const TransactionAdmissionResult validation =
+        TransactionAdmissionValidator::validateNetworkSubmission(
+            tx,
+            networkParameters,
+            accountState,
+            m_runtime.mempool(),
+            cryptoContext.policy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            cryptoContext.userSignatureProvider()
+        );
+
+    if (!validation.accepted()) {
+        return jsonError(
+            "Transaction rejected: " +
+            transactionAdmissionStatusToString(validation.status()) +
+            ": " +
+            validation.reason()
+        );
+    }
+
     const mempool::MempoolAdmissionResult result =
         m_runtime.mutableMempool().admitTransaction(
             tx,
-            policy,
+            cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             now
         );
