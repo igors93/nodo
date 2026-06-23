@@ -77,7 +77,7 @@ consensus::ValidatorVoteRecord Signer::signValidatorVote(
             sigHex,
             createdAt
         );
-        crypto::SignatureBundle bundle(crypto::SignatureBundleType::SINGLE);
+        crypto::SignatureBundle bundle;
         bundle.addSignature(signature);
 
         return consensus::ValidatorVoteRecord(

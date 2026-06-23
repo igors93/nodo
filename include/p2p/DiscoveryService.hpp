@@ -75,7 +75,7 @@ private:
     std::function<void(const std::string&, const std::string&, std::uint16_t)> m_discoveredCallback;
 
     asio::io_context m_ioContext;
-    asio::executor_work_guard<asio::io_context::executor_type> m_workGuard;
+    std::optional<asio::executor_work_guard<asio::io_context::executor_type>> m_workGuard;
     std::unique_ptr<asio::ip::udp::socket> m_socket;
     std::thread m_ioThread;
 

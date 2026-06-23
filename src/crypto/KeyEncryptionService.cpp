@@ -157,10 +157,13 @@ std::string KeyEncryptionService::decrypt(
 
     std::size_t pos = 0;
     std::vector<unsigned char> salt, nonce, tag, ciphertext;
-    if (!hexToBytes(hex.substr(pos, SALT_BYTES * 2), salt))  return ""; pos += SALT_BYTES * 2;
-    if (!hexToBytes(hex.substr(pos, NONCE_BYTES * 2), nonce)) return ""; pos += NONCE_BYTES * 2;
-    if (!hexToBytes(hex.substr(pos, TAG_BYTES * 2), tag))    return ""; pos += TAG_BYTES * 2;
-    if (!hexToBytes(hex.substr(pos), ciphertext))            return "";
+    if (!hexToBytes(hex.substr(pos, SALT_BYTES * 2), salt)) return "";
+    pos += SALT_BYTES * 2;
+    if (!hexToBytes(hex.substr(pos, NONCE_BYTES * 2), nonce)) return "";
+    pos += NONCE_BYTES * 2;
+    if (!hexToBytes(hex.substr(pos, TAG_BYTES * 2), tag)) return "";
+    pos += TAG_BYTES * 2;
+    if (!hexToBytes(hex.substr(pos), ciphertext)) return "";
 
     unsigned char key[KEY_BYTES];
     if (!deriveKey(password, salt.data(), SALT_BYTES, key, KEY_BYTES)) return "";

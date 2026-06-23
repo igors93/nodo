@@ -1,12 +1,6 @@
 #include "app/CommandLineInterface.hpp"
 #include "app/ProtocolCommandPolicy.hpp"
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <termios.h>
-#include <unistd.h>
-#endif
 
 #include "config/GenesisRegistry.hpp"
 #include "config/NetworkProfileRegistry.hpp"
@@ -52,9 +46,17 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <cstring>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <termios.h>
 #include <unistd.h>
-#include <cstring>
+#endif
 
 namespace nodo::app {
 

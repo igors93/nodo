@@ -48,8 +48,7 @@ DiscoveryService::DiscoveryService(
 ) : m_localNodeId(localNodeId),
     m_localUdpPort(udpPort),
     m_localTcpPort(tcpPort),
-    m_localIdHash(idHash(localNodeId)),
-    m_workGuard(asio::make_work_guard(m_ioContext)) {}
+    m_localIdHash(idHash(localNodeId)) {}
 
 DiscoveryService::~DiscoveryService() {
     stop();
@@ -61,7 +60,7 @@ void DiscoveryService::start() {
 
     try {
         m_ioContext.restart();
-        m_workGuard = asio::make_work_guard(m_ioContext);
+        m_workGuard.emplace(asio::make_work_guard(m_ioContext));
         m_socket = std::make_unique<asio::ip::udp::socket>(
             m_ioContext,
             asio::ip::udp::endpoint(asio::ip::udp::v4(), m_localUdpPort)

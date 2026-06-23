@@ -416,6 +416,56 @@ void testRuntimeRejectsInvalidConfig() {
     );
 }
 
+void testRuntimeHalt() {
+    auto start =
+        NodeRuntimeFactory::startFromGenesis(
+            NodeRuntimeConfig(
+                genesisConfig(),
+                peer("local-node", 0),
+                8
+            )
+        );
+
+    requireCondition(
+        start.started(),
+        "Runtime should start."
+    );
+
+    nodo::node::NodeRuntime runtime = start.runtime();
+
+    requireCondition(
+        runtime.isRunning(),
+        "Runtime should start in RUNNING state."
+    );
+
+    requireCondition(
+        !runtime.isHalted(),
+        "Runtime should not be halted initially."
+    );
+
+    requireCondition(
+        runtime.isValid(),
+        "Runtime should be valid initially."
+    );
+
+    runtime.halt();
+
+    requireCondition(
+        runtime.isHalted(),
+        "Runtime should be HALTED after halt()."
+    );
+
+    requireCondition(
+        !runtime.isRunning(),
+        "Runtime should not be RUNNING after halt()."
+    );
+
+    requireCondition(
+        !runtime.isValid(),
+        "Runtime should not be valid after halt()."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -428,6 +478,7 @@ int main() {
         testRuntimeCreatesChainSummaryMessage();
         testRuntimeEvaluatesBetterPeerForSync();
         testRuntimeRejectsInvalidConfig();
+        testRuntimeHalt();
 
         std::cout << "Nodo node runtime tests passed.\n";
         return 0;
