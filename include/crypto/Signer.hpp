@@ -24,6 +24,8 @@ public:
         const SignatureProvider& provider
     );
 
+    void setOutofProcessSigner(class OutofProcessSigner* oopSigner);
+
     const KeyPair& keyPair() const;
     std::string address() const;
 
@@ -45,6 +47,7 @@ public:
 private:
     KeyPair m_keyPair;
     const SignatureProvider* m_provider;
+    class OutofProcessSigner* m_oopSigner = nullptr;
 };
 
 } // namespace nodo::crypto

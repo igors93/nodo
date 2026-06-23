@@ -9,7 +9,7 @@ std::string computeHash(const std::string& left, const std::string& right) {
     std::string combined = left + right;
     char hashOut[NODO_HASH_BUFFER_SIZE];
     nodo_hash_bytes(
-        reinterpret_cast<const unsigned char*>(combined.c_str()),
+        reinterpret_cast<const unsigned char*>(combined.data()),
         combined.size(),
         hashOut,
         NODO_HASH_BUFFER_SIZE

@@ -1,4 +1,5 @@
 #include "crypto/Signer.hpp"
+#include "crypto/OutofProcessSigner.hpp"
 
 #include <stdexcept>
 #include <utility>
@@ -19,6 +20,10 @@ Signer::Signer(
         m_provider->algorithm() != m_keyPair.algorithm()) {
         throw std::invalid_argument("Signer provider does not match KeyPair algorithm.");
     }
+}
+
+void Signer::setOutofProcessSigner(OutofProcessSigner* oopSigner) {
+    m_oopSigner = oopSigner;
 }
 
 const KeyPair& Signer::keyPair() const {
@@ -54,6 +59,41 @@ consensus::ValidatorVoteRecord Signer::signValidatorVote(
     const std::string& reasonHash,
     std::int64_t createdAt
 ) const {
+    if (m_oopSigner) {
+        std::string payload = consensus::ValidatorVoteRecord::buildSigningPayload(
+            address(), m_keyPair.publicKey(),
+            blockIndex, blockHash, previousHash, round, decision, reasonHash, createdAt
+        );
+        crypto::SignatureRequest req{blockIndex, static_cast<std::uint32_t>(round), blockHash, payload};
+        std::string sigHex;
+        if (!m_oopSigner->signVote(req, sigHex)) {
+            throw std::runtime_error("Signer rejected vote signing (possible double-sign).");
+        }
+        crypto::Signature signature(
+            m_keyPair.publicKey().algorithm() == crypto::CryptoAlgorithm::BLS12_381 ? crypto::CryptoSuiteId::NODO_CRYPTO_SUITE_V1 : crypto::CryptoSuiteId::NODO_CRYPTO_SUITE_V1,
+            crypto::SigningDomain::VALIDATOR_VOTE,
+            m_keyPair.publicKey().algorithm(),
+            m_keyPair.publicKey(),
+            sigHex,
+            createdAt
+        );
+        crypto::SignatureBundle bundle(crypto::SignatureBundleType::SINGLE);
+        bundle.addSignature(signature);
+
+        return consensus::ValidatorVoteRecord(
+            address(),
+            m_keyPair.publicKey(),
+            blockIndex,
+            blockHash,
+            previousHash,
+            round,
+            decision,
+            reasonHash,
+            createdAt,
+            bundle
+        );
+    }
+
     return consensus::ValidatorVoteRecord::createVote(
         address(),
         m_keyPair.publicKey(),

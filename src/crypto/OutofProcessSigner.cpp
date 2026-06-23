@@ -163,9 +163,19 @@ OutofProcessSigner::OutofProcessSigner(
     const std::string& keyId,
     const std::string& encryptedKeyEnvelope,
     const std::string& password,
-    std::filesystem::path stateFile
+    std::filesystem::path stateFile,
+    bool inMemoryTestMode
 ) : m_keyId(keyId),
-    m_stateFile(std::move(stateFile)) {
+    m_stateFile(std::move(stateFile)),
+    m_lastSignedProposalHeight(0),
+    m_lastSignedProposalRound(0),
+    m_lastSignedVoteHeight(0),
+    m_lastSignedVoteRound(0) {
+
+    if (m_stateFile.empty() && !inMemoryTestMode) {
+        throw std::invalid_argument("OutofProcessSigner requires a persistent state file for real use.");
+    }
+
     if (!decryptKey(encryptedKeyEnvelope, password)) {
         throw std::runtime_error("Failed to decrypt validator private key: incorrect password or corrupted key envelope");
     }

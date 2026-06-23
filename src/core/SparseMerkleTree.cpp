@@ -10,8 +10,13 @@ namespace {
 
 std::string hashString(const std::string& input) {
     char output[NODO_HASH_BUFFER_SIZE] = {0};
-    nodo_hash_string(input.c_str(), output, sizeof(output));
-    return std::string(output);
+    nodo_hash_bytes(
+        reinterpret_cast<const unsigned char*>(input.data()),
+        input.size(),
+        output,
+        sizeof(output)
+    );
+    return std::string(output, NODO_HASH_HEX_SIZE);
 }
 
 } // namespace

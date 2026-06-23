@@ -14,12 +14,12 @@ TcpTransport::TcpTransport()
     : m_workGuard(asio::make_work_guard(m_ioContext)) {}
 
 TcpTransport::~TcpTransport() {
-    closeAll();
     m_workGuard.reset();
     m_ioContext.stop();
     if (m_ioThread.joinable()) {
         m_ioThread.join();
     }
+    closeAll();
 }
 
 TransportResult TcpTransport::bind(
@@ -185,12 +185,21 @@ TransportResult TcpTransport::disconnect(
         return TransportResult(TransportStatus::REJECTED, "Local node id does not match bound TCP transport.");
     }
 
-    std::lock_guard<std::mutex> lock(m_mutex);
-    auto found = m_connectionsByPeer.find(remoteNodeId);
-    if (found != m_connectionsByPeer.end()) {
-        asio::error_code ec;
-        found->second->socket.close(ec);
-        m_connectionsByPeer.erase(found);
+    std::shared_ptr<PeerSession> sessionToClose;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto found = m_connectionsByPeer.find(remoteNodeId);
+        if (found != m_connectionsByPeer.end()) {
+            sessionToClose = found->second;
+            m_connectionsByPeer.erase(found);
+        }
+    }
+
+    if (sessionToClose) {
+        asio::post(m_ioContext, [sessionToClose]() {
+            asio::error_code ec;
+            sessionToClose->socket.close(ec);
+        });
     }
 
     return TransportResult(TransportStatus::SENT, "TCP peer disconnected.");
@@ -278,25 +287,42 @@ std::optional<TransportMessage> TcpTransport::poll(const std::string& localNodeI
 }
 
 void TcpTransport::closeAll() {
-    asio::error_code ec;
-    
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_acceptor) {
-        m_acceptor->close(ec);
+    std::vector<std::shared_ptr<PeerSession>> sessionsToClose;
+    std::unique_ptr<asio::ip::tcp::acceptor> acceptorToClose;
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        acceptorToClose = std::move(m_acceptor);
+
+        for (auto& [peer, session] : m_connectionsByPeer) {
+            sessionsToClose.push_back(session);
+        }
+        m_connectionsByPeer.clear();
+
+        for (auto& session : m_unidentifiedSessions) {
+            sessionsToClose.push_back(session);
+        }
+        m_unidentifiedSessions.clear();
+
+        std::queue<TransportMessage> empty;
+        std::swap(m_incomingQueue, empty);
     }
 
-    for (auto& [peer, session] : m_connectionsByPeer) {
-        session->socket.close(ec);
+    if (!m_ioContext.stopped()) {
+        asio::post(m_ioContext, [acceptorToClose = std::move(acceptorToClose), sessionsToClose = std::move(sessionsToClose)]() {
+            asio::error_code ec;
+            if (acceptorToClose) acceptorToClose->close(ec);
+            for (auto& session : sessionsToClose) {
+                session->socket.close(ec);
+            }
+        });
+    } else {
+        asio::error_code ec;
+        if (acceptorToClose) acceptorToClose->close(ec);
+        for (auto& session : sessionsToClose) {
+            session->socket.close(ec);
+        }
     }
-    m_connectionsByPeer.clear();
-
-    for (auto& session : m_unidentifiedSessions) {
-        session->socket.close(ec);
-    }
-    m_unidentifiedSessions.clear();
-
-    std::queue<TransportMessage> empty;
-    std::swap(m_incomingQueue, empty);
 }
 
 void TcpTransport::startAccept() {

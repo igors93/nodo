@@ -94,7 +94,7 @@ void testSignerInitializationAndRealSignatures() {
     const std::string envelope =
         encryptedValidatorPrivateKey(keyId, keyPair, password);
 
-    OutofProcessSigner signer(keyId, envelope, password);
+    OutofProcessSigner signer(keyId, envelope, password, {}, true);
     requireCondition(
         signer.validatorAddress() == keyPair.address().value(),
         "Validator address should be derived from the decrypted validator public key"
@@ -161,7 +161,7 @@ void testSignerBlocksDoubleSignInMemory() {
     const std::string envelope =
         encryptedValidatorPrivateKey(keyId, keyPair, password);
 
-    OutofProcessSigner signer(keyId, envelope, password);
+    OutofProcessSigner signer(keyId, envelope, password, {}, true);
 
     SignatureRequest req1{20, 0, "hashA", "block-payload-A"};
     std::string sig1;

@@ -24,7 +24,8 @@ public:
         const std::string& keyId,
         const std::string& encryptedKeyEnvelope,
         const std::string& password,
-        std::filesystem::path stateFile = {}
+        std::filesystem::path stateFile = {},
+        bool inMemoryTestMode = false
     );
 
     bool signBlockProposal(const SignatureRequest& request, std::string& signatureOut);

@@ -14,14 +14,14 @@ bool DiscoveryPeerInfo::isValid() const {
 }
 
 std::string DiscoveryPeerInfo::serialize() const {
-    return peerId + ":" + host + ":" + std::to_string(tcpPort) + ":" + std::to_string(udpPort);
+    return peerId + "|" + host + "|" + std::to_string(tcpPort) + "|" + std::to_string(udpPort);
 }
 
 DiscoveryPeerInfo DiscoveryPeerInfo::deserialize(const std::string& serialized) {
     std::vector<std::string> parts;
     std::stringstream ss(serialized);
     std::string item;
-    while (std::getline(ss, item, ':')) {
+    while (std::getline(ss, item, '|')) {
         parts.push_back(item);
     }
     if (parts.size() < 4) {
@@ -60,6 +60,8 @@ void DiscoveryService::start() {
     if (m_socket) return;
 
     try {
+        m_ioContext.restart();
+        m_workGuard = asio::make_work_guard(m_ioContext);
         m_socket = std::make_unique<asio::ip::udp::socket>(
             m_ioContext,
             asio::ip::udp::endpoint(asio::ip::udp::v4(), m_localUdpPort)
@@ -181,6 +183,8 @@ std::vector<DiscoveryPeerInfo> DiscoveryService::findClosestPeers(
 void DiscoveryService::bootstrap(
     const std::vector<std::pair<std::string, std::pair<std::string, std::uint16_t>>>& seedPeers
 ) {
+    if (!m_socket) return;
+
     for (const auto& seed : seedPeers) {
         const std::string& seedHost = seed.second.first;
         std::uint16_t seedUdpPort = seed.second.second;
@@ -220,56 +224,61 @@ void DiscoveryService::handleReceive(const asio::error_code& ec, std::size_t byt
         return;
     }
 
-    std::string message(m_recvBuffer.data(), bytesTransferred);
+    try {
+        std::string message(m_recvBuffer.data(), bytesTransferred);
 
-    // Parse message envelope
-    if (message.rfind("KADEMLIA_MSG{", 0) == 0 && message.back() == '}') {
-        std::string body = message.substr(13, message.size() - 14);
-        std::map<std::string, std::string> fields;
-        std::stringstream ss(body);
-        std::string part;
-        while (std::getline(ss, part, ';')) {
-            auto eq = part.find('=');
-            if (eq != std::string::npos) {
-                fields[part.substr(0, eq)] = part.substr(eq + 1);
+        // Parse message envelope
+        if (message.rfind("KADEMLIA_MSG{", 0) == 0 && message.back() == '}') {
+            std::string body = message.substr(13, message.size() - 14);
+            std::map<std::string, std::string> fields;
+            std::stringstream ss(body);
+            std::string part;
+            while (std::getline(ss, part, ';')) {
+                auto eq = part.find('=');
+                if (eq != std::string::npos) {
+                    fields[part.substr(0, eq)] = part.substr(eq + 1);
+                }
             }
-        }
 
-        std::string type = fields["type"];
-        std::string senderId = fields["senderId"];
-        std::uint16_t senderUdpPort = fields.count("senderUdpPort") ? static_cast<std::uint16_t>(std::stoul(fields["senderUdpPort"])) : 0;
-        std::uint16_t senderTcpPort = fields.count("senderTcpPort") ? static_cast<std::uint16_t>(std::stoul(fields["senderTcpPort"])) : 0;
+            std::string type = fields["type"];
+            std::string senderId = fields["senderId"];
+            std::uint16_t senderUdpPort = fields.count("senderUdpPort") ? static_cast<std::uint16_t>(std::stoul(fields["senderUdpPort"])) : 0;
+            std::uint16_t senderTcpPort = fields.count("senderTcpPort") ? static_cast<std::uint16_t>(std::stoul(fields["senderTcpPort"])) : 0;
 
-        if (!senderId.empty() && senderId != m_localNodeId && senderUdpPort > 0) {
-            // Update routing table with sender info
-            addPeer(senderId, m_recvEndpoint.address().to_string(), senderTcpPort, senderUdpPort);
+            if (!senderId.empty() && senderId != m_localNodeId && senderUdpPort > 0) {
+                // Update routing table with sender info
+                addPeer(senderId, m_recvEndpoint.address().to_string(), senderTcpPort, senderUdpPort);
 
-            if (type == "PING") {
-                sendPong(m_recvEndpoint);
-            } else if (type == "PONG") {
-                // Already updated peer in addPeer
-            } else if (type == "FIND_NODE") {
-                std::string targetId = fields["targetId"];
-                auto closest = findClosestPeers(targetId, 8);
-                sendNeighbors(m_recvEndpoint, closest);
-            } else if (type == "NEIGHBORS") {
-                std::string neighborsStr = fields["neighbors"];
-                std::stringstream nss(neighborsStr);
-                std::string peerSer;
-                while (std::getline(nss, peerSer, ',')) {
-                    DiscoveryPeerInfo peer = DiscoveryPeerInfo::deserialize(peerSer);
-                    if (peer.isValid()) {
-                        addPeer(peer.peerId, peer.host, peer.tcpPort, peer.udpPort);
+                if (type == "PING") {
+                    sendPong(m_recvEndpoint);
+                } else if (type == "PONG") {
+                    // Already updated peer in addPeer
+                } else if (type == "FIND_NODE") {
+                    std::string targetId = fields["targetId"];
+                    auto closest = findClosestPeers(targetId, 8);
+                    sendNeighbors(m_recvEndpoint, closest);
+                } else if (type == "NEIGHBORS") {
+                    std::string neighborsStr = fields["neighbors"];
+                    std::stringstream nss(neighborsStr);
+                    std::string peerSer;
+                    while (std::getline(nss, peerSer, ',')) {
+                        DiscoveryPeerInfo peer = DiscoveryPeerInfo::deserialize(peerSer);
+                        if (peer.isValid()) {
+                            addPeer(peer.peerId, peer.host, peer.tcpPort, peer.udpPort);
+                        }
                     }
                 }
             }
         }
+    } catch (...) {
+        // Ignore malformed messages safely
     }
 
     startReceive();
 }
 
 void DiscoveryService::sendPing(const asio::ip::udp::endpoint& endpoint) {
+    if (!m_socket) return;
     std::ostringstream oss;
     oss << "KADEMLIA_MSG{"
         << "type=PING"
@@ -277,11 +286,12 @@ void DiscoveryService::sendPing(const asio::ip::udp::endpoint& endpoint) {
         << ";senderUdpPort=" << m_localUdpPort
         << ";senderTcpPort=" << m_localTcpPort
         << "}";
-    std::string payload = oss.str();
-    m_socket->async_send_to(asio::buffer(payload), endpoint, [](const asio::error_code&, std::size_t) {});
+    auto payload = std::make_shared<std::string>(oss.str());
+    m_socket->async_send_to(asio::buffer(*payload), endpoint, [payload](const asio::error_code&, std::size_t) {});
 }
 
 void DiscoveryService::sendPong(const asio::ip::udp::endpoint& endpoint) {
+    if (!m_socket) return;
     std::ostringstream oss;
     oss << "KADEMLIA_MSG{"
         << "type=PONG"
@@ -289,11 +299,12 @@ void DiscoveryService::sendPong(const asio::ip::udp::endpoint& endpoint) {
         << ";senderUdpPort=" << m_localUdpPort
         << ";senderTcpPort=" << m_localTcpPort
         << "}";
-    std::string payload = oss.str();
-    m_socket->async_send_to(asio::buffer(payload), endpoint, [](const asio::error_code&, std::size_t) {});
+    auto payload = std::make_shared<std::string>(oss.str());
+    m_socket->async_send_to(asio::buffer(*payload), endpoint, [payload](const asio::error_code&, std::size_t) {});
 }
 
 void DiscoveryService::sendFindNode(const asio::ip::udp::endpoint& endpoint, const std::string& targetId) {
+    if (!m_socket) return;
     std::ostringstream oss;
     oss << "KADEMLIA_MSG{"
         << "type=FIND_NODE"
@@ -302,11 +313,12 @@ void DiscoveryService::sendFindNode(const asio::ip::udp::endpoint& endpoint, con
         << ";senderTcpPort=" << m_localTcpPort
         << ";targetId=" << targetId
         << "}";
-    std::string payload = oss.str();
-    m_socket->async_send_to(asio::buffer(payload), endpoint, [](const asio::error_code&, std::size_t) {});
+    auto payload = std::make_shared<std::string>(oss.str());
+    m_socket->async_send_to(asio::buffer(*payload), endpoint, [payload](const asio::error_code&, std::size_t) {});
 }
 
 void DiscoveryService::sendNeighbors(const asio::ip::udp::endpoint& endpoint, const std::vector<DiscoveryPeerInfo>& neighbors) {
+    if (!m_socket) return;
     std::ostringstream oss;
     oss << "KADEMLIA_MSG{"
         << "type=NEIGHBORS"
@@ -321,8 +333,8 @@ void DiscoveryService::sendNeighbors(const asio::ip::udp::endpoint& endpoint, co
     }
 
     oss << "}";
-    std::string payload = oss.str();
-    m_socket->async_send_to(asio::buffer(payload), endpoint, [](const asio::error_code&, std::size_t) {});
+    auto payload = std::make_shared<std::string>(oss.str());
+    m_socket->async_send_to(asio::buffer(*payload), endpoint, [payload](const asio::error_code&, std::size_t) {});
 }
 
 std::size_t DiscoveryService::getBucketIndex(const std::string& peerId) {
