@@ -532,7 +532,9 @@ bool TcpTransport::connected(
     const std::string& localNodeId,
     const std::string& remoteNodeId
 ) const {
-    (void)localNodeId;
+    if (localNodeId != m_localNodeId) {
+        return false;
+    }
     return m_connectionsByPeer.find(remoteNodeId) != m_connectionsByPeer.end();
 }
 
