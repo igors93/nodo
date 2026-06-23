@@ -13,6 +13,7 @@
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/TcpTestnetNodeRuntime.hpp"
 #include "p2p/Peer.hpp"
+#include "p2p/DiscoveryService.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -183,6 +184,7 @@ private:
     std::unique_ptr<consensus::ConsensusEventLoop> m_consensusLoop;
     std::unique_ptr<NodeRpcServer>           m_rpcServer;
     consensus::EvidencePool                  m_evidencePool;
+    std::unique_ptr<p2p::DiscoveryService>   m_discoveryService;
 
     std::atomic<bool> m_running;
     std::optional<crypto::Signer> m_localSigner;

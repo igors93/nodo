@@ -21,12 +21,12 @@ std::string computeHash(const std::string& left, const std::string& right) {
 
 } // namespace
 
-MerkleProof::MerkleProof(
+PrunerMerkleProof::PrunerMerkleProof(
     const std::string& leaf,
-    const std::vector<MerkleProofNode>& path
+    const std::vector<PrunerMerkleProofNode>& path
 ) : m_leaf(leaf), m_path(path) {}
 
-bool MerkleProof::verify(const std::string& rootHash) const {
+bool PrunerMerkleProof::verify(const std::string& rootHash) const {
     std::string currentHash = m_leaf;
 
     for (const auto& node : m_path) {
@@ -40,11 +40,11 @@ bool MerkleProof::verify(const std::string& rootHash) const {
     return currentHash == rootHash;
 }
 
-const std::string& MerkleProof::leaf() const {
+const std::string& PrunerMerkleProof::leaf() const {
     return m_leaf;
 }
 
-const std::vector<MerkleProofNode>& MerkleProof::path() const {
+const std::vector<PrunerMerkleProofNode>& PrunerMerkleProof::path() const {
     return m_path;
 }
 

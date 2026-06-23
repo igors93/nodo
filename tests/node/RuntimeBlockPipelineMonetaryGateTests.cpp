@@ -226,6 +226,35 @@ void testGatePreservesUnauthorizedMintStatus() {
            nodo::economics::MonetaryFirewallStatus::UNAUTHORIZED_MINT);
 }
 
+void testSafeHaltingLifecycle() {
+    NodeRuntime runtime = startRuntime();
+    assert(!runtime.isHalted());
+    assert(runtime.isRunning());
+    assert(runtime.isValid());
+
+    runtime.halt();
+    assert(runtime.isHalted());
+    assert(!runtime.isRunning());
+    assert(!runtime.isValid());
+}
+
+void testHaltedNodeRejectsBlockProduction() {
+    NodeRuntime runtime = startRuntime();
+    admitTransaction(runtime);
+
+    runtime.halt();
+
+    const auto result = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        runtime,
+        RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
+        localValidatorSigner()
+    );
+
+    assert(!result.finalized());
+    assert(result.status() == RuntimeBlockPipelineStatus::INVALID_RUNTIME);
+    assert(result.reason() == "Node runtime is invalid.");
+}
+
 } // namespace
 
 int main() {
@@ -235,5 +264,7 @@ int main() {
     testContextUnavailableIsAlwaysRejection();
     testGateRejectsSupplyDeltaWithMismatchedBlockHash();
     testGatePreservesUnauthorizedMintStatus();
+    testSafeHaltingLifecycle();
+    testHaltedNodeRejectsBlockProduction();
     return 0;
 }

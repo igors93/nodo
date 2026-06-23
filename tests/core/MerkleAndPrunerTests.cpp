@@ -8,8 +8,8 @@
 
 namespace {
 
-using nodo::core::MerkleProof;
-using nodo::core::MerkleProofNode;
+using nodo::core::PrunerMerkleProof;
+using nodo::core::PrunerMerkleProofNode;
 using nodo::core::StatePruner;
 
 void requireCondition(bool condition, const std::string& failureMessage) {
@@ -38,11 +38,11 @@ void testMerkleProofVerification() {
 
     // Proof for L1 ("apple", which hashes to h1Str)
     // The sibling is h2Str, which is on the right.
-    std::vector<MerkleProofNode> path = {
+    std::vector<PrunerMerkleProofNode> path = {
         {true, h2Str} // isRight = true, hash = h2Str
     };
 
-    MerkleProof proof(h1Str, path);
+    PrunerMerkleProof proof(h1Str, path);
     requireCondition(proof.verify(rootStr), "Merkle proof should verify successfully for L1");
     requireCondition(!proof.verify("invalid-root"), "Merkle proof should fail for incorrect root");
 }

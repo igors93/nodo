@@ -1988,15 +1988,25 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
                 feeEconomicBalance
             );
 
-        monetaryFirewallAudit =
-            MonetaryFirewall::buildAuditWithSupplyBefore(
-                production.block().index(),
-                monetaryValidationResult.supplyDelta().supplyBefore(),
-                utils::Amount(),
-                feeBurnRecord.burnAmount(),
-                treasuryFeeRecord.treasuryAmount(),
-                utils::Amount()
-            );
+        try {
+            monetaryFirewallAudit =
+                MonetaryFirewall::buildAuditWithSupplyBefore(
+                    production.block().index(),
+                    monetaryValidationResult.supplyDelta().supplyBefore(),
+                    utils::Amount(),
+                    feeBurnRecord.burnAmount(),
+                    treasuryFeeRecord.treasuryAmount(),
+                    utils::Amount()
+                );
+        } catch (const std::exception& error) {
+            runtime.halt();
+            throw;
+        }
+
+        if (!monetaryFirewallAudit.passed()) {
+            runtime.halt();
+            throw std::runtime_error("Monetary firewall audit did not pass.");
+        }
 
         genesisTreasurySnapshot =
             ProtectionTreasury::buildGenesisTreasurySnapshot(

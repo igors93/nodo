@@ -1,6 +1,8 @@
 #include "core/StateRootCalculator.hpp"
 
 #include "core/MerkleTree.hpp"
+#include "core/SparseMerkleTree.hpp"
+#include "crypto/hash.h"
 
 #include <sstream>
 #include <vector>
@@ -14,25 +16,29 @@ std::string StateRootCalculator::calculateAccountStateRoot(
         return "";
     }
 
-    // Build one leaf payload per account: "address:balance:nonce".
-    // Leaves are sorted by address inside MerkleTree::buildRoot so the
-    // result is deterministic regardless of insertion order.
     const std::vector<AccountState> accounts = view.accounts();
 
-    std::vector<std::string> leafPayloads;
-    leafPayloads.reserve(accounts.size());
+    SparseMerkleTree smt;
 
     for (const auto& account : accounts) {
+        // Derive SMT 256-bit key from address hash
+        char addressHash[NODO_HASH_BUFFER_SIZE] = {0};
+        nodo_hash_string(account.address().c_str(), addressHash, sizeof(addressHash));
+        std::string keyHex(addressHash);
+
+        // Derive leaf value hash
         std::ostringstream oss;
         oss << "NODO_ACCOUNT_LEAF_V2{"
             << "address=" << account.address()
             << ";balance=" << account.balance().rawUnits()
             << ";nonce=" << account.nonce()
             << "}";
-        leafPayloads.push_back(oss.str());
+        std::string leafHash = MerkleTree::hashLeaf(oss.str());
+
+        smt.update(keyHex, leafHash);
     }
 
-    return MerkleTree::buildRoot(std::move(leafPayloads));
+    return smt.root();
 }
 
 std::string StateRootCalculator::canonicalAccountStatePayload(

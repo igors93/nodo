@@ -110,3 +110,13 @@ if(NOT TARGET blst::blst)
             INTERFACE_INCLUDE_DIRECTORIES "${BLST_INCLUDE_DIR}"
     )
 endif()
+
+# Standalone Asio Dependency
+include(FetchContent)
+FetchContent_Declare(
+    asio
+    GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
+    GIT_TAG        asio-1-30-2
+)
+FetchContent_MakeAvailable(asio)
+

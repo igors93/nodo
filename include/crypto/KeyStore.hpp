@@ -4,6 +4,7 @@
 #include "crypto/CryptoSuiteId.hpp"
 #include "crypto/KeyPair.hpp"
 #include "crypto/LocalIdentity.hpp"
+#include "crypto/KeyEncryptionPolicy.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -38,7 +39,8 @@ public:
         PublicKey publicKey,
         std::string address,
         std::int64_t createdAt,
-        std::string networkProfile = "localnet"
+        std::string networkProfile = "localnet",
+        KeyEncryptionLevel encryptionLevel = KeyEncryptionLevel::PLAINTEXT
     );
 
     const std::string& keyId() const;
@@ -50,6 +52,7 @@ public:
     const std::string& address() const;
     std::int64_t createdAt() const;
     const std::string& networkProfile() const;
+    KeyEncryptionLevel encryptionLevel() const;
 
     bool isLocalnetOnly() const;
     bool isValid() const;
@@ -65,6 +68,7 @@ private:
     std::string m_address;
     std::int64_t m_createdAt;
     std::string m_networkProfile;
+    KeyEncryptionLevel m_encryptionLevel;
 };
 
 enum class KeyStoreStatus {
@@ -175,7 +179,9 @@ public:
         const std::filesystem::path& keysDirectory,
         const std::string& keyId,
         const std::string& seed,
-        std::int64_t createdAt
+        std::int64_t createdAt,
+        const std::string& password = "",
+        const std::string& networkProfile = LOCAL_NETWORK_PROFILE
     );
 
     static KeyStoreCreateResult createLocalKey(
@@ -183,12 +189,16 @@ public:
         const std::string& keyId,
         KeyStoreKeyType keyType,
         const std::string& seed,
-        std::int64_t createdAt
+        std::int64_t createdAt,
+        const std::string& password = "",
+        const std::string& networkProfile = LOCAL_NETWORK_PROFILE
     );
 
     static KeyStoreLoadResult loadKey(
         const std::filesystem::path& keysDirectory,
-        const std::string& keyId
+        const std::string& keyId,
+        const std::string& password = "",
+        bool metadataOnly = false
     );
 
     static KeyStoreListResult listKeys(
@@ -213,12 +223,16 @@ private:
         const std::string& keyId,
         KeyStoreKeyType keyType,
         const KeyPair& keyPair,
-        std::int64_t createdAt
+        std::int64_t createdAt,
+        const std::string& password = "",
+        const std::string& networkProfile = LOCAL_NETWORK_PROFILE
     );
 
     static KeyStoreLoadResult decodeKeyFile(
         const std::string& keyId,
-        const std::string& contents
+        const std::string& contents,
+        const std::string& password = "",
+        bool metadataOnly = false
     );
 
     static std::string indexFileContents(

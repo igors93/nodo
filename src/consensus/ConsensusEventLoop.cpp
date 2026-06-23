@@ -3,6 +3,7 @@
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
+#include "consensus/ValidatorVoteBuilder.hpp"
 #include "crypto/Hex.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "node/DoubleVoteDetector.hpp"
@@ -51,6 +52,10 @@ void ConsensusEventLoop::setLocalValidatorAddress(const std::string& address) {
     m_localValidatorAddress = address;
 }
 
+void ConsensusEventLoop::setLocalSigner(const crypto::Signer* signer) {
+    m_localSigner = signer;
+}
+
 void ConsensusEventLoop::setEvidencePool(EvidencePool* pool) {
     m_evidencePool = pool;
 }
@@ -94,45 +99,120 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     // is empty (genesis not yet committed).
     if (m_runtime.blockchain().empty()) return result;
 
+    const core::Blockchain& chain = m_runtime.blockchain();
+    const auto& state = m_runtime.consensusRoundManager().currentState();
+    const std::uint64_t height = state.height();
+    const std::uint64_t round = state.round();
+
+    // Height change detection: reset locking / voting state
+    if (height > m_lastProcessedHeight) {
+        m_lastProcessedHeight = height;
+        m_lockedBlock = "";
+        m_lockedRound = 0;
+        m_votedPrevote = false;
+        m_votedPrecommit = false;
+    }
+
     // TASK 1: If this node is the designated proposer for the current
     // height+round and no block exists at that height yet, trigger local
     // block production before attempting quorum assembly.
     if (!m_localValidatorAddress.empty() && m_blockProducer) {
-        const core::Blockchain& chainForProposer = m_runtime.blockchain();
-        const auto& stateForProposer = m_runtime.consensusRoundManager().currentState();
-        const std::uint64_t targetHeight = stateForProposer.height();
         const std::uint64_t tipHeight =
-            chainForProposer.empty() ? 0 : chainForProposer.latestBlock().index();
+            chain.empty() ? 0 : chain.latestBlock().index();
         const std::uint64_t nextHeight =
-            chainForProposer.empty() ? 0 : tipHeight + 1;
+            chain.empty() ? 0 : tipHeight + 1;
 
         // Only produce if the target height is the next expected block.
-        if (chainForProposer.empty() || targetHeight == nextHeight) {
+        if (chain.empty() || height == nextHeight) {
             const std::string chainId =
                 m_runtime.config().genesisConfig().networkParameters().chainId();
             const std::string proposer = ProposerSchedule::selectProposer(
                 m_runtime.validatorRegistry(),
                 chainId,
-                targetHeight,
-                stateForProposer.round()
+                height,
+                round
             );
             if (proposer == m_localValidatorAddress) {
-                m_blockProducer(targetHeight, stateForProposer.round(), now);
+                m_blockProducer(height, round, now);
             }
         }
     }
 
-    // Try to form a quorum on the current tip.
-    const core::Blockchain& chain = m_runtime.blockchain();
-    if (chain.empty()) return result;
+    // If no block at the current height is in our blockchain yet, we cannot vote.
+    if (chain.latestBlock().index() != height) {
+        return result;
+    }
 
     const core::Block& tip = chain.latestBlock();
-    const std::uint64_t height = tip.index();
     const std::string& blockHash = tip.hash();
     const std::string& prevHash  = tip.previousHash();
 
-    const auto& state = m_runtime.consensusRoundManager().currentState();
-    const std::uint64_t round = state.round();
+    const VotePool& pool = m_runtime.consensusRoundManager().voteCollector().votePool();
+    std::vector<ValidatorVoteRecord> votes = pool.votesForBlock(height, blockHash, round);
+
+    std::uint64_t prevoteCount = 0;
+    std::uint64_t precommitCount = 0;
+    for (const auto& v : votes) {
+        if (v.decision() == ValidatorVoteDecision::PREVOTE) {
+            prevoteCount++;
+        } else if (v.decision() == ValidatorVoteDecision::PRECOMMIT) {
+            precommitCount++;
+        }
+    }
+
+    const std::uint64_t activeValidators = m_runtime.validatorRegistry().activeCount();
+    const std::uint64_t requiredVotes = QuorumCertificateBuilder::requiredVoteCount(
+        activeValidators,
+        QUORUM_NUMERATOR,
+        QUORUM_DENOMINATOR
+    );
+
+    // PREVOTE rule:
+    if (!m_votedPrevote && m_localSigner && m_runtime.validatorRegistry().isActiveValidator(m_localSigner->address())) {
+        if (m_lockedBlock.empty() || blockHash == m_lockedBlock || round > m_lockedRound) {
+            ValidatorVoteRecord prevote = ValidatorVoteBuilder::buildPrevote(
+                m_runtime.validatorRegistry(),
+                tip,
+                round,
+                now,
+                *m_localSigner
+            );
+            const auto collected = m_runtime.submitConsensusVote(prevote);
+            if (collected.accepted()) {
+                m_votedPrevote = true;
+                m_gossip.broadcast(
+                    p2p::NetworkMessageType::VOTE_ANNOUNCE,
+                    prevote.serialize(),
+                    now
+                );
+            }
+        }
+    }
+
+    // PRECOMMIT rule:
+    if (m_votedPrevote && !m_votedPrecommit && m_localSigner && m_runtime.validatorRegistry().isActiveValidator(m_localSigner->address())) {
+        if (prevoteCount >= requiredVotes) {
+            m_lockedBlock = blockHash;
+            m_lockedRound = round;
+
+            ValidatorVoteRecord precommit = ValidatorVoteBuilder::buildPrecommit(
+                m_runtime.validatorRegistry(),
+                tip,
+                round,
+                now,
+                *m_localSigner
+            );
+            const auto collected = m_runtime.submitConsensusVote(precommit);
+            if (collected.accepted()) {
+                m_votedPrecommit = true;
+                m_gossip.broadcast(
+                    p2p::NetworkMessageType::VOTE_ANNOUNCE,
+                    precommit.serialize(),
+                    now
+                );
+            }
+        }
+    }
 
     if (tryFinalizeBlock(height, blockHash, prevHash, round, now, result)) {
         if (m_onFinalized && result.blockFinalized) {
@@ -145,6 +225,8 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     // TASK 2: Check round timeout, advance if expired, and broadcast to peers.
     if (m_runtime.advanceConsensusRoundIfTimedOut(now)) {
         result.roundAdvanced = true;
+        m_votedPrevote = false;
+        m_votedPrecommit = false;
         broadcastRoundAdvancement(now);
     }
 
@@ -205,13 +287,22 @@ bool ConsensusEventLoop::tryFinalizeBlock(
 
     const VotePool& pool = collector.votePool();
 
+    // Filter to PRECOMMIT and APPROVE votes only
+    std::vector<ValidatorVoteRecord> allVotes = pool.votesForBlock(blockIndex, blockHash, round);
+    std::vector<ValidatorVoteRecord> certificateVotes;
+    for (const auto& vote : allVotes) {
+        if (vote.decision() == ValidatorVoteDecision::PRECOMMIT || vote.decision() == ValidatorVoteDecision::APPROVE) {
+            certificateVotes.push_back(vote);
+        }
+    }
+
     const QuorumCertificateBuildResult qcResult =
-        QuorumAssembly::tryBuildCertificate(
-            pool,
+        QuorumCertificateBuilder::buildFromVotes(
             blockIndex,
             blockHash,
             previousHash,
             round,
+            certificateVotes,
             m_runtime.validatorRegistry(),
             m_policy,
             m_provider,

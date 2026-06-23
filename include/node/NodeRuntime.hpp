@@ -106,7 +106,8 @@ private:
 
 enum class NodeRuntimeStatus {
     STOPPED,
-    RUNNING
+    RUNNING,
+    HALTED
 };
 
 std::string nodeRuntimeStatusToString(
@@ -163,7 +164,9 @@ public:
     RuntimeSupplyState& mutableSupplyState();
 
     bool isRunning() const;
+    bool isHalted() const;
     bool isValid() const;
+    void halt();
 
     consensus::ChainForkSummary chainSummary() const;
 

@@ -17,6 +17,22 @@ public:
         std::int64_t createdAt,
         const crypto::Signer& signer
     );
+
+    static ValidatorVoteRecord buildPrevote(
+        const core::ValidatorRegistry& validatorRegistry,
+        const core::Block& block,
+        std::uint64_t round,
+        std::int64_t createdAt,
+        const crypto::Signer& signer
+    );
+
+    static ValidatorVoteRecord buildPrecommit(
+        const core::ValidatorRegistry& validatorRegistry,
+        const core::Block& block,
+        std::uint64_t round,
+        std::int64_t createdAt,
+        const crypto::Signer& signer
+    );
 };
 
 } // namespace nodo::consensus

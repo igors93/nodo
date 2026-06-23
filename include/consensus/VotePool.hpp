@@ -135,7 +135,8 @@ public:
     const ValidatorVoteRecord* firstVoteForValidator(
         const std::string& validatorAddress,
         std::uint64_t blockIndex,
-        std::uint64_t round
+        std::uint64_t round,
+        ValidatorVoteDecision decision
     ) const;
 
     std::size_t totalVoteCount() const;

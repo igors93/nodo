@@ -8,6 +8,7 @@
 #include "consensus/VotePool.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureProvider.hpp"
+#include "crypto/Signer.hpp"
 #include "node/NodeRuntime.hpp"
 #include "p2p/GossipMesh.hpp"
 
@@ -101,6 +102,11 @@ public:
     void setLocalValidatorAddress(const std::string& address);
 
     /*
+     * Set local validator signer for BFT prevoting and precommitting.
+     */
+    void setLocalSigner(const crypto::Signer* signer);
+
+    /*
      * Wire an EvidencePool so that double-votes detected in the VotePool are
      * automatically forwarded as SlashingEvidence. Optional: if not set, double-
      * vote detection is skipped. Must be set before start().
@@ -143,6 +149,13 @@ private:
     BlockProducerCallback m_blockProducer;
     std::string           m_localValidatorAddress;
     EvidencePool*         m_evidencePool = nullptr;
+    const crypto::Signer* m_localSigner = nullptr;
+
+    std::string           m_lockedBlock = "";
+    std::uint64_t         m_lockedRound = 0;
+    bool                  m_votedPrevote = false;
+    bool                  m_votedPrecommit = false;
+    std::uint64_t         m_lastProcessedHeight = 0;
 
     std::atomic<bool>    m_running;
     std::thread          m_thread;

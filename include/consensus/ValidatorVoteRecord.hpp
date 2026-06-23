@@ -21,7 +21,9 @@ namespace nodo::consensus {
 enum class ValidatorVoteDecision {
     UNKNOWN,
     APPROVE,
-    REJECT
+    REJECT,
+    PREVOTE,
+    PRECOMMIT
 };
 
 std::string validatorVoteDecisionToString(

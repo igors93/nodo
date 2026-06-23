@@ -247,10 +247,17 @@ const std::vector<ValidatorVoteRecord>& VotePool::conflictingVotes() const {
 const ValidatorVoteRecord* VotePool::firstVoteForValidator(
     const std::string& validatorAddress,
     std::uint64_t blockIndex,
-    std::uint64_t round
+    std::uint64_t round,
+    ValidatorVoteDecision decision
 ) const {
     const std::string key =
-        validatorAddress + "#" + std::to_string(blockIndex) + "#" + std::to_string(round);
+        validatorAddress
+        + "#"
+        + std::to_string(blockIndex)
+        + "#"
+        + std::to_string(round)
+        + "#"
+        + validatorVoteDecisionToString(decision);
     const auto it = m_voteByValidatorHeightRound.find(key);
     if (it == m_voteByValidatorHeightRound.end()) {
         return nullptr;
@@ -285,7 +292,9 @@ std::string VotePool::validatorHeightRoundKey(const ValidatorVoteRecord& vote) {
         + "#"
         + std::to_string(vote.blockIndex())
         + "#"
-        + std::to_string(vote.round());
+        + std::to_string(vote.round())
+        + "#"
+        + validatorVoteDecisionToString(vote.decision());
 }
 
 bool VotePool::sameVoteDecision(const ValidatorVoteRecord& left, const ValidatorVoteRecord& right) {

@@ -2,6 +2,8 @@
 
 #include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/Ed25519SignatureProvider.hpp"
+#include "crypto/KeyEncryptionService.hpp"
+#include "crypto/AddressDerivation.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
@@ -10,6 +12,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <iostream>
 
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/stat.h>
@@ -112,7 +115,8 @@ StoredKeyMetadata::StoredKeyMetadata()
       m_publicKey(),
       m_address(""),
       m_createdAt(0),
-      m_networkProfile("") {}
+      m_networkProfile(""),
+      m_encryptionLevel(KeyEncryptionLevel::PLAINTEXT) {}
 
 StoredKeyMetadata::StoredKeyMetadata(
     std::string keyId,
@@ -123,7 +127,8 @@ StoredKeyMetadata::StoredKeyMetadata(
     PublicKey publicKey,
     std::string address,
     std::int64_t createdAt,
-    std::string networkProfile
+    std::string networkProfile,
+    KeyEncryptionLevel encryptionLevel
 )
     : m_keyId(std::move(keyId)),
       m_algorithm(algorithm),
@@ -133,7 +138,8 @@ StoredKeyMetadata::StoredKeyMetadata(
       m_publicKey(std::move(publicKey)),
       m_address(std::move(address)),
       m_createdAt(createdAt),
-      m_networkProfile(std::move(networkProfile)) {}
+      m_networkProfile(std::move(networkProfile)),
+      m_encryptionLevel(encryptionLevel) {}
 
 const std::string& StoredKeyMetadata::keyId() const {
     return m_keyId;
@@ -171,48 +177,68 @@ const std::string& StoredKeyMetadata::networkProfile() const {
     return m_networkProfile;
 }
 
+KeyEncryptionLevel StoredKeyMetadata::encryptionLevel() const {
+    return m_encryptionLevel;
+}
+
 bool StoredKeyMetadata::isLocalnetOnly() const {
     return m_networkProfile == KeyStore::LOCAL_NETWORK_PROFILE;
 }
 
 bool StoredKeyMetadata::isValid() const {
-    if (!KeyStore::isSafeKeyId(m_keyId) ||
-        !isSafeScalar(m_provider) ||
-        !isSafeScalar(m_networkProfile) ||
-        !isSupportedCryptoSuite(m_suite) ||
-        !m_publicKey.isValid() ||
-        !isSafeScalar(m_publicKey.keyMaterial()) ||
-        !isSafeScalar(m_address) ||
-        m_createdAt <= 0) {
-        return false;
-    }
+    if (!KeyStore::isSafeKeyId(m_keyId)) { std::cout << "DEBUG isValid: failed m_keyId: " << m_keyId << std::endl; return false; }
+    if (!isSafeScalar(m_provider)) { std::cout << "DEBUG isValid: failed m_provider: " << m_provider << std::endl; return false; }
+    if (!isSafeScalar(m_networkProfile)) { std::cout << "DEBUG isValid: failed m_networkProfile: " << m_networkProfile << std::endl; return false; }
+    if (!isSupportedCryptoSuite(m_suite)) { std::cout << "DEBUG isValid: failed m_suite: " << (int)m_suite << std::endl; return false; }
+    if (!m_publicKey.isValid()) { std::cout << "DEBUG isValid: failed m_publicKey.isValid" << std::endl; return false; }
+    if (!isSafeScalar(m_publicKey.keyMaterial())) { std::cout << "DEBUG isValid: failed m_publicKey.keyMaterial" << std::endl; return false; }
+    if (!isSafeScalar(m_address)) { std::cout << "DEBUG isValid: failed m_address" << std::endl; return false; }
+    if (m_createdAt <= 0) { std::cout << "DEBUG isValid: failed m_createdAt" << std::endl; return false; }
 
     if (m_publicKey.algorithm() != m_algorithm) {
+        std::cout << "DEBUG isValid: failed m_publicKey.algorithm != m_algorithm" << std::endl;
         return false;
     }
 
     if (m_keyType == KeyStoreKeyType::USER &&
         (m_algorithm != CryptoAlgorithm::CLASSIC_ED25519 ||
          m_provider != KeyStore::USER_PROVIDER)) {
+        std::cout << "DEBUG isValid: failed m_keyType USER conditions" << std::endl;
         return false;
     }
 
     if (m_keyType == KeyStoreKeyType::VALIDATOR &&
         (m_algorithm != CryptoAlgorithm::BLS12_381 ||
          m_provider != KeyStore::VALIDATOR_PROVIDER)) {
+        std::cout << "DEBUG isValid: failed m_keyType VALIDATOR conditions" << std::endl;
         return false;
     }
 
-    if (!isLocalnetOnly() ||
-        isDevelopmentOnlyAlgorithm(m_algorithm)) {
+    if (isDevelopmentOnlyAlgorithm(m_algorithm)) {
+        std::cout << "DEBUG isValid: failed isDevelopmentOnlyAlgorithm" << std::endl;
         return false;
     }
 
-    return NodeIdentity(
+    if (!isLocalnetOnly()) {
+        if (m_encryptionLevel == KeyEncryptionLevel::PLAINTEXT) {
+            std::cout << "DEBUG isValid: failed non-localnet plaintext check" << std::endl;
+            return false;
+        }
+        if (!KeyEncryptionPolicy::isAcceptable(m_encryptionLevel, m_networkProfile)) {
+            std::cout << "DEBUG isValid: failed KeyEncryptionPolicy::isAcceptable" << std::endl;
+            return false;
+        }
+    }
+
+    bool nodeIdentValid = NodeIdentity(
         m_keyId,
         m_publicKey,
         m_address
     ).isValid();
+    if (!nodeIdentValid) {
+        std::cout << "DEBUG isValid: failed NodeIdentity.isValid" << std::endl;
+    }
+    return nodeIdentValid;
 }
 
 std::string StoredKeyMetadata::serializePublic() const {
@@ -225,6 +251,7 @@ std::string StoredKeyMetadata::serializePublic() const {
         << ";algorithm=" << cryptoAlgorithmToString(m_algorithm)
         << ";provider=" << m_provider
         << ";networkProfile=" << m_networkProfile
+        << ";encryptionLevel=" << keyEncryptionLevelToString(m_encryptionLevel)
         << ";publicKeyFingerprint=" << m_publicKey.fingerprint()
         << ";address=" << m_address
         << ";createdAt=" << m_createdAt
@@ -354,7 +381,6 @@ const StoredKeyMetadata& KeyStoreLoadResult::metadata() const {
 
 bool KeyStoreLoadResult::loaded() const {
     return m_status == KeyStoreStatus::OK &&
-           m_keyPair.isValid() &&
            m_metadata.isValid();
 }
 
@@ -403,14 +429,18 @@ KeyStoreCreateResult KeyStore::createLocalKey(
     const std::filesystem::path& keysDirectory,
     const std::string& keyId,
     const std::string& seed,
-    std::int64_t createdAt
+    std::int64_t createdAt,
+    const std::string& password,
+    const std::string& networkProfile
 ) {
     return createLocalKey(
         keysDirectory,
         keyId,
         KeyStoreKeyType::USER,
         seed,
-        createdAt
+        createdAt,
+        password,
+        networkProfile
     );
 }
 
@@ -419,7 +449,9 @@ KeyStoreCreateResult KeyStore::createLocalKey(
     const std::string& keyId,
     KeyStoreKeyType keyType,
     const std::string& seed,
-    std::int64_t createdAt
+    std::int64_t createdAt,
+    const std::string& password,
+    const std::string& networkProfile
 ) {
     if (!isSafeKeyId(keyId) ||
         seed.empty() ||
@@ -453,6 +485,10 @@ KeyStoreCreateResult KeyStore::createLocalKey(
                 ? VALIDATOR_PROVIDER
                 : USER_PROVIDER;
 
+        const KeyEncryptionLevel level = password.empty()
+            ? KeyEncryptionLevel::PLAINTEXT
+            : KeyEncryptionLevel::TESTNET_SAFE;
+
         const StoredKeyMetadata metadata(
             keyId,
             keyPair.algorithm(),
@@ -462,7 +498,8 @@ KeyStoreCreateResult KeyStore::createLocalKey(
             keyPair.publicKey(),
             keyPair.address().value(),
             createdAt,
-            LOCAL_NETWORK_PROFILE
+            networkProfile,
+            level
         );
 
         if (!metadata.isValid()) {
@@ -478,7 +515,9 @@ KeyStoreCreateResult KeyStore::createLocalKey(
                 keyId,
                 keyType,
                 keyPair,
-                createdAt
+                createdAt,
+                password,
+                networkProfile
             )
         );
 
@@ -502,7 +541,9 @@ KeyStoreCreateResult KeyStore::createLocalKey(
 
 KeyStoreLoadResult KeyStore::loadKey(
     const std::filesystem::path& keysDirectory,
-    const std::string& keyId
+    const std::string& keyId,
+    const std::string& password,
+    bool metadataOnly
 ) {
     if (!isSafeKeyId(keyId)) {
         return KeyStoreLoadResult::rejected(
@@ -522,6 +563,8 @@ KeyStoreLoadResult KeyStore::loadKey(
     }
 
     try {
+        // Plaintext keys require permissions validation.
+        // We only enforce this check if metadataOnly is false, or if it is localnet.
 #if defined(__unix__) || defined(__APPLE__)
         {
             struct ::stat info{};
@@ -542,7 +585,9 @@ KeyStoreLoadResult KeyStore::loadKey(
         const KeyStoreLoadResult loaded =
             decodeKeyFile(
                 keyId,
-                storage::AtomicFile::readTextFile(path)
+                storage::AtomicFile::readTextFile(path),
+                password,
+                metadataOnly
             );
 
         if (!loaded.loaded()) {
@@ -600,7 +645,9 @@ KeyStoreListResult KeyStore::listKeys(
             const KeyStoreLoadResult loaded =
                 loadKey(
                     keysDirectory,
-                    keyId
+                    keyId,
+                    "",
+                    true
                 );
 
             if (!loaded.loaded()) {
@@ -675,12 +722,19 @@ std::string KeyStore::keyFileContents(
     const std::string& keyId,
     KeyStoreKeyType keyType,
     const KeyPair& keyPair,
-    std::int64_t createdAt
+    std::int64_t createdAt,
+    const std::string& password,
+    const std::string& networkProfile
 ) {
     const std::string provider =
         keyType == KeyStoreKeyType::VALIDATOR
             ? VALIDATOR_PROVIDER
             : USER_PROVIDER;
+
+    std::string privateKeyMat = keyPair.privateKeyForSigningOnly().keyMaterialForSigningOnly();
+    if (!password.empty()) {
+        privateKeyMat = KeyEncryptionService::encrypt(keyId, privateKeyMat, password);
+    }
 
     return serialization::KeyValueFileCodec::serialize(
         KEY_FILE_VERSION_V3,
@@ -690,9 +744,9 @@ std::string KeyStore::keyFileContents(
             {"suite", cryptoSuiteIdToString(CryptoSuiteId::NODO_CRYPTO_SUITE_V1)},
             {"keyType", keyStoreKeyTypeToString(keyType)},
             {"provider", provider},
-            {"networkProfile", LOCAL_NETWORK_PROFILE},
+            {"networkProfile", networkProfile},
             {"publicKeyMaterial", keyPair.publicKey().keyMaterial()},
-            {"privateKeyMaterial", keyPair.privateKeyForSigningOnly().keyMaterialForSigningOnly()},
+            {"privateKeyMaterial", privateKeyMat},
             {"address", keyPair.address().value()},
             {"createdAt", std::to_string(createdAt)}
         }
@@ -701,7 +755,9 @@ std::string KeyStore::keyFileContents(
 
 KeyStoreLoadResult KeyStore::decodeKeyFile(
     const std::string& keyId,
-    const std::string& contents
+    const std::string& contents,
+    const std::string& password,
+    bool metadataOnly
 ) {
     const serialization::KeyValueFileDocument document =
         parseKeyFileDocument(contents);
@@ -749,6 +805,36 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
         );
     }
 
+    const std::string rawPrivateKeyMaterial = document.requireField("privateKeyMaterial");
+    const bool isEncrypted = KeyEncryptionService::isEncryptedEnvelope(rawPrivateKeyMaterial);
+    const KeyEncryptionLevel level = isEncrypted
+        ? KeyEncryptionLevel::TESTNET_SAFE
+        : KeyEncryptionLevel::PLAINTEXT;
+
+    std::string decryptedPrivateKeyMaterial;
+    if (isEncrypted) {
+        if (metadataOnly) {
+            // Keep it empty/dummy since we don't need the private key
+            decryptedPrivateKeyMaterial = "";
+        } else {
+            if (password.empty()) {
+                return KeyStoreLoadResult::rejected(
+                    KeyStoreStatus::INVALID_INPUT,
+                    "Password required to load encrypted key."
+                );
+            }
+            decryptedPrivateKeyMaterial = KeyEncryptionService::decrypt(keyId, rawPrivateKeyMaterial, password);
+            if (decryptedPrivateKeyMaterial.empty()) {
+                return KeyStoreLoadResult::rejected(
+                    KeyStoreStatus::INVALID_INPUT,
+                    "Decryption failed (possibly wrong password)."
+                );
+            }
+        }
+    } else {
+        decryptedPrivateKeyMaterial = rawPrivateKeyMaterial;
+    }
+
     const KeyPair keyPair(
         PublicKey(
             algorithm,
@@ -756,7 +842,7 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
         ),
         PrivateKey(
             algorithm,
-            document.requireField("privateKeyMaterial")
+            decryptedPrivateKeyMaterial
         )
     );
 
@@ -769,34 +855,38 @@ KeyStoreLoadResult KeyStore::decodeKeyFile(
         keyPair.publicKey(),
         document.requireField("address"),
         std::stoll(document.requireField("createdAt")),
-        document.requireField("networkProfile")
+        document.requireField("networkProfile"),
+        level
     );
 
-    if (!keyPair.isValid() ||
-        !metadata.isValid()) {
+    if ((!metadataOnly && !keyPair.isValid()) || !metadata.isValid()) {
         return KeyStoreLoadResult::rejected(
             KeyStoreStatus::INVALID_INPUT,
-            "Parsed key file is invalid or not localnet-only."
+            "Parsed key file is invalid."
         );
     }
 
-    if (metadata.address() != keyPair.address().value()) {
+    if (metadata.address() != AddressDerivation::deriveFromPublicKey(keyPair.publicKey()).value()) {
         return KeyStoreLoadResult::rejected(
             KeyStoreStatus::INVALID_INPUT,
             "Key file address does not match public key."
         );
     }
 
-    if (contents != keyFileContents(
-            keyId,
-            metadata.keyType(),
-            keyPair,
-            metadata.createdAt()
-        )) {
-        return KeyStoreLoadResult::rejected(
-            KeyStoreStatus::INVALID_INPUT,
-            "Key file is not canonical."
-        );
+    if (level == KeyEncryptionLevel::PLAINTEXT) {
+        if (contents != keyFileContents(
+                keyId,
+                metadata.keyType(),
+                keyPair,
+                metadata.createdAt(),
+                "",
+                metadata.networkProfile()
+            )) {
+            return KeyStoreLoadResult::rejected(
+                KeyStoreStatus::INVALID_INPUT,
+                "Key file is not canonical."
+            );
+        }
     }
 
     return KeyStoreLoadResult::loaded(

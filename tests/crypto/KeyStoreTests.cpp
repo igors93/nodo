@@ -200,6 +200,108 @@ void testRejectsMalformedKeyFile() {
     clean(path);
 }
 
+void testEncryptedKey() {
+    const std::filesystem::path path = tempPath();
+    clean(path);
+
+    const std::string keyId = "enc-user";
+    const std::string seed = "key-store-test-seed";
+    const std::string password = "strong-password-123";
+    const std::string network = "testnet-candidate";
+
+    // 1. Create encrypted key
+    const auto created =
+        KeyStore::createLocalKey(
+            path,
+            keyId,
+            KeyStoreKeyType::USER,
+            seed,
+            kTimestamp,
+            password,
+            network
+        );
+
+    requireCondition(
+        created.success(),
+        "Encrypted key creation should succeed. Reason: " + created.reason()
+    );
+
+    requireCondition(
+        created.metadata().networkProfile() == network &&
+        !created.metadata().isLocalnetOnly() &&
+        created.metadata().encryptionLevel() == nodo::crypto::KeyEncryptionLevel::TESTNET_SAFE,
+        "Created encrypted key should match the network profile and encryption level."
+    );
+
+    // 2. Try loading without password
+    const auto loadedNoPassword =
+        KeyStore::loadKey(
+            path,
+            keyId
+        );
+
+    requireCondition(
+        !loadedNoPassword.loaded(),
+        "Loading encrypted key without password should fail."
+    );
+
+    // 3. Try loading with wrong password
+    const auto loadedWrongPassword =
+        KeyStore::loadKey(
+            path,
+            keyId,
+            "wrong-password"
+        );
+
+    requireCondition(
+        !loadedWrongPassword.loaded(),
+        "Loading encrypted key with wrong password should fail."
+    );
+
+    // 4. Load metadata only
+    const auto loadedMetadataOnly =
+        KeyStore::loadKey(
+            path,
+            keyId,
+            "",
+            true
+        );
+
+    requireCondition(
+        loadedMetadataOnly.loaded() &&
+        loadedMetadataOnly.metadata().keyId() == keyId &&
+        loadedMetadataOnly.metadata().networkProfile() == network,
+        "Loading metadata only should succeed without password. Reason: " + loadedMetadataOnly.reason()
+    );
+
+    // 5. Load with correct password
+    const auto loadedCorrectPassword =
+        KeyStore::loadKey(
+            path,
+            keyId,
+            password
+        );
+
+    requireCondition(
+        loadedCorrectPassword.loaded() &&
+        loadedCorrectPassword.metadata().address() == created.metadata().address(),
+        "Loading encrypted key with correct password should succeed."
+    );
+
+    // 6. Test that listed keys includes our encrypted key and can load metadata
+    const auto listed = KeyStore::listKeys(path);
+    requireCondition(
+        listed.loaded() &&
+        listed.keys().size() == 1U &&
+        listed.keys().front().keyId() == keyId &&
+        listed.keys().front().networkProfile() == network &&
+        listed.keys().front().encryptionLevel() == nodo::crypto::KeyEncryptionLevel::TESTNET_SAFE,
+        "Listing should succeed and list encrypted keys without password."
+    );
+
+    clean(path);
+}
+
 } // namespace
 
 int main() {
@@ -207,6 +309,7 @@ int main() {
         testCreateLoadAndListKey();
         testRejectsUnsafeKeyId();
         testRejectsMalformedKeyFile();
+        testEncryptedKey();
 
         std::cout << "Nodo key store tests passed.\n";
         return 0;

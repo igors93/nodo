@@ -21,7 +21,8 @@ DoubleVoteDetectionResult DoubleVoteDetector::detect(
             votePool.firstVoteForValidator(
                 conflicting.validatorAddress(),
                 conflicting.blockIndex(),
-                conflicting.round()
+                conflicting.round(),
+                conflicting.decision()
             );
 
         if (!original) {

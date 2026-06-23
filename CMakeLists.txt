@@ -66,6 +66,12 @@ add_library(nodo_core STATIC
 target_include_directories(nodo_core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${asio_SOURCE_DIR}/asio/include
+)
+
+target_compile_definitions(nodo_core
+    PUBLIC
+        ASIO_STANDALONE
 )
 
 target_compile_options(nodo_core
@@ -74,10 +80,13 @@ target_compile_options(nodo_core
         $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>
 )
 
+find_package(Threads REQUIRED)
+
 target_link_libraries(nodo_core
     PUBLIC
         ${NODO_CRYPTO_TARGET}
         blst::blst
+        Threads::Threads
 )
 
 if(WIN32)

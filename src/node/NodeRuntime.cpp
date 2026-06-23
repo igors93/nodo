@@ -295,6 +295,8 @@ std::string nodeRuntimeStatusToString(
     switch (status) {
         case NodeRuntimeStatus::RUNNING:
             return "RUNNING";
+        case NodeRuntimeStatus::HALTED:
+            return "HALTED";
         case NodeRuntimeStatus::STOPPED:
         default:
             return "STOPPED";
@@ -445,6 +447,10 @@ bool NodeRuntime::isRunning() const {
     return m_status == NodeRuntimeStatus::RUNNING;
 }
 
+bool NodeRuntime::isHalted() const {
+    return m_status == NodeRuntimeStatus::HALTED;
+}
+
 bool NodeRuntime::isValid() const {
     return isRunning() &&
            m_config.isValid() &&
@@ -454,6 +460,10 @@ bool NodeRuntime::isValid() const {
            m_finalizationRegistry.isValid() &&
            m_consensusRoundManager.currentState().isValid() &&
            m_peerManager.isValid();
+}
+
+void NodeRuntime::halt() {
+    m_status = NodeRuntimeStatus::HALTED;
 }
 
 consensus::ChainForkSummary NodeRuntime::chainSummary() const {

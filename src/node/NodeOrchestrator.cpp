@@ -135,6 +135,7 @@ void NodeOrchestrator::stop() {
 
     if (m_rpcServer)       m_rpcServer->stop();
     if (m_consensusLoop)   m_consensusLoop->stop();
+    if (m_discoveryService) m_discoveryService->stop();
     if (m_tcpRuntime)      m_tcpRuntime->stop();
 }
 
@@ -302,12 +303,67 @@ bool NodeOrchestrator::startTransport() {
     const auto transportResult = m_tcpRuntime->start();
     if (!transportResult.success()) return false;
 
-    // Load known peers from disk and connect.
+    // Extract TCP port to compute UDP port
+    const auto& peer = m_config.localPeer();
+    const std::string& endpoint = peer.endpoint();
+    std::uint16_t tcpPort = 30333;
+    const auto colon = endpoint.rfind(':');
+    if (colon != std::string::npos) {
+        try {
+            tcpPort = static_cast<std::uint16_t>(
+                std::stoul(endpoint.substr(colon + 1))
+            );
+        } catch (...) {}
+    }
+    std::uint16_t udpPort = tcpPort + 1;
+
+    m_discoveryService = std::make_unique<p2p::DiscoveryService>(
+        peer.peerId(),
+        udpPort,
+        tcpPort
+    );
+
+    m_discoveryService->registerPeerDiscoveredCallback(
+        [this](const std::string& peerId, const std::string& host, std::uint16_t port) {
+            if (m_tcpRuntime) {
+                const auto nowSec = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+                ).count();
+                p2p::PeerMetadata peerMeta(
+                    peerId,
+                    p2p::PeerEndpoint(host, port),
+                    "",
+                    nowSec,
+                    nowSec,
+                    0,
+                    false
+                );
+                if (m_tcpRuntime->addPeer(peerMeta).success()) {
+                    m_tcpRuntime->connectPeer(peerId);
+                }
+            }
+        }
+    );
+
+    m_discoveryService->start();
+
+    // Load known peers from disk, seed them into the discovery service, and connect.
     const auto now = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()
     ).count();
 
     m_tcpRuntime->loadPeersFromDisk(now);
+
+    const auto entries = TcpTestnetPeerStore::load(m_tcpRuntime->config().peersFilePath());
+    for (const auto& entry : entries) {
+        m_discoveryService->addPeer(
+            entry.nodeId(),
+            entry.endpoint().host(),
+            entry.endpoint().port(),
+            entry.endpoint().port() + 1
+        );
+    }
+
     return true;
 }
 
@@ -323,6 +379,10 @@ bool NodeOrchestrator::startConsensus() {
     m_consensusLoop->setLocalValidatorAddress(
         m_config.localValidatorAddress()
     );
+
+    if (m_localSigner.has_value()) {
+        m_consensusLoop->setLocalSigner(&m_localSigner.value());
+    }
 
     // Wire the block producer callback.
     m_consensusLoop->setBlockProducerCallback(

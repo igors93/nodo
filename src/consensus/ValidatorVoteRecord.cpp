@@ -326,6 +326,14 @@ ValidatorVoteDecision parseVoteDecision(
         return ValidatorVoteDecision::REJECT;
     }
 
+    if (value == "PREVOTE") {
+        return ValidatorVoteDecision::PREVOTE;
+    }
+
+    if (value == "PRECOMMIT") {
+        return ValidatorVoteDecision::PRECOMMIT;
+    }
+
     throw std::invalid_argument("Unknown validator vote decision: " + value);
 }
 
@@ -460,6 +468,10 @@ std::string validatorVoteDecisionToString(
             return "APPROVE";
         case ValidatorVoteDecision::REJECT:
             return "REJECT";
+        case ValidatorVoteDecision::PREVOTE:
+            return "PREVOTE";
+        case ValidatorVoteDecision::PRECOMMIT:
+            return "PRECOMMIT";
         case ValidatorVoteDecision::UNKNOWN:
         default:
             return "UNKNOWN";

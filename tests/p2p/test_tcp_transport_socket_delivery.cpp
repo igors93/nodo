@@ -1,9 +1,28 @@
 #include "p2p/TcpTransport.hpp"
 
 #include <cassert>
+#include <chrono>
 #include <iostream>
+#include <optional>
+#include <thread>
 
 using namespace nodo;
+
+std::optional<p2p::TransportMessage> waitForMessage(
+    p2p::TcpTransport& transport,
+    const std::string& localNodeId
+) {
+    for (int attempt = 0; attempt < 500; ++attempt) {
+        auto received = transport.poll(localNodeId);
+        if (received.has_value()) {
+            return received;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    return std::nullopt;
+}
 
 int main() {
     p2p::TcpTransport nodeA;
@@ -42,16 +61,39 @@ int main() {
 
     assert(nodeA.send(message).success());
 
-    std::optional<p2p::TransportMessage> received;
-    for (int attempt = 0; attempt < 1000 && !received.has_value(); ++attempt) {
-        received = nodeB.poll("node-b");
-    }
-
+    const auto received = waitForMessage(nodeB, "node-b");
     assert(received.has_value());
     assert(received->fromNodeId() == "node-a");
     assert(received->toNodeId() == "node-b");
     assert(received->envelope().payload() == "hello-node-b");
     assert(nodeB.connected("node-b", "node-a"));
+    assert(!nodeB.connected("wrong-local-node", "node-a"));
+
+    p2p::NetworkEnvelope replyEnvelope(
+        "nodo-localnet",
+        "localnet-chain",
+        "1.0.0",
+        p2p::NetworkMessageType::PONG,
+        "node-b",
+        1001,
+        30,
+        "hello-node-a"
+    );
+
+    p2p::TransportMessage reply(
+        "node-b",
+        "node-a",
+        replyEnvelope,
+        1001
+    );
+
+    assert(nodeB.send(reply).success());
+
+    const auto replyReceived = waitForMessage(nodeA, "node-a");
+    assert(replyReceived.has_value());
+    assert(replyReceived->fromNodeId() == "node-b");
+    assert(replyReceived->toNodeId() == "node-a");
+    assert(replyReceived->envelope().payload() == "hello-node-a");
 
     std::cout << "tcp socket delivery tests passed\n";
     return 0;

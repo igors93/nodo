@@ -4,20 +4,23 @@
 #include "p2p/Peer.hpp"
 #include "p2p/Transport.hpp"
 
+#include <asio.hpp>
 #include <cstdint>
 #include <map>
+#include <mutex>
+#include <queue>
+#include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace nodo::p2p {
 
 /*
- * TcpTransport is the first real socket-backed transport for Nodo testnet
- * runtime experiments. It is synchronous and deterministic by design: tests and
- * local operators explicitly call poll() instead of relying on background
- * threads. Future production transports can use the same Transport interface
- * with event loops, encryption and peer discovery.
+ * TcpTransport implements an asynchronous non-blocking TCP transport using Asio.
+ * It runs the Asio event loop in a background thread and maintains a thread-safe
+ * queue of incoming messages for the main state machine's poll() loop.
  */
 class TcpTransport final : public Transport {
 public:
@@ -79,34 +82,53 @@ public:
 
     void closeAll();
 
-#ifdef _WIN32
-    using SocketHandle = std::uintptr_t;
-#else
-    using SocketHandle = int;
-#endif
-
 private:
-    SocketHandle m_listenFd;
-    bool m_socketRuntimeReady;
+    struct PeerSession : public std::enable_shared_from_this<PeerSession> {
+        asio::ip::tcp::socket socket;
+        std::string peerNodeId;
+        bool identified = false;
+
+        // Buffers for reading frames
+        std::uint32_t pendingHeader = 0;
+        std::vector<unsigned char> pendingFrame;
+
+        // Outbound write queue
+        std::queue<std::vector<unsigned char>> writeQueue;
+        bool writing = false;
+
+        TcpTransport& transport;
+
+        PeerSession(asio::ip::tcp::socket s, TcpTransport& t)
+            : socket(std::move(s)), transport(t) {}
+    };
+
+    mutable std::mutex m_mutex;
+
+    // Asio members
+    asio::io_context m_ioContext;
+    asio::executor_work_guard<asio::io_context::executor_type> m_workGuard;
+    std::unique_ptr<asio::ip::tcp::acceptor> m_acceptor;
+    std::thread m_ioThread;
+
     std::string m_localNodeId;
     PeerEndpoint m_localEndpoint;
+
+    // Registered peer endpoints
     std::map<std::string, PeerEndpoint> m_peerEndpoints;
-    std::map<std::string, SocketHandle> m_connectionsByPeer;
-    std::vector<SocketHandle> m_unidentifiedInboundFds;
 
-    TransportResult acceptAvailableConnections();
-    std::optional<TransportMessage> pollFd(
-        SocketHandle fd,
-        bool unidentified
-    );
+    // Active sessions
+    std::map<std::string, std::shared_ptr<PeerSession>> m_connectionsByPeer;
+    std::vector<std::shared_ptr<PeerSession>> m_unidentifiedSessions;
 
-    void rememberConnection(
-        const std::string& remoteNodeId,
-        SocketHandle fd
-    );
+    // Incoming messages
+    std::queue<TransportMessage> m_incomingQueue;
 
-    void closeFd(SocketHandle fd);
-    void closePeerConnection(const std::string& remoteNodeId);
+    void startAccept();
+    void startRead(std::shared_ptr<PeerSession> session);
+    void writeSession(std::shared_ptr<PeerSession> session, std::vector<unsigned char> data);
+    void writeSessionLoop(std::shared_ptr<PeerSession> session);
+    void handleSessionError(std::shared_ptr<PeerSession> session);
+    void identifySession(std::shared_ptr<PeerSession> session, const std::string& nodeId);
 
     static bool isSafeNodeId(const std::string& nodeId);
     static bool isSafeHost(const std::string& host);

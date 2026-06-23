@@ -6,23 +6,23 @@
 
 namespace nodo::core {
 
-struct MerkleProofNode {
+struct PrunerMerkleProofNode {
     bool isRight;
     std::string hash;
 };
 
-class MerkleProof {
+class PrunerMerkleProof {
 public:
-    MerkleProof(const std::string& leaf, const std::vector<MerkleProofNode>& path);
+    PrunerMerkleProof(const std::string& leaf, const std::vector<PrunerMerkleProofNode>& path);
 
     bool verify(const std::string& rootHash) const;
 
     const std::string& leaf() const;
-    const std::vector<MerkleProofNode>& path() const;
+    const std::vector<PrunerMerkleProofNode>& path() const;
 
 private:
     std::string m_leaf;
-    std::vector<MerkleProofNode> m_path;
+    std::vector<PrunerMerkleProofNode> m_path;
 };
 
 } // namespace nodo::core

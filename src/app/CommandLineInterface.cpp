@@ -45,10 +45,62 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <termios.h>
+#include <unistd.h>
+#include <cstring>
 
 namespace nodo::app {
 
 namespace {
+
+std::string readPasswordNoEcho(const std::string& prompt) {
+    std::cout << prompt;
+    std::cout.flush();
+
+    termios oldt;
+    tcgetattr(STDIN_FILENO, &oldt);
+    termios newt = oldt;
+    newt.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+
+    std::string password;
+    std::getline(std::cin, password);
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+    std::cout << "\n";
+    return password;
+}
+
+crypto::KeyStoreLoadResult loadKeyWithPrompt(
+    const std::filesystem::path& keysDir,
+    const std::string& keyId
+) {
+    const crypto::KeyStoreLoadResult metaLoad =
+        crypto::KeyStore::loadKey(
+            keysDir,
+            keyId,
+            "",
+            true
+        );
+    
+    if (metaLoad.status() != crypto::KeyStoreStatus::OK) {
+        return metaLoad;
+    }
+    
+    if (metaLoad.metadata().encryptionLevel() == crypto::KeyEncryptionLevel::PLAINTEXT) {
+        return crypto::KeyStore::loadKey(keysDir, keyId);
+    }
+    
+    const char* envVal = std::getenv("NODO_KEY_PASSWORD");
+    std::string password;
+    if (envVal && std::strlen(envVal) > 0) {
+        password = envVal;
+    } else {
+        password = readPasswordNoEcho("Enter password for key '" + keyId + "': ");
+    }
+    
+    return crypto::KeyStore::loadKey(keysDir, keyId, password);
+}
 
 std::int64_t nowUnixSeconds() {
     return std::chrono::duration_cast<std::chrono::seconds>(
@@ -892,7 +944,7 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
         options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
 
     const crypto::KeyStoreLoadResult key =
-        crypto::KeyStore::loadKey(
+        loadKeyWithPrompt(
             directoryConfig.keysDirectoryPath(),
             validatorKeyId
         );
@@ -1125,7 +1177,7 @@ CommandLineResult CommandLineInterface::executeDiagnostics(
         options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
 
     const crypto::KeyStoreLoadResult key =
-        crypto::KeyStore::loadKey(
+        loadKeyWithPrompt(
             directoryConfig.keysDirectoryPath(),
             validatorKeyId
         );
@@ -1247,6 +1299,29 @@ CommandLineResult CommandLineInterface::executeKeysCreate(
                 + keyId;
         };
 
+    std::string password;
+    if (crypto::KeyEncryptionPolicy::isOfficialNetwork(options.networkName)) {
+        const char* envVal = std::getenv("NODO_KEY_PASSWORD");
+        if (envVal && std::strlen(envVal) > 0) {
+            password = envVal;
+        } else {
+            password = readPasswordNoEcho("Enter password to encrypt private key: ");
+            if (password.size() < 8) {
+                return CommandLineResult::failure(
+                    CommandLineStatus::COMMAND_FAILED,
+                    "Error: Password must be at least 8 characters for official networks.\n"
+                );
+            }
+            std::string confirm = readPasswordNoEcho("Confirm password: ");
+            if (password != confirm) {
+                return CommandLineResult::failure(
+                    CommandLineStatus::COMMAND_FAILED,
+                    "Error: Passwords do not match.\n"
+                );
+            }
+        }
+    }
+
     const auto createKey =
         [&](const std::string& keyId, crypto::KeyStoreKeyType keyType) {
             return crypto::KeyStore::createLocalKey(
@@ -1254,7 +1329,9 @@ CommandLineResult CommandLineInterface::executeKeysCreate(
                 keyId,
                 keyType,
                 seedFor(keyId, keyType),
-                options.timestamp
+                options.timestamp,
+                password,
+                options.networkName
             );
         };
 
@@ -1501,7 +1578,7 @@ CommandLineResult CommandLineInterface::executeSubmitTransaction(
             : defaultLocalnetUserKeyId();
 
     const crypto::KeyStoreLoadResult key =
-        crypto::KeyStore::loadKey(
+        loadKeyWithPrompt(
             directoryConfig.keysDirectoryPath(),
             signingKeyId
         );
@@ -1671,7 +1748,7 @@ CommandLineResult CommandLineInterface::executeProduceBlock(
             : defaultLocalnetKeyId();
 
     const crypto::KeyStoreLoadResult key =
-        crypto::KeyStore::loadKey(
+        loadKeyWithPrompt(
             directoryConfig.keysDirectoryPath(),
             validatorKeyId
         );

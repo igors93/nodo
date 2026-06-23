@@ -72,6 +72,17 @@ KeySafetyCheckResult ProductionKeySafetyGate::check(
         );
     }
 
+    // Explicitly reject plaintext keys on official networks.
+    if (metadata.encryptionLevel() == crypto::KeyEncryptionLevel::PLAINTEXT &&
+        crypto::KeyEncryptionPolicy::isOfficialNetwork(targetNetworkName)) {
+        return KeySafetyCheckResult::rejected(
+            KeySafetyStatus::REJECTED_PLAINTEXT_ON_OFFICIAL_NETWORK,
+            "Key '" + metadata.keyId() + "' is plaintext and "
+            "cannot be used on official network '" + targetNetworkName + "'. "
+            "Keys for official networks must be encrypted."
+        );
+    }
+
     // A key bound to a specific network profile must match the target network.
     const std::string& keyProfile = metadata.networkProfile();
     if (!keyProfile.empty() &&
