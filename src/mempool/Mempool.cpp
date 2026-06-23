@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <limits>
 #include <map>
+#include <numeric>
 #include <set>
 #include <sstream>
 #include <utility>
@@ -256,6 +257,29 @@ std::string MempoolAdmissionResult::serialize() const {
     return oss.str();
 }
 
+// MempoolStats
+
+std::size_t MempoolStats::countBySender(const std::string& address) const {
+    const auto it = countPerSender.find(address);
+    if (it == countPerSender.end()) {
+        return 0;
+    }
+    return it->second;
+}
+
+std::string MempoolStats::serialize() const {
+    std::ostringstream oss;
+    oss << "MempoolStats{"
+        << "totalCount=" << totalCount
+        << ";highestFeeRaw=" << highestFee.rawUnits()
+        << ";lowestFeeRaw=" << lowestFee.rawUnits()
+        << ";averageFeeRaw=" << averageFee.rawUnits()
+        << "}";
+    return oss.str();
+}
+
+// Mempool
+
 Mempool::Mempool(
     MempoolConfig config
 )
@@ -346,10 +370,15 @@ MempoolAdmissionResult Mempool::admitTransaction(
             );
         }
 
-        if (transaction.fee().rawUnits() <= existingEntry->second.priorityFeeRaw()) {
+        // Enforce 10% minimum bump: incoming fee must be >= existing * 110 / 100
+        const std::int64_t existingFee = existingEntry->second.priorityFeeRaw();
+        const std::int64_t minimumReplacementFee =
+            (existingFee * REPLACEMENT_NUMERATOR) / REPLACEMENT_DENOMINATOR;
+
+        if (transaction.fee().rawUnits() < minimumReplacementFee) {
             return MempoolAdmissionResult::rejected(
                 MempoolAdmissionStatus::CONFLICTING_NONCE,
-                "Replacement transaction must pay a strictly higher fee."
+                "Replacement transaction must pay at least 10% more than the existing fee."
             );
         }
 
@@ -586,6 +615,112 @@ std::vector<core::Transaction> Mempool::transactionsForBlock(
     }
 
     return transactions;
+}
+
+std::vector<core::Transaction> Mempool::transactionsForBlockByFee(
+    std::size_t maxCount,
+    const core::AccountStateView& accountStateView
+) const {
+    if (maxCount == 0 || !accountStateView.isValid()) {
+        return {};
+    }
+
+    // Get all entries sorted by fee descending (already deterministic via
+    // sortedEntriesByPriority: fee desc, then acceptedAt asc, then id asc)
+    const std::vector<MempoolEntry> entries =
+        sortedEntriesByPriority(m_entriesById);
+
+    std::map<std::string, std::uint64_t> nextNonceBySender;
+    std::set<std::string> selectedTransactionIds;
+    std::vector<core::Transaction> transactions;
+
+    // Multi-pass: each pass selects one transaction per sender (the highest-fee
+    // one whose nonce is next). This preserves nonce continuity while still
+    // honouring fee ordering globally.
+    bool selectedInPass = true;
+    while (selectedInPass && transactions.size() < maxCount) {
+        selectedInPass = false;
+
+        for (const auto& entry : entries) {
+            if (transactions.size() >= maxCount) {
+                break;
+            }
+
+            const core::Transaction& transaction = entry.transaction();
+
+            if (selectedTransactionIds.count(transaction.id())) {
+                continue;
+            }
+
+            auto nextNonce = nextNonceBySender.find(transaction.fromAddress());
+            if (nextNonce == nextNonceBySender.end()) {
+                if (!accountStateView.hasAccount(transaction.fromAddress())) {
+                    continue;
+                }
+
+                const core::AccountState account =
+                    accountStateView.accountOrDefault(
+                        transaction.fromAddress()
+                    );
+
+                if (account.nonce() == std::numeric_limits<std::uint64_t>::max()) {
+                    continue;
+                }
+
+                nextNonce = nextNonceBySender.emplace(
+                    transaction.fromAddress(),
+                    account.nonce() + 1
+                ).first;
+            }
+
+            if (transaction.nonce() != nextNonce->second) {
+                continue;
+            }
+
+            transactions.push_back(transaction);
+            selectedTransactionIds.insert(transaction.id());
+            ++nextNonce->second;
+            selectedInPass = true;
+            break;
+        }
+    }
+
+    return transactions;
+}
+
+MempoolStats Mempool::stats() const {
+    MempoolStats result;
+    result.totalCount = m_entriesById.size();
+
+    if (m_entriesById.empty()) {
+        return result;
+    }
+
+    std::int64_t highest = std::numeric_limits<std::int64_t>::min();
+    std::int64_t lowest  = std::numeric_limits<std::int64_t>::max();
+    std::int64_t sum     = 0;
+
+    for (const auto& [_, entry] : m_entriesById) {
+        const std::int64_t fee = entry.priorityFeeRaw();
+
+        if (fee > highest) {
+            highest = fee;
+        }
+        if (fee < lowest) {
+            lowest = fee;
+        }
+        sum += fee;
+
+        result.countPerSender[entry.transaction().fromAddress()]++;
+    }
+
+    result.highestFee = utils::Amount::fromRawUnits(highest);
+    result.lowestFee  = utils::Amount::fromRawUnits(lowest);
+    result.averageFee = utils::Amount::fromRawUnits(
+        sum / static_cast<std::int64_t>(m_entriesById.size())
+    );
+
+    return result;
 }
 
 std::size_t Mempool::size() const {

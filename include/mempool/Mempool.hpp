@@ -4,6 +4,7 @@
 #include "core/AccountStateView.hpp"
 #include "core/Transaction.hpp"
 #include "crypto/CryptoPolicy.hpp"
+#include "utils/Amount.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -123,6 +124,23 @@ private:
 };
 
 /*
+ * MempoolStats provides a snapshot of the current mempool state.
+ */
+struct MempoolStats {
+    std::size_t totalCount{0};
+    utils::Amount highestFee;
+    utils::Amount lowestFee;
+    utils::Amount averageFee;
+
+    std::size_t countBySender(const std::string& address) const;
+
+    // Per-sender counts are stored here for O(1) lookup by countBySender()
+    std::map<std::string, std::size_t> countPerSender;
+
+    std::string serialize() const;
+};
+
+/*
  * Mempool is the local admission queue for transactions waiting to enter a
  * block.
  *
@@ -132,6 +150,10 @@ private:
  */
 class Mempool {
 public:
+    // Replacement fee minimum bump: incoming fee must be >= existing * 110 / 100
+    static constexpr std::int64_t REPLACEMENT_NUMERATOR   = 110;
+    static constexpr std::int64_t REPLACEMENT_DENOMINATOR = 100;
+
     explicit Mempool(
         MempoolConfig config = MempoolConfig()
     );
@@ -174,6 +196,23 @@ public:
         std::size_t maxCount,
         const core::AccountStateView& accountStateView
     ) const;
+
+    /*
+     * Select transactions sorted by fee descending, respecting per-sender
+     * nonce continuity from the supplied account state.
+     *
+     * Highest-fee transactions appear first. Within each sender, nonces
+     * must be contiguous starting from the sender's state nonce + 1.
+     */
+    std::vector<core::Transaction> transactionsForBlockByFee(
+        std::size_t maxCount,
+        const core::AccountStateView& accountStateView
+    ) const;
+
+    /*
+     * Returns a snapshot of current mempool statistics.
+     */
+    MempoolStats stats() const;
 
     std::size_t size() const;
     bool empty() const;

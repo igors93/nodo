@@ -39,6 +39,7 @@ using nodo::crypto::SigningDomain;
 using nodo::mempool::Mempool;
 using nodo::mempool::MempoolAdmissionStatus;
 using nodo::mempool::MempoolConfig;
+using nodo::mempool::MempoolStats;
 using nodo::utils::Amount;
 
 constexpr std::int64_t kTimestamp = 1900000000;
@@ -996,6 +997,154 @@ void testReplacementUpdatesMempoolSizeWithoutUnrelatedEviction() {
     );
 }
 
+void testTransactionsForBlockByFeeOrderedHighestFirst() {
+    Mempool mempool;
+
+    // Three senders, each with nonce=1 starting from account nonce=0
+    const Transaction low =
+        signedTransfer("byFee-low", "alice", "bob", 1000, 100, 1, kTimestamp + 200);
+    const Transaction mid =
+        signedTransfer("byFee-mid", "carol", "dave", 1000, 300, 1, kTimestamp + 201);
+    const Transaction high =
+        signedTransfer("byFee-high", "erin", "frank", 1000, 900, 1, kTimestamp + 202);
+
+    requireCondition(
+        mempool.admitTransaction(low, CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION, kTimestamp + 203).accepted(),
+        "low should be accepted."
+    );
+    requireCondition(
+        mempool.admitTransaction(mid, CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION, kTimestamp + 204).accepted(),
+        "mid should be accepted."
+    );
+    requireCondition(
+        mempool.admitTransaction(high, CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION, kTimestamp + 205).accepted(),
+        "high should be accepted."
+    );
+
+    AccountStateView view;
+    requireCondition(view.putAccount(AccountState("alice", Amount::fromRawUnits(100000), 0)),
+        "alice account fixture.");
+    requireCondition(view.putAccount(AccountState("carol", Amount::fromRawUnits(100000), 0)),
+        "carol account fixture.");
+    requireCondition(view.putAccount(AccountState("erin", Amount::fromRawUnits(100000), 0)),
+        "erin account fixture.");
+
+    const std::vector<Transaction> selected =
+        mempool.transactionsForBlockByFee(3, view);
+
+    requireCondition(
+        selected.size() == 3U,
+        "All three transactions should be selected."
+    );
+
+    requireCondition(
+        selected[0].id() == high.id(),
+        "Highest-fee transaction should appear first in transactionsForBlockByFee."
+    );
+
+    requireCondition(
+        selected[1].id() == mid.id(),
+        "Mid-fee transaction should appear second."
+    );
+
+    requireCondition(
+        selected[2].id() == low.id(),
+        "Low-fee transaction should appear last."
+    );
+}
+
+void testReplacementRequiresTenPercentBump() {
+    Mempool mempool(MempoolConfig(10, 0, true, 3600));
+
+    const Transaction original =
+        signedTransfer("rep10-orig", "greta", "hank", 1000, 100, 1, kTimestamp + 300);
+    const Transaction exactBump =
+        signedTransfer("rep10-exact", "greta", "hank", 1000, 110, 1, kTimestamp + 301);
+    const Transaction tooSmallBump =
+        signedTransfer("rep10-small", "greta", "hank", 1000, 105, 1, kTimestamp + 302);
+    const Transaction sufficientBump =
+        signedTransfer("rep10-ok", "greta", "hank", 1000, 120, 1, kTimestamp + 303);
+
+    requireCondition(
+        mempool.admitTransaction(original, CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION, kTimestamp + 304).accepted(),
+        "Original should be accepted."
+    );
+
+    // Exactly 10% bump (100 -> 110) should succeed
+    const auto exactResult =
+        mempool.admitTransaction(exactBump, CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION, kTimestamp + 305);
+
+    requireCondition(
+        exactResult.status() == MempoolAdmissionStatus::REPLACED,
+        "Exactly 10% bump (100->110) should be accepted as replacement."
+    );
+
+    // Now base is 110. A bump to 115 is less than 10% (need >= 121)
+    const auto smallResult =
+        mempool.admitTransaction(tooSmallBump, CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION, kTimestamp + 306);
+
+    requireCondition(
+        smallResult.status() == MempoolAdmissionStatus::CONFLICTING_NONCE,
+        "Less-than-10% bump should be rejected with CONFLICTING_NONCE."
+    );
+
+    // A bump from 110 to 120 is < 10% (need >=121), should fail
+    requireCondition(
+        mempool.admitTransaction(sufficientBump, CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION, kTimestamp + 307).status()
+            == MempoolAdmissionStatus::CONFLICTING_NONCE,
+        "110->120 is less than 10% bump (need >=121), should be rejected."
+    );
+}
+
+void testMempoolStatsReporting() {
+    Mempool mempool;
+
+    // Empty mempool stats
+    const MempoolStats emptyStats = mempool.stats();
+    requireCondition(emptyStats.totalCount == 0U, "Empty mempool totalCount should be 0.");
+
+    const Transaction t1 =
+        signedTransfer("stats-1", "alice2", "bob2", 500, 100, 1, kTimestamp + 400);
+    const Transaction t2 =
+        signedTransfer("stats-2", "alice2", "bob2", 500, 300, 2, kTimestamp + 401);
+    const Transaction t3 =
+        signedTransfer("stats-3", "carol2", "dave2", 500, 200, 1, kTimestamp + 402);
+
+    requireCondition(
+        mempool.admitTransaction(t1, CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION, kTimestamp + 403).accepted(),
+        "t1 should be accepted."
+    );
+    requireCondition(
+        mempool.admitTransaction(t2, CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION, kTimestamp + 404).accepted(),
+        "t2 should be accepted."
+    );
+    requireCondition(
+        mempool.admitTransaction(t3, CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION, kTimestamp + 405).accepted(),
+        "t3 should be accepted."
+    );
+
+    const MempoolStats s = mempool.stats();
+
+    requireCondition(s.totalCount == 3U, "totalCount should be 3.");
+    requireCondition(s.highestFee.rawUnits() == 300, "highestFee should be 300.");
+    requireCondition(s.lowestFee.rawUnits() == 100, "lowestFee should be 100.");
+    // average = (100 + 300 + 200) / 3 = 200
+    requireCondition(s.averageFee.rawUnits() == 200, "averageFee should be 200.");
+    requireCondition(s.countBySender("alice2") == 2U, "alice2 should have 2 txs.");
+    requireCondition(s.countBySender("carol2") == 1U, "carol2 should have 1 tx.");
+    requireCondition(s.countBySender("nobody") == 0U, "unknown sender should have 0.");
+}
+
 } // namespace
 
 int main() {
@@ -1012,6 +1161,9 @@ int main() {
         testSizeEvictionDryRunRejectLeavesMempoolUnchanged();
         testSizeEvictionDryRunAcceptsHigherFeeTransaction();
         testReplacementUpdatesMempoolSizeWithoutUnrelatedEviction();
+        testTransactionsForBlockByFeeOrderedHighestFirst();
+        testReplacementRequiresTenPercentBump();
+        testMempoolStatsReporting();
 
         std::cout << "Nodo mempool tests passed.\n";
         return 0;
