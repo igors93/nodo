@@ -64,11 +64,14 @@ void StakingManager::unjailValidator(const std::string& validatorAddress, uint64
     }
 }
 
-std::vector<std::string> StakingManager::getActiveValidatorSet(size_t maxCount) const {
+std::vector<std::string> StakingManager::getActiveValidatorSet(size_t maxCount, uint64_t currentBlock) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::pair<std::string, uint64_t>> sortedValidators;
     for (const auto& [addr, stake] : m_bondedStakes) {
-        if (m_jailedUntilBlock.find(addr) == m_jailedUntilBlock.end()) {
+        const auto jailedUntil =
+            m_jailedUntilBlock.find(addr);
+        if (jailedUntil == m_jailedUntilBlock.end() ||
+            currentBlock >= jailedUntil->second) {
             sortedValidators.push_back({addr, stake});
         }
     }

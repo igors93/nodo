@@ -12,6 +12,22 @@ using nodo::core::PrunerMerkleProof;
 using nodo::core::PrunerMerkleProofNode;
 using nodo::core::StatePruner;
 
+std::string proofHash(
+    const std::string& left,
+    const std::string& right
+) {
+    const std::string combined = left + right;
+    char hashOut[NODO_HASH_BUFFER_SIZE] = {0};
+    nodo_hash_bytes(
+        reinterpret_cast<const unsigned char*>(combined.data()),
+        combined.size(),
+        hashOut,
+        NODO_HASH_BUFFER_SIZE
+    );
+
+    return std::string(hashOut, NODO_HASH_HEX_SIZE);
+}
+
 void requireCondition(bool condition, const std::string& failureMessage) {
     if (!condition) {
         throw std::runtime_error(failureMessage);
@@ -28,13 +44,11 @@ void testMerkleProofVerification() {
     nodo_hash_bytes(reinterpret_cast<const unsigned char*>("apple"), 5, h1, NODO_HASH_BUFFER_SIZE);
     nodo_hash_bytes(reinterpret_cast<const unsigned char*>("banana"), 6, h2, NODO_HASH_BUFFER_SIZE);
 
-    std::string h1Str(h1);
-    std::string h2Str(h2);
+    std::string h1Str(h1, NODO_HASH_HEX_SIZE);
+    std::string h2Str(h2, NODO_HASH_HEX_SIZE);
 
-    std::string combined = h1Str + h2Str;
-    char root[NODO_HASH_BUFFER_SIZE];
-    nodo_hash_bytes(reinterpret_cast<const unsigned char*>(combined.c_str()), combined.size(), root, NODO_HASH_BUFFER_SIZE);
-    std::string rootStr(root);
+    std::string rootStr =
+        proofHash(h1Str, h2Str);
 
     // Proof for L1 ("apple", which hashes to h1Str)
     // The sibling is h2Str, which is on the right.
@@ -45,6 +59,32 @@ void testMerkleProofVerification() {
     PrunerMerkleProof proof(h1Str, path);
     requireCondition(proof.verify(rootStr), "Merkle proof should verify successfully for L1");
     requireCondition(!proof.verify("invalid-root"), "Merkle proof should fail for incorrect root");
+}
+
+void testMerkleProofPreservesBinaryHashInputs() {
+    const std::string leafWithZero(
+        std::string("left", 4) + '\0' + std::string("leaf", 4)
+    );
+    const std::string siblingWithZero(
+        std::string("right", 5) + '\0' + std::string("sibling", 7)
+    );
+
+    const std::string root =
+        proofHash(leafWithZero, siblingWithZero);
+
+    std::vector<PrunerMerkleProofNode> path = {
+        {true, siblingWithZero}
+    };
+
+    PrunerMerkleProof proof(leafWithZero, path);
+    requireCondition(
+        proof.leaf().size() == 9U,
+        "Merkle proof fixture should contain an embedded zero byte."
+    );
+    requireCondition(
+        proof.verify(root),
+        "Merkle proof should verify binary hash inputs without C-string truncation."
+    );
 }
 
 void testStatePruner() {
@@ -75,6 +115,7 @@ void testStatePruner() {
 int main() {
     try {
         testMerkleProofVerification();
+        testMerkleProofPreservesBinaryHashInputs();
         testStatePruner();
         std::cout << "Nodo Merkle and state pruner tests passed.\n";
         return 0;

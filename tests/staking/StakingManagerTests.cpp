@@ -52,10 +52,16 @@ void testJailingAndSlashing() {
     requireCondition(manager.isJailed("val1", 120), "Val1 should be jailed at block 120");
     requireCondition(!manager.isJailed("val1", 160), "Val1 should not be jailed at block 160");
 
-    // Val1 is jailed, so active set should only contain val2
-    auto activeSet = manager.getActiveValidatorSet(2);
+    // Val1 is jailed at block 120, so active set should only contain val2.
+    auto activeSet = manager.getActiveValidatorSet(2, 120);
     requireCondition(activeSet.size() == 1, "Only val2 should be active");
     requireCondition(activeSet[0] == "val2", "Val2 should be active val");
+
+    // After the jail expires, val1 should return without a manual unjail call.
+    auto activeAfterJail = manager.getActiveValidatorSet(2, 160);
+    requireCondition(activeAfterJail.size() == 2, "Both validators should be active after jail expiry");
+    requireCondition(activeAfterJail[0] == "val1", "Val1 should return as highest-stake validator");
+    requireCondition(activeAfterJail[1] == "val2", "Val2 should remain in active set");
 
     // Slash val2 by 50%
     manager.slashValidator("val2", 0.5, 100);

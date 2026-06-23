@@ -30,7 +30,7 @@ public:
     void slashValidator(const std::string& validatorAddress, double slashFraction, uint64_t currentBlock);
     void unjailValidator(const std::string& validatorAddress, uint64_t currentBlock);
 
-    std::vector<std::string> getActiveValidatorSet(size_t maxCount) const;
+    std::vector<std::string> getActiveValidatorSet(size_t maxCount, uint64_t currentBlock = 0) const;
     uint64_t getValidatorStake(const std::string& validatorAddress) const;
     bool isJailed(const std::string& validatorAddress, uint64_t currentBlock) const;
 

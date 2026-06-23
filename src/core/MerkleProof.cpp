@@ -1,7 +1,5 @@
 #include "core/MerkleProof.hpp"
 #include "crypto/hash.h"
-#include <sstream>
-#include <iomanip>
 
 namespace nodo::core {
 
@@ -16,7 +14,7 @@ std::string computeHash(const std::string& left, const std::string& right) {
         hashOut,
         NODO_HASH_BUFFER_SIZE
     );
-    return std::string(hashOut);
+    return std::string(hashOut, NODO_HASH_HEX_SIZE);
 }
 
 } // namespace

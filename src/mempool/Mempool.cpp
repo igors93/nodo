@@ -319,55 +319,19 @@ MempoolAdmissionResult Mempool::admitTransaction(
         );
     }
 
-    // Eviction loop:
-    while (m_currentMempoolSizeBytes + incomingSize > m_config.maxMempoolSizeBytes()) {
-        if (m_entriesById.empty()) {
-            break;
-        }
-
-        std::string lowestFeeTxId;
-        std::int64_t lowestFee = std::numeric_limits<std::int64_t>::max();
-        std::int64_t oldestAge = 0;
-
-        for (const auto& [id, entry] : m_entriesById) {
-            std::int64_t fee = entry.priorityFeeRaw();
-            if (fee < lowestFee) {
-                lowestFee = fee;
-                lowestFeeTxId = id;
-                oldestAge = entry.acceptedAt();
-            } else if (fee == lowestFee) {
-                if (entry.acceptedAt() < oldestAge) {
-                    lowestFeeTxId = id;
-                    oldestAge = entry.acceptedAt();
-                }
-            }
-        }
-
-        if (lowestFeeTxId.empty()) {
-            break;
-        }
-
-        if (transaction.fee().rawUnits() <= lowestFee) {
-            return MempoolAdmissionResult::rejected(
-                MempoolAdmissionStatus::FEE_TOO_LOW,
-                "Mempool is full and incoming transaction fee is too low to trigger eviction."
-            );
-        }
-
-        removeTransaction(lowestFeeTxId);
-    }
-
     const std::string senderNonce =
         senderNonceKey(transaction);
 
     const auto existingByNonce =
         m_transactionIdBySenderNonce.find(senderNonce);
 
+    bool replacesExistingTransaction = false;
+    std::string replacedTransactionId;
+    std::size_t replacedTransactionSize = 0;
+
     if (existingByNonce != m_transactionIdBySenderNonce.end()) {
-        const std::string existingTransactionId =
-            existingByNonce->second;
-        auto existingEntry =
-            m_entriesById.find(existingTransactionId);
+        replacedTransactionId = existingByNonce->second;
+        auto existingEntry = m_entriesById.find(replacedTransactionId);
         if (existingEntry == m_entriesById.end()) {
             return MempoolAdmissionResult::rejected(
                 MempoolAdmissionStatus::INVALID_TRANSACTION,
@@ -389,40 +353,71 @@ MempoolAdmissionResult Mempool::admitTransaction(
             );
         }
 
-        const std::string replacedTransactionId =
-            existingTransactionId;
-        
-        m_currentMempoolSizeBytes -= existingEntry->second.transaction().serialize().size();
-        removeIndexesForEntry(existingEntry->second);
-        m_entriesById.erase(existingEntry);
-
-        MempoolEntry replacement(
-            transaction,
-            acceptedAt
-        );
-
-        m_transactionIdBySenderNonce.emplace(
-            replacement.senderNonceKey(),
-            transaction.id()
-        );
-
-        m_entriesById.emplace(
-            transaction.id(),
-            replacement
-        );
-        m_currentMempoolSizeBytes += incomingSize;
-
-        return MempoolAdmissionResult::replaced(
-            transaction.id(),
-            replacedTransactionId
-        );
+        replacesExistingTransaction = true;
+        replacedTransactionSize =
+            existingEntry->second.transaction().serialize().size();
     }
 
-    if (m_entriesById.size() >= m_config.maxTransactions()) {
+    if (!replacesExistingTransaction &&
+        m_entriesById.size() >= m_config.maxTransactions()) {
         return MempoolAdmissionResult::rejected(
             MempoolAdmissionStatus::CAPACITY_REACHED,
             "Mempool capacity reached."
         );
+    }
+
+    std::size_t projectedSize =
+        m_currentMempoolSizeBytes - replacedTransactionSize;
+    std::set<std::string> plannedEvictions;
+    std::vector<std::string> evictionOrder;
+
+    while (projectedSize + incomingSize > m_config.maxMempoolSizeBytes()) {
+        std::string lowestFeeTxId;
+        std::int64_t lowestFee = std::numeric_limits<std::int64_t>::max();
+        std::int64_t oldestAcceptedAt = 0;
+        std::size_t lowestFeeTxSize = 0;
+
+        for (const auto& [id, entry] : m_entriesById) {
+            if (id == replacedTransactionId ||
+                plannedEvictions.find(id) != plannedEvictions.end()) {
+                continue;
+            }
+
+            const std::int64_t fee = entry.priorityFeeRaw();
+            if (fee < lowestFee ||
+                (fee == lowestFee && entry.acceptedAt() < oldestAcceptedAt)) {
+                lowestFee = fee;
+                lowestFeeTxId = id;
+                oldestAcceptedAt = entry.acceptedAt();
+                lowestFeeTxSize = entry.transaction().serialize().size();
+            }
+        }
+
+        if (lowestFeeTxId.empty()) {
+            return MempoolAdmissionResult::rejected(
+                MempoolAdmissionStatus::CAPACITY_REACHED,
+                "Mempool cannot make enough room for incoming transaction."
+            );
+        }
+
+        if (transaction.fee().rawUnits() <= lowestFee) {
+            return MempoolAdmissionResult::rejected(
+                MempoolAdmissionStatus::FEE_TOO_LOW,
+                "Mempool is full and incoming transaction fee is too low to trigger eviction."
+            );
+        }
+
+        plannedEvictions.insert(lowestFeeTxId);
+        evictionOrder.push_back(lowestFeeTxId);
+        projectedSize -= lowestFeeTxSize;
+    }
+
+    for (const std::string& transactionId : evictionOrder) {
+        removeTransaction(transactionId);
+    }
+
+    if (replacesExistingTransaction) {
+        removeTransaction(replacedTransactionId);
     }
 
     MempoolEntry entry(
@@ -441,9 +436,14 @@ MempoolAdmissionResult Mempool::admitTransaction(
     );
     m_currentMempoolSizeBytes += incomingSize;
 
-    return MempoolAdmissionResult::accepted(
-        transaction.id()
-    );
+    if (replacesExistingTransaction) {
+        return MempoolAdmissionResult::replaced(
+            transaction.id(),
+            replacedTransactionId
+        );
+    }
+
+    return MempoolAdmissionResult::accepted(transaction.id());
 }
 
 bool Mempool::contains(
