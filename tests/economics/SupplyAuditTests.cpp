@@ -3,6 +3,7 @@
 #include "economics/MintRecord.hpp"
 
 #include <cassert>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -50,27 +51,17 @@ void testMismatchedSupplyFails() {
 }
 
 void testNegativeGenesisSupplyFails() {
-    const auto result = nodo::economics::SupplyAudit::audit(
-        nodo::utils::Amount(-1),  // raw constructor allows negative for testing
-        {},
-        nodo::utils::Amount::fromRawUnits(0),
-        nodo::utils::Amount::fromRawUnits(0),
-        nodo::utils::Amount::fromRawUnits(0),
-        nodo::utils::Amount::fromRawUnits(0)
-    );
-    assert(!result.isValid());
+    // Amount constructor now prevents negative values at the type level.
+    bool threw = false;
+    try { (void)nodo::utils::Amount(-1); } catch (const std::invalid_argument&) { threw = true; }
+    assert(threw);
 }
 
 void testNegativeTreasuryFails() {
-    const auto result = nodo::economics::SupplyAudit::audit(
-        nodo::utils::Amount::fromRawUnits(1000),
-        {},
-        nodo::utils::Amount(-1),  // raw constructor allows negative for testing
-        nodo::utils::Amount::fromRawUnits(0),
-        nodo::utils::Amount::fromRawUnits(0),
-        nodo::utils::Amount::fromRawUnits(1000)
-    );
-    assert(!result.isValid());
+    // Amount constructor now prevents negative values at the type level.
+    bool threw = false;
+    try { (void)nodo::utils::Amount(-1); } catch (const std::invalid_argument&) { threw = true; }
+    assert(threw);
 }
 
 void testEmptyStakesAndZeroSupply() {

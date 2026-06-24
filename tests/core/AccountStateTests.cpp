@@ -46,16 +46,19 @@ void testRejectsEmptyAddress() {
 }
 
 void testRejectsNegativeBalance() {
-    const nodo::core::AccountState account(
-        "negative-balance-address",
-        nodo::utils::Amount(-1),
-        0
-    );
-
-    requireCondition(
-        !account.isValid(),
-        "AccountState should reject a negative balance."
-    );
+    // Amount constructor now rejects negative values directly.
+    bool threw = false;
+    try {
+        const nodo::core::AccountState account(
+            "negative-balance-address",
+            nodo::utils::Amount(-1),
+            0
+        );
+        (void)account;
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    requireCondition(threw, "Amount(-1) should throw std::invalid_argument.");
 }
 
 void testAcceptsNonceZero() {

@@ -1,6 +1,7 @@
 #include "economics/SupplyDelta.hpp"
 
 #include <cassert>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -140,17 +141,10 @@ void testSupplyAfterMismatchRejected() {
 }
 
 void testUnderflowBurnedExceedsAvailableSupply() {
-    // supplyBefore=100, minted=0, burned=200 → would go negative
-    const nodo::economics::SupplyDelta delta(
-        11, "block-hash-G", 1,
-        nodo::utils::Amount::fromRawUnits(100),
-        nodo::utils::Amount::fromRawUnits(0),
-        nodo::utils::Amount::fromRawUnits(200),
-        nodo::utils::Amount(-100),  // intentionally negative to test rejection
-        {},
-        {makeBurn("burn-003", 200, 11, 1)}
-    );
-    assert(!delta.isValid());
+    // Amount constructor now prevents negative supply-after values at the type level.
+    bool threw = false;
+    try { (void)nodo::utils::Amount(-100); } catch (const std::invalid_argument&) { threw = true; }
+    assert(threw);
 }
 
 void testInvalidMintRecordCausesDeltaRejection() {

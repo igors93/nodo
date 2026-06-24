@@ -1,6 +1,7 @@
 #include "economics/MonetaryPolicy.hpp"
 
 #include <cassert>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -77,17 +78,10 @@ void testZeroBaseUnitsRejected() {
 }
 
 void testNegativeInitialSupplyRejected() {
-    const nodo::economics::MonetaryPolicy policy(
-        "NODO_MONETARY_POLICY_V1",
-        "nodo-localnet-1",
-        "NODO",
-        "raw",
-        100000000,
-        nodo::utils::Amount(-1),  // raw constructor allows negative for testing
-        400
-    );
-    assert(!policy.isValid());
-    assert(!policy.rejectionReason().empty());
+    // Amount constructor now rejects negatives before MonetaryPolicy sees them.
+    bool threw = false;
+    try { (void)nodo::utils::Amount(-1); } catch (const std::invalid_argument&) { threw = true; }
+    assert(threw);
 }
 
 void testInflationAbove400BasisPointsRejected() {

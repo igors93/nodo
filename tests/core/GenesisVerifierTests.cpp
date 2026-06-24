@@ -1,8 +1,10 @@
 #include "core/GenesisVerifier.hpp"
 
 #include "crypto/KeyPair.hpp"
+#include "utils/Amount.hpp"
 
 #include <cassert>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -102,12 +104,15 @@ void testSupplyBalanceMatchPasses() {
 }
 
 void testNegativeSupplyRejected() {
-    const auto result = nodo::core::GenesisVerifier::verifySupplyBalance(
-        nodo::utils::Amount::fromRawUnits(100),
-        nodo::utils::Amount(-1)  // raw constructor allows negative for testing
-    );
-    assert(!result.isValid());
-    assert(result.status() == nodo::core::GenesisVerificationStatus::NEGATIVE_SUPPLY);
+    // Amount constructor now rejects negative values; the type-level guard
+    // replaces the old NEGATIVE_SUPPLY status path in GenesisVerifier.
+    bool threw = false;
+    try {
+        (void)nodo::utils::Amount(-1);
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    assert(threw);
 }
 
 void testStatusToString() {
