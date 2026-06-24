@@ -42,6 +42,31 @@ public:
         const TransactionBuildRequest& request,
         const crypto::Signer& signer
     );
+
+    static Transaction buildSignedStakeLock(
+        const TransactionBuildRequest& request,
+        const crypto::Signer& signer
+    );
+
+    static Transaction buildSignedStakeTopUp(
+        const TransactionBuildRequest& request,
+        const crypto::Signer& signer
+    );
+
+    static Transaction buildSignedStakeWithdraw(
+        const TransactionBuildRequest& request,
+        const crypto::Signer& signer
+    );
+
+    static Transaction buildSignedValidatorExitRequest(
+        const TransactionBuildRequest& request,
+        const crypto::Signer& signer
+    );
+
+    static Transaction buildSignedValidatorUnjailRequest(
+        const TransactionBuildRequest& request,
+        const crypto::Signer& signer
+    );
 };
 
 } // namespace nodo::core

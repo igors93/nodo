@@ -53,14 +53,34 @@ std::string validatorRegistrationStatusToString(
     ValidatorRegistrationStatus status
 ) {
     switch (status) {
+        case ValidatorRegistrationStatus::PENDING_ACTIVATION:
+            return "PENDING_ACTIVATION";
         case ValidatorRegistrationStatus::ACTIVE:
             return "ACTIVE";
+        case ValidatorRegistrationStatus::JAILED:
+            return "JAILED";
+        case ValidatorRegistrationStatus::EXIT_REQUESTED:
+            return "EXIT_REQUESTED";
+        case ValidatorRegistrationStatus::EXITED:
+            return "EXITED";
         case ValidatorRegistrationStatus::DEACTIVATED:
             return "DEACTIVATED";
         case ValidatorRegistrationStatus::UNKNOWN:
         default:
             return "UNKNOWN";
     }
+}
+
+ValidatorRegistrationStatus validatorRegistrationStatusFromString(
+    const std::string& value
+) {
+    if (value == "PENDING_ACTIVATION") return ValidatorRegistrationStatus::PENDING_ACTIVATION;
+    if (value == "ACTIVE")             return ValidatorRegistrationStatus::ACTIVE;
+    if (value == "JAILED")             return ValidatorRegistrationStatus::JAILED;
+    if (value == "EXIT_REQUESTED")     return ValidatorRegistrationStatus::EXIT_REQUESTED;
+    if (value == "EXITED")             return ValidatorRegistrationStatus::EXITED;
+    if (value == "DEACTIVATED")        return ValidatorRegistrationStatus::DEACTIVATED;
+    return ValidatorRegistrationStatus::UNKNOWN;
 }
 
 ValidatorRegistrationRecord::ValidatorRegistrationRecord()
@@ -173,7 +193,11 @@ std::string ValidatorRegistrationRecord::serialize() const {
 ValidatorRegistryEntry::ValidatorRegistryEntry()
     : m_registrationRecord(),
       m_status(ValidatorRegistrationStatus::UNKNOWN),
-      m_lastUpdatedAt(0) {}
+      m_lastUpdatedAt(0),
+      m_stakeAmount(0),
+      m_jailUntilEpoch(0),
+      m_exitRequestHeight(0),
+      m_ownerAddress("") {}
 
 ValidatorRegistryEntry::ValidatorRegistryEntry(
     ValidatorRegistrationRecord registrationRecord,
@@ -182,7 +206,28 @@ ValidatorRegistryEntry::ValidatorRegistryEntry(
 )
     : m_registrationRecord(std::move(registrationRecord)),
       m_status(status),
-      m_lastUpdatedAt(lastUpdatedAt) {}
+      m_lastUpdatedAt(lastUpdatedAt),
+      m_stakeAmount(0),
+      m_jailUntilEpoch(0),
+      m_exitRequestHeight(0),
+      m_ownerAddress("") {}
+
+ValidatorRegistryEntry::ValidatorRegistryEntry(
+    ValidatorRegistrationRecord registrationRecord,
+    ValidatorRegistrationStatus status,
+    std::int64_t lastUpdatedAt,
+    std::uint64_t stakeAmount,
+    std::uint64_t jailUntilEpoch,
+    std::uint64_t exitRequestHeight,
+    std::string ownerAddress
+)
+    : m_registrationRecord(std::move(registrationRecord)),
+      m_status(status),
+      m_lastUpdatedAt(lastUpdatedAt),
+      m_stakeAmount(stakeAmount),
+      m_jailUntilEpoch(jailUntilEpoch),
+      m_exitRequestHeight(exitRequestHeight),
+      m_ownerAddress(std::move(ownerAddress)) {}
 
 const ValidatorRegistrationRecord& ValidatorRegistryEntry::registrationRecord() const {
     return m_registrationRecord;
@@ -194,6 +239,35 @@ ValidatorRegistrationStatus ValidatorRegistryEntry::status() const {
 
 std::int64_t ValidatorRegistryEntry::lastUpdatedAt() const {
     return m_lastUpdatedAt;
+}
+
+std::uint64_t ValidatorRegistryEntry::stakeAmount() const {
+    return m_stakeAmount;
+}
+
+std::uint64_t ValidatorRegistryEntry::jailUntilEpoch() const {
+    return m_jailUntilEpoch;
+}
+
+std::uint64_t ValidatorRegistryEntry::exitRequestHeight() const {
+    return m_exitRequestHeight;
+}
+
+const std::string& ValidatorRegistryEntry::ownerAddress() const {
+    return m_ownerAddress;
+}
+
+bool ValidatorRegistryEntry::eligibleForConsensus() const {
+    return m_status == ValidatorRegistrationStatus::ACTIVE;
+}
+
+bool ValidatorRegistryEntry::jailed() const {
+    return m_status == ValidatorRegistrationStatus::JAILED;
+}
+
+bool ValidatorRegistryEntry::exited() const {
+    return m_status == ValidatorRegistrationStatus::EXITED ||
+           m_status == ValidatorRegistrationStatus::DEACTIVATED;
 }
 
 bool ValidatorRegistryEntry::active() const {
@@ -236,20 +310,21 @@ std::string validatorRegistryUpdateStatusToString(
     ValidatorRegistryUpdateStatus status
 ) {
     switch (status) {
-        case ValidatorRegistryUpdateStatus::ACCEPTED:
-            return "ACCEPTED";
-        case ValidatorRegistryUpdateStatus::DUPLICATE:
-            return "DUPLICATE";
-        case ValidatorRegistryUpdateStatus::DEACTIVATED:
-            return "DEACTIVATED";
-        case ValidatorRegistryUpdateStatus::CONFLICTING_PUBLIC_KEY:
-            return "CONFLICTING_PUBLIC_KEY";
-        case ValidatorRegistryUpdateStatus::INVALID_RECORD:
-            return "INVALID_RECORD";
-        case ValidatorRegistryUpdateStatus::INVALID_REGISTRY:
-            return "INVALID_REGISTRY";
-        default:
-            return "INVALID_REGISTRY";
+        case ValidatorRegistryUpdateStatus::ACCEPTED:            return "ACCEPTED";
+        case ValidatorRegistryUpdateStatus::DUPLICATE:           return "DUPLICATE";
+        case ValidatorRegistryUpdateStatus::DEACTIVATED:         return "DEACTIVATED";
+        case ValidatorRegistryUpdateStatus::JAILED:              return "JAILED";
+        case ValidatorRegistryUpdateStatus::UNJAILED:            return "UNJAILED";
+        case ValidatorRegistryUpdateStatus::EXIT_REQUESTED:      return "EXIT_REQUESTED";
+        case ValidatorRegistryUpdateStatus::ACTIVATED:           return "ACTIVATED";
+        case ValidatorRegistryUpdateStatus::CONFLICTING_PUBLIC_KEY: return "CONFLICTING_PUBLIC_KEY";
+        case ValidatorRegistryUpdateStatus::INVALID_RECORD:      return "INVALID_RECORD";
+        case ValidatorRegistryUpdateStatus::INVALID_REGISTRY:    return "INVALID_REGISTRY";
+        case ValidatorRegistryUpdateStatus::ALREADY_ACTIVE:      return "ALREADY_ACTIVE";
+        case ValidatorRegistryUpdateStatus::ALREADY_JAILED:      return "ALREADY_JAILED";
+        case ValidatorRegistryUpdateStatus::INVALID_STATUS_TRANSITION: return "INVALID_STATUS_TRANSITION";
+        case ValidatorRegistryUpdateStatus::INSUFFICIENT_STAKE:  return "INSUFFICIENT_STAKE";
+        default:                                                  return "INVALID_REGISTRY";
     }
 }
 
@@ -283,6 +358,46 @@ ValidatorRegistryUpdateResult ValidatorRegistryUpdateResult::deactivated(
 ) {
     ValidatorRegistryUpdateResult result;
     result.m_status = ValidatorRegistryUpdateStatus::DEACTIVATED;
+    result.m_reason = "";
+    result.m_entry = std::move(entry);
+    return result;
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistryUpdateResult::jailed(
+    ValidatorRegistryEntry entry
+) {
+    ValidatorRegistryUpdateResult result;
+    result.m_status = ValidatorRegistryUpdateStatus::JAILED;
+    result.m_reason = "";
+    result.m_entry = std::move(entry);
+    return result;
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistryUpdateResult::unjailed(
+    ValidatorRegistryEntry entry
+) {
+    ValidatorRegistryUpdateResult result;
+    result.m_status = ValidatorRegistryUpdateStatus::UNJAILED;
+    result.m_reason = "";
+    result.m_entry = std::move(entry);
+    return result;
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistryUpdateResult::exitRequested(
+    ValidatorRegistryEntry entry
+) {
+    ValidatorRegistryUpdateResult result;
+    result.m_status = ValidatorRegistryUpdateStatus::EXIT_REQUESTED;
+    result.m_reason = "";
+    result.m_entry = std::move(entry);
+    return result;
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistryUpdateResult::activated(
+    ValidatorRegistryEntry entry
+) {
+    ValidatorRegistryUpdateResult result;
+    result.m_status = ValidatorRegistryUpdateStatus::ACTIVATED;
     result.m_reason = "";
     result.m_entry = std::move(entry);
     return result;
@@ -323,7 +438,13 @@ bool ValidatorRegistryUpdateResult::deactivated() const {
 }
 
 bool ValidatorRegistryUpdateResult::success() const {
-    return accepted() || duplicate() || deactivated();
+    return m_status == ValidatorRegistryUpdateStatus::ACCEPTED ||
+           m_status == ValidatorRegistryUpdateStatus::DUPLICATE ||
+           m_status == ValidatorRegistryUpdateStatus::DEACTIVATED ||
+           m_status == ValidatorRegistryUpdateStatus::JAILED ||
+           m_status == ValidatorRegistryUpdateStatus::UNJAILED ||
+           m_status == ValidatorRegistryUpdateStatus::EXIT_REQUESTED ||
+           m_status == ValidatorRegistryUpdateStatus::ACTIVATED;
 }
 
 std::string ValidatorRegistryUpdateResult::serialize() const {
@@ -533,6 +654,305 @@ std::vector<std::string> ValidatorRegistry::activeValidatorAddresses() const {
     }
 
     return addresses;
+}
+
+std::vector<std::string> ValidatorRegistry::eligibleValidatorAddresses() const {
+    std::vector<std::string> addresses;
+
+    for (const auto& [address, entry] : m_entries) {
+        if (entry.eligibleForConsensus()) {
+            addresses.push_back(address);
+        }
+    }
+
+    return addresses;
+}
+
+std::vector<std::string> ValidatorRegistry::jailedValidatorAddresses() const {
+    std::vector<std::string> addresses;
+
+    for (const auto& [address, entry] : m_entries) {
+        if (entry.jailed()) {
+            addresses.push_back(address);
+        }
+    }
+
+    return addresses;
+}
+
+std::vector<std::string> ValidatorRegistry::pendingValidatorAddresses() const {
+    std::vector<std::string> addresses;
+
+    for (const auto& [address, entry] : m_entries) {
+        if (entry.status() == ValidatorRegistrationStatus::PENDING_ACTIVATION) {
+            addresses.push_back(address);
+        }
+    }
+
+    return addresses;
+}
+
+std::vector<std::string> ValidatorRegistry::exitRequestedValidatorAddresses() const {
+    std::vector<std::string> addresses;
+
+    for (const auto& [address, entry] : m_entries) {
+        if (entry.status() == ValidatorRegistrationStatus::EXIT_REQUESTED) {
+            addresses.push_back(address);
+        }
+    }
+
+    return addresses;
+}
+
+bool ValidatorRegistry::isEligibleForConsensus(
+    const std::string& validatorAddress
+) const {
+    const auto it = m_entries.find(validatorAddress);
+    if (it == m_entries.end()) {
+        return false;
+    }
+    return it->second.eligibleForConsensus();
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistry::activateValidator(
+    const std::string& validatorAddress,
+    std::uint64_t currentEpoch,
+    std::int64_t timestamp
+) {
+    auto it = m_entries.find(validatorAddress);
+    if (it == m_entries.end()) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_RECORD,
+            "Validator is not registered."
+        );
+    }
+
+    const ValidatorRegistryEntry& existing = it->second;
+
+    if (existing.status() == ValidatorRegistrationStatus::ACTIVE) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::ALREADY_ACTIVE,
+            "Validator is already active."
+        );
+    }
+
+    if (existing.status() != ValidatorRegistrationStatus::PENDING_ACTIVATION) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_STATUS_TRANSITION,
+            "Only PENDING_ACTIVATION validators can be activated."
+        );
+    }
+
+    if (existing.registrationRecord().activationEpoch() > currentEpoch) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_STATUS_TRANSITION,
+            "Activation epoch has not been reached."
+        );
+    }
+
+    ValidatorRegistryEntry updated(
+        existing.registrationRecord(),
+        ValidatorRegistrationStatus::ACTIVE,
+        timestamp,
+        existing.stakeAmount(),
+        existing.jailUntilEpoch(),
+        existing.exitRequestHeight(),
+        existing.ownerAddress()
+    );
+
+    it->second = updated;
+    return ValidatorRegistryUpdateResult::activated(updated);
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistry::jailValidator(
+    const std::string& validatorAddress,
+    std::uint64_t jailUntilEpoch,
+    std::int64_t timestamp
+) {
+    auto it = m_entries.find(validatorAddress);
+    if (it == m_entries.end()) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_RECORD,
+            "Validator is not registered."
+        );
+    }
+
+    const ValidatorRegistryEntry& existing = it->second;
+
+    if (existing.status() == ValidatorRegistrationStatus::JAILED) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::ALREADY_JAILED,
+            "Validator is already jailed."
+        );
+    }
+
+    if (existing.status() != ValidatorRegistrationStatus::ACTIVE) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_STATUS_TRANSITION,
+            "Only ACTIVE validators can be jailed."
+        );
+    }
+
+    ValidatorRegistryEntry updated(
+        existing.registrationRecord(),
+        ValidatorRegistrationStatus::JAILED,
+        timestamp,
+        existing.stakeAmount(),
+        jailUntilEpoch,
+        existing.exitRequestHeight(),
+        existing.ownerAddress()
+    );
+
+    it->second = updated;
+    return ValidatorRegistryUpdateResult::jailed(updated);
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistry::unjailValidator(
+    const std::string& validatorAddress,
+    std::uint64_t currentEpoch,
+    std::int64_t timestamp
+) {
+    auto it = m_entries.find(validatorAddress);
+    if (it == m_entries.end()) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_RECORD,
+            "Validator is not registered."
+        );
+    }
+
+    const ValidatorRegistryEntry& existing = it->second;
+
+    if (existing.status() != ValidatorRegistrationStatus::JAILED) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_STATUS_TRANSITION,
+            "Only JAILED validators can be unjailed."
+        );
+    }
+
+    if (existing.jailUntilEpoch() > currentEpoch) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_STATUS_TRANSITION,
+            "Jail period has not elapsed (until epoch "
+                + std::to_string(existing.jailUntilEpoch()) + ")."
+        );
+    }
+
+    ValidatorRegistryEntry updated(
+        existing.registrationRecord(),
+        ValidatorRegistrationStatus::ACTIVE,
+        timestamp,
+        existing.stakeAmount(),
+        0,
+        existing.exitRequestHeight(),
+        existing.ownerAddress()
+    );
+
+    it->second = updated;
+    return ValidatorRegistryUpdateResult::unjailed(updated);
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistry::requestExit(
+    const std::string& validatorAddress,
+    std::uint64_t requestHeight,
+    std::int64_t timestamp
+) {
+    auto it = m_entries.find(validatorAddress);
+    if (it == m_entries.end()) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_RECORD,
+            "Validator is not registered."
+        );
+    }
+
+    const ValidatorRegistryEntry& existing = it->second;
+
+    const bool canExit =
+        existing.status() == ValidatorRegistrationStatus::ACTIVE ||
+        existing.status() == ValidatorRegistrationStatus::JAILED;
+
+    if (!canExit) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_STATUS_TRANSITION,
+            "Only ACTIVE or JAILED validators can request exit."
+        );
+    }
+
+    ValidatorRegistryEntry updated(
+        existing.registrationRecord(),
+        ValidatorRegistrationStatus::EXIT_REQUESTED,
+        timestamp,
+        existing.stakeAmount(),
+        existing.jailUntilEpoch(),
+        requestHeight,
+        existing.ownerAddress()
+    );
+
+    it->second = updated;
+    return ValidatorRegistryUpdateResult::exitRequested(updated);
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistry::completeExit(
+    const std::string& validatorAddress,
+    std::int64_t timestamp
+) {
+    auto it = m_entries.find(validatorAddress);
+    if (it == m_entries.end()) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_RECORD,
+            "Validator is not registered."
+        );
+    }
+
+    const ValidatorRegistryEntry& existing = it->second;
+
+    if (existing.status() != ValidatorRegistrationStatus::EXIT_REQUESTED) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_STATUS_TRANSITION,
+            "Only EXIT_REQUESTED validators can complete exit."
+        );
+    }
+
+    ValidatorRegistryEntry updated(
+        existing.registrationRecord(),
+        ValidatorRegistrationStatus::EXITED,
+        timestamp,
+        existing.stakeAmount(),
+        existing.jailUntilEpoch(),
+        existing.exitRequestHeight(),
+        existing.ownerAddress()
+    );
+
+    it->second = updated;
+    return ValidatorRegistryUpdateResult::deactivated(updated);
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistry::updateStake(
+    const std::string& validatorAddress,
+    std::uint64_t newStakeAmount,
+    std::int64_t timestamp
+) {
+    auto it = m_entries.find(validatorAddress);
+    if (it == m_entries.end()) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_RECORD,
+            "Validator is not registered."
+        );
+    }
+
+    const ValidatorRegistryEntry& existing = it->second;
+
+    ValidatorRegistryEntry updated(
+        existing.registrationRecord(),
+        existing.status(),
+        timestamp,
+        newStakeAmount,
+        existing.jailUntilEpoch(),
+        existing.exitRequestHeight(),
+        existing.ownerAddress()
+    );
+
+    it->second = updated;
+    return ValidatorRegistryUpdateResult::accepted(updated);
 }
 
 std::size_t ValidatorRegistry::size() const {

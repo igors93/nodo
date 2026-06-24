@@ -152,6 +152,7 @@ public:
     const core::Blockchain& blockchain() const;
     core::Blockchain& mutableBlockchain();
     const core::ValidatorRegistry& validatorRegistry() const;
+    core::ValidatorRegistry& mutableValidatorRegistry();
     const consensus::BlockFinalizationRegistry& finalizationRegistry() const;
     consensus::BlockFinalizationRegistry& mutableFinalizationRegistry();
     const consensus::ConsensusRoundManager& consensusRoundManager() const;

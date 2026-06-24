@@ -219,6 +219,9 @@ bool isCommandGroup(
            value == "chain" ||
            value == "keys" ||
            value == "validator" ||
+           value == "stake" ||
+           value == "rewards" ||
+           value == "slashing" ||
            value == "testnet";
 }
 
@@ -299,6 +302,7 @@ CommandLineOptions::CommandLineOptions()
       keyId("local-validator"),
       keyType("both"),
       toAddress("nodo-localnet-recipient"),
+      validatorAddress(""),
       amountRaw(1000),
       feeRaw(100),
       nonce(0),
@@ -459,6 +463,34 @@ CommandLineResult CommandLineInterface::execute(
 
         if (options.command == "validator list") {
             return executeValidatorList(options);
+        }
+
+        if (options.command == "validator status") {
+            return executeValidatorStatus(options);
+        }
+
+        if (options.command == "validator exit") {
+            return executeValidatorExit(options);
+        }
+
+        if (options.command == "validator unjail") {
+            return executeValidatorUnjail(options);
+        }
+
+        if (options.command == "stake lock") {
+            return executeStakeLock(options);
+        }
+
+        if (options.command == "stake status") {
+            return executeStakeStatus(options);
+        }
+
+        if (options.command == "rewards status") {
+            return executeRewardsStatus(options);
+        }
+
+        if (options.command == "slashing evidence") {
+            return executeSlashingEvidence(options);
         }
 
         return CommandLineResult::failure(
@@ -666,6 +698,40 @@ CommandLineOptions CommandLineInterface::parse(
 
             options.keyId = args[index + 1];
             options.keyIdProvided = true;
+            index += 2;
+            continue;
+        }
+
+        if (option == "--validator") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--validator requires a value (validator address).");
+            }
+
+            options.validatorAddress = args[index + 1];
+            index += 2;
+            continue;
+        }
+
+        if (option == "--owner") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--owner requires a value (key-id of validator owner).");
+            }
+
+            options.keyId = args[index + 1];
+            options.keyIdProvided = true;
+            index += 2;
+            continue;
+        }
+
+        if (option == "--stake") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--stake requires a value (amount in raw units).");
+            }
+
+            options.amountRaw = parseSignedInt64("--stake", args[index + 1]);
+            if (options.amountRaw < 0) {
+                throw std::invalid_argument("--stake must be non-negative.");
+            }
             index += 2;
             continue;
         }
@@ -2193,6 +2259,719 @@ CommandLineResult CommandLineInterface::executeNodeRun(
     daemon.stop();
 
     return CommandLineResult::success("Nodo daemon stopped.\n");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: validator lifecycle + staking CLI commands
+// ---------------------------------------------------------------------------
+
+CommandLineResult CommandLineInterface::executeValidatorStatus(
+    const CommandLineOptions& options
+) {
+    const std::string addr = options.validatorAddress.empty()
+        ? options.toAddress
+        : options.validatorAddress;
+
+    if (addr.empty()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Provide --validator <address> to inspect a validator.\n"
+        );
+    }
+
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            genesisLookup.genesis(),
+            localPeerFromOptions(options)
+        );
+
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load runtime state: " + load.reason() + "\n"
+        );
+    }
+
+    const core::ValidatorRegistryEntry* entry =
+        load.runtime().validatorRegistry().entryForAddress(addr);
+
+    std::ostringstream out;
+    out << "Validator status\n"
+        << "----------------\n"
+        << "Address: " << addr << "\n";
+
+    if (!entry) {
+        out << "Status: NOT REGISTERED\n";
+    } else {
+        out << "Status: "
+            << core::validatorRegistrationStatusToString(entry->status()) << "\n"
+            << "Eligible for consensus: "
+            << (entry->eligibleForConsensus() ? "yes" : "no") << "\n"
+            << "Stake (raw units): " << entry->stakeAmount() << "\n"
+            << "Activation epoch: "
+            << entry->registrationRecord().activationEpoch() << "\n"
+            << "Owner: " << entry->ownerAddress() << "\n";
+
+        if (entry->jailed()) {
+            out << "Jail until epoch: " << entry->jailUntilEpoch() << "\n";
+        }
+        if (entry->status() == core::ValidatorRegistrationStatus::EXIT_REQUESTED) {
+            out << "Exit request height: " << entry->exitRequestHeight() << "\n";
+        }
+    }
+
+    return CommandLineResult::success(out.str());
+}
+
+CommandLineResult CommandLineInterface::executeValidatorExit(
+    const CommandLineOptions& options
+) {
+    const std::string validatorAddr = options.validatorAddress.empty()
+        ? options.toAddress
+        : options.validatorAddress;
+
+    if (validatorAddr.empty()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Provide --validator <address> to request exit for.\n"
+        );
+    }
+
+    const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+    const config::NetworkParameters networkParameters = genesisConfig.networkParameters();
+
+    const node::NodeDataDirectoryReadResult manifest =
+        node::NodeDataDirectory::loadManifest(directoryConfig);
+    if (!manifest.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit before init: " + manifest.reason() + "\n"
+        );
+    }
+
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::fromNetworkName(networkParameters.networkName());
+    if (!cryptoContext.isValid()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Invalid crypto context: " + cryptoContext.rejectionReason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig,
+            localPeerFromOptions(options)
+        );
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Runtime reload failed: " + load.reason() + "\n"
+        );
+    }
+
+    const std::string keyId = options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
+    const crypto::KeyStoreLoadResult key =
+        loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), keyId);
+    if (!key.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load key '" + keyId + "': " + key.reason() + "\n"
+        );
+    }
+
+    const node::KeySafetyCheckResult keySafety =
+        node::ProductionKeySafetyGate::check(key.metadata(), manifest.manifest().networkName());
+    if (!keySafety.isApproved()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Key safety: " + keySafety.reason() + "\n"
+        );
+    }
+
+    const crypto::Ed25519SignatureProvider provider;
+    const crypto::Signer signer(key.keyPair(), provider);
+
+    const core::AccountStateView accountState =
+        node::RuntimeAccountStateBuilder::accountStateViewAtTip(
+            genesisConfig,
+            load.runtime().blockchain(),
+            static_cast<std::int64_t>(networkParameters.minimumFeeRawUnits())
+        );
+    if (!accountState.hasAccount(key.metadata().address())) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Signing account does not exist in current state.\n"
+        );
+    }
+
+    const std::uint64_t nextNonce = options.nonce == 0
+        ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
+        : options.nonce;
+
+    const core::Transaction tx =
+        core::TransactionBuilder::buildSignedValidatorExitRequest(
+            core::TransactionBuildRequest(
+                validatorAddr,
+                utils::Amount(),
+                utils::Amount::fromRawUnits(options.feeRaw),
+                nextNonce,
+                options.timestamp + 10
+            ),
+            signer
+        );
+
+    const node::TransactionAdmissionResult admission =
+        node::TransactionAdmissionValidator::validateRuntimeSubmission(
+            tx,
+            key.metadata(),
+            networkParameters,
+            accountState,
+            load.runtime().mempool(),
+            cryptoContext.policy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            provider
+        );
+    if (!admission.accepted()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Transaction rejected: " + admission.reason() + "\n"
+        );
+    }
+
+    const node::PersistentMempoolWriteResult persisted =
+        node::PersistentMempoolStore::persistTransaction(
+            directoryConfig, tx, key.metadata().publicKey(), tx.timestamp() + 1
+        );
+    if (!persisted.success()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Failed to persist: " + persisted.reason() + "\n"
+        );
+    }
+
+    std::ostringstream out;
+    out << "Validator exit request submitted.\n"
+        << "Validator: " << validatorAddr << "\n"
+        << "Transaction id: " << persisted.transactionId() << "\n";
+    return CommandLineResult::success(out.str());
+}
+
+CommandLineResult CommandLineInterface::executeValidatorUnjail(
+    const CommandLineOptions& options
+) {
+    const std::string validatorAddr = options.validatorAddress.empty()
+        ? options.toAddress
+        : options.validatorAddress;
+
+    if (validatorAddr.empty()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Provide --validator <address> to unjail.\n"
+        );
+    }
+
+    const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+    const config::NetworkParameters networkParameters = genesisConfig.networkParameters();
+
+    const node::NodeDataDirectoryReadResult manifest =
+        node::NodeDataDirectory::loadManifest(directoryConfig);
+    if (!manifest.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit before init: " + manifest.reason() + "\n"
+        );
+    }
+
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::fromNetworkName(networkParameters.networkName());
+    if (!cryptoContext.isValid()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Invalid crypto context: " + cryptoContext.rejectionReason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig,
+            localPeerFromOptions(options)
+        );
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Runtime reload failed: " + load.reason() + "\n"
+        );
+    }
+
+    const std::string keyId = options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
+    const crypto::KeyStoreLoadResult key =
+        loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), keyId);
+    if (!key.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load key '" + keyId + "': " + key.reason() + "\n"
+        );
+    }
+
+    const node::KeySafetyCheckResult keySafety =
+        node::ProductionKeySafetyGate::check(key.metadata(), manifest.manifest().networkName());
+    if (!keySafety.isApproved()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Key safety: " + keySafety.reason() + "\n"
+        );
+    }
+
+    const crypto::Ed25519SignatureProvider provider;
+    const crypto::Signer signer(key.keyPair(), provider);
+
+    const core::AccountStateView accountState =
+        node::RuntimeAccountStateBuilder::accountStateViewAtTip(
+            genesisConfig,
+            load.runtime().blockchain(),
+            static_cast<std::int64_t>(networkParameters.minimumFeeRawUnits())
+        );
+    if (!accountState.hasAccount(key.metadata().address())) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Signing account does not exist in current state.\n"
+        );
+    }
+
+    const std::uint64_t nextNonce = options.nonce == 0
+        ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
+        : options.nonce;
+
+    const core::Transaction tx =
+        core::TransactionBuilder::buildSignedValidatorUnjailRequest(
+            core::TransactionBuildRequest(
+                validatorAddr,
+                utils::Amount(),
+                utils::Amount::fromRawUnits(options.feeRaw),
+                nextNonce,
+                options.timestamp + 10
+            ),
+            signer
+        );
+
+    const node::TransactionAdmissionResult admission =
+        node::TransactionAdmissionValidator::validateRuntimeSubmission(
+            tx,
+            key.metadata(),
+            networkParameters,
+            accountState,
+            load.runtime().mempool(),
+            cryptoContext.policy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            provider
+        );
+    if (!admission.accepted()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Transaction rejected: " + admission.reason() + "\n"
+        );
+    }
+
+    const node::PersistentMempoolWriteResult persisted =
+        node::PersistentMempoolStore::persistTransaction(
+            directoryConfig, tx, key.metadata().publicKey(), tx.timestamp() + 1
+        );
+    if (!persisted.success()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Failed to persist: " + persisted.reason() + "\n"
+        );
+    }
+
+    std::ostringstream out;
+    out << "Validator unjail request submitted.\n"
+        << "Validator: " << validatorAddr << "\n"
+        << "Transaction id: " << persisted.transactionId() << "\n";
+    return CommandLineResult::success(out.str());
+}
+
+CommandLineResult CommandLineInterface::executeStakeLock(
+    const CommandLineOptions& options
+) {
+    const std::string validatorAddr = options.validatorAddress.empty()
+        ? options.toAddress
+        : options.validatorAddress;
+
+    if (validatorAddr.empty()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Provide --validator <address> to stake into.\n"
+        );
+    }
+
+    if (options.amountRaw <= 0) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Provide --stake <amount> (positive integer raw units).\n"
+        );
+    }
+
+    const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+    const config::NetworkParameters networkParameters = genesisConfig.networkParameters();
+
+    const node::NodeDataDirectoryReadResult manifest =
+        node::NodeDataDirectory::loadManifest(directoryConfig);
+    if (!manifest.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit before init: " + manifest.reason() + "\n"
+        );
+    }
+
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::fromNetworkName(networkParameters.networkName());
+    if (!cryptoContext.isValid()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Invalid crypto context: " + cryptoContext.rejectionReason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig,
+            localPeerFromOptions(options)
+        );
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Runtime reload failed: " + load.reason() + "\n"
+        );
+    }
+
+    const std::string keyId = options.keyIdProvided
+        ? options.keyId
+        : defaultLocalnetUserKeyId();
+    const crypto::KeyStoreLoadResult key =
+        loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), keyId);
+    if (!key.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load key '" + keyId + "': " + key.reason() + "\n"
+        );
+    }
+
+    const node::KeySafetyCheckResult keySafety =
+        node::ProductionKeySafetyGate::check(key.metadata(), manifest.manifest().networkName());
+    if (!keySafety.isApproved()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Key safety: " + keySafety.reason() + "\n"
+        );
+    }
+
+    const crypto::Ed25519SignatureProvider provider;
+    const crypto::Signer signer(key.keyPair(), provider);
+
+    const core::AccountStateView accountState =
+        node::RuntimeAccountStateBuilder::accountStateViewAtTip(
+            genesisConfig,
+            load.runtime().blockchain(),
+            static_cast<std::int64_t>(networkParameters.minimumFeeRawUnits())
+        );
+    if (!accountState.hasAccount(key.metadata().address())) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Signing account does not exist in current state.\n"
+        );
+    }
+
+    const std::uint64_t nextNonce = options.nonce == 0
+        ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
+        : options.nonce;
+
+    const core::Transaction tx =
+        core::TransactionBuilder::buildSignedStakeLock(
+            core::TransactionBuildRequest(
+                validatorAddr,
+                utils::Amount::fromRawUnits(options.amountRaw),
+                utils::Amount::fromRawUnits(options.feeRaw),
+                nextNonce,
+                options.timestamp + 10
+            ),
+            signer
+        );
+
+    const node::TransactionAdmissionResult admission =
+        node::TransactionAdmissionValidator::validateRuntimeSubmission(
+            tx,
+            key.metadata(),
+            networkParameters,
+            accountState,
+            load.runtime().mempool(),
+            cryptoContext.policy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            provider
+        );
+    if (!admission.accepted()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Transaction rejected: " + admission.reason() + "\n"
+        );
+    }
+
+    const node::PersistentMempoolWriteResult persisted =
+        node::PersistentMempoolStore::persistTransaction(
+            directoryConfig, tx, key.metadata().publicKey(), tx.timestamp() + 1
+        );
+    if (!persisted.success()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Failed to persist: " + persisted.reason() + "\n"
+        );
+    }
+
+    std::ostringstream out;
+    out << "Stake lock submitted.\n"
+        << "Validator: " << validatorAddr << "\n"
+        << "Amount: " << options.amountRaw << " raw units\n"
+        << "Transaction id: " << persisted.transactionId() << "\n";
+    return CommandLineResult::success(out.str());
+}
+
+CommandLineResult CommandLineInterface::executeStakeStatus(
+    const CommandLineOptions& options
+) {
+    const std::string addr = options.validatorAddress.empty()
+        ? options.toAddress
+        : options.validatorAddress;
+
+    if (addr.empty()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Provide --validator <address> to inspect stake for.\n"
+        );
+    }
+
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            genesisLookup.genesis(),
+            localPeerFromOptions(options)
+        );
+
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load runtime state: " + load.reason() + "\n"
+        );
+    }
+
+    const core::ValidatorRegistryEntry* entry =
+        load.runtime().validatorRegistry().entryForAddress(addr);
+
+    std::ostringstream out;
+    out << "Stake status\n"
+        << "------------\n"
+        << "Validator: " << addr << "\n";
+
+    if (!entry) {
+        out << "No validator registration found for this address.\n";
+    } else {
+        out << "Registry status: "
+            << core::validatorRegistrationStatusToString(entry->status()) << "\n"
+            << "Bonded stake (raw units): " << entry->stakeAmount() << "\n";
+    }
+
+    return CommandLineResult::success(out.str());
+}
+
+CommandLineResult CommandLineInterface::executeRewardsStatus(
+    const CommandLineOptions& options
+) {
+    const std::string validatorAddr = options.validatorAddress.empty()
+        ? options.toAddress
+        : options.validatorAddress;
+
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            genesisLookup.genesis(),
+            localPeerFromOptions(options)
+        );
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load runtime state: " + load.reason() + "\n"
+        );
+    }
+
+    const core::Blockchain& blockchain = load.runtime().blockchain();
+    const std::uint64_t chainHeight = blockchain.empty()
+        ? 0u
+        : blockchain.latestBlock().index();
+    const std::vector<node::FinalizedBlockArtifact>& artifacts = load.loadedArtifacts();
+
+    std::ostringstream output;
+    output << "Nodo rewards status\n"
+           << "-------------------\n"
+           << "Chain height: " << chainHeight << "\n";
+
+    if (!validatorAddr.empty()) {
+        output << "Validator: " << validatorAddr << "\n";
+
+        if (!artifacts.empty()) {
+            const node::FinalizedBlockArtifact& tipArtifact = artifacts.back();
+            std::int64_t totalReward = 0;
+
+            for (const auto& dist : tipArtifact.rewardDistributions()) {
+                if (dist.validatorAddress() == validatorAddr) {
+                    totalReward += dist.liquidReward().rawUnits();
+                    output << "  Block " << dist.blockHeight()
+                           << " liquid reward: " << dist.liquidReward().rawUnits() << "\n";
+                }
+            }
+            output << "Total liquid rewards at tip: " << totalReward << " raw units\n";
+        } else {
+            output << "No finalized artifacts loaded.\n";
+        }
+    } else {
+        output << "Use --validator <address> to see rewards for a specific validator.\n";
+    }
+
+    return CommandLineResult::success(output.str());
+}
+
+CommandLineResult CommandLineInterface::executeSlashingEvidence(
+    const CommandLineOptions& options
+) {
+    const std::string validatorAddr = options.validatorAddress.empty()
+        ? options.toAddress
+        : options.validatorAddress;
+
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            genesisLookup.genesis(),
+            localPeerFromOptions(options)
+        );
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load runtime state: " + load.reason() + "\n"
+        );
+    }
+
+    const core::Blockchain& blockchain = load.runtime().blockchain();
+    const std::uint64_t chainHeight = blockchain.empty()
+        ? 0u
+        : blockchain.latestBlock().index();
+    const std::vector<node::FinalizedBlockArtifact>& artifacts = load.loadedArtifacts();
+
+    std::ostringstream output;
+    output << "Nodo slashing evidence\n"
+           << "----------------------\n"
+           << "Chain height: " << chainHeight << "\n";
+
+    if (!validatorAddr.empty()) {
+        output << "Validator: " << validatorAddr << "\n";
+
+        if (!artifacts.empty()) {
+            const node::FinalizedBlockArtifact& tipArtifact = artifacts.back();
+            std::size_t evidenceCount = 0;
+
+            for (const auto& rec : tipArtifact.cryptographicSlashingEvidenceRecords()) {
+                if (rec.validatorAddress() == validatorAddr) {
+                    output << "  Evidence at block " << rec.blockHeight()
+                           << " round " << rec.round()
+                           << " severity " << rec.severityScore() << "\n";
+                    ++evidenceCount;
+                }
+            }
+            for (const auto& pen : tipArtifact.stakePenaltyRecords()) {
+                if (pen.validatorAddress() == validatorAddr) {
+                    output << "  Stake penalty: before=" << pen.lockedStakeBefore().rawUnits()
+                           << " after=" << pen.lockedStakeAfter().rawUnits()
+                           << " penalty=" << pen.penaltyAmount().rawUnits() << "\n";
+                }
+            }
+            if (evidenceCount == 0) {
+                output << "No slashing evidence found at current tip.\n";
+            }
+        } else {
+            output << "No finalized artifacts loaded.\n";
+        }
+    } else {
+        output << "Use --validator <address> to see slashing evidence for a specific validator.\n";
+    }
+
+    return CommandLineResult::success(output.str());
 }
 
 } // namespace nodo::app

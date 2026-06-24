@@ -275,6 +275,15 @@ std::string transactionTypeToString(TransactionType type) {
         case TransactionType::STAKE_WITHDRAW:
             return "STAKE_WITHDRAW";
 
+        case TransactionType::STAKE_TOP_UP:
+            return "STAKE_TOP_UP";
+
+        case TransactionType::VALIDATOR_EXIT_REQUEST:
+            return "VALIDATOR_EXIT_REQUEST";
+
+        case TransactionType::VALIDATOR_UNJAIL_REQUEST:
+            return "VALIDATOR_UNJAIL_REQUEST";
+
         case TransactionType::GOVERNANCE_PROPOSE:
             return "GOVERNANCE_PROPOSE";
 
@@ -327,6 +336,18 @@ TransactionType transactionTypeFromString(const std::string& value) {
         return TransactionType::STAKE_WITHDRAW;
     }
 
+    if (value == "STAKE_TOP_UP") {
+        return TransactionType::STAKE_TOP_UP;
+    }
+
+    if (value == "VALIDATOR_EXIT_REQUEST") {
+        return TransactionType::VALIDATOR_EXIT_REQUEST;
+    }
+
+    if (value == "VALIDATOR_UNJAIL_REQUEST") {
+        return TransactionType::VALIDATOR_UNJAIL_REQUEST;
+    }
+
     if (value == "GOVERNANCE_PROPOSE") {
         return TransactionType::GOVERNANCE_PROPOSE;
     }
@@ -356,13 +377,23 @@ bool requiresUserSignature(TransactionType type) {
            type == TransactionType::BURN ||
            type == TransactionType::STAKE_DEPOSIT ||
            type == TransactionType::STAKE_WITHDRAW ||
+           type == TransactionType::STAKE_TOP_UP ||
+           type == TransactionType::VALIDATOR_EXIT_REQUEST ||
+           type == TransactionType::VALIDATOR_UNJAIL_REQUEST ||
            type == TransactionType::GOVERNANCE_PROPOSE ||
            type == TransactionType::GOVERNANCE_VOTE;
 }
 
 bool isStakingTransaction(TransactionType type) {
     return type == TransactionType::STAKE_DEPOSIT ||
-           type == TransactionType::STAKE_WITHDRAW;
+           type == TransactionType::STAKE_WITHDRAW ||
+           type == TransactionType::STAKE_TOP_UP;
+}
+
+bool isValidatorLifecycleTransaction(TransactionType type) {
+    return type == TransactionType::VALIDATOR_REGISTER ||
+           type == TransactionType::VALIDATOR_EXIT_REQUEST ||
+           type == TransactionType::VALIDATOR_UNJAIL_REQUEST;
 }
 
 bool isGovernanceTransaction(TransactionType type) {

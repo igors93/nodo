@@ -15,6 +15,8 @@ std::string stakingApplyStatusToString(StakingApplyStatus status) {
         case StakingApplyStatus::VALIDATOR_TOMBSTONED:   return "VALIDATOR_TOMBSTONED";
         case StakingApplyStatus::INVALID_TRANSACTION:    return "INVALID_TRANSACTION";
         case StakingApplyStatus::COOLDOWN_NOT_ELAPSED:   return "COOLDOWN_NOT_ELAPSED";
+        case StakingApplyStatus::BELOW_MINIMUM_STAKE:    return "BELOW_MINIMUM_STAKE";
+        case StakingApplyStatus::ALREADY_UNBONDING:      return "ALREADY_UNBONDING";
         default:                                          return "INVALID_TRANSACTION";
     }
 }
@@ -68,24 +70,50 @@ StakingApplyResult StakingTransactionApplier::apply(
     const core::Transaction&       tx,
     const economics::StakeAccount& stake,
     utils::Amount                  senderBalance,
-    std::uint64_t                  currentHeight
+    std::uint64_t                  currentHeight,
+    utils::Amount                  minimumStake
 ) {
-    if (!core::isStakingTransaction(tx.type())) {
+    const bool isHandled =
+        core::isStakingTransaction(tx.type()) ||
+        tx.type() == core::TransactionType::VALIDATOR_EXIT_REQUEST;
+
+    if (!isHandled) {
         return StakingApplyResult::rejected(
             StakingApplyStatus::INVALID_TRANSACTION,
-            "Transaction is not a staking transaction."
+            "Transaction type is not handled by StakingTransactionApplier."
         );
     }
 
-    if (tx.fromAddress().empty() || tx.amount().rawUnits() <= 0) {
+    if (tx.fromAddress().empty()) {
         return StakingApplyResult::rejected(
             StakingApplyStatus::INVALID_TRANSACTION,
             "Staking transaction missing required fields."
         );
     }
 
-    if (tx.type() == core::TransactionType::STAKE_DEPOSIT) {
-        // Sender must have enough liquid balance to cover deposit + fee.
+    // STAKE_DEPOSIT and STAKE_TOP_UP: add to bonded amount.
+    const bool isDepositLike =
+        tx.type() == core::TransactionType::STAKE_DEPOSIT ||
+        tx.type() == core::TransactionType::STAKE_TOP_UP;
+
+    if (isDepositLike) {
+        if (tx.amount().rawUnits() <= 0) {
+            return StakingApplyResult::rejected(
+                StakingApplyStatus::INVALID_TRANSACTION,
+                "Deposit amount must be positive."
+            );
+        }
+
+        // Enforce minimum stake if provided.
+        const std::int64_t projectedBonded =
+            stake.bondedAmount().rawUnits() + tx.amount().rawUnits();
+        if (minimumStake.isPositive() && projectedBonded < minimumStake.rawUnits()) {
+            return StakingApplyResult::rejected(
+                StakingApplyStatus::BELOW_MINIMUM_STAKE,
+                "Resulting bonded stake below minimum required."
+            );
+        }
+
         const utils::Amount total = utils::Amount::fromRawUnits(
             tx.amount().rawUnits() + tx.fee().rawUnits()
         );
@@ -96,25 +124,55 @@ StakingApplyResult StakingTransactionApplier::apply(
             );
         }
 
-        // Increase bonded amount by adding to a copy.
-        // StakeAccount doesn't expose a direct "add" — we reconstruct.
         economics::StakeAccount next(
             stake.validatorAddress(),
             utils::Amount::fromRawUnits(
                 stake.bondedAmount().rawUnits() + tx.amount().rawUnits()
             )
         );
-        if (stake.jailed())      next.jail();
-        if (stake.tombstoned())  next.tombstone();
+        if (stake.jailed())     next.jail();
+        if (stake.tombstoned()) next.tombstone();
 
-        // Balance delta: sender loses (amount + fee).
-        return StakingApplyResult::applied(
-            std::move(next),
-            utils::Amount::fromRawUnits(-(tx.amount().rawUnits() + tx.fee().rawUnits()))
-        );
+        // Caller deducts (amount + fee) from sender balance separately.
+        return StakingApplyResult::applied(std::move(next), utils::Amount());
+    }
+
+    // VALIDATOR_EXIT_REQUEST: records intent, stake account unchanged, sender pays fee.
+    if (tx.type() == core::TransactionType::VALIDATOR_EXIT_REQUEST) {
+        if (stake.tombstoned()) {
+            return StakingApplyResult::rejected(
+                StakingApplyStatus::VALIDATOR_TOMBSTONED,
+                "Tombstoned validator cannot request exit."
+            );
+        }
+        if (stake.jailed()) {
+            return StakingApplyResult::rejected(
+                StakingApplyStatus::VALIDATOR_JAILED,
+                "Jailed validator cannot request exit directly; unjail first."
+            );
+        }
+
+        const std::int64_t bondedRaw  = stake.bondedAmount().rawUnits();
+        const std::int64_t slashedRaw = stake.slashedAmount().rawUnits();
+        if ((bondedRaw <= slashedRaw) || bondedRaw == 0) {
+            return StakingApplyResult::rejected(
+                StakingApplyStatus::INSUFFICIENT_STAKE,
+                "Validator has no stake to exit."
+            );
+        }
+
+        // Caller deducts fee from sender balance separately.
+        return StakingApplyResult::applied(stake, utils::Amount());
     }
 
     // STAKE_WITHDRAW
+    if (tx.amount().rawUnits() <= 0) {
+        return StakingApplyResult::rejected(
+            StakingApplyStatus::INVALID_TRANSACTION,
+            "Withdraw amount must be positive."
+        );
+    }
+
     if (stake.tombstoned()) {
         return StakingApplyResult::rejected(
             StakingApplyStatus::VALIDATOR_TOMBSTONED,
@@ -139,8 +197,7 @@ StakingApplyResult StakingTransactionApplier::apply(
         );
     }
 
-    // Enforce unbonding delay: nonce field carries the requested-at block.
-    // The cooldown is measured from tx.nonce() as the request block height.
+    // Enforce unbonding delay: nonce field carries the requested-at block height.
     if (currentHeight < tx.nonce() + UNBONDING_DELAY_BLOCKS) {
         return StakingApplyResult::rejected(
             StakingApplyStatus::COOLDOWN_NOT_ELAPSED,
@@ -158,7 +215,6 @@ StakingApplyResult StakingTransactionApplier::apply(
     if (stake.jailed())     next.jail();
     if (stake.tombstoned()) next.tombstone();
 
-    // Balance delta: sender receives withdrawn amount minus fee.
     return StakingApplyResult::applied(
         std::move(next),
         utils::Amount::fromRawUnits(tx.amount().rawUnits() - tx.fee().rawUnits())

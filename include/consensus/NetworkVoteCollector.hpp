@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace nodo::consensus {
 
@@ -16,7 +17,9 @@ enum class VoteCollectStatus {
     REJECTED_STALE_ROUND,
     REJECTED_REPLAY,
     REJECTED_CONFLICTING,
-    REJECTED_INVALID
+    REJECTED_INVALID,
+    REJECTED_NOT_ELIGIBLE,
+    DOUBLE_VOTE_DETECTED
 };
 
 std::string voteCollectStatusToString(VoteCollectStatus status);
@@ -66,6 +69,10 @@ public:
         const crypto::SignatureProvider& provider
     );
 
+    void setEligibleValidators(std::vector<std::string> eligibleAddresses);
+
+    bool hasDoubleVote(const ValidatorVoteRecord& vote) const;
+
     const VotePool& votePool() const;
 
     std::size_t acceptedVoteCount() const;
@@ -74,6 +81,7 @@ private:
     VotePool m_pool;
     std::uint64_t m_currentHeight;
     std::uint64_t m_currentRound;
+    std::vector<std::string> m_eligibleValidators;
 };
 
 } // namespace nodo::consensus

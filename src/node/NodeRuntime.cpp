@@ -403,6 +403,10 @@ const core::ValidatorRegistry& NodeRuntime::validatorRegistry() const {
     return m_validatorRegistry;
 }
 
+core::ValidatorRegistry& NodeRuntime::mutableValidatorRegistry() {
+    return m_validatorRegistry;
+}
+
 const consensus::BlockFinalizationRegistry& NodeRuntime::finalizationRegistry() const {
     return m_finalizationRegistry;
 }

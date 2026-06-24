@@ -2,6 +2,7 @@
 
 #include "node/FeeEconomics.hpp"
 #include "node/RuntimeMonetaryValidation.hpp"
+#include "node/ValidatorLifecycle.hpp"
 
 #include "consensus/ValidatorVoteBuilder.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
@@ -2261,6 +2262,39 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             std::string("Supply state update failed after finalization: ") +
             error.what()
         );
+    }
+
+    // Epoch boundary: activate pending validators and complete exits.
+    const std::uint64_t finalizedHeight = production.block().index();
+    if (finalizedHeight > 0 && finalizedHeight % NODO_VALIDATOR_EPOCH_BLOCKS == 0) {
+        const std::uint64_t currentEpoch =
+            ValidatorLifecycle::epochIndexForBlock(finalizedHeight);
+        const std::int64_t boundaryTimestamp = config.timestamp() + 4;
+
+        for (const std::string& addr :
+             runtime.validatorRegistry().pendingValidatorAddresses()) {
+            const core::ValidatorRegistryEntry* entry =
+                runtime.validatorRegistry().entryForAddress(addr);
+            if (entry &&
+                entry->registrationRecord().activationEpoch() <= currentEpoch) {
+                runtime.mutableValidatorRegistry().activateValidator(
+                    addr, currentEpoch, boundaryTimestamp
+                );
+            }
+        }
+
+        for (const std::string& addr :
+             runtime.validatorRegistry().exitRequestedValidatorAddresses()) {
+            const core::ValidatorRegistryEntry* entry =
+                runtime.validatorRegistry().entryForAddress(addr);
+            if (entry &&
+                entry->exitRequestHeight() + NODO_VALIDATOR_EPOCH_BLOCKS
+                    <= finalizedHeight) {
+                runtime.mutableValidatorRegistry().completeExit(
+                    addr, boundaryTimestamp
+                );
+            }
+        }
     }
 
     return finalResult;

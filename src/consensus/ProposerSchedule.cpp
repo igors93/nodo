@@ -26,7 +26,7 @@ std::string ProposerSchedule::selectProposer(
     std::uint64_t height,
     std::uint64_t round
 ) {
-    const auto addresses = registry.activeValidatorAddresses();
+    const auto addresses = registry.eligibleValidatorAddresses();
     if (addresses.empty()) {
         return "";
     }

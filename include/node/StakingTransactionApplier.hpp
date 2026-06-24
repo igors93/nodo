@@ -32,7 +32,9 @@ enum class StakingApplyStatus {
     VALIDATOR_JAILED,
     VALIDATOR_TOMBSTONED,
     INVALID_TRANSACTION,
-    COOLDOWN_NOT_ELAPSED
+    COOLDOWN_NOT_ELAPSED,
+    BELOW_MINIMUM_STAKE,
+    ALREADY_UNBONDING
 };
 
 std::string stakingApplyStatusToString(StakingApplyStatus status);
@@ -67,20 +69,24 @@ private:
 class StakingTransactionApplier {
 public:
     static constexpr std::uint64_t UNBONDING_DELAY_BLOCKS = 21;
+    static constexpr std::int64_t  MIN_STAKE_RAW_UNITS     = 1'000'000;
 
     /*
-     * Apply a STAKE_DEPOSIT or STAKE_WITHDRAW transaction.
+     * Apply a STAKE_DEPOSIT, STAKE_TOP_UP, STAKE_WITHDRAW, or
+     * VALIDATOR_EXIT_REQUEST transaction.
      *
-     * @param tx            The signed staking transaction.
+     * @param tx            The signed staking/lifecycle transaction.
      * @param stake         Current stake account for the validator.
      * @param senderBalance Current liquid balance of the sender account.
      * @param currentHeight Current block height (used for cooldown).
+     * @param minimumStake  Minimum required bonded stake (0 = no check).
      */
     static StakingApplyResult apply(
         const core::Transaction&       tx,
         const economics::StakeAccount& stake,
         utils::Amount                  senderBalance,
-        std::uint64_t                  currentHeight
+        std::uint64_t                  currentHeight,
+        utils::Amount                  minimumStake = utils::Amount()
     );
 };
 

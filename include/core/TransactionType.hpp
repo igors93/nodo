@@ -23,6 +23,9 @@ enum class TransactionType {
     BURN,
     STAKE_DEPOSIT,
     STAKE_WITHDRAW,
+    STAKE_TOP_UP,
+    VALIDATOR_EXIT_REQUEST,
+    VALIDATOR_UNJAIL_REQUEST,
     GOVERNANCE_PROPOSE,
     GOVERNANCE_VOTE
 };
@@ -34,6 +37,7 @@ bool isMintTransaction(TransactionType type);
 bool isSecurityLockTransaction(TransactionType type);
 bool requiresUserSignature(TransactionType type);
 bool isStakingTransaction(TransactionType type);
+bool isValidatorLifecycleTransaction(TransactionType type);
 bool isGovernanceTransaction(TransactionType type);
 
 } // namespace nodo::core

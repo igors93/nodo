@@ -13,9 +13,17 @@ namespace nodo::core {
 
 enum class ValidatorRegistrationStatus {
     UNKNOWN,
+    PENDING_ACTIVATION,
     ACTIVE,
+    JAILED,
+    EXIT_REQUESTED,
+    EXITED,
     DEACTIVATED
 };
+
+ValidatorRegistrationStatus validatorRegistrationStatusFromString(
+    const std::string& value
+);
 
 std::string validatorRegistrationStatusToString(
     ValidatorRegistrationStatus status
@@ -73,11 +81,28 @@ public:
         std::int64_t lastUpdatedAt
     );
 
+    ValidatorRegistryEntry(
+        ValidatorRegistrationRecord registrationRecord,
+        ValidatorRegistrationStatus status,
+        std::int64_t lastUpdatedAt,
+        std::uint64_t stakeAmount,
+        std::uint64_t jailUntilEpoch,
+        std::uint64_t exitRequestHeight,
+        std::string ownerAddress
+    );
+
     const ValidatorRegistrationRecord& registrationRecord() const;
     ValidatorRegistrationStatus status() const;
     std::int64_t lastUpdatedAt() const;
+    std::uint64_t stakeAmount() const;
+    std::uint64_t jailUntilEpoch() const;
+    std::uint64_t exitRequestHeight() const;
+    const std::string& ownerAddress() const;
 
     bool active() const;
+    bool eligibleForConsensus() const;
+    bool jailed() const;
+    bool exited() const;
 
     bool isValid() const;
 
@@ -87,15 +112,27 @@ private:
     ValidatorRegistrationRecord m_registrationRecord;
     ValidatorRegistrationStatus m_status;
     std::int64_t m_lastUpdatedAt;
+    std::uint64_t m_stakeAmount;
+    std::uint64_t m_jailUntilEpoch;
+    std::uint64_t m_exitRequestHeight;
+    std::string m_ownerAddress;
 };
 
 enum class ValidatorRegistryUpdateStatus {
     ACCEPTED,
     DUPLICATE,
     DEACTIVATED,
+    JAILED,
+    UNJAILED,
+    EXIT_REQUESTED,
+    ACTIVATED,
     CONFLICTING_PUBLIC_KEY,
     INVALID_RECORD,
-    INVALID_REGISTRY
+    INVALID_REGISTRY,
+    ALREADY_ACTIVE,
+    ALREADY_JAILED,
+    INVALID_STATUS_TRANSITION,
+    INSUFFICIENT_STAKE
 };
 
 std::string validatorRegistryUpdateStatusToString(
@@ -115,6 +152,22 @@ public:
     );
 
     static ValidatorRegistryUpdateResult deactivated(
+        ValidatorRegistryEntry entry
+    );
+
+    static ValidatorRegistryUpdateResult jailed(
+        ValidatorRegistryEntry entry
+    );
+
+    static ValidatorRegistryUpdateResult unjailed(
+        ValidatorRegistryEntry entry
+    );
+
+    static ValidatorRegistryUpdateResult exitRequested(
+        ValidatorRegistryEntry entry
+    );
+
+    static ValidatorRegistryUpdateResult activated(
         ValidatorRegistryEntry entry
     );
 
@@ -150,6 +203,8 @@ private:
  */
 class ValidatorRegistry {
 public:
+    static constexpr std::uint64_t MIN_VALIDATOR_STAKE_RAW_UNITS = 1'000'000;
+
     ValidatorRegistry();
 
     ValidatorRegistryUpdateResult registerValidator(
@@ -161,11 +216,50 @@ public:
         std::int64_t timestamp
     );
 
+    ValidatorRegistryUpdateResult activateValidator(
+        const std::string& validatorAddress,
+        std::uint64_t currentEpoch,
+        std::int64_t timestamp
+    );
+
+    ValidatorRegistryUpdateResult jailValidator(
+        const std::string& validatorAddress,
+        std::uint64_t jailUntilEpoch,
+        std::int64_t timestamp
+    );
+
+    ValidatorRegistryUpdateResult unjailValidator(
+        const std::string& validatorAddress,
+        std::uint64_t currentEpoch,
+        std::int64_t timestamp
+    );
+
+    ValidatorRegistryUpdateResult requestExit(
+        const std::string& validatorAddress,
+        std::uint64_t requestHeight,
+        std::int64_t timestamp
+    );
+
+    ValidatorRegistryUpdateResult completeExit(
+        const std::string& validatorAddress,
+        std::int64_t timestamp
+    );
+
+    ValidatorRegistryUpdateResult updateStake(
+        const std::string& validatorAddress,
+        std::uint64_t newStakeAmount,
+        std::int64_t timestamp
+    );
+
     bool hasValidator(
         const std::string& validatorAddress
     ) const;
 
     bool isActiveValidator(
+        const std::string& validatorAddress
+    ) const;
+
+    bool isEligibleForConsensus(
         const std::string& validatorAddress
     ) const;
 
@@ -179,6 +273,10 @@ public:
     ) const;
 
     std::vector<std::string> activeValidatorAddresses() const;
+    std::vector<std::string> eligibleValidatorAddresses() const;
+    std::vector<std::string> jailedValidatorAddresses() const;
+    std::vector<std::string> pendingValidatorAddresses() const;
+    std::vector<std::string> exitRequestedValidatorAddresses() const;
 
     std::size_t size() const;
     std::size_t activeCount() const;

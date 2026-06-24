@@ -77,4 +77,104 @@ Transaction TransactionBuilder::buildSignedTransfer(
     );
 }
 
+Transaction TransactionBuilder::buildSignedStakeLock(
+    const TransactionBuildRequest& request,
+    const crypto::Signer& signer
+) {
+    if (!request.isValid()) {
+        throw std::invalid_argument("Stake lock build request is invalid.");
+    }
+
+    Transaction tx(
+        TransactionType::STAKE_DEPOSIT,
+        signer.address(),
+        request.toAddress(),
+        request.amount(),
+        request.fee(),
+        request.nonce(),
+        request.timestamp()
+    );
+    return signer.signTransaction(tx, request.timestamp());
+}
+
+Transaction TransactionBuilder::buildSignedStakeTopUp(
+    const TransactionBuildRequest& request,
+    const crypto::Signer& signer
+) {
+    if (!request.isValid()) {
+        throw std::invalid_argument("Stake top-up build request is invalid.");
+    }
+
+    Transaction tx(
+        TransactionType::STAKE_TOP_UP,
+        signer.address(),
+        request.toAddress(),
+        request.amount(),
+        request.fee(),
+        request.nonce(),
+        request.timestamp()
+    );
+    return signer.signTransaction(tx, request.timestamp());
+}
+
+Transaction TransactionBuilder::buildSignedStakeWithdraw(
+    const TransactionBuildRequest& request,
+    const crypto::Signer& signer
+) {
+    if (!request.isValid()) {
+        throw std::invalid_argument("Stake withdraw build request is invalid.");
+    }
+
+    Transaction tx(
+        TransactionType::STAKE_WITHDRAW,
+        signer.address(),
+        request.toAddress(),
+        request.amount(),
+        request.fee(),
+        request.nonce(),
+        request.timestamp()
+    );
+    return signer.signTransaction(tx, request.timestamp());
+}
+
+Transaction TransactionBuilder::buildSignedValidatorExitRequest(
+    const TransactionBuildRequest& request,
+    const crypto::Signer& signer
+) {
+    if (request.toAddress().empty() || request.fee().isNegative()) {
+        throw std::invalid_argument("Validator exit request requires a non-empty validator address and non-negative fee.");
+    }
+
+    Transaction tx(
+        TransactionType::VALIDATOR_EXIT_REQUEST,
+        signer.address(),
+        request.toAddress(),
+        utils::Amount(),
+        request.fee(),
+        request.nonce(),
+        request.timestamp()
+    );
+    return signer.signTransaction(tx, request.timestamp());
+}
+
+Transaction TransactionBuilder::buildSignedValidatorUnjailRequest(
+    const TransactionBuildRequest& request,
+    const crypto::Signer& signer
+) {
+    if (request.toAddress().empty() || request.fee().isNegative()) {
+        throw std::invalid_argument("Validator unjail request requires a non-empty validator address and non-negative fee.");
+    }
+
+    Transaction tx(
+        TransactionType::VALIDATOR_UNJAIL_REQUEST,
+        signer.address(),
+        request.toAddress(),
+        utils::Amount(),
+        request.fee(),
+        request.nonce(),
+        request.timestamp()
+    );
+    return signer.signTransaction(tx, request.timestamp());
+}
+
 } // namespace nodo::core

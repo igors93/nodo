@@ -10,8 +10,10 @@ std::string voteCollectStatusToString(VoteCollectStatus status) {
         case VoteCollectStatus::REJECTED_STALE_ROUND: return "REJECTED_STALE_ROUND";
         case VoteCollectStatus::REJECTED_REPLAY:      return "REJECTED_REPLAY";
         case VoteCollectStatus::REJECTED_CONFLICTING: return "REJECTED_CONFLICTING";
-        case VoteCollectStatus::REJECTED_INVALID:     return "REJECTED_INVALID";
-        default:                                      return "UNKNOWN";
+        case VoteCollectStatus::REJECTED_INVALID:      return "REJECTED_INVALID";
+        case VoteCollectStatus::REJECTED_NOT_ELIGIBLE: return "REJECTED_NOT_ELIGIBLE";
+        case VoteCollectStatus::DOUBLE_VOTE_DETECTED:  return "DOUBLE_VOTE_DETECTED";
+        default:                                       return "UNKNOWN";
     }
 }
 
@@ -30,7 +32,8 @@ bool VoteCollectResult::accepted() const { return m_status == VoteCollectStatus:
 NetworkVoteCollector::NetworkVoteCollector()
     : m_pool(),
       m_currentHeight(0),
-      m_currentRound(0) {}
+      m_currentRound(0),
+      m_eligibleValidators() {}
 
 NetworkVoteCollector::NetworkVoteCollector(
     std::uint64_t currentHeight,
@@ -38,7 +41,8 @@ NetworkVoteCollector::NetworkVoteCollector(
 )
     : m_pool(),
       m_currentHeight(currentHeight),
-      m_currentRound(currentRound) {}
+      m_currentRound(currentRound),
+      m_eligibleValidators() {}
 
 void NetworkVoteCollector::setCurrentRound(std::uint64_t height, std::uint64_t round) {
     m_currentHeight = height;
@@ -48,11 +52,39 @@ void NetworkVoteCollector::setCurrentRound(std::uint64_t height, std::uint64_t r
 std::uint64_t NetworkVoteCollector::currentHeight() const { return m_currentHeight; }
 std::uint64_t NetworkVoteCollector::currentRound() const { return m_currentRound; }
 
+void NetworkVoteCollector::setEligibleValidators(
+    std::vector<std::string> eligibleAddresses
+) {
+    m_eligibleValidators = std::move(eligibleAddresses);
+}
+
+bool NetworkVoteCollector::hasDoubleVote(const ValidatorVoteRecord& vote) const {
+    return m_pool.hasConflictingVote(
+        vote.validatorAddress(),
+        vote.blockIndex(),
+        vote.round()
+    );
+}
+
 VoteCollectResult NetworkVoteCollector::submitNetworkVote(
     const ValidatorVoteRecord& vote,
     const crypto::CryptoPolicy& policy,
     const crypto::SignatureProvider& provider
 ) {
+    if (!m_eligibleValidators.empty()) {
+        const std::string& addr = vote.validatorAddress();
+        bool eligible = false;
+        for (const auto& e : m_eligibleValidators) {
+            if (e == addr) { eligible = true; break; }
+        }
+        if (!eligible) {
+            return VoteCollectResult(
+                VoteCollectStatus::REJECTED_NOT_ELIGIBLE,
+                "Validator " + addr + " is not eligible to vote."
+            );
+        }
+    }
+
     if (vote.blockIndex() < m_currentHeight) {
         return VoteCollectResult(
             VoteCollectStatus::REJECTED_STALE_ROUND,

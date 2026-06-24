@@ -26,6 +26,7 @@ public:
     std::string keyId;
     std::string keyType;
     std::string toAddress;
+    std::string validatorAddress;
     std::int64_t amountRaw;
     std::int64_t feeRaw;
     std::uint64_t nonce;
@@ -127,6 +128,34 @@ private:
     );
 
     static CommandLineResult executeValidatorList(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeValidatorStatus(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeValidatorExit(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeValidatorUnjail(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeStakeLock(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeStakeStatus(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeRewardsStatus(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeSlashingEvidence(
         const CommandLineOptions& options
     );
 
