@@ -2,11 +2,9 @@ name: Nodo CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -16,48 +14,402 @@ concurrency:
   group: nodo-ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  BLST_VERSION: v0.3.11
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared blst installation logic is repeated per job (no composite action
+# needed at this scale). The cache key is stable: blst version + OS + arch.
+# On a cache hit, the clone + build step is skipped (~30 s saved per job).
+# ─────────────────────────────────────────────────────────────────────────────
+
 jobs:
-  linux-build-and-tests:
-    name: Linux build and tests
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # 1. Linux · GCC · Debug
+  #    Primary gate: full build + all CTest suites + CLI smoke.
+  # ───────────────────────────────────────────────────────────────────────────
+  linux-gcc:
+    name: Linux · GCC · Debug
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install compiler toolchain
+      - name: Install toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential git
+          sudo apt-get update -q
+          sudo apt-get install -y build-essential cmake libssl-dev
+
+      - name: Cache blst
+        id: cache-blst
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nodo/blst
+          key: blst-${{ env.BLST_VERSION }}-linux-gcc-${{ runner.arch }}
+
+      - name: Build blst
+        if: steps.cache-blst.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
+            https://github.com/supranational/blst.git /tmp/blst
+          cd /tmp/blst && ./build.sh
+          mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
+          cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
+          cp libblst.a ~/.cache/nodo/blst/lib/
 
       - name: Install blst
         run: |
-          git clone --depth 1 --branch v0.3.11 https://github.com/supranational/blst.git /tmp/blst
-          cd /tmp/blst
-          ./build.sh
-          sudo cp bindings/blst.h /usr/local/include/
-          sudo cp bindings/blst_aux.h /usr/local/include/
-          sudo cp libblst.a /usr/local/lib/
-          sudo ldconfig || true
+          sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
+          sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
+          sudo ldconfig
 
-      - name: Show compiler versions
-        run: |
-          gcc --version
-          g++ --version
+      - name: Show versions
+        run: gcc --version && g++ --version && cmake --version && openssl version
 
-      - name: Make scripts executable
-        run: |
-          chmod +x scripts/*.sh
+      - name: Configure (Debug)
+        run: cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Debug
 
-      - name: Build Nodo
-        run: |
-          ./scripts/clean.sh
-          ./scripts/build.sh
+      - name: Build
+        run: cmake --build build/cmake --parallel $(nproc)
 
-      - name: Run Nodo demo
+      - name: Verify CLI
         run: |
-          ./build/nodo
+          ./build/nodo --help
+          ./build/nodo --help | grep -q "node run"
+          ./build/nodo --help | grep -q "tx submit"
+          ./build/nodo --help | grep -q "chain audit"
 
-      - name: Run all tests
+      - name: Run CTest
         run: |
-          ./scripts/test_all.sh
+          ctest --test-dir build/cmake \
+            --output-on-failure \
+            --parallel $(nproc)
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-linux-gcc
+          path: build/cmake/Testing/
+          retention-days: 7
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # 2. Linux · Clang · Debug
+  #    Compiler compatibility check. Clang is stricter on some C++20 rules
+  #    and catches issues GCC silently accepts.
+  # ───────────────────────────────────────────────────────────────────────────
+  linux-clang:
+    name: Linux · Clang · Debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y clang cmake libssl-dev
+
+      - name: Cache blst
+        id: cache-blst
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nodo/blst
+          key: blst-${{ env.BLST_VERSION }}-linux-clang-${{ runner.arch }}
+
+      - name: Build blst
+        if: steps.cache-blst.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
+            https://github.com/supranational/blst.git /tmp/blst
+          cd /tmp/blst && CC=clang ./build.sh
+          mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
+          cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
+          cp libblst.a ~/.cache/nodo/blst/lib/
+
+      - name: Install blst
+        run: |
+          sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
+          sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
+          sudo ldconfig
+
+      - name: Show versions
+        run: clang --version && clang++ --version && cmake --version
+
+      - name: Configure (Debug, Clang)
+        run: |
+          cmake -S . -B build/cmake \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++
+
+      - name: Build
+        run: cmake --build build/cmake --parallel $(nproc)
+
+      - name: Verify CLI
+        run: ./build/nodo --help
+
+      - name: Run CTest
+        run: |
+          ctest --test-dir build/cmake \
+            --output-on-failure \
+            --parallel $(nproc)
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # 3. Linux · GCC · Release
+  #    Ensures the Release build compiles cleanly (optimisations, LTO-safe
+  #    code, no debug-only includes). Does not run tests — the Debug jobs
+  #    cover correctness.
+  # ───────────────────────────────────────────────────────────────────────────
+  linux-release:
+    name: Linux · GCC · Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y build-essential cmake libssl-dev
+
+      - name: Cache blst
+        id: cache-blst
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nodo/blst
+          key: blst-${{ env.BLST_VERSION }}-linux-gcc-${{ runner.arch }}
+
+      - name: Build blst
+        if: steps.cache-blst.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
+            https://github.com/supranational/blst.git /tmp/blst
+          cd /tmp/blst && ./build.sh
+          mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
+          cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
+          cp libblst.a ~/.cache/nodo/blst/lib/
+
+      - name: Install blst
+        run: |
+          sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
+          sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
+          sudo ldconfig
+
+      - name: Configure (Release)
+        run: cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build/cmake --parallel $(nproc)
+
+      - name: Verify CLI
+        run: ./build/nodo --help
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # 4. Linux · GCC · ASan + UBSan
+  #    Memory safety and undefined behaviour. Runs all tests under sanitizers.
+  #    Serial execution (--parallel 1) avoids address-space contention between
+  #    multiple sanitized processes.
+  # ───────────────────────────────────────────────────────────────────────────
+  sanitizers:
+    name: Linux · GCC · ASan + UBSan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y build-essential cmake libssl-dev
+
+      - name: Cache blst
+        id: cache-blst
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nodo/blst
+          key: blst-${{ env.BLST_VERSION }}-linux-sanitized-${{ runner.arch }}
+
+      - name: Build blst
+        if: steps.cache-blst.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
+            https://github.com/supranational/blst.git /tmp/blst
+          cd /tmp/blst && ./build.sh
+          mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
+          cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
+          cp libblst.a ~/.cache/nodo/blst/lib/
+
+      - name: Install blst
+        run: |
+          sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
+          sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
+          sudo ldconfig
+
+      - name: Configure (Debug + ASan + UBSan)
+        run: |
+          cmake -S . -B build/cmake-san \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS_DEBUG="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
+            -DCMAKE_CXX_FLAGS_DEBUG="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
+            -DCMAKE_EXE_LINKER_FLAGS_DEBUG="-fsanitize=address,undefined"
+
+      - name: Build (sanitized)
+        run: cmake --build build/cmake-san --parallel $(nproc)
+
+      - name: Run CTest (sanitized, serial)
+        env:
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          ctest --test-dir build/cmake-san \
+            --output-on-failure \
+            --parallel 1
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # 5. Localnet smoke test
+  #    Full CLI round-trip on a fresh temporary data directory: init → keys →
+  #    status → block produce → reload → audit → inspect. Runs after linux-gcc
+  #    passes to avoid wasting resources on a broken build.
+  # ───────────────────────────────────────────────────────────────────────────
+  smoke-localnet:
+    name: Localnet smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: linux-gcc
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y build-essential cmake libssl-dev
+
+      - name: Restore blst from cache
+        id: cache-blst
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nodo/blst
+          key: blst-${{ env.BLST_VERSION }}-linux-gcc-${{ runner.arch }}
+
+      - name: Build blst (if cache miss)
+        if: steps.cache-blst.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
+            https://github.com/supranational/blst.git /tmp/blst
+          cd /tmp/blst && ./build.sh
+          mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
+          cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
+          cp libblst.a ~/.cache/nodo/blst/lib/
+
+      - name: Install blst
+        run: |
+          sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
+          sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
+          sudo ldconfig
+
+      - name: Build
+        run: |
+          cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/cmake --parallel $(nproc)
+
+      - name: Localnet round-trip
+        run: |
+          DATA="$(mktemp -d)"
+          set -euo pipefail
+
+          echo "--- init"
+          ./build/nodo init          --data-dir "$DATA"
+
+          echo "--- keys create"
+          ./build/nodo keys create   --data-dir "$DATA"
+
+          echo "--- status"
+          ./build/nodo status        --data-dir "$DATA"
+
+          echo "--- block produce"
+          ./build/nodo block produce --data-dir "$DATA"
+
+          echo "--- node reload"
+          ./build/nodo node reload   --data-dir "$DATA"
+
+          echo "--- chain audit"
+          ./build/nodo chain audit   --data-dir "$DATA"
+
+          echo "--- inspect"
+          ./build/nodo inspect       --data-dir "$DATA"
+
+          echo "Localnet round-trip: PASS"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # 6. macOS · AppleClang · Debug
+  #    Platform compatibility. Catches macOS-specific issues: different libc++,
+  #    Homebrew OpenSSL path, AppleClang C++20 edge cases.
+  # ───────────────────────────────────────────────────────────────────────────
+  macos:
+    name: macOS · AppleClang · Debug
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: brew install cmake openssl
+
+      - name: Cache blst
+        id: cache-blst
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nodo/blst
+          key: blst-${{ env.BLST_VERSION }}-macos-${{ runner.arch }}
+
+      - name: Build blst
+        if: steps.cache-blst.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
+            https://github.com/supranational/blst.git /tmp/blst
+          cd /tmp/blst && ./build.sh
+          mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
+          cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
+          cp libblst.a ~/.cache/nodo/blst/lib/
+
+      - name: Install blst
+        run: |
+          sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
+          sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
+
+      - name: Show versions
+        run: clang --version && cmake --version && openssl version
+
+      - name: Configure (Debug)
+        run: |
+          cmake -S . -B build/cmake \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl)"
+
+      - name: Build
+        run: cmake --build build/cmake --parallel $(sysctl -n hw.logicalcpu)
+
+      - name: Verify CLI
+        run: ./build/nodo --help
+
+      - name: Run CTest
+        run: |
+          ctest --test-dir build/cmake \
+            --output-on-failure \
+            --parallel $(sysctl -n hw.logicalcpu)
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-macos
+          path: build/cmake/Testing/
+          retention-days: 7
