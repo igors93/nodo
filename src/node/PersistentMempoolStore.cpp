@@ -832,6 +832,52 @@ std::int64_t PersistentMempoolStore::decodeAcceptedAt(
     );
 }
 
+std::string PersistentMempoolStore::serializeForGossip(
+    const core::Transaction& transaction,
+    const crypto::PublicKey& publicKey,
+    std::int64_t acceptedAt
+) {
+    try {
+        return transactionFileContents(transaction, publicKey, acceptedAt);
+    } catch (...) {
+        return {};
+    }
+}
+
+bool PersistentMempoolStore::deserializeGossipAndAdmit(
+    const std::string& payload,
+    mempool::Mempool& mempool,
+    const crypto::CryptoPolicy& policy,
+    crypto::SecurityContext context
+) {
+    try {
+        const core::Transaction transaction = decodeTransactionFile(payload);
+        const std::int64_t acceptedAt = decodeAcceptedAt(payload);
+
+        if (!transaction.hasSignatureBundle() ||
+            transaction.signatureBundle().signatures().empty()) {
+            return false;
+        }
+
+        const crypto::PublicKey& publicKey =
+            transaction.signatureBundle().signatures().front().publicKey();
+
+        const crypto::Ed25519SignatureProvider ed25519Provider;
+
+        validatePersistentTransactionSignature(
+            transaction, publicKey, policy, context, ed25519Provider
+        );
+
+        const auto result = mempool.admitTransaction(
+            transaction, policy, context, acceptedAt
+        );
+
+        return result.success();
+    } catch (...) {
+        return false;
+    }
+}
+
 void PersistentMempoolStore::writeTextFile(
     const std::filesystem::path& path,
     const std::string& contents

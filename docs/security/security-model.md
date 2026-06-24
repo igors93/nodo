@@ -13,7 +13,18 @@ Nodo is defensive by design. It should reject invalid data, preserve evidence, r
 - treasury execution evidence validation;
 - slashing evidence and idempotent penalty foundations;
 - peer rate limiting and inbound message validation foundations;
-- testnet readiness and diagnostics foundations.
+- testnet readiness and diagnostics foundations;
+- gossip transaction deduplication via `SeenTransactionCache` (LRU + TTL) —
+  prevents amplification from peers replaying the same payload;
+- gossip payload signature verification before mempool admission — no unsigned
+  or wrongly-signed transaction is admitted from the network;
+- `ProductionKeySafetyGate` blocks localnet-only keys on official networks;
+- `LOCKED_PRODUCTION` (mainnet) startup is refused at the CLI level;
+- genesis compatibility check prevents mixing data directories across networks;
+- finalized artifact QC verification against the local validator registry before
+  recording — no finalized block is accepted on peer word alone;
+- no implicit trust in P2P messages: every consensus payload is verified
+  locally before acting on it.
 
 ## Current Limits
 

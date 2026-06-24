@@ -227,6 +227,11 @@ const NodeRuntime& NodeOrchestrator::runtime() const {
     return *m_runtime;
 }
 
+NodeRuntime& NodeOrchestrator::mutableRuntime() {
+    if (!m_runtime) throw std::runtime_error("NodeOrchestrator: runtime not started");
+    return *m_runtime;
+}
+
 const TcpTestnetNodeRuntime& NodeOrchestrator::tcpRuntime() const {
     if (!m_tcpRuntime) throw std::runtime_error("NodeOrchestrator: transport not started");
     return *m_tcpRuntime;
@@ -234,6 +239,29 @@ const TcpTestnetNodeRuntime& NodeOrchestrator::tcpRuntime() const {
 
 const NodeOrchestratorConfig&  NodeOrchestrator::config()        const { return m_config; }
 const consensus::EvidencePool& NodeOrchestrator::evidencePool()  const { return m_evidencePool; }
+
+std::vector<p2p::NetworkEnvelope> NodeOrchestrator::drainGossipInbox(
+    p2p::NetworkMessageType type
+) {
+    if (!m_tcpRuntime) return {};
+    return m_tcpRuntime->gossipMesh().drainInbox(type);
+}
+
+p2p::GossipDeliveryReport NodeOrchestrator::gossipBroadcast(
+    p2p::NetworkMessageType type,
+    const std::string& payload,
+    std::int64_t now
+) {
+    if (!m_tcpRuntime) return {};
+    return m_tcpRuntime->gossipMesh().broadcast(type, payload, now);
+}
+
+void NodeOrchestrator::addAndConnectPeer(const p2p::PeerMetadata& peer) {
+    if (!m_tcpRuntime) return;
+    if (m_tcpRuntime->addPeer(peer).success()) {
+        m_tcpRuntime->connectPeer(peer.nodeId());
+    }
+}
 
 // ---- Internal startup helpers ---------------------------------------------
 

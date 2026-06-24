@@ -15,6 +15,13 @@ Nodo is in development and pre-mainnet. This roadmap describes project direction
 - Consensus round manager, proposer schedule, quorum certificates, finalization, fork choice foundations, and slashing evidence.
 - P2P message validation, gossip mesh, loopback/TCP transports, encrypted peer-channel foundations, persistent sync, and peer rate limiting.
 - Testnet-candidate network profile, readiness checks, and operator diagnostics foundations.
+- Phase 1 daemon and distributed consensus foundations: `NodeDaemon` continuous
+  tick loop wrapping `NodeOrchestrator`; `TRANSACTION_GOSSIP` propagation with
+  `SeenTransactionCache` deduplication; `BLOCK_PROPOSAL` relaying via
+  `BlockAnnounceHandler`; `VALIDATOR_VOTE` accumulation and `QUORUM_CERTIFICATE`
+  assembly in `ConsensusEventLoop`; `FINALIZED_BLOCK_ARTIFACT` verification and
+  recording; `node run` CLI command with `--listen`, `--peer`, `--validator-key`
+  options; `ProductionKeySafetyGate` enforcement and mainnet startup rejection.
 
 ## In Progress
 

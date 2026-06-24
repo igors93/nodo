@@ -1,5 +1,6 @@
 #include "app/CommandLineInterface.hpp"
 #include "app/ProtocolCommandPolicy.hpp"
+#include "node/NodeDaemon.hpp"
 
 
 #include "config/GenesisRegistry.hpp"
@@ -40,12 +41,15 @@
 #include "node/TransactionAdmissionValidator.hpp"
 #include "utils/Amount.hpp"
 
+#include <atomic>
 #include <chrono>
+#include <csignal>
 #include <filesystem>
 #include <iostream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <cstring>
 
 #ifdef _WIN32
@@ -291,6 +295,7 @@ CommandLineOptions::CommandLineOptions()
       networkName("localnet"),
       peerId("local-node"),
       endpoint("127.0.0.1:9000"),
+      listenAddress(""),
       keyId("local-validator"),
       keyType("both"),
       toAddress("nodo-localnet-recipient"),
@@ -418,6 +423,10 @@ CommandLineResult CommandLineInterface::execute(
 
         if (options.command == "node reload") {
             return executeReload(options);
+        }
+
+        if (options.command == "node run") {
+            return executeNodeRun(options);
         }
 
         if (options.command == "chain audit") {
@@ -628,6 +637,39 @@ CommandLineOptions CommandLineInterface::parse(
             continue;
         }
 
+        if (option == "--listen") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--listen requires a value (HOST:PORT).");
+            }
+
+            options.listenAddress = args[index + 1];
+            // Also propagate to endpoint so localPeerFromOptions() picks it up.
+            options.endpoint = args[index + 1];
+            index += 2;
+            continue;
+        }
+
+        if (option == "--peer") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--peer requires a value (NAME@HOST:PORT).");
+            }
+
+            options.peers.push_back(args[index + 1]);
+            index += 2;
+            continue;
+        }
+
+        if (option == "--validator-key") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--validator-key requires a value.");
+            }
+
+            options.keyId = args[index + 1];
+            options.keyIdProvided = true;
+            index += 2;
+            continue;
+        }
+
         throw std::invalid_argument("Unknown option: " + option);
     }
 
@@ -644,6 +686,7 @@ std::string CommandLineInterface::helpText() {
         "  nodo init [--network localnet|testnet-candidate] [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo status [--network localnet|testnet-candidate] [--data-dir PATH]\n"
         "  nodo inspect [--network localnet|testnet-candidate] [--data-dir PATH]\n"
+        "  nodo node run [--network localnet|testnet-candidate] [--data-dir PATH] [--listen HOST:PORT] [--peer NAME@HOST:PORT]... [--validator-key ID]\n"
         "  nodo node reload [--network localnet|testnet-candidate] [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo keys create [--network localnet|testnet-candidate] [--data-dir PATH] [--type user|validator|both] [--key-id ID]\n"
         "  nodo keys list [--data-dir PATH]\n"
@@ -659,6 +702,9 @@ std::string CommandLineInterface::helpText() {
         "  --network NAME       Network profile: localnet or testnet-candidate. mainnet is blocked.\n"
         "  --peer-id ID         Local peer id for init/load. Default: local-node\n"
         "  --endpoint HOST:PORT Local endpoint for init/load. Default: 127.0.0.1:9000\n"
+        "  --listen HOST:PORT   Bind address for node run daemon. Overrides --endpoint.\n"
+        "  --peer NAME@HOST:PORT Static peer for node run daemon (repeatable).\n"
+        "  --validator-key ID   Key id for the local validator in node run.\n"
         "  --key-id ID          Key id for keys create or signing. Defaults depend on command.\n"
         "  --type TYPE          Key type for keys create. Default: both\n"
         "  --from KEY_ID        Alias for --key-id in tx submit.\n"
@@ -1942,6 +1988,211 @@ CommandLineResult CommandLineInterface::executeProduceBlock(
            << "Manifest latest state root: " << persistedBlock.manifest().latestStateRoot() << "\n";
 
     return CommandLineResult::success(output.str());
+}
+
+// ---------------------------------------------------------------------------
+// node run — long-running daemon
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// SIGINT/SIGTERM flag — set from signal handler, polled by runBlocking loop.
+std::atomic<bool> g_daemonShutdownRequested{false};
+
+node::NodeDaemonPeerEntry parsePeerEntry(const std::string& raw) {
+    // Format: NAME@HOST:PORT
+    const auto atPos = raw.find('@');
+    if (atPos == std::string::npos) {
+        throw std::invalid_argument(
+            "Invalid --peer value '" + raw + "': expected NAME@HOST:PORT"
+        );
+    }
+    const std::string nodeId = raw.substr(0, atPos);
+    const std::string hostPort = raw.substr(atPos + 1);
+    const auto colonPos = hostPort.rfind(':');
+    if (colonPos == std::string::npos) {
+        throw std::invalid_argument(
+            "Invalid --peer value '" + raw + "': missing port in HOST:PORT"
+        );
+    }
+    const std::string host = hostPort.substr(0, colonPos);
+    const std::string portStr = hostPort.substr(colonPos + 1);
+
+    std::uint16_t port = 0;
+    try {
+        const unsigned long raw_port = std::stoul(portStr);
+        if (raw_port == 0 || raw_port > 65535) {
+            throw std::out_of_range("port out of range");
+        }
+        port = static_cast<std::uint16_t>(raw_port);
+    } catch (...) {
+        throw std::invalid_argument(
+            "Invalid --peer port in '" + raw + "'"
+        );
+    }
+
+    node::NodeDaemonPeerEntry entry;
+    entry.nodeId = nodeId;
+    entry.host   = host;
+    entry.port   = port;
+    return entry;
+}
+
+} // namespace
+
+CommandLineResult CommandLineInterface::executeNodeRun(
+    const CommandLineOptions& options
+) {
+    // Security gate: reject mainnet.
+    const config::NetworkParameters params =
+        networkParametersForOptions(options);
+
+    if (params.networkClass() == config::NetworkClass::LOCKED_PRODUCTION) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "node run: mainnet (locked production) is not supported in this build.\n"
+        );
+    }
+
+    // Resolve and verify genesis — refuse to start with an unknown genesis.
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "node run: " + genesisLookup.reason() + "\n"
+        );
+    }
+
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+    const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+
+    // If already initialized, verify data-dir belongs to the same genesis.
+    if (node::NodeDataDirectory::isInitialized(directoryConfig)) {
+        const node::NodeDataDirectoryReadResult manifest =
+            node::NodeDataDirectory::loadManifest(directoryConfig);
+
+        if (manifest.loaded()) {
+            const std::optional<std::string> mismatch =
+                manifestNetworkMismatch(manifest.manifest(), options);
+
+            if (mismatch.has_value()) {
+                return CommandLineResult::failure(
+                    CommandLineStatus::COMMAND_FAILED,
+                    "node run: data directory belongs to a different genesis: "
+                    + *mismatch + "\n"
+                );
+            }
+        }
+    }
+
+    // BLS provider must outlive the Signer and the daemon.
+    const crypto::Bls12381SignatureProvider blsProvider;
+    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+
+    // Load optional validator key (for signing blocks / votes).
+    std::optional<crypto::Signer> localSigner;
+    std::string localValidatorAddress;
+
+    const std::string validatorKeyId =
+        options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
+
+    const crypto::KeyStoreLoadResult key =
+        loadKeyWithPrompt(
+            directoryConfig.keysDirectoryPath(),
+            validatorKeyId
+        );
+
+    if (key.loaded()) {
+        const node::KeySafetyCheckResult keySafety =
+            node::ProductionKeySafetyGate::check(
+                key.metadata(),
+                params.networkName()
+            );
+
+        if (!keySafety.isApproved()) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "node run: key safety check failed: " + keySafety.reason() + "\n"
+            );
+        }
+
+        localSigner.emplace(key.keyPair(), blsProvider);
+        localValidatorAddress = localSigner->address();
+    }
+
+    // Parse static peers.
+    std::vector<node::NodeDaemonPeerEntry> staticPeers;
+    for (const auto& rawPeer : options.peers) {
+        try {
+            staticPeers.push_back(parsePeerEntry(rawPeer));
+        } catch (const std::exception& e) {
+            return CommandLineResult::failure(
+                CommandLineStatus::INVALID_ARGUMENTS,
+                std::string("node run: ") + e.what() + "\n"
+            );
+        }
+    }
+
+    // Build daemon config.
+    const node::NodeOrchestratorConfig orchestratorConfig(
+        genesisConfig,
+        directoryConfig,
+        localPeerFromOptions(options),
+        localValidatorAddress,
+        8545,
+        "127.0.0.1",
+        100,
+        static_cast<std::size_t>(
+            genesisConfig.networkParameters().maxTransactionsPerBlock()
+        )
+    );
+
+    node::NodeDaemonConfig daemonConfig;
+    daemonConfig.orchestratorConfig = orchestratorConfig;
+    daemonConfig.staticPeers        = std::move(staticPeers);
+
+    node::NodeDaemon daemon(daemonConfig, policy, blsProvider);
+
+    if (localSigner.has_value()) {
+        daemon.setLocalSigner(std::move(*localSigner));
+    }
+
+    // Set up SIGINT/SIGTERM handler.
+    g_daemonShutdownRequested.store(false);
+    std::signal(SIGINT,  [](int) { g_daemonShutdownRequested.store(true); });
+    std::signal(SIGTERM, [](int) { g_daemonShutdownRequested.store(true); });
+
+    const auto startResult = daemon.start();
+    if (!startResult.running()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "node run: failed to start daemon: " + startResult.reason + "\n"
+        );
+    }
+
+    std::cout << "Nodo daemon running on " << options.endpoint
+              << " (network: " << options.networkName << ")\n"
+              << "Press Ctrl+C to stop.\n";
+    std::cout.flush();
+
+    // Poll g_daemonShutdownRequested in the tick loop instead of runBlocking().
+    while (!g_daemonShutdownRequested.load() && daemon.isRunning()) {
+        const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+
+        daemon.tick(static_cast<std::int64_t>(now));
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(node::NodeDaemon::DEFAULT_TICK_INTERVAL_MS)
+        );
+    }
+
+    daemon.stop();
+
+    return CommandLineResult::success("Nodo daemon stopped.\n");
 }
 
 } // namespace nodo::app

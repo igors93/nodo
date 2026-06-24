@@ -10,6 +10,7 @@
 #include "p2p/NetworkEnvelope.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
 
+#include <array>
 #include <chrono>
 #include <thread>
 
@@ -180,11 +181,9 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
             const auto collected = m_runtime.submitConsensusVote(prevote);
             if (collected.accepted()) {
                 m_votedPrevote = true;
-                m_gossip.broadcast(
-                    p2p::NetworkMessageType::VOTE_ANNOUNCE,
-                    prevote.serialize(),
-                    now
-                );
+                const std::string serializedVote = prevote.serialize();
+                m_gossip.broadcast(p2p::NetworkMessageType::VOTE_ANNOUNCE,  serializedVote, now);
+                m_gossip.broadcast(p2p::NetworkMessageType::VALIDATOR_VOTE, serializedVote, now);
             }
         }
     }
@@ -205,11 +204,9 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
             const auto collected = m_runtime.submitConsensusVote(precommit);
             if (collected.accepted()) {
                 m_votedPrecommit = true;
-                m_gossip.broadcast(
-                    p2p::NetworkMessageType::VOTE_ANNOUNCE,
-                    precommit.serialize(),
-                    now
-                );
+                const std::string serializedVote = precommit.serialize();
+                m_gossip.broadcast(p2p::NetworkMessageType::VOTE_ANNOUNCE,  serializedVote, now);
+                m_gossip.broadcast(p2p::NetworkMessageType::VALIDATOR_VOTE, serializedVote, now);
             }
         }
     }
@@ -239,23 +236,30 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(
     ConsensusTickResult result;
 
     const auto& inbox = m_gossip.inbox();
-    const auto voteMessages = inbox.messagesForType(
-        p2p::NetworkMessageType::VOTE_ANNOUNCE
-    );
 
-    for (const auto& envelope : voteMessages) {
-        if (envelope.payload().empty()) continue;
+    // Process both VOTE_ANNOUNCE (legacy) and VALIDATOR_VOTE (new) message types.
+    const std::array<p2p::NetworkMessageType, 2> voteTypes = {
+        p2p::NetworkMessageType::VOTE_ANNOUNCE,
+        p2p::NetworkMessageType::VALIDATOR_VOTE
+    };
 
-        ValidatorVoteRecord vote =
-            ValidatorVoteRecord::deserialize(envelope.payload());
+    for (const auto voteType : voteTypes) {
+        const auto voteMessages = inbox.messagesForType(voteType);
 
-        if (!vote.isStructurallyValid(m_policy)) continue;
+        for (const auto& envelope : voteMessages) {
+            if (envelope.payload().empty()) continue;
 
-        const VoteCollectResult collected =
-            m_runtime.submitConsensusVote(vote);
+            ValidatorVoteRecord vote =
+                ValidatorVoteRecord::deserialize(envelope.payload());
 
-        if (collected.accepted()) {
-            result.votesCollected++;
+            if (!vote.isStructurallyValid(m_policy)) continue;
+
+            const VoteCollectResult collected =
+                m_runtime.submitConsensusVote(vote);
+
+            if (collected.accepted()) {
+                result.votesCollected++;
+            }
         }
     }
 
@@ -337,6 +341,13 @@ bool ConsensusEventLoop::tryFinalizeBlock(
     result.blockFinalized     = true;
     result.finalizedBlockHash = finResult.record().blockHash();
     result.finalizedHeight    = finResult.record().blockIndex();
+
+    // Broadcast the finalized record so lagging peers can learn about it.
+    m_gossip.broadcast(
+        p2p::NetworkMessageType::FINALIZED_BLOCK_ARTIFACT,
+        finResult.record().serialize(),
+        now
+    );
 
     return true;
 }

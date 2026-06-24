@@ -12,6 +12,8 @@
 #include "node/NodeRuntime.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/TcpTestnetNodeRuntime.hpp"
+#include "p2p/GossipMesh.hpp"
+#include "p2p/NetworkEnvelope.hpp"
 #include "p2p/Peer.hpp"
 #include "p2p/DiscoveryService.hpp"
 
@@ -169,9 +171,25 @@ public:
     // ---- Accessors (read-only for monitoring / tests) ---------------------
 
     const NodeRuntime&              runtime()        const;
+    NodeRuntime&                    mutableRuntime();
     const TcpTestnetNodeRuntime&    tcpRuntime()     const;
     const NodeOrchestratorConfig&   config()         const;
     const consensus::EvidencePool&  evidencePool()   const;
+
+    // ---- Gossip helpers for NodeDaemon ------------------------------------
+
+    // Drain all messages of `type` from the gossip inbox and return them.
+    std::vector<p2p::NetworkEnvelope> drainGossipInbox(p2p::NetworkMessageType type);
+
+    // Broadcast a message to all connected peers via the gossip mesh.
+    p2p::GossipDeliveryReport gossipBroadcast(
+        p2p::NetworkMessageType type,
+        const std::string& payload,
+        std::int64_t now
+    );
+
+    // Register and connect a static peer (e.g. from --peer CLI flag).
+    void addAndConnectPeer(const p2p::PeerMetadata& peer);
 
 private:
     NodeOrchestratorConfig               m_config;

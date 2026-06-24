@@ -8,6 +8,7 @@ nodo init [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
 nodo status [--data-dir PATH]
 nodo inspect [--data-dir PATH]
 nodo node reload [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
+nodo node run [--network localnet|testnet-candidate] [--data-dir PATH] [--listen HOST:PORT] [--peer NAME@HOST:PORT]... [--validator-key ID]
 nodo keys create [--data-dir PATH] [--type user|validator|both] [--key-id ID]
 nodo keys list [--data-dir PATH]
 nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]
@@ -23,6 +24,16 @@ nodo validator list [--data-dir PATH]
 - `inspect`: prints the serialized manifest.
 - `node reload`: rebuilds runtime from manifest, finalized blocks and
   persistent mempool, then reports loaded counts.
+- `node run`: starts a long-running node daemon. Verifies genesis, checks
+  data-dir compatibility, loads an optional validator key (via
+  `--validator-key`), registers static peers (`--peer NAME@HOST:PORT`), then
+  runs the `NodeDaemon` tick loop until SIGINT or SIGTERM. Rejected for
+  `LOCKED_PRODUCTION` (mainnet) networks. Uses `ProductionKeySafetyGate` to
+  refuse localnet-only keys on official networks. Each tick drains gossip
+  inboxes: `TRANSACTION_GOSSIP` payloads are deduplicated via
+  `SeenTransactionCache`, validated and relayed; `BLOCK_PROPOSAL` messages are
+  applied via `BlockAnnounceHandler`; `FINALIZED_BLOCK_ARTIFACT` messages are
+  verified against the local validator registry before being recorded.
 - `keys create`: creates localnet keys in `.nodo/keys`. Without `--type`, it
   creates both `local-user` Ed25519 and `local-validator` BLS12-381 keys.
 - `keys list`: lists public key metadata without printing private material.

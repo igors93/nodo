@@ -23,3 +23,27 @@ Current localnet signs user transactions with Ed25519 through OpenSSL and
 validator votes/proposals with BLS12-381 through blst. Future testnet and
 mainnet configs must refuse startup unless the configured crypto suite and key
 store are production-safe for that network profile.
+
+## P2P Consensus Messages
+
+The gossip layer carries the following consensus-specific message types:
+
+- `BLOCK_PROPOSAL`: a proposer-signed candidate block broadcast before voting.
+  Applied via `BlockAnnounceHandler`; the `ConsensusEventLoop` drives prevote
+  and precommit rounds after validation.
+- `VALIDATOR_VOTE`: a BLS12-381-signed vote (prevote or precommit) from an
+  active validator. `ConsensusEventLoop` accumulates votes and builds a
+  `QuorumCertificate` when the 2/3 weight threshold is crossed. Duplicate votes
+  and votes from unregistered validators are discarded.
+- `QUORUM_CERTIFICATE`: an assembled QC broadcast after quorum is reached.
+  Peers that missed votes may use this to advance their consensus state.
+- `FINALIZED_BLOCK_ARTIFACT`: a `FinalizedBlockRecord` carrying the block index,
+  block hash, previous hash, round, finalization timestamp and quorum
+  certificate. Receiving nodes verify the QC against their local validator
+  registry before recording finality. Malformed or unverifiable artifacts are
+  silently discarded; no implicit trust is granted to peers.
+- `BLOCK_SYNC_REQUEST` / `BLOCK_SYNC_RESPONSE`: used to fetch blocks a peer
+  missed during downtime or initial block download.
+
+All consensus message signatures are verified locally; no message is acted on
+without signature verification against the validator registry.

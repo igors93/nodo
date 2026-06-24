@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+
 namespace nodo::app {
 
 class CommandLineOptions {
@@ -20,6 +21,8 @@ public:
     std::string networkName;
     std::string peerId;
     std::string endpoint;
+    std::string listenAddress;          // --listen HOST:PORT for node run
+    std::vector<std::string> peers;     // --peer NAME@HOST:PORT (repeatable)
     std::string keyId;
     std::string keyType;
     std::string toAddress;
@@ -132,6 +135,10 @@ private:
     );
 
     static CommandLineResult executeSubmitTransaction(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeNodeRun(
         const CommandLineOptions& options
     );
 };

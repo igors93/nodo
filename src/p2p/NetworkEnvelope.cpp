@@ -43,38 +43,52 @@ std::string hashString(const std::string& value) {
 
 std::string networkMessageTypeToString(NetworkMessageType type) {
     switch (type) {
-        case NetworkMessageType::PING: return "PING";
-        case NetworkMessageType::PONG: return "PONG";
-        case NetworkMessageType::PEER_HELLO: return "PEER_HELLO";
-        case NetworkMessageType::PEER_STATUS: return "PEER_STATUS";
-        case NetworkMessageType::TRANSACTION_ANNOUNCE: return "TRANSACTION_ANNOUNCE";
-        case NetworkMessageType::TRANSACTION_REQUEST: return "TRANSACTION_REQUEST";
-        case NetworkMessageType::TRANSACTION_RESPONSE: return "TRANSACTION_RESPONSE";
-        case NetworkMessageType::BLOCK_ANNOUNCE: return "BLOCK_ANNOUNCE";
-        case NetworkMessageType::BLOCK_REQUEST: return "BLOCK_REQUEST";
-        case NetworkMessageType::BLOCK_RESPONSE: return "BLOCK_RESPONSE";
-        case NetworkMessageType::VOTE_ANNOUNCE: return "VOTE_ANNOUNCE";
+        case NetworkMessageType::PING:                        return "PING";
+        case NetworkMessageType::PONG:                        return "PONG";
+        case NetworkMessageType::PEER_HELLO:                  return "PEER_HELLO";
+        case NetworkMessageType::PEER_STATUS:                 return "PEER_STATUS";
+        case NetworkMessageType::TRANSACTION_ANNOUNCE:        return "TRANSACTION_ANNOUNCE";
+        case NetworkMessageType::TRANSACTION_REQUEST:         return "TRANSACTION_REQUEST";
+        case NetworkMessageType::TRANSACTION_RESPONSE:        return "TRANSACTION_RESPONSE";
+        case NetworkMessageType::TRANSACTION_GOSSIP:          return "TRANSACTION_GOSSIP";
+        case NetworkMessageType::BLOCK_ANNOUNCE:              return "BLOCK_ANNOUNCE";
+        case NetworkMessageType::BLOCK_REQUEST:               return "BLOCK_REQUEST";
+        case NetworkMessageType::BLOCK_RESPONSE:              return "BLOCK_RESPONSE";
+        case NetworkMessageType::BLOCK_PROPOSAL:              return "BLOCK_PROPOSAL";
+        case NetworkMessageType::VOTE_ANNOUNCE:               return "VOTE_ANNOUNCE";
+        case NetworkMessageType::VALIDATOR_VOTE:              return "VALIDATOR_VOTE";
         case NetworkMessageType::QUORUM_CERTIFICATE_ANNOUNCE: return "QUORUM_CERTIFICATE_ANNOUNCE";
-        case NetworkMessageType::CHAIN_STATUS: return "CHAIN_STATUS";
+        case NetworkMessageType::QUORUM_CERTIFICATE:          return "QUORUM_CERTIFICATE";
+        case NetworkMessageType::FINALIZED_BLOCK_ARTIFACT:    return "FINALIZED_BLOCK_ARTIFACT";
+        case NetworkMessageType::CHAIN_STATUS:                return "CHAIN_STATUS";
+        case NetworkMessageType::BLOCK_SYNC_REQUEST:          return "BLOCK_SYNC_REQUEST";
+        case NetworkMessageType::BLOCK_SYNC_RESPONSE:         return "BLOCK_SYNC_RESPONSE";
         case NetworkMessageType::UNKNOWN:
         default: return "UNKNOWN";
     }
 }
 
 NetworkMessageType networkMessageTypeFromString(const std::string& value) {
-    if (value == "PING") return NetworkMessageType::PING;
-    if (value == "PONG") return NetworkMessageType::PONG;
-    if (value == "PEER_HELLO") return NetworkMessageType::PEER_HELLO;
-    if (value == "PEER_STATUS") return NetworkMessageType::PEER_STATUS;
-    if (value == "TRANSACTION_ANNOUNCE") return NetworkMessageType::TRANSACTION_ANNOUNCE;
-    if (value == "TRANSACTION_REQUEST") return NetworkMessageType::TRANSACTION_REQUEST;
-    if (value == "TRANSACTION_RESPONSE") return NetworkMessageType::TRANSACTION_RESPONSE;
-    if (value == "BLOCK_ANNOUNCE") return NetworkMessageType::BLOCK_ANNOUNCE;
-    if (value == "BLOCK_REQUEST") return NetworkMessageType::BLOCK_REQUEST;
-    if (value == "BLOCK_RESPONSE") return NetworkMessageType::BLOCK_RESPONSE;
-    if (value == "VOTE_ANNOUNCE") return NetworkMessageType::VOTE_ANNOUNCE;
+    if (value == "PING")                        return NetworkMessageType::PING;
+    if (value == "PONG")                        return NetworkMessageType::PONG;
+    if (value == "PEER_HELLO")                  return NetworkMessageType::PEER_HELLO;
+    if (value == "PEER_STATUS")                 return NetworkMessageType::PEER_STATUS;
+    if (value == "TRANSACTION_ANNOUNCE")        return NetworkMessageType::TRANSACTION_ANNOUNCE;
+    if (value == "TRANSACTION_REQUEST")         return NetworkMessageType::TRANSACTION_REQUEST;
+    if (value == "TRANSACTION_RESPONSE")        return NetworkMessageType::TRANSACTION_RESPONSE;
+    if (value == "TRANSACTION_GOSSIP")          return NetworkMessageType::TRANSACTION_GOSSIP;
+    if (value == "BLOCK_ANNOUNCE")              return NetworkMessageType::BLOCK_ANNOUNCE;
+    if (value == "BLOCK_REQUEST")               return NetworkMessageType::BLOCK_REQUEST;
+    if (value == "BLOCK_RESPONSE")              return NetworkMessageType::BLOCK_RESPONSE;
+    if (value == "BLOCK_PROPOSAL")              return NetworkMessageType::BLOCK_PROPOSAL;
+    if (value == "VOTE_ANNOUNCE")               return NetworkMessageType::VOTE_ANNOUNCE;
+    if (value == "VALIDATOR_VOTE")              return NetworkMessageType::VALIDATOR_VOTE;
     if (value == "QUORUM_CERTIFICATE_ANNOUNCE") return NetworkMessageType::QUORUM_CERTIFICATE_ANNOUNCE;
-    if (value == "CHAIN_STATUS") return NetworkMessageType::CHAIN_STATUS;
+    if (value == "QUORUM_CERTIFICATE")          return NetworkMessageType::QUORUM_CERTIFICATE;
+    if (value == "FINALIZED_BLOCK_ARTIFACT")    return NetworkMessageType::FINALIZED_BLOCK_ARTIFACT;
+    if (value == "CHAIN_STATUS")                return NetworkMessageType::CHAIN_STATUS;
+    if (value == "BLOCK_SYNC_REQUEST")          return NetworkMessageType::BLOCK_SYNC_REQUEST;
+    if (value == "BLOCK_SYNC_RESPONSE")         return NetworkMessageType::BLOCK_SYNC_RESPONSE;
     return NetworkMessageType::UNKNOWN;
 }
 

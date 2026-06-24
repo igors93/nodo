@@ -10,8 +10,11 @@ Nodo is organized by runtime responsibility rather than implementation phase.
 - `consensus`: votes, quorum certificates, finalization and fork choice.
 - `mempool`: volatile transaction admission and selection.
 - `node`: local runtime, data directory, runtime loader, runtime verifier,
-  finalized block artifact codec/store, persistent mempool and local block
-  pipeline.
+  finalized block artifact codec/store, persistent mempool, local block
+  pipeline, `NodeOrchestrator` (transport + peer discovery + sync + consensus
+  event loop + RPC) and `NodeDaemon` (wraps `NodeOrchestrator` to add static
+  peer registration, transaction gossip processing, block proposal relaying and
+  finalized artifact verification).
 - `storage`: generic chain/block storage helpers and atomic file IO.
 - `serialization`: strict canonical binary codecs for protocol boundaries plus
   deterministic text codecs for legacy development persistence.
@@ -47,6 +50,30 @@ manifest-to-runtime checks and deterministic `latestStateRoot` recalculation.
 `ProtocolInvariantChecker` performs heavy runtime invariants after genesis and
 reload. `ChainAuditor` adds the final operational checks for crypto context,
 mempool admission policy and validator registry consistency.
+
+## Daemon and Gossip Flow
+
+`NodeDaemon` wraps `NodeOrchestrator` and adds a tick-driven gossip processing
+layer:
+
+```text
+NodeDaemon.tick()
+  ├── NodeOrchestrator.tick()          — transport I/O, peer heartbeats, block sync
+  ├── processTransactionGossip()       — drain TRANSACTION_GOSSIP inbox
+  │     ├── SeenTransactionCache       — LRU+TTL dedup by payloadHash
+  │     ├── PersistentMempoolStore::deserializeGossipAndAdmit()  — Ed25519 verify + admit
+  │     └── gossipBroadcast()          — relay if newly admitted
+  ├── processBlockProposals()          — drain BLOCK_PROPOSAL inbox
+  │     └── BlockAnnounceHandler       — apply to local blockchain
+  └── processFinalizedArtifacts()      — drain FINALIZED_BLOCK_ARTIFACT inbox
+        ├── FinalizedBlockRecord::deserialize()
+        ├── record.verify()            — QC check vs. local validator registry
+        └── FinalizationRegistry::registerFinalizedBlock()
+```
+
+`ConsensusEventLoop` runs in a background thread inside `NodeOrchestrator` and
+handles `VALIDATOR_VOTE` / `VOTE_ANNOUNCE` accumulation, `QuorumCertificate`
+assembly and broadcasting `FINALIZED_BLOCK_ARTIFACT` after quorum.
 
 ## Build
 

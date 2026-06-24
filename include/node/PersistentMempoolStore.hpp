@@ -135,6 +135,32 @@ public:
         const std::string& transactionId
     );
 
+    /*
+     * Serialize a signed transaction to the gossip wire format (same as the
+     * on-disk NODO_MEMPOOL_TRANSACTION_V2 schema).
+     *
+     * Returns an empty string if the transaction is unsigned or invalid.
+     */
+    static std::string serializeForGossip(
+        const core::Transaction& transaction,
+        const crypto::PublicKey& publicKey,
+        std::int64_t acceptedAt
+    );
+
+    /*
+     * Decode a gossip payload produced by serializeForGossip() and admit the
+     * transaction to the provided mempool.
+     *
+     * Returns true if the transaction was admitted (ACCEPTED or REPLACED).
+     * Signature verification uses Ed25519 (user transaction standard).
+     */
+    static bool deserializeGossipAndAdmit(
+        const std::string& payload,
+        mempool::Mempool& mempool,
+        const crypto::CryptoPolicy& policy,
+        crypto::SecurityContext context
+    );
+
 private:
     static std::string transactionFileContents(
         const core::Transaction& transaction,
