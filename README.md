@@ -1,5 +1,3 @@
-<h1 align="center">Nodo</h1>
-
 <p align="center">
   <img src="assets/nodo-readme-hero.svg" alt="Nodo - Proof of Protection Blockchain" />
 </p>
