@@ -37,7 +37,12 @@ public:
     std::size_t size() const;
     std::size_t countForValidator(const std::string& validatorAddress) const;
 
-    void pruneOlderThan(std::int64_t cutoffTimestamp);
+    // Minimum time (seconds) evidence must be retained to cover the unbonding
+    // window before a validator can be slashed.  Callers must pass a `now`
+    // value so the pool can enforce this floor internally.
+    static constexpr std::int64_t kMinRetentionSeconds = 7 * 24 * 3600; // 7 days
+
+    void pruneOlderThan(std::int64_t cutoffTimestamp, std::int64_t now);
 
     bool isValid() const;
     std::string serialize() const;

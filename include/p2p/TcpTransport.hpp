@@ -94,7 +94,9 @@ private:
     std::map<std::string, PeerEndpoint> m_peerEndpoints;
     std::map<std::string, SocketHandle> m_connectionsByPeer;
     std::vector<SocketHandle> m_unidentifiedInboundFds;
-    mutable std::mutex m_sendMutex;
+    // Guards all public methods that access shared maps/fds.
+    // Recursive because send() may call connect() internally.
+    mutable std::recursive_mutex m_mutex;
 
     struct PollFdResult {
         enum class Status {

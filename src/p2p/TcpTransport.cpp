@@ -521,6 +521,8 @@ TransportResult TcpTransport::connect(
     const std::string& localNodeId,
     const std::string& remoteNodeId
 ) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
     if (localNodeId != m_localNodeId || !listening()) {
         return TransportResult(
             TransportStatus::REJECTED,
@@ -638,6 +640,8 @@ TransportResult TcpTransport::disconnect(
     const std::string& localNodeId,
     const std::string& remoteNodeId
 ) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
     if (localNodeId != m_localNodeId) {
         return TransportResult(
             TransportStatus::REJECTED,
@@ -666,7 +670,7 @@ bool TcpTransport::connected(
 TransportResult TcpTransport::send(
     const TransportMessage& message
 ) {
-    std::lock_guard<std::mutex> sendLock(m_sendMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
     if (!message.isValid()) {
         return TransportResult(
@@ -730,6 +734,8 @@ TransportResult TcpTransport::send(
 std::optional<TransportMessage> TcpTransport::poll(
     const std::string& localNodeId
 ) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
     if (localNodeId != m_localNodeId || !listening()) {
         return std::nullopt;
     }

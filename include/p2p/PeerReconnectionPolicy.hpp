@@ -28,6 +28,7 @@ struct PeerReconnectionState {
     std::int64_t  nextRetryAt;
     bool          quarantined;
     std::string   quarantineReason;
+    bool          attemptInFlight{false}; // true after recordAttempt(), cleared by recordFailure/recordSuccess
 
     bool isReadyToRetry(std::int64_t now) const;
     std::string serialize() const;

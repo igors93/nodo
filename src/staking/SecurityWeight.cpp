@@ -1,5 +1,7 @@
 #include "staking/SecurityWeight.hpp"
 
+#include <limits>
+
 namespace nodo::staking {
 
 std::uint64_t SecurityWeight::calculateForCoinLot(
@@ -13,11 +15,13 @@ std::uint64_t SecurityWeight::calculateForCoinLot(
     const std::uint64_t multiplier =
         lockDurationMultiplier(currentBlock, coinLot.lockedUntilBlock());
 
-    // Multiply before dividing to preserve sub-1-NODO precision.
-    return static_cast<std::uint64_t>(
-        (coinLot.amount().rawUnits() * static_cast<std::int64_t>(multiplier))
-        / utils::Amount::UNITS_PER_NODO
-    );
+    // Use __int128 to multiply before dividing without overflow risk.
+    const __int128 product =
+        static_cast<__int128>(coinLot.amount().rawUnits())
+        * static_cast<__int128>(multiplier);
+    const __int128 result = product / static_cast<__int128>(utils::Amount::UNITS_PER_NODO);
+    constexpr __int128 kMax = static_cast<__int128>(std::numeric_limits<std::uint64_t>::max());
+    return static_cast<std::uint64_t>(result > kMax ? kMax : result);
 }
 
 std::uint64_t SecurityWeight::lockDurationMultiplier(

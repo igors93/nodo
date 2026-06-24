@@ -250,8 +250,9 @@ void PeerReconnectionPolicy::recordAttempt(
 
     auto& s = it->second;
     s.attempts++;
-    s.lastAttemptAt = now;
-    s.nextRetryAt   = now + backoffDelay(s.attempts);
+    s.lastAttemptAt    = now;
+    s.nextRetryAt      = now + backoffDelay(s.attempts);
+    s.attemptInFlight  = true;
 }
 
 void PeerReconnectionPolicy::recordSuccess(const std::string& nodeId) {
@@ -266,7 +267,12 @@ void PeerReconnectionPolicy::recordFailure(
     if (it == m_states.end()) return;
 
     auto& s = it->second;
-    s.nextRetryAt = now + backoffDelay(s.attempts);
+    // If recordAttempt() was not called first, increment here so backoff still grows.
+    if (!s.attemptInFlight) {
+        s.attempts++;
+    }
+    s.attemptInFlight = false;
+    s.nextRetryAt     = now + backoffDelay(s.attempts);
 }
 
 void PeerReconnectionPolicy::quarantine(

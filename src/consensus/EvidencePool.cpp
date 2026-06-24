@@ -1,5 +1,6 @@
 #include "consensus/EvidencePool.hpp"
 
+#include <algorithm>
 #include <sstream>
 
 namespace nodo::consensus {
@@ -94,9 +95,15 @@ std::size_t EvidencePool::countForValidator(
     return evidenceForValidator(validatorAddress).size();
 }
 
-void EvidencePool::pruneOlderThan(std::int64_t cutoffTimestamp) {
+void EvidencePool::pruneOlderThan(std::int64_t cutoffTimestamp, std::int64_t now) {
+    // Never remove evidence newer than (now - kMinRetentionSeconds) regardless
+    // of the requested cutoff, to prevent slashing evidence from being pruned
+    // before the unbonding/finality window has elapsed.
+    const std::int64_t safeCutoff =
+        std::min(cutoffTimestamp, now - kMinRetentionSeconds);
+
     for (auto it = m_evidenceById.begin(); it != m_evidenceById.end(); ) {
-        if (it->second.createdAt() < cutoffTimestamp) {
+        if (it->second.createdAt() < safeCutoff) {
             it = m_evidenceById.erase(it);
         } else {
             ++it;
