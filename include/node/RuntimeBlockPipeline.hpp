@@ -489,6 +489,7 @@ public:
     const ValidatorLifecycleSummary& validatorLifecycleSummary() const;
     const economics::SupplyDelta& supplyDelta() const;
     const std::string& snapshotDigest() const;
+    const std::string& receiptsRoot() const;
 
     std::string serialize() const;
 
@@ -543,6 +544,7 @@ private:
     ValidatorLifecycleSummary m_validatorLifecycleSummary;
     economics::SupplyDelta m_supplyDelta;
     std::string m_snapshotDigest;
+    std::string m_receiptsRoot;
 };
 
 /*

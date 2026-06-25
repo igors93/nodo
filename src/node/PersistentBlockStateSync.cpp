@@ -503,6 +503,57 @@ std::string PersistentSnapshotSyncManifest::serialize() const {
     return output.str();
 }
 
+// static
+PersistentSnapshotSyncManifest PersistentSnapshotSyncManifest::deserialize(
+    const std::string& serialized
+) {
+    const std::string prefix = "PersistentSnapshotSyncManifest{";
+    if (serialized.size() < prefix.size() + 1 ||
+        serialized.substr(0, prefix.size()) != prefix ||
+        serialized.back() != '}') {
+        throw std::invalid_argument("Invalid PersistentSnapshotSyncManifest format.");
+    }
+
+    const std::string inner = serialized.substr(
+        prefix.size(),
+        serialized.size() - prefix.size() - 1
+    );
+
+    std::map<std::string, std::string> fields;
+    std::istringstream stream(inner);
+    std::string token;
+    while (std::getline(stream, token, ';')) {
+        if (token.empty()) {
+            continue;
+        }
+        const auto eq = token.find('=');
+        if (eq == std::string::npos || eq == 0) {
+            throw std::invalid_argument("Malformed manifest field: " + token);
+        }
+        const std::string key = token.substr(0, eq);
+        const std::string value = token.substr(eq + 1);
+        if (!fields.emplace(key, value).second) {
+            throw std::invalid_argument("Duplicate manifest field: " + key);
+        }
+    }
+
+    const std::string sourcePeerId     = requireField(fields, "sourcePeerId");
+    const std::string snapshotBlockHash = requireField(fields, "snapshotBlockHash");
+    const std::string snapshotStateRoot = requireField(fields, "snapshotStateRoot");
+    const std::string snapshotDigest    = requireField(fields, "snapshotDigest");
+    const std::uint64_t snapshotHeight  = parseU64Strict(requireField(fields, "snapshotHeight"), "snapshotHeight");
+    const std::int64_t  createdAt       = parseI64Strict(requireField(fields, "createdAt"), "createdAt");
+
+    return PersistentSnapshotSyncManifest(
+        sourcePeerId,
+        snapshotHeight,
+        snapshotBlockHash,
+        snapshotStateRoot,
+        snapshotDigest,
+        createdAt
+    );
+}
+
 std::string persistentSyncPlanStatusToString(PersistentSyncPlanStatus status) {
     switch (status) {
         case PersistentSyncPlanStatus::NOT_REQUIRED:
@@ -561,6 +612,28 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
     std::uint64_t snapshotThreshold,
     std::int64_t now
 ) {
+    return planFromRemoteStatus(
+        localCheckpoint,
+        remoteStatus,
+        localNodeId,
+        sourcePeerId,
+        maxBlocksPerRequest,
+        snapshotThreshold,
+        now,
+        std::nullopt
+    );
+}
+
+PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
+    const PersistentSyncCheckpoint& localCheckpoint,
+    const ChainStatusMessage& remoteStatus,
+    const std::string& localNodeId,
+    const std::string& sourcePeerId,
+    std::uint64_t maxBlocksPerRequest,
+    std::uint64_t snapshotThreshold,
+    std::int64_t now,
+    const std::optional<PersistentSnapshotSyncManifest>& localManifest
+) {
     if (!localCheckpoint.isValid()) {
         return PersistentSyncPlan(
             PersistentSyncPlanStatus::REJECTED,
@@ -608,6 +681,21 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
     const std::uint64_t heightGap = remoteStatus.latestHeight() - localCheckpoint.finalizedHeight();
 
     if (heightGap > snapshotThreshold) {
+        // If the local node already has a verified epoch snapshot ahead of its
+        // current checkpoint, use it to populate the REQUEST_SNAPSHOT manifest
+        // with real data instead of placeholder values. This enables the runtime
+        // to jump forward from the snapshot height rather than from the checkpoint.
+        if (localManifest.has_value() &&
+            localManifest->isValid() &&
+            localManifest->snapshotHeight() > localCheckpoint.finalizedHeight()) {
+            return PersistentSyncPlan(
+                PersistentSyncPlanStatus::REQUEST_SNAPSHOT,
+                "Local epoch snapshot available; apply it to advance checkpoint before block sync.",
+                std::nullopt,
+                localManifest.value()
+            );
+        }
+
         PersistentSnapshotSyncManifest manifest(
             sourcePeerId,
             remoteStatus.finalizedHeight(),

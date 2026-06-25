@@ -334,8 +334,19 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             );
         }
 
+        if (!artifact.postStateRoot().empty()) {
+            runtime.mutableStatePruner().recordStateRoot(
+                artifact.block().index(),
+                artifact.postStateRoot()
+            );
+        }
+
         loadedArtifacts.push_back(artifact);
         ++loadedBlockCount;
+    }
+
+    if (manifest.latestBlockHeight() > 0) {
+        runtime.mutableStatePruner().pruneHistory(manifest.latestBlockHeight());
     }
 
     if (runtime.blockchain().latestBlock().index() != manifest.latestBlockHeight() ||

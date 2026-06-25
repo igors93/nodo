@@ -3,6 +3,7 @@
 
 #include "config/NetworkParameters.hpp"
 #include "node/NodeRuntime.hpp"
+#include "node/PersistentBlockStateSync.hpp"
 #include "p2p/PeerMessage.hpp"
 
 #include <cstdint>
@@ -229,6 +230,10 @@ public:
     );
 
     static bool isInitialized(
+        const NodeDataDirectoryConfig& directoryConfig
+    );
+
+    static std::optional<PersistentSnapshotSyncManifest> loadEpochSnapshotManifest(
         const NodeDataDirectoryConfig& directoryConfig
     );
 

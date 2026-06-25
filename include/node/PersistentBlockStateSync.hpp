@@ -197,6 +197,10 @@ public:
     bool isValid() const;
     std::string serialize() const;
 
+    static PersistentSnapshotSyncManifest deserialize(
+        const std::string& serialized
+    );
+
 private:
     std::string m_sourcePeerId;
     std::uint64_t m_snapshotHeight;
@@ -256,6 +260,17 @@ public:
         std::uint64_t maxBlocksPerRequest,
         std::uint64_t snapshotThreshold,
         std::int64_t now
+    );
+
+    static PersistentSyncPlan planFromRemoteStatus(
+        const PersistentSyncCheckpoint& localCheckpoint,
+        const ChainStatusMessage& remoteStatus,
+        const std::string& localNodeId,
+        const std::string& sourcePeerId,
+        std::uint64_t maxBlocksPerRequest,
+        std::uint64_t snapshotThreshold,
+        std::int64_t now,
+        const std::optional<PersistentSnapshotSyncManifest>& localManifest
     );
 };
 

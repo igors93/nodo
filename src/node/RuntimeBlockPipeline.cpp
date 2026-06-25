@@ -1658,6 +1658,10 @@ const std::string& RuntimeBlockPipelineResult::snapshotDigest() const {
     return m_snapshotDigest;
 }
 
+const std::string& RuntimeBlockPipelineResult::receiptsRoot() const {
+    return m_receiptsRoot;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -2268,6 +2272,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             error.what()
         );
     }
+
+    finalResult.m_receiptsRoot = transitionValidation.receiptsRoot();
 
     // Record the finalized state root in the pruner and trim old entries.
     const std::uint64_t finalizedHeight = production.block().index();

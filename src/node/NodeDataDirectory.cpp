@@ -999,6 +999,38 @@ bool NodeDataDirectory::isInitialized(
     return loadManifest(directoryConfig).loaded();
 }
 
+// static
+std::optional<PersistentSnapshotSyncManifest>
+NodeDataDirectory::loadEpochSnapshotManifest(
+    const NodeDataDirectoryConfig& directoryConfig
+) {
+    if (!directoryConfig.isValid()) {
+        return std::nullopt;
+    }
+
+    const std::filesystem::path manifestPath =
+        directoryConfig.epochSnapshotManifestPath();
+
+    if (!std::filesystem::exists(manifestPath)) {
+        return std::nullopt;
+    }
+
+    try {
+        const std::string contents = storage::AtomicFile::readTextFile(manifestPath);
+        if (contents.empty()) {
+            return std::nullopt;
+        }
+        PersistentSnapshotSyncManifest manifest =
+            PersistentSnapshotSyncManifest::deserialize(contents);
+        if (!manifest.isValid()) {
+            return std::nullopt;
+        }
+        return manifest;
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
 void NodeDataDirectory::ensureDirectoryTree(
     const NodeDataDirectoryConfig& directoryConfig
 ) {

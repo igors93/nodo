@@ -549,6 +549,132 @@ void testAcceptsBlockWithCorrectStateRoot() {
     );
 }
 
+void testRejectsBlockWithWrongReceiptsRoot() {
+    const core::Blockchain blockchain = chain();
+    const core::Transaction tx = transaction("2", 1);
+
+    // First get the correct receiptsRoot from a candidate without one.
+    const core::Block candidateNoRoot(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1
+    );
+
+    const core::BlockValidationResult previewResult =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            candidateNoRoot,
+            economicContext(1000, 1, 1)
+        );
+
+    requireCondition(
+        previewResult.accepted() && !previewResult.receiptsRoot().empty(),
+        "Pre-check: candidate without receipts root should pass and compute a non-empty receipts root."
+    );
+
+    // Build a block with a wrong receiptsRoot — both sides non-empty so check fires.
+    const core::Block blockWithWrongRoot(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        "",
+        "wrong-receipts-root"
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            blockWithWrongRoot,
+            economicContext(1000, 1, 1)
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_BLOCK &&
+        result.reason().find("Receipts root mismatch") != std::string::npos,
+        "Block with wrong declared receipts root should be rejected."
+    );
+}
+
+void testAcceptsBlockWithCorrectReceiptsRoot() {
+    const core::Blockchain blockchain = chain();
+    const core::Transaction tx = transaction("2", 1);
+
+    const core::Block candidateNoRoot(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1
+    );
+
+    const core::BlockValidationResult previewResult =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            candidateNoRoot,
+            economicContext(1000, 1, 1)
+        );
+
+    requireCondition(
+        previewResult.accepted() && !previewResult.receiptsRoot().empty(),
+        "Pre-check: candidate should produce a non-empty receipts root."
+    );
+
+    const core::Block blockWithCorrectRoot(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        "",
+        previewResult.receiptsRoot()
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            blockWithCorrectRoot,
+            economicContext(1000, 1, 1)
+        );
+
+    requireCondition(
+        result.accepted(),
+        "Block with correct declared receipts root should be accepted."
+    );
+}
+
+void testBlockReceiptsRootInHeaderPayload() {
+    const core::Transaction tx = transaction("1");
+    const core::Block blockEmpty(
+        1,
+        "GENESIS",
+        {record(tx)},
+        kTimestamp,
+        "",
+        ""
+    );
+    const core::Block blockWithRoot(
+        1,
+        "GENESIS",
+        {record(tx)},
+        kTimestamp,
+        "",
+        "some-receipts-root"
+    );
+    // Different receiptsRoot → different hash (receiptsRoot is in headerPayload).
+    requireCondition(
+        blockEmpty.hash() != blockWithRoot.hash(),
+        "Blocks with different receiptsRoot must have different hashes."
+    );
+    // Round-trip: serialize + deserialize preserves receiptsRoot.
+    const auto deserialized = core::Block::deserialize(blockWithRoot.serialize());
+    requireCondition(
+        deserialized.has_value() &&
+        deserialized->receiptsRoot() == "some-receipts-root",
+        "Block deserialize must preserve receiptsRoot."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -567,6 +693,9 @@ int main() {
         testAcceptsBlockWithinFutureWindow();
         testRejectsBlockWithWrongStateRoot();
         testAcceptsBlockWithCorrectStateRoot();
+        testRejectsBlockWithWrongReceiptsRoot();
+        testAcceptsBlockWithCorrectReceiptsRoot();
+        testBlockReceiptsRootInHeaderPayload();
 
         std::cout << "Nodo block state transition validator tests passed.\n";
         return 0;

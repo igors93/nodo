@@ -61,6 +61,7 @@ jobs:
 
       - name: Install blst
         run: |
+          sudo mkdir -p /usr/local/include /usr/local/lib
           sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
           sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
           sudo ldconfig
@@ -132,6 +133,7 @@ jobs:
 
       - name: Install blst
         run: |
+          sudo mkdir -p /usr/local/include /usr/local/lib
           sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
           sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
           sudo ldconfig
@@ -196,6 +198,7 @@ jobs:
 
       - name: Install blst
         run: |
+          sudo mkdir -p /usr/local/include /usr/local/lib
           sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
           sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
           sudo ldconfig
@@ -247,6 +250,7 @@ jobs:
 
       - name: Install blst
         run: |
+          sudo mkdir -p /usr/local/include /usr/local/lib
           sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
           sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
           sudo ldconfig
@@ -310,6 +314,7 @@ jobs:
 
       - name: Install blst
         run: |
+          sudo mkdir -p /usr/local/include /usr/local/lib
           sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
           sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
           sudo ldconfig
@@ -382,6 +387,7 @@ jobs:
 
       - name: Install blst
         run: |
+          sudo mkdir -p /usr/local/include /usr/local/lib
           sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
           sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
 

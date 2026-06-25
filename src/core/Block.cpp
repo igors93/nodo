@@ -18,14 +18,16 @@ Block::Block(
     std::string previousHash,
     std::vector<LedgerRecord> records,
     std::int64_t timestamp,
-    std::string stateRoot
+    std::string stateRoot,
+    std::string receiptsRoot
 )
     : m_index(index),
       m_previousHash(std::move(previousHash)),
       m_hash(""),
       m_records(std::move(records)),
       m_timestamp(timestamp),
-      m_stateRoot(std::move(stateRoot)) {
+      m_stateRoot(std::move(stateRoot)),
+      m_receiptsRoot(std::move(receiptsRoot)) {
     if (m_previousHash.empty()) {
         throw std::invalid_argument("Block previousHash cannot be empty.");
     }
@@ -83,6 +85,10 @@ const std::vector<LedgerRecord>& Block::records() const {
 
 const std::string& Block::stateRoot() const {
     return m_stateRoot;
+}
+
+const std::string& Block::receiptsRoot() const {
+    return m_receiptsRoot;
 }
 
 bool Block::isGenesisBlock() const {
@@ -154,6 +160,7 @@ std::string Block::headerPayload() const {
         << ";timestamp=" << m_timestamp
         << ";recordsMerkleRoot=" << recordsMerkleRoot
         << ";stateRoot=" << m_stateRoot
+        << ";receiptsRoot=" << m_receiptsRoot
         << ";records=[";
 
     for (std::size_t i = 0; i < m_records.size(); ++i) {
@@ -177,6 +184,7 @@ std::string Block::serialize() const {
         << ";hash=" << m_hash
         << ";timestamp=" << m_timestamp
         << ";stateRoot=" << m_stateRoot
+        << ";receiptsRoot=" << m_receiptsRoot
         << ";recordCount=" << m_records.size()
         << ";payload=" << headerPayload()
         << "}";
@@ -227,6 +235,7 @@ std::optional<Block> Block::deserialize(const std::string& text) {
     const std::string storedHash  = extractField("hash");
     const std::string tsStr       = extractField("timestamp");
     const std::string stateRoot   = extractField("stateRoot");
+    const std::string receiptsRoot = extractField("receiptsRoot");
     const std::string countStr    = extractField("recordCount");
     const std::string payload     = extractField("payload");
 
@@ -350,7 +359,7 @@ std::optional<Block> Block::deserialize(const std::string& text) {
     }
 
     try {
-        Block block(index, prevHash, std::move(records), timestamp, stateRoot);
+        Block block(index, prevHash, std::move(records), timestamp, stateRoot, receiptsRoot);
         // Verify hash integrity.
         if (block.hash() != storedHash) return std::nullopt;
         if (block.serialize() != text) return std::nullopt;

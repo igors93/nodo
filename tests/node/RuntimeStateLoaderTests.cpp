@@ -977,6 +977,89 @@ void testRejectsPersistentMempoolFutureNonce() {
     clean(path);
 }
 
+void testStatePrunerPopulatedAfterReload() {
+    const std::filesystem::path path =
+        tempPath("state-pruner-reload");
+
+    clean(path);
+
+    const NodeDataDirectoryConfig directoryConfig(path);
+
+    requireCondition(
+        NodeDataDirectory::initialize(
+            directoryConfig,
+            genesisConfig(),
+            localPeer(),
+            kTimestamp + 1
+        ).initialized(),
+        "Data directory should initialize for pruner reload test."
+    );
+
+    NodeRuntime runtime = startRuntime();
+
+    const Transaction tx = signedTransfer("pruner", 1, kTimestamp + 10);
+    requireCondition(
+        runtime.mutableMempool().admitTransaction(
+            tx,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            kTimestamp + 11
+        ).accepted(),
+        "Transaction should enter mempool for pruner test."
+    );
+
+    const auto pipeline =
+        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            runtime,
+            RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
+            localValidatorSigner()
+        );
+
+    requireCondition(
+        pipeline.finalized(),
+        "Pipeline should finalize a block for pruner test."
+    );
+
+    // Persist the block to disk so RuntimeStateLoader can reload it.
+    requireCondition(
+        FinalizedBlockStore::persist(
+            directoryConfig,
+            runtime,
+            pipeline,
+            kTimestamp + 21
+        ).stored(),
+        "Finalized block should persist for pruner test."
+    );
+
+    // Reload the runtime from disk.
+    const auto loaded =
+        RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig(),
+            localPeer()
+        );
+
+    requireCondition(
+        loaded.loaded(),
+        "Runtime should reload from data directory."
+    );
+
+    // After reload, the StatePruner should hold the state root for block 1.
+    const nodo::node::NodeRuntime& reloaded = loaded.runtime();
+
+    requireCondition(
+        reloaded.statePruner().hasStateRoot(1),
+        "StatePruner must hold state root for block 1 after reload."
+    );
+
+    requireCondition(
+        reloaded.statePruner().getStateRoot(1) == pipeline.postStateRoot(),
+        "StatePruner state root after reload must match the finalized block postStateRoot."
+    );
+
+    clean(path);
+}
+
 } // namespace
 
 int main() {
@@ -990,6 +1073,7 @@ int main() {
         testRejectsFinalizedBlockWithInvalidQuorumCertificate();
         testRejectsFinalizedBlockWithDuplicateVote();
         testRejectsPersistentMempoolFutureNonce();
+        testStatePrunerPopulatedAfterReload();
 
         std::cout << "Nodo runtime state loader tests passed.\n";
         return 0;

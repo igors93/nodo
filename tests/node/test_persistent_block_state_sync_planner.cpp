@@ -87,6 +87,85 @@ int main() {
     assert(snapshotPlan.snapshotRequestManifest().has_value());
     assert(snapshotPlan.snapshotRequestManifest()->snapshotHeight() == 10000);
 
+    // Manifest deserialize round-trip.
+    const PersistentSnapshotSyncManifest original(
+        "node-origin",
+        43200,
+        "epoch1-block-hash",
+        "epoch1-state-root",
+        "epoch1-snapshot-digest",
+        now + 10
+    );
+    const std::string serialized = original.serialize();
+    const PersistentSnapshotSyncManifest roundTrip =
+        PersistentSnapshotSyncManifest::deserialize(serialized);
+
+    assert(roundTrip.sourcePeerId()      == original.sourcePeerId());
+    assert(roundTrip.snapshotHeight()    == original.snapshotHeight());
+    assert(roundTrip.snapshotBlockHash() == original.snapshotBlockHash());
+    assert(roundTrip.snapshotStateRoot() == original.snapshotStateRoot());
+    assert(roundTrip.snapshotDigest()    == original.snapshotDigest());
+    assert(roundTrip.createdAt()         == original.createdAt());
+    assert(roundTrip.isValid());
+
+    // Planner uses local manifest when remote is far ahead and local manifest
+    // covers height beyond the current checkpoint.
+    PersistentSnapshotSyncManifest localManifest(
+        "local-chain",
+        500,
+        "epoch-snap-block-hash",
+        "epoch-snap-state-root",
+        "epoch-snap-digest",
+        now + 20
+    );
+
+    auto planWithLocalManifest = PersistentBlockStateSyncPlanner::planFromRemoteStatus(
+        checkpoint,
+        farAhead,
+        "node-a",
+        "node-b",
+        512,
+        100,
+        now + 30,
+        localManifest
+    );
+
+    assert(planWithLocalManifest.requestSnapshot());
+    assert(planWithLocalManifest.snapshotRequestManifest().has_value());
+    // The plan should carry the local manifest data, not remote placeholder values.
+    assert(planWithLocalManifest.snapshotRequestManifest()->snapshotHeight() == 500);
+    assert(planWithLocalManifest.snapshotRequestManifest()->snapshotDigest() == "epoch-snap-digest");
+    assert(planWithLocalManifest.snapshotRequestManifest()->snapshotStateRoot() == "epoch-snap-state-root");
+
+    // Planner falls back to remote info when local manifest height <= checkpoint height.
+    PersistentSnapshotSyncManifest staleManifest(
+        "local-chain",
+        0,  // height 0 is not > localCheckpoint.finalizedHeight() (0), so not used
+        "stale-block-hash",
+        "stale-state-root",
+        "stale-digest",
+        now + 5
+    );
+
+    // staleManifest has height 0 which is NOT > checkpoint.finalizedHeight() (0),
+    // so the planner must fall back to the remote placeholder path.
+    // (snapshotHeight=0 also makes isValid() false, ensuring the guard triggers.)
+    auto planWithStaleManifest = PersistentBlockStateSyncPlanner::planFromRemoteStatus(
+        checkpoint,
+        farAhead,
+        "node-a",
+        "node-b",
+        512,
+        100,
+        now + 40,
+        staleManifest
+    );
+
+    assert(planWithStaleManifest.requestSnapshot());
+    assert(planWithStaleManifest.snapshotRequestManifest().has_value());
+    // Falls back to remote data since stale manifest is invalid / height not ahead.
+    assert(planWithStaleManifest.snapshotRequestManifest()->snapshotHeight() == 10000);
+
     std::cout << "persistent block/state sync planner tests passed\n";
     return 0;
 }

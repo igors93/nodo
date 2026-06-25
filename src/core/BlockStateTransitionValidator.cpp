@@ -244,6 +244,15 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
         );
     }
 
+    if (!preview.receiptsRoot().empty() &&
+        !candidateBlock.receiptsRoot().empty() &&
+        preview.receiptsRoot() != candidateBlock.receiptsRoot()) {
+        return BlockValidationResult::rejected(
+            BlockValidationStatus::INVALID_BLOCK,
+            "Receipts root mismatch between block header and computed state transition."
+        );
+    }
+
     return BlockValidationResult::valid(
         preview.stateRoot(),
         preview.totalFee(),
