@@ -2,6 +2,7 @@
 #define NODO_CONSENSUS_CONSENSUS_EVENT_LOOP_HPP
 
 #include "consensus/BlockFinalizer.hpp"
+#include "consensus/ConsensusRoundManager.hpp"
 #include "consensus/EvidencePool.hpp"
 #include "consensus/QuorumCertificate.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
@@ -14,7 +15,9 @@
 
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -114,6 +117,14 @@ public:
     void setEvidencePool(EvidencePool* pool);
 
     /*
+     * Set the filesystem path where lock/vote state is persisted after each
+     * vote. When set, ConsensusRecoveryStore::save() is called automatically
+     * after a prevote or precommit is accepted so that the state survives
+     * a node restart without violating BFT safety.
+     */
+    void setRecoveryPath(std::filesystem::path path);
+
+    /*
      * Start the background consensus thread with the given tick interval.
      * No-op if already running.
      */
@@ -139,6 +150,14 @@ public:
      */
     ConsensusTickResult tick(std::int64_t now);
 
+    /*
+     * Restore BFT lock/vote state from a persisted ConsensusRoundState.
+     * Called during startup after a recovery state is loaded from disk so that
+     * this node does not violate the invariant of voting for two different
+     * blocks at the same height across restarts.
+     */
+    void loadFromRecoveryState(const ConsensusRoundState& state);
+
 private:
     node::NodeRuntime&              m_runtime;
     p2p::GossipMesh&                m_gossip;
@@ -156,6 +175,7 @@ private:
     bool                  m_votedPrevote = false;
     bool                  m_votedPrecommit = false;
     std::uint64_t         m_lastProcessedHeight = 0;
+    std::optional<std::filesystem::path> m_recoveryPath;
 
     std::atomic<bool>    m_running;
     std::thread          m_thread;

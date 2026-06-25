@@ -345,6 +345,210 @@ void testAcceptsTransactionAtMinimumFee() {
     );
 }
 
+void testRejectsBlockWithTimestampEqualToPrevious() {
+    const core::Blockchain blockchain =
+        chain();
+
+    const core::Transaction tx =
+        transaction("2");
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_PREVIOUS_HASH,
+        "Block with timestamp equal to previous block should be rejected."
+    );
+}
+
+void testRejectsBlockWithTimestampBeforePrevious() {
+    const core::Blockchain blockchain =
+        chain();
+
+    const core::Transaction tx =
+        transaction("2");
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp - 1
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_PREVIOUS_HASH,
+        "Block with timestamp before previous block should be rejected."
+    );
+}
+
+void testRejectsBlockTooFarInFuture() {
+    const core::Blockchain blockchain =
+        chain();
+
+    const core::Transaction tx =
+        transaction("2");
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1
+    );
+
+    const core::StateTransitionPreviewContext context(
+        0,
+        core::AccountStateView(),
+        true,
+        false,
+        "",
+        kTimestamp + 1 - 301
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            context
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_BLOCK,
+        "Block with timestamp more than 300 seconds in the future should be rejected."
+    );
+}
+
+void testAcceptsBlockWithinFutureWindow() {
+    const core::Blockchain blockchain =
+        chain();
+
+    const core::Transaction tx =
+        transaction("2");
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1
+    );
+
+    const core::StateTransitionPreviewContext context(
+        0,
+        core::AccountStateView(),
+        true,
+        false,
+        "",
+        kTimestamp + 1 - 299
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            context
+        );
+
+    requireCondition(
+        result.accepted(),
+        "Block with timestamp within 300-second future window should be accepted."
+    );
+}
+
+void testRejectsBlockWithWrongStateRoot() {
+    const core::Blockchain blockchain =
+        chain();
+
+    const core::Transaction tx =
+        transaction("2");
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        "wrong-state-root"
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            economicContext(1000, 1, 1)
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_BLOCK &&
+        result.reason().find("State root mismatch") != std::string::npos,
+        "Block with wrong declared state root should be rejected."
+    );
+}
+
+void testAcceptsBlockWithCorrectStateRoot() {
+    const core::Blockchain blockchain =
+        chain();
+
+    const core::Transaction tx =
+        transaction("2", 1);
+
+    const core::Block candidateNoRoot(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1
+    );
+
+    const core::BlockValidationResult previewResult =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            candidateNoRoot,
+            economicContext(1000, 1, 1)
+        );
+
+    requireCondition(
+        previewResult.accepted() && !previewResult.stateRoot().empty(),
+        "Pre-check: candidate without state root should pass to obtain computed root."
+    );
+
+    const core::Block blockWithRoot(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        previewResult.stateRoot()
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            blockWithRoot,
+            economicContext(1000, 1, 1)
+        );
+
+    requireCondition(
+        result.accepted(),
+        "Block with correct declared state root should be accepted."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -357,6 +561,12 @@ int main() {
         testRejectsDuplicateLedgerSource();
         testRejectsTransactionBelowMinimumFee();
         testAcceptsTransactionAtMinimumFee();
+        testRejectsBlockWithTimestampEqualToPrevious();
+        testRejectsBlockWithTimestampBeforePrevious();
+        testRejectsBlockTooFarInFuture();
+        testAcceptsBlockWithinFutureWindow();
+        testRejectsBlockWithWrongStateRoot();
+        testAcceptsBlockWithCorrectStateRoot();
 
         std::cout << "Nodo block state transition validator tests passed.\n";
         return 0;

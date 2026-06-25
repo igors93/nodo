@@ -23,12 +23,14 @@ public:
         std::uint64_t index,
         std::string previousHash,
         std::vector<LedgerRecord> records,
-        std::int64_t timestamp
+        std::int64_t timestamp,
+        std::string stateRoot = ""
     );
 
     static Block createGenesisBlock(
         std::vector<LedgerRecord> records,
-        std::int64_t timestamp
+        std::int64_t timestamp,
+        std::string stateRoot = ""
     );
 
     std::uint64_t index() const;
@@ -36,6 +38,7 @@ public:
     const std::string& hash() const;
     std::int64_t timestamp() const;
     const std::vector<LedgerRecord>& records() const;
+    const std::string& stateRoot() const;
 
     bool isGenesisBlock() const;
     bool isValid() const;
@@ -67,6 +70,7 @@ private:
     std::string m_hash;
     std::vector<LedgerRecord> m_records;
     std::int64_t m_timestamp;
+    std::string m_stateRoot;
 
     std::string calculateHash() const;
 

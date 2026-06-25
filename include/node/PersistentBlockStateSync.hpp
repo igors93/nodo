@@ -1,6 +1,10 @@
 #ifndef NODO_NODE_PERSISTENT_BLOCK_STATE_SYNC_HPP
 #define NODO_NODE_PERSISTENT_BLOCK_STATE_SYNC_HPP
 
+#include "core/Blockchain.hpp"
+#include "core/ValidatorRegistry.hpp"
+#include "crypto/CryptoPolicy.hpp"
+#include "crypto/SignatureProvider.hpp"
 #include "node/ChainSyncMessages.hpp"
 
 #include <cstdint>
@@ -113,7 +117,8 @@ public:
         std::string previousBlockHash,
         std::string serializedBlock,
         std::string finalizedStateRoot,
-        std::int64_t createdAt
+        std::int64_t createdAt,
+        std::string serializedFinalizedRecord = ""
     );
 
     std::uint64_t height() const;
@@ -122,6 +127,7 @@ public:
     const std::string& serializedBlock() const;
     const std::string& finalizedStateRoot() const;
     std::int64_t createdAt() const;
+    const std::string& serializedFinalizedRecord() const;
 
     bool isValid() const;
     std::string serialize() const;
@@ -133,6 +139,7 @@ private:
     std::string m_serializedBlock;
     std::string m_finalizedStateRoot;
     std::int64_t m_createdAt;
+    std::string m_serializedFinalizedRecord;
 };
 
 class PersistentBlockSyncBatch {
@@ -288,6 +295,19 @@ public:
     static PersistentSyncApplyResult applyValidatedBatch(
         const PersistentSyncCheckpoint& checkpoint,
         const PersistentBlockSyncBatch& batch,
+        const core::ValidatorRegistry& validatorRegistry,
+        const crypto::CryptoPolicy& policy,
+        const crypto::SignatureProvider& provider,
+        std::int64_t now
+    );
+
+    static PersistentSyncApplyResult applyValidatedBatch(
+        const PersistentSyncCheckpoint& checkpoint,
+        const PersistentBlockSyncBatch& batch,
+        core::Blockchain& blockchain,
+        const core::ValidatorRegistry& validatorRegistry,
+        const crypto::CryptoPolicy& policy,
+        const crypto::SignatureProvider& provider,
         std::int64_t now
     );
 

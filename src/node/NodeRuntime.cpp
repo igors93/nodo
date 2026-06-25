@@ -443,6 +443,14 @@ RuntimeSupplyState& NodeRuntime::mutableSupplyState() {
     return m_supplyState;
 }
 
+const core::StatePruner& NodeRuntime::statePruner() const {
+    return m_statePruner;
+}
+
+core::StatePruner& NodeRuntime::mutableStatePruner() {
+    return m_statePruner;
+}
+
 LocalPeerManager& NodeRuntime::mutablePeerManager() {
     return m_peerManager;
 }

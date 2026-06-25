@@ -558,7 +558,7 @@ void testInvalidBlockchainIsRejectedBeforeRegistryMutation() {
 
     const SignedProtectionBlockProposal signedProposal =
         signedProposalFor(
-            proposalFor(validChain),
+            proposalFor(validChain, kTimestamp + 60),
             key,
             validatorPrivateKey("invalid-chain"),
             kTimestamp + 140

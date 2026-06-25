@@ -17,13 +17,15 @@ Block::Block(
     std::uint64_t index,
     std::string previousHash,
     std::vector<LedgerRecord> records,
-    std::int64_t timestamp
+    std::int64_t timestamp,
+    std::string stateRoot
 )
     : m_index(index),
       m_previousHash(std::move(previousHash)),
       m_hash(""),
       m_records(std::move(records)),
-      m_timestamp(timestamp) {
+      m_timestamp(timestamp),
+      m_stateRoot(std::move(stateRoot)) {
     if (m_previousHash.empty()) {
         throw std::invalid_argument("Block previousHash cannot be empty.");
     }
@@ -47,13 +49,15 @@ Block::Block(
 
 Block Block::createGenesisBlock(
     std::vector<LedgerRecord> records,
-    std::int64_t timestamp
+    std::int64_t timestamp,
+    std::string stateRoot
 ) {
     return Block(
         0,
         "GENESIS",
         std::move(records),
-        timestamp
+        timestamp,
+        std::move(stateRoot)
     );
 }
 
@@ -75,6 +79,10 @@ std::int64_t Block::timestamp() const {
 
 const std::vector<LedgerRecord>& Block::records() const {
     return m_records;
+}
+
+const std::string& Block::stateRoot() const {
+    return m_stateRoot;
 }
 
 bool Block::isGenesisBlock() const {
@@ -145,6 +153,7 @@ std::string Block::headerPayload() const {
         << ";previousHash=" << m_previousHash
         << ";timestamp=" << m_timestamp
         << ";recordsMerkleRoot=" << recordsMerkleRoot
+        << ";stateRoot=" << m_stateRoot
         << ";records=[";
 
     for (std::size_t i = 0; i < m_records.size(); ++i) {
@@ -167,6 +176,7 @@ std::string Block::serialize() const {
         << ";previousHash=" << m_previousHash
         << ";hash=" << m_hash
         << ";timestamp=" << m_timestamp
+        << ";stateRoot=" << m_stateRoot
         << ";recordCount=" << m_records.size()
         << ";payload=" << headerPayload()
         << "}";
@@ -216,6 +226,7 @@ std::optional<Block> Block::deserialize(const std::string& text) {
     const std::string prevHash    = extractField("previousHash");
     const std::string storedHash  = extractField("hash");
     const std::string tsStr       = extractField("timestamp");
+    const std::string stateRoot   = extractField("stateRoot");
     const std::string countStr    = extractField("recordCount");
     const std::string payload     = extractField("payload");
 
@@ -339,7 +350,7 @@ std::optional<Block> Block::deserialize(const std::string& text) {
     }
 
     try {
-        Block block(index, prevHash, std::move(records), timestamp);
+        Block block(index, prevHash, std::move(records), timestamp, stateRoot);
         // Verify hash integrity.
         if (block.hash() != storedHash) return std::nullopt;
         if (block.serialize() != text) return std::nullopt;

@@ -265,6 +265,10 @@ std::filesystem::path NodeDataDirectoryConfig::runtimeSnapshotPath() const {
     return m_rootPath / "runtime" / "runtime_snapshot.nodo";
 }
 
+std::filesystem::path NodeDataDirectoryConfig::epochSnapshotManifestPath() const {
+    return m_rootPath / "runtime" / "epoch_snapshot_manifest.nodo";
+}
+
 std::filesystem::path NodeDataDirectoryConfig::consensusRecoveryPath() const {
     return m_rootPath / "runtime" / "consensus_round.nodo";
 }

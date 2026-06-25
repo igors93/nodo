@@ -185,6 +185,7 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
     std::set<std::string> touchedAccountSet;
     std::vector<std::string> orderedTransactionIds;
     std::vector<TransactionReceipt> receipts;
+    std::vector<std::string> nonTransactionDigests;
     AccountStateView workingAccountState =
         context.accountStateView();
     utils::Amount totalFee;
@@ -208,6 +209,7 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
         }
 
         if (record.type() != LedgerRecordType::TRANSACTION) {
+            nonTransactionDigests.push_back(record.sourceId());
             continue;
         }
 
@@ -402,6 +404,20 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
         receiptPayloads.push_back(receipt.serialize());
     }
 
+    const std::string accountStateRoot =
+        StateRootCalculator::calculateAccountStateRoot(workingAccountState);
+    std::string combinedStateRoot;
+    if (nonTransactionDigests.empty()) {
+        combinedStateRoot = accountStateRoot;
+    } else {
+        std::vector<std::string> stateInputs;
+        stateInputs.push_back(accountStateRoot);
+        for (const auto& d : nonTransactionDigests) {
+            stateInputs.push_back(d);
+        }
+        combinedStateRoot = MerkleTree::buildRoot(stateInputs);
+    }
+
     return StateTransitionPreviewResult::valid(
         processedTransactionCount,
         totalFee,
@@ -411,9 +427,7 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
         ),
         orderedTransactionIds,
         workingAccountState.accounts(),
-        StateRootCalculator::calculateAccountStateRoot(
-            workingAccountState
-        ),
+        combinedStateRoot,
         std::move(receipts),
         MerkleTree::buildRoot(receiptPayloads)
     );

@@ -35,6 +35,7 @@ public:
     std::filesystem::path genesisConfigPath() const;
     std::filesystem::path localPeerPath() const;
     std::filesystem::path runtimeSnapshotPath() const;
+    std::filesystem::path epochSnapshotManifestPath() const;
     std::filesystem::path consensusRecoveryPath() const;
     std::filesystem::path blocksDirectoryPath() const;
     std::filesystem::path keysDirectoryPath() const;

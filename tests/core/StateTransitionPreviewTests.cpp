@@ -122,6 +122,34 @@ core::LedgerRecord persistedTransactionRecord(
     );
 }
 
+core::LedgerRecord persistedNonTransactionRecord(
+    const std::string& sourceId,
+    const std::string& payload
+) {
+    const std::string payloadHash =
+        hashString(payload);
+
+    const std::string recordId =
+        hashString(
+            "LedgerRecordId{type=MINT;sourceId="
+            + sourceId
+            + ";payloadHash="
+            + payloadHash
+            + ";timestamp="
+            + std::to_string(kTimestamp)
+            + "}"
+        );
+
+    return core::LedgerRecord::fromPersistedFields(
+        recordId,
+        core::LedgerRecordType::MINT,
+        sourceId,
+        payload,
+        payloadHash,
+        kTimestamp
+    );
+}
+
 core::StateTransitionPreviewContext economicContext(
     std::int64_t senderBalanceRawUnits = 1000,
     std::uint64_t senderNonce = 0,
@@ -513,6 +541,50 @@ void testRejectsInvalidPayload() {
     );
 }
 
+void testNonTransactionRecordChangesStateRoot() {
+    const core::Transaction tx =
+        transaction(1, 10);
+
+    const core::Block blockWithoutExtra(
+        1,
+        "previous-hash",
+        {record(tx)},
+        kTimestamp + 10
+    );
+
+    const core::Block blockWithExtra(
+        1,
+        "previous-hash-2",
+        {
+            record(tx),
+            persistedNonTransactionRecord(
+                "mint-source-id",
+                "MintRecord{amount=500}"
+            )
+        },
+        kTimestamp + 10
+    );
+
+    const core::StateTransitionPreviewResult resultWithout =
+        core::StateTransitionPreview::previewBlock(
+            blockWithoutExtra,
+            10
+        );
+
+    const core::StateTransitionPreviewResult resultWith =
+        core::StateTransitionPreview::previewBlock(
+            blockWithExtra,
+            10
+        );
+
+    requireCondition(
+        resultWithout.accepted() &&
+        resultWith.accepted() &&
+        resultWithout.stateRoot() != resultWith.stateRoot(),
+        "Preview with non-TRANSACTION ledger record should produce a different state root."
+    );
+}
+
 void testFailureDoesNotMutateInitialState() {
     core::AccountStateView view;
     view.putAccount(
@@ -575,6 +647,7 @@ int main() {
         testRejectsTransactionBelowMinimumFee();
         testRejectsSenderEqualsRecipient();
         testRejectsInvalidPayload();
+        testNonTransactionRecordChangesStateRoot();
         testFailureDoesNotMutateInitialState();
 
         std::cout << "Nodo state transition preview tests passed.\n";

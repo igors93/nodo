@@ -5,6 +5,7 @@
 #include "node/FinalizedMonetarySectionCodec.hpp"
 #include "node/FinalizedTreasurySection.hpp"
 #include "node/FinalizedTreasurySectionCodec.hpp"
+#include "node/PersistentBlockStateSync.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
@@ -326,6 +327,25 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
                 FinalizedBlockStoreStatus::IO_ERROR,
                 "Runtime snapshot latestStateRoot does not match finalized block postStateRoot."
             );
+        }
+
+        // At epoch boundaries, persist the snapshot commitment manifest so that
+        // syncing peers can request and verify this epoch's state snapshot.
+        if (!pipelineResult.snapshotDigest().empty()) {
+            const PersistentSnapshotSyncManifest epochManifest(
+                runtime.config().genesisConfig().networkParameters().chainId(),
+                pipelineResult.block().index(),
+                pipelineResult.block().hash(),
+                pipelineResult.postStateRoot(),
+                pipelineResult.snapshotDigest(),
+                updatedAt
+            );
+            if (epochManifest.isValid()) {
+                storage::AtomicFile::writeTextFile(
+                    directoryConfig.epochSnapshotManifestPath(),
+                    epochManifest.serialize()
+                );
+            }
         }
 
         return FinalizedBlockStoreResult::stored(

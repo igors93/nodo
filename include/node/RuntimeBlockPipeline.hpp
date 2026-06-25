@@ -488,6 +488,7 @@ public:
     const EpochAccountingRecord& epochAccountingRecord() const;
     const ValidatorLifecycleSummary& validatorLifecycleSummary() const;
     const economics::SupplyDelta& supplyDelta() const;
+    const std::string& snapshotDigest() const;
 
     std::string serialize() const;
 
@@ -541,6 +542,7 @@ private:
     EpochAccountingRecord m_epochAccountingRecord;
     ValidatorLifecycleSummary m_validatorLifecycleSummary;
     economics::SupplyDelta m_supplyDelta;
+    std::string m_snapshotDigest;
 };
 
 /*

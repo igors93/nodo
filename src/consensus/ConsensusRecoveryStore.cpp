@@ -104,7 +104,11 @@ std::string serializeState(
             {"height", std::to_string(state.height())},
             {"round", std::to_string(state.round())},
             {"proposerAddress", state.proposerAddress()},
-            {"roundStartedAt", std::to_string(state.roundStartedAt())}
+            {"roundStartedAt", std::to_string(state.roundStartedAt())},
+            {"lockedBlockHash", state.lockedBlockHash().empty() ? "-" : state.lockedBlockHash()},
+            {"lockedRound", std::to_string(state.lockedRound())},
+            {"votedPrevote", state.votedPrevote() ? "1" : "0"},
+            {"votedPrecommit", state.votedPrecommit() ? "1" : "0"}
         }
     );
 }
@@ -124,25 +128,45 @@ std::optional<ConsensusRoundState> parseState(
                 "height",
                 "round",
                 "proposerAddress",
-                "roundStartedAt"
+                "roundStartedAt",
+                "lockedBlockHash",
+                "lockedRound",
+                "votedPrevote",
+                "votedPrecommit"
             }
         );
 
         std::uint64_t height = 0;
         std::uint64_t round = 0;
         std::int64_t roundStartedAt = 0;
+        std::uint64_t lockedRound = 0;
 
         if (!parseUint64Strict(doc.requireField("height"), height) ||
             !parseUint64Strict(doc.requireField("round"), round) ||
-            !parseInt64Strict(doc.requireField("roundStartedAt"), roundStartedAt)) {
+            !parseInt64Strict(doc.requireField("roundStartedAt"), roundStartedAt) ||
+            !parseUint64Strict(doc.requireField("lockedRound"), lockedRound)) {
             return std::nullopt;
         }
+
+        const std::string votedPrevoteStr = doc.requireField("votedPrevote");
+        const std::string votedPrecommitStr = doc.requireField("votedPrecommit");
+        if ((votedPrevoteStr != "0" && votedPrevoteStr != "1") ||
+            (votedPrecommitStr != "0" && votedPrecommitStr != "1")) {
+            return std::nullopt;
+        }
+
+        const std::string rawLockedBlockHash = doc.requireField("lockedBlockHash");
+        const std::string lockedBlockHash = (rawLockedBlockHash == "-") ? "" : rawLockedBlockHash;
 
         const ConsensusRoundState state(
             height,
             round,
             doc.requireField("proposerAddress"),
-            roundStartedAt
+            roundStartedAt,
+            lockedBlockHash,
+            lockedRound,
+            votedPrevoteStr == "1",
+            votedPrecommitStr == "1"
         );
 
         if (!isPersistableRoundState(state)) {

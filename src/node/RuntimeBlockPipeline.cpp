@@ -2,6 +2,7 @@
 
 #include "node/FeeEconomics.hpp"
 #include "node/RuntimeMonetaryValidation.hpp"
+#include "node/StateSnapshot.hpp"
 #include "node/ValidatorLifecycle.hpp"
 
 #include "consensus/ValidatorVoteBuilder.hpp"
@@ -1653,6 +1654,10 @@ const economics::SupplyDelta& RuntimeBlockPipelineResult::supplyDelta() const {
     return m_supplyDelta;
 }
 
+const std::string& RuntimeBlockPipelineResult::snapshotDigest() const {
+    return m_snapshotDigest;
+}
+
 std::string RuntimeBlockPipelineResult::serialize() const {
     std::ostringstream oss;
 
@@ -2264,8 +2269,17 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
-    // Epoch boundary: activate pending validators and complete exits.
+    // Record the finalized state root in the pruner and trim old entries.
     const std::uint64_t finalizedHeight = production.block().index();
+    if (!finalResult.postStateRoot().empty()) {
+        runtime.mutableStatePruner().recordStateRoot(
+            finalizedHeight,
+            finalResult.postStateRoot()
+        );
+        runtime.mutableStatePruner().pruneHistory(finalizedHeight);
+    }
+
+    // Epoch boundary: activate pending validators, complete exits, and take snapshot.
     if (finalizedHeight > 0 && finalizedHeight % NODO_VALIDATOR_EPOCH_BLOCKS == 0) {
         const std::uint64_t currentEpoch =
             ValidatorLifecycle::epochIndexForBlock(finalizedHeight);
@@ -2294,6 +2308,24 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
                     addr, boundaryTimestamp
                 );
             }
+        }
+
+        // Create a state snapshot commitment at the epoch boundary.
+        // Rebuilding the account state is acceptable here: epochs are 43,200 blocks apart.
+        try {
+            const core::StateTransitionPreviewContext snapshotCtx =
+                previewContextForRuntime(runtime);
+            const StateSnapshot epochSnapshot = StateSnapshot::create(
+                finalizedHeight,
+                production.block().hash(),
+                snapshotCtx.accountStateView(),
+                runtime.validatorRegistry(),
+                production.block().records(),
+                boundaryTimestamp
+            );
+            finalResult.m_snapshotDigest = epochSnapshot.canonicalDigest();
+        } catch (...) {
+            // Snapshot failure is non-fatal; the block is already finalized.
         }
     }
 

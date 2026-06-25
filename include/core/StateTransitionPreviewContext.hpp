@@ -17,7 +17,8 @@ public:
         AccountStateView accountStateView,
         bool allowMissingAccounts,
         bool enforceAccountState,
-        std::string feeRecipientAddress = ""
+        std::string feeRecipientAddress = "",
+        std::int64_t wallClockNow = 0
     );
 
     static StateTransitionPreviewContext structuralOnly(
@@ -29,6 +30,7 @@ public:
     bool allowMissingAccounts() const;
     bool enforceAccountState() const;
     const std::string& feeRecipientAddress() const;
+    std::int64_t wallClockNow() const;
 
     bool coinLotPreviewEnabled() const;
     bool supplyAuditPreviewEnabled() const;
@@ -42,6 +44,7 @@ private:
     bool m_allowMissingAccounts;
     bool m_enforceAccountState;
     std::string m_feeRecipientAddress;
+    std::int64_t m_wallClockNow;
     bool m_coinLotPreviewEnabled;
     bool m_supplyAuditPreviewEnabled;
 };

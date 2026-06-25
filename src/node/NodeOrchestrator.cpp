@@ -1,5 +1,6 @@
 #include "node/NodeOrchestrator.hpp"
 
+#include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "crypto/Signer.hpp"
 #include "node/BlockAnnounceHandler.hpp"
@@ -7,10 +8,12 @@
 #include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/PeerHandshakeAutoRegistrar.hpp"
+#include "node/PersistentBlockStateSync.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeStateLoader.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -263,6 +266,53 @@ void NodeOrchestrator::addAndConnectPeer(const p2p::PeerMetadata& peer) {
     }
 }
 
+void NodeOrchestrator::triggerSyncIfBehind(
+    const ChainStatusMessage& remotePeerStatus,
+    std::int64_t now
+) {
+    if (!m_runtime || !m_tcpRuntime) return;
+
+    PersistentSyncCheckpointStore store(
+        m_config.dataDirectory().rootPath()
+    );
+
+    PersistentSyncCheckpoint checkpoint;
+    const auto loaded = store.load();
+    if (loaded.has_value()) {
+        checkpoint = loaded.value();
+    } else {
+        const auto& chain = m_runtime->blockchain();
+        const std::uint64_t height =
+            chain.empty() ? 0 : chain.latestBlock().index();
+        const std::string hash =
+            chain.empty() ? "" : chain.latestBlock().hash();
+        checkpoint = PersistentSyncCheckpoint::genesis(
+            hash.empty() ? "genesis" : hash,
+            "state-root-" + std::to_string(height),
+            now
+        );
+    }
+
+    const PersistentSyncPlan plan = PersistentBlockStateSyncPlanner::planFromRemoteStatus(
+        checkpoint,
+        remotePeerStatus,
+        m_config.localPeer().peerId(),
+        remotePeerStatus.chainId(),
+        NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH,
+        NODO_PERSISTENT_SYNC_DEFAULT_SNAPSHOT_THRESHOLD,
+        now
+    );
+
+    if (!plan.requestBlocks()) return;
+
+    const NetworkBlockSyncRequest& req = plan.blockRequest().value();
+    m_tcpRuntime->gossipMesh().broadcast(
+        p2p::NetworkMessageType::BLOCK_SYNC_REQUEST,
+        req.serialize(),
+        now
+    );
+}
+
 // ---- Internal startup helpers ---------------------------------------------
 
 NodeOrchestratorStartResult NodeOrchestrator::initOrLoad() {
@@ -410,6 +460,18 @@ bool NodeOrchestrator::startConsensus() {
 
     if (m_localSigner.has_value()) {
         m_consensusLoop->setLocalSigner(&m_localSigner.value());
+    }
+
+    // Wire the consensus recovery path for BFT lock/vote persistence.
+    const std::filesystem::path recoveryPath =
+        m_config.dataDirectory().consensusRecoveryPath();
+    m_consensusLoop->setRecoveryPath(recoveryPath);
+
+    // Restore lock/vote state from disk so we don't double-vote after restart.
+    const auto recoveryState =
+        consensus::ConsensusRecoveryStore::load(recoveryPath);
+    if (recoveryState.has_value()) {
+        m_consensusLoop->loadFromRecoveryState(*recoveryState);
     }
 
     // Wire the block producer callback.

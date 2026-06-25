@@ -133,6 +133,45 @@ void testRoundStateSerializes() {
     assert(s.find("round=2") != std::string::npos);
 }
 
+void testRoundStateSerializesLockFields() {
+    const nodo::consensus::ConsensusRoundState state(
+        7, 3, "validator-b", 2000000,
+        "hashofblock", 3, true, true
+    );
+    const std::string s = state.serialize();
+    assert(s.find("lockedBlockHash=hashofblock") != std::string::npos);
+    assert(s.find("lockedRound=3") != std::string::npos);
+    assert(s.find("votedPrevote=1") != std::string::npos);
+    assert(s.find("votedPrecommit=1") != std::string::npos);
+}
+
+void testRoundStateDeserializeRoundTrip() {
+    const nodo::consensus::ConsensusRoundState original(
+        12, 4, "validator-c", 3000000,
+        "abcdef123456", 4, true, false
+    );
+    const std::string serialized = original.serialize();
+    const nodo::consensus::ConsensusRoundState recovered =
+        nodo::consensus::ConsensusRoundState::deserialize(serialized);
+
+    assert(recovered.height() == 12);
+    assert(recovered.round() == 4);
+    assert(recovered.proposerAddress() == "validator-c");
+    assert(recovered.roundStartedAt() == 3000000);
+    assert(recovered.lockedBlockHash() == "abcdef123456");
+    assert(recovered.lockedRound() == 4);
+    assert(recovered.votedPrevote() == true);
+    assert(recovered.votedPrecommit() == false);
+}
+
+void testRoundStateDefaultLockFields() {
+    const nodo::consensus::ConsensusRoundState state(1, 1, "validator-a", 1000000);
+    assert(state.lockedBlockHash() == "");
+    assert(state.lockedRound() == 0);
+    assert(state.votedPrevote() == false);
+    assert(state.votedPrecommit() == false);
+}
+
 } // namespace
 
 int main() {
@@ -144,5 +183,8 @@ int main() {
     testTimeoutExpires();
     testAdvanceRound();
     testRoundStateSerializes();
+    testRoundStateSerializesLockFields();
+    testRoundStateDeserializeRoundTrip();
+    testRoundStateDefaultLockFields();
     return 0;
 }

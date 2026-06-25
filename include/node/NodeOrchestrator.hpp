@@ -191,6 +191,13 @@ public:
     // Register and connect a static peer (e.g. from --peer CLI flag).
     void addAndConnectPeer(const p2p::PeerMetadata& peer);
 
+    // Evaluate a remote peer's ChainStatusMessage and broadcast a
+    // BLOCK_SYNC_REQUEST if the durable sync checkpoint is behind.
+    void triggerSyncIfBehind(
+        const ChainStatusMessage& remotePeerStatus,
+        std::int64_t now
+    );
+
 private:
     NodeOrchestratorConfig               m_config;
     const crypto::CryptoPolicy&          m_policy;

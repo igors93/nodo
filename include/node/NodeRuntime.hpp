@@ -6,6 +6,7 @@
 #include "consensus/ConsensusRoundManager.hpp"
 #include "consensus/ForkChoice.hpp"
 #include "core/Blockchain.hpp"
+#include "core/StatePruner.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "mempool/Mempool.hpp"
 #include "node/RuntimeSupplyState.hpp"
@@ -163,6 +164,8 @@ public:
     LocalPeerManager& mutablePeerManager();
     const RuntimeSupplyState& supplyState() const;
     RuntimeSupplyState& mutableSupplyState();
+    const core::StatePruner& statePruner() const;
+    core::StatePruner& mutableStatePruner();
 
     bool isRunning() const;
     bool isHalted() const;
@@ -202,6 +205,7 @@ private:
     mempool::Mempool m_mempool;
     LocalPeerManager m_peerManager;
     RuntimeSupplyState m_supplyState;
+    core::StatePruner m_statePruner;
 };
 
 enum class NodeRuntimeStartStatus {

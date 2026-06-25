@@ -11,6 +11,7 @@ StateTransitionPreviewContext::StateTransitionPreviewContext()
       m_allowMissingAccounts(false),
       m_enforceAccountState(false),
       m_feeRecipientAddress(""),
+      m_wallClockNow(0),
       m_coinLotPreviewEnabled(false),
       m_supplyAuditPreviewEnabled(false) {}
 
@@ -19,13 +20,15 @@ StateTransitionPreviewContext::StateTransitionPreviewContext(
     AccountStateView accountStateView,
     bool allowMissingAccounts,
     bool enforceAccountState,
-    std::string feeRecipientAddress
+    std::string feeRecipientAddress,
+    std::int64_t wallClockNow
 )
     : m_minimumFeeRawUnits(minimumFeeRawUnits),
       m_accountStateView(std::move(accountStateView)),
       m_allowMissingAccounts(allowMissingAccounts),
       m_enforceAccountState(enforceAccountState),
       m_feeRecipientAddress(std::move(feeRecipientAddress)),
+      m_wallClockNow(wallClockNow),
       m_coinLotPreviewEnabled(false),
       m_supplyAuditPreviewEnabled(false) {}
 
@@ -60,6 +63,10 @@ const std::string& StateTransitionPreviewContext::feeRecipientAddress() const {
     return m_feeRecipientAddress;
 }
 
+std::int64_t StateTransitionPreviewContext::wallClockNow() const {
+    return m_wallClockNow;
+}
+
 bool StateTransitionPreviewContext::coinLotPreviewEnabled() const {
     return m_coinLotPreviewEnabled;
 }
@@ -90,6 +97,7 @@ std::string StateTransitionPreviewContext::serialize() const {
         << ";allowMissingAccounts=" << (m_allowMissingAccounts ? "true" : "false")
         << ";enforceAccountState=" << (m_enforceAccountState ? "true" : "false")
         << ";feeRecipientAddress=" << m_feeRecipientAddress
+        << ";wallClockNow=" << m_wallClockNow
         << ";coinLotPreviewEnabled=" << (m_coinLotPreviewEnabled ? "true" : "false")
         << ";supplyAuditPreviewEnabled=" << (m_supplyAuditPreviewEnabled ? "true" : "false")
         << ";accountStateView=" << m_accountStateView.serialize()

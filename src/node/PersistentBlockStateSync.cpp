@@ -1,5 +1,8 @@
 #include "node/PersistentBlockStateSync.hpp"
 
+#include "consensus/BlockFinalizer.hpp"
+#include "core/BlockStateTransitionValidator.hpp"
+#include "serialization/BlockCodec.hpp"
 #include "serialization/CanonicalHash.hpp"
 #include "serialization/CanonicalReader.hpp"
 #include "serialization/CanonicalWriter.hpp"
@@ -311,7 +314,8 @@ PersistentBlockSyncItem::PersistentBlockSyncItem()
       m_previousBlockHash(),
       m_serializedBlock(),
       m_finalizedStateRoot(),
-      m_createdAt(0) {}
+      m_createdAt(0),
+      m_serializedFinalizedRecord() {}
 
 PersistentBlockSyncItem::PersistentBlockSyncItem(
     std::uint64_t height,
@@ -319,13 +323,15 @@ PersistentBlockSyncItem::PersistentBlockSyncItem(
     std::string previousBlockHash,
     std::string serializedBlock,
     std::string finalizedStateRoot,
-    std::int64_t createdAt
+    std::int64_t createdAt,
+    std::string serializedFinalizedRecord
 ) : m_height(height),
     m_blockHash(std::move(blockHash)),
     m_previousBlockHash(std::move(previousBlockHash)),
     m_serializedBlock(std::move(serializedBlock)),
     m_finalizedStateRoot(std::move(finalizedStateRoot)),
-    m_createdAt(createdAt) {}
+    m_createdAt(createdAt),
+    m_serializedFinalizedRecord(std::move(serializedFinalizedRecord)) {}
 
 std::uint64_t PersistentBlockSyncItem::height() const { return m_height; }
 const std::string& PersistentBlockSyncItem::blockHash() const { return m_blockHash; }
@@ -333,6 +339,7 @@ const std::string& PersistentBlockSyncItem::previousBlockHash() const { return m
 const std::string& PersistentBlockSyncItem::serializedBlock() const { return m_serializedBlock; }
 const std::string& PersistentBlockSyncItem::finalizedStateRoot() const { return m_finalizedStateRoot; }
 std::int64_t PersistentBlockSyncItem::createdAt() const { return m_createdAt; }
+const std::string& PersistentBlockSyncItem::serializedFinalizedRecord() const { return m_serializedFinalizedRecord; }
 
 bool PersistentBlockSyncItem::isValid() const {
     return m_height > 0 &&
@@ -352,6 +359,7 @@ std::string PersistentBlockSyncItem::serialize() const {
            << ";serializedBlockBytes=" << m_serializedBlock.size()
            << ";finalizedStateRoot=" << m_finalizedStateRoot
            << ";createdAt=" << m_createdAt
+           << ";hasFinalizedRecord=" << (!m_serializedFinalizedRecord.empty() ? "true" : "false")
            << "}";
     return output.str();
 }
@@ -678,6 +686,9 @@ std::string PersistentSyncApplyResult::serialize() const {
 PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
     const PersistentSyncCheckpoint& checkpoint,
     const PersistentBlockSyncBatch& batch,
+    const core::ValidatorRegistry& validatorRegistry,
+    const crypto::CryptoPolicy& policy,
+    const crypto::SignatureProvider& provider,
     std::int64_t now
 ) {
     if (!checkpoint.isValid()) {
@@ -720,6 +731,44 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
         );
     }
 
+    for (const auto& item : batch.items()) {
+        if (item.serializedFinalizedRecord().empty()) {
+            continue;
+        }
+
+        consensus::FinalizedBlockRecord record;
+        try {
+            record = consensus::FinalizedBlockRecord::deserialize(
+                item.serializedFinalizedRecord()
+            );
+        } catch (const std::exception& error) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Failed to deserialize FinalizedBlockRecord at height " +
+                    std::to_string(item.height()) + ": " + error.what(),
+                std::nullopt
+            );
+        }
+
+        if (record.blockHash() != item.blockHash()) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "FinalizedBlockRecord blockHash does not match sync item blockHash at height " +
+                    std::to_string(item.height()) + ".",
+                std::nullopt
+            );
+        }
+
+        if (!record.verify(validatorRegistry, policy, provider)) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "QuorumCertificate verification failed for block at height " +
+                    std::to_string(item.height()) + ".",
+                std::nullopt
+            );
+        }
+    }
+
     const PersistentBlockSyncItem* last = batch.lastItem();
     if (last == nullptr) {
         return PersistentSyncApplyResult(
@@ -752,6 +801,66 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
         "Validated block sync batch advanced the durable checkpoint.",
         updatedCheckpoint
     );
+}
+
+PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
+    const PersistentSyncCheckpoint& checkpoint,
+    const PersistentBlockSyncBatch& batch,
+    core::Blockchain& blockchain,
+    const core::ValidatorRegistry& validatorRegistry,
+    const crypto::CryptoPolicy& policy,
+    const crypto::SignatureProvider& provider,
+    std::int64_t now
+) {
+    const PersistentSyncApplyResult qcResult = applyValidatedBatch(
+        checkpoint, batch, validatorRegistry, policy, provider, now
+    );
+
+    if (!qcResult.applied()) {
+        return qcResult;
+    }
+
+    for (const auto& item : batch.items()) {
+        std::optional<core::Block> blockOpt;
+        try {
+            blockOpt.emplace(serialization::BlockCodec::deserialize(item.serializedBlock()));
+        } catch (const std::exception& error) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Failed to deserialize block at height " +
+                    std::to_string(item.height()) + ": " + error.what(),
+                std::nullopt
+            );
+        }
+
+        const core::BlockValidationResult validation =
+            core::BlockStateTransitionValidator::validateCandidateBlock(
+                blockchain,
+                blockOpt.value()
+            );
+
+        if (!validation.accepted()) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Block state transition validation failed at height " +
+                    std::to_string(item.height()) + ": " + validation.reason(),
+                std::nullopt
+            );
+        }
+
+        try {
+            blockchain.addBlock(blockOpt.value());
+        } catch (const std::exception& error) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Failed to add block at height " +
+                    std::to_string(item.height()) + " to blockchain: " + error.what(),
+                std::nullopt
+            );
+        }
+    }
+
+    return qcResult;
 }
 
 PersistentSyncApplyResult PersistentBlockStateSyncApplier::applySnapshotManifest(
@@ -857,6 +966,7 @@ std::vector<unsigned char> PersistentBlockStateSyncCodec::encodeBlockSyncItem(
     writer.writeString(item.serializedBlock());
     writer.writeString(item.finalizedStateRoot());
     writer.writeInt64(item.createdAt());
+    writer.writeString(item.serializedFinalizedRecord());
     return writer.bytes();
 }
 
@@ -872,6 +982,7 @@ PersistentBlockSyncItem PersistentBlockStateSyncCodec::decodeBlockSyncItem(
     const std::string serializedBlock = reader.readString();
     const std::string finalizedStateRoot = reader.readString();
     const std::int64_t createdAt = reader.readInt64();
+    const std::string serializedFinalizedRecord = reader.readString();
 
     PersistentBlockSyncItem item(
         height,
@@ -879,7 +990,8 @@ PersistentBlockSyncItem PersistentBlockStateSyncCodec::decodeBlockSyncItem(
         previousBlockHash,
         serializedBlock,
         finalizedStateRoot,
-        createdAt
+        createdAt,
+        serializedFinalizedRecord
     );
 
     reader.requireFullyConsumed();

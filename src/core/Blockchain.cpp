@@ -152,6 +152,10 @@ bool Blockchain::isValidNextBlock(
         return false;
     }
 
+    if (currentBlock.timestamp() <= previousBlock.timestamp()) {
+        return false;
+    }
+
     return true;
 }
 

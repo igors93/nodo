@@ -169,6 +169,14 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
         );
     }
 
+    if (context.wallClockNow() > 0 &&
+        candidateBlock.timestamp() > context.wallClockNow() + 300) {
+        return BlockValidationResult::rejected(
+            BlockValidationStatus::INVALID_BLOCK,
+            "Candidate block timestamp is too far in the future."
+        );
+    }
+
     for (const LedgerRecord& record : candidateBlock.records()) {
         if (!record.isValid()) {
             return BlockValidationResult::rejected(
@@ -224,6 +232,15 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
         return BlockValidationResult::rejected(
             BlockValidationStatus::STATE_PREVIEW_FAILED,
             preview.reason()
+        );
+    }
+
+    if (!preview.stateRoot().empty() &&
+        !candidateBlock.stateRoot().empty() &&
+        preview.stateRoot() != candidateBlock.stateRoot()) {
+        return BlockValidationResult::rejected(
+            BlockValidationStatus::INVALID_BLOCK,
+            "State root mismatch between block header and computed state transition."
         );
     }
 

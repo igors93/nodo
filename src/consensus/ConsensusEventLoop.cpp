@@ -1,6 +1,7 @@
 #include "consensus/ConsensusEventLoop.hpp"
 
 #include "consensus/BlockFinalizer.hpp"
+#include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "consensus/ValidatorVoteBuilder.hpp"
@@ -12,6 +13,7 @@
 
 #include <array>
 #include <chrono>
+#include <filesystem>
 #include <thread>
 
 namespace nodo::consensus {
@@ -61,6 +63,18 @@ void ConsensusEventLoop::setEvidencePool(EvidencePool* pool) {
     m_evidencePool = pool;
 }
 
+void ConsensusEventLoop::setRecoveryPath(std::filesystem::path path) {
+    m_recoveryPath = std::move(path);
+}
+
+void ConsensusEventLoop::loadFromRecoveryState(const ConsensusRoundState& state) {
+    m_lockedBlock    = state.lockedBlockHash();
+    m_lockedRound    = state.lockedRound();
+    m_votedPrevote   = state.votedPrevote();
+    m_votedPrecommit = state.votedPrecommit();
+    m_lastProcessedHeight = state.height();
+}
+
 void ConsensusEventLoop::start(std::int64_t tickIntervalMs) {
     if (m_running.load()) return;
     m_tickIntervalMs = tickIntervalMs;
@@ -105,13 +119,20 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     const std::uint64_t height = state.height();
     const std::uint64_t round = state.round();
 
-    // Height change detection: reset locking / voting state
-    if (height > m_lastProcessedHeight) {
+    // Reset lock/vote state only when a new height is confirmed via finalization.
+    // This preserves the BFT safety invariant across restarts: lock state is only
+    // cleared when the previous height is actually finalized, not just when the
+    // round manager advances to a new height.
+    if (height > m_lastProcessedHeight &&
+        m_finalizationRegistry.hasFinalizedHeight(
+            m_lastProcessedHeight > 0 ? m_lastProcessedHeight : height)) {
         m_lastProcessedHeight = height;
         m_lockedBlock = "";
         m_lockedRound = 0;
         m_votedPrevote = false;
         m_votedPrecommit = false;
+    } else if (m_lastProcessedHeight == 0 && height > 0) {
+        m_lastProcessedHeight = height;
     }
 
     // TASK 1: If this node is the designated proposer for the current
@@ -184,6 +205,15 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
                 const std::string serializedVote = prevote.serialize();
                 m_gossip.broadcast(p2p::NetworkMessageType::VOTE_ANNOUNCE,  serializedVote, now);
                 m_gossip.broadcast(p2p::NetworkMessageType::VALIDATOR_VOTE, serializedVote, now);
+
+                if (m_recoveryPath.has_value()) {
+                    ConsensusRoundState updatedState(
+                        state.height(), state.round(), state.proposerAddress(),
+                        state.roundStartedAt(), m_lockedBlock, m_lockedRound,
+                        m_votedPrevote, m_votedPrecommit
+                    );
+                    ConsensusRecoveryStore::save(*m_recoveryPath, updatedState);
+                }
             }
         }
     }
@@ -207,6 +237,15 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
                 const std::string serializedVote = precommit.serialize();
                 m_gossip.broadcast(p2p::NetworkMessageType::VOTE_ANNOUNCE,  serializedVote, now);
                 m_gossip.broadcast(p2p::NetworkMessageType::VALIDATOR_VOTE, serializedVote, now);
+
+                if (m_recoveryPath.has_value()) {
+                    ConsensusRoundState updatedState(
+                        state.height(), state.round(), state.proposerAddress(),
+                        state.roundStartedAt(), m_lockedBlock, m_lockedRound,
+                        m_votedPrevote, m_votedPrecommit
+                    );
+                    ConsensusRecoveryStore::save(*m_recoveryPath, updatedState);
+                }
             }
         }
     }
