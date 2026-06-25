@@ -1,5 +1,8 @@
 #include "core/MempoolBlockProducer.hpp"
 
+#include "core/StateTransitionPreview.hpp"
+#include "core/StateTransitionPreviewContext.hpp"
+
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -331,15 +334,61 @@ BlockProductionResult produceCandidateBlockImpl(
         );
     }
 
-    Block block(
+    std::string draftStateRoot = plan.blockIndex() == 0 ? "" : "DRAFT_STATE_ROOT";
+    std::string draftReceiptsRoot = plan.blockIndex() == 0 ? "" : "DRAFT_RECEIPTS_ROOT";
+
+    Block draftBlock(
         plan.blockIndex(),
         plan.previousHash(),
         plan.ledgerRecords(),
-        timestamp
+        timestamp,
+        draftStateRoot,
+        draftReceiptsRoot
     );
 
-    if (!block.isValid() ||
-        !blockchain.canAppendBlock(block)) {
+    StateTransitionPreviewContext previewContext;
+    if (accountStateView != nullptr) {
+        previewContext = StateTransitionPreviewContext(
+            0,
+            *accountStateView,
+            true,
+            true
+        );
+    } else {
+        previewContext = StateTransitionPreviewContext::structuralOnly(0);
+    }
+
+    const StateTransitionPreviewResult preview =
+        StateTransitionPreview::previewBlock(
+            draftBlock,
+            previewContext
+        );
+
+    std::string finalStateRoot;
+    std::string finalReceiptsRoot;
+
+    if (plan.blockIndex() == 0) {
+        finalStateRoot = "";
+        finalReceiptsRoot = "";
+    } else if (preview.accepted()) {
+        finalStateRoot = preview.stateRoot();
+        finalReceiptsRoot = preview.receiptsRoot();
+    } else {
+        finalStateRoot = draftStateRoot;
+        finalReceiptsRoot = draftReceiptsRoot;
+    }
+
+    Block finalBlock(
+        plan.blockIndex(),
+        plan.previousHash(),
+        plan.ledgerRecords(),
+        timestamp,
+        finalStateRoot,
+        finalReceiptsRoot
+    );
+
+    if (!finalBlock.isValid() ||
+        !blockchain.canAppendBlock(finalBlock)) {
         return BlockProductionResult::rejected(
             BlockProductionStatus::BLOCK_AUDIT_FAILED,
             "Produced block failed append audit."
@@ -347,7 +396,7 @@ BlockProductionResult produceCandidateBlockImpl(
     }
 
     return BlockProductionResult::produced(
-        block,
+        finalBlock,
         plan
     );
 }

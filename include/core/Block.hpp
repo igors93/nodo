@@ -24,8 +24,8 @@ public:
         std::string previousHash,
         std::vector<LedgerRecord> records,
         std::int64_t timestamp,
-        std::string stateRoot = "",
-        std::string receiptsRoot = ""
+        std::string stateRoot = "default_state_root",
+        std::string receiptsRoot = "default_receipts_root"
     );
 
     static Block createGenesisBlock(

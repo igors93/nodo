@@ -3,6 +3,7 @@
 #include "core/Blockchain.hpp"
 #include "core/LedgerRecord.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
+#include "core/StateTransitionPreview.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
@@ -153,11 +154,30 @@ void testAcceptsCandidateWithValidEconomicState() {
     const core::Transaction tx =
         transaction("2", 5);
 
+    const core::Block draft(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        "draft_state",
+        "draft_receipts"
+    );
+
+    const core::StateTransitionPreviewResult preview =
+        core::StateTransitionPreview::previewBlock(
+            draft,
+            economicContext(1000, 1, 5)
+        );
+
+    requireCondition(preview.accepted(), "Preview must accept valid candidate.");
+
     const core::Block block(
         1,
         blockchain.latestBlock().hash(),
         {record(tx)},
-        kTimestamp + 1
+        kTimestamp + 1,
+        preview.stateRoot(),
+        preview.receiptsRoot()
     );
 
     const core::BlockValidationResult result =
@@ -509,23 +529,24 @@ void testAcceptsBlockWithCorrectStateRoot() {
     const core::Transaction tx =
         transaction("2", 1);
 
-    const core::Block candidateNoRoot(
+    const core::Block draft(
         1,
         blockchain.latestBlock().hash(),
         {record(tx)},
-        kTimestamp + 1
+        kTimestamp + 1,
+        "draft_state",
+        "draft_receipts"
     );
 
-    const core::BlockValidationResult previewResult =
-        core::BlockStateTransitionValidator::validateCandidateBlock(
-            blockchain,
-            candidateNoRoot,
+    const core::StateTransitionPreviewResult previewResult =
+        core::StateTransitionPreview::previewBlock(
+            draft,
             economicContext(1000, 1, 1)
         );
 
     requireCondition(
         previewResult.accepted() && !previewResult.stateRoot().empty(),
-        "Pre-check: candidate without state root should pass to obtain computed root."
+        "Pre-check: state transition preview should succeed."
     );
 
     const core::Block blockWithRoot(
@@ -533,7 +554,8 @@ void testAcceptsBlockWithCorrectStateRoot() {
         blockchain.latestBlock().hash(),
         {record(tx)},
         kTimestamp + 1,
-        previewResult.stateRoot()
+        previewResult.stateRoot(),
+        previewResult.receiptsRoot()
     );
 
     const core::BlockValidationResult result =
@@ -553,33 +575,33 @@ void testRejectsBlockWithWrongReceiptsRoot() {
     const core::Blockchain blockchain = chain();
     const core::Transaction tx = transaction("2", 1);
 
-    // First get the correct receiptsRoot from a candidate without one.
-    const core::Block candidateNoRoot(
+    const core::Block draft(
         1,
         blockchain.latestBlock().hash(),
         {record(tx)},
-        kTimestamp + 1
+        kTimestamp + 1,
+        "draft_state",
+        "draft_receipts"
     );
 
-    const core::BlockValidationResult previewResult =
-        core::BlockStateTransitionValidator::validateCandidateBlock(
-            blockchain,
-            candidateNoRoot,
+    const core::StateTransitionPreviewResult previewResult =
+        core::StateTransitionPreview::previewBlock(
+            draft,
             economicContext(1000, 1, 1)
         );
 
     requireCondition(
         previewResult.accepted() && !previewResult.receiptsRoot().empty(),
-        "Pre-check: candidate without receipts root should pass and compute a non-empty receipts root."
+        "Pre-check: state transition preview should succeed."
     );
 
-    // Build a block with a wrong receiptsRoot — both sides non-empty so check fires.
+    // Build a block with a correct stateRoot but wrong receiptsRoot
     const core::Block blockWithWrongRoot(
         1,
         blockchain.latestBlock().hash(),
         {record(tx)},
         kTimestamp + 1,
-        "",
+        previewResult.stateRoot(),
         "wrong-receipts-root"
     );
 
@@ -602,23 +624,24 @@ void testAcceptsBlockWithCorrectReceiptsRoot() {
     const core::Blockchain blockchain = chain();
     const core::Transaction tx = transaction("2", 1);
 
-    const core::Block candidateNoRoot(
+    const core::Block draft(
         1,
         blockchain.latestBlock().hash(),
         {record(tx)},
-        kTimestamp + 1
+        kTimestamp + 1,
+        "draft_state",
+        "draft_receipts"
     );
 
-    const core::BlockValidationResult previewResult =
-        core::BlockStateTransitionValidator::validateCandidateBlock(
-            blockchain,
-            candidateNoRoot,
+    const core::StateTransitionPreviewResult previewResult =
+        core::StateTransitionPreview::previewBlock(
+            draft,
             economicContext(1000, 1, 1)
         );
 
     requireCondition(
         previewResult.accepted() && !previewResult.receiptsRoot().empty(),
-        "Pre-check: candidate should produce a non-empty receipts root."
+        "Pre-check: state transition preview should succeed."
     );
 
     const core::Block blockWithCorrectRoot(
@@ -626,7 +649,7 @@ void testAcceptsBlockWithCorrectReceiptsRoot() {
         blockchain.latestBlock().hash(),
         {record(tx)},
         kTimestamp + 1,
-        "",
+        previewResult.stateRoot(),
         previewResult.receiptsRoot()
     );
 
@@ -646,7 +669,7 @@ void testAcceptsBlockWithCorrectReceiptsRoot() {
 void testBlockReceiptsRootInHeaderPayload() {
     const core::Transaction tx = transaction("1");
     const core::Block blockEmpty(
-        1,
+        0,
         "GENESIS",
         {record(tx)},
         kTimestamp,
@@ -654,7 +677,7 @@ void testBlockReceiptsRootInHeaderPayload() {
         ""
     );
     const core::Block blockWithRoot(
-        1,
+        0,
         "GENESIS",
         {record(tx)},
         kTimestamp,

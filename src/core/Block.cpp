@@ -130,6 +130,12 @@ bool Block::isValid() const {
         return false;
     }
 
+    if (m_index > 0) {
+        if (m_stateRoot.empty() || m_receiptsRoot.empty()) {
+            return false;
+        }
+    }
+
     return true;
 }
 

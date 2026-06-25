@@ -1,5 +1,6 @@
 #include "serialization/BlockCodec.hpp"
 
+#include "serialization/FieldCodec.hpp"
 #include "serialization/LedgerRecordCodec.hpp"
 #include "storage/BlockSnapshotHeader.hpp"
 
@@ -29,6 +30,12 @@ core::Block BlockCodec::deserialize(
         throw std::logic_error("BlockCodec record count mismatch.");
     }
 
+    const std::string stateRoot =
+        FieldCodec::extractField(serializedBlock, "stateRoot");
+
+    const std::string receiptsRoot =
+        FieldCodec::extractField(serializedBlock, "receiptsRoot");
+
     /*
      * Block constructor recalculates the block hash from the reconstructed
      * header payload. This protects against trusting the serialized hash field.
@@ -37,7 +44,9 @@ core::Block BlockCodec::deserialize(
         snapshotHeader.blockIndex(),
         snapshotHeader.previousHash(),
         std::move(records),
-        snapshotHeader.timestamp()
+        snapshotHeader.timestamp(),
+        stateRoot,
+        receiptsRoot
     );
 
     if (!block.isValid()) {
