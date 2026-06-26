@@ -119,33 +119,38 @@ std::string BlockValidationResult::serialize() const {
 
 BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
     const Blockchain& blockchain,
-    const Block& candidateBlock
+    const Block& candidateBlock,
+    BlockValidationMode mode
 ) {
     return validateCandidateBlock(
         blockchain,
         candidateBlock,
-        0
+        0,
+        mode
     );
 }
 
 BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
     const Blockchain& blockchain,
     const Block& candidateBlock,
-    std::int64_t minimumFeeRawUnits
+    std::int64_t minimumFeeRawUnits,
+    BlockValidationMode mode
 ) {
     return validateCandidateBlock(
         blockchain,
         candidateBlock,
         StateTransitionPreviewContext::structuralOnly(
             minimumFeeRawUnits
-        )
+        ),
+        mode
     );
 }
 
 BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
     const Blockchain& blockchain,
     const Block& candidateBlock,
-    const StateTransitionPreviewContext& context
+    const StateTransitionPreviewContext& context,
+    BlockValidationMode mode
 ) {
     if (blockchain.empty() ||
         !blockchain.isValid()) {
@@ -155,7 +160,8 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
         );
     }
 
-    if (!candidateBlock.isValid()) {
+    const bool requireProtocol = (mode == BlockValidationMode::ProtocolCommitment);
+    if (!candidateBlock.isValid(requireProtocol)) {
         return BlockValidationResult::rejected(
             BlockValidationStatus::INVALID_BLOCK,
             "Candidate block is structurally invalid."
@@ -235,7 +241,7 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
         );
     }
 
-    if (!candidateBlock.isGenesisBlock() && context.enforceAccountState()) {
+    if (!candidateBlock.isGenesisBlock() && mode == BlockValidationMode::ProtocolCommitment) {
         if (preview.stateRoot() != candidateBlock.stateRoot()) {
             return BlockValidationResult::rejected(
                 BlockValidationStatus::INVALID_BLOCK,

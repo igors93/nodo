@@ -24,8 +24,8 @@ public:
         std::string previousHash,
         std::vector<LedgerRecord> records,
         std::int64_t timestamp,
-        std::string stateRoot = "default_state_root",
-        std::string receiptsRoot = "default_receipts_root"
+        std::string stateRoot = "",
+        std::string receiptsRoot = ""
     );
 
     static Block createGenesisBlock(
@@ -43,7 +43,7 @@ public:
     const std::string& receiptsRoot() const;
 
     bool isGenesisBlock() const;
-    bool isValid() const;
+    bool isValid(bool requireProtocolCommitments = true) const;
 
     /*
      * Deterministic representation of the block header.

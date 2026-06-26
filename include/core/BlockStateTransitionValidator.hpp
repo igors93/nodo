@@ -26,6 +26,11 @@ std::string blockValidationStatusToString(
     BlockValidationStatus status
 );
 
+enum class BlockValidationMode {
+    StructuralOnly,
+    ProtocolCommitment
+};
+
 class BlockValidationResult {
 public:
     BlockValidationResult();
@@ -74,21 +79,37 @@ private:
  */
 class BlockStateTransitionValidator {
 public:
+    /*
+     * Structural-only overloads. These cannot produce a real account-state root
+     * so they default to StructuralOnly mode: block hash, previous-hash linkage,
+     * record validity, and duplicate detection are checked, but stateRoot /
+     * receiptsRoot commitments are NOT compared against a computed transition.
+     *
+     * Use the full-context overload below for protocol-level validation.
+     */
     static BlockValidationResult validateCandidateBlock(
         const Blockchain& blockchain,
-        const Block& candidateBlock
+        const Block& candidateBlock,
+        BlockValidationMode mode = BlockValidationMode::StructuralOnly
     );
 
     static BlockValidationResult validateCandidateBlock(
         const Blockchain& blockchain,
         const Block& candidateBlock,
-        std::int64_t minimumFeeRawUnits
+        std::int64_t minimumFeeRawUnits,
+        BlockValidationMode mode = BlockValidationMode::StructuralOnly
     );
 
+    /*
+     * Full protocol validation. Requires a real AccountStateView in context so
+     * the computed stateRoot and receiptsRoot can be compared against the block's
+     * declared commitments. Defaults to ProtocolCommitment mode.
+     */
     static BlockValidationResult validateCandidateBlock(
         const Blockchain& blockchain,
         const Block& candidateBlock,
-        const StateTransitionPreviewContext& context
+        const StateTransitionPreviewContext& context,
+        BlockValidationMode mode = BlockValidationMode::ProtocolCommitment
     );
 };
 

@@ -334,16 +334,13 @@ BlockProductionResult produceCandidateBlockImpl(
         );
     }
 
-    std::string draftStateRoot = plan.blockIndex() == 0 ? "" : "DRAFT_STATE_ROOT";
-    std::string draftReceiptsRoot = plan.blockIndex() == 0 ? "" : "DRAFT_RECEIPTS_ROOT";
-
     Block draftBlock(
         plan.blockIndex(),
         plan.previousHash(),
         plan.ledgerRecords(),
         timestamp,
-        draftStateRoot,
-        draftReceiptsRoot
+        "",
+        ""
     );
 
     StateTransitionPreviewContext previewContext;
@@ -370,12 +367,22 @@ BlockProductionResult produceCandidateBlockImpl(
     if (plan.blockIndex() == 0) {
         finalStateRoot = "";
         finalReceiptsRoot = "";
-    } else if (preview.accepted()) {
+    } else {
+        if (!preview.accepted()) {
+            BlockProductionStatus status = BlockProductionStatus::BLOCK_AUDIT_FAILED;
+            if (preview.status() == StateTransitionPreviewStatus::INVALID_TRANSACTION ||
+                preview.status() == StateTransitionPreviewStatus::INSUFFICIENT_BALANCE ||
+                preview.status() == StateTransitionPreviewStatus::INVALID_NONCE ||
+                preview.status() == StateTransitionPreviewStatus::DUPLICATE_TRANSACTION) {
+                status = BlockProductionStatus::INVALID_TRANSACTION;
+            }
+            return BlockProductionResult::rejected(
+                status,
+                "State transition preview failed: " + preview.reason()
+            );
+        }
         finalStateRoot = preview.stateRoot();
         finalReceiptsRoot = preview.receiptsRoot();
-    } else {
-        finalStateRoot = draftStateRoot;
-        finalReceiptsRoot = draftReceiptsRoot;
     }
 
     Block finalBlock(
@@ -387,7 +394,7 @@ BlockProductionResult produceCandidateBlockImpl(
         finalReceiptsRoot
     );
 
-    if (!finalBlock.isValid() ||
+    if (!finalBlock.isValid(true) ||
         !blockchain.canAppendBlock(finalBlock)) {
         return BlockProductionResult::rejected(
             BlockProductionStatus::BLOCK_AUDIT_FAILED,

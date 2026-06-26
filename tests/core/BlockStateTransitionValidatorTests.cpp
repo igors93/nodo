@@ -121,6 +121,47 @@ core::StateTransitionPreviewContext economicContext(
     );
 }
 
+/*
+ * Build the correct stateRoot and receiptsRoot for a block by running preview
+ * with the given context, then return a final Block with those real roots.
+ */
+core::Block blockWithRealRoots(
+    const core::Blockchain& blockchain,
+    const core::Transaction& tx,
+    const core::StateTransitionPreviewContext& ctx
+) {
+    const core::Block draft(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        "",
+        ""
+    );
+
+    const core::StateTransitionPreviewResult previewResult =
+        core::StateTransitionPreview::previewBlock(draft, ctx);
+
+    if (!previewResult.accepted()) {
+        throw std::runtime_error(
+            "blockWithRealRoots: preview failed: " + previewResult.reason()
+        );
+    }
+
+    return core::Block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        previewResult.stateRoot(),
+        previewResult.receiptsRoot()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Structural validation tests (StructuralOnly default for 1st/2nd overloads)
+// ---------------------------------------------------------------------------
+
 void testAcceptsAppendableCandidate() {
     const core::Blockchain blockchain =
         chain();
@@ -143,7 +184,7 @@ void testAcceptsAppendableCandidate() {
 
     requireCondition(
         result.accepted(),
-        "Appendable candidate block should pass state transition validation."
+        "Appendable candidate block should pass structural state transition validation."
     );
 }
 
@@ -154,31 +195,8 @@ void testAcceptsCandidateWithValidEconomicState() {
     const core::Transaction tx =
         transaction("2", 5);
 
-    const core::Block draft(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(tx)},
-        kTimestamp + 1,
-        "draft_state",
-        "draft_receipts"
-    );
-
-    const core::StateTransitionPreviewResult preview =
-        core::StateTransitionPreview::previewBlock(
-            draft,
-            economicContext(1000, 1, 5)
-        );
-
-    requireCondition(preview.accepted(), "Preview must accept valid candidate.");
-
-    const core::Block block(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(tx)},
-        kTimestamp + 1,
-        preview.stateRoot(),
-        preview.receiptsRoot()
-    );
+    const core::Block block =
+        blockWithRealRoots(blockchain, tx, economicContext(1000, 1, 5));
 
     const core::BlockValidationResult result =
         core::BlockStateTransitionValidator::validateCandidateBlock(
@@ -208,11 +226,14 @@ void testRejectsCandidateWithInsufficientBalance() {
         kTimestamp + 1
     );
 
+    // StructuralOnly mode: allows empty roots so the state transition
+    // (insufficient balance) is the rejection cause, not root validation.
     const core::BlockValidationResult result =
         core::BlockStateTransitionValidator::validateCandidateBlock(
             blockchain,
             block,
-            economicContext(104, 1, 5)
+            economicContext(104, 1, 5),
+            core::BlockValidationMode::StructuralOnly
         );
 
     requireCondition(
@@ -237,11 +258,13 @@ void testRejectsCandidateWithInvalidNonce() {
         kTimestamp + 1
     );
 
+    // StructuralOnly mode: the nonce error is the rejection cause.
     const core::BlockValidationResult result =
         core::BlockStateTransitionValidator::validateCandidateBlock(
             blockchain,
             block,
-            economicContext(1000, 1, 5)
+            economicContext(1000, 1, 5),
+            core::BlockValidationMode::StructuralOnly
         );
 
     requireCondition(
@@ -433,6 +456,7 @@ void testRejectsBlockTooFarInFuture() {
         kTimestamp + 1
     );
 
+    // StructuralOnly: testing timestamp, not protocol commitments.
     const core::StateTransitionPreviewContext context(
         0,
         core::AccountStateView(),
@@ -446,7 +470,8 @@ void testRejectsBlockTooFarInFuture() {
         core::BlockStateTransitionValidator::validateCandidateBlock(
             blockchain,
             block,
-            context
+            context,
+            core::BlockValidationMode::StructuralOnly
         );
 
     requireCondition(
@@ -470,6 +495,7 @@ void testAcceptsBlockWithinFutureWindow() {
         kTimestamp + 1
     );
 
+    // StructuralOnly: testing timestamp, not protocol commitments.
     const core::StateTransitionPreviewContext context(
         0,
         core::AccountStateView(),
@@ -483,7 +509,8 @@ void testAcceptsBlockWithinFutureWindow() {
         core::BlockStateTransitionValidator::validateCandidateBlock(
             blockchain,
             block,
-            context
+            context,
+            core::BlockValidationMode::StructuralOnly
         );
 
     requireCondition(
@@ -492,6 +519,10 @@ void testAcceptsBlockWithinFutureWindow() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Protocol commitment tests (ProtocolCommitment mode, real roots required)
+// ---------------------------------------------------------------------------
+
 void testRejectsBlockWithWrongStateRoot() {
     const core::Blockchain blockchain =
         chain();
@@ -499,12 +530,16 @@ void testRejectsBlockWithWrongStateRoot() {
     const core::Transaction tx =
         transaction("2");
 
+    // Both roots non-empty and non-placeholder so isValid(true) passes.
+    // stateRoot is deliberately wrong; receiptsRoot is a placeholder value
+    // not in the banned list, so the block passes structural isValid(true).
     const core::Block block(
         1,
         blockchain.latestBlock().hash(),
         {record(tx)},
         kTimestamp + 1,
-        "wrong-state-root"
+        "wrong-state-root",
+        "placeholder-receipts-for-wrong-root-test"
     );
 
     const core::BlockValidationResult result =
@@ -529,34 +564,8 @@ void testAcceptsBlockWithCorrectStateRoot() {
     const core::Transaction tx =
         transaction("2", 1);
 
-    const core::Block draft(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(tx)},
-        kTimestamp + 1,
-        "draft_state",
-        "draft_receipts"
-    );
-
-    const core::StateTransitionPreviewResult previewResult =
-        core::StateTransitionPreview::previewBlock(
-            draft,
-            economicContext(1000, 1, 1)
-        );
-
-    requireCondition(
-        previewResult.accepted() && !previewResult.stateRoot().empty(),
-        "Pre-check: state transition preview should succeed."
-    );
-
-    const core::Block blockWithRoot(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(tx)},
-        kTimestamp + 1,
-        previewResult.stateRoot(),
-        previewResult.receiptsRoot()
-    );
+    const core::Block blockWithRoot =
+        blockWithRealRoots(blockchain, tx, economicContext(1000, 1, 1));
 
     const core::BlockValidationResult result =
         core::BlockStateTransitionValidator::validateCandidateBlock(
@@ -580,8 +589,8 @@ void testRejectsBlockWithWrongReceiptsRoot() {
         blockchain.latestBlock().hash(),
         {record(tx)},
         kTimestamp + 1,
-        "draft_state",
-        "draft_receipts"
+        "",
+        ""
     );
 
     const core::StateTransitionPreviewResult previewResult =
@@ -595,7 +604,6 @@ void testRejectsBlockWithWrongReceiptsRoot() {
         "Pre-check: state transition preview should succeed."
     );
 
-    // Build a block with a correct stateRoot but wrong receiptsRoot
     const core::Block blockWithWrongRoot(
         1,
         blockchain.latestBlock().hash(),
@@ -624,34 +632,8 @@ void testAcceptsBlockWithCorrectReceiptsRoot() {
     const core::Blockchain blockchain = chain();
     const core::Transaction tx = transaction("2", 1);
 
-    const core::Block draft(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(tx)},
-        kTimestamp + 1,
-        "draft_state",
-        "draft_receipts"
-    );
-
-    const core::StateTransitionPreviewResult previewResult =
-        core::StateTransitionPreview::previewBlock(
-            draft,
-            economicContext(1000, 1, 1)
-        );
-
-    requireCondition(
-        previewResult.accepted() && !previewResult.receiptsRoot().empty(),
-        "Pre-check: state transition preview should succeed."
-    );
-
-    const core::Block blockWithCorrectRoot(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(tx)},
-        kTimestamp + 1,
-        previewResult.stateRoot(),
-        previewResult.receiptsRoot()
-    );
+    const core::Block blockWithCorrectRoot =
+        blockWithRealRoots(blockchain, tx, economicContext(1000, 1, 1));
 
     const core::BlockValidationResult result =
         core::BlockStateTransitionValidator::validateCandidateBlock(
@@ -698,6 +680,179 @@ void testBlockReceiptsRootInHeaderPayload() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Protocol commitment enforcement tests
+// These tests verify that ProtocolCommitment mode rejects blocks that lack
+// real commitments, while StructuralOnly mode does not impose that requirement.
+// ---------------------------------------------------------------------------
+
+void testProtocolCommitmentRejectsBlockWithEmptyStateRoot() {
+    const core::Blockchain blockchain = chain();
+    const core::Transaction tx = transaction("2");
+
+    // receiptsRoot is non-empty but stateRoot is empty.
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        "",
+        "some-receipts-root"
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            core::BlockValidationMode::ProtocolCommitment
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_BLOCK,
+        "Non-genesis block with empty stateRoot must be rejected in ProtocolCommitment mode."
+    );
+}
+
+void testProtocolCommitmentRejectsBlockWithEmptyReceiptsRoot() {
+    const core::Blockchain blockchain = chain();
+    const core::Transaction tx = transaction("2");
+
+    // stateRoot is non-empty but receiptsRoot is empty.
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        "some-state-root",
+        ""
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            core::BlockValidationMode::ProtocolCommitment
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_BLOCK,
+        "Non-genesis block with empty receiptsRoot must be rejected in ProtocolCommitment mode."
+    );
+}
+
+void testProtocolCommitmentRejectsBlockWithPlaceholderStateRoot() {
+    const core::Blockchain blockchain = chain();
+    const core::Transaction tx = transaction("2");
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        "DRAFT_STATE_ROOT",
+        "some-valid-receipts-root"
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            core::BlockValidationMode::ProtocolCommitment
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_BLOCK,
+        "Non-genesis block with DRAFT_STATE_ROOT placeholder must be rejected."
+    );
+}
+
+void testProtocolCommitmentRejectsBlockWithPlaceholderReceiptsRoot() {
+    const core::Blockchain blockchain = chain();
+    const core::Transaction tx = transaction("2");
+
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        "some-valid-state-root",
+        "DRAFT_RECEIPTS_ROOT"
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            core::BlockValidationMode::ProtocolCommitment
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_BLOCK,
+        "Non-genesis block with DRAFT_RECEIPTS_ROOT placeholder must be rejected."
+    );
+}
+
+void testStructuralOnlyModeAcceptsBlockWithoutRoots() {
+    const core::Blockchain blockchain = chain();
+    const core::Transaction tx = transaction("2");
+
+    // Block with no roots at all.
+    const core::Block block(
+        1,
+        blockchain.latestBlock().hash(),
+        {record(tx)},
+        kTimestamp + 1,
+        "",
+        ""
+    );
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            core::BlockValidationMode::StructuralOnly
+        );
+
+    requireCondition(
+        result.accepted(),
+        "Block without roots must be accepted in StructuralOnly mode."
+    );
+}
+
+void testProtocolCommitmentRootComparisonRequiresEnforceAccountState() {
+    // When ProtocolCommitment mode is used with a context that has
+    // enforceAccountState=false, the computed roots come from an empty state.
+    // The block's declared roots won't match those → INVALID_BLOCK.
+    const core::Blockchain blockchain = chain();
+    const core::Transaction tx = transaction("2", 1);
+
+    const core::Block block =
+        blockWithRealRoots(blockchain, tx, economicContext(1000, 1, 1));
+
+    // Validate with a structural-only context but ProtocolCommitment mode.
+    // Computed roots from empty state won't match block's real roots.
+    const core::StateTransitionPreviewContext structuralCtx =
+        core::StateTransitionPreviewContext::structuralOnly(0);
+
+    const core::BlockValidationResult result =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            structuralCtx,
+            core::BlockValidationMode::ProtocolCommitment
+        );
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::BlockValidationStatus::INVALID_BLOCK,
+        "ProtocolCommitment with structural-only context must reject: computed roots won't match."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -719,6 +874,12 @@ int main() {
         testRejectsBlockWithWrongReceiptsRoot();
         testAcceptsBlockWithCorrectReceiptsRoot();
         testBlockReceiptsRootInHeaderPayload();
+        testProtocolCommitmentRejectsBlockWithEmptyStateRoot();
+        testProtocolCommitmentRejectsBlockWithEmptyReceiptsRoot();
+        testProtocolCommitmentRejectsBlockWithPlaceholderStateRoot();
+        testProtocolCommitmentRejectsBlockWithPlaceholderReceiptsRoot();
+        testStructuralOnlyModeAcceptsBlockWithoutRoots();
+        testProtocolCommitmentRootComparisonRequiresEnforceAccountState();
 
         std::cout << "Nodo block state transition validator tests passed.\n";
         return 0;

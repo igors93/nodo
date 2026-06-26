@@ -172,7 +172,7 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
         );
     }
 
-    if (!block.isValid()) {
+    if (!block.isValid(false)) {
         return StateTransitionPreviewResult::rejected(
             StateTransitionPreviewStatus::INVALID_BLOCK,
             "Block is structurally invalid.",

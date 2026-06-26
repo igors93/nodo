@@ -326,6 +326,44 @@ void testRejectsInvalidConfig() {
     );
 }
 
+void testProducedBlockHasNoPlaceholderRoots() {
+    const Blockchain blockchain =
+        blockchainWithGenesis();
+
+    const Mempool mempool =
+        mempoolWithTwoTransactions();
+
+    const auto result =
+        MempoolBlockProducer::produceCandidateBlock(
+            blockchain,
+            mempool,
+            CryptoPolicy::developmentPolicy(),
+            SecurityContext::USER_TRANSACTION,
+            BlockProductionConfig(10, 1),
+            kTimestamp + 20
+        );
+
+    requireCondition(
+        result.produced(),
+        "Block production should succeed for placeholder-roots test."
+    );
+
+    const Block& block = result.block();
+
+    requireCondition(
+        block.stateRoot() != "DRAFT_STATE_ROOT" &&
+        block.stateRoot() != "default_state_root" &&
+        block.receiptsRoot() != "DRAFT_RECEIPTS_ROOT" &&
+        block.receiptsRoot() != "default_receipts_root",
+        "Produced block must not contain any placeholder root values."
+    );
+
+    requireCondition(
+        block.isValid(true),
+        "Produced block must pass protocol structural validation (isValid)."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -335,6 +373,7 @@ int main() {
         testRejectsInvalidBlockchain();
         testRejectsNotEnoughTransactions();
         testRejectsInvalidConfig();
+        testProducedBlockHasNoPlaceholderRoots();
 
         std::cout << "Nodo mempool block producer tests passed.\n";
         return 0;
