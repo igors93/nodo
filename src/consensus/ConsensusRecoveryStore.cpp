@@ -1,6 +1,7 @@
 #include "consensus/ConsensusRecoveryStore.hpp"
 
 #include "serialization/KeyValueFileCodec.hpp"
+#include "storage/AtomicFile.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -190,11 +191,9 @@ bool ConsensusRecoveryStore::save(
     const ConsensusRoundState& state
 ) {
     try {
-        const std::string content =
-            serializeState(state);
+        const std::string content = serializeState(state);
 
-        const std::filesystem::path parent =
-            path.parent_path();
+        const std::filesystem::path parent = path.parent_path();
         if (!parent.empty()) {
             std::error_code createError;
             std::filesystem::create_directories(parent, createError);
@@ -203,37 +202,14 @@ bool ConsensusRecoveryStore::save(
             }
         }
 
-        std::filesystem::path tmp = path;
-        tmp += ".tmp";
-
-        {
-            std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-            if (!out) {
-                return false;
-            }
-
-            out << content;
-            if (!out) {
-                std::error_code removeError;
-                std::filesystem::remove(tmp, removeError);
-                return false;
-            }
-        }
-
-        std::error_code renameError;
-        std::filesystem::rename(tmp, path, renameError);
-        if (renameError) {
-            std::error_code removeError;
-            std::filesystem::remove(tmp, removeError);
-            return false;
-        }
-
+        // AtomicFile uses fsync() + rename so the state is durable even on
+        // an OS crash between the two steps.  This is critical because the
+        // recovery store is written after every BFT vote — losing it would
+        // allow a validator to vote for a different block in the same round
+        // after restart, breaking the equivocation-free invariant.
+        storage::AtomicFile::writeTextFile(path, content);
         return true;
     } catch (...) {
-        std::filesystem::path tmp = path;
-        tmp += ".tmp";
-        std::error_code removeError;
-        std::filesystem::remove(tmp, removeError);
         return false;
     }
 }

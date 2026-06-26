@@ -819,9 +819,18 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
         );
     }
 
+    // Fast-path sync requires a FinalizedBlockRecord (QC proof) for every item.
+    // Accepting items without a record would allow a peer to bypass quorum
+    // verification entirely by omitting all finalized records.
     for (const auto& item : batch.items()) {
         if (item.serializedFinalizedRecord().empty()) {
-            continue;
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Block at height " + std::to_string(item.height()) +
+                    " is missing a required QuorumCertificate proof. "
+                    "Fast-path sync requires a FinalizedBlockRecord for every item.",
+                std::nullopt
+            );
         }
 
         consensus::FinalizedBlockRecord record;
@@ -901,13 +910,81 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
     std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder,
     std::int64_t now
 ) {
-    // Phase 1: verify quorum-certificate signatures for all items in the batch.
-    const PersistentSyncApplyResult qcResult = applyValidatedBatch(
-        checkpoint, batch, validatorRegistry, policy, provider, now
-    );
+    // Phase 1: shape validation — same rules as the fast path, minus the QC
+    // requirement.  Protocol-commitment mode trusts state-root recomputation as
+    // its primary trust mechanism; QC is verified as defence-in-depth only when
+    // the peer supplies a FinalizedBlockRecord.
+    if (!checkpoint.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Current checkpoint is invalid.",
+            std::nullopt
+        );
+    }
 
-    if (!qcResult.applied()) {
-        return qcResult;
+    if (!batch.isValid() || now <= 0) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Block sync batch or timestamp is invalid.",
+            std::nullopt
+        );
+    }
+
+    if (batch.fromHeight() != checkpoint.finalizedHeight() + 1) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Batch does not start at the next expected height.",
+            std::nullopt
+        );
+    }
+
+    if (batch.items().front().previousBlockHash() != checkpoint.finalizedBlockHash()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Batch first block does not connect to the current checkpoint.",
+            std::nullopt
+        );
+    }
+
+    // Defence-in-depth: verify QC for any item that includes a FinalizedBlockRecord.
+    // Items without a record are accepted here; state-root recomputation below
+    // provides the binding trust check for those items.
+    for (const auto& item : batch.items()) {
+        if (item.serializedFinalizedRecord().empty()) {
+            continue;
+        }
+
+        consensus::FinalizedBlockRecord record;
+        try {
+            record = consensus::FinalizedBlockRecord::deserialize(
+                item.serializedFinalizedRecord()
+            );
+        } catch (const std::exception& error) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Failed to deserialize FinalizedBlockRecord at height " +
+                    std::to_string(item.height()) + ": " + error.what(),
+                std::nullopt
+            );
+        }
+
+        if (record.blockHash() != item.blockHash()) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "FinalizedBlockRecord blockHash does not match sync item blockHash at height " +
+                    std::to_string(item.height()) + ".",
+                std::nullopt
+            );
+        }
+
+        if (!record.verify(validatorRegistry, policy, provider)) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "QuorumCertificate verification failed for block at height " +
+                    std::to_string(item.height()) + ".",
+                std::nullopt
+            );
+        }
     }
 
     // Phase 2: full protocol commitment validation for each block.
@@ -959,7 +1036,38 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
         }
     }
 
-    return qcResult;
+    const PersistentBlockSyncItem* last = batch.lastItem();
+    if (last == nullptr) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Batch has no final item.",
+            std::nullopt
+        );
+    }
+
+    PersistentSyncCheckpoint updatedCheckpoint(
+        PersistentSyncCheckpoint::SCHEMA_VERSION,
+        last->height(),
+        last->blockHash(),
+        last->finalizedStateRoot(),
+        PersistentSyncStatus::COMPLETE,
+        batch.sourcePeerId(),
+        now
+    );
+
+    if (!updatedCheckpoint.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Updated checkpoint would be invalid.",
+            std::nullopt
+        );
+    }
+
+    return PersistentSyncApplyResult(
+        PersistentSyncApplyStatus::APPLIED,
+        "Protocol-commitment block sync batch advanced the durable checkpoint.",
+        updatedCheckpoint
+    );
 }
 
 PersistentSyncApplyResult PersistentBlockStateSyncApplier::applySnapshotManifest(

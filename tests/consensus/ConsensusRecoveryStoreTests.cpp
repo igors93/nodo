@@ -1,5 +1,6 @@
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ConsensusRoundManager.hpp"
+#include "storage/AtomicFile.hpp"
 
 #include <cassert>
 #include <filesystem>
@@ -103,6 +104,55 @@ int main() {
     // Test 5: remove and confirm gone.
     assert(nodo::consensus::ConsensusRecoveryStore::remove(path));
     assert(!nodo::consensus::ConsensusRecoveryStore::load(path).has_value());
+
+    // Test 6: atomic write — no temporary file is left behind after a
+    // successful save.  AtomicFile renames .tmp.* → final before returning,
+    // so no leftover with the temporary-file naming convention should exist.
+    // Uses an isolated subdirectory so that unrelated system temp files in
+    // the OS temp directory do not cause false failures on Windows.
+    {
+        const std::filesystem::path isolatedDir =
+            std::filesystem::temp_directory_path()
+            / "nodo-consensus-recovery-atomic-test";
+        std::filesystem::create_directories(isolatedDir);
+        const std::filesystem::path isolatedPath =
+            isolatedDir / "recovery.state";
+
+        const nodo::consensus::ConsensusRoundState state(
+            99, 1, "validator-d", 1900000010
+        );
+        assert(nodo::consensus::ConsensusRecoveryStore::save(isolatedPath, state));
+        assert(std::filesystem::exists(isolatedPath));
+
+        const auto temporaryFiles =
+            nodo::storage::AtomicFile::listTemporaryWriteFiles(isolatedDir);
+        assert(temporaryFiles.empty());
+
+        std::error_code cleanupError2;
+        std::filesystem::remove_all(isolatedDir, cleanupError2);
+    }
+
+    // Test 7: serialisation round-trip produces identical content on repeated
+    // saves (determinism requirement).
+    {
+        const nodo::consensus::ConsensusRoundState state(
+            55, 2, "validator-e", 1900000020, "deadbeef", 2, true, true
+        );
+        assert(nodo::consensus::ConsensusRecoveryStore::save(path, state));
+        const auto first = nodo::consensus::ConsensusRecoveryStore::load(path);
+        assert(nodo::consensus::ConsensusRecoveryStore::save(path, state));
+        const auto second = nodo::consensus::ConsensusRecoveryStore::load(path);
+
+        assert(first.has_value() && second.has_value());
+        assert(first->height()          == second->height());
+        assert(first->round()           == second->round());
+        assert(first->lockedBlockHash() == second->lockedBlockHash());
+        assert(first->votedPrevote()    == second->votedPrevote());
+        assert(first->votedPrecommit()  == second->votedPrecommit());
+
+        std::error_code cleanupError3;
+        std::filesystem::remove(path, cleanupError3);
+    }
 
     return 0;
 }

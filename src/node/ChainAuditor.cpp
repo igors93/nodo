@@ -21,6 +21,8 @@
 #include "node/RuntimeStateVerifier.hpp"
 
 #include <filesystem>
+#include <set>
+#include <utility>
 
 namespace nodo::node {
 
@@ -248,6 +250,136 @@ ChainAuditResult auditImpl(
             return ChainAuditResult::failed(
                 "chain audit: treasury section audit failed: " + treasuryAudit.reason()
             );
+        }
+
+        // Per-record integrity verification across all loaded artifacts.
+        //
+        // These checks catch tampering that aggregate-supply audits miss:
+        // duplicate slash evidence, counts inconsistent with summaries, and
+        // structurally invalid reward or lifecycle records.
+
+        // A. Cross-artifact slash evidence deduplication.
+        // The same (validatorAddress, blockHeight) pair must not appear in more
+        // than one artifact — that would mean the same misbehaviour was used to
+        // slash twice.
+        {
+            std::set<std::pair<std::string, std::uint64_t>> seenSlashEvidence;
+            for (const auto& artifact : load.loadedArtifacts()) {
+                for (const auto& record : artifact.slashingEvidenceRecords()) {
+                    const auto key = std::make_pair(
+                        record.validatorAddress(),
+                        record.blockHeight()
+                    );
+                    if (!seenSlashEvidence.insert(key).second) {
+                        return ChainAuditResult::failed(
+                            "chain audit: duplicate slash evidence for validator " +
+                            record.validatorAddress() + " at height " +
+                            std::to_string(record.blockHeight()) +
+                            " detected in artifact at block " +
+                            std::to_string(artifact.block().index()) +
+                            ". The same misbehaviour record must not appear in "
+                            "more than one finalized artifact."
+                        );
+                    }
+                }
+            }
+        }
+
+        // B. Intra-artifact slash evidence summary consistency.
+        // The summary's evidenceCount must equal the number of actual records and
+        // slashableEvidenceCount must not exceed evidenceCount.
+        for (const auto& artifact : load.loadedArtifacts()) {
+            const auto& summary = artifact.slashingEvidenceSummary();
+            if (!summary.active()) {
+                continue;
+            }
+
+            const auto actualEvidenceCount =
+                static_cast<std::uint64_t>(artifact.slashingEvidenceRecords().size());
+
+            if (summary.evidenceCount() != actualEvidenceCount) {
+                return ChainAuditResult::failed(
+                    "chain audit: slash evidence summary count mismatch at block " +
+                    std::to_string(artifact.block().index()) +
+                    ": summary declares " + std::to_string(summary.evidenceCount()) +
+                    " evidence records but " + std::to_string(actualEvidenceCount) +
+                    " are present in the artifact."
+                );
+            }
+
+            if (summary.slashableEvidenceCount() > summary.evidenceCount()) {
+                return ChainAuditResult::failed(
+                    "chain audit: slash evidence summary at block " +
+                    std::to_string(artifact.block().index()) +
+                    " claims more slashable records (" +
+                    std::to_string(summary.slashableEvidenceCount()) +
+                    ") than total evidence records (" +
+                    std::to_string(summary.evidenceCount()) + ")."
+                );
+            }
+        }
+
+        // C. Intra-artifact validator lifecycle summary consistency.
+        // active + jailed + slashed counts in the summary must equal the total
+        // number of ValidatorLifecycleRecord entries in the same artifact.
+        for (const auto& artifact : load.loadedArtifacts()) {
+            const auto& lifecycleSummary = artifact.validatorLifecycleSummary();
+            if (!lifecycleSummary.active()) {
+                continue;
+            }
+
+            const std::uint64_t summaryTotal =
+                lifecycleSummary.activeValidatorCount() +
+                lifecycleSummary.jailedValidatorCount() +
+                lifecycleSummary.slashedValidatorCount();
+
+            const auto recordCount =
+                static_cast<std::uint64_t>(artifact.validatorLifecycleRecords().size());
+
+            if (summaryTotal != recordCount) {
+                return ChainAuditResult::failed(
+                    "chain audit: validator lifecycle summary count mismatch at block " +
+                    std::to_string(artifact.block().index()) +
+                    ": active(" +
+                    std::to_string(lifecycleSummary.activeValidatorCount()) +
+                    ") + jailed(" +
+                    std::to_string(lifecycleSummary.jailedValidatorCount()) +
+                    ") + slashed(" +
+                    std::to_string(lifecycleSummary.slashedValidatorCount()) +
+                    ") = " + std::to_string(summaryTotal) +
+                    " but " + std::to_string(recordCount) +
+                    " lifecycle records are present."
+                );
+            }
+
+            // Each lifecycle record must be individually valid.
+            for (const auto& rec : artifact.validatorLifecycleRecords()) {
+                if (!rec.isValid()) {
+                    return ChainAuditResult::failed(
+                        "chain audit: invalid validator lifecycle record for " +
+                        rec.validatorAddress() + " at block " +
+                        std::to_string(artifact.block().index()) + "."
+                    );
+                }
+            }
+        }
+
+        // D. Intra-artifact reward distribution validity.
+        // Every RewardDistribution in each artifact must pass its own isValid()
+        // guard.  A structurally invalid distribution indicates tampering or a
+        // serialisation bug.
+        for (const auto& artifact : load.loadedArtifacts()) {
+            for (const auto& dist : artifact.rewardDistributions()) {
+                if (!dist.isValid()) {
+                    return ChainAuditResult::failed(
+                        "chain audit: structurally invalid reward distribution "
+                        "for validator " + dist.validatorAddress() +
+                        " at block " + std::to_string(artifact.block().index()) +
+                        ". Reward distributions must satisfy their own validity "
+                        "contract after deserialization."
+                    );
+                }
+            }
         }
 
         // Treasury report verification.

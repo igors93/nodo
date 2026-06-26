@@ -317,6 +317,122 @@ void testApplyValidatedBatchAcceptsBlockWithCorrectRoots() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Fast-path tests (first overload — no Blockchain, requires QC records)
+// ---------------------------------------------------------------------------
+
+void testFastPathRejectsMissingFinalizedRecord() {
+    const core::Blockchain blockchain = chainWithGenesis();
+    const core::ValidatorRegistry registry;
+    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+    const crypto::Bls12381SignatureProvider provider;
+
+    // Block without a serializedFinalizedRecord — fast path must reject this.
+    const core::Block block = buildBlockWithRealRoots(blockchain, 3);
+    const PersistentBlockSyncItem item(
+        1,
+        block.hash(),
+        blockchain.latestBlock().hash(),
+        block.serialize(),
+        "finalized-state-root-1",
+        kTimestamp + 1
+        // serializedFinalizedRecord intentionally omitted (defaults to "")
+    );
+    const PersistentBlockSyncBatch batch("peer-b", 1, 1, {item}, kTimestamp + 2);
+    const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
+
+    const PersistentSyncApplyResult result =
+        PersistentBlockStateSyncApplier::applyValidatedBatch(
+            checkpoint, batch, registry, policy, provider, kTimestamp + 3
+        );
+
+    requireCondition(
+        !result.applied(),
+        "Fast-path must reject item with missing FinalizedBlockRecord."
+    );
+    requireCondition(
+        result.status() == PersistentSyncApplyStatus::REJECTED,
+        "Fast-path rejection must have REJECTED status."
+    );
+    requireCondition(
+        result.reason().find("QuorumCertificate") != std::string::npos ||
+        result.reason().find("FinalizedBlockRecord") != std::string::npos,
+        "Fast-path rejection reason must mention the missing proof."
+    );
+}
+
+void testFastPathRejectsWhenAnyItemMissesFinalizedRecord() {
+    const core::Blockchain blockchain = chainWithGenesis();
+    const core::ValidatorRegistry registry;
+    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+    const crypto::Bls12381SignatureProvider provider;
+
+    // One item has an empty record, one has a non-empty placeholder.
+    // The fast path must reject the batch as soon as it hits the empty one.
+    const core::Block block = buildBlockWithRealRoots(blockchain, 4);
+    const PersistentBlockSyncItem itemWithRecord(
+        1,
+        block.hash(),
+        blockchain.latestBlock().hash(),
+        block.serialize(),
+        "finalized-state-root-1",
+        kTimestamp + 1,
+        "non-empty-placeholder-record"
+    );
+    const PersistentBlockSyncItem itemWithoutRecord(
+        2,
+        "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111",
+        block.hash(),
+        block.serialize(),
+        "finalized-state-root-2",
+        kTimestamp + 2
+        // serializedFinalizedRecord intentionally omitted
+    );
+    const PersistentBlockSyncBatch batch(
+        "peer-c", 1, 2, {itemWithRecord, itemWithoutRecord}, kTimestamp + 3
+    );
+    const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
+
+    const PersistentSyncApplyResult result =
+        PersistentBlockStateSyncApplier::applyValidatedBatch(
+            checkpoint, batch, registry, policy, provider, kTimestamp + 4
+        );
+
+    requireCondition(
+        !result.applied(),
+        "Fast-path must reject batch where any item is missing a FinalizedBlockRecord."
+    );
+}
+
+void testProtocolCommitmentStillAcceptsItemsWithoutFinalizedRecord() {
+    core::Blockchain blockchain = chainWithGenesis();
+    const core::ValidatorRegistry registry;
+    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+    const crypto::Bls12381SignatureProvider provider;
+
+    // Protocol-commitment mode verifies state roots from scratch; QC records
+    // are optional (verified as defence-in-depth only when present).
+    const core::Block goodBlock = buildBlockWithRealRoots(blockchain, 5);
+    const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
+    const PersistentBlockSyncBatch batch =
+        singleBlockBatch(goodBlock, blockchain.latestBlock().hash());
+
+    const PersistentSyncApplyResult result =
+        PersistentBlockStateSyncApplier::applyValidatedBatch(
+            checkpoint, batch, blockchain, registry, policy, provider, buildContext, kTimestamp + 3
+        );
+
+    requireCondition(
+        result.applied(),
+        "Protocol-commitment mode must accept batch without FinalizedBlockRecord "
+        "when state roots are correct."
+    );
+    requireCondition(
+        blockchain.size() == 2U,
+        "Blockchain must grow by one after successful protocol-commitment sync."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -326,6 +442,9 @@ int main() {
         testNoCheckpointAdvanceOnProtocolFailure();
         testApplyValidatedBatchRejectsNonCanonicalRoots();
         testApplyValidatedBatchAcceptsBlockWithCorrectRoots();
+        testFastPathRejectsMissingFinalizedRecord();
+        testFastPathRejectsWhenAnyItemMissesFinalizedRecord();
+        testProtocolCommitmentStillAcceptsItemsWithoutFinalizedRecord();
 
         std::cout << "PersistentSync protocol validation tests passed.\n";
         return 0;
