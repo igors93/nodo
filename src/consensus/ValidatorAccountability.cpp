@@ -13,11 +13,14 @@ bool isSafeScalar(const std::string& value, std::size_t maxSize = 512) {
     }
 
     for (const char character : value) {
-        if (character == '\n' ||
-            character == '\r' ||
-            character == '\t' ||
+        if (character == ';' ||
             character == '{' ||
-            character == '}') {
+            character == '}' ||
+            character == '[' ||
+            character == ']' ||
+            character == '\n' ||
+            character == '\r' ||
+            character == '\t') {
             return false;
         }
     }
