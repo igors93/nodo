@@ -590,10 +590,6 @@ std::vector<core::Transaction> Mempool::transactionsForBlock(
             auto nextNonce =
                 nextNonceBySender.find(transaction.fromAddress());
             if (nextNonce == nextNonceBySender.end()) {
-                if (!accountStateView.hasAccount(transaction.fromAddress())) {
-                    continue;
-                }
-
                 const core::AccountState account =
                     accountStateView.accountOrDefault(
                         transaction.fromAddress()
@@ -660,10 +656,6 @@ std::vector<core::Transaction> Mempool::transactionsForBlockByFee(
 
             auto nextNonce = nextNonceBySender.find(transaction.fromAddress());
             if (nextNonce == nextNonceBySender.end()) {
-                if (!accountStateView.hasAccount(transaction.fromAddress())) {
-                    continue;
-                }
-
                 const core::AccountState account =
                     accountStateView.accountOrDefault(
                         transaction.fromAddress()
