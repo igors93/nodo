@@ -370,10 +370,16 @@ MempoolAdmissionResult Mempool::admitTransaction(
             );
         }
 
-        // Enforce 10% minimum bump: incoming fee must be >= existing * 110 / 100
+        // Enforce 10% minimum bump: incoming fee must be >= existing * 110 / 100.
+        // Use __int128 to prevent signed overflow when existingFee is large.
         const std::int64_t existingFee = existingEntry->second.priorityFeeRaw();
+        const __int128 wideMinimum =
+            (static_cast<__int128>(existingFee) * REPLACEMENT_NUMERATOR)
+            / REPLACEMENT_DENOMINATOR;
         const std::int64_t minimumReplacementFee =
-            (existingFee * REPLACEMENT_NUMERATOR) / REPLACEMENT_DENOMINATOR;
+            wideMinimum > static_cast<__int128>(std::numeric_limits<std::int64_t>::max())
+                ? std::numeric_limits<std::int64_t>::max()
+                : static_cast<std::int64_t>(wideMinimum);
 
         if (transaction.fee().rawUnits() < minimumReplacementFee) {
             return MempoolAdmissionResult::rejected(
