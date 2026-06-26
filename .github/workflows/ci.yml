@@ -338,6 +338,9 @@ jobs:
           echo "--- status"
           ./build/nodo status        --data-dir "$DATA"
 
+          echo "--- tx submit"
+          ./build/nodo tx submit     --data-dir "$DATA"
+
           echo "--- block produce"
           ./build/nodo block produce --data-dir "$DATA"
 
