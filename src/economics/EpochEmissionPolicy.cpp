@@ -126,22 +126,10 @@ std::int64_t EpochEmissionPolicy::multiplyDivideRawUnits(
     const std::uint64_t raw =
         static_cast<std::uint64_t>(rawUnits);
 
-    const std::uint64_t quotient =
-        raw / denominator;
+    const __int128 result =
+        (static_cast<__int128>(raw) * numerator) / denominator;
 
-    const std::uint64_t remainder =
-        raw % denominator;
-
-    if (numerator != 0 &&
-        quotient > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) / numerator) {
-        throw std::overflow_error("Emission cap calculation overflow.");
-    }
-
-    const std::uint64_t result =
-        quotient * numerator +
-        (remainder * numerator) / denominator;
-
-    if (result > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+    if (result > static_cast<__int128>(std::numeric_limits<std::int64_t>::max())) {
         throw std::overflow_error("Emission cap calculation overflow.");
     }
 

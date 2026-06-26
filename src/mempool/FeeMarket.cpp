@@ -94,13 +94,23 @@ utils::Amount FeeMarket::estimateFee(
             // 1.0x — exactly base
             return utils::Amount::fromRawUnits(base);
 
-        case FeeUrgency::MEDIUM:
+        case FeeUrgency::MEDIUM: {
             // 1.1x — base * 110 / 100
-            return utils::Amount::fromRawUnits((base * 110) / 100);
+            const __int128 estimated = (static_cast<__int128>(base) * 110) / 100;
+            if (estimated > INT64_MAX) {
+                throw std::overflow_error("Fee estimation overflow.");
+            }
+            return utils::Amount::fromRawUnits(static_cast<std::int64_t>(estimated));
+        }
 
-        case FeeUrgency::HIGH:
+        case FeeUrgency::HIGH: {
             // 1.25x — base * 125 / 100
-            return utils::Amount::fromRawUnits((base * 125) / 100);
+            const __int128 estimated = (static_cast<__int128>(base) * 125) / 100;
+            if (estimated > INT64_MAX) {
+                throw std::overflow_error("Fee estimation overflow.");
+            }
+            return utils::Amount::fromRawUnits(static_cast<std::int64_t>(estimated));
+        }
 
         default:
             return utils::Amount::fromRawUnits(base);
