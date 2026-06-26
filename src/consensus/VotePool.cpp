@@ -364,4 +364,50 @@ QuorumCertificateBuildResult QuorumAssembly::tryBuildCertificate(
     );
 }
 
+void VotePool::prune(std::uint64_t currentHeight) {
+    for (auto it = m_votesByBlock.begin(); it != m_votesByBlock.end(); ) {
+        if (it->first.blockIndex() < currentHeight) {
+            it = m_votesByBlock.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = m_voteByValidatorHeightRound.begin(); it != m_voteByValidatorHeightRound.end(); ) {
+        if (it->second.blockIndex() < currentHeight) {
+            m_voteIds.erase(it->second.voteId());
+            it = m_voteByValidatorHeightRound.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = m_conflictingVotes.begin(); it != m_conflictingVotes.end(); ) {
+        if (it->blockIndex() < currentHeight) {
+            it = m_conflictingVotes.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = m_conflictingVoteCounts.begin(); it != m_conflictingVoteCounts.end(); ) {
+        const std::string& key = it->first;
+        std::size_t firstHash = key.find('#');
+        if (firstHash != std::string::npos) {
+            std::size_t secondHash = key.find('#', firstHash + 1);
+            if (secondHash != std::string::npos) {
+                std::string heightStr = key.substr(firstHash + 1, secondHash - firstHash - 1);
+                try {
+                    std::uint64_t height = std::stoull(heightStr);
+                    if (height < currentHeight) {
+                        it = m_conflictingVoteCounts.erase(it);
+                        continue;
+                    }
+                } catch (...) {}
+            }
+        }
+        ++it;
+    }
+}
+
 } // namespace nodo::consensus

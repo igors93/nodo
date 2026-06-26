@@ -141,6 +141,7 @@ public:
 
     std::size_t totalVoteCount() const;
     std::string serialize() const;
+    void prune(std::uint64_t currentHeight);
 
 private:
     std::map<VotePoolBlockKey, std::vector<ValidatorVoteRecord>> m_votesByBlock;

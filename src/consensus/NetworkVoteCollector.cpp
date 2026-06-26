@@ -47,6 +47,7 @@ NetworkVoteCollector::NetworkVoteCollector(
 void NetworkVoteCollector::setCurrentRound(std::uint64_t height, std::uint64_t round) {
     m_currentHeight = height;
     m_currentRound = round;
+    m_pool.prune(height);
 }
 
 std::uint64_t NetworkVoteCollector::currentHeight() const { return m_currentHeight; }
