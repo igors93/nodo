@@ -101,6 +101,7 @@ private:
     InboundMessagePolicy m_policy;
     std::map<std::string, std::int64_t> m_seenMessageIds;
     std::map<std::string, PeerWindowCounter> m_messagesByPeerInWindow;
+    std::int64_t m_lastPruneTime;
 
     void pruneExpiredState(std::int64_t now);
 };

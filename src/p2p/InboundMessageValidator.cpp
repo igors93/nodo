@@ -84,7 +84,8 @@ bool InboundMessageResult::accepted() const { return m_status == InboundMessageS
 InboundMessageValidator::InboundMessageValidator(InboundMessagePolicy policy)
     : m_policy(policy),
       m_seenMessageIds(),
-      m_messagesByPeerInWindow() {}
+      m_messagesByPeerInWindow(),
+      m_lastPruneTime(0) {}
 
 InboundMessageResult InboundMessageValidator::validate(
     const NetworkEnvelope& envelope,
@@ -179,6 +180,11 @@ void InboundMessageValidator::pruneExpiredState(std::int64_t now) {
     if (now <= 0) {
         return;
     }
+
+    if (now - m_lastPruneTime < 5) {
+        return;
+    }
+    m_lastPruneTime = now;
 
     for (auto iterator = m_seenMessageIds.begin();
          iterator != m_seenMessageIds.end();) {
