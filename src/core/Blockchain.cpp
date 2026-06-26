@@ -85,7 +85,9 @@ bool Blockchain::canAppendBlock(const Block& block) const {
         return isValidGenesisBlock(block);
     }
 
-    return isValidNextBlock(latestBlock(), block);
+    // Protocol commitment enforcement is the validator's responsibility.
+    // canAppendBlock checks structural linkage only for the candidate.
+    return isValidNextBlock(latestBlock(), block, false);
 }
 
 std::string Blockchain::serialize() const {
@@ -130,13 +132,14 @@ bool Blockchain::isValidGenesisBlock(const Block& block) const {
 
 bool Blockchain::isValidNextBlock(
     const Block& previousBlock,
-    const Block& currentBlock
+    const Block& currentBlock,
+    bool requireProtocolCommitmentsForCurrentBlock
 ) const {
     if (!previousBlock.isValid()) {
         return false;
     }
 
-    if (!currentBlock.isValid()) {
+    if (!currentBlock.isValid(requireProtocolCommitmentsForCurrentBlock)) {
         return false;
     }
 

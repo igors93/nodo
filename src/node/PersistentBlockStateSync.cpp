@@ -898,8 +898,10 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
     const core::ValidatorRegistry& validatorRegistry,
     const crypto::CryptoPolicy& policy,
     const crypto::SignatureProvider& provider,
+    std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder,
     std::int64_t now
 ) {
+    // Phase 1: verify quorum-certificate signatures for all items in the batch.
     const PersistentSyncApplyResult qcResult = applyValidatedBatch(
         checkpoint, batch, validatorRegistry, policy, provider, now
     );
@@ -908,6 +910,10 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
         return qcResult;
     }
 
+    // Phase 2: full protocol commitment validation for each block.
+    // The context is rebuilt from the current chain state before each block so
+    // that stateRoot and receiptsRoot are computed against all previously
+    // applied blocks.  A single root mismatch aborts the entire batch.
     for (const auto& item : batch.items()) {
         std::optional<core::Block> blockOpt;
         try {
@@ -921,16 +927,21 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
             );
         }
 
+        const core::StateTransitionPreviewContext context =
+            contextBuilder(blockchain);
+
         const core::BlockValidationResult validation =
             core::BlockStateTransitionValidator::validateCandidateBlock(
                 blockchain,
-                blockOpt.value()
+                blockOpt.value(),
+                context
+                // defaults to BlockValidationMode::ProtocolCommitment
             );
 
         if (!validation.accepted()) {
             return PersistentSyncApplyResult(
                 PersistentSyncApplyStatus::REJECTED,
-                "Block state transition validation failed at height " +
+                "Block failed protocol commitment validation at height " +
                     std::to_string(item.height()) + ": " + validation.reason(),
                 std::nullopt
             );

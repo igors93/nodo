@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Manifest field scenarios — exhaustive validation of manifest.nodo parsing.
 
@@ -18,8 +16,10 @@ Category breakdown (subtests within each test method):
 Total effective scenarios: ~260+
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import tempfile
+from pathlib import Path
 
 from nodo_diag.base_test import NodoBaseTest
 from nodo_diag.filesystem_faults import (
@@ -35,17 +35,13 @@ from nodo_diag.generators import (
     bad_hash_values,
     bad_integer_values,
     bad_positive_integer_values,
-    known_hash_manifest_fields,
-    known_numeric_manifest_fields,
-    known_positive_numeric_manifest_fields,
     known_required_manifest_fields,
     unknown_field_names,
 )
 
-
 STATUS_FAILURE_TEXT = "Failed to read Nodo status"
 RELOAD_FAILURE_TEXT = "Failed to reload Nodo runtime"
-AUDIT_FAILURE_TEXT  = "chain audit"
+AUDIT_FAILURE_TEXT = "chain audit"
 
 
 class ManifestFieldScenarios(NodoBaseTest):
@@ -384,4 +380,5 @@ class ManifestFieldScenarios(NodoBaseTest):
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main(verbosity=2)

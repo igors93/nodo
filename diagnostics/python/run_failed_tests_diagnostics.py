@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from pathlib import Path
-from datetime import datetime, timezone
 import json
 import sys
+from datetime import datetime, timezone
 
 from nodo_diag.artifact_audit import audit_artifacts
 from nodo_diag.ctest_runner import (
     classify_output,
     extract_failure_windows,
-    focused_ctests,
     find_ctest_build_dir,
     find_repo_root,
+    focused_ctests,
     read_last_test_logs,
     run_failed_ctests,
 )
@@ -45,8 +44,11 @@ def make_markdown_report(report: dict) -> str:
     lines.append(f"- Loader allowed fields: `{source['allowed_fields_count']}`")
     lines.append(f"- Loader canonical fields: `{source['canonical_fields_count']}`")
     lines.append(f"- Governance fields present: `{source['governance_fields_present']}`")
-    lines.append(f"- Protection reward fields present: `{source['protection_reward_fields_present']}`")
-    lines.append(f"- Cryptographic slashing fields present: `{source['cryptographic_slashing_fields_present']}`")
+    lines.append(
+        f"- Protection reward fields present: `{source['protection_reward_fields_present']}`"
+    )
+    key = "cryptographic_slashing_fields_present"
+    lines.append(f"- Cryptographic slashing fields present: `{source[key]}`")
     lines.append(f"- Fee economics fields present: `{source['fee_economics_fields_present']}`")
     lines.append(f"- Monetary fields present: `{source['monetary_fields_present']}`")
     lines.append("")
@@ -68,7 +70,9 @@ def make_markdown_report(report: dict) -> str:
     lines.append("## Artifact audit")
     lines.append("")
     if not report["artifact_findings"]:
-        lines.append("No finalized block artifact problems were found in files that still exist on disk.")
+        lines.append(
+            "No finalized block artifact problems were found in files that still exist on disk."
+        )
     else:
         for finding in report["artifact_findings"]:
             lines.append(
@@ -100,10 +104,22 @@ def make_markdown_report(report: dict) -> str:
 
     lines.append("## Recommended next checks")
     lines.append("")
-    lines.append("1. If a field appears in `persisted_not_allowed`, add it to RuntimeStateLoader allowed fields.")
-    lines.append("2. If a field appears in `persisted_not_canonical`, add it to RuntimeStateLoader canonical reconstruction.")
-    lines.append("3. If the failing output says `should persist`, compare FinalizedBlockStore fields with the test expectation.")
-    lines.append("4. If CLI tests fail after node tests, fix node persistence/reload first; CLI failures are often downstream.")
+    lines.append(
+        "1. If a field appears in `persisted_not_allowed`, "
+        "add it to RuntimeStateLoader allowed fields."
+    )
+    lines.append(
+        "2. If a field appears in `persisted_not_canonical`, "
+        "add it to RuntimeStateLoader canonical reconstruction."
+    )
+    lines.append(
+        "3. If the failing output says `should persist`, "
+        "compare FinalizedBlockStore fields with the test expectation."
+    )
+    lines.append(
+        "4. If CLI tests fail after node tests, fix node persistence/reload first; "
+        "CLI failures are often downstream."
+    )
     lines.append("")
 
     return "\n".join(lines)
@@ -128,7 +144,9 @@ def main() -> int:
         combined = result.stdout + "\n" + result.stderr
         data = result.to_dict()
         data["classifications"] = classify_output(combined) if result.returncode != 0 else []
-        data["failure_windows"] = extract_failure_windows(combined) if result.returncode != 0 else []
+        data["failure_windows"] = (
+            extract_failure_windows(combined) if result.returncode != 0 else []
+        )
         ctest_results.append(data)
 
     logs = read_last_test_logs(build_dir)
@@ -150,7 +168,7 @@ def main() -> int:
     json_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     md_path.write_text(make_markdown_report(report), encoding="utf-8")
 
-    print(f"Diagnostic report written:")
+    print("Diagnostic report written:")
     print(f"- {md_path}")
     print(f"- {json_path}")
 

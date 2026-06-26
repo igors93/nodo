@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Security-focused input scenarios.
 
@@ -26,8 +24,10 @@ Category breakdown:
   - Binary / control chars in args: 6 subtests
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import tempfile
+from pathlib import Path
 
 from nodo_diag.base_test import NodoBaseTest
 from nodo_diag.cli_runner import run_nodo
@@ -107,8 +107,10 @@ class VeryLongValueScenarios(NodoBaseTest):
                     result = run_nodo(
                         [
                             "status",
-                            "--network", long_value,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "--network",
+                            long_value,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -177,8 +179,10 @@ class UnicodeInputScenarios(NodoBaseTest):
                     result = run_nodo(
                         [
                             "status",
-                            "--network", value,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "--network",
+                            value,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -234,13 +238,11 @@ class DangerousKeyIdScenarios(NodoBaseTest):
                     if result.returncode == 0:
                         # If the binary accepted the key, nothing should have escaped.
                         above_data_dir = data_dir.parent.parent
-                        suspicious = list(above_data_dir.rglob("*.key")) + \
-                                     list(above_data_dir.rglob("*.pem"))
+                        suspicious = list(above_data_dir.rglob("*.key")) + list(
+                            above_data_dir.rglob("*.pem")
+                        )
                         # Filter to exclude the data_dir itself
-                        suspicious = [
-                            f for f in suspicious
-                            if not str(f).startswith(str(data_dir))
-                        ]
+                        suspicious = [f for f in suspicious if not str(f).startswith(str(data_dir))]
                         self.assertEqual(
                             suspicious,
                             [],
@@ -285,4 +287,5 @@ class RepetitiveOperationScenarios(NodoBaseTest):
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main(verbosity=2)

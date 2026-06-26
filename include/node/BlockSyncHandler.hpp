@@ -2,9 +2,11 @@
 #define NODO_NODE_BLOCK_SYNC_HANDLER_HPP
 
 #include "core/Blockchain.hpp"
+#include "core/StateTransitionPreviewContext.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "p2p/GossipMesh.hpp"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -49,10 +51,20 @@ public:
      * Called on the REQUESTING node: process BLOCK_RESPONSE messages,
      * apply received blocks to local blockchain in order.
      * Returns number of blocks applied.
+     *
+     * contextBuilder is called once per block, BEFORE the block is validated,
+     * with the current blockchain state (which grows after each successfully
+     * applied block).  It must return a real StateTransitionPreviewContext
+     * so that stateRoot and receiptsRoot can be recomputed and compared to
+     * the block's declared commitments (ProtocolCommitment mode).
+     *
+     * If any block fails validation the entire remaining batch is discarded;
+     * the function returns the count of blocks successfully applied so far.
      */
     static std::size_t applyResponses(
         p2p::GossipMesh&  gossip,
         core::Blockchain& blockchain,
+        std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder,
         std::int64_t      now
     );
 

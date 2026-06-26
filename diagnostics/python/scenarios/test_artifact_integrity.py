@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Artifact integrity and treasury report digest scenarios.
 
@@ -19,14 +17,15 @@ Category breakdown:
   - Repeated audit stability: 3 tests
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import tempfile
+from pathlib import Path
 
 from nodo_diag.base_test import NodoBaseTest
 from nodo_diag.filesystem_faults import (
     manifest_path,
     replace_key_value,
-    write_text,
 )
 
 
@@ -189,7 +188,9 @@ class ArtifactIntegrityRegressionGuards(NodoBaseTest):
             for i in range(3):
                 with self.subTest(iteration=i):
                     result = self.run_chain_audit(data_dir)
-                    self.assertSucceeded(result, msg=f"Audit #{i+1} must succeed (stability guard)")
+                    self.assertSucceeded(
+                        result, msg=f"Audit #{i + 1} must succeed (stability guard)"
+                    )
 
 
 class ManifestHeightMismatchScenarios(NodoBaseTest):
@@ -201,9 +202,9 @@ class ManifestHeightMismatchScenarios(NodoBaseTest):
     """
 
     HEIGHT_VARIANTS = [
-        ("height_1",   "1"),
-        ("height_2",   "2"),
-        ("height_10",  "10"),
+        ("height_1", "1"),
+        ("height_2", "2"),
+        ("height_10", "10"),
         ("height_100", "100"),
     ]
 
@@ -232,4 +233,5 @@ class ManifestHeightMismatchScenarios(NodoBaseTest):
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main(verbosity=2)

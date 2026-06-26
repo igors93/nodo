@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Block file and block-reference corruption scenarios.
 
@@ -20,44 +18,45 @@ Category breakdown:
   - Combined manifest + block file corruption: 4 tests
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import tempfile
+from pathlib import Path
 
 from nodo_diag.base_test import NodoBaseTest
 from nodo_diag.filesystem_faults import (
+    append_key_value,
     manifest_path,
     replace_key_value,
-    append_key_value,
     write_text,
 )
 
-
 RELOAD_FAILURE_TEXT = "Failed to reload Nodo runtime"
-AUDIT_FAILURE_TEXT  = "chain audit"
+AUDIT_FAILURE_TEXT = "chain audit"
 
 
 # Heights that claim non-existent blocks (genesis is height 0).
 BAD_BLOCK_HEIGHTS = [
-    ("height_1",        "1"),
-    ("height_2",        "2"),
-    ("height_10",       "10"),
-    ("height_100",      "100"),
-    ("height_999",      "999"),
-    ("height_max_int",  "2147483647"),
-    ("height_huge",     "9999999999"),
+    ("height_1", "1"),
+    ("height_2", "2"),
+    ("height_10", "10"),
+    ("height_100", "100"),
+    ("height_999", "999"),
+    ("height_max_int", "2147483647"),
+    ("height_huge", "9999999999"),
     ("height_overflow", "9" * 19),
 ]
 
 # Heights that are syntactically bad (parser must reject before trying to load blocks).
 SYNTACTICALLY_BAD_HEIGHTS = [
-    ("neg_1",       "-1"),
-    ("neg_large",   "-9999"),
-    ("float",       "1.5"),
-    ("nan",         "NaN"),
-    ("text",        "not-a-height"),
-    ("empty",       ""),
-    ("hex",         "0xFF"),
-    ("overflow",    "9" * 25),
+    ("neg_1", "-1"),
+    ("neg_large", "-9999"),
+    ("float", "1.5"),
+    ("nan", "NaN"),
+    ("text", "not-a-height"),
+    ("empty", ""),
+    ("hex", "0xFF"),
+    ("overflow", "9" * 25),
 ]
 
 
@@ -311,4 +310,5 @@ class FakeBlockFileScenarios(NodoBaseTest):
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main(verbosity=2)

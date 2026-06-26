@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-import re
+from typing import Any
 
 
 @dataclass
@@ -13,7 +13,7 @@ class ArtifactFinding:
     value: str
     problem: str
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -61,7 +61,10 @@ def audit_artifacts(repo_root: Path) -> list[ArtifactFinding]:
     required_groups = {
         "monetary": ["monetaryFirewallStatus", "monetary.reason"],
         "fee": ["feeEconomicBalanceStatus", "feeBalance.reason"],
-        "protection_rewards": ["protectionRewardSummaryStatus", "protectionSummary.reason"],
+        "protection_rewards": [
+            "protectionRewardSummaryStatus",
+            "protectionSummary.reason",
+        ],
         "cryptographic_slashing": [
             "cryptographicSlashingSummaryStatus",
             "cryptographicSlashingSummary.sourcePenaltyDigest",

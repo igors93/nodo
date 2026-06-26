@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Chain audit and runtime reload edge case scenarios.
 
@@ -20,14 +18,16 @@ Category breakdown:
   - Error message informativeness: 6 tests
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import tempfile
+from pathlib import Path
 
 from nodo_diag.base_test import NodoBaseTest
 from nodo_diag.filesystem_faults import (
+    append_key_value,
     manifest_path,
     replace_key_value,
-    append_key_value,
 )
 
 
@@ -79,14 +79,14 @@ class IdempotencyScenarios(NodoBaseTest):
             data_dir = self.init_localnet(Path(tmp))
             for i in range(3):
                 result = self.run_reload(data_dir)
-                self.assertSucceeded(result, msg=f"Reload #{i+1} must succeed")
+                self.assertSucceeded(result, msg=f"Reload #{i + 1} must succeed")
 
     def test_audit_then_audit_again_both_succeed(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nodo_ae_ca2_") as tmp:
             data_dir = self.init_localnet(Path(tmp))
             for i in range(3):
                 result = self.run_chain_audit(data_dir)
-                self.assertSucceeded(result, msg=f"Audit #{i+1} must succeed")
+                self.assertSucceeded(result, msg=f"Audit #{i + 1} must succeed")
 
 
 class SequentialOperationScenarios(NodoBaseTest):
@@ -118,17 +118,17 @@ class SequentialOperationScenarios(NodoBaseTest):
         with tempfile.TemporaryDirectory(prefix="nodo_ae_seq4_") as tmp:
             data_dir = self.init_localnet(Path(tmp))
 
-            self.assertSucceeded(self.run_status(data_dir),      msg="status 1")
-            self.assertSucceeded(self.run_reload(data_dir),      msg="reload")
+            self.assertSucceeded(self.run_status(data_dir), msg="status 1")
+            self.assertSucceeded(self.run_reload(data_dir), msg="reload")
             self.assertSucceeded(self.run_chain_audit(data_dir), msg="audit")
-            self.assertSucceeded(self.run_status(data_dir),      msg="status 2")
+            self.assertSucceeded(self.run_status(data_dir), msg="status 2")
 
     def test_multiple_reloads_interleaved_with_audits(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nodo_ae_seq5_") as tmp:
             data_dir = self.init_localnet(Path(tmp))
 
             for i in range(2):
-                self.assertSucceeded(self.run_reload(data_dir),      msg=f"reload {i}")
+                self.assertSucceeded(self.run_reload(data_dir), msg=f"reload {i}")
                 self.assertSucceeded(self.run_chain_audit(data_dir), msg=f"audit {i}")
 
     def test_keys_create_then_reload_then_audit(self) -> None:
@@ -138,7 +138,7 @@ class SequentialOperationScenarios(NodoBaseTest):
                 self.run_keys_create(data_dir),
                 msg="keys create",
             )
-            self.assertSucceeded(self.run_reload(data_dir),      msg="reload after key create")
+            self.assertSucceeded(self.run_reload(data_dir), msg="reload after key create")
             self.assertSucceeded(self.run_chain_audit(data_dir), msg="audit after key create")
 
 
@@ -162,7 +162,9 @@ class PostCorruptionDetectionScenarios(NodoBaseTest):
         with tempfile.TemporaryDirectory(prefix="nodo_ae_pc_ca_") as tmp:
             data_dir = self.init_localnet(Path(tmp))
 
-            self.assertSucceeded(self.run_chain_audit(data_dir), msg="clean audit before corruption")
+            self.assertSucceeded(
+                self.run_chain_audit(data_dir), msg="clean audit before corruption"
+            )
 
             replace_key_value(manifest_path(data_dir), "latestStateRoot", "corrupted-by-test")
 
@@ -184,7 +186,9 @@ class PostCorruptionDetectionScenarios(NodoBaseTest):
             self.assertNotTimedOut(result)
             self.assertNoSegfault(result)
 
-    def test_unknown_field_injected_after_reload_causes_next_reload_to_fail(self) -> None:
+    def test_unknown_field_injected_after_reload_causes_next_reload_to_fail(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory(prefix="nodo_ae_pc_unk_") as tmp:
             data_dir = self.init_localnet(Path(tmp))
 
@@ -204,10 +208,10 @@ class PostCorruptionDetectionScenarios(NodoBaseTest):
             replace_key_value(manifest_path(data_dir), "genesisConfigId", "wrong-genesis-id")
 
             reload_result = self.run_reload(data_dir)
-            audit_result  = self.run_chain_audit(data_dir)
+            audit_result = self.run_chain_audit(data_dir)
 
             self.assertFailed(reload_result, msg="reload must detect genesis corruption")
-            self.assertFailed(audit_result,  msg="audit must detect genesis corruption")
+            self.assertFailed(audit_result, msg="audit must detect genesis corruption")
 
     def test_height_mismatch_detected_by_both_reload_and_audit(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nodo_ae_pc_height_") as tmp:
@@ -216,10 +220,10 @@ class PostCorruptionDetectionScenarios(NodoBaseTest):
             replace_key_value(manifest_path(data_dir), "latestBlockHeight", "999")
 
             reload_result = self.run_reload(data_dir)
-            audit_result  = self.run_chain_audit(data_dir)
+            audit_result = self.run_chain_audit(data_dir)
 
             self.assertFailed(reload_result, msg="reload must detect height mismatch")
-            self.assertFailed(audit_result,  msg="audit must detect height mismatch")
+            self.assertFailed(audit_result, msg="audit must detect height mismatch")
 
 
 class ReloadSuccessMessageScenarios(NodoBaseTest):
@@ -273,4 +277,5 @@ class ReloadSuccessMessageScenarios(NodoBaseTest):
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main(verbosity=2)

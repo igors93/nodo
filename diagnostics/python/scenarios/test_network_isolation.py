@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Network isolation and boundary scenarios.
 
@@ -20,13 +18,14 @@ Category breakdown:
   - Official vs localnet boundary: 6 tests
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import tempfile
+from pathlib import Path
 
 from nodo_diag.base_test import NodoBaseTest
 from nodo_diag.cli_runner import run_nodo
 from nodo_diag.generators import official_networks
-
 
 NETWORK_MISMATCH_TEXT = "Data directory belongs to network"
 
@@ -167,7 +166,9 @@ class NetworkReadinessIsolationScenarios(NodoBaseTest):
             )
             self.assertFailedWithText(result, NETWORK_MISMATCH_TEXT)
 
-    def test_testnet_readiness_rejects_all_official_networks_on_localnet_data(self) -> None:
+    def test_testnet_readiness_rejects_all_official_networks_on_localnet_data(
+        self,
+    ) -> None:
         for network in official_networks():
             with self.subTest(network=network):
                 with tempfile.TemporaryDirectory(prefix=f"nodo_ni_ready_{network[:6]}_") as tmp:
@@ -193,8 +194,10 @@ class NetworkDemoCommandIsolationScenarios(NodoBaseTest):
                     result = run_nodo(
                         [
                             "demo",
-                            "--network", network,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "--network",
+                            network,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -211,8 +214,10 @@ class NetworkDemoCommandIsolationScenarios(NodoBaseTest):
                         [
                             "block",
                             "produce",
-                            "--network", network,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "--network",
+                            network,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -222,10 +227,11 @@ class NetworkDemoCommandIsolationScenarios(NodoBaseTest):
                     if not result.succeeded:
                         self.assertFalse(
                             "not permitted on official network" in (result.stderr or ""),
-                            "Canonical 'block produce' must not be blocked by policy."
+                            "Canonical 'block produce' must not be blocked by policy.",
                         )
 
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main(verbosity=2)

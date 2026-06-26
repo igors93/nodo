@@ -5,11 +5,11 @@ import unittest
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-_PYTHON_ROOT = _HERE.parent
-if str(_PYTHON_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PYTHON_ROOT))
+_SRC = _HERE.parent / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-from nodo_diag.ctest_runner import (
+from nodo_diag.ctest_runner import (  # noqa: E402
     DEFAULT_FOCUSED_TESTS,
     find_ctest_build_dir,
     find_repo_root,

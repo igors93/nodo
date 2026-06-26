@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from pathlib import Path
 import os
 import re
 import shutil
 import subprocess
 import time
-from typing import Iterable
-
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Iterable
 
 DEFAULT_FOCUSED_TESTS = [
     "app_CommandLineLocalFlowTests",
@@ -28,7 +27,7 @@ class CommandResult:
     stdout: str
     stderr: str
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -208,11 +207,17 @@ def read_last_test_logs(build_dir: Path) -> dict[str, str]:
 def classify_output(text: str) -> list[str]:
     patterns = {
         "empty_key_value_field": r"Empty value for key-value field",
-        "unknown_key_value_field": r"Unknown key-value field|Unexpected key-value field|not allowed",
+        "unknown_key_value_field": (
+            r"Unknown key-value field|Unexpected key-value field|not allowed"
+        ),
         "finalized_block_persist_failure": r"Finalized block file should persist",
-        "runtime_pipeline_not_finalized": r"Runtime block pipeline.*not finalized|Pipeline should finalize",
+        "runtime_pipeline_not_finalized": (
+            r"Runtime block pipeline.*not finalized|Pipeline should finalize"
+        ),
         "reward_split_mismatch": r"reward.*does not match|fee split|validator fee allocation",
-        "protection_reward_mismatch": r"protection reward|ProtectionReward|protectionWork|protectionSummary",
+        "protection_reward_mismatch": (
+            r"protection reward|ProtectionReward|protectionWork|protectionSummary"
+        ),
         "governance_mismatch": r"governance|Governance",
         "monetary_firewall_mismatch": r"monetary firewall|MonetaryFirewall|supply ledger",
         "slashing_mismatch": r"slashing|CryptographicSlashing|sourcePenaltyDigest",

@@ -1,6 +1,7 @@
 #include "node/BlockAnnounceHandler.hpp"
 
 #include "core/Block.hpp"
+#include "core/BlockStateTransitionValidator.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 #include "serialization/BlockCodec.hpp"
 
@@ -54,9 +55,10 @@ std::string blockAnnounceStatusToString(BlockAnnounceStatus status) {
 // ---------------------------------------------------------------------------
 
 std::vector<BlockAnnounceResult> BlockAnnounceHandler::processInbox(
-    p2p::GossipMesh&  gossip,
-    core::Blockchain& blockchain,
-    std::int64_t      /*now*/
+    p2p::GossipMesh&                           gossip,
+    core::Blockchain&                          blockchain,
+    const core::StateTransitionPreviewContext& validationContext,
+    std::int64_t                               /*now*/
 ) {
     std::vector<BlockAnnounceResult> results;
 
@@ -65,7 +67,7 @@ std::vector<BlockAnnounceResult> BlockAnnounceHandler::processInbox(
     );
 
     for (const auto& envelope : messages) {
-        results.push_back(processEnvelope(envelope, blockchain));
+        results.push_back(processEnvelope(envelope, blockchain, validationContext));
     }
 
     return results;
@@ -76,8 +78,9 @@ std::vector<BlockAnnounceResult> BlockAnnounceHandler::processInbox(
 // ---------------------------------------------------------------------------
 
 BlockAnnounceResult BlockAnnounceHandler::processEnvelope(
-    const p2p::NetworkEnvelope& envelope,
-    core::Blockchain&           blockchain
+    const p2p::NetworkEnvelope&                envelope,
+    core::Blockchain&                          blockchain,
+    const core::StateTransitionPreviewContext& validationContext
 ) {
     // Step 1: decode block from payload.
     auto maybeBlock = decodeBlock(envelope.payload());
@@ -102,27 +105,34 @@ BlockAnnounceResult BlockAnnounceHandler::processEnvelope(
         };
     }
 
-    // Step 3: structural validation.
-    if (!block.isValid()) {
+    // Step 3: Full protocol commitment validation.
+    // This checks canonical root format, parent linkage, and most importantly
+    // recomputes stateRoot and receiptsRoot from local account state, then
+    // compares them to the block's declared commitments.  A block is only
+    // accepted if every commitment matches the local execution result.
+    const core::BlockValidationResult validation =
+        core::BlockStateTransitionValidator::validateCandidateBlock(
+            blockchain,
+            block,
+            validationContext
+            // defaults to BlockValidationMode::ProtocolCommitment
+        );
+
+    if (!validation.accepted()) {
+        const BlockAnnounceStatus announceStatus =
+            (validation.status() == core::BlockValidationStatus::INVALID_PREVIOUS_HASH)
+            ? BlockAnnounceStatus::CANNOT_APPEND
+            : BlockAnnounceStatus::INVALID_BLOCK;
+
         return BlockAnnounceResult{
-            BlockAnnounceStatus::INVALID_BLOCK,
+            announceStatus,
             block.index(),
             block.hash(),
-            "Received block failed structural validation."
+            "Received block failed protocol commitment validation: " + validation.reason()
         };
     }
 
-    // Step 4: chain-append check.
-    if (!blockchain.canAppendBlock(block)) {
-        return BlockAnnounceResult{
-            BlockAnnounceStatus::CANNOT_APPEND,
-            block.index(),
-            block.hash(),
-            "Block cannot be appended to the current chain tip."
-        };
-    }
-
-    // Step 5: append.
+    // Step 4: append (only reached when all commitments verified).
     blockchain.addBlock(block);
 
     return BlockAnnounceResult{

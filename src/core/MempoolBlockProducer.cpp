@@ -334,6 +334,19 @@ BlockProductionResult produceCandidateBlockImpl(
         );
     }
 
+    // A non-genesis protocol block must be produced with a real AccountStateView.
+    // Without one, the state-transition preview runs on an empty account state and
+    // produces stateRoot/receiptsRoot values that do not match the real economic
+    // state.  Such a block would be rejected by every other validator and must
+    // never leave the producer as a finalized protocol block.
+    if (accountStateView == nullptr && plan.blockIndex() > 0) {
+        return BlockProductionResult::rejected(
+            BlockProductionStatus::BLOCK_AUDIT_FAILED,
+            "Cannot produce a non-genesis protocol block without AccountStateView: "
+            "stateRoot and receiptsRoot cannot be computed from real account state."
+        );
+    }
+
     Block draftBlock(
         plan.blockIndex(),
         plan.previousHash(),

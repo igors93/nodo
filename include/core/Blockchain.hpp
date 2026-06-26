@@ -48,7 +48,15 @@ private:
     std::vector<Block> m_blocks;
 
     bool isValidGenesisBlock(const Block& block) const;
-    bool isValidNextBlock(const Block& previousBlock, const Block& currentBlock) const;
+
+    // requireProtocolCommitmentsForCurrentBlock: when false, validates the
+    // current block structurally only (no canonical-root check). Used by
+    // canAppendBlock so that StructuralOnly candidates are not rejected.
+    bool isValidNextBlock(
+        const Block& previousBlock,
+        const Block& currentBlock,
+        bool requireProtocolCommitmentsForCurrentBlock = true
+    ) const;
 };
 
 } // namespace nodo::core

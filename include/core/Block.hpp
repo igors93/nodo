@@ -46,6 +46,17 @@ public:
     bool isValid(bool requireProtocolCommitments = true) const;
 
     /*
+     * Returns true if `root` is a canonical commitment hash: exactly 64
+     * lowercase hex characters, as produced by the SHA-256 hasher used
+     * throughout the protocol.  Rejects empty strings, known placeholder
+     * labels, and any non-hex input.
+     */
+    static bool isCanonicalCommitmentRoot(const std::string& root);
+
+    bool hasCanonicalStateRoot() const;
+    bool hasCanonicalReceiptsRoot() const;
+
+    /*
      * Deterministic representation of the block header.
      *
      * This payload excludes the final hash field.

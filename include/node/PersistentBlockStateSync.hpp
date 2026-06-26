@@ -2,6 +2,7 @@
 #define NODO_NODE_PERSISTENT_BLOCK_STATE_SYNC_HPP
 
 #include "core/Blockchain.hpp"
+#include "core/StateTransitionPreviewContext.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureProvider.hpp"
@@ -9,6 +10,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -316,6 +318,18 @@ public:
         std::int64_t now
     );
 
+    /*
+     * Full-protocol overload: deserializes each block, validates it against
+     * the local blockchain using BlockValidationMode::ProtocolCommitment
+     * (stateRoot and receiptsRoot are recomputed and compared to declared
+     * values), then adds accepted blocks to `blockchain`.
+     *
+     * `contextBuilder` is called before each block with the current blockchain
+     * state so the computed roots reflect all previously applied blocks.
+     *
+     * No block is added and no checkpoint is advanced if any protocol
+     * commitment check fails.
+     */
     static PersistentSyncApplyResult applyValidatedBatch(
         const PersistentSyncCheckpoint& checkpoint,
         const PersistentBlockSyncBatch& batch,
@@ -323,6 +337,7 @@ public:
         const core::ValidatorRegistry& validatorRegistry,
         const crypto::CryptoPolicy& policy,
         const crypto::SignatureProvider& provider,
+        std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder,
         std::int64_t now
     );
 

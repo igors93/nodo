@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Regression tests for known bug patterns in the Nodo runtime.
 
@@ -21,23 +19,25 @@ Categories:
   5. Key isolation: keys tied to one network must not cross to another
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import tempfile
+from pathlib import Path
 
 from nodo_diag.base_test import NodoBaseTest
 from nodo_diag.cli_runner import run_nodo
 from nodo_diag.filesystem_faults import (
+    append_key_value,
     manifest_path,
     remove_key_value_line,
     replace_key_value,
-    append_key_value,
 )
 from nodo_diag.generators import official_networks
-
 
 # ---------------------------------------------------------------------------
 # 1. CLI safety regressions
 # ---------------------------------------------------------------------------
+
 
 class CliSafetyRegressions(NodoBaseTest):
     """
@@ -51,8 +51,10 @@ class CliSafetyRegressions(NodoBaseTest):
             result = run_nodo(
                 [
                     "demo",
-                    "--network", "testnet-candidate",
-                    "--data-dir", str(Path(tmp) / "node-data"),
+                    "--network",
+                    "testnet-candidate",
+                    "--data-dir",
+                    str(Path(tmp) / "node-data"),
                 ],
                 repo_root=self.repo_root,
                 timeout_seconds=30,
@@ -70,9 +72,12 @@ class CliSafetyRegressions(NodoBaseTest):
                 with tempfile.TemporaryDirectory(prefix="nodo_reg_ready_") as tmp:
                     result = run_nodo(
                         [
-                            "testnet", "readiness",
-                            "--network", network,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "testnet",
+                            "readiness",
+                            "--network",
+                            network,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -90,8 +95,10 @@ class CliSafetyRegressions(NodoBaseTest):
                     result = run_nodo(
                         [
                             "diagnostics",
-                            "--network", network,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "--network",
+                            network,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -106,6 +113,7 @@ class CliSafetyRegressions(NodoBaseTest):
 # ---------------------------------------------------------------------------
 # 2. Monetary audit continuity regressions
 # ---------------------------------------------------------------------------
+
 
 class MonetaryAuditContinuityRegressions(NodoBaseTest):
     """
@@ -171,6 +179,7 @@ class MonetaryAuditContinuityRegressions(NodoBaseTest):
 # 3. Runtime state integrity regressions
 # ---------------------------------------------------------------------------
 
+
 class RuntimeStateIntegrityRegressions(NodoBaseTest):
     """
     The reload and status commands must always agree on the node state.
@@ -182,11 +191,16 @@ class RuntimeStateIntegrityRegressions(NodoBaseTest):
             data_dir = Path(tmp) / "not-initialized"
             result = run_nodo(
                 [
-                    "keys", "create",
-                    "--network", "localnet",
-                    "--data-dir", str(data_dir),
-                    "--type", "validator",
-                    "--key-id", "test",
+                    "keys",
+                    "create",
+                    "--network",
+                    "localnet",
+                    "--data-dir",
+                    str(data_dir),
+                    "--type",
+                    "validator",
+                    "--key-id",
+                    "test",
                 ],
                 repo_root=self.repo_root,
                 timeout_seconds=30,
@@ -212,12 +226,15 @@ class RuntimeStateIntegrityRegressions(NodoBaseTest):
         with tempfile.TemporaryDirectory(prefix="nodo_reg_rsi_3_") as tmp:
             data_dir = self.init_localnet(Path(tmp))
             result = self.run_reload(data_dir, network="testnet-candidate")
-            self.assertFailed(result, msg="Regression: network boundary check in reload was removed")
+            self.assertFailed(
+                result, msg="Regression: network boundary check in reload was removed"
+            )
 
 
 # ---------------------------------------------------------------------------
 # 4. Storage corruption detection regressions
 # ---------------------------------------------------------------------------
+
 
 class StorageCorruptionDetectionRegressions(NodoBaseTest):
     """
@@ -271,6 +288,7 @@ class StorageCorruptionDetectionRegressions(NodoBaseTest):
 
     def test_non_canonical_manifest_still_causes_status_failure(self) -> None:
         from nodo_diag.filesystem_faults import break_file_canonical_order
+
         with tempfile.TemporaryDirectory(prefix="nodo_reg_scd_5_") as tmp:
             data_dir = self.init_localnet(Path(tmp))
             break_file_canonical_order(manifest_path(data_dir))
@@ -330,6 +348,7 @@ class StorageCorruptionDetectionRegressions(NodoBaseTest):
 # 5. Key isolation regressions
 # ---------------------------------------------------------------------------
 
+
 class KeyIsolationRegressions(NodoBaseTest):
     """Keys must remain isolated to their network."""
 
@@ -354,8 +373,10 @@ class KeyIsolationRegressions(NodoBaseTest):
         with tempfile.TemporaryDirectory(prefix="nodo_reg_ki_2_") as tmp:
             data_dir = self.init_localnet(Path(tmp))
             self.run_keys_create(
-                data_dir, network="localnet",
-                key_type="validator", key_id="my-validator",
+                data_dir,
+                network="localnet",
+                key_type="validator",
+                key_id="my-validator",
             )
             result = self.run_keys_list(data_dir)
             self.assertSucceeded(result, msg="Keys list must succeed after key creation")
@@ -363,4 +384,5 @@ class KeyIsolationRegressions(NodoBaseTest):
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main(verbosity=2)

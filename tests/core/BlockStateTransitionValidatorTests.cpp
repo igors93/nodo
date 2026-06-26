@@ -530,16 +530,15 @@ void testRejectsBlockWithWrongStateRoot() {
     const core::Transaction tx =
         transaction("2");
 
-    // Both roots non-empty and non-placeholder so isValid(true) passes.
-    // stateRoot is deliberately wrong; receiptsRoot is a placeholder value
-    // not in the banned list, so the block passes structural isValid(true).
+    // Both roots have canonical 64-char lowercase hex format so isValid(true) passes.
+    // The stateRoot value is deliberately wrong so the validator detects the mismatch.
     const core::Block block(
         1,
         blockchain.latestBlock().hash(),
         {record(tx)},
         kTimestamp + 1,
-        "wrong-state-root",
-        "placeholder-receipts-for-wrong-root-test"
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+        "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe"
     );
 
     const core::BlockValidationResult result =
@@ -610,7 +609,7 @@ void testRejectsBlockWithWrongReceiptsRoot() {
         {record(tx)},
         kTimestamp + 1,
         previewResult.stateRoot(),
-        "wrong-receipts-root"
+        "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe"
     );
 
     const core::BlockValidationResult result =

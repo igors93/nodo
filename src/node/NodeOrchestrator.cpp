@@ -2,6 +2,7 @@
 
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposerSchedule.hpp"
+#include "core/StateTransitionPreviewContext.hpp"
 #include "crypto/Signer.hpp"
 #include "node/BlockAnnounceHandler.hpp"
 #include "node/BlockSyncHandler.hpp"
@@ -9,11 +10,13 @@
 #include "node/NodeDataDirectory.hpp"
 #include "node/PeerHandshakeAutoRegistrar.hpp"
 #include "node/PersistentBlockStateSync.hpp"
+#include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeStateLoader.hpp"
 
 #include <chrono>
 #include <filesystem>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -173,10 +176,34 @@ void NodeOrchestrator::tick(std::int64_t now) {
         now
     );
 
+    // Build a protocol validation context from the current chain state.
+    // This context is used to recompute stateRoot and receiptsRoot for each
+    // incoming block and compare them to the block's declared commitments.
+    // If context construction fails, fall back to a structural-only context so
+    // that all non-genesis blocks are rejected (safe degraded mode).
+    const std::uint64_t minFeeRaw =
+        m_runtime->config().genesisConfig().networkParameters().minimumFeeRawUnits();
+    const std::int64_t minFee =
+        (minFeeRaw > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+        ? std::numeric_limits<std::int64_t>::max()
+        : static_cast<std::int64_t>(minFeeRaw);
+
+    core::StateTransitionPreviewContext announceValidationContext;
+    try {
+        announceValidationContext = RuntimeAccountStateBuilder::previewContextAtTip(
+            m_runtime->config().genesisConfig(),
+            m_runtime->blockchain(),
+            minFee
+        );
+    } catch (...) {
+        announceValidationContext = core::StateTransitionPreviewContext::structuralOnly(minFee);
+    }
+
     // 3. Apply any incoming BLOCK_ANNOUNCE messages.
     BlockAnnounceHandler::processInbox(
         gossip,
         m_runtime->mutableBlockchain(),
+        announceValidationContext,
         now
     );
 
@@ -188,13 +215,28 @@ void NodeOrchestrator::tick(std::int64_t now) {
     );
 
     // 5. Apply any received BLOCK_RESPONSE messages.
+    // The context builder is called per-block so the state reflects all blocks
+    // applied so far in the batch.
     const std::uint64_t localHeight =
         m_runtime->blockchain().empty() ? 0
         : m_runtime->blockchain().latestBlock().index();
 
+    const config::GenesisConfig& genesisConfig = m_runtime->config().genesisConfig();
+
     BlockSyncHandler::applyResponses(
         gossip,
         m_runtime->mutableBlockchain(),
+        [&genesisConfig, minFee](const core::Blockchain& chain) -> core::StateTransitionPreviewContext {
+            try {
+                return RuntimeAccountStateBuilder::previewContextAtTip(
+                    genesisConfig,
+                    chain,
+                    minFee
+                );
+            } catch (...) {
+                return core::StateTransitionPreviewContext::structuralOnly(minFee);
+            }
+        },
         now
     );
 

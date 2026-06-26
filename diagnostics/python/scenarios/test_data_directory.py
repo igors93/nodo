@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Data directory edge case scenarios.
 
@@ -20,9 +18,11 @@ Category breakdown:
   - Path characters: 4 subtests
 """
 
+from __future__ import annotations
+
 import os
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from nodo_diag.base_test import NodoBaseTest
 from nodo_diag.cli_runner import run_nodo
@@ -235,7 +235,7 @@ class DataDirPathEdgeCaseScenarios(NodoBaseTest):
 
     def test_init_then_status_on_path_with_spaces(self) -> None:
         """Paths with spaces in directory names must work end-to-end."""
-        import platform
+
         # Use a temp directory with spaces in its name
         with tempfile.TemporaryDirectory(prefix="nodo dd spaces ") as tmp:
             data_dir = Path(tmp) / "node data"
@@ -254,4 +254,5 @@ class DataDirPathEdgeCaseScenarios(NodoBaseTest):
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main(verbosity=2)

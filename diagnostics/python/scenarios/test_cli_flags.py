@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 CLI flag and subcommand validation scenarios.
 
@@ -20,8 +18,10 @@ Category breakdown:
   - Empty/malformed flag values: 8 subtests
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import tempfile
+from pathlib import Path
 
 from nodo_diag.base_test import NodoBaseTest
 from nodo_diag.cli_runner import run_nodo
@@ -40,7 +40,13 @@ class CliNetworkRestrictionScenarios(NodoBaseTest):
     def _run_demo_command(self, command: str, network: str) -> object:
         with tempfile.TemporaryDirectory(prefix=f"nodo_clf_{command[:6]}_") as tmp:
             return run_nodo(
-                [command, "--network", network, "--data-dir", str(Path(tmp) / "node-data")],
+                [
+                    command,
+                    "--network",
+                    network,
+                    "--data-dir",
+                    str(Path(tmp) / "node-data"),
+                ],
                 repo_root=self.repo_root,
                 timeout_seconds=30,
             )
@@ -52,15 +58,20 @@ class CliNetworkRestrictionScenarios(NodoBaseTest):
                     result = self._run_demo_command(command, network)
                     self.assertFailedWithText(result, "not permitted on official network")
 
-    def test_testnet_readiness_blocked_without_key_id_on_official_networks(self) -> None:
+    def test_testnet_readiness_blocked_without_key_id_on_official_networks(
+        self,
+    ) -> None:
         for network in official_networks():
             with self.subTest(network=network):
                 with tempfile.TemporaryDirectory(prefix="nodo_clf_ready_nokeyid_") as tmp:
                     result = run_nodo(
                         [
-                            "testnet", "readiness",
-                            "--network", network,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "testnet",
+                            "readiness",
+                            "--network",
+                            network,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -77,8 +88,10 @@ class CliNetworkRestrictionScenarios(NodoBaseTest):
                     result = run_nodo(
                         [
                             "diagnostics",
-                            "--network", network,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "--network",
+                            network,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -101,8 +114,10 @@ class CliUnknownNetworkScenarios(NodoBaseTest):
                     result = run_nodo(
                         [
                             "init",
-                            "--network", bad_name,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "--network",
+                            bad_name,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -120,8 +135,10 @@ class CliUnknownNetworkScenarios(NodoBaseTest):
                     result = run_nodo(
                         [
                             "status",
-                            "--network", bad_name,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "--network",
+                            bad_name,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -138,11 +155,16 @@ class CliUnknownNetworkScenarios(NodoBaseTest):
                 with tempfile.TemporaryDirectory(prefix=f"nodo_clf_keynet_{label}_") as tmp:
                     result = run_nodo(
                         [
-                            "keys", "create",
-                            "--network", bad_name,
-                            "--data-dir", str(Path(tmp) / "node-data"),
-                            "--type", "validator",
-                            "--key-id", "test-key",
+                            "keys",
+                            "create",
+                            "--network",
+                            bad_name,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
+                            "--type",
+                            "validator",
+                            "--key-id",
+                            "test-key",
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -159,9 +181,12 @@ class CliUnknownNetworkScenarios(NodoBaseTest):
                 with tempfile.TemporaryDirectory(prefix=f"nodo_clf_rlnet_{label}_") as tmp:
                     result = run_nodo(
                         [
-                            "node", "reload",
-                            "--network", bad_name,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "node",
+                            "reload",
+                            "--network",
+                            bad_name,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -181,11 +206,16 @@ class CliKeyFlagScenarios(NodoBaseTest):
                     data_dir = self.init_localnet(Path(tmp))
                     result = run_nodo(
                         [
-                            "keys", "create",
-                            "--network", "localnet",
-                            "--data-dir", str(data_dir),
-                            "--type", bad_type,
-                            "--key-id", "test-key",
+                            "keys",
+                            "create",
+                            "--network",
+                            "localnet",
+                            "--data-dir",
+                            str(data_dir),
+                            "--type",
+                            bad_type,
+                            "--key-id",
+                            "test-key",
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -201,11 +231,16 @@ class CliKeyFlagScenarios(NodoBaseTest):
                     data_dir = self.init_localnet(Path(tmp))
                     result = run_nodo(
                         [
-                            "keys", "create",
-                            "--network", "localnet",
-                            "--data-dir", str(data_dir),
-                            "--type", "validator",
-                            "--key-id", bad_id,
+                            "keys",
+                            "create",
+                            "--network",
+                            "localnet",
+                            "--data-dir",
+                            str(data_dir),
+                            "--type",
+                            "validator",
+                            "--key-id",
+                            bad_id,
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -253,8 +288,10 @@ class CliUnknownSubcommandScenarios(NodoBaseTest):
                 with tempfile.TemporaryDirectory(prefix="nodo_clf_keysubcmd_") as tmp:
                     result = run_nodo(
                         [
-                            "keys", sub,
-                            "--data-dir", str(Path(tmp) / "node-data"),
+                            "keys",
+                            sub,
+                            "--data-dir",
+                            str(Path(tmp) / "node-data"),
                         ],
                         repo_root=self.repo_root,
                         timeout_seconds=30,
@@ -293,10 +330,14 @@ class CliMissingFlagScenarios(NodoBaseTest):
             data_dir = self.init_localnet(Path(tmp))
             result = run_nodo(
                 [
-                    "keys", "create",
-                    "--network", "localnet",
-                    "--data-dir", str(data_dir),
-                    "--key-id", "test-key",
+                    "keys",
+                    "create",
+                    "--network",
+                    "localnet",
+                    "--data-dir",
+                    str(data_dir),
+                    "--key-id",
+                    "test-key",
                 ],
                 repo_root=self.repo_root,
                 timeout_seconds=30,
@@ -312,10 +353,14 @@ class CliMissingFlagScenarios(NodoBaseTest):
             data_dir = self.init_localnet(Path(tmp))
             result = run_nodo(
                 [
-                    "keys", "create",
-                    "--network", "localnet",
-                    "--data-dir", str(data_dir),
-                    "--type", "validator",
+                    "keys",
+                    "create",
+                    "--network",
+                    "localnet",
+                    "--data-dir",
+                    str(data_dir),
+                    "--type",
+                    "validator",
                 ],
                 repo_root=self.repo_root,
                 timeout_seconds=30,
@@ -352,4 +397,5 @@ class CliMissingFlagScenarios(NodoBaseTest):
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main(verbosity=2)

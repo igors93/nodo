@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Unit tests for the Python helper modules in nodo_diag/.
 
@@ -16,7 +14,8 @@ Categories:
   - artifact_audit.py: parse_key_value_file
 """
 
-import os
+from __future__ import annotations
+
 import sys
 import tempfile
 import unittest
@@ -26,11 +25,14 @@ from pathlib import Path
 # Make nodo_diag importable regardless of CWD.
 # ---------------------------------------------------------------------------
 _HERE = Path(__file__).resolve().parent
-_PYTHON_ROOT = _HERE.parent
-if str(_PYTHON_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PYTHON_ROOT))
+_SRC = _HERE.parent / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-from nodo_diag.filesystem_faults import (
+from nodo_diag import assertions as asrt  # noqa: E402
+from nodo_diag.artifact_audit import parse_key_value_file  # noqa: E402
+from nodo_diag.cli_runner import NodoCliResult, find_repo_root  # noqa: E402
+from nodo_diag.filesystem_faults import (  # noqa: E402
     append_key_value,
     break_file_canonical_order,
     manifest_path,
@@ -40,30 +42,27 @@ from nodo_diag.filesystem_faults import (
     require_file,
     write_text,
 )
-from nodo_diag.cli_runner import NodoCliResult, find_repo_root
-from nodo_diag import assertions as asrt
-from nodo_diag.generators import (
-    bad_integer_values,
-    bad_positive_integer_values,
-    bad_hash_values,
+from nodo_diag.generators import (  # noqa: E402
+    all_demo_commands,
     bad_config_id_values,
+    bad_hash_values,
+    bad_integer_values,
     bad_key_id_values,
     bad_key_types,
     bad_network_names,
+    bad_positive_integer_values,
     known_required_manifest_fields,
     official_networks,
-    all_demo_commands,
     path_traversal_attempts,
     shell_metacharacter_values,
     unicode_payloads,
     very_long_values,
 )
-from nodo_diag.artifact_audit import parse_key_value_file
-
 
 # ===========================================================================
 # Helpers
 # ===========================================================================
+
 
 def _tmp_file(content: str, suffix: str = ".txt") -> tuple[tempfile.NamedTemporaryFile, Path]:
     f = tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False, encoding="utf-8")
@@ -87,8 +86,8 @@ def _make_result(returncode: int = 0, stdout: str = "", stderr: str = "") -> Nod
 # Tests: filesystem_faults.py
 # ===========================================================================
 
-class RequireFileTests(unittest.TestCase):
 
+class RequireFileTests(unittest.TestCase):
     def test_require_file_returns_path_when_file_exists(self) -> None:
         path = _tmp_file("hello")
         try:
@@ -110,7 +109,6 @@ class RequireFileTests(unittest.TestCase):
 
 
 class ReadTextTests(unittest.TestCase):
-
     def test_read_text_returns_file_content(self) -> None:
         path = _tmp_file("hello world\n")
         try:
@@ -136,7 +134,6 @@ class ReadTextTests(unittest.TestCase):
 
 
 class WriteTextTests(unittest.TestCase):
-
     def test_write_text_creates_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "new_file.txt"
@@ -172,7 +169,6 @@ class WriteTextTests(unittest.TestCase):
 
 
 class RemoveKeyValueLineTests(unittest.TestCase):
-
     def test_removes_target_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "manifest.nodo"
@@ -210,7 +206,6 @@ class RemoveKeyValueLineTests(unittest.TestCase):
 
 
 class ReplaceKeyValueTests(unittest.TestCase):
-
     def test_replaces_value_for_existing_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "manifest.nodo"
@@ -246,7 +241,6 @@ class ReplaceKeyValueTests(unittest.TestCase):
 
 
 class AppendKeyValueTests(unittest.TestCase):
-
     def test_appends_new_key_value_line(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "manifest.nodo"
@@ -275,7 +269,6 @@ class AppendKeyValueTests(unittest.TestCase):
 
 
 class BreakFileCanonicalOrderTests(unittest.TestCase):
-
     def test_swaps_lines_1_and_2(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "manifest.nodo"
@@ -302,7 +295,6 @@ class BreakFileCanonicalOrderTests(unittest.TestCase):
 
 
 class ManifestPathTests(unittest.TestCase):
-
     def test_manifest_path_returns_correct_subpath(self) -> None:
         data_dir = Path("/some/data/dir")
         expected = data_dir / "manifest.nodo"
@@ -317,8 +309,8 @@ class ManifestPathTests(unittest.TestCase):
 # Tests: cli_runner.py — NodoCliResult
 # ===========================================================================
 
-class NodoCliResultTests(unittest.TestCase):
 
+class NodoCliResultTests(unittest.TestCase):
     def test_succeeded_returns_true_for_zero_returncode(self) -> None:
         r = _make_result(returncode=0)
         self.assertTrue(r.succeeded())
@@ -356,7 +348,6 @@ class NodoCliResultTests(unittest.TestCase):
 
 
 class FindRepoRootTests(unittest.TestCase):
-
     def test_find_repo_root_returns_path_with_cmakelists(self) -> None:
         # This test must be run from within the Nodo repo.
         try:
@@ -379,8 +370,8 @@ class FindRepoRootTests(unittest.TestCase):
 # Tests: assertions.py
 # ===========================================================================
 
-class AssertionsTests(unittest.TestCase):
 
+class AssertionsTests(unittest.TestCase):
     def test_assert_succeeded_passes_for_rc0(self) -> None:
         asrt.assert_succeeded(_make_result(returncode=0))
 
@@ -469,8 +460,8 @@ class AssertionsTests(unittest.TestCase):
 # Tests: generators.py
 # ===========================================================================
 
-class GeneratorsTests(unittest.TestCase):
 
+class GeneratorsTests(unittest.TestCase):
     def _check_list_of_tuples(self, lst, min_count: int = 2) -> None:
         self.assertIsInstance(lst, list)
         self.assertGreaterEqual(len(lst), min_count, msg=f"Expected at least {min_count} items")
@@ -561,8 +552,8 @@ class GeneratorsTests(unittest.TestCase):
 # Tests: artifact_audit.py — parse_key_value_file
 # ===========================================================================
 
-class ParseKeyValueFileTests(unittest.TestCase):
 
+class ParseKeyValueFileTests(unittest.TestCase):
     def test_parses_simple_key_value_pairs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "artifact.kv"

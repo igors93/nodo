@@ -206,34 +206,23 @@ void testProducesCandidateBlockFromMempool() {
             kTimestamp + 20
         );
 
+    // The stateless overload cannot produce non-genesis protocol blocks because
+    // stateRoot and receiptsRoot cannot be correctly computed without a real
+    // AccountStateView.  Producing a block with fake roots would be rejected by
+    // every validating peer, so the security guard fires early.
     requireCondition(
-        result.produced(),
-        "Valid mempool should produce candidate block."
+        result.status() == BlockProductionStatus::BLOCK_AUDIT_FAILED,
+        "Stateless overload must not produce a non-genesis protocol block."
     );
 
     requireCondition(
-        result.block().index() == blockchain.size(),
-        "Produced block index should be next chain height."
-    );
-
-    requireCondition(
-        result.block().previousHash() == blockchain.latestBlock().hash(),
-        "Produced block should point to current chain tip."
-    );
-
-    requireCondition(
-        result.block().records().size() == 2U,
-        "Produced block should contain two ledger records."
-    );
-
-    requireCondition(
-        result.plan().transactions().front().fee().rawUnits() == 500,
-        "Higher fee transaction should be first in block plan."
+        result.reason().find("AccountStateView") != std::string::npos,
+        "Rejection must explain that AccountStateView is required."
     );
 
     requireCondition(
         mempool.size() == 2U,
-        "Block production must not mutate mempool before finalization."
+        "Block production rejection must not mutate the mempool."
     );
 }
 
@@ -343,24 +332,13 @@ void testProducedBlockHasNoPlaceholderRoots() {
             kTimestamp + 20
         );
 
+    // The stateless overload is now blocked from producing any non-genesis block.
+    // This is the strongest guarantee that no placeholder or fake root value can
+    // ever leak into a finalized protocol block via this code path.
     requireCondition(
-        result.produced(),
-        "Block production should succeed for placeholder-roots test."
-    );
-
-    const Block& block = result.block();
-
-    requireCondition(
-        block.stateRoot() != "DRAFT_STATE_ROOT" &&
-        block.stateRoot() != "default_state_root" &&
-        block.receiptsRoot() != "DRAFT_RECEIPTS_ROOT" &&
-        block.receiptsRoot() != "default_receipts_root",
-        "Produced block must not contain any placeholder root values."
-    );
-
-    requireCondition(
-        block.isValid(true),
-        "Produced block must pass protocol structural validation (isValid)."
+        !result.produced() &&
+        result.status() == BlockProductionStatus::BLOCK_AUDIT_FAILED,
+        "Stateless overload must not produce any block at non-genesis height."
     );
 }
 

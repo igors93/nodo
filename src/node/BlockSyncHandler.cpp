@@ -1,6 +1,7 @@
 #include "node/BlockSyncHandler.hpp"
 
 #include "core/Block.hpp"
+#include "core/BlockStateTransitionValidator.hpp"
 #include "crypto/Hex.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "p2p/NetworkEnvelope.hpp"
@@ -381,6 +382,7 @@ p2p::GossipDeliveryReport BlockSyncHandler::requestBlocks(
 std::size_t BlockSyncHandler::applyResponses(
     p2p::GossipMesh&  gossip,
     core::Blockchain& blockchain,
+    std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder,
     std::int64_t      /*now*/
 ) {
     const auto messages = gossip.inbox().messagesForType(
@@ -393,14 +395,26 @@ std::size_t BlockSyncHandler::applyResponses(
         const std::vector<core::Block> blocks =
             deserializeBlockList(envelope.payload());
 
-        // Apply in order; stop at first block that cannot be appended.
+        // Apply in order; stop at first block that fails full protocol
+        // commitment validation.  The context is rebuilt from the current
+        // chain state before each block so that the computed stateRoot and
+        // receiptsRoot reflect all previously applied blocks.
         for (const auto& block : blocks) {
-            if (!block.isValid()) {
+            const core::StateTransitionPreviewContext context =
+                contextBuilder(blockchain);
+
+            const core::BlockValidationResult validation =
+                core::BlockStateTransitionValidator::validateCandidateBlock(
+                    blockchain,
+                    block,
+                    context
+                    // defaults to BlockValidationMode::ProtocolCommitment
+                );
+
+            if (!validation.accepted()) {
                 break;
             }
-            if (!blockchain.canAppendBlock(block)) {
-                break;
-            }
+
             blockchain.addBlock(block);
             ++applied;
         }

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 import json
 import sys
 import unittest
+from datetime import datetime, timezone
+from pathlib import Path
 
 
 def find_repo_root(start: Path | None = None) -> Path:

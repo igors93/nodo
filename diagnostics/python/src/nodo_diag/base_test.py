@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from nodo_diag.cli_runner import (
     NodoCliResult,
@@ -81,11 +81,16 @@ class NodoBaseTest(unittest.TestCase):
     ) -> NodoCliResult:
         return run_nodo(
             [
-                "keys", "create",
-                "--network", network,
-                "--data-dir", str(data_dir),
-                "--type", key_type,
-                "--key-id", key_id,
+                "keys",
+                "create",
+                "--network",
+                network,
+                "--data-dir",
+                str(data_dir),
+                "--type",
+                key_type,
+                "--key-id",
+                key_id,
             ],
             repo_root=self.repo_root,
             timeout_seconds=30,
@@ -104,7 +109,14 @@ class NodoBaseTest(unittest.TestCase):
         network: str = "testnet-candidate",
         key_id: str | None = None,
     ) -> NodoCliResult:
-        args = ["testnet", "readiness", "--network", network, "--data-dir", str(data_dir)]
+        args = [
+            "testnet",
+            "readiness",
+            "--network",
+            network,
+            "--data-dir",
+            str(data_dir),
+        ]
         if key_id is not None:
             args += ["--key-id", key_id]
         return run_nodo(args, repo_root=self.repo_root, timeout_seconds=30)
@@ -120,7 +132,7 @@ class NodoBaseTest(unittest.TestCase):
             args += ["--key-id", key_id]
         return run_nodo(args, repo_root=self.repo_root, timeout_seconds=30)
 
-    def temp_localnet(self) -> tuple[tempfile.TemporaryDirectory, Path]:
+    def temp_localnet(self) -> tuple[tempfile.TemporaryDirectory[str], Path]:
         """Returns (tmp_context_manager, data_dir). Caller must close the tmp."""
         tmp = tempfile.TemporaryDirectory(prefix="nodo_base_")
         data_dir = self.init_localnet(Path(tmp.name))
@@ -156,9 +168,7 @@ class NodoBaseTest(unittest.TestCase):
             ),
         )
 
-    def assertFailedWithText(
-        self, result: NodoCliResult, text: str, msg: str = ""
-    ) -> None:
+    def assertFailedWithText(self, result: NodoCliResult, text: str, msg: str = "") -> None:
         self.assertFailed(result, msg=msg)
         self.assertIn(
             text,
@@ -173,9 +183,7 @@ class NodoBaseTest(unittest.TestCase):
             ),
         )
 
-    def assertSucceededWithText(
-        self, result: NodoCliResult, text: str, msg: str = ""
-    ) -> None:
+    def assertSucceededWithText(self, result: NodoCliResult, text: str, msg: str = "") -> None:
         self.assertSucceeded(result, msg=msg)
         self.assertIn(
             text,

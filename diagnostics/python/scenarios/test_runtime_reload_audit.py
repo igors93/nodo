@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from nodo_diag.cli_runner import (
     assert_failed_with_text,
@@ -225,7 +225,9 @@ class RuntimeReloadAuditScenarios(unittest.TestCase):
 
             assert_failed_with_text(result, "Failed to reload Nodo runtime")
 
-    def test_chain_audit_rejects_missing_finalized_block_declared_in_manifest(self) -> None:
+    def test_chain_audit_rejects_missing_finalized_block_declared_in_manifest(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory(prefix="nodo_audit_missing_block_") as temp:
             data_dir = self.initialize_localnet(Path(temp))
 

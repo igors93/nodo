@@ -95,6 +95,29 @@ bool Block::isGenesisBlock() const {
     return m_index == 0 && m_previousHash == "GENESIS";
 }
 
+// static
+bool Block::isCanonicalCommitmentRoot(const std::string& root) {
+    // A protocol commitment root is a lowercase hex-encoded SHA-256 hash.
+    // The hasher always produces exactly 64 hex characters.
+    if (root.size() != 64) {
+        return false;
+    }
+    for (const char c : root) {
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Block::hasCanonicalStateRoot() const {
+    return isCanonicalCommitmentRoot(m_stateRoot);
+}
+
+bool Block::hasCanonicalReceiptsRoot() const {
+    return isCanonicalCommitmentRoot(m_receiptsRoot);
+}
+
 bool Block::isValid(bool requireProtocolCommitments) const {
     if (m_previousHash.empty()) {
         return false;
@@ -131,17 +154,10 @@ bool Block::isValid(bool requireProtocolCommitments) const {
     }
 
     if (requireProtocolCommitments && m_index > 0) {
-        if (m_stateRoot.empty() || m_receiptsRoot.empty()) {
-            return false;
-        }
-        if (m_stateRoot == "default_state_root" ||
-            m_receiptsRoot == "default_receipts_root" ||
-            m_stateRoot == "DRAFT_STATE_ROOT" ||
-            m_receiptsRoot == "DRAFT_RECEIPTS_ROOT" ||
-            m_stateRoot == "REMOTE_STATE_ROOT_PENDING" ||
-            m_stateRoot == "REMOTE_SNAPSHOT_DIGEST_PENDING" ||
-            m_receiptsRoot == "receipts-root-pending" ||
-            m_stateRoot.rfind("state-root-", 0) == 0) {
+        // Both roots must be canonical 64-char lowercase hex hashes.
+        // This rejects empty strings, placeholder labels, and any non-hex input.
+        if (!isCanonicalCommitmentRoot(m_stateRoot) ||
+            !isCanonicalCommitmentRoot(m_receiptsRoot)) {
             return false;
         }
     }

@@ -5,12 +5,12 @@ import unittest
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-_PYTHON_ROOT = _HERE.parent
-if str(_PYTHON_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PYTHON_ROOT))
+_SRC = _HERE.parent / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-from nodo_diag.source_audit import audit_sources
-from nodo_diag.ctest_runner import find_repo_root
+from nodo_diag.ctest_runner import find_repo_root  # noqa: E402
+from nodo_diag.source_audit import audit_sources  # noqa: E402
 
 
 class SourcePersistenceAuditTests(unittest.TestCase):

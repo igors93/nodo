@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Key management operation scenarios.
 
@@ -22,8 +20,10 @@ Category breakdown:
   - Positive warning checks: 3 tests
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import tempfile
+from pathlib import Path
 
 from nodo_diag.base_test import NodoBaseTest
 from nodo_diag.cli_runner import run_nodo
@@ -38,11 +38,16 @@ class KeyBeforeInitScenarios(NodoBaseTest):
             data_dir = Path(tmp) / "node-data"
             result = run_nodo(
                 [
-                    "keys", "create",
-                    "--network", "localnet",
-                    "--data-dir", str(data_dir),
-                    "--type", "validator",
-                    "--key-id", "local-validator",
+                    "keys",
+                    "create",
+                    "--network",
+                    "localnet",
+                    "--data-dir",
+                    str(data_dir),
+                    "--type",
+                    "validator",
+                    "--key-id",
+                    "local-validator",
                 ],
                 repo_root=self.repo_root,
                 timeout_seconds=30,
@@ -65,11 +70,16 @@ class KeyBeforeInitScenarios(NodoBaseTest):
             data_dir = Path(tmp) / "a" / "b" / "c" / "node-data"
             result = run_nodo(
                 [
-                    "keys", "create",
-                    "--network", "localnet",
-                    "--data-dir", str(data_dir),
-                    "--type", "validator",
-                    "--key-id", "local-validator",
+                    "keys",
+                    "create",
+                    "--network",
+                    "localnet",
+                    "--data-dir",
+                    str(data_dir),
+                    "--type",
+                    "validator",
+                    "--key-id",
+                    "local-validator",
                 ],
                 repo_root=self.repo_root,
                 timeout_seconds=30,
@@ -82,23 +92,32 @@ class KeyBeforeInitScenarios(NodoBaseTest):
 class KeyNetworkMismatchScenarios(NodoBaseTest):
     """Mismatched network must be caught when creating keys."""
 
-    def test_keys_create_rejects_testnet_candidate_network_on_localnet_data(self) -> None:
+    def test_keys_create_rejects_testnet_candidate_network_on_localnet_data(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory(prefix="nodo_key_mismatch_tc_") as tmp:
             data_dir = self.init_localnet(Path(tmp))
             result = run_nodo(
                 [
-                    "keys", "create",
-                    "--network", "testnet-candidate",
-                    "--data-dir", str(data_dir),
-                    "--type", "validator",
-                    "--key-id", "local-validator",
+                    "keys",
+                    "create",
+                    "--network",
+                    "testnet-candidate",
+                    "--data-dir",
+                    str(data_dir),
+                    "--type",
+                    "validator",
+                    "--key-id",
+                    "local-validator",
                 ],
                 repo_root=self.repo_root,
                 timeout_seconds=30,
             )
             self.assertFailedWithText(result, "Data directory belongs to network")
 
-    def test_keys_create_rejects_wrong_localnet_data_with_testnet_candidate(self) -> None:
+    def test_keys_create_rejects_wrong_localnet_data_with_testnet_candidate(
+        self,
+    ) -> None:
         """Mirror: using localnet data dir with testnet-candidate must fail."""
         with tempfile.TemporaryDirectory(prefix="nodo_key_mismatch_rev_") as tmp:
             data_dir = self.init_localnet(Path(tmp))
@@ -321,4 +340,5 @@ class KeyLocalnetSuccessScenarios(NodoBaseTest):
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main(verbosity=2)

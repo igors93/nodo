@@ -3,6 +3,7 @@
 
 #include "core/Block.hpp"
 #include "core/Blockchain.hpp"
+#include "core/StateTransitionPreviewContext.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 
@@ -33,32 +34,49 @@ struct BlockAnnounceResult {
 /*
  * BlockAnnounceHandler processes incoming BLOCK_ANNOUNCE messages from peers.
  *
- * Flow:
+ * Protocol flow:
  *  1. Decode Block from envelope payload (using Block::deserialize).
  *  2. Check if already in local blockchain (duplicate check by hash).
- *  3. Validate structural integrity (block.isValid()).
- *  4. Check blockchain.canAppendBlock().
- *  5. Append to blockchain.
- *  6. Optionally re-broadcast to other peers (gossip relay).
+ *  3. Full protocol commitment validation:
+ *     - Structural integrity (block.isValid with canonical roots)
+ *     - Parent-hash linkage (canAppendBlock)
+ *     - State transition: recompute stateRoot and receiptsRoot from local state
+ *       and compare to block's declared commitments.
+ *  4. Append to blockchain ONLY after validation passes.
+ *
+ * Security: blocks received from the network are NEVER accepted on structural
+ * checks alone.  The caller must supply a real StateTransitionPreviewContext
+ * built from the local chain state.  If the context yields a different
+ * stateRoot or receiptsRoot than what the block declares, the block is
+ * rejected.
  */
 class BlockAnnounceHandler {
 public:
     /*
      * Process all BLOCK_ANNOUNCE messages currently in the gossip inbox.
-     * Drains the inbox for that type. Returns results for each processed message.
+     * Drains the inbox for that type.  Returns results for each message.
+     *
+     * validationContext must be built from the current local chain state so
+     * that computed stateRoot/receiptsRoot can be compared against each
+     * announced block's declared commitments.
      */
     static std::vector<BlockAnnounceResult> processInbox(
-        p2p::GossipMesh&   gossip,
-        core::Blockchain&  blockchain,
-        std::int64_t       now
+        p2p::GossipMesh&                           gossip,
+        core::Blockchain&                          blockchain,
+        const core::StateTransitionPreviewContext& validationContext,
+        std::int64_t                               now
     );
 
     /*
      * Process a single BLOCK_ANNOUNCE envelope.
+     *
+     * Runs full ProtocolCommitment validation against validationContext before
+     * adding the block to the chain.
      */
     static BlockAnnounceResult processEnvelope(
-        const p2p::NetworkEnvelope& envelope,
-        core::Blockchain&           blockchain
+        const p2p::NetworkEnvelope&                envelope,
+        core::Blockchain&                          blockchain,
+        const core::StateTransitionPreviewContext& validationContext
     );
 
     /*

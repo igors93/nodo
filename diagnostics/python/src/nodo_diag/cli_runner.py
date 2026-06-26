@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from pathlib import Path
 import os
 import subprocess
 import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -25,7 +26,7 @@ class NodoCliResult:
     def failed(self) -> bool:
         return self.returncode != 0
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 

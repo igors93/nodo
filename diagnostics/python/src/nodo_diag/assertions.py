@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Standalone assertion helpers for Nodo diagnostic scenarios.
 
@@ -7,6 +5,8 @@ These wrap NodoCliResult checks in clear, reusable functions.
 Use the NodoBaseTest class methods when writing unittest.TestCase subclasses;
 use these functions in scripts or one-off checks.
 """
+
+from __future__ import annotations
 
 from nodo_diag.cli_runner import NodoCliResult
 
