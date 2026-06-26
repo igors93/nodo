@@ -31,6 +31,7 @@ public:
     const std::vector<Block>& blocks() const;
 
     bool isValid() const;
+    bool isValid(bool requireProtocolCommitments) const;
 
     /*
      * Returns true when the given block can be appended to the current chain.

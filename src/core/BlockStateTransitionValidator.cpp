@@ -153,7 +153,7 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
     BlockValidationMode mode
 ) {
     if (blockchain.empty() ||
-        !blockchain.isValid()) {
+        !blockchain.isValid(false)) {
         return BlockValidationResult::rejected(
             BlockValidationStatus::INVALID_BLOCKCHAIN,
             "Blockchain is empty or invalid."

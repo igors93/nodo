@@ -265,7 +265,7 @@ std::vector<unsigned char> ProtocolMessageCodec::encodeBlockList(
     writer.writeUInt32(static_cast<std::uint32_t>(blocks.size()));
 
     for (const auto& block : blocks) {
-        if (!block.isValid()) {
+        if (!block.isValid(false)) {
             throw std::invalid_argument("Invalid block rejected by canonical block list codec.");
         }
         writer.writeString(block.serialize());
@@ -291,7 +291,7 @@ std::vector<core::Block> ProtocolMessageCodec::decodeBlockList(
     for (std::uint32_t index = 0; index < blockCount; ++index) {
         const std::string serializedBlock = reader.readString();
         core::Block decoded = BlockCodec::deserialize(serializedBlock);
-        if (!decoded.isValid()) {
+        if (!decoded.isValid(false)) {
             throw std::runtime_error("Canonical block list contains invalid block.");
         }
         blocks.push_back(std::move(decoded));

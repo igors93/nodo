@@ -229,7 +229,7 @@ void testProtectionLedgerRecordsCanEnterBlock() {
     );
 
     requireCondition(
-        block.isValid(),
+        block.isValid(false),
         "Block containing protection ledger records should be valid."
     );
 

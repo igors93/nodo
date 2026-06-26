@@ -467,7 +467,7 @@ bool NodeRuntime::isValid() const {
     return isRunning() &&
            m_config.isValid() &&
            !m_blockchain.empty() &&
-           m_blockchain.isValid() &&
+           m_blockchain.isValid(false) &&
            m_validatorRegistry.isValid() &&
            m_finalizationRegistry.isValid() &&
            m_consensusRoundManager.currentState().isValid() &&

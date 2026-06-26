@@ -254,7 +254,7 @@ void testChainStateRebuilderAppliesGenesisRewards() {
         buildRewardBlockchain();
 
     requireCondition(
-        blockchain.isValid(),
+        blockchain.isValid(false),
         "Reward blockchain should be valid."
     );
 

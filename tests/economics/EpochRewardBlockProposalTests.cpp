@@ -250,7 +250,7 @@ void testBlockBuilderCreatesAppendableRewardBlockProposal() {
     );
 
     requireCondition(
-        blockchain.isValid(),
+        blockchain.isValid(false),
         "Blockchain should remain valid after reward block append."
     );
 

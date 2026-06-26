@@ -235,7 +235,7 @@ void testValidatorSignsAndVerifiesProposal() {
     );
 
     requireCondition(
-        blockchain.isValid(),
+        blockchain.isValid(false),
         "Blockchain should remain valid after signed proposal append."
     );
 }

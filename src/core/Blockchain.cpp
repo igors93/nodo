@@ -60,6 +60,10 @@ const std::vector<Block>& Blockchain::blocks() const {
 }
 
 bool Blockchain::isValid() const {
+    return isValid(true);
+}
+
+bool Blockchain::isValid(bool requireProtocolCommitments) const {
     if (m_blocks.empty()) {
         return false;
     }
@@ -72,7 +76,7 @@ bool Blockchain::isValid() const {
         const Block& previousBlock = m_blocks[i - 1];
         const Block& currentBlock = m_blocks[i];
 
-        if (!isValidNextBlock(previousBlock, currentBlock)) {
+        if (!isValidNextBlock(previousBlock, currentBlock, requireProtocolCommitments)) {
             return false;
         }
     }
@@ -135,7 +139,7 @@ bool Blockchain::isValidNextBlock(
     const Block& currentBlock,
     bool requireProtocolCommitmentsForCurrentBlock
 ) const {
-    if (!previousBlock.isValid()) {
+    if (!previousBlock.isValid(requireProtocolCommitmentsForCurrentBlock)) {
         return false;
     }
 

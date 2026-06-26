@@ -235,7 +235,7 @@ Blockchain buildReferenceBlockchain() {
     blockchain.addBlock(transferBlock);
 
     requireCondition(
-        blockchain.isValid(),
+        blockchain.isValid(false),
         "Reference Blockchain is invalid."
     );
 

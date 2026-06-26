@@ -248,7 +248,7 @@ BlockProductionResult produceCandidateBlockImpl(
         );
     }
 
-    if (blockchain.empty() || !blockchain.isValid()) {
+    if (blockchain.empty() || !blockchain.isValid(false)) {
         return BlockProductionResult::rejected(
             BlockProductionStatus::INVALID_BLOCKCHAIN,
             "Blockchain is empty or invalid."
@@ -407,7 +407,7 @@ BlockProductionResult produceCandidateBlockImpl(
         finalReceiptsRoot
     );
 
-    if (!finalBlock.isValid(true) ||
+    if (!finalBlock.isValid(false) ||
         !blockchain.canAppendBlock(finalBlock)) {
         return BlockProductionResult::rejected(
             BlockProductionStatus::BLOCK_AUDIT_FAILED,

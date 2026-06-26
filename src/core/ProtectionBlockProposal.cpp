@@ -40,11 +40,11 @@ bool ProtectionBlockProposal::isValidForBlockchain(
         return false;
     }
 
-    if (!blockchain.isValid()) {
+    if (!blockchain.isValid(false)) {
         return false;
     }
 
-    if (!m_block.isValid()) {
+    if (!m_block.isValid(false)) {
         return false;
     }
 
@@ -119,7 +119,7 @@ ProtectionBlockProposal ProtectionBlockBuilder::buildRewardBlockProposal(
         throw std::invalid_argument("Cannot build reward block proposal for empty blockchain.");
     }
 
-    if (!blockchain.isValid()) {
+    if (!blockchain.isValid(false)) {
         throw std::invalid_argument("Cannot build reward block proposal for invalid blockchain.");
     }
 

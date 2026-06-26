@@ -755,7 +755,7 @@ BlockFinalizationResult BlockFinalizer::finalizeBlock(
     const crypto::SignatureProvider& provider,
     std::int64_t finalizedAt
 ) {
-    if (blockchain.empty() || !blockchain.isValid()) {
+    if (blockchain.empty() || !blockchain.isValid(false)) {
         return BlockFinalizationResult::rejected(
             BlockFinalizationStatus::INVALID_BLOCKCHAIN,
             "Blockchain is empty or invalid."
@@ -769,7 +769,7 @@ BlockFinalizationResult BlockFinalizer::finalizeBlock(
         );
     }
 
-    if (!block.isValid() || block.isGenesisBlock()) {
+    if (!block.isValid(false) || block.isGenesisBlock()) {
         return BlockFinalizationResult::rejected(
             BlockFinalizationStatus::INVALID_BLOCK,
             "Only valid non-genesis blocks can be finalized."

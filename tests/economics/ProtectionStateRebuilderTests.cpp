@@ -182,7 +182,7 @@ void testRebuildProtectionEconomicsStateFromBlockchain() {
         sampleProtectionBlockchain();
 
     requireCondition(
-        blockchain.isValid(),
+        blockchain.isValid(false),
         "Sample protection blockchain should be valid."
     );
 
