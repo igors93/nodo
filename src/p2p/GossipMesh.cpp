@@ -493,9 +493,10 @@ void GossipMesh::recordInvalidMessage(
                 ++it;
             }
         }
-        // If still over limit after TTL eviction, remove oldest entries.
-        while (m_lastEvidenceAt.size() >= kMaxCoalescingEntries) {
-            m_lastEvidenceAt.erase(m_lastEvidenceAt.begin());
+        // If still over limit after TTL eviction, we are likely under a flood.
+        // Clear the table to prevent O(N) eviction scans on every subsequent message.
+        if (m_lastEvidenceAt.size() >= kMaxCoalescingEntries) {
+            m_lastEvidenceAt.clear();
         }
     }
 
