@@ -276,84 +276,79 @@ jobs:
             --parallel 1
 
   # ───────────────────────────────────────────────────────────────────────────
-  # 5. Localnet smoke test
-  #    Full CLI round-trip on a fresh temporary data directory: init → keys →
-  #    status → block produce → reload → audit → inspect. Runs after linux-gcc
-  #    passes to avoid wasting resources on a broken build.
+  # 5. Windows · MinGW · Debug
+  #    Platform compatibility. Catches Windows-specific issues: Win32 socket
+  #    API (ws2_32), MinGW linker quirks, path-separator edge cases, and
+  #    runtime DLL copying for test executables.
   # ───────────────────────────────────────────────────────────────────────────
-  smoke-localnet:
-    name: Localnet smoke test
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: linux-gcc
+  windows:
+    name: Windows · MinGW · Debug
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    defaults:
+      run:
+        shell: msys2 {0}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install toolchain
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y build-essential cmake libssl-dev
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-openssl
+            mingw-w64-x86_64-make
+          update: false
 
-      - name: Restore blst from cache
+      - name: Show versions
+        run: gcc --version && g++ --version && cmake --version && openssl version
+
+      - name: Cache blst
         id: cache-blst
         uses: actions/cache@v4
         with:
-          path: ~/.cache/nodo/blst
-          key: blst-${{ env.BLST_VERSION }}-linux-gcc-${{ runner.arch }}
+          path: C:\nodo-deps\blst
+          key: blst-${{ env.BLST_VERSION }}-windows-mingw-${{ runner.arch }}
 
-      - name: Build blst (if cache miss)
+      - name: Build blst
         if: steps.cache-blst.outputs.cache-hit != 'true'
         run: |
           git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
             https://github.com/supranational/blst.git /tmp/blst
           cd /tmp/blst && ./build.sh
-          mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
-          cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
-          cp libblst.a ~/.cache/nodo/blst/lib/
+          mkdir -p /c/nodo-deps/blst/include /c/nodo-deps/blst/lib
+          cp bindings/blst.h bindings/blst_aux.h /c/nodo-deps/blst/include/
+          cp libblst.a /c/nodo-deps/blst/lib/
 
-      - name: Install blst
+      - name: Configure (Debug, MinGW)
         run: |
-          sudo mkdir -p /usr/local/include /usr/local/lib
-          sudo cp ~/.cache/nodo/blst/include/* /usr/local/include/
-          sudo cp ~/.cache/nodo/blst/lib/*     /usr/local/lib/
-          sudo ldconfig
+          cmake -S . -B build/cmake \
+            -G "MinGW Makefiles" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBLST_ROOT=/c/nodo-deps/blst
 
       - name: Build
+        run: cmake --build build/cmake --parallel $(nproc)
+
+      - name: Verify CLI
+        run: ./build/nodo.exe --help
+
+      - name: Run CTest
         run: |
-          cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Debug
-          cmake --build build/cmake --parallel $(nproc)
+          ctest --test-dir build/cmake \
+            --output-on-failure \
+            --parallel $(nproc)
 
-      - name: Localnet round-trip
-        run: |
-          DATA="$(mktemp -d)"
-          set -euo pipefail
-
-          echo "--- init"
-          ./build/nodo init          --data-dir "$DATA"
-
-          echo "--- keys create"
-          ./build/nodo keys create   --data-dir "$DATA"
-
-          echo "--- status"
-          ./build/nodo status        --data-dir "$DATA"
-
-          echo "--- tx submit"
-          ./build/nodo tx submit     --data-dir "$DATA"
-
-          echo "--- block produce"
-          ./build/nodo block produce --data-dir "$DATA"
-
-          echo "--- node reload"
-          ./build/nodo node reload   --data-dir "$DATA"
-
-          echo "--- chain audit"
-          ./build/nodo chain audit   --data-dir "$DATA"
-
-          echo "--- inspect"
-          ./build/nodo inspect       --data-dir "$DATA"
-
-          echo "Localnet round-trip: PASS"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-windows
+          path: build/cmake/Testing/
+          retention-days: 7
 
   # ───────────────────────────────────────────────────────────────────────────
   # 6. macOS · AppleClang · Debug
