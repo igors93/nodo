@@ -274,8 +274,6 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(
 ) {
     ConsensusTickResult result;
 
-    const auto& inbox = m_gossip.inbox();
-
     // Process both VOTE_ANNOUNCE (legacy) and VALIDATOR_VOTE (new) message types.
     const std::array<p2p::NetworkMessageType, 2> voteTypes = {
         p2p::NetworkMessageType::VOTE_ANNOUNCE,
@@ -283,7 +281,7 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(
     };
 
     for (const auto voteType : voteTypes) {
-        const auto voteMessages = inbox.messagesForType(voteType);
+        const auto voteMessages = m_gossip.drainInbox(voteType);
 
         for (const auto& envelope : voteMessages) {
             if (envelope.payload().empty()) continue;

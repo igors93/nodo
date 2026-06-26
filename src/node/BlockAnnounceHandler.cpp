@@ -62,7 +62,7 @@ std::vector<BlockAnnounceResult> BlockAnnounceHandler::processInbox(
 ) {
     std::vector<BlockAnnounceResult> results;
 
-    const auto messages = gossip.inbox().messagesForType(
+    const auto messages = gossip.drainInbox(
         p2p::NetworkMessageType::BLOCK_ANNOUNCE
     );
 

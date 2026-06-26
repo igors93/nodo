@@ -291,7 +291,7 @@ void BlockSyncHandler::serveRequests(
     const core::Blockchain& blockchain,
     std::int64_t            now
 ) {
-    const auto messages = gossip.inbox().messagesForType(
+    const auto messages = gossip.drainInbox(
         p2p::NetworkMessageType::BLOCK_REQUEST
     );
 
@@ -385,7 +385,7 @@ std::size_t BlockSyncHandler::applyResponses(
     std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder,
     std::int64_t      /*now*/
 ) {
-    const auto messages = gossip.inbox().messagesForType(
+    const auto messages = gossip.drainInbox(
         p2p::NetworkMessageType::BLOCK_RESPONSE
     );
 
