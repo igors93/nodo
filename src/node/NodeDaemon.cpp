@@ -6,14 +6,43 @@
 #include "core/BlockStateTransitionValidator.hpp"
 #include "node/BlockAnnounceHandler.hpp"
 #include "node/PersistentMempoolStore.hpp"
+#include "node/RuntimeAccountStateBuilder.hpp"
 #include "p2p/Peer.hpp"
 #include "serialization/BlockCodec.hpp"
 
 #include <chrono>
+#include <limits>
 #include <optional>
 #include <thread>
 
 namespace nodo::node {
+
+namespace {
+
+std::int64_t minimumFeeRawUnitsForRuntime(
+    const NodeRuntime& runtime
+) {
+    const std::uint64_t minimumFee =
+        runtime.config().genesisConfig().networkParameters().minimumFeeRawUnits();
+
+    if (minimumFee > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+
+    return static_cast<std::int64_t>(minimumFee);
+}
+
+core::StateTransitionPreviewContext previewContextForRuntime(
+    const NodeRuntime& runtime
+) {
+    return RuntimeAccountStateBuilder::previewContextAtTip(
+        runtime.config().genesisConfig(),
+        runtime.blockchain(),
+        minimumFeeRawUnitsForRuntime(runtime)
+    );
+}
+
+} // namespace
 
 NodeDaemon::NodeDaemon(
     NodeDaemonConfig                 config,
@@ -186,11 +215,19 @@ void NodeDaemon::processBlockProposals(std::int64_t now) {
             (void)expectedProposer;
         }
 
+        core::StateTransitionPreviewContext validationContext;
+        try {
+            validationContext = previewContextForRuntime(m_orchestrator.runtime());
+        } catch (const std::exception&) {
+            continue;
+        }
+
         // Full state-transition validation before adding the block.
         const core::BlockValidationResult validation =
             core::BlockStateTransitionValidator::validateCandidateBlock(
                 chain,
-                block
+                block,
+                validationContext
             );
         if (!validation.accepted()) continue;
 
