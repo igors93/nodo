@@ -288,16 +288,23 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(
         for (const auto& envelope : voteMessages) {
             if (envelope.payload().empty()) continue;
 
-            ValidatorVoteRecord vote =
-                ValidatorVoteRecord::deserialize(envelope.payload());
+            try {
+                ValidatorVoteRecord vote =
+                    ValidatorVoteRecord::deserialize(envelope.payload());
 
-            if (!vote.isStructurallyValid(m_policy)) continue;
+                if (!vote.isStructurallyValid(m_policy)) continue;
 
-            const VoteCollectResult collected =
-                m_runtime.submitConsensusVote(vote);
+                const VoteCollectResult collected =
+                    m_runtime.submitConsensusVote(vote);
 
-            if (collected.accepted()) {
-                result.votesCollected++;
+                if (collected.accepted()) {
+                    result.votesCollected++;
+                }
+            } catch (const std::exception&) {
+                // Malformed vote payload from peer — skip silently.
+                // This prevents a single invalid network message from
+                // crashing the consensus event loop thread.
+                continue;
             }
         }
     }
