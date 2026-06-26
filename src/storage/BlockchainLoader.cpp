@@ -128,7 +128,7 @@ BlockchainLoadReport BlockchainLoader::auditStorageRoot(
             loadFromStorageRoot(rootDirectory);
 
         report.setLoadedBlockCount(loadedBlockchain.size());
-        report.setLoadedBlockchainValid(loadedBlockchain.isValid());
+        report.setLoadedBlockchainValid(loadedBlockchain.isValid(false));
         report.setLoadedBlockchainMatchesManifest(
             manifest.matchesBlockchain(loadedBlockchain)
         );
@@ -203,7 +203,7 @@ core::Blockchain BlockchainLoader::loadFromStorageRoot(
     core::Blockchain loadedBlockchain =
         buildBlockchainFromBlocks(loadedBlocks);
 
-    if (!loadedBlockchain.isValid()) {
+    if (!loadedBlockchain.isValid(false)) {
         throw std::logic_error("Loaded Blockchain validation failed.");
     }
 
@@ -233,7 +233,7 @@ core::Blockchain BlockchainLoader::buildBlockchainFromBlocks(
         blockchain.addBlock(blocks[i]);
     }
 
-    if (!blockchain.isValid()) {
+    if (!blockchain.isValid(false)) {
         throw std::logic_error("Rebuilt Blockchain is invalid.");
     }
 

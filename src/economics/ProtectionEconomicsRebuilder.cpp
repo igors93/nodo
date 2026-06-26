@@ -9,7 +9,7 @@ namespace nodo::economics {
 ProtectionEconomicsState ProtectionEconomicsRebuilder::rebuildFromBlockchain(
     const core::Blockchain& blockchain
 ) {
-    if (!blockchain.isValid()) {
+    if (!blockchain.isValid(false)) {
         throw std::invalid_argument("Cannot rebuild protection economy from invalid blockchain.");
     }
 
@@ -22,7 +22,7 @@ ProtectionEconomicsState ProtectionEconomicsRebuilder::rebuildFromBlocks(
     ProtectionEconomicsState state;
 
     for (const auto& block : blocks) {
-        if (!block.isValid()) {
+        if (!block.isValid(false)) {
             throw std::invalid_argument("Cannot rebuild protection economy from invalid block.");
         }
 

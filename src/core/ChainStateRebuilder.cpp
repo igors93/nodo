@@ -119,7 +119,7 @@ StateRebuildReport ChainStateRebuilder::auditBlockchain(
         return report;
     }
 
-    if (!blockchain.isValid()) {
+    if (!blockchain.isValid(false)) {
         report.markFailure("Blockchain validation failed.");
         return report;
     }
@@ -127,7 +127,7 @@ StateRebuildReport ChainStateRebuilder::auditBlockchain(
     report.setBlockCount(blockchain.size());
 
     for (const auto& block : blockchain.blocks()) {
-        if (!block.isValid()) {
+        if (!block.isValid(false)) {
             report.markFailure("Invalid block found during rebuild audit.");
             return report;
         }

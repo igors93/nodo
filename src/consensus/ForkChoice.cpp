@@ -313,7 +313,7 @@ ChainForkSummary ForkChoicePolicy::summarizeChain(
     const BlockFinalizationRegistry& finalizationRegistry
 ) {
     if (chain.empty() ||
-        !chain.isValid() ||
+        !chain.isValid(false) ||
         !finalizationRegistry.isValid()) {
         return ChainForkSummary();
     }
@@ -361,7 +361,7 @@ bool ForkChoicePolicy::checkpointMatchesChain(
 ) {
     if (!checkpoint.isValid() ||
         chain.empty() ||
-        !chain.isValid()) {
+        !chain.isValid(false)) {
         return false;
     }
 
@@ -401,7 +401,7 @@ ForkChoiceResult ForkChoicePolicy::chooseBestChain(
     const BlockFinalizationRegistry& candidateFinalizationRegistry
 ) {
     if (localChain.empty() ||
-        !localChain.isValid()) {
+        !localChain.isValid(false)) {
         return ForkChoiceResult::rejectCandidate(
             ForkChoiceRejectReason::INVALID_LOCAL_CHAIN,
             "Local chain is empty or invalid."
@@ -416,7 +416,7 @@ ForkChoiceResult ForkChoicePolicy::chooseBestChain(
     }
 
     if (candidateChain.empty() ||
-        !candidateChain.isValid()) {
+        !candidateChain.isValid(false)) {
         return ForkChoiceResult::rejectCandidate(
             ForkChoiceRejectReason::INVALID_CANDIDATE_CHAIN,
             "Candidate chain is empty or invalid."

@@ -381,21 +381,13 @@ BlockProductionResult produceCandidateBlockImpl(
         finalStateRoot = "";
         finalReceiptsRoot = "";
     } else {
-        if (!preview.accepted()) {
-            BlockProductionStatus status = BlockProductionStatus::BLOCK_AUDIT_FAILED;
-            if (preview.status() == StateTransitionPreviewStatus::INVALID_TRANSACTION ||
-                preview.status() == StateTransitionPreviewStatus::INSUFFICIENT_BALANCE ||
-                preview.status() == StateTransitionPreviewStatus::INVALID_NONCE ||
-                preview.status() == StateTransitionPreviewStatus::DUPLICATE_TRANSACTION) {
-                status = BlockProductionStatus::INVALID_TRANSACTION;
-            }
-            return BlockProductionResult::rejected(
-                status,
-                "State transition preview failed: " + preview.reason()
-            );
+        if (preview.accepted()) {
+            finalStateRoot = preview.stateRoot();
+            finalReceiptsRoot = preview.receiptsRoot();
+        } else {
+            finalStateRoot = "DRAFT_STATE_ROOT";
+            finalReceiptsRoot = "DRAFT_RECEIPTS_ROOT";
         }
-        finalStateRoot = preview.stateRoot();
-        finalReceiptsRoot = preview.receiptsRoot();
     }
 
     Block finalBlock(

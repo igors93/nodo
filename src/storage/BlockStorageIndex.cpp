@@ -15,7 +15,7 @@ namespace nodo::storage {
 BlockIndexEntry BlockIndexEntry::fromBlock(
     const core::Block& block
 ) {
-    if (!block.isValid()) {
+    if (!block.isValid(false)) {
         throw std::invalid_argument("Invalid block rejected by BlockIndexEntry.");
     }
 
@@ -76,7 +76,7 @@ bool BlockIndexEntry::matchesBlock(
         return false;
     }
 
-    if (!block.isValid()) {
+    if (!block.isValid(false)) {
         return false;
     }
 
@@ -181,7 +181,7 @@ BlockStorageIndex BlockStorageIndex::fromBlockchainAndManifest(
         throw std::invalid_argument("Empty Blockchain rejected by BlockStorageIndex.");
     }
 
-    if (!blockchain.isValid()) {
+    if (!blockchain.isValid(false)) {
         throw std::invalid_argument("Invalid Blockchain rejected by BlockStorageIndex.");
     }
 

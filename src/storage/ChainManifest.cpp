@@ -20,7 +20,7 @@ ChainManifest ChainManifest::fromBlockchain(
         throw std::invalid_argument("Empty Blockchain rejected by ChainManifest.");
     }
 
-    if (!blockchain.isValid()) {
+    if (!blockchain.isValid(false)) {
         throw std::invalid_argument("Invalid Blockchain rejected by ChainManifest.");
     }
 
@@ -188,7 +188,7 @@ bool ChainManifest::matchesBlockchain(
         return false;
     }
 
-    if (!blockchain.isValid()) {
+    if (!blockchain.isValid(false)) {
         return false;
     }
 

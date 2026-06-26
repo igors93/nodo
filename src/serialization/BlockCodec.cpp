@@ -49,7 +49,7 @@ core::Block BlockCodec::deserialize(
         receiptsRoot
     );
 
-    if (!block.isValid()) {
+    if (!block.isValid(false)) {
         throw std::invalid_argument("Deserialized Block is invalid.");
     }
 

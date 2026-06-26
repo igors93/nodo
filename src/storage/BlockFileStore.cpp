@@ -61,7 +61,7 @@ void BlockFileStore::clearBlockStorage() const {
 }
 
 void BlockFileStore::writeBlock(const core::Block& block) const {
-    if (!block.isValid()) {
+    if (!block.isValid(false)) {
         throw std::invalid_argument("Invalid block rejected by BlockFileStore.");
     }
 
@@ -97,7 +97,7 @@ void BlockFileStore::writeBlockchain(
         throw std::invalid_argument("Empty Blockchain rejected by BlockFileStore.");
     }
 
-    if (!blockchain.isValid()) {
+    if (!blockchain.isValid(false)) {
         throw std::invalid_argument("Invalid Blockchain rejected by BlockFileStore.");
     }
 
@@ -111,7 +111,7 @@ void BlockFileStore::writeBlockchain(
 bool BlockFileStore::hasStoredBlock(
     const core::Block& block
 ) const {
-    if (!block.isValid()) {
+    if (!block.isValid(false)) {
         return false;
     }
 
@@ -121,7 +121,7 @@ bool BlockFileStore::hasStoredBlock(
 bool BlockFileStore::verifyStoredBlock(
     const core::Block& block
 ) const {
-    if (!block.isValid()) {
+    if (!block.isValid(false)) {
         return false;
     }
 
@@ -139,7 +139,7 @@ bool BlockFileStore::verifyStoredBlock(
 std::string BlockFileStore::readBlockSnapshot(
     const core::Block& block
 ) const {
-    if (!block.isValid()) {
+    if (!block.isValid(false)) {
         throw std::invalid_argument("Invalid block rejected while reading snapshot.");
     }
 
@@ -210,7 +210,7 @@ std::filesystem::path BlockFileStore::blockFilePath(
 std::string BlockFileStore::blockFileName(
     const core::Block& block
 ) {
-    if (!block.isValid()) {
+    if (!block.isValid(false)) {
         throw std::invalid_argument("Invalid block cannot be converted to file name.");
     }
 

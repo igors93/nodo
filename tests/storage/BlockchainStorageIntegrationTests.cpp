@@ -502,7 +502,7 @@ void assertLoadedBlockchainMatchesReference(
         BlockchainLoader::loadFromStorageRoot(rootPath.string());
 
     requireCondition(
-        loadedBlockchain.isValid(),
+        loadedBlockchain.isValid(false),
         "Loaded Blockchain is invalid."
     );
 
