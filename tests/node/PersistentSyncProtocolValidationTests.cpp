@@ -327,13 +327,14 @@ void testFastPathRejectsMissingFinalizedRecord() {
     const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
     const crypto::Bls12381SignatureProvider provider;
 
-    // Block without a serializedFinalizedRecord — fast path must reject this.
-    const core::Block block = buildBlockWithRealRoots(blockchain, 3);
+    // Fast-path checks serializedFinalizedRecord.empty() before deserializing
+    // the block, so actual block content is irrelevant for this rejection test.
+    // Use a string placeholder to avoid any platform-specific preview behaviour.
     const PersistentBlockSyncItem item(
         1,
-        block.hash(),
+        "fast-path-block-hash-1",
         blockchain.latestBlock().hash(),
-        block.serialize(),
+        "Block{index=1}",
         "finalized-state-root-1",
         kTimestamp + 1
         // serializedFinalizedRecord intentionally omitted (defaults to "")
@@ -367,23 +368,23 @@ void testFastPathRejectsWhenAnyItemMissesFinalizedRecord() {
     const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
     const crypto::Bls12381SignatureProvider provider;
 
-    // One item has an empty record, one has a non-empty placeholder.
-    // The fast path must reject the batch as soon as it hits the empty one.
-    const core::Block block = buildBlockWithRealRoots(blockchain, 4);
+    // First item has a non-empty record, second is missing its record.
+    // Fast-path rejects before deserializing any block, so string placeholders
+    // are sufficient — no StateTransitionPreview is invoked on this path.
     const PersistentBlockSyncItem itemWithRecord(
         1,
-        block.hash(),
+        "fast-path-block-hash-1",
         blockchain.latestBlock().hash(),
-        block.serialize(),
+        "Block{index=1}",
         "finalized-state-root-1",
         kTimestamp + 1,
         "non-empty-placeholder-record"
     );
     const PersistentBlockSyncItem itemWithoutRecord(
         2,
-        "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111",
-        block.hash(),
-        block.serialize(),
+        "fast-path-block-hash-2",
+        "fast-path-block-hash-1",
+        "Block{index=2}",
         "finalized-state-root-2",
         kTimestamp + 2
         // serializedFinalizedRecord intentionally omitted
@@ -412,7 +413,8 @@ void testProtocolCommitmentStillAcceptsItemsWithoutFinalizedRecord() {
 
     // Protocol-commitment mode verifies state roots from scratch; QC records
     // are optional (verified as defence-in-depth only when present).
-    const core::Block goodBlock = buildBlockWithRealRoots(blockchain, 5);
+    // Use nonce 1 — matches the senderContext() account nonce of 0 (next = 1).
+    const core::Block goodBlock = buildBlockWithRealRoots(blockchain, 1);
     const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
     const PersistentBlockSyncBatch batch =
         singleBlockBatch(goodBlock, blockchain.latestBlock().hash());

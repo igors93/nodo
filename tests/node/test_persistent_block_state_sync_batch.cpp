@@ -82,11 +82,12 @@ int main() {
         now + 4
     );
 
-    assert(result.applied());
-    assert(result.checkpoint().has_value());
-    assert(result.checkpoint()->finalizedHeight() == 2);
-    assert(result.checkpoint()->finalizedBlockHash() == "block-2");
-    assert(result.checkpoint()->finalizedStateRoot() == "state-root-2");
+    // Fast-path now requires a FinalizedBlockRecord (QC proof) for every item.
+    // item1 and item2 both have empty serializedFinalizedRecord so the batch
+    // must be rejected — a peer cannot bypass quorum verification by omitting
+    // the finalized record.
+    assert(!result.applied());
+    assert(!result.checkpoint().has_value());
 
     PersistentBlockSyncItem broken(
         2,
