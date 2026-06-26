@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 namespace nodo::p2p {
 
@@ -18,27 +19,41 @@ std::string PeerSubnetInfo::extractSubnetPrefix(const std::string& ip) {
         return "";
     }
 
-    int dotCount = 0;
-    std::size_t lastDotPos = std::string::npos;
-
-    for (std::size_t i = 0; i < ip.size(); ++i) {
-        const char c = ip[i];
+    std::vector<std::string> parts;
+    std::string current;
+    for (const char c : ip) {
         if (c == '.') {
-            ++dotCount;
-            if (dotCount == 3) {
-                lastDotPos = i;
-                break;
-            }
-        } else if (c < '0' || c > '9') {
-            return "";  // non-numeric, non-dot character
+            if (current.empty()) return ""; // Empty octet like "192..1.1"
+            parts.push_back(current);
+            current.clear();
+        } else if (c >= '0' && c <= '9') {
+            current.push_back(c);
+        } else if (c == ':') {
+            // Port separator, we stop parsing here
+            break;
+        } else {
+            return ""; // Invalid character
+        }
+    }
+    if (!current.empty()) {
+        parts.push_back(current);
+    }
+
+    if (parts.size() != 4) {
+        return ""; // IPv4 must have exactly 4 octets
+    }
+
+    for (int i = 0; i < 4; ++i) {
+        if (parts[i].size() > 3) {
+            return ""; // An octet can have at most 3 digits
+        }
+        int val = std::stoi(parts[i]);
+        if (val < 0 || val > 255) {
+            return "";
         }
     }
 
-    if (dotCount < 3 || lastDotPos == std::string::npos) {
-        return "";
-    }
-
-    return ip.substr(0, lastDotPos);
+    return parts[0] + "." + parts[1] + "." + parts[2];
 }
 
 bool PeerSubnetInfo::isValid() const {
