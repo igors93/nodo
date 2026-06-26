@@ -12,7 +12,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
-#include <iostream>
+
 
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/stat.h>
@@ -186,59 +186,49 @@ bool StoredKeyMetadata::isLocalnetOnly() const {
 }
 
 bool StoredKeyMetadata::isValid() const {
-    if (!KeyStore::isSafeKeyId(m_keyId)) { std::cout << "DEBUG isValid: failed m_keyId: " << m_keyId << std::endl; return false; }
-    if (!isSafeScalar(m_provider)) { std::cout << "DEBUG isValid: failed m_provider: " << m_provider << std::endl; return false; }
-    if (!isSafeScalar(m_networkProfile)) { std::cout << "DEBUG isValid: failed m_networkProfile: " << m_networkProfile << std::endl; return false; }
-    if (!isSupportedCryptoSuite(m_suite)) { std::cout << "DEBUG isValid: failed m_suite: " << (int)m_suite << std::endl; return false; }
-    if (!m_publicKey.isValid()) { std::cout << "DEBUG isValid: failed m_publicKey.isValid" << std::endl; return false; }
-    if (!isSafeScalar(m_publicKey.keyMaterial())) { std::cout << "DEBUG isValid: failed m_publicKey.keyMaterial" << std::endl; return false; }
-    if (!isSafeScalar(m_address)) { std::cout << "DEBUG isValid: failed m_address" << std::endl; return false; }
-    if (m_createdAt <= 0) { std::cout << "DEBUG isValid: failed m_createdAt" << std::endl; return false; }
+    if (!KeyStore::isSafeKeyId(m_keyId)) { return false; }
+    if (!isSafeScalar(m_provider)) { return false; }
+    if (!isSafeScalar(m_networkProfile)) { return false; }
+    if (!isSupportedCryptoSuite(m_suite)) { return false; }
+    if (!m_publicKey.isValid()) { return false; }
+    if (!isSafeScalar(m_publicKey.keyMaterial())) { return false; }
+    if (!isSafeScalar(m_address)) { return false; }
+    if (m_createdAt <= 0) { return false; }
 
     if (m_publicKey.algorithm() != m_algorithm) {
-        std::cout << "DEBUG isValid: failed m_publicKey.algorithm != m_algorithm" << std::endl;
         return false;
     }
 
     if (m_keyType == KeyStoreKeyType::USER &&
         (m_algorithm != CryptoAlgorithm::CLASSIC_ED25519 ||
          m_provider != KeyStore::USER_PROVIDER)) {
-        std::cout << "DEBUG isValid: failed m_keyType USER conditions" << std::endl;
         return false;
     }
 
     if (m_keyType == KeyStoreKeyType::VALIDATOR &&
         (m_algorithm != CryptoAlgorithm::BLS12_381 ||
          m_provider != KeyStore::VALIDATOR_PROVIDER)) {
-        std::cout << "DEBUG isValid: failed m_keyType VALIDATOR conditions" << std::endl;
         return false;
     }
 
     if (isDevelopmentOnlyAlgorithm(m_algorithm)) {
-        std::cout << "DEBUG isValid: failed isDevelopmentOnlyAlgorithm" << std::endl;
         return false;
     }
 
     if (!isLocalnetOnly()) {
         if (m_encryptionLevel == KeyEncryptionLevel::PLAINTEXT) {
-            std::cout << "DEBUG isValid: failed non-localnet plaintext check" << std::endl;
             return false;
         }
         if (!KeyEncryptionPolicy::isAcceptable(m_encryptionLevel, m_networkProfile)) {
-            std::cout << "DEBUG isValid: failed KeyEncryptionPolicy::isAcceptable" << std::endl;
             return false;
         }
     }
 
-    bool nodeIdentValid = LocalNodeKeyIdentity(
+    return LocalNodeKeyIdentity(
         m_keyId,
         m_publicKey,
         m_address
     ).isValid();
-    if (!nodeIdentValid) {
-        std::cout << "DEBUG isValid: failed LocalNodeKeyIdentity.isValid" << std::endl;
-    }
-    return nodeIdentValid;
 }
 
 std::string StoredKeyMetadata::serializePublic() const {
