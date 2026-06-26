@@ -375,7 +375,7 @@ void VotePool::prune(std::uint64_t currentHeight) {
 
     for (auto it = m_voteByValidatorHeightRound.begin(); it != m_voteByValidatorHeightRound.end(); ) {
         if (it->second.blockIndex() < currentHeight) {
-            m_voteIds.erase(it->second.voteId());
+            m_voteIds.erase(it->second.deterministicId());
             it = m_voteByValidatorHeightRound.erase(it);
         } else {
             ++it;
