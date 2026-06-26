@@ -410,8 +410,9 @@ void testRejectsBlockWithTimestampEqualToPrevious() {
 
     requireCondition(
         !result.accepted() &&
-        result.status() == core::BlockValidationStatus::INVALID_PREVIOUS_HASH,
-        "Block with timestamp equal to previous block should be rejected."
+        result.status() == core::BlockValidationStatus::INVALID_BLOCK &&
+        result.reason().find("timestamp") != std::string::npos,
+        "Block with timestamp equal to previous block should be rejected with INVALID_BLOCK and timestamp reason."
     );
 }
 
@@ -437,8 +438,9 @@ void testRejectsBlockWithTimestampBeforePrevious() {
 
     requireCondition(
         !result.accepted() &&
-        result.status() == core::BlockValidationStatus::INVALID_PREVIOUS_HASH,
-        "Block with timestamp before previous block should be rejected."
+        result.status() == core::BlockValidationStatus::INVALID_BLOCK &&
+        result.reason().find("timestamp") != std::string::npos,
+        "Block with timestamp before previous block should be rejected with INVALID_BLOCK and timestamp reason."
     );
 }
 

@@ -302,6 +302,10 @@ void BlockSyncHandler::serveRequests(
             continue;
         }
 
+        if (req.requesterId != envelope.senderNodeId()) {
+            continue;
+        }
+
         const std::size_t chainSize = blockchain.size();
         if (chainSize == 0) {
             continue;

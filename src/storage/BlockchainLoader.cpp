@@ -1,5 +1,6 @@
 #include "storage/BlockchainLoader.hpp"
 
+#include "core/BlockStateTransitionValidator.hpp"
 #include "serialization/BlockCodec.hpp"
 #include "storage/BlockchainStorageReader.hpp"
 #include "storage/BlockStorageIndex.hpp"
@@ -238,6 +239,111 @@ core::Blockchain BlockchainLoader::buildBlockchainFromBlocks(
     }
 
     return blockchain;
+}
+
+// ---------------------------------------------------------------------------
+// BlockchainCommitmentVerificationReport
+// ---------------------------------------------------------------------------
+
+BlockchainCommitmentVerificationReport::BlockchainCommitmentVerificationReport()
+    : m_passed(false)
+    , m_firstFailedHeight(0)
+    , m_reason("")
+    , m_verifiedBlockCount(0)
+{}
+
+BlockchainCommitmentVerificationReport BlockchainCommitmentVerificationReport::passed(
+    std::size_t verifiedBlockCount
+) {
+    BlockchainCommitmentVerificationReport r;
+    r.m_passed = true;
+    r.m_verifiedBlockCount = verifiedBlockCount;
+    return r;
+}
+
+BlockchainCommitmentVerificationReport BlockchainCommitmentVerificationReport::failed(
+    std::uint64_t firstFailedHeight,
+    std::string reason
+) {
+    BlockchainCommitmentVerificationReport r;
+    r.m_passed = false;
+    r.m_firstFailedHeight = firstFailedHeight;
+    r.m_reason = std::move(reason);
+    return r;
+}
+
+bool BlockchainCommitmentVerificationReport::commitmentsPassed() const {
+    return m_passed;
+}
+
+std::uint64_t BlockchainCommitmentVerificationReport::firstFailedHeight() const {
+    return m_firstFailedHeight;
+}
+
+const std::string& BlockchainCommitmentVerificationReport::reason() const {
+    return m_reason;
+}
+
+std::size_t BlockchainCommitmentVerificationReport::verifiedBlockCount() const {
+    return m_verifiedBlockCount;
+}
+
+std::string BlockchainCommitmentVerificationReport::serialize() const {
+    std::ostringstream oss;
+    oss << "BlockchainCommitmentVerificationReport{"
+        << "passed=" << (m_passed ? "true" : "false")
+        << ";firstFailedHeight=" << m_firstFailedHeight
+        << ";reason=" << m_reason
+        << ";verifiedBlockCount=" << m_verifiedBlockCount
+        << "}";
+    return oss.str();
+}
+
+// ---------------------------------------------------------------------------
+// BlockchainLoader::verifyChainCommitmentsViaEngine
+// ---------------------------------------------------------------------------
+
+BlockchainCommitmentVerificationReport BlockchainLoader::verifyChainCommitmentsViaEngine(
+    const core::Blockchain& blockchain,
+    std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder
+) {
+    if (blockchain.empty()) {
+        return BlockchainCommitmentVerificationReport::passed(0);
+    }
+
+    // Build a replay chain block-by-block. For each non-genesis candidate,
+    // derive the execution context from the partial chain (all preceding blocks),
+    // then validate with ProtocolCommitment mode to compare the engine-computed
+    // stateRoot and receiptsRoot against the block's declared values.
+    core::Blockchain partialChain;
+    partialChain.addGenesisBlock(blockchain.blocks().front());
+
+    const auto& allBlocks = blockchain.blocks();
+    for (std::size_t i = 1; i < allBlocks.size(); ++i) {
+        const core::Block& candidate = allBlocks[i];
+
+        const core::StateTransitionPreviewContext ctx = contextBuilder(partialChain);
+
+        const core::BlockValidationResult result =
+            core::BlockStateTransitionValidator::validateCandidateBlock(
+                partialChain,
+                candidate,
+                ctx,
+                core::BlockValidationMode::ProtocolCommitment
+            );
+
+        if (!result.accepted()) {
+            return BlockchainCommitmentVerificationReport::failed(
+                candidate.index(),
+                "Commitment verification failed at block " +
+                std::to_string(candidate.index()) + ": " + result.reason()
+            );
+        }
+
+        partialChain.addBlock(candidate);
+    }
+
+    return BlockchainCommitmentVerificationReport::passed(allBlocks.size());
 }
 
 } // namespace nodo::storage

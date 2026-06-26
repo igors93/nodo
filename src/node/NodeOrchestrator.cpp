@@ -3,6 +3,7 @@
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
+#include "crypto/Hex.hpp"
 #include "crypto/Signer.hpp"
 #include "node/BlockAnnounceHandler.hpp"
 #include "node/BlockSyncHandler.hpp"
@@ -13,6 +14,8 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeStateLoader.hpp"
+#include "serialization/ProtocolMessageCodec.hpp"
+#include "storage/BlockFileStore.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -70,6 +73,102 @@ bool NodeOrchestratorConfig::isValid() const {
            m_consensusTickMs > 0 &&
            m_maxBlockTransactions > 0;
 }
+
+// ---------------------------------------------------------------------------
+// Internal persistence helper (file-scope)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+static const std::string kOrchestratorCanonicalPrefix =
+    "NODO_CANONICAL_PROTOCOL_HEX_V1:";
+
+// Persists a finalized block to disk and advances the durable sync checkpoint.
+// Called from both the FinalizedCallback (consensus-driven finalization) and
+// after block sync applies new blocks. Errors are swallowed: storage failures
+// must not crash the node.
+void persistFinalizedBlock(
+    const core::Block& block,
+    const std::filesystem::path& dataRoot,
+    const std::string& sourcePeerId,
+    std::int64_t now
+) {
+    try {
+        storage::BlockFileStore store(dataRoot.string());
+        store.writeBlock(block);
+    } catch (...) {}
+
+    try {
+        PersistentSyncCheckpointStore checkpointStore(dataRoot);
+        const std::string stateRoot = block.hasCanonicalStateRoot()
+            ? block.stateRoot()
+            : "height-" + std::to_string(block.index());
+
+        checkpointStore.save(PersistentSyncCheckpoint(
+            PersistentSyncCheckpoint::SCHEMA_VERSION,
+            block.index(),
+            block.hash(),
+            stateRoot,
+            PersistentSyncStatus::COMPLETE,
+            sourcePeerId,
+            now
+        ));
+    } catch (...) {}
+}
+
+// Decode a canonical-hex gossip payload; returns std::nullopt if not in
+// canonical format or if hex decoding fails.
+std::optional<std::vector<unsigned char>> tryUnwrapCanonical(
+    const std::string& payload
+) {
+    if (payload.rfind(kOrchestratorCanonicalPrefix, 0) != 0) {
+        return std::nullopt;
+    }
+    const std::string hex = payload.substr(kOrchestratorCanonicalPrefix.size());
+    if (!crypto::isHexString(hex)) return std::nullopt;
+    try {
+        return crypto::hexDecode(hex);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+// Build a PersistentBlockSyncBatch from [fromHeight, fromHeight+maxItems) of the
+// local chain, so we can respond to BLOCK_SYNC_REQUEST messages from peers.
+PersistentBlockSyncBatch buildSyncResponseBatch(
+    const core::Blockchain& blockchain,
+    const std::string& localPeerId,
+    std::uint64_t fromHeight,
+    std::uint64_t maxItems,
+    std::int64_t now
+) {
+    std::vector<PersistentBlockSyncItem> items;
+    items.reserve(static_cast<std::size_t>(maxItems));
+    for (const auto& block : blockchain.blocks()) {
+        if (block.index() < fromHeight) continue;
+        if (items.size() >= static_cast<std::size_t>(maxItems)) break;
+        items.emplace_back(
+            block.index(),
+            block.hash(),
+            block.previousHash(),
+            block.serialize(),
+            block.hasCanonicalStateRoot()
+                ? block.stateRoot()
+                : "height-" + std::to_string(block.index()),
+            now
+        );
+    }
+    if (items.empty()) return PersistentBlockSyncBatch{};
+    return PersistentBlockSyncBatch(
+        localPeerId,
+        items.front().height(),
+        items.back().height(),
+        std::move(items),
+        now
+    );
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Free helpers
@@ -169,6 +268,19 @@ void NodeOrchestrator::tick(std::int64_t now) {
 
     auto& gossip = m_tcpRuntime->gossipMesh();
 
+    // Snapshot our chain height once. Used throughout this tick.
+    const std::uint64_t localHeight =
+        m_runtime->blockchain().empty() ? 0
+        : m_runtime->blockchain().latestBlock().index();
+
+    // Compute minimum fee and genesis config once for context builders below.
+    const config::GenesisConfig& genesisConfig = m_runtime->config().genesisConfig();
+    const std::uint64_t minFeeRaw = genesisConfig.networkParameters().minimumFeeRawUnits();
+    const std::int64_t minFee =
+        (minFeeRaw > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+        ? std::numeric_limits<std::int64_t>::max()
+        : static_cast<std::int64_t>(minFeeRaw);
+
     // 2. Auto-register new peers that sent PEER_HELLO.
     PeerHandshakeAutoRegistrar::processInbox(
         gossip,
@@ -176,22 +288,53 @@ void NodeOrchestrator::tick(std::int64_t now) {
         now
     );
 
-    // Build a protocol validation context from the current chain state.
-    // This context is used to recompute stateRoot and receiptsRoot for each
-    // incoming block and compare them to the block's declared commitments.
-    // If context construction fails, fall back to a structural-only context so
-    // that all non-genesis blocks are rejected (safe degraded mode).
-    const std::uint64_t minFeeRaw =
-        m_runtime->config().genesisConfig().networkParameters().minimumFeeRawUnits();
-    const std::int64_t minFee =
-        (minFeeRaw > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
-        ? std::numeric_limits<std::int64_t>::max()
-        : static_cast<std::int64_t>(minFeeRaw);
+    // 2.5. Drain incoming CHAIN_STATUS messages.
+    // These are broadcast by peers after round advances or on handshake. We use
+    // them to keep our local peer-height registry accurate and to trigger
+    // persistent sync when a peer is materially ahead of us.
+    {
+        const auto chainStatusMsgs = gossip.drainInbox(
+            p2p::NetworkMessageType::CHAIN_STATUS
+        );
+        for (const auto& envelope : chainStatusMsgs) {
+            const auto optBytes = tryUnwrapCanonical(envelope.payload());
+            if (!optBytes.has_value()) continue;
+            try {
+                const ChainStatusMessage status =
+                    serialization::ProtocolMessageCodec::decodeChainStatusMessage(
+                        optBytes.value()
+                    );
+                if (!status.isValid()) continue;
 
+                // Update peer height so step 6 (block request) stays accurate.
+                const p2p::PeerInfo* existing =
+                    m_runtime->peerManager().peer(envelope.senderNodeId());
+                if (existing != nullptr &&
+                    status.latestHeight() > existing->latestKnownHeight()) {
+                    m_runtime->mutablePeerManager().addOrUpdatePeer(p2p::PeerInfo(
+                        existing->peerId(),
+                        existing->endpoint(),
+                        existing->protocolVersion(),
+                        status.latestHeight(),
+                        now
+                    ));
+                }
+
+                // Trigger persistent sync if peer is ahead by more than one block.
+                if (status.peerIsAheadOf(localHeight)) {
+                    triggerSyncIfBehind(status, now);
+                }
+            } catch (...) {}
+        }
+    }
+
+    // Build a protocol validation context from the current chain state.
+    // Used by both BLOCK_ANNOUNCE and BLOCK_RESPONSE validation below.
+    // Falls back to structural-only on context-construction failure.
     core::StateTransitionPreviewContext announceValidationContext;
     try {
         announceValidationContext = RuntimeAccountStateBuilder::previewContextAtTip(
-            m_runtime->config().genesisConfig(),
+            genesisConfig,
             m_runtime->blockchain(),
             minFee
         );
@@ -207,23 +350,58 @@ void NodeOrchestrator::tick(std::int64_t now) {
         now
     );
 
-    // 4. Serve incoming BLOCK_REQUEST messages.
+    // 4. Serve incoming BLOCK_REQUEST messages (fast-path sync).
     BlockSyncHandler::serveRequests(
         gossip,
         m_runtime->blockchain(),
         now
     );
 
-    // 5. Apply any received BLOCK_RESPONSE messages.
+    // 4.5. Serve incoming BLOCK_SYNC_REQUEST messages (persistent sync path).
+    // Decode each request, build a PersistentBlockSyncBatch from local blocks,
+    // and broadcast a BLOCK_SYNC_RESPONSE so the requester can apply the batch.
+    {
+        const auto syncRequests = gossip.drainInbox(
+            p2p::NetworkMessageType::BLOCK_SYNC_REQUEST
+        );
+        for (const auto& envelope : syncRequests) {
+            const auto optBytes = tryUnwrapCanonical(envelope.payload());
+            if (!optBytes.has_value()) continue;
+            try {
+                const NetworkBlockSyncRequest req =
+                    serialization::ProtocolMessageCodec::decodeNetworkBlockSyncRequest(
+                        optBytes.value()
+                    );
+                if (!req.isValid()) continue;
+
+                const std::uint64_t maxItems = std::min(
+                    req.locator().maxBlocks(),
+                    static_cast<std::uint64_t>(BlockSyncHandler::MAX_BLOCKS_PER_RESPONSE)
+                );
+                const PersistentBlockSyncBatch batch = buildSyncResponseBatch(
+                    m_runtime->blockchain(),
+                    m_config.localPeer().peerId(),
+                    req.locator().fromHeight(),
+                    maxItems,
+                    now
+                );
+                if (!batch.isValid()) continue;
+
+                const std::vector<unsigned char> encoded =
+                    PersistentBlockStateSyncCodec::encodeBlockSyncBatch(batch);
+                gossip.broadcast(
+                    p2p::NetworkMessageType::BLOCK_SYNC_RESPONSE,
+                    kOrchestratorCanonicalPrefix + crypto::hexEncode(encoded),
+                    now
+                );
+            } catch (...) {}
+        }
+    }
+
+    // 5. Apply any received BLOCK_RESPONSE messages (fast-path sync).
     // The context builder is called per-block so the state reflects all blocks
     // applied so far in the batch.
-    const std::uint64_t localHeight =
-        m_runtime->blockchain().empty() ? 0
-        : m_runtime->blockchain().latestBlock().index();
-
-    const config::GenesisConfig& genesisConfig = m_runtime->config().genesisConfig();
-
-    BlockSyncHandler::applyResponses(
+    const std::size_t syncApplied = BlockSyncHandler::applyResponses(
         gossip,
         m_runtime->mutableBlockchain(),
         [&genesisConfig, minFee](const core::Blockchain& chain) -> core::StateTransitionPreviewContext {
@@ -240,27 +418,115 @@ void NodeOrchestrator::tick(std::int64_t now) {
         now
     );
 
-    // 6. If peer is ahead of us, request missing blocks.
+    // Persist each block that was successfully synced via fast-path.
+    if (syncApplied > 0 && !m_runtime->blockchain().empty()) {
+        const auto& allBlocks = m_runtime->blockchain().blocks();
+        const std::uint64_t newHeight = m_runtime->blockchain().latestBlock().index();
+        const std::uint64_t firstSynced =
+            (newHeight >= static_cast<std::uint64_t>(syncApplied))
+            ? newHeight - static_cast<std::uint64_t>(syncApplied) + 1
+            : 0;
+        for (const auto& b : allBlocks) {
+            if (b.index() >= firstSynced && b.index() <= newHeight) {
+                persistFinalizedBlock(
+                    b,
+                    m_config.dataDirectory().rootPath(),
+                    "sync",
+                    now
+                );
+            }
+        }
+    }
+
+    // 5.5. Apply any received BLOCK_SYNC_RESPONSE batches (persistent sync path).
+    // Each batch is validated block-by-block with ProtocolCommitment mode before
+    // being added to the chain. Applied blocks are persisted immediately.
+    {
+        const auto syncResponses = gossip.drainInbox(
+            p2p::NetworkMessageType::BLOCK_SYNC_RESPONSE
+        );
+
+        PersistentSyncCheckpointStore cpStore(m_config.dataDirectory().rootPath());
+        const auto loadedCp = cpStore.load();
+        const PersistentSyncCheckpoint checkpoint = loadedCp.has_value()
+            ? loadedCp.value()
+            : PersistentSyncCheckpoint::genesis(
+                m_runtime->blockchain().empty()
+                    ? "genesis"
+                    : m_runtime->blockchain().latestBlock().hash(),
+                "genesis-state-root",
+                now
+              );
+
+        for (const auto& envelope : syncResponses) {
+            const auto optBytes = tryUnwrapCanonical(envelope.payload());
+            if (!optBytes.has_value()) continue;
+            try {
+                const PersistentBlockSyncBatch batch =
+                    PersistentBlockStateSyncCodec::decodeBlockSyncBatch(optBytes.value());
+                if (!batch.isValid()) continue;
+
+                const PersistentSyncApplyResult applyResult =
+                    PersistentBlockStateSyncApplier::applyValidatedBatch(
+                        checkpoint,
+                        batch,
+                        m_runtime->mutableBlockchain(),
+                        m_runtime->validatorRegistry(),
+                        m_policy,
+                        m_provider,
+                        [&genesisConfig, minFee](
+                            const core::Blockchain& chain
+                        ) -> core::StateTransitionPreviewContext {
+                            try {
+                                return RuntimeAccountStateBuilder::previewContextAtTip(
+                                    genesisConfig, chain, minFee
+                                );
+                            } catch (...) {
+                                return core::StateTransitionPreviewContext::structuralOnly(minFee);
+                            }
+                        },
+                        now
+                    );
+
+                if (applyResult.applied()) {
+                    // Persist each block from the applied batch.
+                    const auto& allBlocks = m_runtime->blockchain().blocks();
+                    for (const auto& b : allBlocks) {
+                        if (b.index() >= batch.fromHeight() &&
+                            b.index() <= batch.toHeight()) {
+                            persistFinalizedBlock(
+                                b,
+                                m_config.dataDirectory().rootPath(),
+                                batch.sourcePeerId(),
+                                now
+                            );
+                        }
+                    }
+                }
+            } catch (...) {}
+        }
+    }
+
+    // 6. If a known peer is ahead of us, request the next missing blocks.
     // Only trust peers that have completed handshake (non-empty peerId and endpoint).
-    // Also guard against height-spoofing attacks by capping the look-ahead window.
+    // Cap the look-ahead window to guard against height-spoofing attacks.
     static constexpr std::uint64_t kMaxSyncLookAhead = 10000;
+    const std::uint64_t currentHeight =
+        m_runtime->blockchain().empty() ? 0
+        : m_runtime->blockchain().latestBlock().index();
     const auto peers = m_runtime->peerManager().peers();
     for (const auto& peer : peers) {
-        // Skip peers that have not completed the handshake.
         if (peer.peerId().empty() || peer.endpoint().empty()) continue;
-
-        // Ignore implausibly large claimed heights (height-spoofing protection).
-        if (peer.latestKnownHeight() > localHeight + kMaxSyncLookAhead) continue;
-
-        if (peer.latestKnownHeight() > localHeight + 1) {
+        if (peer.latestKnownHeight() > currentHeight + kMaxSyncLookAhead) continue;
+        if (peer.latestKnownHeight() > currentHeight + 1) {
             BlockSyncHandler::requestBlocks(
                 gossip,
                 m_config.localPeer().peerId(),
-                localHeight + 1,
+                currentHeight + 1,
                 BlockSyncHandler::MAX_BLOCKS_PER_RESPONSE,
                 now
             );
-            break; // request from first ahead-peer; retries happen next tick
+            break;
         }
     }
 }
@@ -348,9 +614,15 @@ void NodeOrchestrator::triggerSyncIfBehind(
     if (!plan.requestBlocks()) return;
 
     const NetworkBlockSyncRequest& req = plan.blockRequest().value();
+    // Use canonical hex encoding so the receiving node can decode with
+    // ProtocolMessageCodec::decodeNetworkBlockSyncRequest (step 4.5 in tick()).
+    const std::string payload = kOrchestratorCanonicalPrefix +
+        crypto::hexEncode(
+            serialization::ProtocolMessageCodec::encodeNetworkBlockSyncRequest(req)
+        );
     m_tcpRuntime->gossipMesh().broadcast(
         p2p::NetworkMessageType::BLOCK_SYNC_REQUEST,
-        req.serialize(),
+        payload,
         now
     );
 }
@@ -526,7 +798,8 @@ bool NodeOrchestrator::startConsensus() {
     // Wire the evidence pool for double-vote detection.
     m_consensusLoop->setEvidencePool(&m_evidencePool);
 
-    // Wire a finalized-block callback that broadcasts the block to peers.
+    // Wire a finalized-block callback that broadcasts the block to peers and
+    // persists it to disk (BlockFileStore + PersistentSyncCheckpoint).
     m_consensusLoop->setFinalizedCallback(
         [this](const consensus::FinalizedBlockRecord& rec) {
             if (!m_tcpRuntime || m_runtime->blockchain().empty()) return;
@@ -542,6 +815,13 @@ bool NodeOrchestrator::startConsensus() {
             BlockAnnounceHandler::broadcastBlock(
                 block,
                 m_tcpRuntime->gossipMesh(),
+                now
+            );
+
+            persistFinalizedBlock(
+                block,
+                m_config.dataDirectory().rootPath(),
+                m_config.localPeer().peerId(),
                 now
             );
         }

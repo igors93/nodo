@@ -2,8 +2,10 @@
 #define NODO_STORAGE_BLOCKCHAIN_LOADER_HPP
 
 #include "core/Blockchain.hpp"
+#include "core/StateTransitionPreviewContext.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <string>
 
 namespace nodo::storage {
@@ -53,6 +55,36 @@ private:
 };
 
 /*
+ * BlockchainCommitmentVerificationReport records the result of re-executing
+ * every block in a loaded chain via StateTransitionEngine and comparing the
+ * computed stateRoot/receiptsRoot to each block's declared values.
+ *
+ * This is a stronger check than isValid(true): it proves that the persisted
+ * state commitments match deterministic re-execution, not just that the fields
+ * are structurally present.
+ */
+class BlockchainCommitmentVerificationReport {
+public:
+    static BlockchainCommitmentVerificationReport passed(std::size_t verifiedBlockCount);
+    static BlockchainCommitmentVerificationReport failed(std::uint64_t firstFailedHeight, std::string reason);
+
+    bool commitmentsPassed() const;
+    std::uint64_t firstFailedHeight() const;
+    const std::string& reason() const;
+    std::size_t verifiedBlockCount() const;
+
+    std::string serialize() const;
+
+private:
+    BlockchainCommitmentVerificationReport();
+
+    bool m_passed;
+    std::uint64_t m_firstFailedHeight;
+    std::string m_reason;
+    std::size_t m_verifiedBlockCount;
+};
+
+/*
  * BlockchainLoader rebuilds a Blockchain object from Nodo storage metadata and
  * block snapshot files.
  *
@@ -61,11 +93,6 @@ private:
  * data/chain_manifest.nodo
  * data/block_index.nodo
  * data/blocks/block_<height>_<hash>.nodo
- *
- * Current status:
- * This is the first complete disk-to-Blockchain loader foundation. Future
- * phases should add stronger storage tests, canonical binary serialization,
- * and production-grade cryptographic hashing.
  */
 class BlockchainLoader {
 public:
@@ -75,6 +102,16 @@ public:
 
     static core::Blockchain loadFromStorageRoot(
         const std::string& rootDirectory
+    );
+
+    // Re-executes every non-genesis block via StateTransitionEngine and
+    // compares stateRoot and receiptsRoot to the block's declared values.
+    // The contextBuilder is called with the partial chain (all blocks
+    // preceding the candidate) and must return the account state needed
+    // for state transition preview.
+    static BlockchainCommitmentVerificationReport verifyChainCommitmentsViaEngine(
+        const core::Blockchain& blockchain,
+        std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder
     );
 
 private:

@@ -168,6 +168,17 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
         );
     }
 
+    // Enforce timestamp monotonicity before checking hash linkage so that callers
+    // receive a specific, actionable rejection reason instead of INVALID_PREVIOUS_HASH.
+    if (!candidateBlock.isGenesisBlock()) {
+        if (candidateBlock.timestamp() <= blockchain.latestBlock().timestamp()) {
+            return BlockValidationResult::rejected(
+                BlockValidationStatus::INVALID_BLOCK,
+                "Candidate block timestamp must be strictly greater than parent block timestamp."
+            );
+        }
+    }
+
     if (!blockchain.canAppendBlock(candidateBlock)) {
         return BlockValidationResult::rejected(
             BlockValidationStatus::INVALID_PREVIOUS_HASH,

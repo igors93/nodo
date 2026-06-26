@@ -1,5 +1,6 @@
 #include "core/ChainStateRebuilder.hpp"
 
+#include "core/BlockStateTransitionValidator.hpp"
 #include "core/LedgerRecord.hpp"
 #include "core/Transaction.hpp"
 #include "economics/GenesisRewardRecord.hpp"
@@ -20,7 +21,10 @@ StateRebuildReport::StateRebuildReport()
       m_genesisRewardRecordCount(0),
       m_transactionRecordCount(0),
       m_protectionMetadataRecordCount(0),
-      m_validatorPenaltyRecordCount(0) {}
+      m_validatorPenaltyRecordCount(0),
+      m_commitmentVerificationPassed(false),
+      m_firstFailedCommitmentHeight(0),
+      m_commitmentFailureReason("") {}
 
 bool StateRebuildReport::success() const {
     return m_success;
@@ -91,6 +95,30 @@ void StateRebuildReport::incrementValidatorPenaltyRecordCount() {
     ++m_validatorPenaltyRecordCount;
 }
 
+bool StateRebuildReport::commitmentVerificationPassed() const {
+    return m_commitmentVerificationPassed;
+}
+
+std::uint64_t StateRebuildReport::firstFailedCommitmentHeight() const {
+    return m_firstFailedCommitmentHeight;
+}
+
+const std::string& StateRebuildReport::commitmentFailureReason() const {
+    return m_commitmentFailureReason;
+}
+
+void StateRebuildReport::setCommitmentVerificationPassed(bool value) {
+    m_commitmentVerificationPassed = value;
+}
+
+void StateRebuildReport::setFirstFailedCommitmentHeight(std::uint64_t height) {
+    m_firstFailedCommitmentHeight = height;
+}
+
+void StateRebuildReport::setCommitmentFailureReason(std::string reason) {
+    m_commitmentFailureReason = std::move(reason);
+}
+
 std::string StateRebuildReport::serialize() const {
     std::ostringstream oss;
 
@@ -104,6 +132,9 @@ std::string StateRebuildReport::serialize() const {
         << ";transactionRecordCount=" << m_transactionRecordCount
         << ";protectionMetadataRecordCount=" << m_protectionMetadataRecordCount
         << ";validatorPenaltyRecordCount=" << m_validatorPenaltyRecordCount
+        << ";commitmentVerificationPassed=" << (m_commitmentVerificationPassed ? "true" : "false")
+        << ";firstFailedCommitmentHeight=" << m_firstFailedCommitmentHeight
+        << ";commitmentFailureReason=" << m_commitmentFailureReason
         << "}";
 
     return oss.str();
@@ -276,6 +307,61 @@ State ChainStateRebuilder::rebuildStateFromLedgerRecords(
     }
 
     return rebuiltState;
+}
+
+StateRebuildReport ChainStateRebuilder::rebuildAndVerifyViaEngine(
+    const Blockchain& blockchain,
+    std::function<StateTransitionPreviewContext(const Blockchain&)> contextBuilder
+) {
+    StateRebuildReport report = auditBlockchain(blockchain);
+    if (!report.success()) {
+        return report;
+    }
+
+    if (blockchain.size() <= 1) {
+        // Genesis-only or empty chain: commitments trivially pass.
+        report.setCommitmentVerificationPassed(true);
+        return report;
+    }
+
+    // Replay the chain block-by-block through StateTransitionEngine.
+    // For each non-genesis block, build the context from the partial chain (all
+    // preceding blocks), then validate with ProtocolCommitment mode to verify
+    // that the engine-computed stateRoot and receiptsRoot match the block's
+    // declared values.
+    Blockchain partialChain;
+    partialChain.addGenesisBlock(blockchain.blocks().front());
+
+    const auto& allBlocks = blockchain.blocks();
+    for (std::size_t i = 1; i < allBlocks.size(); ++i) {
+        const Block& candidate = allBlocks[i];
+
+        const StateTransitionPreviewContext ctx = contextBuilder(partialChain);
+
+        const BlockValidationResult result =
+            BlockStateTransitionValidator::validateCandidateBlock(
+                partialChain,
+                candidate,
+                ctx,
+                BlockValidationMode::ProtocolCommitment
+            );
+
+        if (!result.accepted()) {
+            report.setCommitmentVerificationPassed(false);
+            report.setFirstFailedCommitmentHeight(candidate.index());
+            report.setCommitmentFailureReason(
+                "Engine commitment mismatch at block " +
+                std::to_string(candidate.index()) + ": " + result.reason()
+            );
+            report.markFailure(report.commitmentFailureReason());
+            return report;
+        }
+
+        partialChain.addBlock(candidate);
+    }
+
+    report.setCommitmentVerificationPassed(true);
+    return report;
 }
 
 } // namespace nodo::core
