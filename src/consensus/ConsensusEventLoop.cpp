@@ -1,10 +1,8 @@
 #include "consensus/ConsensusEventLoop.hpp"
 
-#include "consensus/BlockFinalizer.hpp"
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
-#include "consensus/ValidatorVoteBuilder.hpp"
 #include "crypto/Hex.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "node/DoubleVoteDetector.hpp"
@@ -13,7 +11,6 @@
 
 #include <array>
 #include <chrono>
-#include <filesystem>
 #include <thread>
 
 namespace nodo::consensus {
@@ -29,7 +26,7 @@ ConsensusEventLoop::ConsensusEventLoop(
     node::NodeRuntime&               runtime,
     p2p::GossipMesh&                 gossip,
     const crypto::CryptoPolicy&      policy,
-    const crypto::SignatureProvider&  provider
+    const crypto::SignatureProvider& provider
 )
     : m_runtime(runtime)
     , m_gossip(gossip)
@@ -68,10 +65,10 @@ void ConsensusEventLoop::setRecoveryPath(std::filesystem::path path) {
 }
 
 void ConsensusEventLoop::loadFromRecoveryState(const ConsensusRoundState& state) {
-    m_lockedBlock    = state.lockedBlockHash();
-    m_lockedRound    = state.lockedRound();
-    m_votedPrevote   = state.votedPrevote();
-    m_votedPrecommit = state.votedPrecommit();
+    m_lockedBlock         = state.lockedBlockHash();
+    m_lockedRound         = state.lockedRound();
+    m_votedPrevote        = state.votedPrevote();
+    m_votedPrecommit      = state.votedPrecommit();
     m_lastProcessedHeight = state.height();
 }
 
@@ -110,171 +107,230 @@ void ConsensusEventLoop::runLoop() {
 ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     ConsensusTickResult result = drainVotesAndCollect(now);
 
-    // Guard: do not access consensus round manager state if the blockchain
-    // is empty (genesis not yet committed).
     if (m_runtime.blockchain().empty()) return result;
 
-    const core::Blockchain& chain = m_runtime.blockchain();
-    const auto& state = m_runtime.consensusRoundManager().currentState();
-    const std::uint64_t height = state.height();
-    const std::uint64_t round = state.round();
+    const core::Blockchain& chain  = m_runtime.blockchain();
+    const auto& state              = m_runtime.consensusRoundManager().currentState();
+    const std::uint64_t height     = state.height();
+    const std::uint64_t round      = state.round();
 
-    // Reset lock/vote state only when a new height is confirmed via finalization.
-    // This preserves the BFT safety invariant across restarts: lock state is only
-    // cleared when the previous height is actually finalized, not just when the
-    // round manager advances to a new height.
+    // After a restart, the recovery store sets m_lastProcessedHeight to the
+    // height at which we last voted. If the finalization registry shows that
+    // height already finalized, clear lock/vote flags so the next height starts clean.
     if (height > m_lastProcessedHeight &&
-        m_finalizationRegistry.hasFinalizedHeight(
+        m_runtime.finalizationRegistry().hasFinalizedHeight(
             m_lastProcessedHeight > 0 ? m_lastProcessedHeight : height)) {
-        m_lastProcessedHeight = height;
-        m_lockedBlock = "";
-        m_lockedRound = 0;
-        m_votedPrevote = false;
-        m_votedPrecommit = false;
+        m_lastProcessedHeight    = height;
+        m_lockedBlock            = "";
+        m_lockedRound            = 0;
+        m_votedPrevote           = false;
+        m_votedPrecommit         = false;
+        m_producedThisRound      = false;
     } else if (m_lastProcessedHeight == 0 && height > 0) {
         m_lastProcessedHeight = height;
     }
 
-    // TASK 1: If this node is the designated proposer for the current
-    // height+round and no block exists at that height yet, trigger local
-    // block production before attempting quorum assembly.
-    if (!m_localValidatorAddress.empty() && m_blockProducer) {
-        const std::uint64_t tipHeight =
-            chain.empty() ? 0 : chain.latestBlock().index();
-        const std::uint64_t nextHeight =
-            chain.empty() ? 0 : tipHeight + 1;
+    // -------------------------------------------------------------------------
+    // PHASE 1 (PRODUCTION) + PHASE 2 (PROPOSAL)
+    //
+    // When this node is the designated proposer and hasn't produced a block
+    // for the current round yet:
+    //   1. Invoke the production callback to build a validated candidate block.
+    //   2. Add the block to the local chain (enables same-tick voting).
+    //   3. Broadcast it as a signed BLOCK_PROPOSAL for peers to validate.
+    //
+    // After this block the proposer falls through to the same prevote/precommit
+    // path as every other validator — no APPROVE shortcuts.
+    // -------------------------------------------------------------------------
+    if (!m_localValidatorAddress.empty() && m_blockProducer && !m_producedThisRound) {
+        const std::uint64_t tipHeight  = chain.latestBlock().index();
+        const std::uint64_t nextHeight = tipHeight + 1;
 
-        // Only produce if the target height is the next expected block.
-        if (chain.empty() || height == nextHeight) {
+        if (height == nextHeight) {
             const std::string chainId =
                 m_runtime.config().genesisConfig().networkParameters().chainId();
             const std::string proposer = ProposerSchedule::selectProposer(
-                m_runtime.validatorRegistry(),
-                chainId,
-                height,
-                round
+                m_runtime.validatorRegistry(), chainId, height, round
             );
+
             if (proposer == m_localValidatorAddress) {
-                m_blockProducer(height, round, now);
+                std::optional<core::Block> blockOpt = m_blockProducer(height, round, now);
+
+                if (blockOpt.has_value()) {
+                    m_runtime.mutableBlockchain().addBlock(*blockOpt);
+                    m_runtime.applyGovernanceFromBlock(*blockOpt, now);
+                    m_runtime.invalidateAccountStateCache();
+
+                    // Phase 2: sign and broadcast the proposal.
+                    if (m_localSigner) {
+                        BlockProposalPhase::propose(
+                            *blockOpt,
+                            m_localValidatorAddress,
+                            round,
+                            now,
+                            *m_localSigner,
+                            m_gossip,
+                            m_provider
+                        );
+                    }
+                }
+
+                m_producedThisRound = true;
             }
         }
     }
 
-    // If no block at the current height is in our blockchain yet, we cannot vote.
+    // If no block exists at the current consensus height, there is nothing
+    // to vote on. Wait for the proposer's BLOCK_PROPOSAL to arrive.
     if (chain.latestBlock().index() != height) {
         return result;
     }
 
-    const core::Block& tip = chain.latestBlock();
-    const std::string& blockHash = tip.hash();
-    const std::string& prevHash  = tip.previousHash();
+    const core::Block& tip        = chain.latestBlock();
+    const std::string& blockHash  = tip.hash();
+    const std::string& prevHash   = tip.previousHash();
 
+    // Count accumulated prevotes for the current block.
     const VotePool& pool = m_runtime.consensusRoundManager().voteCollector().votePool();
-    std::vector<ValidatorVoteRecord> votes = pool.votesForBlock(height, blockHash, round);
+    std::vector<ValidatorVoteRecord> currentVotes =
+        pool.votesForBlock(height, blockHash, round);
 
     std::uint64_t prevoteCount = 0;
-    std::uint64_t precommitCount = 0;
-    for (const auto& v : votes) {
+    for (const auto& v : currentVotes) {
         if (v.decision() == ValidatorVoteDecision::PREVOTE) {
             prevoteCount++;
-        } else if (v.decision() == ValidatorVoteDecision::PRECOMMIT) {
-            precommitCount++;
         }
     }
 
-    const std::uint64_t activeValidators = m_runtime.validatorRegistry().activeCount();
-    const std::uint64_t requiredVotes = QuorumCertificateBuilder::requiredVoteCount(
-        activeValidators,
-        QUORUM_NUMERATOR,
-        QUORUM_DENOMINATOR
-    );
+    const std::uint64_t activeValidators =
+        m_runtime.validatorRegistry().activeCount();
+    const std::uint64_t requiredVotes =
+        QuorumCertificateBuilder::requiredVoteCount(
+            activeValidators, QUORUM_NUMERATOR, QUORUM_DENOMINATOR
+        );
 
-    // PREVOTE rule:
-    if (!m_votedPrevote && m_localSigner && m_runtime.validatorRegistry().isActiveValidator(m_localSigner->address())) {
+    // -------------------------------------------------------------------------
+    // PHASE 3a (PREVOTE)
+    //
+    // Cast a PREVOTE if:
+    //   - We have not already voted at this height/round.
+    //   - We are an active validator.
+    //   - The block is safe to vote for (no conflicting lock from a prior round).
+    // -------------------------------------------------------------------------
+    if (!m_votedPrevote &&
+        m_localSigner &&
+        m_runtime.validatorRegistry().isActiveValidator(m_localSigner->address())) {
+
         if (m_lockedBlock.empty() || blockHash == m_lockedBlock || round > m_lockedRound) {
-            ValidatorVoteRecord prevote = ValidatorVoteBuilder::buildPrevote(
-                m_runtime.validatorRegistry(),
-                tip,
-                round,
-                now,
-                *m_localSigner
+            const VoteCastResult prevoteResult = BlockVotingPhase::castPrevote(
+                m_runtime, tip, round, now, *m_localSigner, m_gossip
             );
-            const auto collected = m_runtime.submitConsensusVote(prevote);
-            if (collected.accepted()) {
-                m_votedPrevote = true;
-                const std::string serializedVote = prevote.serialize();
-                m_gossip.broadcast(p2p::NetworkMessageType::VOTE_ANNOUNCE,  serializedVote, now);
-                m_gossip.broadcast(p2p::NetworkMessageType::VALIDATOR_VOTE, serializedVote, now);
 
-                if (m_recoveryPath.has_value()) {
-                    ConsensusRoundState updatedState(
-                        state.height(), state.round(), state.proposerAddress(),
-                        state.roundStartedAt(), m_lockedBlock, m_lockedRound,
-                        m_votedPrevote, m_votedPrecommit
-                    );
-                    ConsensusRecoveryStore::save(*m_recoveryPath, updatedState);
-                }
+            if (prevoteResult.cast()) {
+                m_votedPrevote = true;
+                prevoteCount++;  // Count own vote immediately for same-tick precommit check.
+                saveRecoveryState(m_votedPrevote, m_votedPrecommit);
             }
         }
     }
 
-    // PRECOMMIT rule:
-    if (m_votedPrevote && !m_votedPrecommit && m_localSigner && m_runtime.validatorRegistry().isActiveValidator(m_localSigner->address())) {
+    // -------------------------------------------------------------------------
+    // PHASE 3b (PRECOMMIT)
+    //
+    // Cast a PRECOMMIT once the PREVOTE quorum threshold is reached.
+    // This locks this validator to the block at (blockHash, round).
+    // -------------------------------------------------------------------------
+    if (m_votedPrevote &&
+        !m_votedPrecommit &&
+        m_localSigner &&
+        m_runtime.validatorRegistry().isActiveValidator(m_localSigner->address())) {
+
         if (prevoteCount >= requiredVotes) {
             m_lockedBlock = blockHash;
             m_lockedRound = round;
 
-            ValidatorVoteRecord precommit = ValidatorVoteBuilder::buildPrecommit(
-                m_runtime.validatorRegistry(),
-                tip,
-                round,
-                now,
-                *m_localSigner
+            const VoteCastResult precommitResult = BlockVotingPhase::castPrecommit(
+                m_runtime, tip, round, now, *m_localSigner, m_gossip
             );
-            const auto collected = m_runtime.submitConsensusVote(precommit);
-            if (collected.accepted()) {
-                m_votedPrecommit = true;
-                const std::string serializedVote = precommit.serialize();
-                m_gossip.broadcast(p2p::NetworkMessageType::VOTE_ANNOUNCE,  serializedVote, now);
-                m_gossip.broadcast(p2p::NetworkMessageType::VALIDATOR_VOTE, serializedVote, now);
 
-                if (m_recoveryPath.has_value()) {
-                    ConsensusRoundState updatedState(
-                        state.height(), state.round(), state.proposerAddress(),
-                        state.roundStartedAt(), m_lockedBlock, m_lockedRound,
-                        m_votedPrevote, m_votedPrecommit
-                    );
-                    ConsensusRecoveryStore::save(*m_recoveryPath, updatedState);
-                }
+            if (precommitResult.cast()) {
+                m_votedPrecommit = true;
+                saveRecoveryState(m_votedPrevote, m_votedPrecommit);
             }
         }
     }
 
-    if (tryFinalizeBlock(height, blockHash, prevHash, round, now, result)) {
-        if (m_onFinalized && result.blockFinalized) {
-            const FinalizedBlockRecord* rec =
-                m_finalizationRegistry.recordForHeight(height);
-            if (rec) m_onFinalized(*rec);
+    // -------------------------------------------------------------------------
+    // PHASE 4 (FINALIZATION)
+    //
+    // Attempt to assemble a QuorumCertificate and finalize the block.
+    // On success:
+    //   - Broadcast the FinalizedBlockRecord to peers.
+    //   - Advance the consensus round manager to the next height.
+    //   - Reset per-height lock/vote state.
+    //   - Invoke the registered finalization callback (persistence, etc.).
+    // -------------------------------------------------------------------------
+    const BlockFinalizationPhaseResult finResult = BlockFinalizationPhase::tryFinalize(
+        m_runtime, tip, height, blockHash, prevHash, round, m_policy, m_provider, now
+    );
+
+    if (finResult.finalized()) {
+        result.quorumFormed      = true;
+        result.blockFinalized    = true;
+        result.finalizedBlockHash = finResult.record().blockHash();
+        result.finalizedHeight   = finResult.record().blockIndex();
+
+        // Broadcast the finalized record to lagging peers.
+        m_gossip.broadcast(
+            p2p::NetworkMessageType::FINALIZED_BLOCK_ARTIFACT,
+            finResult.record().serialize(),
+            now
+        );
+
+        // Advance the consensus round to the next height.
+        const std::uint64_t nextHeight = height + 1;
+        const std::string chainId =
+            m_runtime.config().genesisConfig().networkParameters().chainId();
+        const std::string nextProposer =
+            ProposerSchedule::selectProposer(
+                m_runtime.validatorRegistry(), chainId, nextHeight, 1
+            );
+        const std::int64_t targetBlockTimeSec =
+            m_runtime.config().genesisConfig().networkParameters().targetBlockTimeSeconds();
+        m_runtime.mutableConsensusRoundManager().advanceToHeight(
+            nextHeight, 1, nextProposer, now, targetBlockTimeSec
+        );
+
+        // Reset per-height BFT state.
+        m_lastProcessedHeight = nextHeight;
+        m_lockedBlock         = "";
+        m_lockedRound         = 0;
+        m_votedPrevote        = false;
+        m_votedPrecommit      = false;
+        m_producedThisRound   = false;
+
+        // Notify application layer (disk persistence, snapshots, etc.).
+        if (m_onFinalized) {
+            m_onFinalized(finResult.record());
         }
     }
 
-    // TASK 2: Check round timeout, advance if expired, and broadcast to peers.
+    // Round timeout: advance to the next round at the same height when the
+    // proposer has not produced in time.
     if (m_runtime.advanceConsensusRoundIfTimedOut(now)) {
-        result.roundAdvanced = true;
-        m_votedPrevote = false;
-        m_votedPrecommit = false;
+        result.roundAdvanced    = true;
+        m_votedPrevote          = false;
+        m_votedPrecommit        = false;
+        m_producedThisRound     = false;
         broadcastRoundAdvancement(now);
     }
 
     return result;
 }
 
-ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(
-    std::int64_t now
-) {
+ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
     ConsensusTickResult result;
 
-    // Process both VOTE_ANNOUNCE (legacy) and VALIDATOR_VOTE (new) message types.
     const std::array<p2p::NetworkMessageType, 2> voteTypes = {
         p2p::NetworkMessageType::VOTE_ANNOUNCE,
         p2p::NetworkMessageType::VALIDATOR_VOTE
@@ -299,16 +355,12 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(
                     result.votesCollected++;
                 }
             } catch (const std::exception&) {
-                // Malformed vote payload from peer — skip silently.
-                // This prevents a single invalid network message from
-                // crashing the consensus event loop thread.
                 continue;
             }
         }
     }
 
-    // TASK 3: After collecting votes, scan for double-votes and forward them
-    // to the EvidencePool as slashing evidence.
+    // Detect double-votes and forward them to the evidence pool for slashing.
     if (m_evidencePool) {
         const VotePool& pool =
             m_runtime.consensusRoundManager().voteCollector().votePool();
@@ -318,82 +370,21 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(
     return result;
 }
 
-bool ConsensusEventLoop::tryFinalizeBlock(
-    std::uint64_t       blockIndex,
-    const std::string&  blockHash,
-    const std::string&  previousHash,
-    std::uint64_t       round,
-    std::int64_t        now,
-    ConsensusTickResult& result
-) {
-    if (m_finalizationRegistry.hasFinalizedHeight(blockIndex)) {
-        return false;
-    }
+void ConsensusEventLoop::saveRecoveryState(bool votedPrevote, bool votedPrecommit) {
+    if (!m_recoveryPath.has_value()) return;
 
-    const NetworkVoteCollector& collector =
-        m_runtime.consensusRoundManager().voteCollector();
-
-    const VotePool& pool = collector.votePool();
-
-    // Filter to PRECOMMIT and APPROVE votes only
-    std::vector<ValidatorVoteRecord> allVotes = pool.votesForBlock(blockIndex, blockHash, round);
-    std::vector<ValidatorVoteRecord> certificateVotes;
-    for (const auto& vote : allVotes) {
-        if (vote.decision() == ValidatorVoteDecision::PRECOMMIT || vote.decision() == ValidatorVoteDecision::APPROVE) {
-            certificateVotes.push_back(vote);
-        }
-    }
-
-    const QuorumCertificateBuildResult qcResult =
-        QuorumCertificateBuilder::buildFromVotes(
-            blockIndex,
-            blockHash,
-            previousHash,
-            round,
-            certificateVotes,
-            m_runtime.validatorRegistry(),
-            m_policy,
-            m_provider,
-            QUORUM_NUMERATOR,
-            QUORUM_DENOMINATOR
-        );
-
-    if (!qcResult.certified()) return false;
-
-    result.quorumFormed = true;
-
-    const core::Block& block = m_runtime.blockchain().latestBlock();
-
-    BlockFinalizationResult finResult = BlockFinalizer::finalizeBlock(
-        m_runtime.mutableBlockchain(),
-        block,
-        qcResult.certificate(),
-        m_runtime.validatorRegistry(),
-        m_finalizationRegistry,
-        m_policy,
-        m_provider,
-        now
+    const auto& state = m_runtime.consensusRoundManager().currentState();
+    ConsensusRoundState updatedState(
+        state.height(),
+        state.round(),
+        state.proposerAddress(),
+        state.roundStartedAt(),
+        m_lockedBlock,
+        m_lockedRound,
+        votedPrevote,
+        votedPrecommit
     );
-
-    if (!finResult.success()) {
-        if (!finResult.duplicate()) {
-            result.errorMessage = finResult.reason();
-        }
-        return false;
-    }
-
-    result.blockFinalized     = true;
-    result.finalizedBlockHash = finResult.record().blockHash();
-    result.finalizedHeight    = finResult.record().blockIndex();
-
-    // Broadcast the finalized record so lagging peers can learn about it.
-    m_gossip.broadcast(
-        p2p::NetworkMessageType::FINALIZED_BLOCK_ARTIFACT,
-        finResult.record().serialize(),
-        now
-    );
-
-    return true;
+    ConsensusRecoveryStore::save(*m_recoveryPath, updatedState);
 }
 
 void ConsensusEventLoop::broadcastRoundAdvancement(std::int64_t now) {
@@ -406,23 +397,15 @@ void ConsensusEventLoop::broadcastRoundAdvancement(std::int64_t now) {
         now
     );
 
-    if (!message.isValid()) {
-        return;
-    }
+    if (!message.isValid()) return;
 
     const std::string payload =
         kCanonicalPayloadPrefix +
         crypto::hexEncode(
-            serialization::ProtocolMessageCodec::encodeRoundAdvanceMessage(
-                message
-            )
+            serialization::ProtocolMessageCodec::encodeRoundAdvanceMessage(message)
         );
 
-    m_gossip.broadcast(
-        p2p::NetworkMessageType::CHAIN_STATUS,
-        payload,
-        now
-    );
+    m_gossip.broadcast(p2p::NetworkMessageType::CHAIN_STATUS, payload, now);
 }
 
 } // namespace nodo::consensus

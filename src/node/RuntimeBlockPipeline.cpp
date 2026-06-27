@@ -505,7 +505,6 @@ std::int64_t RuntimeBlockPipelineConfig::timestamp() const {
 
 bool RuntimeBlockPipelineConfig::isValid() const {
     return m_maxTransactionsPerBlock > 0 &&
-           m_minTransactionsPerBlock > 0 &&
            m_minTransactionsPerBlock <= m_maxTransactionsPerBlock &&
            m_consensusRound > 0 &&
            m_timestamp > 0;

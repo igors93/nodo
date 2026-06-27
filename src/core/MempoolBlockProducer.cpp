@@ -30,7 +30,6 @@ std::size_t BlockProductionConfig::minTransactionsPerBlock() const {
 
 bool BlockProductionConfig::isValid() const {
     return m_maxTransactionsPerBlock > 0 &&
-           m_minTransactionsPerBlock > 0 &&
            m_minTransactionsPerBlock <= m_maxTransactionsPerBlock;
 }
 

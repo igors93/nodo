@@ -226,7 +226,11 @@ private:
     bool startRpc();
 
     // Block producer callback wired into ConsensusEventLoop.
-    bool produceBlock(std::uint64_t height, std::uint64_t round, std::int64_t now);
+    // Returns the validated candidate block, or nullopt on failure.
+    // Does NOT finalize — finalization is handled entirely by ConsensusEventLoop.
+    std::optional<core::Block> produceBlock(
+        std::uint64_t height, std::uint64_t round, std::int64_t now
+    );
 
     // Build chain status from current runtime state.
     ChainStatusMessage currentChainStatus() const;

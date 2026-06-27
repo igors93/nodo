@@ -15,7 +15,6 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeStateLoader.hpp"
-#include "node/SignedBlockProposalMessage.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
 #include "storage/AccountStateSnapshotStore.hpp"
 #include "storage/BlockFileStore.hpp"
@@ -972,8 +971,13 @@ bool NodeOrchestrator::startConsensus() {
     }
 
     // Wire the block producer callback.
+    // Returns a validated candidate block (no QC, no finalization).
+    // ConsensusEventLoop handles adding the block to the chain, broadcasting
+    // the proposal, voting, and finalization.
     m_consensusLoop->setBlockProducerCallback(
-        [this](std::uint64_t height, std::uint64_t round, std::int64_t now) -> bool {
+        [this](std::uint64_t height,
+               std::uint64_t round,
+               std::int64_t  now) -> std::optional<core::Block> {
             return this->produceBlock(height, round, now);
         }
     );
@@ -1072,83 +1076,36 @@ void NodeOrchestrator::setLocalSigner(crypto::Signer signer) {
     m_localSigner = std::move(signer);
 }
 
-bool NodeOrchestrator::produceBlock(
+std::optional<core::Block> NodeOrchestrator::produceBlock(
     std::uint64_t height,
     std::uint64_t round,
     std::int64_t  now
 ) {
-    // For now: if the runtime has no validators, skip.
-    if (m_runtime->validatorRegistry().activeCount() == 0) return false;
+    if (m_runtime->validatorRegistry().activeCount() == 0) return std::nullopt;
 
-    // Check if we're proposer for this height+round.
+    // Confirm this node is the designated proposer for (height, round).
     const std::string chainId =
         m_config.genesisConfig().networkParameters().chainId();
     const std::string expectedProposer = consensus::ProposerSchedule::selectProposer(
-        m_runtime->validatorRegistry(),
-        chainId,
-        height,
-        round
+        m_runtime->validatorRegistry(), chainId, height, round
     );
 
-    if (expectedProposer != m_config.localValidatorAddress()) return false;
+    if (expectedProposer != m_config.localValidatorAddress()) return std::nullopt;
+    if (!m_localSigner.has_value()) return std::nullopt;
 
-    if (!m_localSigner.has_value()) return false;
-
-    RuntimeBlockPipelineConfig pipelineConfig(
-        m_config.maxBlockTransactions(),
-        0,
-        round,
-        now
+    // Phase 1: production only — no voting, no QC, no finalization.
+    // ConsensusEventLoop is responsible for adding the block to the chain,
+    // broadcasting the proposal, voting, and finalizing.
+    const RuntimeBlockPipelineConfig pipelineConfig(
+        m_config.maxBlockTransactions(), 0, round, now
     );
 
-    const auto result = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
-        *m_runtime,
-        pipelineConfig,
-        m_localSigner.value()
-    );
+    const consensus::BlockCandidateResult candidate =
+        consensus::BlockProductionPhase::produce(*m_runtime, pipelineConfig);
 
-    if (result.status() != RuntimeBlockPipelineStatus::FINALIZED) {
-        return false;
-    }
+    if (!candidate.produced()) return std::nullopt;
 
-    // A block was just appended to the chain — process any governance proposals
-    // it contains so effective parameters update immediately, then drop the
-    // cached account state so the next tick rebuilds it from the updated tip.
-    if (!m_runtime->blockchain().empty()) {
-        m_runtime->applyGovernanceFromBlock(
-            m_runtime->blockchain().latestBlock(), now
-        );
-    }
-    m_runtime->invalidateAccountStateCache();
-
-    // Sign and broadcast the proposed block so peers can authenticate
-    // the proposer before adding it to their chains.
-    if (m_tcpRuntime && result.block().isValid()) {
-        try {
-            const crypto::Signer& signer = m_localSigner.value();
-            const SignedBlockProposalMessage proposal = SignedBlockProposalMessage::sign(
-                result.block(),
-                signer.address(),
-                signer.keyPair().publicKey(),
-                signer.keyPair().privateKeyForSigningOnly(),
-                round,
-                now,
-                m_provider
-            );
-
-            if (proposal.isValid()) {
-                m_tcpRuntime->gossipMesh().broadcast(
-                    p2p::NetworkMessageType::BLOCK_PROPOSAL,
-                    proposal.serialize(),
-                    now
-                );
-            }
-        } catch (...) {
-            // Broadcast failure is non-fatal; the block was already finalized locally.
-        }
-    }
-
-    return true;
+    return candidate.block();
 }
 
 ChainStatusMessage NodeOrchestrator::currentChainStatus() const {
