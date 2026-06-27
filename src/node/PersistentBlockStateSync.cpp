@@ -1126,7 +1126,12 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
     // provides the binding trust check for those items.
     for (const auto& item : batch.items()) {
         if (item.serializedFinalizedRecord().empty()) {
-            continue;
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Block at height " + std::to_string(item.height()) +
+                    " is missing a required FinalizedBlockRecord.",
+                std::nullopt
+            );
         }
 
         consensus::FinalizedBlockRecord record;

@@ -357,24 +357,61 @@ void testApplyValidatedBatchRejectsNonCanonicalRoots() {
 
 void testApplyValidatedBatchAcceptsBlockWithCorrectRoots() {
     core::Blockchain blockchain = chainWithGenesis();
-    const core::ValidatorRegistry registry;
-    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+
+    const crypto::KeyPair validatorKey =
+        crypto::KeyPair::createDeterministicBls12381KeyPair(
+            "protocol-valid-qc"
+        );
+
+    core::ValidatorRegistry registry;
+    registerValidator(registry, validatorKey, "protocol-valid-qc");
+
+    const crypto::CryptoPolicy policy =
+        crypto::CryptoPolicy::developmentPolicy();
     const crypto::Bls12381SignatureProvider provider;
 
-    const core::Block goodBlock = buildBlockWithRealRoots(blockchain, 1);
+    const core::Block goodBlock =
+        buildBlockWithRealRoots(blockchain, 1);
 
-    const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
-    const PersistentBlockSyncBatch batch =
-        singleBlockBatch(goodBlock, blockchain.latestBlock().hash());
+    const consensus::FinalizedBlockRecord finalizedRecord =
+        buildFinalizedRecord(goodBlock, validatorKey, registry);
+
+    const PersistentSyncCheckpoint checkpoint =
+        genesisCheckpoint(blockchain);
+
+    const PersistentBlockSyncItem item(
+        goodBlock.index(),
+        goodBlock.hash(),
+        goodBlock.previousHash(),
+        goodBlock.serialize(),
+        goodBlock.stateRoot(),
+        kTimestamp + 1,
+        finalizedRecord.serialize()
+    );
+
+    const PersistentBlockSyncBatch batch(
+        "peer-a",
+        goodBlock.index(),
+        goodBlock.index(),
+        {item},
+        kTimestamp + 2
+    );
 
     const PersistentSyncApplyResult result =
         PersistentBlockStateSyncApplier::applyValidatedBatch(
-            checkpoint, batch, blockchain, registry, policy, provider, buildContext, kTimestamp + 3
+            checkpoint,
+            batch,
+            blockchain,
+            registry,
+            policy,
+            provider,
+            buildContext,
+            kTimestamp + 3
         );
 
     requireCondition(
         result.applied(),
-        "Batch with correct roots must be accepted."
+        "Batch with correct roots and valid QC must be accepted."
     );
     requireCondition(
         result.checkpoint().has_value(),
@@ -478,7 +515,7 @@ void testFastPathRejectsWhenAnyItemMissesFinalizedRecord() {
     );
 }
 
-void testProtocolCommitmentStillAcceptsItemsWithoutFinalizedRecord() {
+void testProtocolCommitmentRejectsItemsWithoutFinalizedRecord() {
     core::Blockchain blockchain = chainWithGenesis();
     const core::ValidatorRegistry registry;
     const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
@@ -498,13 +535,12 @@ void testProtocolCommitmentStillAcceptsItemsWithoutFinalizedRecord() {
         );
 
     requireCondition(
-        result.applied(),
-        "Protocol-commitment mode must accept batch without FinalizedBlockRecord "
-        "when state roots are correct."
+        !result.applied(),
+        "Protocol-commitment sync must reject a block without finality proof."
     );
     requireCondition(
-        blockchain.size() == 2U,
-        "Blockchain must grow by one after successful protocol-commitment sync."
+        blockchain.size() == 1U,
+        "Blockchain must remain unchanged when the QC is missing."
     );
 }
 
@@ -590,7 +626,7 @@ int main() {
         testApplyValidatedBatchAcceptsBlockWithCorrectRoots();
         testFastPathRejectsMissingFinalizedRecord();
         testFastPathRejectsWhenAnyItemMissesFinalizedRecord();
-        testProtocolCommitmentStillAcceptsItemsWithoutFinalizedRecord();
+        testProtocolCommitmentRejectsItemsWithoutFinalizedRecord();
         testFastPathAcceptsValidQcRecord();
 
         std::cout << "PersistentSync protocol validation tests passed.\n";
