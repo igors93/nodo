@@ -321,14 +321,17 @@ void BlockSyncHandler::serveRequests(
         std::vector<core::Block> toSend;
         toSend.reserve(static_cast<std::size_t>(maxToSend));
 
-        for (const auto& block : blockchain.blocks()) {
-            if (block.index() < fromHeight) {
-                continue;
+        const auto& blocks = blockchain.blocks();
+        if (fromHeight < blocks.size()) {
+            const std::size_t startIdx = static_cast<std::size_t>(fromHeight);
+            const std::size_t endIdx = std::min(
+                blocks.size(),
+                startIdx + static_cast<std::size_t>(maxToSend)
+            );
+            
+            for (std::size_t i = startIdx; i < endIdx; ++i) {
+                toSend.push_back(blocks[i]);
             }
-            if (toSend.size() >= static_cast<std::size_t>(maxToSend)) {
-                break;
-            }
-            toSend.push_back(block);
         }
 
         if (toSend.empty()) {
