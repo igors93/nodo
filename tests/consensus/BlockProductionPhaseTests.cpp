@@ -5,6 +5,7 @@
 #include "node/NodeRuntime.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "p2p/PeerMessage.hpp"
+#include "../common/ConsensusPhaseTestFixtures.hpp"
 
 #include <iostream>
 #include <stdexcept>
@@ -20,6 +21,10 @@ void require(bool condition, const std::string& msg) {
     if (!condition) throw std::runtime_error(msg);
 }
 
+crypto::KeyPair userKey() {
+    return test::consensusTestUserKey("block-production-phase-user");
+}
+
 config::GenesisConfig minimalGenesis() {
     return config::GenesisConfig(
         config::NetworkParameters::developmentLocal(),
@@ -28,8 +33,7 @@ config::GenesisConfig minimalGenesis() {
             crypto::KeyPair::createDeterministicBls12381KeyPair("prod-val").publicKey(),
             1, 1, "prod-val-meta"
           ) },
-        { config::GenesisAccountConfig("prod-sender",
-            utils::Amount::fromRawUnits(1000000LL), 0) },
+        { test::fundedConsensusTestAccount(userKey()) },
         "block-production-phase-test"
     );
 }
@@ -48,12 +52,13 @@ node::NodeRuntime startRuntime(const config::GenesisConfig& genesis) {
 void testProduceSucceedsWithValidRuntime() {
     const config::GenesisConfig genesis = minimalGenesis();
     node::NodeRuntime runtime = startRuntime(genesis);
+    test::admitConsensusTestTransfer(runtime, userKey(), 1, kTs + 1);
 
     const node::RuntimeBlockPipelineConfig config(
         10,    // maxTransactions
         0,     // minTransactions
         1,     // round
-        kTs + 1
+        kTs + 2
     );
 
     const consensus::BlockCandidateResult result =
@@ -85,12 +90,16 @@ void testProduceFailsWithInvalidConfig() {
 void testProduceDoesNotFinalizeOrAdvanceRound() {
     const config::GenesisConfig genesis = minimalGenesis();
     node::NodeRuntime runtime = startRuntime(genesis);
+    test::admitConsensusTestTransfer(runtime, userKey(), 1, kTs + 1);
 
     const std::uint64_t heightBefore =
         runtime.consensusRoundManager().currentState().height();
 
-    const node::RuntimeBlockPipelineConfig config(10, 0, 1, kTs + 1);
-    consensus::BlockProductionPhase::produce(runtime, config);
+    const node::RuntimeBlockPipelineConfig config(10, 1, 1, kTs + 2);
+    const consensus::BlockCandidateResult candidate =
+        consensus::BlockProductionPhase::produce(runtime, config);
+    require(candidate.produced(),
+            "Production must succeed before side effects are evaluated.");
 
     const std::uint64_t heightAfter =
         runtime.consensusRoundManager().currentState().height();

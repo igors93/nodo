@@ -63,8 +63,6 @@ NodeDaemon.tick()
   │     ├── SeenTransactionCache       — LRU+TTL dedup by payloadHash
   │     ├── PersistentMempoolStore::deserializeGossipAndAdmit()  — Ed25519 verify + admit
   │     └── gossipBroadcast()          — relay if newly admitted
-  ├── processBlockProposals()          — drain BLOCK_PROPOSAL inbox
-  │     └── BlockAnnounceHandler       — apply to local blockchain
   └── processFinalizedArtifacts()      — drain FINALIZED_BLOCK_ARTIFACT inbox
         ├── FinalizedBlockRecord::deserialize()
         ├── record.verify()            — QC check vs. local validator registry
@@ -72,8 +70,10 @@ NodeDaemon.tick()
 ```
 
 `ConsensusEventLoop` runs in a background thread inside `NodeOrchestrator` and
-handles `VALIDATOR_VOTE` / `VOTE_ANNOUNCE` accumulation, `QuorumCertificate`
-assembly and broadcasting `FINALIZED_BLOCK_ARTIFACT` after quorum.
+owns proposal admission. A validated `BLOCK_PROPOSAL` is retained as a
+round-scoped candidate, never appended as canonical state. The loop handles
+`VALIDATOR_VOTE` / `VOTE_ANNOUNCE` accumulation and `QuorumCertificate`
+assembly; only `BlockFinalizer` appends the candidate after quorum.
 
 ## Build
 

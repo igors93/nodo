@@ -3,14 +3,19 @@
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
+#include "core/BlockStateTransitionValidator.hpp"
 #include "crypto/Hex.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "node/DoubleVoteDetector.hpp"
+#include "node/RuntimeAccountStateBuilder.hpp"
+#include "node/SignedBlockProposalMessage.hpp"
 #include "p2p/NetworkEnvelope.hpp"
+#include "serialization/BlockCodec.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
 
 #include <array>
 #include <chrono>
+#include <limits>
 #include <thread>
 
 namespace nodo::consensus {
@@ -19,6 +24,14 @@ namespace {
 
 static const std::string kCanonicalPayloadPrefix =
     "NODO_CANONICAL_PROTOCOL_HEX_V1:";
+
+std::int64_t effectiveMinimumFee(const node::NodeRuntime& runtime) {
+    const std::uint64_t raw = runtime.effectiveMinimumFeeRawUnits();
+    if (raw > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+    return static_cast<std::int64_t>(raw);
+}
 
 } // namespace
 
@@ -109,6 +122,10 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
 
     if (m_runtime.blockchain().empty()) return result;
 
+    // BLOCK_PROPOSAL is consensus input. Keeping proposal admission on this
+    // thread prevents the daemon from mutating the canonical chain concurrently.
+    processBlockProposals();
+
     const core::Blockchain& chain  = m_runtime.blockchain();
     const auto& state              = m_runtime.consensusRoundManager().currentState();
     const std::uint64_t height     = state.height();
@@ -126,6 +143,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         m_votedPrevote           = false;
         m_votedPrecommit         = false;
         m_producedThisRound      = false;
+        m_pendingCandidate.reset();
     } else if (m_lastProcessedHeight == 0 && height > 0) {
         m_lastProcessedHeight = height;
     }
@@ -136,13 +154,16 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     // When this node is the designated proposer and hasn't produced a block
     // for the current round yet:
     //   1. Invoke the production callback to build a validated candidate block.
-    //   2. Add the block to the local chain (enables same-tick voting).
-    //   3. Broadcast it as a signed BLOCK_PROPOSAL for peers to validate.
+    //   2. Broadcast it as a signed BLOCK_PROPOSAL for peers to validate.
+    //   3. Retain it outside the canonical chain until PRECOMMIT quorum.
     //
     // After this block the proposer falls through to the same prevote/precommit
     // path as every other validator — no APPROVE shortcuts.
     // -------------------------------------------------------------------------
-    if (!m_localValidatorAddress.empty() && m_blockProducer && !m_producedThisRound) {
+    if (!m_localValidatorAddress.empty() &&
+        m_blockProducer &&
+        !m_producedThisRound &&
+        !m_pendingCandidate.has_value()) {
         const std::uint64_t tipHeight  = chain.latestBlock().index();
         const std::uint64_t nextHeight = tipHeight + 1;
 
@@ -157,13 +178,9 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
                 std::optional<core::Block> blockOpt = m_blockProducer(height, round, now);
 
                 if (blockOpt.has_value()) {
-                    m_runtime.mutableBlockchain().addBlock(*blockOpt);
-                    m_runtime.applyGovernanceFromBlock(*blockOpt, now);
-                    m_runtime.invalidateAccountStateCache();
-
                     // Phase 2: sign and broadcast the proposal.
                     if (m_localSigner) {
-                        BlockProposalPhase::propose(
+                        const BlockProposalResult proposalResult = BlockProposalPhase::propose(
                             *blockOpt,
                             m_localValidatorAddress,
                             round,
@@ -172,6 +189,12 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
                             m_gossip,
                             m_provider
                         );
+
+                        if (proposalResult.proposed()) {
+                            m_pendingCandidate = PendingBlockCandidate{*blockOpt, round};
+                        } else {
+                            result.errorMessage = proposalResult.reason();
+                        }
                     }
                 }
 
@@ -180,15 +203,18 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         }
     }
 
-    // If no block exists at the current consensus height, there is nothing
-    // to vote on. Wait for the proposer's BLOCK_PROPOSAL to arrive.
-    if (chain.latestBlock().index() != height) {
+    // A missing proposal must not bypass the timeout check; otherwise an
+    // offline proposer would permanently stall this height.
+    if (!m_pendingCandidate.has_value() ||
+        m_pendingCandidate->block.index() != height ||
+        m_pendingCandidate->round != round) {
+        advanceRoundIfTimedOut(now, result);
         return result;
     }
 
-    const core::Block& tip        = chain.latestBlock();
-    const std::string& blockHash  = tip.hash();
-    const std::string& prevHash   = tip.previousHash();
+    const core::Block& candidate = m_pendingCandidate->block;
+    const std::string& blockHash = candidate.hash();
+    const std::string& prevHash  = candidate.previousHash();
 
     // Count accumulated prevotes for the current block.
     const VotePool& pool = m_runtime.consensusRoundManager().voteCollector().votePool();
@@ -223,7 +249,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
 
         if (m_lockedBlock.empty() || blockHash == m_lockedBlock || round > m_lockedRound) {
             const VoteCastResult prevoteResult = BlockVotingPhase::castPrevote(
-                m_runtime, tip, round, now, *m_localSigner, m_gossip
+                m_runtime, candidate, round, now, *m_localSigner, m_gossip
             );
 
             if (prevoteResult.cast()) {
@@ -250,7 +276,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
             m_lockedRound = round;
 
             const VoteCastResult precommitResult = BlockVotingPhase::castPrecommit(
-                m_runtime, tip, round, now, *m_localSigner, m_gossip
+                m_runtime, candidate, round, now, *m_localSigner, m_gossip
             );
 
             if (precommitResult.cast()) {
@@ -271,7 +297,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     //   - Invoke the registered finalization callback (persistence, etc.).
     // -------------------------------------------------------------------------
     const BlockFinalizationPhaseResult finResult = BlockFinalizationPhase::tryFinalize(
-        m_runtime, tip, height, blockHash, prevHash, round, m_policy, m_provider, now
+        m_runtime, candidate, height, blockHash, prevHash, round, m_policy, m_provider, now
     );
 
     if (finResult.finalized()) {
@@ -279,6 +305,11 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         result.blockFinalized    = true;
         result.finalizedBlockHash = finResult.record().blockHash();
         result.finalizedHeight   = finResult.record().blockIndex();
+
+        // State derived from block contents becomes visible only after the
+        // quorum-authorized append performed by BlockFinalizer.
+        m_runtime.applyGovernanceFromBlock(candidate, now);
+        m_runtime.invalidateAccountStateCache();
 
         // Broadcast the finalized record to lagging peers.
         m_gossip.broadcast(
@@ -308,6 +339,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         m_votedPrevote        = false;
         m_votedPrecommit      = false;
         m_producedThisRound   = false;
+        m_pendingCandidate.reset();
 
         // Notify application layer (disk persistence, snapshots, etc.).
         if (m_onFinalized) {
@@ -315,15 +347,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         }
     }
 
-    // Round timeout: advance to the next round at the same height when the
-    // proposer has not produced in time.
-    if (m_runtime.advanceConsensusRoundIfTimedOut(now)) {
-        result.roundAdvanced    = true;
-        m_votedPrevote          = false;
-        m_votedPrecommit        = false;
-        m_producedThisRound     = false;
-        broadcastRoundAdvancement(now);
-    }
+    advanceRoundIfTimedOut(now, result);
 
     return result;
 }
@@ -368,6 +392,112 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
     }
 
     return result;
+}
+
+void ConsensusEventLoop::processBlockProposals() {
+    const auto messages = m_gossip.drainInbox(
+        p2p::NetworkMessageType::BLOCK_PROPOSAL
+    );
+
+    if (messages.empty() || m_runtime.blockchain().empty()) return;
+
+    const core::Blockchain& chain = m_runtime.blockchain();
+    const core::ValidatorRegistry& validators = m_runtime.validatorRegistry();
+    const ConsensusRoundState& state =
+        m_runtime.consensusRoundManager().currentState();
+
+    if (validators.activeCount() == 0) return;
+
+    const std::string chainId =
+        m_runtime.config().genesisConfig().networkParameters().chainId();
+    const std::string expectedProposer = ProposerSchedule::selectProposer(
+        validators,
+        chainId,
+        state.height(),
+        state.round()
+    );
+
+    if (expectedProposer.empty()) return;
+
+    for (const auto& envelope : messages) {
+        if (envelope.payload().empty()) continue;
+
+        try {
+            const node::SignedBlockProposalMessage proposal =
+                node::SignedBlockProposalMessage::deserialize(envelope.payload());
+
+            if (!proposal.isValid() ||
+                proposal.blockIndex() != state.height() ||
+                proposal.round() != state.round()) {
+                continue;
+            }
+
+            if (!proposal.verify(
+                    expectedProposer,
+                    validators,
+                    m_policy,
+                    m_provider)) {
+                continue;
+            }
+
+            const core::Block block =
+                serialization::BlockCodec::deserialize(proposal.serializedBlock());
+
+            if (!block.isValid() ||
+                block.index() != proposal.blockIndex() ||
+                block.hash() != proposal.blockHash() ||
+                !chain.canAppendBlock(block)) {
+                continue;
+            }
+
+            const core::StateTransitionPreviewContext validationContext =
+                node::RuntimeAccountStateBuilder::previewContextAtTip(
+                    m_runtime.config().genesisConfig(),
+                    chain,
+                    effectiveMinimumFee(m_runtime)
+                );
+
+            const core::BlockValidationResult validation =
+                core::BlockStateTransitionValidator::validateCandidateBlock(
+                    chain,
+                    block,
+                    validationContext
+                );
+
+            if (!validation.accepted()) continue;
+
+            if (m_pendingCandidate.has_value()) {
+                // Exact duplicates are harmless. A second hash for the same
+                // proposer/round is conflicting input and must not replace the
+                // candidate already selected for local voting.
+                if (m_pendingCandidate->round == state.round() &&
+                    m_pendingCandidate->block.index() == state.height()) {
+                    continue;
+                }
+            }
+
+            m_pendingCandidate = PendingBlockCandidate{block, state.round()};
+        } catch (const std::exception&) {
+            // Malformed or unverifiable peer input is ignored without changing
+            // the active candidate or canonical chain.
+            continue;
+        }
+    }
+}
+
+bool ConsensusEventLoop::advanceRoundIfTimedOut(
+    std::int64_t now,
+    ConsensusTickResult& result
+) {
+    if (!m_runtime.advanceConsensusRoundIfTimedOut(now)) return false;
+
+    result.roundAdvanced    = true;
+    m_votedPrevote          = false;
+    m_votedPrecommit        = false;
+    m_producedThisRound     = false;
+    m_pendingCandidate.reset();
+    broadcastRoundAdvancement(now);
+    return true;
 }
 
 void ConsensusEventLoop::saveRecoveryState(bool votedPrevote, bool votedPrecommit) {

@@ -132,6 +132,13 @@ public:
         std::int64_t now
     );
 
+    GossipDeliveryReport sendTo(
+        const std::string& targetNodeId,
+        NetworkMessageType type,
+        const std::string& payload,
+        std::int64_t now
+    );
+
     GossipDeliveryReport flushOutbound(
         std::int64_t now
     );

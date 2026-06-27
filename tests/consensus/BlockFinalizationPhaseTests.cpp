@@ -13,6 +13,7 @@
 #include "p2p/GossipMesh.hpp"
 #include "p2p/LoopbackTransport.hpp"
 #include "p2p/PeerMessage.hpp"
+#include "../common/ConsensusPhaseTestFixtures.hpp"
 
 #include <iostream>
 #include <memory>
@@ -29,6 +30,10 @@ void require(bool condition, const std::string& msg) {
     if (!condition) throw std::runtime_error(msg);
 }
 
+crypto::KeyPair userKey() {
+    return test::consensusTestUserKey("block-finalization-phase-user");
+}
+
 config::GenesisConfig minimalGenesis() {
     return config::GenesisConfig(
         config::NetworkParameters::developmentLocal(),
@@ -37,7 +42,7 @@ config::GenesisConfig minimalGenesis() {
             crypto::KeyPair::createDeterministicBls12381KeyPair("fin-val").publicKey(),
             1, 1, "fin-val-meta"
           ) },
-        {},
+        { test::fundedConsensusTestAccount(userKey()) },
         "block-finalization-phase-test"
     );
 }
@@ -72,16 +77,17 @@ struct TestGossipMesh {
 void testFinalizeSucceedsAfterPrecommitQuorum() {
     const config::GenesisConfig genesis = minimalGenesis();
     node::NodeRuntime runtime = startRuntime(genesis);
+    test::admitConsensusTestTransfer(runtime, userKey(), 1, kTs + 1);
 
     // Phase 1: produce a candidate block.
-    const node::RuntimeBlockPipelineConfig prodConfig(10, 0, 1, kTs + 1);
+    const node::RuntimeBlockPipelineConfig prodConfig(10, 1, 1, kTs + 2);
     const consensus::BlockCandidateResult candidate =
         consensus::BlockProductionPhase::produce(runtime, prodConfig);
     require(candidate.produced(), "Need a produced block.");
     const core::Block block = candidate.block();
 
-    // Add block to chain (CEL would do this; here we do it manually).
-    runtime.mutableBlockchain().addBlock(block);
+    require(runtime.blockchain().size() == 1,
+            "A candidate must remain outside the canonical chain before quorum.");
 
     TestGossipMesh tgm("fin-node", genesis.deterministicId());
     const crypto::KeyPair kp =
@@ -91,10 +97,10 @@ void testFinalizeSucceedsAfterPrecommitQuorum() {
 
     // Phase 3: cast prevote + precommit (only validator = immediate quorum).
     consensus::BlockVotingPhase::castPrevote(
-        runtime, block, 1, kTs + 1, signer, tgm.mesh
+        runtime, block, 1, kTs + 3, signer, tgm.mesh
     );
     consensus::BlockVotingPhase::castPrecommit(
-        runtime, block, 1, kTs + 2, signer, tgm.mesh
+        runtime, block, 1, kTs + 4, signer, tgm.mesh
     );
 
     // Phase 4: finalize.
@@ -114,7 +120,7 @@ void testFinalizeSucceedsAfterPrecommitQuorum() {
             1,              // round
             cryptoCtx.policy(),
             cryptoCtx.signatureProvider(),
-            kTs + 3
+            kTs + 5
         );
 
     require(finResult.finalized(),
@@ -123,19 +129,22 @@ void testFinalizeSucceedsAfterPrecommitQuorum() {
             "Finalized record must reference the correct block height.");
     require(finResult.record().blockHash() == block.hash(),
             "Finalized record must reference the correct block hash.");
+    require(runtime.blockchain().size() == 2,
+            "Finalization must append the candidate exactly once after quorum.");
+    require(runtime.blockchain().latestBlock().hash() == block.hash(),
+            "The quorum-authorized candidate must become the canonical tip.");
 }
 
 void testFinalizeReturnNotEnoughVotesWithoutQuorum() {
     const config::GenesisConfig genesis = minimalGenesis();
     node::NodeRuntime runtime = startRuntime(genesis);
+    test::admitConsensusTestTransfer(runtime, userKey(), 1, kTs + 1);
 
-    const node::RuntimeBlockPipelineConfig prodConfig(10, 0, 1, kTs + 1);
+    const node::RuntimeBlockPipelineConfig prodConfig(10, 1, 1, kTs + 2);
     const consensus::BlockCandidateResult candidate =
         consensus::BlockProductionPhase::produce(runtime, prodConfig);
     require(candidate.produced(), "Need a produced block.");
     const core::Block block = candidate.block();
-
-    runtime.mutableBlockchain().addBlock(block);
 
     const crypto::ProtocolCryptoContext cryptoCtx =
         crypto::ProtocolCryptoContext::fromNetworkName(
@@ -153,25 +162,27 @@ void testFinalizeReturnNotEnoughVotesWithoutQuorum() {
             1,
             cryptoCtx.policy(),
             cryptoCtx.signatureProvider(),
-            kTs + 1
+            kTs + 3
         );
 
     require(!result.finalized(),
             "Finalization must not succeed without quorum.");
     require(result.insufficient(),
             "Without quorum, result must indicate insufficient votes.");
+    require(runtime.blockchain().size() == 1,
+            "A candidate without quorum must not enter the canonical chain.");
 }
 
 void testFinalizationRegistersInRuntimeRegistry() {
     const config::GenesisConfig genesis = minimalGenesis();
     node::NodeRuntime runtime = startRuntime(genesis);
+    test::admitConsensusTestTransfer(runtime, userKey(), 1, kTs + 1);
 
-    const node::RuntimeBlockPipelineConfig prodConfig(10, 0, 1, kTs + 1);
+    const node::RuntimeBlockPipelineConfig prodConfig(10, 1, 1, kTs + 2);
     const consensus::BlockCandidateResult candidate =
         consensus::BlockProductionPhase::produce(runtime, prodConfig);
     require(candidate.produced(), "Need a produced block.");
     const core::Block block = candidate.block();
-    runtime.mutableBlockchain().addBlock(block);
 
     TestGossipMesh tgm("fin-node", genesis.deterministicId());
     const crypto::KeyPair kp =
@@ -180,10 +191,10 @@ void testFinalizationRegistersInRuntimeRegistry() {
     const crypto::Signer signer(kp, provider);
 
     consensus::BlockVotingPhase::castPrevote(
-        runtime, block, 1, kTs + 1, signer, tgm.mesh
+        runtime, block, 1, kTs + 3, signer, tgm.mesh
     );
     consensus::BlockVotingPhase::castPrecommit(
-        runtime, block, 1, kTs + 2, signer, tgm.mesh
+        runtime, block, 1, kTs + 4, signer, tgm.mesh
     );
 
     const crypto::ProtocolCryptoContext cryptoCtx =
@@ -197,13 +208,15 @@ void testFinalizationRegistersInRuntimeRegistry() {
 
     consensus::BlockFinalizationPhase::tryFinalize(
         runtime, block, block.index(), block.hash(), block.previousHash(),
-        1, cryptoCtx.policy(), cryptoCtx.signatureProvider(), kTs + 3
+        1, cryptoCtx.policy(), cryptoCtx.signatureProvider(), kTs + 5
     );
 
     const bool after =
         runtime.finalizationRegistry().hasFinalizedHeight(block.index());
     require(after,
             "Runtime finalizationRegistry must reflect the finalized height.");
+    require(runtime.blockchain().latestBlock().hash() == block.hash(),
+            "Registered finalization must append the matching block.");
 }
 
 } // namespace

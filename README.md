@@ -287,8 +287,6 @@ NodeDaemon.tick()
   │     ├── SeenTransactionCache       — LRU+TTL dedup by payloadHash
   │     ├── PersistentMempoolStore::deserializeGossipAndAdmit()  — Ed25519 verify + admit
   │     └── gossipBroadcast()          — relay if newly admitted
-  ├── processBlockProposals()          — drain BLOCK_PROPOSAL inbox
-  │     └── BlockAnnounceHandler       — proposer-auth + state-transition verify + apply
   └── processFinalizedArtifacts()      — drain FINALIZED_BLOCK_ARTIFACT inbox
         ├── FinalizedBlockRecord::deserialize()
         ├── record.verify()            — QC check vs. local validator registry
@@ -296,7 +294,7 @@ NodeDaemon.tick()
         └── FinalizedBlockRecordStore::save()   — persist QC to disk
 ```
 
-`ConsensusEventLoop` runs in a background thread inside `NodeOrchestrator` and handles `VALIDATOR_VOTE` accumulation, `QuorumCertificate` assembly, and broadcasts `FINALIZED_BLOCK_ARTIFACT` after quorum. The resulting record is persisted before being broadcast.
+`ConsensusEventLoop` runs in a background thread inside `NodeOrchestrator`. It validates `BLOCK_PROPOSAL` messages, retains the active candidate outside the canonical chain, accumulates `VALIDATOR_VOTE` messages, assembles the `QuorumCertificate`, and delegates the only authorized append to `BlockFinalizer` after quorum. The finalized callback then persists the block and QC record.
 
 ## Documentation
 

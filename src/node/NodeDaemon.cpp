@@ -1,50 +1,14 @@
 #include "node/NodeDaemon.hpp"
 
 #include "consensus/BlockFinalizer.hpp"
-#include "consensus/ProposerSchedule.hpp"
-#include "core/Block.hpp"
-#include "core/BlockStateTransitionValidator.hpp"
-#include "node/BlockAnnounceHandler.hpp"
 #include "node/FinalizedBlockRecordStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
-#include "node/RuntimeAccountStateBuilder.hpp"
-#include "node/SignedBlockProposalMessage.hpp"
 #include "p2p/Peer.hpp"
-#include "serialization/BlockCodec.hpp"
 
 #include <chrono>
-#include <limits>
-#include <optional>
 #include <thread>
 
 namespace nodo::node {
-
-namespace {
-
-std::int64_t minimumFeeRawUnitsForRuntime(
-    const NodeRuntime& runtime
-) {
-    const std::uint64_t minimumFee =
-        runtime.config().genesisConfig().networkParameters().minimumFeeRawUnits();
-
-    if (minimumFee > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-        return std::numeric_limits<std::int64_t>::max();
-    }
-
-    return static_cast<std::int64_t>(minimumFee);
-}
-
-core::StateTransitionPreviewContext previewContextForRuntime(
-    const NodeRuntime& runtime
-) {
-    return RuntimeAccountStateBuilder::previewContextAtTip(
-        runtime.config().genesisConfig(),
-        runtime.blockchain(),
-        minimumFeeRawUnitsForRuntime(runtime)
-    );
-}
-
-} // namespace
 
 NodeDaemon::NodeDaemon(
     NodeDaemonConfig                 config,
@@ -104,7 +68,6 @@ void NodeDaemon::setLocalSigner(crypto::Signer signer) {
 void NodeDaemon::tick(std::int64_t now) {
     m_orchestrator.tick(now);
     processTransactionGossip(now);
-    processBlockProposals(now);
     processFinalizedArtifacts(now);
 }
 
@@ -165,113 +128,6 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
             );
         }
     }
-}
-
-void NodeDaemon::processBlockProposals(std::int64_t now) {
-    const auto messages = m_orchestrator.drainGossipInbox(
-        p2p::NetworkMessageType::BLOCK_PROPOSAL
-    );
-
-    const core::Blockchain& chain = m_orchestrator.runtime().blockchain();
-    const core::ValidatorRegistry& validatorRegistry =
-        m_orchestrator.runtime().validatorRegistry();
-
-    for (const auto& envelope : messages) {
-        if (envelope.payload().empty()) continue;
-
-        // Decode as a SignedBlockProposalMessage. Proposals that cannot be
-        // decoded (e.g. raw Block bytes from older peers) are dropped.
-        SignedBlockProposalMessage proposal;
-        bool decodeFailed = false;
-        try {
-            proposal = SignedBlockProposalMessage::deserialize(envelope.payload());
-        } catch (...) {
-            decodeFailed = true;
-        }
-        if (decodeFailed || !proposal.isValid()) continue;
-
-        // Verify the proposer identity against the schedule and signature.
-        const std::uint64_t activeValidators =
-            validatorRegistry.activeCount();
-
-        // Without active validators there is no legitimate proposer.
-        if (activeValidators == 0) {
-            continue;
-        }
-
-        const std::string chainId =
-            m_orchestrator.config()
-                .genesisConfig()
-                .networkParameters()
-                .chainId();
-
-        const std::uint64_t currentRound =
-            m_orchestrator.runtime()
-                .consensusRoundManager()
-                .currentState()
-                .round();
-
-        // A proposal is valid only for the current consensus round.
-        if (proposal.round() != currentRound) {
-            continue;
-        }
-
-        const std::string expectedProposer =
-            consensus::ProposerSchedule::selectProposer(
-                validatorRegistry,
-                chainId,
-                proposal.blockIndex(),
-                currentRound
-            );
-
-        if (!proposal.verify(
-                expectedProposer,
-                validatorRegistry,
-                m_orchestrator.cryptoPolicy(),
-                m_orchestrator.signatureProvider()
-            )) {
-            continue;
-        }
-
-        // Deserialize the block from the verified proposal payload.
-        std::optional<core::Block> blockOpt;
-        try {
-            blockOpt = serialization::BlockCodec::deserialize(proposal.serializedBlock());
-        } catch (...) {
-            continue;
-        }
-
-        if (!blockOpt || !blockOpt->isValid()) continue;
-
-        const core::Block& block = *blockOpt;
-
-        // The signed proposal commits to the block hash; verify it matches.
-        if (block.hash() != proposal.blockHash() ||
-            block.index() != proposal.blockIndex()) {
-            continue;
-        }
-
-        if (!chain.canAppendBlock(block)) continue;
-
-        core::StateTransitionPreviewContext validationContext;
-        try {
-            validationContext = previewContextForRuntime(m_orchestrator.runtime());
-        } catch (const std::exception&) {
-            continue;
-        }
-
-        const core::BlockValidationResult validation =
-            core::BlockStateTransitionValidator::validateCandidateBlock(
-                chain,
-                block,
-                validationContext
-            );
-        if (!validation.accepted()) continue;
-
-        m_orchestrator.mutableRuntime().mutableBlockchain().addBlock(block);
-    }
-
-    (void)now;
 }
 
 void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {

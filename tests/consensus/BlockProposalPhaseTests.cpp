@@ -10,6 +10,7 @@
 #include "p2p/GossipMesh.hpp"
 #include "p2p/LoopbackTransport.hpp"
 #include "p2p/PeerMessage.hpp"
+#include "../common/ConsensusPhaseTestFixtures.hpp"
 
 #include <iostream>
 #include <memory>
@@ -26,6 +27,10 @@ void require(bool condition, const std::string& msg) {
     if (!condition) throw std::runtime_error(msg);
 }
 
+crypto::KeyPair userKey() {
+    return test::consensusTestUserKey("block-proposal-phase-user");
+}
+
 config::GenesisConfig minimalGenesis() {
     return config::GenesisConfig(
         config::NetworkParameters::developmentLocal(),
@@ -34,7 +39,7 @@ config::GenesisConfig minimalGenesis() {
             crypto::KeyPair::createDeterministicBls12381KeyPair("prop-val").publicKey(),
             1, 1, "prop-val-meta"
           ) },
-        {},
+        { test::fundedConsensusTestAccount(userKey()) },
         "block-proposal-phase-test"
     );
 }
@@ -69,8 +74,9 @@ struct TestGossipMesh {
 void testProposalSucceedsWithValidBlock() {
     const config::GenesisConfig genesis = minimalGenesis();
     node::NodeRuntime runtime = startRuntime(genesis);
+    test::admitConsensusTestTransfer(runtime, userKey(), 1, kTs + 1);
 
-    const node::RuntimeBlockPipelineConfig prodConfig(10, 0, 1, kTs + 1);
+    const node::RuntimeBlockPipelineConfig prodConfig(10, 1, 1, kTs + 2);
     const consensus::BlockCandidateResult candidate =
         consensus::BlockProductionPhase::produce(runtime, prodConfig);
     require(candidate.produced(), "Need a produced block to test proposal phase.");
@@ -87,7 +93,7 @@ void testProposalSucceedsWithValidBlock() {
             candidate.block(),
             signer.address(),
             1,       // round
-            kTs + 1, // now
+            kTs + 3, // now
             signer,
             tgm.mesh,
             provider
@@ -100,8 +106,9 @@ void testProposalSucceedsWithValidBlock() {
 void testProposalHasNoSideEffectsOnChain() {
     const config::GenesisConfig genesis = minimalGenesis();
     node::NodeRuntime runtime = startRuntime(genesis);
+    test::admitConsensusTestTransfer(runtime, userKey(), 1, kTs + 1);
 
-    const node::RuntimeBlockPipelineConfig prodConfig(10, 0, 1, kTs + 1);
+    const node::RuntimeBlockPipelineConfig prodConfig(10, 1, 1, kTs + 2);
     const consensus::BlockCandidateResult candidate =
         consensus::BlockProductionPhase::produce(runtime, prodConfig);
     require(candidate.produced(), "Need a produced block.");
@@ -115,7 +122,7 @@ void testProposalHasNoSideEffectsOnChain() {
     const std::uint64_t tipBefore = runtime.blockchain().latestBlock().index();
 
     consensus::BlockProposalPhase::propose(
-        candidate.block(), signer.address(), 1, kTs + 1,
+        candidate.block(), signer.address(), 1, kTs + 3,
         signer, tgm.mesh, provider
     );
 

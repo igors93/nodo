@@ -11,6 +11,7 @@
 #include "p2p/GossipMesh.hpp"
 #include "p2p/LoopbackTransport.hpp"
 #include "p2p/PeerMessage.hpp"
+#include "../common/ConsensusPhaseTestFixtures.hpp"
 
 #include <iostream>
 #include <memory>
@@ -27,6 +28,10 @@ void require(bool condition, const std::string& msg) {
     if (!condition) throw std::runtime_error(msg);
 }
 
+crypto::KeyPair userKey() {
+    return test::consensusTestUserKey("block-voting-phase-user");
+}
+
 config::GenesisConfig minimalGenesis() {
     return config::GenesisConfig(
         config::NetworkParameters::developmentLocal(),
@@ -35,7 +40,7 @@ config::GenesisConfig minimalGenesis() {
             crypto::KeyPair::createDeterministicBls12381KeyPair("vote-val").publicKey(),
             1, 1, "vote-val-meta"
           ) },
-        {},
+        { test::fundedConsensusTestAccount(userKey()) },
         "block-voting-phase-test"
     );
 }
@@ -67,22 +72,24 @@ struct TestGossipMesh {
     {}
 };
 
-// Produce and add a block at height 1 so voting can proceed.
-core::Block produceAndAddBlock(node::NodeRuntime& runtime) {
-    const node::RuntimeBlockPipelineConfig config(10, 0, 1, kTs + 1);
+// Produce a candidate at height 1 without mutating the canonical chain.
+core::Block produceCandidate(node::NodeRuntime& runtime) {
+    test::admitConsensusTestTransfer(runtime, userKey(), 1, kTs + 1);
+    const node::RuntimeBlockPipelineConfig config(10, 1, 1, kTs + 2);
     const consensus::BlockCandidateResult candidate =
         consensus::BlockProductionPhase::produce(runtime, config);
     if (!candidate.produced()) {
-        throw std::runtime_error("produceAndAddBlock: production failed.");
+        throw std::runtime_error(
+            "produceCandidate: production failed: " + candidate.reason()
+        );
     }
-    runtime.mutableBlockchain().addBlock(candidate.block());
     return candidate.block();
 }
 
 void testPrevoteIsAcceptedAndRecordedInVotePool() {
     const config::GenesisConfig genesis = minimalGenesis();
     node::NodeRuntime runtime = startRuntime(genesis);
-    const core::Block block = produceAndAddBlock(runtime);
+    const core::Block block = produceCandidate(runtime);
 
     TestGossipMesh tgm("vote-node", genesis.deterministicId());
     const crypto::KeyPair kp =
@@ -92,7 +99,7 @@ void testPrevoteIsAcceptedAndRecordedInVotePool() {
 
     const consensus::VoteCastResult result =
         consensus::BlockVotingPhase::castPrevote(
-            runtime, block, 1, kTs + 1, signer, tgm.mesh
+            runtime, block, 1, kTs + 3, signer, tgm.mesh
         );
 
     require(result.cast(), "castPrevote must succeed for an active validator.");
@@ -114,7 +121,7 @@ void testPrevoteIsAcceptedAndRecordedInVotePool() {
 void testPrecommitIsAcceptedAndRecordedInVotePool() {
     const config::GenesisConfig genesis = minimalGenesis();
     node::NodeRuntime runtime = startRuntime(genesis);
-    const core::Block block = produceAndAddBlock(runtime);
+    const core::Block block = produceCandidate(runtime);
 
     TestGossipMesh tgm("vote-node", genesis.deterministicId());
     const crypto::KeyPair kp =
@@ -124,13 +131,13 @@ void testPrecommitIsAcceptedAndRecordedInVotePool() {
 
     // First cast prevote.
     consensus::BlockVotingPhase::castPrevote(
-        runtime, block, 1, kTs + 1, signer, tgm.mesh
+        runtime, block, 1, kTs + 3, signer, tgm.mesh
     );
 
     // Then cast precommit.
     const consensus::VoteCastResult result =
         consensus::BlockVotingPhase::castPrecommit(
-            runtime, block, 1, kTs + 2, signer, tgm.mesh
+            runtime, block, 1, kTs + 4, signer, tgm.mesh
         );
 
     require(result.cast(), "castPrecommit must succeed for an active validator.");
@@ -151,7 +158,7 @@ void testPrecommitIsAcceptedAndRecordedInVotePool() {
 void testVotingPhaseHasNoSideEffectsOnBlockchain() {
     const config::GenesisConfig genesis = minimalGenesis();
     node::NodeRuntime runtime = startRuntime(genesis);
-    const core::Block block = produceAndAddBlock(runtime);
+    const core::Block block = produceCandidate(runtime);
 
     TestGossipMesh tgm("vote-node", genesis.deterministicId());
     const crypto::KeyPair kp =
@@ -162,7 +169,7 @@ void testVotingPhaseHasNoSideEffectsOnBlockchain() {
     const std::uint64_t tipBefore = runtime.blockchain().latestBlock().index();
 
     consensus::BlockVotingPhase::castPrevote(
-        runtime, block, 1, kTs + 1, signer, tgm.mesh
+        runtime, block, 1, kTs + 3, signer, tgm.mesh
     );
 
     require(runtime.blockchain().latestBlock().index() == tipBefore,

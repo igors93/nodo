@@ -43,8 +43,9 @@ struct NodeDaemonConfig {
  *   - static peer registration from the command line (--peer flags);
  *   - transaction gossip: receive TRANSACTION_GOSSIP from peers, validate,
  *     insert into local mempool, and re-broadcast to other peers;
- *   - block proposal reception: treat incoming BLOCK_PROPOSAL as a candidate
- *     block from the current proposer and apply it to the local chain;
+ *   - transaction and finalized-artifact network orchestration;
+ *   - block proposals are consumed by ConsensusEventLoop so unfinalized
+ *     candidates never enter the canonical chain from the daemon thread;
  *   - finalized artifact reception: verify FINALIZED_BLOCK_ARTIFACT messages
  *     from peers and record finality in the local registry.
  *
@@ -100,9 +101,6 @@ private:
 
     // Handle incoming TRANSACTION_GOSSIP messages.
     void processTransactionGossip(std::int64_t now);
-
-    // Handle incoming BLOCK_PROPOSAL messages from the current proposer.
-    void processBlockProposals(std::int64_t now);
 
     // Handle incoming FINALIZED_BLOCK_ARTIFACT messages.
     void processFinalizedArtifacts(std::int64_t now);

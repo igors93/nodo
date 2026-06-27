@@ -435,7 +435,8 @@ void NodeOrchestrator::tick(std::int64_t now) {
 
                 const std::vector<unsigned char> encoded =
                     PersistentBlockStateSyncCodec::encodeBlockSyncBatch(batch);
-                gossip.broadcast(
+                gossip.sendTo(
+                    req.requesterNodeId(),
                     p2p::NetworkMessageType::BLOCK_SYNC_RESPONSE,
                     kOrchestratorCanonicalPrefix + crypto::hexEncode(encoded),
                     now
@@ -563,7 +564,7 @@ void NodeOrchestrator::tick(std::int64_t now) {
                                     now
                                 );
                             } catch (...) {
-                                return core::StateTransitionPreviewContext::structuralOnly(minFee);
+                                throw std::runtime_error("State load failed, aborting block sync batch.");
                             }
                         },
                         now

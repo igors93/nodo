@@ -321,6 +321,31 @@ GossipDeliveryReport GossipMesh::broadcast(
     return GossipDeliveryReport(accepted, rejected);
 }
 
+GossipDeliveryReport GossipMesh::sendTo(
+    const std::string& targetNodeId,
+    NetworkMessageType type,
+    const std::string& payload,
+    std::int64_t now
+) {
+    if (!m_config.isValid()) {
+        return GossipDeliveryReport(0, 1);
+    }
+
+    const NetworkEnvelope envelope = createEnvelope(type, payload, now);
+
+    if (!envelope.isStructurallyValid(1024 * 1024)) {
+        return GossipDeliveryReport(0, 1);
+    }
+
+    const PeerMetadata* peer = m_peerRegistry.peer(targetNodeId);
+    if (peer == nullptr || peer->quarantined()) {
+        return GossipDeliveryReport(0, 1);
+    }
+
+    const OutboundQueueResult result = m_outboundQueue.enqueue(targetNodeId, envelope);
+    return result.enqueued() ? GossipDeliveryReport(1, 0) : GossipDeliveryReport(0, 1);
+}
+
 GossipDeliveryReport GossipMesh::flushOutbound(std::int64_t now) {
     std::size_t accepted = 0;
     std::size_t rejected = 0;
@@ -494,9 +519,9 @@ void GossipMesh::recordInvalidMessage(
             }
         }
         // If still over limit after TTL eviction, we are likely under a flood.
-        // Clear the table to prevent O(N) eviction scans on every subsequent message.
+        // Return early to prevent unbounded O(N) eviction scans and protect disk IO.
         if (m_lastEvidenceAt.size() >= kMaxCoalescingEntries) {
-            m_lastEvidenceAt.clear();
+            return;
         }
     }
 

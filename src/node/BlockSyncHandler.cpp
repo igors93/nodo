@@ -339,7 +339,8 @@ void BlockSyncHandler::serveRequests(
         }
 
         const std::string responsePayload = serializeBlockList(toSend);
-        gossip.broadcast(
+        gossip.sendTo(
+            req.requesterId,
             p2p::NetworkMessageType::BLOCK_RESPONSE,
             responsePayload,
             now

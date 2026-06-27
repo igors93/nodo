@@ -89,8 +89,8 @@ public:
      * Called when this node is the proposer for (height, round).
      * Should build and validate a candidate block using BlockProductionPhase.
      * Returns the validated Block, or nullopt if production failed.
-     * The event loop handles adding the block to the chain, proposal broadcast,
-     * voting, and finalization.
+     * The event loop retains the block as a round-scoped candidate, broadcasts
+     * the proposal, collects votes, and appends it only during finalization.
      */
     using BlockProducerCallback =
         std::function<std::optional<core::Block>(std::uint64_t height,
@@ -197,6 +197,15 @@ private:
     bool                  m_producedThisRound = false;
     std::uint64_t         m_lastProcessedHeight = 0;
 
+    struct PendingBlockCandidate {
+        core::Block block;
+        std::uint64_t round;
+    };
+
+    // A proposal is not canonical state. It remains here until a valid quorum
+    // certificate authorizes BlockFinalizer to append it to the blockchain.
+    std::optional<PendingBlockCandidate> m_pendingCandidate;
+
     std::optional<std::filesystem::path> m_recoveryPath;
 
     std::atomic<bool> m_running;
@@ -206,6 +215,14 @@ private:
     void runLoop();
 
     ConsensusTickResult drainVotesAndCollect(std::int64_t now);
+
+    // Validate proposals on the consensus thread and retain at most one
+    // candidate for the active height and round.
+    void processBlockProposals();
+
+    // Advance a timed-out round even when no proposal was received. Any
+    // candidate from the expired round is discarded before the next proposer.
+    bool advanceRoundIfTimedOut(std::int64_t now, ConsensusTickResult& result);
 
     // Persist BFT recovery state after a vote is cast.
     void saveRecoveryState(bool votedPrevote, bool votedPrecommit);
