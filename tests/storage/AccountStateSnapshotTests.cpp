@@ -136,7 +136,7 @@ void testPartialReplayMatchesFullReplay() {
 
     const core::AccountStateView partialReplay =
         node::RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
-            genesisSnapshot, blockchain, 0 /* snapshotHeight */, 0
+            genesis, genesisSnapshot, blockchain, 0 /* snapshotHeight */, 0
         );
 
     // Both paths must produce the same account states.

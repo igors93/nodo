@@ -419,6 +419,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
                 blocks[static_cast<std::size_t>(snap.height())].hash() == snap.blockHash()) {
                 try {
                     tipAccountState = RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
+                        genesisConfig,
                         snap.view(),
                         runtime.blockchain(),
                         snap.height(),

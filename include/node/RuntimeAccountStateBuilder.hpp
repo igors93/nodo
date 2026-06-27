@@ -28,6 +28,7 @@ public:
     // Replay only blocks with index > snapshotHeight starting from snapshotView.
     // Avoids O(N) full replay when a fresh snapshot is available.
     static core::AccountStateView accountStateViewFromSnapshot(
+        const config::GenesisConfig& genesisConfig,
         const core::AccountStateView& snapshotView,
         const core::Blockchain& blockchain,
         std::uint64_t snapshotHeight,

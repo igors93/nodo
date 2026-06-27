@@ -95,6 +95,7 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewAtTip(
 }
 
 core::AccountStateView RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
+    const config::GenesisConfig& genesisConfig,
     const core::AccountStateView& snapshotView,
     const core::Blockchain& blockchain,
     std::uint64_t snapshotHeight,

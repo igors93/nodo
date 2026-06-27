@@ -30,7 +30,6 @@ int main() {
         "node-a",
         "node-b",
         32,
-        4096,
         now + 1
     );
 
@@ -52,7 +51,6 @@ int main() {
         "node-a",
         "node-b",
         4,
-        4096,
         now + 2
     );
 
@@ -79,7 +77,6 @@ int main() {
         "node-a",
         "node-b",
         512,
-        100,
         now + 3
     );
 
