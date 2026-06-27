@@ -67,11 +67,14 @@ Implemented foundations include:
 
 - localnet runtime pipeline with initialization, transaction submission, block production, finalization, reload, and audit;
 - CMake-based C++20 build with one test executable per `tests/**/*.cpp`;
-- strict storage schema validation and atomic persistence helpers;
+- strict storage schema validation and atomic persistence helpers (`AtomicFile` crash-safe writes);
 - canonical finalized artifacts with monetary, treasury, governance, validator, and slashing sections;
 - account-state preview before block votes and deterministic state roots;
 - OpenSSL Ed25519 user signatures and blst BLS12-381 validator signatures;
+- BFT consensus with Quorum Certificate (QC) requiring 2/3+ validator weight;
+- durable QC persistence: `FinalizedBlockRecordStore` writes each QC proof atomically to `{dataDir}/sync/qc/{height}.qc`, reloads all records at startup, and restores the in-memory `BlockFinalizationRegistry` — making the fast-path `QC_REQUIRED` sync mode functional across restarts;
 - P2P message, gossip, loopback, TCP, encrypted peer-channel, sync, and peer-rate-limiter foundations;
+- distributed node daemon with transaction gossip relay, block proposal relay with proposer authentication, and finalized artifact QC verification;
 - treasury policy, spend validation, execution evidence, and finalized treasury audit;
 - governance vote proof, vote evidence, vote-set audit, tally, decision audit, lifecycle persistence, and lifecycle-backed treasury approval;
 - slashing evidence, validator penalty decisions, validator lifecycle, and containment-policy foundations;
@@ -84,7 +87,9 @@ Implemented foundations include:
 | Localnet runtime | Implemented for development and testing. |
 | Testnet candidate | Foundations exist; safety gates and diagnostics are active. |
 | Mainnet | Blocked by design. Not suitable for production use. |
-| P2P networking | Real socket/gossip foundations exist; production networking is still in progress. |
+| QC persistence | Fully implemented; QC proofs survive node restart. |
+| Block sync | Fast-path (`QC_REQUIRED`) and persistent-path both implemented and tested. |
+| P2P networking | Real socket/gossip foundations exist; live distributed consensus is in progress (Phase 2). |
 | Keys and custody | Local development keys exist; production custody is not ready. |
 | Governance | Vote evidence and lifecycle audit foundations exist; public governance workflow is still in development. |
 | Treasury | Evidence-backed execution validation exists; production operator process is still in development. |
@@ -193,12 +198,31 @@ More commands are documented in [CLI](docs/getting-started/cli.md).
 | `src/core/` | Blocks, transactions, account state, validators, and state-transition foundations. |
 | `src/consensus/` | Votes, rounds, quorum certificates, finalization, and proposer scheduling. |
 | `src/economics/` | Monetary policy, treasury, governance, protection rewards, supply audit, and penalties. |
-| `src/node/` | Runtime, storage/reload, finalized artifacts, diagnostics, readiness, and chain audit. |
+| `src/node/` | Runtime, storage/reload, finalized artifacts, QC persistence, diagnostics, readiness, and chain audit. |
 | `src/p2p/` | Messages, gossip, TCP/loopback transport, sync, encryption, and peer limiting. |
 | `src/storage/` | Atomic files, block storage, evidence stores, and persistence helpers. |
-| `tests/` | CTest-discovered module tests. |
+| `tests/` | CTest-discovered module tests (one executable per file, named `{module}_{TestFile}`). |
 | `scripts/` | Build, test, cleanup, and dependency helper scripts. |
 | `docs/` | Project documentation. |
+
+### Storage Layout
+
+```text
+{dataDirectory}/
+├── manifest               — latest height, hash, and state root
+├── schema                 — storage schema version
+├── blocks/                — finalized block artifact files
+├── mempool/               — persistent mempool transactions
+├── sync/
+│   ├── checkpoint.conf    — block sync checkpoint (last synced height)
+│   └── qc/
+│       ├── 1.qc           — FinalizedBlockRecord (QC proof) for height 1
+│       ├── 2.qc           — FinalizedBlockRecord (QC proof) for height 2
+│       └── ...
+└── ...
+```
+
+Each `.qc` file is written atomically via temp file + rename. On startup, all `.qc` files are loaded and the in-memory `BlockFinalizationRegistry` is restored before sync or consensus resumes.
 
 ## Architecture
 
@@ -209,6 +233,8 @@ flowchart TD
     Runtime --> Core["Core State Transition"]
     Runtime --> Consensus["Consensus and Finality"]
     Runtime --> P2P["P2P Foundations"]
+    Consensus --> QCStore["FinalizedBlockRecordStore\n(sync/qc/{height}.qc)"]
+    QCStore --> SyncPath["Block Sync\n(QC_REQUIRED fast-path)"]
     Core --> Economics["Economics"]
     Economics --> Treasury["Treasury Evidence"]
     Economics --> Governance["Governance Lifecycle"]
@@ -217,6 +243,60 @@ flowchart TD
 ```
 
 Read [Architecture Overview](docs/architecture/architecture-overview.md) and [Module Map](docs/architecture/module-map.md).
+
+### QC Persistence Flow
+
+`FinalizedBlockRecord` (containing the BLS12-381 Quorum Certificate) is persisted from four entry points and reloaded on startup:
+
+```text
+1. Consensus-driven finalization
+   ConsensusEventLoop → setFinalizedCallback
+     └── persistFinalizedRecord()    → sync/qc/{height}.qc
+
+2. Fast-path block sync (QC_REQUIRED)
+   BlockSyncHandler::applyResponses
+     └── finalizationRegistry.recordForHeight()
+     └── persistFinalizedRecord()    → sync/qc/{height}.qc
+
+3. Persistent-path batch sync
+   PersistentBlockStateSyncApplier::applyValidatedBatch
+     └── deserialize serializedFinalizedRecord from batch item
+     └── persistFinalizedRecord()    → sync/qc/{height}.qc
+
+4. Gossip-received finalized artifact
+   NodeDaemon::processFinalizedArtifacts
+     └── FinalizedBlockRecord::deserialize + verify QC
+     └── FinalizedBlockRecordStore::save()  → sync/qc/{height}.qc
+
+Startup reload
+   NodeOrchestrator::initOrLoad
+     └── FinalizedBlockRecordStore::loadAll()
+     └── BlockFinalizationRegistry::registerFinalizedBlock() (per record)
+```
+
+Sync responses built by `buildSyncResponseBatch()` include the serialized QC for each block, so receiving peers can verify finality without contacting a third party.
+
+### Daemon and Gossip Flow
+
+`NodeDaemon` wraps `NodeOrchestrator` and adds a tick-driven gossip processing layer:
+
+```text
+NodeDaemon.tick()
+  ├── NodeOrchestrator.tick()          — transport I/O, peer heartbeats, block sync
+  ├── processTransactionGossip()       — drain TRANSACTION_GOSSIP inbox
+  │     ├── SeenTransactionCache       — LRU+TTL dedup by payloadHash
+  │     ├── PersistentMempoolStore::deserializeGossipAndAdmit()  — Ed25519 verify + admit
+  │     └── gossipBroadcast()          — relay if newly admitted
+  ├── processBlockProposals()          — drain BLOCK_PROPOSAL inbox
+  │     └── BlockAnnounceHandler       — proposer-auth + state-transition verify + apply
+  └── processFinalizedArtifacts()      — drain FINALIZED_BLOCK_ARTIFACT inbox
+        ├── FinalizedBlockRecord::deserialize()
+        ├── record.verify()            — QC check vs. local validator registry
+        ├── FinalizationRegistry::registerFinalizedBlock()
+        └── FinalizedBlockRecordStore::save()   — persist QC to disk
+```
+
+`ConsensusEventLoop` runs in a background thread inside `NodeOrchestrator` and handles `VALIDATOR_VOTE` accumulation, `QuorumCertificate` assembly, and broadcasts `FINALIZED_BLOCK_ARTIFACT` after quorum. The resulting record is persisted before being broadcast.
 
 ## Documentation
 
@@ -230,6 +310,7 @@ Key entry points:
 - [Build](docs/getting-started/build.md)
 - [Testing](docs/getting-started/testing.md)
 - [Architecture Overview](docs/architecture/architecture-overview.md)
+- [Persistent Block State Sync](docs/PERSISTENT_BLOCK_STATE_SYNC.md)
 - [Governance Vote Evidence](docs/governance/vote-evidence.md)
 - [Treasury Execution Evidence](docs/treasury/treasury-execution-evidence.md)
 - [Security Model](docs/security/security-model.md)
@@ -245,10 +326,13 @@ Completed foundations:
 - treasury execution evidence;
 - governance vote evidence and lifecycle audit;
 - P2P transport/gossip/encrypted channel foundations;
-- testnet-candidate readiness diagnostics.
+- testnet-candidate readiness diagnostics;
+- distributed node daemon: transaction gossip, block proposal relay, proposer authentication, finalized artifact QC verification;
+- durable QC persistence (`FinalizedBlockRecordStore`): QC proofs survive restart, fast-path `QC_REQUIRED` sync is fully functional, sync responses carry QC proofs to peers.
 
 In progress:
 
+- live distributed consensus (Phase 2): proposer selection wired to daemon, networked prevote/precommit, view change, consensus recovery store;
 - official testnet runtime hardening;
 - production key safety and custody boundaries;
 - governance lifecycle transitions;

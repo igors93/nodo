@@ -11,4 +11,4 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ctest --test-dir "$ROOT_DIR/build/cmake" \
     --output-on-failure \
     -j "$CTEST_PARALLEL_LEVEL" \
-    -R "p2p_test_(loopback_transport|transport_frame_codec|gossip_mesh|gossip_mesh_rejects_wrong_network|peer_handshake_manager)"
+    -R "p2p_(LoopbackTransportTests|TransportFrameCodecTests|GossipMeshTests|GossipMeshNetworkRejectionTests|PeerHandshakeManagerTests)"

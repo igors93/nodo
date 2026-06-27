@@ -11,6 +11,6 @@ export CTEST_PARALLEL_LEVEL
 "$ROOT_DIR/scripts/cmake_build.sh"
 
 ctest --test-dir "$ROOT_DIR/build/cmake" \
-    -R "(node_test_persistent_block_state_sync_planner|node_test_persistent_block_state_sync_batch|node_test_persistent_block_state_sync_store|node_test_persistent_block_state_sync_codec)" \
+    -R "(node_PersistentBlockStateSyncPlannerTests|node_PersistentBlockStateSyncBatchTests|node_PersistentBlockStateSyncStoreTests|node_PersistentBlockStateSyncCodecTests)" \
     --output-on-failure \
     -j "$CTEST_PARALLEL_LEVEL"

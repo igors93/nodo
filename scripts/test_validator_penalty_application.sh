@@ -11,6 +11,6 @@ export CTEST_PARALLEL_LEVEL
 "$ROOT_DIR/scripts/cmake_build.sh"
 
 ctest --test-dir "$ROOT_DIR/build/cmake" \
-    -R "(consensus_test_validator_penalty_policy|consensus_test_validator_penalty_application|storage_test_validator_penalty_store|node_test_validator_penalty_messages)" \
+    -R "(consensus_ValidatorPenaltyPolicyTests|consensus_ValidatorPenaltyApplicationTests|storage_ValidatorPenaltyStoreTests|node_ValidatorPenaltyMessageTests)" \
     --output-on-failure \
     -j "$CTEST_PARALLEL_LEVEL"

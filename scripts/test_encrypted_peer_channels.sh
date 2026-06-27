@@ -11,6 +11,6 @@ export CTEST_PARALLEL_LEVEL
 "$ROOT_DIR/scripts/cmake_build.sh"
 
 ctest --test-dir "$ROOT_DIR/build/cmake" \
-    -R "(p2p_test_encrypted_peer_channel|p2p_test_encrypted_peer_transport|p2p_test_encrypted_peer_handshake)" \
+    -R "(p2p_EncryptedPeerChannelTests|p2p_EncryptedPeerTransportTests|p2p_EncryptedPeerHandshakeTests)" \
     --output-on-failure \
     -j "$CTEST_PARALLEL_LEVEL"
