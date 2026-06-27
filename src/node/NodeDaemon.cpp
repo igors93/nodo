@@ -191,28 +191,41 @@ void NodeDaemon::processBlockProposals(std::int64_t now) {
         if (decodeFailed || !proposal.isValid()) continue;
 
         // Verify the proposer identity against the schedule and signature.
-        const std::uint64_t activeValidators = validatorRegistry.activeCount();
-        if (activeValidators > 0) {
-            const std::string chainId =
-                m_orchestrator.config().genesisConfig().networkParameters().chainId();
-            const std::uint64_t currentRound =
-                m_orchestrator.runtime().consensusRoundManager().currentState().round();
-            const std::string expectedProposer =
-                consensus::ProposerSchedule::selectProposer(
-                    validatorRegistry,
-                    chainId,
-                    proposal.blockIndex(),
-                    currentRound
-                );
+        const std::uint64_t activeValidators =
+            validatorRegistry.activeCount();
 
-            if (!proposal.verify(
-                    expectedProposer,
-                    validatorRegistry,
-                    m_orchestrator.cryptoPolicy(),
-                    m_orchestrator.signatureProvider()
-                )) {
-                continue;
-            }
+        // Without active validators there is no legitimate proposer.
+        if (activeValidators == 0) {
+            continue;
+        }
+
+        const std::string chainId =
+            m_orchestrator.config()
+                .genesisConfig()
+                .networkParameters()
+                .chainId();
+
+        const std::uint64_t currentRound =
+            m_orchestrator.runtime()
+                .consensusRoundManager()
+                .currentState()
+                .round();
+
+        const std::string expectedProposer =
+            consensus::ProposerSchedule::selectProposer(
+                validatorRegistry,
+                chainId,
+                proposal.blockIndex(),
+                currentRound
+            );
+
+        if (!proposal.verify(
+                expectedProposer,
+                validatorRegistry,
+                m_orchestrator.cryptoPolicy(),
+                m_orchestrator.signatureProvider()
+            )) {
+            continue;
         }
 
         // Deserialize the block from the verified proposal payload.
