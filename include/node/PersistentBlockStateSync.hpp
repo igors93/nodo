@@ -17,8 +17,10 @@
 
 namespace nodo::node {
 
+class NodeRuntime;
+class NodeDataDirectoryConfig;
+
 constexpr std::uint64_t NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH = 512;
-constexpr std::uint64_t NODO_PERSISTENT_SYNC_DEFAULT_SNAPSHOT_THRESHOLD = 4096;
 
 /*
  * PersistentBlock/State sync is the durable boundary used by the testnet node
@@ -273,7 +275,6 @@ private:
 enum class PersistentSyncPlanStatus {
     NOT_REQUIRED,
     REQUEST_BLOCKS,
-    REQUEST_SNAPSHOT,
     REJECTED
 };
 
@@ -288,17 +289,14 @@ public:
     PersistentSyncPlan(
         PersistentSyncPlanStatus status,
         std::string reason,
-        std::optional<NetworkBlockSyncRequest> blockRequest,
-        std::optional<PersistentSnapshotSyncManifest> snapshotRequestManifest
+        std::optional<NetworkBlockSyncRequest> blockRequest
     );
 
     PersistentSyncPlanStatus status() const;
     const std::string& reason() const;
     const std::optional<NetworkBlockSyncRequest>& blockRequest() const;
-    const std::optional<PersistentSnapshotSyncManifest>& snapshotRequestManifest() const;
 
     bool requestBlocks() const;
-    bool requestSnapshot() const;
     bool notRequired() const;
     bool rejected() const;
     std::string serialize() const;
@@ -307,7 +305,6 @@ private:
     PersistentSyncPlanStatus m_status;
     std::string m_reason;
     std::optional<NetworkBlockSyncRequest> m_blockRequest;
-    std::optional<PersistentSnapshotSyncManifest> m_snapshotRequestManifest;
 };
 
 class PersistentBlockStateSyncPlanner {
@@ -318,20 +315,9 @@ public:
         const std::string& localNodeId,
         const std::string& sourcePeerId,
         std::uint64_t maxBlocksPerRequest,
-        std::uint64_t snapshotThreshold,
         std::int64_t now
     );
 
-    static PersistentSyncPlan planFromRemoteStatus(
-        const PersistentSyncCheckpoint& localCheckpoint,
-        const ChainStatusMessage& remoteStatus,
-        const std::string& localNodeId,
-        const std::string& sourcePeerId,
-        std::uint64_t maxBlocksPerRequest,
-        std::uint64_t snapshotThreshold,
-        std::int64_t now,
-        const std::optional<PersistentSnapshotSyncManifest>& localManifest
-    );
 };
 
 enum class PersistentSyncApplyStatus {
@@ -367,12 +353,11 @@ private:
 
 class PersistentBlockStateSyncApplier {
 public:
-    static PersistentSyncApplyResult applyValidatedBatch(
+    static PersistentSyncApplyResult importFinalizedBatch(
         const PersistentSyncCheckpoint& checkpoint,
         const PersistentBlockSyncBatch& batch,
-        const core::ValidatorRegistry& validatorRegistry,
-        const crypto::CryptoPolicy& policy,
-        const crypto::SignatureProvider& provider,
+        NodeRuntime& runtime,
+        const NodeDataDirectoryConfig& directoryConfig,
         std::int64_t now
     );
 
@@ -385,8 +370,8 @@ public:
      * `contextBuilder` is called before each block with the current blockchain
      * state so the computed roots reflect all previously applied blocks.
      *
-     * No block is added and no checkpoint is advanced if any protocol
-     * commitment check fails.
+     * Validation runs against a staged Blockchain copy. No block is added and
+     * no checkpoint is advanced if any item, QC, or protocol commitment fails.
      */
     static PersistentSyncApplyResult applyValidatedBatch(
         const PersistentSyncCheckpoint& checkpoint,
@@ -396,13 +381,10 @@ public:
         const crypto::CryptoPolicy& policy,
         const crypto::SignatureProvider& provider,
         std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder,
-        std::int64_t now
+        std::int64_t now,
+        const core::ValidatorSetHistory* validatorSetHistory = nullptr
     );
 
-    static PersistentSyncApplyResult applySnapshotManifest(
-        const PersistentSnapshotSyncManifest& snapshotManifest,
-        std::int64_t now
-    );
 };
 
 class PersistentBlockStateSyncCodec {

@@ -82,6 +82,11 @@ void AccountStateSnapshotStore::save(
     AtomicFile::writeTextFile(snapshotPath(), oss.str());
 }
 
+/**
+ * Loads and parses the account state snapshot from disk.
+ * Reads the atomic file, reconstructing the exact account balances, nonces, and 
+ * genesis configuration state valid at the saved block height.
+ */
 std::optional<AccountStateSnapshot> AccountStateSnapshotStore::load() const {
     const std::filesystem::path path = snapshotPath();
     if (!std::filesystem::exists(path)) return std::nullopt;

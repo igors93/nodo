@@ -5,10 +5,13 @@
 #include "core/AccountStateView.hpp"
 #include "core/Blockchain.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
+#include "utils/Amount.hpp"
 
 #include <cstdint>
 
 namespace nodo::node {
+
+class NodeRuntime;
 
 class RuntimeAccountStateBuilder {
 public:
@@ -34,6 +37,12 @@ public:
     static core::StateTransitionPreviewContext previewContextAtTip(
         const config::GenesisConfig& genesisConfig,
         const core::Blockchain& blockchain,
+        std::int64_t minimumFeeRawUnits,
+        std::int64_t wallClockNow = 0
+    );
+
+    static core::StateTransitionPreviewContext previewContextAtTip(
+        const NodeRuntime& runtime,
         std::int64_t minimumFeeRawUnits,
         std::int64_t wallClockNow = 0
     );

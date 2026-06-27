@@ -46,7 +46,8 @@ inline void admitConsensusTestTransfer(
                 nonce,
                 transactionTimestamp
             ),
-            crypto::Signer(userKey, provider)
+            crypto::Signer(userKey, provider),
+            runtime.config().genesisConfig().networkParameters().chainId()
         );
 
     const auto admission = runtime.mutableMempool().admitTransaction(

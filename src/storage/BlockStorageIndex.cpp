@@ -307,6 +307,11 @@ const std::string& BlockStorageIndex::indexHash() const {
     return m_indexHash;
 }
 
+/**
+ * Validates the metadata structure of the block storage index.
+ * Ensures the index correctly maps block heights to sequential files without duplicates,
+ * matches the required format, and verifies the overall index checksum.
+ */
 bool BlockStorageIndex::isValid() const {
     if (m_indexVersion != currentIndexVersion()) {
         return false;

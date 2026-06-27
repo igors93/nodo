@@ -137,7 +137,8 @@ public:
 
     /*
      * Serialize a signed transaction to the gossip wire format (same as the
-     * on-disk NODO_MEMPOOL_TRANSACTION_V2 schema).
+     * on-disk NODO_MEMPOOL_TRANSACTION_V3 schema). The transaction is
+     * self-contained; the key parameter is checked against its signature.
      *
      * Returns an empty string if the transaction is unsigned or invalid.
      */
@@ -158,7 +159,8 @@ public:
         const std::string& payload,
         mempool::Mempool& mempool,
         const crypto::CryptoPolicy& policy,
-        crypto::SecurityContext context
+        crypto::SecurityContext context,
+        const std::string& expectedChainId
     );
 
 private:

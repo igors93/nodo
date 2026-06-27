@@ -273,7 +273,7 @@ State ChainStateRebuilder::rebuildStateFromLedgerRecords(
 
             if (record.type() == LedgerRecordType::TRANSACTION) {
                 Transaction transaction =
-                    Transaction::deserializeForStateReplay(record.payload());
+                    Transaction::deserialize(record.payload());
 
                 if (transaction.type() != TransactionType::TRANSFER) {
                     throw std::logic_error("Unsupported transaction type during State rebuild.");

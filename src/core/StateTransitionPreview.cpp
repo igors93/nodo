@@ -27,6 +27,8 @@ std::string stateTransitionPreviewStatusToString(
             return "INVALID_LEDGER_RECORD";
         case StateTransitionPreviewStatus::INVALID_TRANSACTION:
             return "INVALID_TRANSACTION";
+        case StateTransitionPreviewStatus::UNSUPPORTED_TRANSITION:
+            return "UNSUPPORTED_TRANSITION";
         case StateTransitionPreviewStatus::DUPLICATE_TRANSACTION:
             return "DUPLICATE_TRANSACTION";
         case StateTransitionPreviewStatus::INSUFFICIENT_BALANCE:
@@ -186,7 +188,6 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
     std::set<std::string> touchedAccountSet;
     std::vector<std::string> orderedTransactionIds;
     std::vector<TransactionReceipt> receipts;
-    std::vector<std::string> nonTransactionDigests;
     AccountStateView workingAccountState =
         context.accountStateView();
     utils::Amount totalFee;
@@ -219,13 +220,16 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                     processedTransactionCount
                 );
             }
-            nonTransactionDigests.push_back(record.sourceId());
-            continue;
+            return StateTransitionPreviewResult::rejected(
+                StateTransitionPreviewStatus::UNSUPPORTED_TRANSITION,
+                "Non-genesis block contains a record without an implemented deterministic state transition.",
+                processedTransactionCount
+            );
         }
 
         try {
             const Transaction transaction =
-                Transaction::deserializeForStateReplay(
+                Transaction::deserialize(
                     record.payload()
                 );
 
@@ -235,6 +239,31 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                     "Transaction ledger source id does not match transaction id.",
                     processedTransactionCount
                 );
+            }
+
+            if (transaction.type() != TransactionType::TRANSFER) {
+                return StateTransitionPreviewResult::rejected(
+                    StateTransitionPreviewStatus::UNSUPPORTED_TRANSITION,
+                    "Transaction type has no authoritative deterministic state transition.",
+                    processedTransactionCount
+                );
+            }
+
+            if (context.protocolAuthorizationEnabled()) {
+                const crypto::ProtocolCryptoContext& cryptoContext =
+                    context.cryptoContext();
+                if (!transaction.verifyAuthorization(
+                        context.expectedChainId(),
+                        cryptoContext.policy(),
+                        crypto::SecurityContext::USER_TRANSACTION,
+                        cryptoContext.userSignatureProvider()
+                    )) {
+                    return StateTransitionPreviewResult::rejected(
+                        StateTransitionPreviewStatus::INVALID_TRANSACTION,
+                        "Transaction chain binding, sender binding, or signature verification failed.",
+                        processedTransactionCount
+                    );
+                }
             }
 
             if (transaction.nonce() == 0 ||
@@ -414,19 +443,11 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
         receiptPayloads.push_back(receipt.serialize());
     }
 
-    const std::string accountStateRoot =
-        StateRootCalculator::calculateAccountStateRoot(workingAccountState);
-    std::string combinedStateRoot;
-    if (nonTransactionDigests.empty()) {
-        combinedStateRoot = accountStateRoot;
-    } else {
-        std::vector<std::string> stateInputs;
-        stateInputs.push_back(accountStateRoot);
-        for (const auto& d : nonTransactionDigests) {
-            stateInputs.push_back(d);
-        }
-        combinedStateRoot = MerkleTree::buildRoot(stateInputs);
-    }
+    const std::string combinedStateRoot =
+        StateRootCalculator::calculateProtocolStateRoot(
+            workingAccountState,
+            context.transitionedStateDomains(totalFee)
+        );
 
     return StateTransitionPreviewResult::valid(
         processedTransactionCount,

@@ -277,9 +277,16 @@ SignedBlockProposalMessage SignedBlockProposalMessage::deserialize(const std::st
     }
 
     const crypto::SignatureBundle bundle = crypto::SignatureBundle::deserialize(
-        requireField(fields, "signatureBundle"),
-        proposerPublicKey
+        requireField(fields, "signatureBundle")
     );
+
+    for (const crypto::Signature& signature : bundle.signatures()) {
+        if (signature.publicKey().serialize() != proposerPublicKey.serialize()) {
+            throw std::invalid_argument(
+                "SignedBlockProposalMessage: signature key does not match proposer key."
+            );
+        }
+    }
 
     return SignedBlockProposalMessage(
         requireField(fields, "proposerAddress"),

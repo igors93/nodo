@@ -13,6 +13,7 @@
 #include "core/AccountStateView.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
 #include "core/State.hpp"
+#include "core/StateTransitionEngine.hpp"
 #include "core/StateTransitionPreview.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
@@ -41,15 +42,14 @@ std::int64_t minimumFeeRawUnitsForRuntime(
 }
 
 core::StateTransitionPreviewContext previewContextForRuntime(
-    const NodeRuntime& runtime
+    const NodeRuntime& runtime,
+    std::int64_t wallClockNow = 0
 ) {
     const std::int64_t minimumFee =
         minimumFeeRawUnitsForRuntime(runtime);
 
     return RuntimeAccountStateBuilder::previewContextAtTip(
-        runtime.config().genesisConfig(),
-        runtime.blockchain(),
-        minimumFee
+        runtime, minimumFee, wallClockNow
     );
 }
 
@@ -1275,6 +1275,11 @@ RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     );
 }
 
+/**
+ * Assembles a finalized pipeline result containing all side-effects and evidences 
+ * generated during the block application process. It also lazily builds required summaries 
+ * (like cryptographic slashing or governance) if they were not pre-evaluated.
+ */
 RuntimeBlockPipelineResult RuntimeBlockPipelineResult::finalized(
     core::Block block,
     consensus::QuorumCertificate certificate,
@@ -1781,7 +1786,12 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
             core::BlockStateTransitionValidator::validateCandidateBlock(
                 runtime.blockchain(),
                 block,
-                previewContextForRuntime(runtime)
+                RuntimeAccountStateBuilder::previewContextAtTip(
+                    runtime.config().genesisConfig(),
+                    runtime.blockchain(),
+                    minimumFeeRawUnitsForRuntime(runtime)
+                ),
+                core::BlockValidationMode::StructuralOnly
             );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(
@@ -1815,6 +1825,32 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
             RuntimeBlockPipelineStatus::MONETARY_VALIDATION_FAILED,
             "Monetary gate rejected certified block: "
                 + monetaryValidationResult.reason()
+        );
+    }
+
+    try {
+        transitionValidation =
+            core::BlockStateTransitionValidator::validateCandidateBlock(
+                runtime.blockchain(),
+                block,
+                RuntimeAccountStateBuilder::previewContextAtTip(
+                    runtime,
+                    minimumFeeRawUnitsForRuntime(runtime),
+                    finalizedAt
+                ),
+                core::BlockValidationMode::ProtocolCommitment
+            );
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            error.what()
+        );
+    }
+
+    if (!transitionValidation.accepted()) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            transitionValidation.reason()
         );
     }
 
@@ -1999,12 +2035,24 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         );
     }
 
+    if (!runtime.mutableValidatorSetHistory().recordSet(
+            block.index(), runtime.validatorRegistry()
+        )) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::FINALIZATION_FAILED,
+            "Validator set history conflicts with the set active for this block height."
+        );
+    }
+
+    const core::ValidatorRegistry& finalizingValidatorSet =
+        runtime.validatorSetHistory().setAt(block.index());
+
     const consensus::BlockFinalizationResult finalization =
         consensus::BlockFinalizer::finalizeBlock(
             runtime.mutableBlockchain(),
             block,
             certificate,
-            runtime.validatorRegistry(),
+            finalizingValidatorSet,
             runtime.mutableFinalizationRegistry(),
             cryptoContext.policy(),
             cryptoContext.signatureProvider(),
@@ -2140,6 +2188,13 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
 
         constexpr std::uint64_t nextRound = 1;
         const std::uint64_t nextHeight = block.index() + 1;
+        if (!runtime.mutableValidatorSetHistory().recordSet(
+                nextHeight, runtime.validatorRegistry()
+            )) {
+            throw std::logic_error(
+                "Validator set history conflicts at the next consensus height."
+            );
+        }
         const std::string nextProposer =
             consensus::ProposerSchedule::selectProposer(
                 runtime.validatorRegistry(),
@@ -2229,7 +2284,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         core::MempoolBlockProducer::produceCandidateBlock(
             runtime.blockchain(),
             runtime.mempool(),
-            productionPreviewContext.accountStateView(),
+            productionPreviewContext,
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             core::BlockProductionConfig(
@@ -2246,11 +2301,13 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
-    if (production.block().index() != activeRound.height()) {
+    core::Block candidateBlock = production.block();
+
+    if (candidateBlock.index() != activeRound.height()) {
         return RuntimeBlockPipelineResult::rejected(
             RuntimeBlockPipelineStatus::VOTE_BUILD_FAILED,
             "Candidate block height " +
-            std::to_string(production.block().index()) +
+            std::to_string(candidateBlock.index()) +
             " does not match active consensus height " +
             std::to_string(activeRound.height()) + "."
         );
@@ -2262,8 +2319,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         transitionValidation =
             core::BlockStateTransitionValidator::validateCandidateBlock(
                 runtime.blockchain(),
-                production.block(),
-                previewContextForRuntime(runtime)
+                candidateBlock,
+                previewContextForRuntime(runtime, config.timestamp())
             );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(
@@ -2285,14 +2342,14 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     // The validated SupplyDelta is preserved and propagated into the finalized result.
     const FeeEconomicBalance preMintFeeBalance =
         FeeEconomics::buildFeeEconomicBalance(
-            production.block().index(),
+            candidateBlock.index(),
             transitionValidation.totalFee()
         );
 
     const RuntimeMonetaryValidationResult monetaryValidationResult =
         RuntimeMonetaryValidation::validateCandidate(
             runtime.config().genesisConfig(),
-            production.block(),
+            candidateBlock,
             preMintFeeBalance.burnAmount(),
             runtime.supplyState().latestSupply()
         );
@@ -2304,12 +2361,56 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
+
+    // The block state commitment includes the post-transition monetary supply.
+    // Rebuild the candidate before voting so the QC signs the complete state,
+    // not an accounts-only or pre-supply root.
+    try {
+        const core::StateTransitionPreviewContext committedContext =
+            RuntimeAccountStateBuilder::previewContextAtTip(
+                runtime,
+                minimumFeeRawUnitsForRuntime(runtime)
+            );
+        const core::Block draft(
+            candidateBlock.index(), candidateBlock.previousHash(),
+            candidateBlock.records(), candidateBlock.timestamp(), "", ""
+        );
+        const core::StateTransitionPreviewResult committedPreview =
+            core::StateTransitionEngine::executeBlock(draft, committedContext);
+        if (!committedPreview.accepted()) {
+            return RuntimeBlockPipelineResult::rejected(
+                RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+                "Unable to compute complete post-state commitment: "
+                    + committedPreview.reason()
+            );
+        }
+        candidateBlock = core::Block(
+            draft.index(), draft.previousHash(), draft.records(), draft.timestamp(),
+            committedPreview.stateRoot(), committedPreview.receiptsRoot()
+        );
+        transitionValidation =
+            core::BlockStateTransitionValidator::validateCandidateBlock(
+                runtime.blockchain(), candidateBlock, committedContext
+            );
+        if (!transitionValidation.accepted()) {
+            return RuntimeBlockPipelineResult::rejected(
+                RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+                transitionValidation.reason()
+            );
+        }
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            error.what()
+        );
+    }
+
     std::vector<consensus::ValidatorVoteRecord> votes;
 
     try {
         votes = buildValidatorVotes(
             runtime,
-            production.block(),
+            candidateBlock,
             activeRound.round(),
             config.timestamp() + 1,
             localValidatorSigner
@@ -2345,9 +2446,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
 
     const consensus::QuorumCertificateBuildResult certificate =
         consensus::QuorumCertificateBuilder::buildFromVotes(
-            production.block().index(),
-            production.block().hash(),
-            production.block().previousHash(),
+            candidateBlock.index(),
+            candidateBlock.hash(),
+            candidateBlock.previousHash(),
             activeRound.round(),
             votes,
             runtime.validatorRegistry(),
@@ -2366,7 +2467,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
 
     return commitCertifiedBlock(
         runtime,
-        production.block(),
+        candidateBlock,
         certificate.certificate(),
         config.timestamp() + 2,
         directoryConfig

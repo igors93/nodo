@@ -318,6 +318,13 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateLocalSubmissio
         );
     }
 
+    if (transaction.type() != core::TransactionType::TRANSFER) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::INVALID_TRANSACTION,
+            "Transaction type has no implemented authoritative state transition."
+        );
+    }
+
     if (!allSignaturesUseSigningKey(
             transaction,
             signingKey
@@ -345,15 +352,12 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateLocalSubmissio
         );
     }
 
-    if (!transaction.signatureBundle().verifyForPolicy(
-            transaction.signingPayload(),
-            policy,
-            context,
-            provider
+    if (!transaction.verifyAuthorization(
+            networkParameters.chainId(), policy, context, provider
         )) {
         return TransactionAdmissionResult::rejected(
             TransactionAdmissionStatus::INVALID_SIGNATURE,
-            "Transaction signature verification failed."
+            "Transaction chain binding, sender binding, or signature verification failed."
         );
     }
 
@@ -417,6 +421,13 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateNetworkSubmiss
         );
     }
 
+    if (transaction.type() != core::TransactionType::TRANSFER) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::INVALID_TRANSACTION,
+            "Transaction type has no implemented authoritative state transition."
+        );
+    }
+
     const std::uint64_t minimumFee =
         networkParameters.minimumFeeRawUnits();
 
@@ -434,15 +445,12 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateNetworkSubmiss
         );
     }
 
-    if (!transaction.signatureBundle().verifyForPolicy(
-            transaction.signingPayload(),
-            policy,
-            context,
-            provider
+    if (!transaction.verifyAuthorization(
+            networkParameters.chainId(), policy, context, provider
         )) {
         return TransactionAdmissionResult::rejected(
             TransactionAdmissionStatus::INVALID_SIGNATURE,
-            "Transaction signature verification failed."
+            "Transaction chain binding, sender binding, or signature verification failed."
         );
     }
 

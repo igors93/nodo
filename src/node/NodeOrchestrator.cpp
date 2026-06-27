@@ -6,8 +6,8 @@
 #include "crypto/Hex.hpp"
 #include "crypto/Signer.hpp"
 #include "node/BlockAnnounceHandler.hpp"
-#include "node/BlockSyncHandler.hpp"
-#include "node/FinalizedBlockRecordStore.hpp"
+#include "node/FinalizedBlockArtifactCodec.hpp"
+#include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/PeerHandshakeAutoRegistrar.hpp"
 #include "node/PersistentBlockStateSync.hpp"
@@ -16,12 +16,11 @@
 #include "node/RuntimeStateLoader.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
 #include "storage/AccountStateSnapshotStore.hpp"
-#include "storage/BlockFileStore.hpp"
 
 #include <chrono>
+#include <algorithm>
 #include <filesystem>
 #include <limits>
-#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -59,7 +58,7 @@ NodeOrchestratorConfig::NodeOrchestratorConfig(
     , m_maxBlockTransactions(maxBlockTransactions)
 {}
 
-const config::GenesisConfig&   NodeOrchestratorConfig::genesisConfig()         const { return m_genesisConfig; }
+const config::GenesisConfig&   NodeOrchestratorConfig::genesisConfig()          const { return m_genesisConfig; }
 const NodeDataDirectoryConfig& NodeOrchestratorConfig::dataDirectory()          const { return m_dataDirectory; }
 const p2p::PeerInfo&           NodeOrchestratorConfig::localPeer()              const { return m_localPeer; }
 const std::string&             NodeOrchestratorConfig::localValidatorAddress()  const { return m_localValidatorAddress; }
@@ -85,53 +84,6 @@ namespace {
 static const std::string kOrchestratorCanonicalPrefix =
     "NODO_CANONICAL_PROTOCOL_HEX_V1:";
 
-// Persists a finalized block to disk and advances the durable sync checkpoint.
-// Called from both the FinalizedCallback (consensus-driven finalization) and
-// after block sync applies new blocks. Errors are swallowed: storage failures
-// must not crash the node.
-void persistFinalizedBlock(
-    const core::Block& block,
-    const std::filesystem::path& dataRoot,
-    const std::string& sourcePeerId,
-    std::int64_t now
-) {
-    try {
-        storage::BlockFileStore store(dataRoot.string());
-        store.writeBlock(block);
-    } catch (...) {}
-
-    try {
-        PersistentSyncCheckpointStore checkpointStore(dataRoot);
-        const std::string stateRoot = block.hasCanonicalStateRoot()
-            ? block.stateRoot()
-            : "height-" + std::to_string(block.index());
-
-        checkpointStore.save(PersistentSyncCheckpoint(
-            PersistentSyncCheckpoint::SCHEMA_VERSION,
-            block.index(),
-            block.hash(),
-            stateRoot,
-            PersistentSyncStatus::COMPLETE,
-            sourcePeerId,
-            now
-        ));
-    } catch (...) {}
-}
-
-// Persists a FinalizedBlockRecord (QC proof) for a finalized block to the
-// durable QC store. Called whenever a block is finalized — either by local
-// consensus or via gossip. Errors are swallowed: storage failures must not
-// crash the node.
-void persistFinalizedRecord(
-    const consensus::FinalizedBlockRecord& record,
-    const std::filesystem::path& dataRoot
-) {
-    try {
-        FinalizedBlockRecordStore qcStore(dataRoot);
-        qcStore.save(record);
-    } catch (...) {}
-}
-
 // Decode a canonical-hex gossip payload; returns std::nullopt if not in
 // canonical format or if hex decoding fails.
 std::optional<std::vector<unsigned char>> tryUnwrapCanonical(
@@ -155,7 +107,7 @@ std::optional<std::vector<unsigned char>> tryUnwrapCanonical(
 // needing to recompute the state root from scratch.
 PersistentBlockSyncBatch buildSyncResponseBatch(
     const core::Blockchain& blockchain,
-    const FinalizedBlockRecordStore& qcStore,
+    const NodeDataDirectoryConfig& directoryConfig,
     const std::string& localPeerId,
     std::uint64_t fromHeight,
     std::uint64_t maxItems,
@@ -167,9 +119,13 @@ PersistentBlockSyncBatch buildSyncResponseBatch(
         if (block.index() < fromHeight) continue;
         if (items.size() >= static_cast<std::size_t>(maxItems)) break;
 
-        const auto qcOpt = qcStore.load(block.index());
-        const std::string serializedQc =
-            qcOpt.has_value() ? qcOpt->serialize() : "";
+        const FinalizedBlockArtifact artifact =
+            FinalizedBlockArtifactCodec::readBlockArtifactFile(
+                FinalizedBlockStore::blockFilePath(directoryConfig, block.index())
+            );
+        if (artifact.block().hash() != block.hash()) {
+            throw std::runtime_error("Canonical sync artifact does not match runtime chain.");
+        }
 
         items.emplace_back(
             block.index(),
@@ -180,7 +136,7 @@ PersistentBlockSyncBatch buildSyncResponseBatch(
                 ? block.stateRoot()
                 : "height-" + std::to_string(block.index()),
             now,
-            serializedQc
+            artifact.finalizedRecord().serialize()
         );
     }
     if (items.empty()) return PersistentBlockSyncBatch{};
@@ -237,23 +193,23 @@ NodeOrchestratorStartResult NodeOrchestrator::start() {
         return {NodeOrchestratorStartStatus::ALREADY_RUNNING, "Already running."};
     }
 
-    // Step 1: Initialize data directory or load existing state.
+    // Initialize data directory or load existing state.
     auto initResult = initOrLoad();
     if (!initResult.running()) return initResult;
 
-    // Step 2: Start TCP transport + gossip mesh.
+    // Start TCP transport + gossip mesh.
     if (!startTransport()) {
         return {NodeOrchestratorStartStatus::TRANSPORT_FAILED,
                 "Failed to bind TCP transport."};
     }
 
-    // Step 3: Start consensus event loop (background thread).
+    // Start consensus event loop (background thread).
     if (!startConsensus()) {
         return {NodeOrchestratorStartStatus::CONSENSUS_FAILED,
                 "Failed to start consensus event loop."};
     }
 
-    // Step 4: Start RPC server (background thread).
+    // Start RPC server (background thread).
     startRpc(); // Non-fatal if RPC fails.
 
     m_running.store(true);
@@ -288,7 +244,7 @@ void NodeOrchestrator::runBlocking(std::int64_t tickIntervalMs) {
 void NodeOrchestrator::tick(std::int64_t now) {
     if (!m_tcpRuntime || !m_runtime) return;
 
-    // 1. Drive the gossip/TCP layer: receive inbound + flush outbound.
+    // Drive the gossip/TCP layer: receive inbound + flush outbound.
     m_tcpRuntime->tick(now);
 
     auto& gossip = m_tcpRuntime->gossipMesh();
@@ -301,20 +257,14 @@ void NodeOrchestrator::tick(std::int64_t now) {
     // Compute effective minimum fee once. effectiveMinimumFeeRawUnits() checks any
     // applied governance overrides before falling back to the genesis config value.
     const config::GenesisConfig& genesisConfig = m_runtime->config().genesisConfig();
-    const std::uint64_t minFeeRaw = m_runtime->effectiveMinimumFeeRawUnits();
-    const std::int64_t minFee =
-        (minFeeRaw > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
-        ? std::numeric_limits<std::int64_t>::max()
-        : static_cast<std::int64_t>(minFeeRaw);
-
-    // 2. Auto-register new peers that sent PEER_HELLO.
+    // Auto-register new peers that sent PEER_HELLO.
     PeerHandshakeAutoRegistrar::processInbox(
         gossip,
         currentChainStatus(),
         now
     );
 
-    // 2.5. Drain incoming CHAIN_STATUS messages.
+    // Drain incoming CHAIN_STATUS messages.
     // These are broadcast by peers after round advances or on handshake. We use
     // them to keep our local peer-height registry accurate and to trigger
     // persistent sync when a peer is materially ahead of us.
@@ -331,6 +281,12 @@ void NodeOrchestrator::tick(std::int64_t now) {
                         optBytes.value()
                     );
                 if (!status.isValid()) continue;
+                const auto& localParameters =
+                    m_config.genesisConfig().networkParameters();
+                if (status.chainId() != localParameters.chainId() ||
+                    status.networkId() != localParameters.networkName()) {
+                    continue;
+                }
 
                 // Update peer height so step 6 (block request) stays accurate.
                 const p2p::PeerInfo* existing =
@@ -348,53 +304,21 @@ void NodeOrchestrator::tick(std::int64_t now) {
 
                 // Trigger persistent sync if peer is ahead by more than one block.
                 if (status.peerIsAheadOf(localHeight)) {
-                    triggerSyncIfBehind(status, now);
+                    triggerSyncIfBehind(status, envelope.senderNodeId(), now);
                 }
             } catch (...) {}
         }
     }
 
-    // Build a protocol validation context from the current chain state.
-    // Used by both BLOCK_ANNOUNCE and BLOCK_RESPONSE validation below.
-    // wallClockNow is passed so the validator can reject blocks with timestamps
-    // too far in the future. Falls back to structural-only on context failure.
-    // The account state view is served from the NodeRuntime cache: it is only
-    // rebuilt when the chain tip height has changed since the last tick.
-    core::StateTransitionPreviewContext announceValidationContext;
-    bool announceContextValid = true;
-    try {
-        announceValidationContext = core::StateTransitionPreviewContext(
-            minFee,
-            m_runtime->cachedAccountStateAtTip(minFee),
-            false,
-            true,
-            "",
-            now
-        );
-    } catch (...) {
-        announceContextValid = false;
-    }
+    // Announcements are hints, not finality proofs. Consensus proposals use
+    // SIGNED_BLOCK_PROPOSAL; finalized catch-up uses BLOCK_SYNC_RESPONSE.
+    // Never append an announced block directly to the canonical chain.
+    gossip.drainInbox(p2p::NetworkMessageType::BLOCK_ANNOUNCE);
 
-    // 3. Apply any incoming BLOCK_ANNOUNCE messages.
-    if (announceContextValid) {
-        BlockAnnounceHandler::processInbox(
-            gossip,
-            m_runtime->mutableBlockchain(),
-            announceValidationContext,
-            now
-        );
-    } else {
-        gossip.drainInbox(p2p::NetworkMessageType::BLOCK_ANNOUNCE);
-    }
+    // The legacy block-only protocol cannot reproduce full runtime state.
+    gossip.drainInbox(p2p::NetworkMessageType::BLOCK_REQUEST);
 
-    // 4. Serve incoming BLOCK_REQUEST messages (fast-path sync).
-    BlockSyncHandler::serveRequests(
-        gossip,
-        m_runtime->blockchain(),
-        now
-    );
-
-    // 4.5. Serve incoming BLOCK_SYNC_REQUEST messages (persistent sync path).
+    // Serve incoming BLOCK_SYNC_REQUEST messages (persistent sync path).
     // Decode each request, build a PersistentBlockSyncBatch from local blocks,
     // and broadcast a BLOCK_SYNC_RESPONSE so the requester can apply the batch.
     {
@@ -415,16 +339,29 @@ void NodeOrchestrator::tick(std::int64_t now) {
                     continue;
                 }
 
+                if (req.locator().fromHeight() == 0 ||
+                    req.locator().fromHeight() > m_runtime->blockchain().size()) {
+                    continue;
+                }
+                const std::string& expectedAncestor =
+                    m_runtime->blockchain().blocks()[
+                        static_cast<std::size_t>(req.locator().fromHeight() - 1)
+                    ].hash();
+                if (std::find(
+                        req.locator().knownAncestorHashes().begin(),
+                        req.locator().knownAncestorHashes().end(),
+                        expectedAncestor
+                    ) == req.locator().knownAncestorHashes().end()) {
+                    continue;
+                }
+
                 const std::uint64_t maxItems = std::min(
                     req.locator().maxBlocks(),
-                    static_cast<std::uint64_t>(BlockSyncHandler::MAX_BLOCKS_PER_RESPONSE)
-                );
-                const FinalizedBlockRecordStore qcStoreForResponse(
-                    m_config.dataDirectory().rootPath()
+                    NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH
                 );
                 const PersistentBlockSyncBatch batch = buildSyncResponseBatch(
                     m_runtime->blockchain(),
-                    qcStoreForResponse,
+                    m_config.dataDirectory(),
                     m_config.localPeer().peerId(),
                     req.locator().fromHeight(),
                     maxItems,
@@ -444,69 +381,12 @@ void NodeOrchestrator::tick(std::int64_t now) {
         }
     }
 
-    // 5. Apply any received BLOCK_RESPONSE messages (fast-path sync).
-    // The context builder is called per-block so the state reflects all blocks
-    // applied so far in the batch. wallClockNow is captured so future-timestamp
-    // drift is enforced even during sync. Each callback invalidates the cache so
-    // the rebuilt view always matches the chain tip at the time of the call.
-    std::size_t syncApplied = 0;
-    try {
-        syncApplied = BlockSyncHandler::applyResponses(
-            gossip,
-            m_runtime->mutableBlockchain(),
-            [this, minFee, now](const core::Blockchain&) -> core::StateTransitionPreviewContext {
-                try {
-                    m_runtime->invalidateAccountStateCache();
-                    return core::StateTransitionPreviewContext(
-                        minFee,
-                        m_runtime->cachedAccountStateAtTip(minFee),
-                        false,
-                        true,
-                        "",
-                        now
-                    );
-                } catch (...) {
-                    throw std::runtime_error("State load failed, aborting block sync.");
-                }
-            },
-            m_runtime->finalizationRegistry(),
-            BlockSyncQcMode::QC_REQUIRED,
-            now
-        );
-    } catch (...) {
-        // Fail gracefully instead of bypassing consensus validation
-    }
+    // Legacy BLOCK_RESPONSE messages do not carry the complete finalized
+    // artifact needed to replay supply, governance and historical validator
+    // state. Drain them; canonical synchronization uses BLOCK_SYNC_RESPONSE.
+    gossip.drainInbox(p2p::NetworkMessageType::BLOCK_RESPONSE);
 
-    // Persist each block that was successfully synced via fast-path.
-    // Also persist the QC record from the finalization registry — the
-    // QC_REQUIRED mode already verified these records before applying.
-    if (syncApplied > 0 && !m_runtime->blockchain().empty()) {
-        const FinalizedBlockRecordStore qcStore(m_config.dataDirectory().rootPath());
-        const auto& allBlocks = m_runtime->blockchain().blocks();
-        const std::uint64_t newHeight = m_runtime->blockchain().latestBlock().index();
-        const std::uint64_t firstSynced =
-            (newHeight >= static_cast<std::uint64_t>(syncApplied))
-            ? newHeight - static_cast<std::uint64_t>(syncApplied) + 1
-            : 0;
-        for (const auto& b : allBlocks) {
-            if (b.index() >= firstSynced && b.index() <= newHeight) {
-                m_runtime->applyGovernanceFromBlock(b, now);
-                persistFinalizedBlock(
-                    b,
-                    m_config.dataDirectory().rootPath(),
-                    "sync",
-                    now
-                );
-                const auto* rec =
-                    m_runtime->finalizationRegistry().recordForHeight(b.index());
-                if (rec != nullptr) {
-                    persistFinalizedRecord(*rec, m_config.dataDirectory().rootPath());
-                }
-            }
-        }
-    }
-
-    // 5.5. Apply any received BLOCK_SYNC_RESPONSE batches (persistent sync path).
+    // Apply any received BLOCK_SYNC_RESPONSE batches (persistent sync path).
     // Each batch is validated block-by-block with ProtocolCommitment mode before
     // being added to the chain. Applied blocks are persisted immediately.
     {
@@ -516,13 +396,22 @@ void NodeOrchestrator::tick(std::int64_t now) {
 
         PersistentSyncCheckpointStore cpStore(m_config.dataDirectory().rootPath());
         const PersistentSyncCheckpointReadResult readCp = cpStore.read();
-        PersistentSyncCheckpoint currentCheckpoint = readCp.loaded()
+        const core::Block& localTip = m_runtime->blockchain().latestBlock();
+        const bool checkpointMatchesRuntime =
+            readCp.loaded() &&
+            readCp.checkpoint().finalizedHeight() == localTip.index() &&
+            readCp.checkpoint().finalizedBlockHash() == localTip.hash();
+        PersistentSyncCheckpoint currentCheckpoint = checkpointMatchesRuntime
             ? readCp.checkpoint()
-            : PersistentSyncCheckpoint::genesis(
-                m_runtime->blockchain().empty()
-                    ? "genesis"
-                    : m_runtime->blockchain().latestBlock().hash(),
-                "genesis-state-root",
+            : PersistentSyncCheckpoint(
+                PersistentSyncCheckpoint::SCHEMA_VERSION,
+                localTip.index(),
+                localTip.hash(),
+                localTip.hasCanonicalStateRoot()
+                    ? localTip.stateRoot()
+                    : "genesis-state-root",
+                PersistentSyncStatus::IDLE,
+                m_config.localPeer().peerId(),
                 now
               );
 
@@ -542,86 +431,23 @@ void NodeOrchestrator::tick(std::int64_t now) {
                 }
 
                 const PersistentSyncApplyResult applyResult =
-                    PersistentBlockStateSyncApplier::applyValidatedBatch(
+                    PersistentBlockStateSyncApplier::importFinalizedBatch(
                         currentCheckpoint,
                         batch,
-                        m_runtime->mutableBlockchain(),
-                        m_runtime->validatorRegistry(),
-                        m_policy,
-                        m_provider,
-                        [this, minFee, now](
-                            const core::Blockchain&
-                        ) -> core::StateTransitionPreviewContext {
-                            try {
-                                m_runtime->invalidateAccountStateCache();
-                                return core::StateTransitionPreviewContext(
-                                    minFee,
-                                    m_runtime->cachedAccountStateAtTip(minFee),
-                                    false,
-                                    true,
-                                    "",
-                                    now
-                                );
-                            } catch (...) {
-                                throw std::runtime_error("State load failed, aborting block sync batch.");
-                            }
-                        },
+                        *m_runtime,
+                        m_config.dataDirectory(),
                         now
                     );
 
                 if (applyResult.applied()) {
-                    // Advance the in-memory checkpoint so the next batch in this
-                    // same tick starts from the correct height, then persist it
-                    // so restarts never re-request blocks we already have.
                     currentCheckpoint = applyResult.checkpoint().value();
                     cpStore.save(currentCheckpoint);
-
-                    // Build a height→serializedQc lookup from batch items that
-                    // carry a FinalizedBlockRecord so we can persist the QC
-                    // alongside each block without searching the batch twice.
-                    std::map<std::uint64_t, std::string> serializedQcByHeight;
-                    for (const auto& item : batch.items()) {
-                        if (!item.serializedFinalizedRecord().empty()) {
-                            serializedQcByHeight[item.height()] =
-                                item.serializedFinalizedRecord();
-                        }
-                    }
-
-                    const FinalizedBlockRecordStore qcStore(
-                        m_config.dataDirectory().rootPath()
-                    );
-                    const auto& allBlocks = m_runtime->blockchain().blocks();
-                    for (const auto& b : allBlocks) {
-                        if (b.index() >= batch.fromHeight() &&
-                            b.index() <= batch.toHeight()) {
-                            m_runtime->applyGovernanceFromBlock(b, now);
-                            persistFinalizedBlock(
-                                b,
-                                m_config.dataDirectory().rootPath(),
-                                batch.sourcePeerId(),
-                                now
-                            );
-                            const auto it = serializedQcByHeight.find(b.index());
-                            if (it != serializedQcByHeight.end()) {
-                                try {
-                                    const auto rec =
-                                        consensus::FinalizedBlockRecord::deserialize(
-                                            it->second
-                                        );
-                                    persistFinalizedRecord(
-                                        rec,
-                                        m_config.dataDirectory().rootPath()
-                                    );
-                                } catch (...) {}
-                            }
-                        }
-                    }
                 }
             } catch (...) {}
         }
     }
 
-    // 5.8. Process any new slashing evidence accumulated by the ConsensusEventLoop.
+    // Process any new slashing evidence accumulated by the ConsensusEventLoop.
     // For each piece of evidence not already in the penalty ledger, compute a
     // deterministic penalty decision and propagate its registry effect immediately
     // so jailed/tombstoned validators lose consensus eligibility this tick.
@@ -649,33 +475,6 @@ void NodeOrchestrator::tick(std::int64_t now) {
         }
     }
 
-    // 6. If a known peer is ahead of us, request the next missing blocks.
-    // Only trust peers that have completed handshake (non-empty peerId and endpoint).
-    // Cap the look-ahead window to guard against height-spoofing attacks.
-    static constexpr std::uint64_t kMaxSyncLookAhead = 10000;
-    static std::int64_t lastFastSyncMs = 0;
-    const std::uint64_t currentHeight =
-        m_runtime->blockchain().empty() ? 0
-        : m_runtime->blockchain().latestBlock().index();
-    const auto peers = m_runtime->peerManager().peers();
-    
-    if (now - lastFastSyncMs >= 5) {
-        for (const auto& peer : peers) {
-            if (peer.peerId().empty() || peer.endpoint().empty()) continue;
-            if (peer.latestKnownHeight() > currentHeight + kMaxSyncLookAhead) continue;
-            if (peer.latestKnownHeight() > currentHeight + 1) {
-                BlockSyncHandler::requestBlocks(
-                    gossip,
-                    m_config.localPeer().peerId(),
-                    currentHeight + 1,
-                    BlockSyncHandler::MAX_BLOCKS_PER_RESPONSE,
-                    now
-                );
-                lastFastSyncMs = now;
-                break;
-            }
-        }
-    }
 }
 
 // ---- Accessors ------------------------------------------------------------
@@ -725,9 +524,10 @@ void NodeOrchestrator::addAndConnectPeer(const p2p::PeerMetadata& peer) {
 
 void NodeOrchestrator::triggerSyncIfBehind(
     const ChainStatusMessage& remotePeerStatus,
+    const std::string& remotePeerId,
     std::int64_t now
 ) {
-    if (!m_runtime || !m_tcpRuntime) return;
+    if (!m_runtime || !m_tcpRuntime || remotePeerId.empty()) return;
 
     PersistentSyncCheckpointStore store(
         m_config.dataDirectory().rootPath()
@@ -735,17 +535,20 @@ void NodeOrchestrator::triggerSyncIfBehind(
 
     PersistentSyncCheckpoint checkpoint;
     const PersistentSyncCheckpointReadResult readResult = store.read();
-    if (readResult.loaded()) {
+    const auto& chain = m_runtime->blockchain();
+    const core::Block& tip = chain.latestBlock();
+    if (readResult.loaded() &&
+        readResult.checkpoint().finalizedHeight() == tip.index() &&
+        readResult.checkpoint().finalizedBlockHash() == tip.hash()) {
         checkpoint = readResult.checkpoint();
     } else {
-        const auto& chain = m_runtime->blockchain();
-        const std::uint64_t height =
-            chain.empty() ? 0 : chain.latestBlock().index();
-        const std::string hash =
-            chain.empty() ? "" : chain.latestBlock().hash();
-        checkpoint = PersistentSyncCheckpoint::genesis(
-            hash.empty() ? "genesis" : hash,
-            "state-root-" + std::to_string(height),
+        checkpoint = PersistentSyncCheckpoint(
+            PersistentSyncCheckpoint::SCHEMA_VERSION,
+            tip.index(),
+            tip.hash(),
+            tip.hasCanonicalStateRoot() ? tip.stateRoot() : "genesis-state-root",
+            PersistentSyncStatus::IDLE,
+            m_config.localPeer().peerId(),
             now
         );
     }
@@ -754,9 +557,8 @@ void NodeOrchestrator::triggerSyncIfBehind(
         checkpoint,
         remotePeerStatus,
         m_config.localPeer().peerId(),
-        remotePeerStatus.chainId(),
+        remotePeerId,
         NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH,
-        NODO_PERSISTENT_SYNC_DEFAULT_SNAPSHOT_THRESHOLD,
         now
     );
 
@@ -769,7 +571,8 @@ void NodeOrchestrator::triggerSyncIfBehind(
         crypto::hexEncode(
             serialization::ProtocolMessageCodec::encodeNetworkBlockSyncRequest(req)
         );
-    m_tcpRuntime->gossipMesh().broadcast(
+    m_tcpRuntime->gossipMesh().sendTo(
+        remotePeerId,
         p2p::NetworkMessageType::BLOCK_SYNC_REQUEST,
         payload,
         now
@@ -828,54 +631,6 @@ NodeOrchestratorStartResult NodeOrchestrator::initOrLoad() {
         }
 
         m_runtime = std::make_unique<NodeRuntime>(std::move(loadResult.runtime()));
-    }
-
-    // Restore durable QC records into the finalization registry so
-    // BlockSyncQcMode::QC_REQUIRED works correctly after restart and peers
-    // requesting sync via BLOCK_SYNC_REQUEST receive batches with QC proofs.
-    {
-        FinalizedBlockRecordStore qcStore(
-            m_config.dataDirectory().rootPath()
-        );
-
-        const auto& blocks = m_runtime->blockchain().blocks();
-
-        for (const auto& record : qcStore.loadAll()) {
-            if (record.blockIndex() >= blocks.size()) {
-                continue;
-            }
-
-            const core::Block& block =
-                blocks[static_cast<std::size_t>(record.blockIndex())];
-
-            if (!record.matchesBlock(block)) {
-                continue;
-            }
-
-            if (!record.verify(
-                    m_runtime->validatorRegistry(),
-                    m_policy,
-                    m_provider
-                )) {
-                continue;
-            }
-
-            m_runtime->mutableFinalizationRegistry()
-                .registerFinalizedBlock(record);
-        }
-    }
-
-    // Replay governance transactions from all loaded blocks so effective
-    // network parameters reflect any changes approved before this restart.
-    {
-        const auto nowSec = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()
-        ).count();
-        for (const auto& block : m_runtime->blockchain().blocks()) {
-            m_runtime->applyGovernanceFromBlock(
-                block, static_cast<std::int64_t>(nowSec)
-            );
-        }
     }
 
     NodeOrchestratorStartResult result;
@@ -1001,8 +756,8 @@ bool NodeOrchestrator::startConsensus() {
     // Wire the evidence pool for double-vote detection.
     m_consensusLoop->setEvidencePool(&m_evidencePool);
 
-    // Wire a finalized-block callback that broadcasts the block to peers,
-    // announces it and saves a derived QC index for sync. The authoritative
+    // Wire a finalized-block callback that broadcasts the block to peers.
+    // The authoritative
     // block artifact and runtime manifest are already committed atomically by
     // RuntimeBlockPipeline before this callback runs.
     m_consensusLoop->setFinalizedCallback(
@@ -1022,8 +777,6 @@ bool NodeOrchestrator::startConsensus() {
                 m_tcpRuntime->gossipMesh(),
                 now
             );
-
-            persistFinalizedRecord(rec, m_config.dataDirectory().rootPath());
 
             // Every 100 finalized blocks save an account-state snapshot so the
             // next restart can do partial replay instead of O(N) full replay.
@@ -1103,7 +856,7 @@ std::optional<core::Block> NodeOrchestrator::produceBlock(
     if (expectedProposer != m_config.localValidatorAddress()) return std::nullopt;
     if (!m_localSigner.has_value()) return std::nullopt;
 
-    // Phase 1: production only — no voting, no QC, no finalization.
+    // Production only — no voting, no QC, no finalization.
     // ConsensusEventLoop is responsible for adding the block to the chain,
     // broadcasting the proposal, voting, and finalizing.
     const RuntimeBlockPipelineConfig pipelineConfig(

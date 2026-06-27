@@ -19,6 +19,10 @@ namespace nodo::core {
  */
 class Block {
 public:
+    static constexpr std::size_t MAX_RECORDS = 10'000;
+    static constexpr std::size_t MAX_SERIALIZED_BYTES = 16 * 1024 * 1024;
+    static constexpr std::size_t MAX_RECORD_PAYLOAD_BYTES = 1024 * 1024;
+
     Block(
         std::uint64_t index,
         std::string previousHash,
@@ -78,6 +82,7 @@ public:
     static std::optional<Block> deserialize(const std::string& text);
 
 private:
+    bool isWithinResourceLimits() const;
     std::uint64_t m_index;
     std::string m_previousHash;
     std::string m_hash;

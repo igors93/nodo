@@ -40,32 +40,38 @@ class TransactionBuilder {
 public:
     static Transaction buildSignedTransfer(
         const TransactionBuildRequest& request,
-        const crypto::Signer& signer
+        const crypto::Signer& signer,
+        const std::string& chainId
     );
 
     static Transaction buildSignedStakeLock(
         const TransactionBuildRequest& request,
-        const crypto::Signer& signer
+        const crypto::Signer& signer,
+        const std::string& chainId
     );
 
     static Transaction buildSignedStakeTopUp(
         const TransactionBuildRequest& request,
-        const crypto::Signer& signer
+        const crypto::Signer& signer,
+        const std::string& chainId
     );
 
     static Transaction buildSignedStakeWithdraw(
         const TransactionBuildRequest& request,
-        const crypto::Signer& signer
+        const crypto::Signer& signer,
+        const std::string& chainId
     );
 
     static Transaction buildSignedValidatorExitRequest(
         const TransactionBuildRequest& request,
-        const crypto::Signer& signer
+        const crypto::Signer& signer,
+        const std::string& chainId
     );
 
     static Transaction buildSignedValidatorUnjailRequest(
         const TransactionBuildRequest& request,
-        const crypto::Signer& signer
+        const crypto::Signer& signer,
+        const std::string& chainId
     );
 };
 

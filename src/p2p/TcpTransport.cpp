@@ -807,6 +807,11 @@ void TcpTransport::closeAll() {
     closeSocket(m_listenFd);
 }
 
+/**
+ * Accepts incoming TCP connections from the non-blocking listener socket.
+ * Registers successfully connected peers into the unidentified connections pool
+ * to await the initial handshake and protocol identification.
+ */
 TransportResult TcpTransport::acceptAvailableConnections() {
     if (m_listenFd == INVALID_FD) {
         return TransportResult(

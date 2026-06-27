@@ -61,15 +61,11 @@ public:
     std::string serialize() const;
 
     /*
-     * Reconstructs a SignatureBundle from its canonical serialized form.
-     *
-     * expectedPublicKey must match the public key embedded in each Signature.
-     * Throws std::invalid_argument on parse or structural errors.
+     * Reconstructs a SignatureBundle from its canonical, self-contained form.
+     * Every serialized Signature carries the complete public key required for
+     * verification. Throws std::invalid_argument on parse/canonicality errors.
      */
-    static SignatureBundle deserialize(
-        const std::string& serialized,
-        const PublicKey& expectedPublicKey
-    );
+    static SignatureBundle deserialize(const std::string& serialized);
 
     /*
      * Creates a signature through a provider boundary.

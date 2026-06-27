@@ -59,7 +59,7 @@ const std::string& TreasuryExecutionValidationResult::reason() const { return m_
 TreasuryExecutionValidationResult TreasuryExecutionValidator::validateEvidence(
     const TreasuryExecutionEvidence& evidence
 ) {
-    // 1. Structural validity of the evidence (field-level checks + consistency).
+    // Structural validity of the evidence (field-level checks + consistency).
     if (!evidence.isValid()) {
         return TreasuryExecutionValidationResult::rejected(
             TreasuryExecutionValidationStatus::INVALID_EVIDENCE,
@@ -68,7 +68,7 @@ TreasuryExecutionValidationResult TreasuryExecutionValidator::validateEvidence(
         );
     }
 
-    // 2. Recompute the spend through TreasurySpendValidator.
+    // Recompute the spend through TreasurySpendValidator.
     // Defense mode is a live gate for new spends; it must not retroactively
     // invalidate spends recorded in evidence before defense mode was activated.
     const TreasurySpendValidationResult spendResult =
@@ -91,7 +91,7 @@ TreasuryExecutionValidationResult TreasuryExecutionValidator::validateEvidence(
         );
     }
 
-    // 3. Compare the recomputed spend record with the stored spend record.
+    // Compare the recomputed spend record with the stored spend record.
     const TreasurySpendRecord& computed = spendResult.spendRecord();
     const TreasurySpendRecord& stored = evidence.spendRecord();
 
@@ -153,7 +153,7 @@ TreasuryExecutionValidationResult TreasuryExecutionValidator::validateEvidence(
         );
     }
 
-    // 4. Validate governance context: the approval must have been produced by
+    // Validate governance context: the approval must have been produced by
     //    GovernanceApprovalBridge, not forged directly.
     const GovernanceEvidenceValidationResult govResult =
         TreasuryGovernanceEvidenceValidator::validateGovernanceContext(evidence);

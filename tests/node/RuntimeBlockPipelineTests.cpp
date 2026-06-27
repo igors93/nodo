@@ -163,7 +163,8 @@ Transaction signedTransfer(
             nonce,
             timestamp
         ),
-        localUserSigner()
+        localUserSigner(),
+        "nodo-localnet-1"
     );
 }
 

@@ -327,6 +327,11 @@ std::size_t QuorumCertificate::voteCount() const {
     return m_votes.size();
 }
 
+/**
+ * Verifies the structural integrity of the quorum certificate.
+ * Checks for required vote counts, prevents duplicate voters, and ensures all votes
+ * correctly target the identical block index, block hash, and consensus round.
+ */
 bool QuorumCertificate::isStructurallyValid() const {
     if (m_blockIndex == 0 ||
         m_round == 0 ||

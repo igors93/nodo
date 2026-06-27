@@ -232,7 +232,8 @@ Transaction signedTransfer() {
             1,
             kTimestamp + 10
         ),
-        localUserSigner()
+        localUserSigner(),
+        "nodo-localnet-1"
     );
 }
 
@@ -435,6 +436,13 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
     requireCondition(
         persisted.stored(),
         "Finalized block should be stored."
+    );
+
+    requireCondition(
+        !std::filesystem::exists(
+            FinalizedBlockStore::commitJournalPath(directoryConfig)
+        ),
+        "Successful finalization must clear its durable commit journal."
     );
 
     requireCondition(

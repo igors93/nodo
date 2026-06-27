@@ -12,6 +12,7 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeStateVerifier.hpp"
 #include "consensus/QuorumCertificate.hpp"
+#include "consensus/ProposerSchedule.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "storage/AccountStateSnapshotStore.hpp"
 
@@ -186,6 +187,15 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::INVALID_CONFIG, "Runtime loader config is invalid.");
     }
 
+    try {
+        FinalizedBlockStore::recoverInterruptedCommit(directoryConfig);
+    } catch (const std::exception& error) {
+        return RuntimeStateLoadResult::rejected(
+            RuntimeStateLoadStatus::MANIFEST_MISMATCH,
+            std::string("Unable to recover interrupted finalization commit: ") + error.what()
+        );
+    }
+
     const NodeDataDirectoryReadResult manifestResult =
         NodeDataDirectory::loadManifest(directoryConfig);
 
@@ -217,7 +227,8 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             consensus::ConsensusRecoveryStore::load(
                 directoryConfig.consensusRecoveryPath()
             );
-        recoveredRound.has_value()) {
+        recoveredRound.has_value() &&
+        recoveredRound->height() <= manifest.latestBlockHeight() + 1) {
         runtime.mutableConsensusRoundManager().advanceToHeight(
             recoveredRound->height(),
             recoveredRound->round(),
@@ -336,6 +347,19 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             );
         }
 
+        runtime.applyGovernanceFromBlock(
+            artifact.block(), artifact.finalizedRecord().finalizedAt()
+        );
+        if (!runtime.mutableValidatorSetHistory().recordSet(
+                artifact.block().index() + 1, runtime.validatorRegistry()
+            )) {
+            return RuntimeStateLoadResult::rejected(
+                RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                "Validator set history conflict while replaying block "
+                    + std::to_string(artifact.block().index())
+            );
+        }
+
         if (!artifact.postStateRoot().empty()) {
             runtime.mutableStatePruner().recordStateRoot(
                 artifact.block().index(),
@@ -349,6 +373,25 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
     if (manifest.latestBlockHeight() > 0) {
         runtime.mutableStatePruner().pruneHistory(manifest.latestBlockHeight());
+    }
+
+    const std::uint64_t nextConsensusHeight =
+        runtime.blockchain().latestBlock().index() + 1;
+    if (runtime.consensusRoundManager().currentState().height() != nextConsensusHeight) {
+        constexpr std::uint64_t nextRound = 1;
+        const std::string proposer = consensus::ProposerSchedule::selectProposer(
+            runtime.validatorRegistry(),
+            genesisConfig.networkParameters().chainId(),
+            nextConsensusHeight,
+            nextRound
+        );
+        runtime.mutableConsensusRoundManager().advanceToHeight(
+            nextConsensusHeight,
+            nextRound,
+            proposer,
+            runtime.blockchain().latestBlock().timestamp() + 1,
+            genesisConfig.networkParameters().targetBlockTimeSeconds()
+        );
     }
 
     if (runtime.blockchain().latestBlock().index() != manifest.latestBlockHeight() ||
@@ -393,13 +436,17 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         }
     }
 
+    const core::StateTransitionPreviewContext tipContext =
+        RuntimeAccountStateBuilder::previewContextAtTip(runtime, minFee);
     const std::string computedStateRoot =
-        core::StateRootCalculator::calculateAccountStateRoot(tipAccountState);
+        core::StateRootCalculator::calculateProtocolStateRoot(
+            tipAccountState, tipContext.deterministicStateDomains()
+        );
 
     if (computedStateRoot.empty() || computedStateRoot != manifest.latestStateRoot()) {
         return RuntimeStateLoadResult::rejected(
             RuntimeStateLoadStatus::MANIFEST_MISMATCH,
-            "Manifest latestStateRoot does not match rebuilt account state."
+            "Manifest latestStateRoot does not match rebuilt protocol state."
         );
     }
 

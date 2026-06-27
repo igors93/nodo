@@ -117,7 +117,8 @@ node::RuntimeBlockPipelineResult produceBlock(
 
     const auto tx = core::TransactionBuilder::buildSignedTransfer(
         core::TransactionBuildRequest("import-recipient", Amount::fromRawUnits(1000), Amount::fromRawUnits(100), nonce, ts - 10),
-        crypto::Signer(uKey, userProv)
+        crypto::Signer(uKey, userProv),
+        rt.config().genesisConfig().networkParameters().chainId()
     );
     const auto adm = rt.mutableMempool().admitTransaction(tx, crypto::CryptoPolicy::developmentPolicy(), crypto::SecurityContext::USER_TRANSACTION, ts - 9);
     require(adm.accepted(), "Transaction must be admitted.");

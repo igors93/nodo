@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace nodo::node {
 
@@ -74,10 +75,22 @@ private:
  */
 class FinalizedBlockStore {
 public:
+    /* Completes or rolls back cleanup for a commit interrupted by a crash. */
+    static void recoverInterruptedCommit(
+        const NodeDataDirectoryConfig& directoryConfig
+    );
+
     static FinalizedBlockStoreResult persist(
         const NodeDataDirectoryConfig& directoryConfig,
         const NodeRuntime& runtime,
         const RuntimeBlockPipelineResult& pipelineResult,
+        std::int64_t updatedAt
+    );
+
+    static FinalizedBlockStoreResult persistBatch(
+        const NodeDataDirectoryConfig& directoryConfig,
+        const NodeRuntime& finalRuntime,
+        const std::vector<RuntimeBlockPipelineResult>& results,
         std::int64_t updatedAt
     );
 
@@ -88,6 +101,10 @@ public:
 
     static std::string finalizedBlockFileContents(
         const RuntimeBlockPipelineResult& pipelineResult
+    );
+
+    static std::filesystem::path commitJournalPath(
+        const NodeDataDirectoryConfig& directoryConfig
     );
 
 private:

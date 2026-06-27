@@ -6,14 +6,72 @@
 #include "node/FinalizedTreasurySection.hpp"
 #include "node/FinalizedTreasurySectionCodec.hpp"
 #include "node/PersistentBlockStateSync.hpp"
+#include "node/PersistentMempoolStore.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
 namespace nodo::node {
+
+namespace {
+
+constexpr const char* FINALIZATION_JOURNAL_SCHEMA =
+    "NODO_FINALIZATION_COMMIT_V1";
+
+std::string commitJournalContents(
+    const RuntimeBlockPipelineResult& result
+) {
+    std::vector<std::pair<std::string, std::string>> fields = {
+        {"targetHeight", std::to_string(result.block().index())},
+        {"targetBlockHash", result.block().hash()},
+        {"targetStateRoot", result.postStateRoot()},
+        {"transactionCount", std::to_string(result.finalizedTransactionIds().size())}
+    };
+    for (std::size_t index = 0; index < result.finalizedTransactionIds().size(); ++index) {
+        fields.emplace_back(
+            "transaction." + std::to_string(index),
+            result.finalizedTransactionIds()[index]
+        );
+    }
+    return serialization::KeyValueFileCodec::serialize(
+        FINALIZATION_JOURNAL_SCHEMA, fields
+    );
+}
+
+std::string commitJournalContents(
+    const std::vector<RuntimeBlockPipelineResult>& results
+) {
+    if (results.empty()) {
+        throw std::invalid_argument("Cannot journal an empty finalized batch.");
+    }
+    std::vector<std::string> transactionIds;
+    for (const auto& result : results) {
+        transactionIds.insert(
+            transactionIds.end(),
+            result.finalizedTransactionIds().begin(),
+            result.finalizedTransactionIds().end()
+        );
+    }
+    const auto& last = results.back();
+    std::vector<std::pair<std::string, std::string>> fields = {
+        {"targetHeight", std::to_string(last.block().index())},
+        {"targetBlockHash", last.block().hash()},
+        {"targetStateRoot", last.postStateRoot()},
+        {"transactionCount", std::to_string(transactionIds.size())}
+    };
+    for (std::size_t index = 0; index < transactionIds.size(); ++index) {
+        fields.emplace_back("transaction." + std::to_string(index), transactionIds[index]);
+    }
+    return serialization::KeyValueFileCodec::serialize(
+        FINALIZATION_JOURNAL_SCHEMA, fields
+    );
+}
+
+} // namespace
 
 std::string finalizedBlockStoreStatusToString(
     FinalizedBlockStoreStatus status
@@ -133,6 +191,15 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
         return FinalizedBlockStoreResult::rejected(
             FinalizedBlockStoreStatus::INVALID_CONFIG,
             "Node data directory config is invalid."
+        );
+    }
+
+    try {
+        recoverInterruptedCommit(directoryConfig);
+    } catch (const std::exception& error) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::IO_ERROR,
+            std::string("Failed to recover interrupted finalization commit: ") + error.what()
         );
     }
 
@@ -265,6 +332,11 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
             directoryConfig.blocksDirectoryPath()
         );
 
+        storage::AtomicFile::writeTextFile(
+            commitJournalPath(directoryConfig),
+            commitJournalContents(pipelineResult)
+        );
+
         if (std::filesystem::exists(path)) {
             const std::string existingContents =
                 readTextFile(path);
@@ -296,6 +368,11 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
                     "Runtime snapshot latestStateRoot does not match finalized block postStateRoot."
                 );
             }
+
+            PersistentMempoolStore::removeTransactions(
+                directoryConfig, pipelineResult.finalizedTransactionIds()
+            );
+            std::filesystem::remove(commitJournalPath(directoryConfig));
 
             return FinalizedBlockStoreResult::alreadyStored(
                 snapshot.manifest(),
@@ -329,6 +406,10 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
             );
         }
 
+        PersistentMempoolStore::removeTransactions(
+            directoryConfig, pipelineResult.finalizedTransactionIds()
+        );
+
         // At epoch boundaries, persist the snapshot commitment manifest so that
         // syncing peers can request and verify this epoch's state snapshot.
         if (!pipelineResult.snapshotDigest().empty()) {
@@ -348,6 +429,8 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
             }
         }
 
+        std::filesystem::remove(commitJournalPath(directoryConfig));
+
         return FinalizedBlockStoreResult::stored(
             snapshot.manifest(),
             path
@@ -358,6 +441,158 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
             error.what()
         );
     }
+}
+
+FinalizedBlockStoreResult FinalizedBlockStore::persistBatch(
+    const NodeDataDirectoryConfig& directoryConfig,
+    const NodeRuntime& finalRuntime,
+    const std::vector<RuntimeBlockPipelineResult>& results,
+    std::int64_t updatedAt
+) {
+    if (!directoryConfig.isValid() || !finalRuntime.isValid() ||
+        results.empty() || updatedAt <= 0) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::INVALID_CONFIG,
+            "Finalized batch persistence input is invalid."
+        );
+    }
+
+    try {
+        recoverInterruptedCommit(directoryConfig);
+        const NodeDataDirectoryReadResult current =
+            NodeDataDirectory::loadManifest(directoryConfig);
+        if (!current.loaded()) {
+            return FinalizedBlockStoreResult::rejected(
+                FinalizedBlockStoreStatus::NOT_INITIALIZED, current.reason()
+            );
+        }
+
+        std::uint64_t expectedHeight = current.manifest().latestBlockHeight() + 1;
+        std::string expectedParent = current.manifest().latestBlockHash();
+        std::vector<std::string> finalizedTransactionIds;
+        for (const auto& result : results) {
+            if (!result.finalized() || result.block().index() != expectedHeight ||
+                result.block().previousHash() != expectedParent ||
+                result.block().stateRoot() != result.postStateRoot()) {
+                return FinalizedBlockStoreResult::rejected(
+                    FinalizedBlockStoreStatus::INVALID_PIPELINE_RESULT,
+                    "Finalized batch is discontinuous or has an invalid state commitment."
+                );
+            }
+            expectedParent = result.block().hash();
+            ++expectedHeight;
+            finalizedTransactionIds.insert(
+                finalizedTransactionIds.end(),
+                result.finalizedTransactionIds().begin(),
+                result.finalizedTransactionIds().end()
+            );
+        }
+
+        if (finalRuntime.blockchain().latestBlock().hash() != results.back().block().hash()) {
+            return FinalizedBlockStoreResult::rejected(
+                FinalizedBlockStoreStatus::INVALID_RUNTIME,
+                "Final runtime tip does not match finalized batch tip."
+            );
+        }
+
+        storage::AtomicFile::writeTextFile(
+            commitJournalPath(directoryConfig), commitJournalContents(results)
+        );
+
+        for (const auto& result : results) {
+            const std::filesystem::path path =
+                blockFilePath(directoryConfig, result.block().index());
+            const std::string contents = finalizedBlockFileContents(result);
+            if (std::filesystem::exists(path)) {
+                if (readTextFile(path) != contents) {
+                    return FinalizedBlockStoreResult::rejected(
+                        FinalizedBlockStoreStatus::CONFLICTING_BLOCK_FILE,
+                        "Conflicting finalized artifact exists inside batch."
+                    );
+                }
+            } else {
+                writeTextFile(path, contents);
+            }
+        }
+
+        const NodeDataDirectoryReadResult snapshot =
+            NodeDataDirectory::writeRuntimeSnapshot(
+                directoryConfig, finalRuntime, updatedAt
+            );
+        if (!snapshot.loaded() ||
+            snapshot.manifest().latestStateRoot() != results.back().postStateRoot()) {
+            return FinalizedBlockStoreResult::rejected(
+                FinalizedBlockStoreStatus::IO_ERROR,
+                snapshot.loaded()
+                    ? "Batch manifest state root does not match batch tip."
+                    : snapshot.reason()
+            );
+        }
+
+        PersistentMempoolStore::removeTransactions(
+            directoryConfig, finalizedTransactionIds
+        );
+        std::filesystem::remove(commitJournalPath(directoryConfig));
+        return FinalizedBlockStoreResult::stored(
+            snapshot.manifest(),
+            blockFilePath(directoryConfig, results.back().block().index())
+        );
+    } catch (const std::exception& error) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::IO_ERROR, error.what()
+        );
+    }
+}
+
+std::filesystem::path FinalizedBlockStore::commitJournalPath(
+    const NodeDataDirectoryConfig& directoryConfig
+) {
+    return directoryConfig.rootPath() / "finalization.commit.pending";
+}
+
+void FinalizedBlockStore::recoverInterruptedCommit(
+    const NodeDataDirectoryConfig& directoryConfig
+) {
+    const std::filesystem::path journalPath = commitJournalPath(directoryConfig);
+    if (!std::filesystem::exists(journalPath)) {
+        return;
+    }
+
+    const serialization::KeyValueFileDocument journal =
+        serialization::KeyValueFileCodec::parse(
+            storage::AtomicFile::readTextFile(journalPath),
+            FINALIZATION_JOURNAL_SCHEMA
+        );
+    const std::uint64_t targetHeight =
+        std::stoull(journal.requireField("targetHeight"));
+    const std::string targetHash = journal.requireField("targetBlockHash");
+    const std::size_t transactionCount = static_cast<std::size_t>(
+        std::stoull(journal.requireField("transactionCount"))
+    );
+
+    const NodeDataDirectoryReadResult manifestResult =
+        NodeDataDirectory::loadManifest(directoryConfig);
+    if (!manifestResult.loaded()) {
+        throw std::runtime_error("Cannot recover finalization without a valid manifest.");
+    }
+
+    const bool published =
+        manifestResult.manifest().latestBlockHeight() >= targetHeight &&
+        (manifestResult.manifest().latestBlockHeight() != targetHeight ||
+         manifestResult.manifest().latestBlockHash() == targetHash);
+
+    if (published) {
+        std::vector<std::string> transactionIds;
+        transactionIds.reserve(transactionCount);
+        for (std::size_t index = 0; index < transactionCount; ++index) {
+            transactionIds.push_back(
+                journal.requireField("transaction." + std::to_string(index))
+            );
+        }
+        PersistentMempoolStore::removeTransactions(directoryConfig, transactionIds);
+    }
+
+    std::filesystem::remove(journalPath);
 }
 
 std::filesystem::path FinalizedBlockStore::blockFilePath(

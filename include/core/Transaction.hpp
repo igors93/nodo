@@ -4,6 +4,7 @@
 #include "core/TransactionType.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "crypto/SignatureProvider.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
@@ -100,12 +101,7 @@ public:
      */
     std::string serialize() const;
 
-    /*
-     * Validates structure and cryptographic policy.
-     *
-     * This does not yet verify real cryptographic signatures.
-     * Real verification will be added when crypto providers are implemented.
-     */
+    /* Validates structure and cryptographic policy. */
     bool isStructurallyValid(
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context
@@ -115,15 +111,20 @@ public:
         const std::string& signingPayload
     );
 
+    /* Rebuilds the complete, canonical transaction including signatures. */
+    static Transaction deserialize(const std::string& serialized);
+
     /*
-     * Rebuilds the transaction core fields from a serialized ledger payload.
-     *
-     * This function intentionally does not restore the SignatureBundle.
-     * Ledger replay applies already-accepted records from the validated chain.
+     * Verifies the authorization that permits this transaction to mutate
+     * protocol state: chain binding, sender/key binding, signature policy and
+     * the mathematical signature itself.
      */
-    static Transaction deserializeForStateReplay(
-        const std::string& serialized
-    );
+    bool verifyAuthorization(
+        const std::string& expectedChainId,
+        const crypto::CryptoPolicy& policy,
+        crypto::SecurityContext context,
+        const crypto::SignatureProvider& provider
+    ) const;
 
 private:
     std::string m_id;

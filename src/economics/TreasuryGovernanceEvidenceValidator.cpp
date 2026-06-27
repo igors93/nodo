@@ -103,7 +103,7 @@ static GovernanceEvidenceValidationStatus mapBridgeStatus(
 GovernanceEvidenceValidationResult TreasuryGovernanceEvidenceValidator::validateGovernanceContext(
     const TreasuryExecutionEvidence& evidence
 ) {
-    // 1. Evidence must carry governance context.
+    // Evidence must carry governance context.
     if (!evidence.hasGovernanceContext()) {
         return GovernanceEvidenceValidationResult::rejected(
             GovernanceEvidenceValidationStatus::MISSING_GOVERNANCE_CONTEXT,
@@ -115,7 +115,7 @@ GovernanceEvidenceValidationResult TreasuryGovernanceEvidenceValidator::validate
 
     const auto& ctx = evidence.governanceContext();
 
-    // 2. Re-run the lifecycle bridge to reproduce the expected TreasuryApproval.
+    // Re-run the lifecycle bridge to reproduce the expected TreasuryApproval.
     const auto bridgeResult =
         GovernanceApprovalBridge::produceTreasuryApprovalFromVerifiedLifecycle(
             ctx.governanceLifecycle
@@ -132,7 +132,7 @@ GovernanceEvidenceValidationResult TreasuryGovernanceEvidenceValidator::validate
     const TreasuryApproval& reproduced = bridgeResult.treasuryApproval();
     const TreasuryApproval& actual    = evidence.approval();
 
-    // 3. The reproduced approval must match the stored approval on every field.
+    // The reproduced approval must match the stored approval on every field.
     if (reproduced.approvalProof() != actual.approvalProof()) {
         return GovernanceEvidenceValidationResult::rejected(
             GovernanceEvidenceValidationStatus::APPROVAL_PROOF_MISMATCH,

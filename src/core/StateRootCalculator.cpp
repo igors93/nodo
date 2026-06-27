@@ -58,4 +58,29 @@ std::string StateRootCalculator::canonicalAccountStatePayload(
     return oss.str();
 }
 
+std::string StateRootCalculator::calculateProtocolStateRoot(
+    const AccountStateView& view,
+    const std::map<std::string, std::string>& deterministicDomains
+) {
+    const std::string accountRoot = calculateAccountStateRoot(view);
+    if (accountRoot.empty()) {
+        return "";
+    }
+    if (deterministicDomains.empty()) {
+        return accountRoot;
+    }
+
+    std::vector<std::string> leaves;
+    leaves.push_back("NODO_STATE_DOMAIN_V1{domain=accounts;root=" + accountRoot + "}");
+    for (const auto& [domain, payload] : deterministicDomains) {
+        if (domain.empty() || payload.empty()) {
+            return "";
+        }
+        leaves.push_back(
+            "NODO_STATE_DOMAIN_V1{domain=" + domain + ";payload=" + payload + "}"
+        );
+    }
+    return MerkleTree::buildRoot(leaves);
+}
+
 } // namespace nodo::core

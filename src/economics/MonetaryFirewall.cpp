@@ -94,7 +94,7 @@ const std::vector<MintAuthorization>& MonetaryFirewallContext::mintAuthorization
 MonetaryFirewallResult MonetaryFirewall::validate(
     const MonetaryFirewallContext& context
 ) {
-    // 1. Reject invalid policy.
+    // Reject invalid policy.
     if (!context.policy().isValid()) {
         return MonetaryFirewallResult::rejected(
             MonetaryFirewallStatus::INVALID_POLICY,
@@ -103,7 +103,7 @@ MonetaryFirewallResult MonetaryFirewall::validate(
         );
     }
 
-    // 2. Reject invalid supply delta.
+    // Reject invalid supply delta.
     if (!context.supplyDelta().isValid()) {
         return MonetaryFirewallResult::rejected(
             MonetaryFirewallStatus::INVALID_SUPPLY_DELTA,
@@ -112,13 +112,13 @@ MonetaryFirewallResult MonetaryFirewall::validate(
         );
     }
 
-    // 3. No mints → accept immediately (burn-only or no-op).
+    // No mints → accept immediately (burn-only or no-op).
     const auto& mintRecords = context.supplyDelta().mintRecords();
     if (mintRecords.empty()) {
         return MonetaryFirewallResult::accepted(context.supplyDelta());
     }
 
-    // 4. Build authorization index and check for duplicate authorizationIds
+    // Build authorization index and check for duplicate authorizationIds
     //    in the provided authorization list.
     std::map<std::string, const MintAuthorization*> authIndex;
     std::set<std::string> seenAuthIds;
@@ -135,7 +135,7 @@ MonetaryFirewallResult MonetaryFirewall::validate(
         authIndex[authId] = &auth;
     }
 
-    // 5. Validate each mint record and accumulate amounts per authorization.
+    // Validate each mint record and accumulate amounts per authorization.
     const std::uint64_t deltaEpoch = context.supplyDelta().epoch();
     std::map<std::string, std::int64_t> mintedPerAuth;
 
@@ -202,7 +202,7 @@ MonetaryFirewallResult MonetaryFirewall::validate(
         mintedPerAuth[authId] = prevTotal + mintRaw;
     }
 
-    // 6. Reject if total minted under any authorization exceeds maxMintAmount.
+    // Reject if total minted under any authorization exceeds maxMintAmount.
     for (const auto& [authId, totalMinted] : mintedPerAuth) {
         const MintAuthorization* auth = authIndex.at(authId);
         if (totalMinted > auth->maxMintAmount().rawUnits()) {

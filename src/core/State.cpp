@@ -266,6 +266,11 @@ void State::applyTransferTransaction(const Transaction& transaction) {
     applyTransferTransactionUsingRegistry(transaction);
 }
 
+/**
+ * Applies a transfer transaction by updating account balances and nonces via the state registry.
+ * Validates sender sufficient funds, correctly assigns transaction fees, and manages 
+ * the recipient's balance changes, committing them to the state tracking structure.
+ */
 void State::applyTransferTransactionUsingRegistry(const Transaction& transaction) {
     if (transaction.type() != TransactionType::TRANSFER) {
         throw std::invalid_argument("Only TRANSFER transactions can be applied by this method.");

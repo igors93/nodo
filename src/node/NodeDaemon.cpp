@@ -117,7 +117,9 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
             payload,
             m_orchestrator.mutableRuntime().mutableMempool(),
             m_policy,
-            crypto::SecurityContext::USER_TRANSACTION
+            crypto::SecurityContext::USER_TRANSACTION,
+            m_orchestrator.runtime().config().genesisConfig()
+                .networkParameters().chainId()
         );
 
         if (admitted) {

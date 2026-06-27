@@ -18,8 +18,7 @@ ArtifactValidationResult StateArtifactValidator::validate(
     try {
         core::StateTransitionPreviewContext previewContext =
             RuntimeAccountStateBuilder::previewContextAtTip(
-                context.genesisConfig(),
-                context.runtime().blockchain(),
+                context.runtime(),
                 context.minimumFeeRawUnits()
             );
 
@@ -38,6 +37,18 @@ ArtifactValidationResult StateArtifactValidator::validate(
         if (preview.stateRoot() != artifact.postStateRoot()) {
             return ArtifactValidationResult::rejected(
                 prefix + "Persisted block postStateRoot does not match rebuilt account state."
+            );
+        }
+
+        if (preview.stateRoot() != artifact.block().stateRoot()) {
+            return ArtifactValidationResult::rejected(
+                prefix + "Persisted block stateRoot does not match the recomputed state transition."
+            );
+        }
+
+        if (preview.receiptsRoot() != artifact.block().receiptsRoot()) {
+            return ArtifactValidationResult::rejected(
+                prefix + "Persisted block receiptsRoot does not match recomputed receipts."
             );
         }
 

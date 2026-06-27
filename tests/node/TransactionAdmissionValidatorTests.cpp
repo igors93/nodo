@@ -118,7 +118,8 @@ core::Transaction buildTransaction(
             nonce,
             timestamp
         ),
-        signer
+        signer,
+        "nodo-localnet-1"
     );
 }
 

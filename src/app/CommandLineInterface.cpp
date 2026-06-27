@@ -24,6 +24,7 @@
 #include "node/ChainAuditResult.hpp"
 #include "node/EpochTreasuryReportStore.hpp"
 #include "node/FinalizedBlockArtifactCodec.hpp"
+#include "node/FinalizedBlockStore.hpp"
 #include "node/FinalizedTreasuryAudit.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/NodeDataDirectory.hpp"
@@ -1777,7 +1778,7 @@ CommandLineResult CommandLineInterface::executeSubmitTransaction(
                 options.timestamp + 10
             ),
             signer,
-            &directoryConfig
+            networkParameters.chainId()
         );
 
     const node::TransactionAdmissionResult admission =
@@ -1928,7 +1929,8 @@ CommandLineResult CommandLineInterface::executeProduceBlock(
                 1,
                 options.timestamp + 20
             ),
-            signer
+            signer,
+            &directoryConfig
         );
 
     if (!pipeline.finalized()) {
@@ -1984,7 +1986,7 @@ CommandLineResult CommandLineInterface::executeProduceBlock(
         node::FinalizedBlockArtifact persistedArtifact;
         try {
             persistedArtifact = node::FinalizedBlockArtifactCodec::readBlockArtifactFile(
-                persistedBlock.blockPath()
+                node::FinalizedBlockStore::blockFilePath(directoryConfig, pipeline.block().index())
             );
         } catch (const std::exception& e) {
             return CommandLineResult::failure(
@@ -2019,11 +2021,8 @@ CommandLineResult CommandLineInterface::executeProduceBlock(
         }
     }
 
-    const std::size_t removedPendingTransactions =
-        node::PersistentMempoolStore::removeTransactions(
-            directoryConfig,
-            pipeline.finalizedTransactionIds()
-        );
+    const node::NodeRuntimeManifest manifest =
+        node::NodeDataDirectory::loadManifest(directoryConfig).manifest();
 
     std::ostringstream output;
 
@@ -2031,10 +2030,10 @@ CommandLineResult CommandLineInterface::executeProduceBlock(
            << "Block height: " << pipeline.block().index() << "\n"
            << "Block hash: " << pipeline.block().hash() << "\n"
            << "Transactions finalized: " << pipeline.finalizedTransactionIds().size() << "\n"
-           << "Pending transactions removed: " << removedPendingTransactions << "\n"
-           << "Block file: " << persistedBlock.blockPath().string() << "\n"
-           << "Manifest latest height: " << persistedBlock.manifest().latestBlockHeight() << "\n"
-           << "Manifest latest state root: " << persistedBlock.manifest().latestStateRoot() << "\n";
+           << "Persistent mempool updated by finalization commit.\n"
+           << "Block file: " << node::FinalizedBlockStore::blockFilePath(directoryConfig, pipeline.block().index()).string() << "\n"
+           << "Manifest latest height: " << manifest.latestBlockHeight() << "\n"
+           << "Manifest latest state root: " << manifest.latestStateRoot() << "\n";
 
     return CommandLineResult::success(output.str());
 }
@@ -2245,7 +2244,7 @@ CommandLineResult CommandLineInterface::executeNodeRun(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2: validator lifecycle + staking CLI commands
+// Validator lifecycle + staking CLI commands
 // ---------------------------------------------------------------------------
 
 CommandLineResult CommandLineInterface::executeValidatorStatus(
@@ -2422,7 +2421,8 @@ CommandLineResult CommandLineInterface::executeValidatorExit(
                 nextNonce,
                 options.timestamp + 10
             ),
-            signer
+            signer,
+            networkParameters.chainId()
         );
 
     const node::TransactionAdmissionResult admission =
@@ -2567,7 +2567,8 @@ CommandLineResult CommandLineInterface::executeValidatorUnjail(
                 nextNonce,
                 options.timestamp + 10
             ),
-            signer
+            signer,
+            networkParameters.chainId()
         );
 
     const node::TransactionAdmissionResult admission =
@@ -2721,7 +2722,8 @@ CommandLineResult CommandLineInterface::executeStakeLock(
                 nextNonce,
                 options.timestamp + 10
             ),
-            signer
+            signer,
+            networkParameters.chainId()
         );
 
     const node::TransactionAdmissionResult admission =

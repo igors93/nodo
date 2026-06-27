@@ -3,6 +3,7 @@
 #include "core/BlockStateTransitionValidator.hpp"
 #include "core/MempoolBlockProducer.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
+#include "core/StateTransitionEngine.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "node/FeeEconomics.hpp"
@@ -63,9 +64,7 @@ BlockCandidateResult BlockProductionPhase::produce(
     core::StateTransitionPreviewContext previewContext;
     try {
         previewContext = node::RuntimeAccountStateBuilder::previewContextAtTip(
-            runtime.config().genesisConfig(),
-            runtime.blockchain(),
-            effectiveMinFeeRaw(runtime)
+            runtime, effectiveMinFeeRaw(runtime)
         );
     } catch (const std::exception& e) {
         return BlockCandidateResult::failed(
@@ -77,7 +76,7 @@ BlockCandidateResult BlockProductionPhase::produce(
         core::MempoolBlockProducer::produceCandidateBlock(
             runtime.blockchain(),
             runtime.mempool(),
-            previewContext.accountStateView(),
+            previewContext,
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             core::BlockProductionConfig(
@@ -106,9 +105,7 @@ BlockCandidateResult BlockProductionPhase::produce(
                 runtime.blockchain(),
                 production.block(),
                 node::RuntimeAccountStateBuilder::previewContextAtTip(
-                    runtime.config().genesisConfig(),
-                    runtime.blockchain(),
-                    effectiveMinFeeRaw(runtime)
+                    runtime, effectiveMinFeeRaw(runtime)
                 )
             );
     } catch (const std::exception& e) {
@@ -139,7 +136,40 @@ BlockCandidateResult BlockProductionPhase::produce(
         );
     }
 
-    return BlockCandidateResult::ok(production.block());
+    try {
+        const core::StateTransitionPreviewContext committedContext =
+            node::RuntimeAccountStateBuilder::previewContextAtTip(
+                runtime,
+                effectiveMinFeeRaw(runtime)
+            );
+        const core::Block draft(
+            production.block().index(),
+            production.block().previousHash(),
+            production.block().records(),
+            production.block().timestamp(),
+            "",
+            ""
+        );
+        const core::StateTransitionPreviewResult committedPreview =
+            core::StateTransitionEngine::executeBlock(draft, committedContext);
+        if (!committedPreview.accepted()) {
+            return BlockCandidateResult::failed(committedPreview.reason());
+        }
+        core::Block committedBlock(
+            draft.index(), draft.previousHash(), draft.records(), draft.timestamp(),
+            committedPreview.stateRoot(), committedPreview.receiptsRoot()
+        );
+        const core::BlockValidationResult committedValidation =
+            core::BlockStateTransitionValidator::validateCandidateBlock(
+                runtime.blockchain(), committedBlock, committedContext
+            );
+        if (!committedValidation.accepted()) {
+            return BlockCandidateResult::failed(committedValidation.reason());
+        }
+        return BlockCandidateResult::ok(std::move(committedBlock));
+    } catch (const std::exception& error) {
+        return BlockCandidateResult::failed(error.what());
+    }
 }
 
 } // namespace nodo::consensus

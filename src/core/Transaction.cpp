@@ -1,5 +1,7 @@
 #include "core/Transaction.hpp"
 
+#include "crypto/Address.hpp"
+#include "crypto/AddressDerivation.hpp"
 #include "crypto/hash.h"
 
 #include <set>
@@ -85,6 +87,21 @@ std::string extractTransactionPayload(
     }
 
     return serialized.substr(payloadStart, payloadEnd - payloadStart);
+}
+
+std::string extractSignatureBundle(const std::string& serialized) {
+    const std::string marker = ";signatureBundle=";
+    const std::size_t markerPosition = serialized.find(marker);
+    if (markerPosition == std::string::npos ||
+        serialized.empty() || serialized.back() != '}') {
+        throw std::invalid_argument("Serialized Transaction signature bundle is malformed.");
+    }
+
+    const std::size_t valueStart = markerPosition + marker.size();
+    if (valueStart >= serialized.size() - 1) {
+        throw std::invalid_argument("Serialized Transaction signature bundle is empty.");
+    }
+    return serialized.substr(valueStart, serialized.size() - valueStart - 1);
 }
 
 bool isSafeCoinLotInputId(
@@ -532,12 +549,6 @@ std::string Transaction::signingPayload() const {
         << ";amountRaw=" << m_amount.rawUnits()
         << ";feeRaw=" << m_fee.rawUnits();
 
-    /*
-     * Backward compatibility:
-     * Do not add inputLots=[] for legacy automatic-input transactions. This
-     * keeps older accepted transaction ids stable while allowing new explicit
-     * input transactions to commit the exact lots being spent.
-     */
     if (!m_inputCoinLotIds.empty()) {
         oss << ";inputLots=" << serializeInputCoinLotIds(m_inputCoinLotIds);
     }
@@ -562,6 +573,12 @@ const std::string& Transaction::chainId() const {
 }
 
 Transaction& Transaction::withChainId(std::string chainId) {
+    if (m_hasSignatureBundle) {
+        throw std::logic_error("Cannot change chainId after transaction signing.");
+    }
+    if (!isSafeTransactionAddress(chainId)) {
+        throw std::invalid_argument("Transaction chainId is empty or unsafe.");
+    }
     m_chainId = std::move(chainId);
     // Recompute the deterministic id to reflect the new chain binding.
     m_id = computeTransactionIdFromPayload(signingPayload());
@@ -669,10 +686,11 @@ std::string Transaction::computeTransactionIdFromPayload(
     return std::string(output);
 }
 
-Transaction Transaction::deserializeForStateReplay(
+Transaction Transaction::deserialize(
     const std::string& serialized
 ) {
-    if (serialized.rfind("Transaction{", 0) != 0) {
+    if (serialized.rfind("Transaction{", 0) != 0 ||
+        serialized.empty() || serialized.back() != '}') {
         throw std::invalid_argument("Serialized data is not a Transaction.");
     }
 
@@ -694,6 +712,17 @@ Transaction Transaction::deserializeForStateReplay(
         extractInputCoinLotIdsFromPayload(payload)
     );
 
+    if (hasField(payload, "chainId")) {
+        transaction.withChainId(extractField(payload, "chainId"));
+    }
+
+    const std::string serializedBundle = extractSignatureBundle(serialized);
+    if (serializedBundle != "NONE") {
+        transaction.attachSignatureBundle(
+            crypto::SignatureBundle::deserialize(serializedBundle)
+        );
+    }
+
     if (transaction.id() != serializedId) {
         throw std::invalid_argument("Serialized Transaction id does not match payload.");
     }
@@ -702,7 +731,53 @@ Transaction Transaction::deserializeForStateReplay(
         throw std::invalid_argument("Transaction serialization round-trip failed.");
     }
 
+    if (transaction.serialize() != serialized) {
+        throw std::invalid_argument("Transaction serialization is non-canonical.");
+    }
+
     return transaction;
+}
+
+bool Transaction::verifyAuthorization(
+    const std::string& expectedChainId,
+    const crypto::CryptoPolicy& policy,
+    crypto::SecurityContext context,
+    const crypto::SignatureProvider& provider
+) const {
+    if (expectedChainId.empty() || m_chainId != expectedChainId ||
+        !isStructurallyValid(policy, context)) {
+        return false;
+    }
+
+    if (!requiresUserSignature(m_type)) {
+        return true;
+    }
+
+    if (!m_hasSignatureBundle || m_signatureBundle.signatures().empty()) {
+        return false;
+    }
+
+    const crypto::PublicKey& signingKey =
+        m_signatureBundle.signatures().front().publicKey();
+    if (signingKey.algorithm() != provider.algorithm()) {
+        return false;
+    }
+
+    for (const crypto::Signature& signature : m_signatureBundle.signatures()) {
+        if (signature.publicKey().serialize() != signingKey.serialize()) {
+            return false;
+        }
+    }
+
+    const crypto::Address sender = crypto::Address::fromString(m_fromAddress);
+    if (!sender.isValid() ||
+        !crypto::AddressDerivation::verifyAddressForPublicKey(sender, signingKey)) {
+        return false;
+    }
+
+    return m_signatureBundle.verifyForPolicy(
+        signingPayload(), policy, context, provider
+    );
 }
 
 } // namespace nodo::core

@@ -2,6 +2,10 @@
 
 #include "consensus/BlockFinalizer.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
+#include "crypto/ProtocolCryptoContext.hpp"
+#include "node/FinalizedBlockStore.hpp"
+#include "node/NodeRuntime.hpp"
+#include "node/RuntimeBlockPipeline.hpp"
 #include "serialization/BlockCodec.hpp"
 #include "serialization/CanonicalHash.hpp"
 #include "serialization/CanonicalReader.hpp"
@@ -735,8 +739,6 @@ std::string persistentSyncPlanStatusToString(PersistentSyncPlanStatus status) {
             return "NOT_REQUIRED";
         case PersistentSyncPlanStatus::REQUEST_BLOCKS:
             return "REQUEST_BLOCKS";
-        case PersistentSyncPlanStatus::REQUEST_SNAPSHOT:
-            return "REQUEST_SNAPSHOT";
         case PersistentSyncPlanStatus::REJECTED:
         default:
             return "REJECTED";
@@ -746,25 +748,20 @@ std::string persistentSyncPlanStatusToString(PersistentSyncPlanStatus status) {
 PersistentSyncPlan::PersistentSyncPlan()
     : m_status(PersistentSyncPlanStatus::REJECTED),
       m_reason("Uninitialized persistent sync plan."),
-      m_blockRequest(std::nullopt),
-      m_snapshotRequestManifest(std::nullopt) {}
+      m_blockRequest(std::nullopt) {}
 
 PersistentSyncPlan::PersistentSyncPlan(
     PersistentSyncPlanStatus status,
     std::string reason,
-    std::optional<NetworkBlockSyncRequest> blockRequest,
-    std::optional<PersistentSnapshotSyncManifest> snapshotRequestManifest
+    std::optional<NetworkBlockSyncRequest> blockRequest
 ) : m_status(status),
     m_reason(std::move(reason)),
-    m_blockRequest(std::move(blockRequest)),
-    m_snapshotRequestManifest(std::move(snapshotRequestManifest)) {}
+    m_blockRequest(std::move(blockRequest)) {}
 
 PersistentSyncPlanStatus PersistentSyncPlan::status() const { return m_status; }
 const std::string& PersistentSyncPlan::reason() const { return m_reason; }
 const std::optional<NetworkBlockSyncRequest>& PersistentSyncPlan::blockRequest() const { return m_blockRequest; }
-const std::optional<PersistentSnapshotSyncManifest>& PersistentSyncPlan::snapshotRequestManifest() const { return m_snapshotRequestManifest; }
 bool PersistentSyncPlan::requestBlocks() const { return m_status == PersistentSyncPlanStatus::REQUEST_BLOCKS && m_blockRequest.has_value(); }
-bool PersistentSyncPlan::requestSnapshot() const { return m_status == PersistentSyncPlanStatus::REQUEST_SNAPSHOT && m_snapshotRequestManifest.has_value(); }
 bool PersistentSyncPlan::notRequired() const { return m_status == PersistentSyncPlanStatus::NOT_REQUIRED; }
 bool PersistentSyncPlan::rejected() const { return m_status == PersistentSyncPlanStatus::REJECTED; }
 
@@ -773,7 +770,6 @@ std::string PersistentSyncPlan::serialize() const {
     output << "PersistentSyncPlan{status=" << persistentSyncPlanStatusToString(m_status)
            << ";reason=" << m_reason
            << ";hasBlockRequest=" << (m_blockRequest.has_value() ? "true" : "false")
-           << ";hasSnapshotRequest=" << (m_snapshotRequestManifest.has_value() ? "true" : "false")
            << "}";
     return output.str();
 }
@@ -784,36 +780,12 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
     const std::string& localNodeId,
     const std::string& sourcePeerId,
     std::uint64_t maxBlocksPerRequest,
-    std::uint64_t snapshotThreshold,
     std::int64_t now
-) {
-    return planFromRemoteStatus(
-        localCheckpoint,
-        remoteStatus,
-        localNodeId,
-        sourcePeerId,
-        maxBlocksPerRequest,
-        snapshotThreshold,
-        now,
-        std::nullopt
-    );
-}
-
-PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
-    const PersistentSyncCheckpoint& localCheckpoint,
-    const ChainStatusMessage& remoteStatus,
-    const std::string& localNodeId,
-    const std::string& sourcePeerId,
-    std::uint64_t maxBlocksPerRequest,
-    std::uint64_t snapshotThreshold,
-    std::int64_t now,
-    const std::optional<PersistentSnapshotSyncManifest>& localManifest
 ) {
     if (!localCheckpoint.isValid()) {
         return PersistentSyncPlan(
             PersistentSyncPlanStatus::REJECTED,
             "Local persistent sync checkpoint is invalid.",
-            std::nullopt,
             std::nullopt
         );
     }
@@ -822,7 +794,6 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
         return PersistentSyncPlan(
             PersistentSyncPlanStatus::REJECTED,
             "Remote chain status is invalid.",
-            std::nullopt,
             std::nullopt
         );
     }
@@ -831,7 +802,6 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
         return PersistentSyncPlan(
             PersistentSyncPlanStatus::REJECTED,
             "Sync planner identifiers or timestamp are invalid.",
-            std::nullopt,
             std::nullopt
         );
     }
@@ -840,7 +810,6 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
         return PersistentSyncPlan(
             PersistentSyncPlanStatus::NOT_REQUIRED,
             "Local checkpoint is already at or ahead of remote peer.",
-            std::nullopt,
             std::nullopt
         );
     }
@@ -849,44 +818,7 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
         maxBlocksPerRequest = NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH;
     }
 
-    if (snapshotThreshold == 0) {
-        snapshotThreshold = NODO_PERSISTENT_SYNC_DEFAULT_SNAPSHOT_THRESHOLD;
-    }
-
     const std::uint64_t heightGap = remoteStatus.latestHeight() - localCheckpoint.finalizedHeight();
-
-    if (heightGap > snapshotThreshold) {
-        // If the local node already has a verified epoch snapshot ahead of its
-        // current checkpoint, use it to populate the REQUEST_SNAPSHOT manifest
-        // with real data instead of placeholder values. This enables the runtime
-        // to jump forward from the snapshot height rather than from the checkpoint.
-        if (localManifest.has_value() &&
-            localManifest->isValid() &&
-            localManifest->snapshotHeight() > localCheckpoint.finalizedHeight()) {
-            return PersistentSyncPlan(
-                PersistentSyncPlanStatus::REQUEST_SNAPSHOT,
-                "Local epoch snapshot available; apply it to advance checkpoint before block sync.",
-                std::nullopt,
-                localManifest.value()
-            );
-        }
-
-        PersistentSnapshotSyncManifest manifest(
-            sourcePeerId,
-            remoteStatus.finalizedHeight(),
-            remoteStatus.finalizedBlockHash(),
-            "REMOTE_STATE_ROOT_PENDING",
-            "REMOTE_SNAPSHOT_DIGEST_PENDING",
-            now
-        );
-
-        return PersistentSyncPlan(
-            PersistentSyncPlanStatus::REQUEST_SNAPSHOT,
-            "Remote peer is far ahead; request a snapshot before block sync.",
-            std::nullopt,
-            manifest
-        );
-    }
 
     const std::uint64_t fromHeight = localCheckpoint.finalizedHeight() + 1;
     const std::uint64_t requestedCount = std::min(heightGap, maxBlocksPerRequest);
@@ -904,8 +836,7 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
     return PersistentSyncPlan(
         PersistentSyncPlanStatus::REQUEST_BLOCKS,
         "Remote peer is ahead; request the next validated block window.",
-        request,
-        std::nullopt
+        request
     );
 }
 
@@ -949,143 +880,15 @@ std::string PersistentSyncApplyResult::serialize() const {
 PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
     const PersistentSyncCheckpoint& checkpoint,
     const PersistentBlockSyncBatch& batch,
-    const core::ValidatorRegistry& validatorRegistry,
-    const crypto::CryptoPolicy& policy,
-    const crypto::SignatureProvider& provider,
-    std::int64_t now
-) {
-    if (!checkpoint.isValid()) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Current checkpoint is invalid.",
-            std::nullopt
-        );
-    }
-
-    if (!batch.isValid()) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Block sync batch is invalid.",
-            std::nullopt
-        );
-    }
-
-    if (now <= 0) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Apply timestamp is invalid.",
-            std::nullopt
-        );
-    }
-
-    if (batch.fromHeight() != checkpoint.finalizedHeight() + 1) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Batch does not start at the next expected height.",
-            std::nullopt
-        );
-    }
-
-    if (batch.items().front().previousBlockHash() != checkpoint.finalizedBlockHash()) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Batch first block does not connect to the current checkpoint.",
-            std::nullopt
-        );
-    }
-
-    // Fast-path sync requires a FinalizedBlockRecord (QC proof) for every item.
-    // Accepting items without a record would allow a peer to bypass quorum
-    // verification entirely by omitting all finalized records.
-    for (const auto& item : batch.items()) {
-        if (item.serializedFinalizedRecord().empty()) {
-            return PersistentSyncApplyResult(
-                PersistentSyncApplyStatus::REJECTED,
-                "Block at height " + std::to_string(item.height()) +
-                    " is missing a required QuorumCertificate proof. "
-                    "Fast-path sync requires a FinalizedBlockRecord for every item.",
-                std::nullopt
-            );
-        }
-
-        consensus::FinalizedBlockRecord record;
-        try {
-            record = consensus::FinalizedBlockRecord::deserialize(
-                item.serializedFinalizedRecord()
-            );
-        } catch (const std::exception& error) {
-            return PersistentSyncApplyResult(
-                PersistentSyncApplyStatus::REJECTED,
-                "Failed to deserialize FinalizedBlockRecord at height " +
-                    std::to_string(item.height()) + ": " + error.what(),
-                std::nullopt
-            );
-        }
-
-        if (record.blockHash() != item.blockHash()) {
-            return PersistentSyncApplyResult(
-                PersistentSyncApplyStatus::REJECTED,
-                "FinalizedBlockRecord blockHash does not match sync item blockHash at height " +
-                    std::to_string(item.height()) + ".",
-                std::nullopt
-            );
-        }
-
-        if (!record.verify(validatorRegistry, policy, provider)) {
-            return PersistentSyncApplyResult(
-                PersistentSyncApplyStatus::REJECTED,
-                "QuorumCertificate verification failed for block at height " +
-                    std::to_string(item.height()) + ".",
-                std::nullopt
-            );
-        }
-    }
-
-    const PersistentBlockSyncItem* last = batch.lastItem();
-    if (last == nullptr) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Batch has no final item.",
-            std::nullopt
-        );
-    }
-
-    PersistentSyncCheckpoint updatedCheckpoint(
-        PersistentSyncCheckpoint::SCHEMA_VERSION,
-        last->height(),
-        last->blockHash(),
-        last->finalizedStateRoot(),
-        PersistentSyncStatus::COMPLETE,
-        batch.sourcePeerId(),
-        now
-    );
-
-    if (!updatedCheckpoint.isValid()) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Updated checkpoint would be invalid.",
-            std::nullopt
-        );
-    }
-
-    return PersistentSyncApplyResult(
-        PersistentSyncApplyStatus::APPLIED,
-        "Validated block sync batch advanced the durable checkpoint.",
-        updatedCheckpoint
-    );
-}
-
-PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
-    const PersistentSyncCheckpoint& checkpoint,
-    const PersistentBlockSyncBatch& batch,
     core::Blockchain& blockchain,
     const core::ValidatorRegistry& validatorRegistry,
     const crypto::CryptoPolicy& policy,
     const crypto::SignatureProvider& provider,
     std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder,
-    std::int64_t now
+    std::int64_t now,
+    const core::ValidatorSetHistory* validatorSetHistory
 ) {
-    // Phase 1: shape validation — same rules as the fast path, minus the QC
+    // Shape validation — same rules as the fast path, minus the QC
     // requirement.  Protocol-commitment mode trusts state-root recomputation as
     // its primary trust mechanism; QC is verified as defence-in-depth only when
     // the peer supplies a FinalizedBlockRecord.
@@ -1119,6 +922,29 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
             "Batch first block does not connect to the current checkpoint.",
             std::nullopt
         );
+    }
+
+    core::ValidatorSetHistory stagedValidatorSetHistory;
+    const core::ValidatorSetHistory* effectiveValidatorSetHistory = nullptr;
+    if (validatorSetHistory != nullptr) {
+        stagedValidatorSetHistory = *validatorSetHistory;
+        for (const auto& item : batch.items()) {
+            if (!stagedValidatorSetHistory.hasSet(item.height())) {
+                const std::uint64_t previousHeight = item.height() - 1;
+                if (!stagedValidatorSetHistory.hasSet(previousHeight) ||
+                    !stagedValidatorSetHistory.recordSet(
+                        item.height(), stagedValidatorSetHistory.setAt(previousHeight)
+                    )) {
+                    return PersistentSyncApplyResult(
+                        PersistentSyncApplyStatus::REJECTED,
+                        "Historical validator-set continuity is missing at block height "
+                            + std::to_string(item.height()) + ".",
+                        std::nullopt
+                    );
+                }
+            }
+        }
+        effectiveValidatorSetHistory = &stagedValidatorSetHistory;
     }
 
     // Every synchronized block must carry a cryptographically valid
@@ -1156,7 +982,20 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
             );
         }
 
-        if (!record.verify(validatorRegistry, policy, provider)) {
+        const core::ValidatorRegistry* qcValidatorSet = &validatorRegistry;
+        if (effectiveValidatorSetHistory != nullptr) {
+            if (!effectiveValidatorSetHistory->hasSet(item.height())) {
+                return PersistentSyncApplyResult(
+                    PersistentSyncApplyStatus::REJECTED,
+                    "Historical validator set is missing for block height "
+                        + std::to_string(item.height()) + ".",
+                    std::nullopt
+                );
+            }
+            qcValidatorSet = &effectiveValidatorSetHistory->setAt(item.height());
+        }
+
+        if (!record.verify(*qcValidatorSet, policy, provider)) {
             return PersistentSyncApplyResult(
                 PersistentSyncApplyStatus::REJECTED,
                 "QuorumCertificate verification failed for block at height " +
@@ -1166,7 +1005,10 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
         }
     }
 
-    // Phase 2: full protocol commitment validation for each block.
+    // Full protocol commitment validation for each block. All writes
+    // target a staged copy so failure of a later block cannot partially mutate
+    // the caller's canonical chain.
+    core::Blockchain stagedBlockchain = blockchain;
     // The context is rebuilt from the current chain state before each block so
     // that stateRoot and receiptsRoot are computed against all previously
     // applied blocks.  A single root mismatch aborts the entire batch.
@@ -1183,12 +1025,38 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
             );
         }
 
+        const core::Block& block = blockOpt.value();
+        if (block.index() != item.height() ||
+            block.hash() != item.blockHash() ||
+            block.previousHash() != item.previousBlockHash() ||
+            block.stateRoot() != item.finalizedStateRoot()) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Serialized block identity or state commitment does not match sync metadata at height "
+                    + std::to_string(item.height()) + ".",
+                std::nullopt
+            );
+        }
+
+        const consensus::FinalizedBlockRecord record =
+            consensus::FinalizedBlockRecord::deserialize(item.serializedFinalizedRecord());
+        if (record.blockIndex() != block.index() ||
+            record.blockHash() != block.hash() ||
+            record.previousHash() != block.previousHash()) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "FinalizedBlockRecord is not bound to the serialized block at height "
+                    + std::to_string(item.height()) + ".",
+                std::nullopt
+            );
+        }
+
         const core::StateTransitionPreviewContext context =
-            contextBuilder(blockchain);
+            contextBuilder(stagedBlockchain);
 
         const core::BlockValidationResult validation =
             core::BlockStateTransitionValidator::validateCandidateBlock(
-                blockchain,
+                stagedBlockchain,
                 blockOpt.value(),
                 context
                 // defaults to BlockValidationMode::ProtocolCommitment
@@ -1204,7 +1072,7 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
         }
 
         try {
-            blockchain.addBlock(blockOpt.value());
+            stagedBlockchain.addBlock(blockOpt.value());
         } catch (const std::exception& error) {
             return PersistentSyncApplyResult(
                 PersistentSyncApplyStatus::REJECTED,
@@ -1242,6 +1110,8 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
         );
     }
 
+    blockchain = std::move(stagedBlockchain);
+
     return PersistentSyncApplyResult(
         PersistentSyncApplyStatus::APPLIED,
         "Protocol-commitment block sync batch advanced the durable checkpoint.",
@@ -1249,40 +1119,153 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
     );
 }
 
-PersistentSyncApplyResult PersistentBlockStateSyncApplier::applySnapshotManifest(
-    const PersistentSnapshotSyncManifest& snapshotManifest,
+PersistentSyncApplyResult PersistentBlockStateSyncApplier::importFinalizedBatch(
+    const PersistentSyncCheckpoint& checkpoint,
+    const PersistentBlockSyncBatch& batch,
+    NodeRuntime& runtime,
+    const NodeDataDirectoryConfig& directoryConfig,
     std::int64_t now
 ) {
-    if (!snapshotManifest.isValid() || now <= 0) {
+    if (!checkpoint.isValid() || !batch.isValid() || !runtime.isValid() ||
+        !directoryConfig.isValid() || now <= 0 ||
+        batch.createdAt() > now + 300 ||
+        batch.fromHeight() != checkpoint.finalizedHeight() + 1 ||
+        runtime.blockchain().latestBlock().index() != checkpoint.finalizedHeight() ||
+        runtime.blockchain().latestBlock().hash() != checkpoint.finalizedBlockHash()) {
         return PersistentSyncApplyResult(
             PersistentSyncApplyStatus::REJECTED,
-            "Snapshot manifest or timestamp is invalid.",
+            "Runtime, checkpoint, data directory, or finalized batch boundary is invalid.",
             std::nullopt
         );
     }
 
-    PersistentSyncCheckpoint checkpoint(
-        PersistentSyncCheckpoint::SCHEMA_VERSION,
-        snapshotManifest.snapshotHeight(),
-        snapshotManifest.snapshotBlockHash(),
-        snapshotManifest.snapshotStateRoot(),
-        PersistentSyncStatus::COMPLETE,
-        snapshotManifest.sourcePeerId(),
-        now
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::fromNetworkName(
+            runtime.config().genesisConfig().networkParameters().networkName()
+        );
+    if (!cryptoContext.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Protocol crypto context is invalid for finalized sync import.",
+            std::nullopt
+        );
+    }
+
+    NodeRuntime stagedRuntime = runtime;
+    std::vector<RuntimeBlockPipelineResult> stagedResults;
+    stagedResults.reserve(batch.items().size());
+
+    for (const PersistentBlockSyncItem& item : batch.items()) {
+        try {
+            const core::Block block =
+                serialization::BlockCodec::deserialize(item.serializedBlock());
+            const consensus::FinalizedBlockRecord remoteRecord =
+                consensus::FinalizedBlockRecord::deserialize(
+                    item.serializedFinalizedRecord()
+                );
+
+            if (item.createdAt() > now + 300 ||
+                remoteRecord.finalizedAt() > now + 300) {
+                return PersistentSyncApplyResult(
+                    PersistentSyncApplyStatus::REJECTED,
+                    "Finalized sync item timestamp is too far in the future at height "
+                        + std::to_string(item.height()) + ".",
+                    std::nullopt
+                );
+            }
+
+            if (block.index() != item.height() ||
+                block.hash() != item.blockHash() ||
+                block.previousHash() != item.previousBlockHash() ||
+                block.stateRoot() != item.finalizedStateRoot() ||
+                !remoteRecord.matchesBlock(block)) {
+                return PersistentSyncApplyResult(
+                    PersistentSyncApplyStatus::REJECTED,
+                    "Finalized sync item identity mismatch at height "
+                        + std::to_string(item.height()) + ".",
+                    std::nullopt
+                );
+            }
+
+            if (!stagedRuntime.validatorSetHistory().hasSet(item.height())) {
+                return PersistentSyncApplyResult(
+                    PersistentSyncApplyStatus::REJECTED,
+                    "Historical validator set is unavailable at height "
+                        + std::to_string(item.height()) + ".",
+                    std::nullopt
+                );
+            }
+            if (!remoteRecord.verify(
+                    stagedRuntime.validatorSetHistory().setAt(item.height()),
+                    cryptoContext.policy(),
+                    cryptoContext.validatorSignatureProvider()
+                )) {
+                return PersistentSyncApplyResult(
+                    PersistentSyncApplyStatus::REJECTED,
+                    "Historical QC verification failed at height "
+                        + std::to_string(item.height()) + ".",
+                    std::nullopt
+                );
+            }
+
+            RuntimeBlockPipelineResult result =
+                RuntimeBlockPipeline::commitCertifiedBlock(
+                    stagedRuntime,
+                    block,
+                    remoteRecord.quorumCertificate(),
+                    remoteRecord.finalizedAt(),
+                    nullptr
+                );
+            if (!result.finalized() ||
+                result.finalizedRecord().serialize() != remoteRecord.serialize()) {
+                return PersistentSyncApplyResult(
+                    PersistentSyncApplyStatus::REJECTED,
+                    "Canonical runtime import rejected finalized block at height "
+                        + std::to_string(item.height()) + ": " + result.reason(),
+                    std::nullopt
+                );
+            }
+            stagedResults.push_back(std::move(result));
+        } catch (const std::exception& error) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Finalized sync import failed at height "
+                    + std::to_string(item.height()) + ": " + error.what(),
+                std::nullopt
+            );
+        }
+    }
+
+    const FinalizedBlockStoreResult persisted = FinalizedBlockStore::persistBatch(
+        directoryConfig, stagedRuntime, stagedResults, now
     );
-
-    if (!checkpoint.isValid()) {
+    if (!persisted.success()) {
         return PersistentSyncApplyResult(
             PersistentSyncApplyStatus::REJECTED,
-            "Snapshot checkpoint would be invalid.",
+            "Finalized sync batch persistence failed: " + persisted.reason(),
             std::nullopt
         );
     }
 
+    const PersistentBlockSyncItem& last = batch.items().back();
+    PersistentSyncCheckpoint updated(
+        PersistentSyncCheckpoint::SCHEMA_VERSION,
+        last.height(), last.blockHash(), last.finalizedStateRoot(),
+        PersistentSyncStatus::COMPLETE, batch.sourcePeerId(), now
+    );
+    if (!updated.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Finalized sync batch produced an invalid checkpoint.",
+            std::nullopt
+        );
+    }
+
+    runtime = std::move(stagedRuntime);
     return PersistentSyncApplyResult(
         PersistentSyncApplyStatus::APPLIED,
-        "Validated snapshot manifest advanced the durable checkpoint.",
-        checkpoint
+        "Finalized sync batch was atomically imported and published.",
+        updated
     );
 }
 

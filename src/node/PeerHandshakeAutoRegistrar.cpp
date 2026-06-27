@@ -142,7 +142,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
         HandshakeRegistrationResult result;
         result.peerId = envelope.senderNodeId();
 
-        // Step 1: validate the hello envelope (network, chain, genesis, expiry).
+        // Validate the hello envelope (network, chain, genesis, expiry).
         const p2p::PeerHandshakeResult validation =
             p2p::PeerHandshakeManager::validateHello(gossip.config(), envelope, now);
 
@@ -154,7 +154,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             continue;
         }
 
-        // Step 2: check if peer is already known.
+        // Check if peer is already known.
         if (gossip.peerRegistry().contains(envelope.senderNodeId())) {
             // Heartbeat update only — treat as already known.
             gossip.peerRegistry().updateHeartbeat(envelope.senderNodeId(), now);
@@ -171,7 +171,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             continue;
         }
 
-        // Step 3: parse PeerMetadata from the hello payload.
+        // Parse PeerMetadata from the hello payload.
         p2p::PeerMetadata peer = parsePeerFromHelloPayload(envelope.payload(), now);
 
         // If parsing yielded an invalid PeerMetadata, fall back to a minimal
@@ -189,7 +189,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             continue;
         }
 
-        // Step 4: register peer.
+        // Register peer.
         const p2p::PeerRegistryResult regResult = gossip.registerPeer(peer);
 
         if (!regResult.success()) {
@@ -200,7 +200,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             continue;
         }
 
-        // Step 5: broadcast our CHAIN_STATUS so the peer knows our height.
+        // Broadcast our CHAIN_STATUS so the peer knows our height.
         gossip.broadcast(
             p2p::NetworkMessageType::CHAIN_STATUS,
             localChainStatus.serialize(),

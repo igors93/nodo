@@ -74,9 +74,29 @@ std::int64_t parseI64(const std::string& value) {
     return static_cast<std::int64_t>(parsed);
 }
 
-Signature parseSignatureChunk(const std::string& chunk, const PublicKey& expectedKey) {
+PublicKey parsePublicKey(const std::string& serialized) {
+    const std::string body = extractBody(serialized, "PublicKey");
+    const std::map<std::string, std::string> fields = parseFields(body);
+    if (fields.size() != 2) {
+        throw std::invalid_argument("PublicKey contains unexpected fields.");
+    }
+
+    const CryptoAlgorithm algorithm =
+        cryptoAlgorithmFromString(requireField(fields, "algorithm"));
+    const PublicKey publicKey(algorithm, requireField(fields, "keyMaterial"));
+    if (!publicKey.isValid() || publicKey.serialize() != serialized) {
+        throw std::invalid_argument("PublicKey is invalid or non-canonical.");
+    }
+    return publicKey;
+}
+
+Signature parseSignatureChunk(const std::string& chunk) {
     const std::string body = extractBody(chunk, "Signature");
     const std::map<std::string, std::string> fields = parseFields(body);
+
+    if (fields.size() != 6) {
+        throw std::invalid_argument("Signature contains unexpected fields.");
+    }
 
     const CryptoAlgorithm algorithm =
         cryptoAlgorithmFromString(requireField(fields, "algorithm"));
@@ -87,16 +107,16 @@ Signature parseSignatureChunk(const std::string& chunk, const PublicKey& expecte
 
     if (domain == SigningDomain::UNKNOWN)
         throw std::invalid_argument("Unknown SigningDomain in Signature.");
-    if (algorithm != expectedKey.algorithm())
-        throw std::invalid_argument("Signature algorithm does not match expected public key.");
-    if (requireField(fields, "publicKeyFingerprint") != expectedKey.fingerprint())
-        throw std::invalid_argument("Signature public key fingerprint does not match expected public key.");
+
+    const PublicKey publicKey = parsePublicKey(requireField(fields, "publicKey"));
+    if (algorithm != publicKey.algorithm())
+        throw std::invalid_argument("Signature algorithm does not match embedded public key.");
 
     Signature sig(
         suite,
         domain,
         algorithm,
-        expectedKey,
+        publicKey,
         requireField(fields, "signatureHex"),
         parseI64(requireField(fields, "createdAt"))
     );
@@ -226,19 +246,15 @@ std::string SignatureBundle::serialize() const {
 
 // static
 SignatureBundle SignatureBundle::deserialize(
-    const std::string& serialized,
-    const PublicKey& expectedPublicKey
+    const std::string& serialized
 ) {
-    if (!expectedPublicKey.isValid())
-        throw std::invalid_argument("SignatureBundle::deserialize requires a valid expected public key.");
-
     const std::string body = extractBody(serialized, "SignatureBundle");
     if (body.empty())
         throw std::invalid_argument("SignatureBundle body is empty.");
 
     SignatureBundle bundle;
     for (const std::string& chunk : splitAtDepthZero(body, ';')) {
-        bundle.addSignature(parseSignatureChunk(chunk, expectedPublicKey));
+        bundle.addSignature(parseSignatureChunk(chunk));
     }
 
     if (bundle.serialize() != serialized)

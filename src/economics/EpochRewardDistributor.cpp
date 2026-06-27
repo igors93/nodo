@@ -228,6 +228,11 @@ std::vector<GenesisRewardRecord> EpochRewardDistribution::genesisRewardRecords()
     return records;
 }
 
+/**
+ * Validates the reward distribution structure for the epoch.
+ * Ensures that the amounts sum up correctly and that there are no negative values or 
+ * structural mismatches within the validator and treasury allocations.
+ */
 bool EpochRewardDistribution::isValid() const {
     if (!m_protectionEpoch.isValid()) {
         return false;

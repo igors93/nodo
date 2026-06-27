@@ -357,6 +357,7 @@ NodeRuntime::NodeRuntime()
       m_status(NodeRuntimeStatus::STOPPED),
       m_blockchain(),
       m_validatorRegistry(),
+      m_validatorSetHistory(),
       m_finalizationRegistry(),
       m_consensusRoundManager(),
       m_mempool(),
@@ -371,6 +372,7 @@ NodeRuntime::NodeRuntime(
       m_status(NodeRuntimeStatus::RUNNING),
       m_blockchain(std::move(blockchain)),
       m_validatorRegistry(std::move(validatorRegistry)),
+      m_validatorSetHistory(),
       m_finalizationRegistry(),
       m_consensusRoundManager(),
       m_mempool(),
@@ -384,6 +386,7 @@ NodeRuntime::NodeRuntime(
             m_blockchain,
             m_validatorRegistry
         );
+        m_validatorSetHistory.recordSet(1, m_validatorRegistry);
     }
 }
 
@@ -409,6 +412,14 @@ const core::ValidatorRegistry& NodeRuntime::validatorRegistry() const {
 
 core::ValidatorRegistry& NodeRuntime::mutableValidatorRegistry() {
     return m_validatorRegistry;
+}
+
+const core::ValidatorSetHistory& NodeRuntime::validatorSetHistory() const {
+    return m_validatorSetHistory;
+}
+
+core::ValidatorSetHistory& NodeRuntime::mutableValidatorSetHistory() {
+    return m_validatorSetHistory;
 }
 
 const consensus::BlockFinalizationRegistry& NodeRuntime::finalizationRegistry() const {
@@ -508,7 +519,7 @@ void NodeRuntime::applyGovernanceFromBlock(
         if (record.type() != core::LedgerRecordType::TRANSACTION) continue;
         try {
             const core::Transaction tx =
-                core::Transaction::deserializeForStateReplay(record.payload());
+                core::Transaction::deserialize(record.payload());
             if (tx.type() != core::TransactionType::GOVERNANCE_PROPOSE) continue;
             if (m_governanceExecutor.hasBeenExecuted(tx.id())) continue;
             // toAddress carries the proposal payload: "target=X;value=Y;effectiveHeight=N"
@@ -535,6 +546,10 @@ bool NodeRuntime::isValid() const {
            !m_blockchain.empty() &&
            m_blockchain.isValid(false) &&
            m_validatorRegistry.isValid() &&
+           m_validatorSetHistory.isValid() &&
+           m_validatorSetHistory.hasSet(
+               m_consensusRoundManager.currentState().height()
+           ) &&
            m_finalizationRegistry.isValid() &&
            m_consensusRoundManager.currentState().isValid() &&
            m_peerManager.isValid();
@@ -628,6 +643,7 @@ std::string NodeRuntime::serialize() const {
         << ";config=" << m_config.serialize()
         << ";blockchainSize=" << m_blockchain.size()
         << ";validatorRegistrySize=" << m_validatorRegistry.size()
+        << ";validatorSetHistory=" << m_validatorSetHistory.serialize()
         << ";finalizationRegistrySize=" << m_finalizationRegistry.size()
         << ";consensusRound=" << m_consensusRoundManager.currentState().serialize()
         << ";peerManager=" << m_peerManager.serialize()

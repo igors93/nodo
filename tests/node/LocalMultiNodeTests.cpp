@@ -132,7 +132,8 @@ node::RuntimeBlockPipelineResult produceBlock(
             Amount::fromRawUnits(100),
             nonce, ts - 10
         ),
-        crypto::Signer(nodeOwner.userKey, userProvider)
+        crypto::Signer(nodeOwner.userKey, userProvider),
+        runtime.config().genesisConfig().networkParameters().chainId()
     );
     const auto admission = runtime.mutableMempool().admitTransaction(
         tx,

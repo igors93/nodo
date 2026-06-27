@@ -364,6 +364,11 @@ QuorumCertificateBuildResult QuorumAssembly::tryBuildCertificate(
     );
 }
 
+/**
+ * Prunes obsolete votes and conflict records from the pool based on the current chain height.
+ * Releases memory for votes referencing older blocks that have already been finalized
+ * or discarded by the network.
+ */
 void VotePool::prune(std::uint64_t currentHeight) {
     for (auto it = m_votesByBlock.begin(); it != m_votesByBlock.end(); ) {
         if (it->first.blockIndex() < currentHeight) {

@@ -32,7 +32,7 @@ Block::Block(
         throw std::invalid_argument("Block previousHash cannot be empty.");
     }
 
-    if (m_records.empty()) {
+    if (m_records.empty() || m_records.size() > MAX_RECORDS) {
         throw std::invalid_argument("Block must contain at least one LedgerRecord.");
     }
 
@@ -41,9 +41,13 @@ Block::Block(
     }
 
     for (const auto& record : m_records) {
-        if (!record.isValid()) {
+        if (!record.isValid() || record.payload().size() > MAX_RECORD_PAYLOAD_BYTES) {
             throw std::invalid_argument("Block rejected invalid LedgerRecord.");
         }
+    }
+
+    if (!isWithinResourceLimits()) {
+        throw std::invalid_argument("Block exceeds canonical protocol resource limits.");
     }
 
     m_hash = calculateHash();
@@ -127,7 +131,7 @@ bool Block::isValid(bool requireProtocolCommitments) const {
         return false;
     }
 
-    if (m_records.empty()) {
+    if (m_records.empty() || !isWithinResourceLimits()) {
         return false;
     }
 
@@ -163,6 +167,24 @@ bool Block::isValid(bool requireProtocolCommitments) const {
     }
 
     return true;
+}
+
+bool Block::isWithinResourceLimits() const {
+    if (m_records.empty() || m_records.size() > MAX_RECORDS) {
+        return false;
+    }
+    std::size_t totalBytes = 0;
+    for (const LedgerRecord& record : m_records) {
+        if (record.payload().size() > MAX_RECORD_PAYLOAD_BYTES) {
+            return false;
+        }
+        const std::size_t recordBytes = record.serialize().size();
+        if (recordBytes > MAX_SERIALIZED_BYTES - totalBytes) {
+            return false;
+        }
+        totalBytes += recordBytes;
+    }
+    return totalBytes <= MAX_SERIALIZED_BYTES;
 }
 
 std::string Block::headerPayload() const {
@@ -237,6 +259,7 @@ std::string Block::hashString(const std::string& value) {
 
 // static
 std::optional<Block> Block::deserialize(const std::string& text) {
+    if (text.size() > MAX_SERIALIZED_BYTES) return std::nullopt;
     if (text.rfind("Block{", 0) != 0) return std::nullopt;
     if (text.size() < 8 || text.back() != '}') return std::nullopt;
 

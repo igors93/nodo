@@ -214,18 +214,17 @@ std::int64_t minimumFeeRawUnits(
 std::string latestStateRootForRuntime(
     const NodeRuntime& runtime
 ) {
-    const core::AccountStateView view =
-        RuntimeAccountStateBuilder::accountStateViewAtTip(
-            runtime.config().genesisConfig(),
-            runtime.blockchain(),
+    const core::StateTransitionPreviewContext context =
+        RuntimeAccountStateBuilder::previewContextAtTip(
+            runtime,
             minimumFeeRawUnits(runtime.config().genesisConfig())
         );
-
-    const std::string stateRoot =
-        core::StateRootCalculator::calculateAccountStateRoot(view);
+    const std::string stateRoot = core::StateRootCalculator::calculateProtocolStateRoot(
+        context.accountStateView(), context.deterministicStateDomains()
+    );
 
     if (stateRoot.empty()) {
-        throw std::invalid_argument("Runtime account state root is empty.");
+        throw std::invalid_argument("Runtime protocol state root is empty.");
     }
 
     return stateRoot;

@@ -4,6 +4,7 @@
 #include "core/AccountStateView.hpp"
 
 #include <string>
+#include <map>
 
 namespace nodo::core {
 
@@ -15,6 +16,11 @@ public:
 
     static std::string canonicalAccountStatePayload(
         const AccountStateView& view
+    );
+
+    static std::string calculateProtocolStateRoot(
+        const AccountStateView& view,
+        const std::map<std::string, std::string>& deterministicDomains
     );
 };
 

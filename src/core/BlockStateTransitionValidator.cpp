@@ -238,6 +238,13 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
             );
         }
 
+        if (preview.status() == StateTransitionPreviewStatus::UNSUPPORTED_TRANSITION) {
+            return BlockValidationResult::rejected(
+                BlockValidationStatus::INVALID_TRANSACTION,
+                preview.reason()
+            );
+        }
+
         if (preview.status() == StateTransitionPreviewStatus::INSUFFICIENT_BALANCE ||
             preview.status() == StateTransitionPreviewStatus::INVALID_NONCE) {
             return BlockValidationResult::rejected(

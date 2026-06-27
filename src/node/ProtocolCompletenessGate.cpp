@@ -310,9 +310,7 @@ ProtocolCompletenessReport ProtocolCompletenessGate::evaluate(
     try {
         const core::StateTransitionPreviewContext context =
             RuntimeAccountStateBuilder::previewContextAtTip(
-                runtime.config().genesisConfig(),
-                runtime.blockchain(),
-                minimumFeeRawUnits(parameters)
+                runtime, minimumFeeRawUnits(parameters)
             );
 
         addRequirement(

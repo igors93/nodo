@@ -41,18 +41,19 @@ void requireCondition(
 // irrelevant to the per-record audit checks — it just satisfies Block's
 // requirement of at least one record.
 core::LedgerRecord minimalRecord() {
+    const crypto::KeyPair kp =
+        crypto::KeyPair::createDeterministicEd25519KeyPair("audit-test-key");
     core::Transaction tx(
         core::TransactionType::TRANSFER,
-        "audit-test-sender",
+        kp.address().value(),
         "audit-test-recipient",
         utils::Amount::fromRawUnits(100),
         utils::Amount::fromRawUnits(10),
         1,
         kTimestamp
     );
-    const crypto::KeyPair kp =
-        crypto::KeyPair::createDeterministicEd25519KeyPair("audit-test-key");
     const crypto::Ed25519SignatureProvider provider;
+    tx.withChainId("nodo-localnet-1");
     tx.attachSignatureBundle(
         crypto::SignatureBundle::createSignature(
             tx.signingPayload(),

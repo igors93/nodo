@@ -58,15 +58,6 @@ int main() {
     assert(decodedManifest.snapshotHeight() == 4096);
     assert(!PersistentBlockStateSyncCodec::hashSnapshotManifest(manifest).empty());
 
-    auto snapshotApply = PersistentBlockStateSyncApplier::applySnapshotManifest(
-        manifest,
-        now + 4
-    );
-
-    assert(snapshotApply.applied());
-    assert(snapshotApply.checkpoint().has_value());
-    assert(snapshotApply.checkpoint()->finalizedHeight() == 4096);
-
     std::cout << "persistent block/state sync codec tests passed\n";
     return 0;
 }

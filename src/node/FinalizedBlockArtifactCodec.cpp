@@ -1486,6 +1486,12 @@ const FinalizedTreasurySection& FinalizedBlockArtifact::treasurySection() const 
     return m_treasurySection;
 }
 
+/**
+ * Performs a comprehensive structural and cryptographic validation of the finalized block artifact.
+ * This includes verifying the block itself, fee economics, reward distributions, 
+ * slashing evidences, governance states, and ensuring that all cross-references 
+ * (such as checkpoints and stake positions) are consistent with the block's index.
+ */
 bool FinalizedBlockArtifact::isValid() const {
     if (!m_block.has_value() ||
         !m_block->isValid() ||

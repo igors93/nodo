@@ -235,6 +235,7 @@ BlockProductionResult produceCandidateBlockImpl(
     const Blockchain& blockchain,
     const mempool::Mempool& mempool,
     const AccountStateView* accountStateView,
+    const StateTransitionPreviewContext* suppliedPreviewContext,
     const crypto::CryptoPolicy& policy,
     crypto::SecurityContext context,
     const BlockProductionConfig& config,
@@ -356,7 +357,9 @@ BlockProductionResult produceCandidateBlockImpl(
     );
 
     StateTransitionPreviewContext previewContext;
-    if (accountStateView != nullptr) {
+    if (suppliedPreviewContext != nullptr) {
+        previewContext = *suppliedPreviewContext;
+    } else if (accountStateView != nullptr) {
         previewContext = StateTransitionPreviewContext(
             0,
             *accountStateView,
@@ -373,20 +376,11 @@ BlockProductionResult produceCandidateBlockImpl(
             previewContext
         );
 
-    std::string finalStateRoot;
-    std::string finalReceiptsRoot;
-
-    if (plan.blockIndex() == 0) {
-        finalStateRoot = "";
-        finalReceiptsRoot = "";
-    } else {
-        if (preview.accepted()) {
-            finalStateRoot = preview.stateRoot();
-            finalReceiptsRoot = preview.receiptsRoot();
-        } else {
-            finalStateRoot = "DRAFT_STATE_ROOT";
-            finalReceiptsRoot = "DRAFT_RECEIPTS_ROOT";
-        }
+    if (!preview.accepted()) {
+        return BlockProductionResult::rejected(
+            BlockProductionStatus::BLOCK_AUDIT_FAILED,
+            "Candidate state transition failed: " + preview.reason()
+        );
     }
 
     Block finalBlock(
@@ -394,8 +388,8 @@ BlockProductionResult produceCandidateBlockImpl(
         plan.previousHash(),
         plan.ledgerRecords(),
         timestamp,
-        finalStateRoot,
-        finalReceiptsRoot
+        preview.stateRoot(),
+        preview.receiptsRoot()
     );
 
     if (!finalBlock.isValid(false) ||
@@ -426,6 +420,7 @@ BlockProductionResult MempoolBlockProducer::produceCandidateBlock(
         blockchain,
         mempool,
         nullptr,
+        nullptr,
         policy,
         context,
         config,
@@ -446,6 +441,28 @@ BlockProductionResult MempoolBlockProducer::produceCandidateBlock(
         blockchain,
         mempool,
         &accountStateView,
+        nullptr,
+        policy,
+        context,
+        config,
+        timestamp
+    );
+}
+
+BlockProductionResult MempoolBlockProducer::produceCandidateBlock(
+    const Blockchain& blockchain,
+    const mempool::Mempool& mempool,
+    const StateTransitionPreviewContext& previewContext,
+    const crypto::CryptoPolicy& policy,
+    crypto::SecurityContext context,
+    const BlockProductionConfig& config,
+    std::int64_t timestamp
+) {
+    return produceCandidateBlockImpl(
+        blockchain,
+        mempool,
+        &previewContext.accountStateView(),
+        &previewContext,
         policy,
         context,
         config,

@@ -59,7 +59,7 @@ void testFromEqualsToFails() {
 void testValidRoundTrip() {
     const Transaction tx = makeTransfer("nodo1abc", "nodo2xyz");
     const std::string serialized = tx.serialize();
-    const Transaction restored = Transaction::deserializeForStateReplay(serialized);
+    const Transaction restored = Transaction::deserialize(serialized);
     assert(tx.id() == restored.id());
     assert(tx.fromAddress() == restored.fromAddress());
     assert(tx.toAddress() == restored.toAddress());

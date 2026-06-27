@@ -111,11 +111,14 @@ RuntimeStateVerificationResult RuntimeStateVerifier::verifyManifestMatchesRuntim
     std::string latestStateRoot;
 
     try {
-        latestStateRoot =
-            calculateLatestStateRoot(
-                runtime.config().genesisConfig(),
-                runtime.blockchain()
+        const core::StateTransitionPreviewContext context =
+            RuntimeAccountStateBuilder::previewContextAtTip(
+                runtime,
+                minimumFeeRawUnits(runtime.config().genesisConfig())
             );
+        latestStateRoot = core::StateRootCalculator::calculateProtocolStateRoot(
+            context.accountStateView(), context.deterministicStateDomains()
+        );
     } catch (const std::exception& error) {
         return RuntimeStateVerificationResult::failed(
             std::string("rebuilt account state failed: ") + error.what()

@@ -198,6 +198,7 @@ public:
     // BLOCK_SYNC_REQUEST if the durable sync checkpoint is behind.
     void triggerSyncIfBehind(
         const ChainStatusMessage& remotePeerStatus,
+        const std::string& remotePeerId,
         std::int64_t now
     );
 

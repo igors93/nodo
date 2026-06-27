@@ -5,6 +5,7 @@
 #include "core/Block.hpp"
 #include "core/Blockchain.hpp"
 #include "core/LedgerRecord.hpp"
+#include "core/StateTransitionPreviewContext.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "mempool/Mempool.hpp"
 
@@ -135,6 +136,16 @@ public:
         const Blockchain& blockchain,
         const mempool::Mempool& mempool,
         const AccountStateView& accountStateView,
+        const crypto::CryptoPolicy& policy,
+        crypto::SecurityContext context,
+        const BlockProductionConfig& config,
+        std::int64_t timestamp
+    );
+
+    static BlockProductionResult produceCandidateBlock(
+        const Blockchain& blockchain,
+        const mempool::Mempool& mempool,
+        const StateTransitionPreviewContext& previewContext,
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context,
         const BlockProductionConfig& config,

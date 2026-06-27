@@ -67,7 +67,8 @@ node::RuntimeBlockPipelineResult produceBlock(
             nonce,
             ts - 10
         ),
-        crypto::Signer(uk, userProv)
+        crypto::Signer(uk, userProv),
+        rt.config().genesisConfig().networkParameters().chainId()
     );
 
     rt.mutableMempool().admitTransaction(

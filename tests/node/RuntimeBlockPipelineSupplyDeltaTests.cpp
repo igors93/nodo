@@ -81,7 +81,8 @@ void admitTransfer(NodeRuntime& runtime, std::uint64_t nonce) {
             "sd-recipient", Amount::fromRawUnits(1000), Amount::fromRawUnits(100),
             nonce, kTimestamp + 10
         ),
-        userSigner()
+        userSigner(),
+        "nodo-localnet-1"
     );
     assert(runtime.mutableMempool().admitTransaction(
         tx, CryptoPolicy::developmentPolicy(),

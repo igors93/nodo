@@ -60,6 +60,7 @@ DiscoveryService::~DiscoveryService() {
 }
 
 void DiscoveryService::start() {
+    // Initializes the UDP socket and starts the asynchronous receive loop on the IO thread.
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_socket) return;
 
@@ -85,6 +86,7 @@ void DiscoveryService::start() {
 }
 
 void DiscoveryService::stop() {
+    // Gracefully shuts down the UDP socket, cancels pending operations, and joins the IO thread.
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_socket) {
@@ -107,6 +109,7 @@ void DiscoveryService::addPeer(
     std::uint16_t tcpPort,
     std::uint16_t udpPort
 ) {
+    // Inserts or updates a peer in the Kademlia routing table based on distance to the local node.
     if (peerId == m_localNodeId || peerId.empty() || host.empty() || tcpPort == 0 || udpPort == 0) {
         return;
     }
@@ -155,6 +158,7 @@ std::vector<DiscoveryPeerInfo> DiscoveryService::findClosestPeers(
     const std::string& targetId,
     std::size_t count
 ) {
+    // Searches the routing table buckets to find peers with IDs closest to the target hash.
     std::array<unsigned char, 32> targetHash = idHash(targetId);
     std::vector<std::pair<std::array<unsigned char, 32>, DiscoveryPeerInfo>> peersWithDistance;
 
@@ -187,6 +191,7 @@ std::vector<DiscoveryPeerInfo> DiscoveryService::findClosestPeers(
 void DiscoveryService::bootstrap(
     const std::vector<std::pair<std::string, std::pair<std::string, std::uint16_t>>>& seedPeers
 ) {
+    // Initiates discovery by sending initial PING and FIND_NODE requests to known seed peers.
     if (!m_socket) return;
 
     for (const auto& seed : seedPeers) {
@@ -228,6 +233,7 @@ void DiscoveryService::startReceive() {
 }
 
 void DiscoveryService::handleReceive(const asio::error_code& ec, std::size_t bytesTransferred) {
+    // Processes incoming UDP packets, updates the routing table, and responds to discovery requests.
     if (ec) {
         return;
     }

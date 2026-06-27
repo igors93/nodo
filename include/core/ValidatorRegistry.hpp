@@ -289,6 +289,24 @@ private:
     std::map<std::string, ValidatorRegistryEntry> m_entries;
 };
 
+/*
+ * Immutable-by-height validator-set snapshots used to verify historical QCs.
+ * A QC must be checked against the set that was active for its own height,
+ * never against the node's current registry.
+ */
+class ValidatorSetHistory {
+public:
+    bool recordSet(std::uint64_t height, const ValidatorRegistry& registry);
+    bool hasSet(std::uint64_t height) const;
+    const ValidatorRegistry& setAt(std::uint64_t height) const;
+    std::uint64_t highestRecordedHeight() const;
+    bool isValid() const;
+    std::string serialize() const;
+
+private:
+    std::map<std::uint64_t, ValidatorRegistry> m_setsByHeight;
+};
+
 } // namespace nodo::core
 
 #endif

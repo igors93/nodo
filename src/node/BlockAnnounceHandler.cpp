@@ -82,7 +82,7 @@ BlockAnnounceResult BlockAnnounceHandler::processEnvelope(
     core::Blockchain&                          blockchain,
     const core::StateTransitionPreviewContext& validationContext
 ) {
-    // Step 1: decode block from payload.
+    // Decode block from payload.
     auto maybeBlock = decodeBlock(envelope.payload());
     if (!maybeBlock.has_value()) {
         return BlockAnnounceResult{
@@ -95,7 +95,7 @@ BlockAnnounceResult BlockAnnounceHandler::processEnvelope(
 
     const core::Block& block = maybeBlock.value();
 
-    // Step 2: duplicate check.
+    // Duplicate check.
     if (blockAlreadyKnown(blockchain, block)) {
         return BlockAnnounceResult{
             BlockAnnounceStatus::ALREADY_KNOWN,
@@ -105,7 +105,7 @@ BlockAnnounceResult BlockAnnounceHandler::processEnvelope(
         };
     }
 
-    // Step 3: Full protocol commitment validation.
+    // Full protocol commitment validation.
     // This checks canonical root format, parent linkage, and most importantly
     // recomputes stateRoot and receiptsRoot from local account state, then
     // compares them to the block's declared commitments.  A block is only
@@ -132,7 +132,7 @@ BlockAnnounceResult BlockAnnounceHandler::processEnvelope(
         };
     }
 
-    // Step 4: append (only reached when all commitments verified).
+    // Append (only reached when all commitments verified).
     blockchain.addBlock(block);
 
     return BlockAnnounceResult{

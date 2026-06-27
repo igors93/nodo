@@ -75,7 +75,7 @@ GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionFo
     const GovernanceProposalEnvelope& envelope,
     const GovernanceDecisionRecord& decision
 ) {
-    // 1. Validate each input individually.
+    // Validate each input individually.
     if (!policy.isValid()) {
         return GovernanceApprovalBridgeResult::rejected(
             GovernanceApprovalBridgeStatus::INVALID_POLICY,
@@ -97,7 +97,7 @@ GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionFo
         );
     }
 
-    // 2. Policy versions must be consistent across all three inputs.
+    // Policy versions must be consistent across all three inputs.
     if (envelope.governancePolicyVersion() != policy.policyVersion()) {
         return GovernanceApprovalBridgeResult::rejected(
             GovernanceApprovalBridgeStatus::POLICY_VERSION_MISMATCH,
@@ -116,7 +116,7 @@ GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionFo
         );
     }
 
-    // 3. The decision must reference the same governance proposal as the envelope.
+    // The decision must reference the same governance proposal as the envelope.
     if (decision.governanceProposalId() != envelope.governanceProposalId()) {
         return GovernanceApprovalBridgeResult::rejected(
             GovernanceApprovalBridgeStatus::PROPOSAL_MISMATCH,
@@ -136,7 +136,7 @@ GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionFo
         );
     }
 
-    // 4. Only APPROVED decisions may produce a TreasuryApproval.
+    // Only APPROVED decisions may produce a TreasuryApproval.
     if (decision.decisionStatus() != GovernanceDecisionStatus::APPROVED) {
         return GovernanceApprovalBridgeResult::rejected(
             GovernanceApprovalBridgeStatus::DECISION_NOT_APPROVED,
@@ -146,7 +146,7 @@ GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionFo
         );
     }
 
-    // 5. Review period: the decision must have been made after enough blocks elapsed.
+    // Review period: the decision must have been made after enough blocks elapsed.
     const std::uint64_t earliestDecisionBlock =
         envelope.submittedAtBlock() + policy.reviewPeriodBlocks();
 
@@ -162,7 +162,7 @@ GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionFo
         );
     }
 
-    // 6. When the policy requires a decision proof, the decision must carry one.
+    // When the policy requires a decision proof, the decision must carry one.
     if (policy.requireDecisionProof() && decision.decisionProof().empty()) {
         return GovernanceApprovalBridgeResult::rejected(
             GovernanceApprovalBridgeStatus::DECISION_PROOF_REQUIRED,
@@ -170,7 +170,7 @@ GovernanceApprovalBridge::produceTreasuryApprovalFromStructurallyValidDecisionFo
         );
     }
 
-    // 7. Build deterministic proof and produce TreasuryApproval.
+    // Build deterministic proof and produce TreasuryApproval.
     const std::string approvalProof = TreasuryApprovalProof::build(
         envelope.governanceProposalId(),
         envelope.treasuryProposal().proposalId(),

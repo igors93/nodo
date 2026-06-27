@@ -78,6 +78,11 @@ utils::Amount CoinLotTransferPlan::totalDebitAmount() const {
     return m_transferAmount + m_feeAmount;
 }
 
+/**
+ * Checks the structural and logical validity of a coin lot transfer plan.
+ * Validates that all inputs correctly cover the required output amounts and fees, 
+ * ensuring no double-spending or arithmetic overflows within the planned transfers.
+ */
 bool CoinLotTransferPlan::isValid() const {
     if (m_transactionId.empty()) {
         return false;

@@ -180,7 +180,7 @@ EclipseCheckResult EclipseGuard::checkAdmission(
     const PeerSubnetInfo& candidate,
     const std::vector<PeerSubnetInfo>& currentPeers
 ) const {
-    // 1. Capacity check
+    // Capacity check
     if (currentPeers.size() >= m_config.maxTotalPeers) {
         return EclipseCheckResult::rejected(
             EclipseCheckOutcome::REJECTED_CAPACITY_FULL,
@@ -188,7 +188,7 @@ EclipseCheckResult EclipseGuard::checkAdmission(
         );
     }
 
-    // 2. Per-subnet check
+    // Per-subnet check
     const auto counts = subnetCounts(currentPeers);
     const auto it = counts.find(candidate.subnetPrefix);
     if (it != counts.end() && it->second >= m_config.maxPeersPerSubnet) {
@@ -200,7 +200,7 @@ EclipseCheckResult EclipseGuard::checkAdmission(
         );
     }
 
-    // 3. Fraction check: adding this peer must not push one subnet over the limit.
+    // Fraction check: adding this peer must not push one subnet over the limit.
     // We only enforce this when the peer set is large enough for the fraction
     // constraint to be satisfiable (at least 1/maxSingleSubnetFraction peers).
     const std::size_t minPeersForFractionCheck =

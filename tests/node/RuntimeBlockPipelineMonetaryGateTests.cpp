@@ -106,7 +106,8 @@ void admitTransaction(NodeRuntime& runtime, std::uint64_t nonce = 1) {
             nonce,
             kTimestamp + 10
         ),
-        localUserSigner()
+        localUserSigner(),
+        "nodo-localnet-1"
     );
     assert(runtime.mutableMempool().admitTransaction(
         tx, CryptoPolicy::developmentPolicy(),

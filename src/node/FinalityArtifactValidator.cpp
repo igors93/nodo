@@ -17,6 +17,14 @@ ArtifactValidationResult FinalityArtifactValidator::validate(
         const core::Block& block =
             artifact.block();
 
+        if (!context.runtime().validatorSetHistory().hasSet(block.index())) {
+            return ArtifactValidationResult::rejected(
+                prefix + "historical validator set is missing for finalized block."
+            );
+        }
+        const core::ValidatorRegistry& historicalValidatorSet =
+            context.runtime().validatorSetHistory().setAt(block.index());
+
         if (!context.runtime().mutableBlockchain().canAppendBlock(block)) {
             return ArtifactValidationResult::appendRejected(
                 "Persisted block cannot append to rebuilt runtime chain."
@@ -45,14 +53,21 @@ ArtifactValidationResult FinalityArtifactValidator::validate(
             );
         }
 
-        if (artifact.quorumCertificate().requiredVoteCount() != context.requiredVoteCount()) {
+        const auto& parameters = context.genesisConfig().networkParameters();
+        const std::uint64_t historicalRequiredVoteCount =
+            consensus::QuorumCertificateBuilder::requiredVoteCount(
+                historicalValidatorSet.activeCount(),
+                parameters.quorumThresholdNumerator(),
+                parameters.quorumThresholdDenominator()
+            );
+        if (artifact.quorumCertificate().requiredVoteCount() != historicalRequiredVoteCount) {
             return ArtifactValidationResult::rejected(
                 prefix + "quorum certificate threshold does not match network parameters."
             );
         }
 
         if (!artifact.quorumCertificate().verify(
-                context.runtime().validatorRegistry(),
+                historicalValidatorSet,
                 context.cryptoContext().policy(),
                 context.cryptoContext().signatureProvider()
             )) {
@@ -62,7 +77,7 @@ ArtifactValidationResult FinalityArtifactValidator::validate(
         }
 
         if (!artifact.finalizedRecord().verify(
-                context.runtime().validatorRegistry(),
+                historicalValidatorSet,
                 context.cryptoContext().policy(),
                 context.cryptoContext().signatureProvider()
             )) {
@@ -87,12 +102,21 @@ ArtifactValidationResult FinalityArtifactValidator::applyFinalization(
         context.rejectionPrefix();
 
     try {
+        if (!context.runtime().mutableValidatorSetHistory().recordSet(
+                artifact.block().index(), context.runtime().validatorRegistry()
+            )) {
+            return ArtifactValidationResult::rejected(
+                prefix + "historical validator set conflicts at finalized block height."
+            );
+        }
+        const core::ValidatorRegistry& historicalValidatorSet =
+            context.runtime().validatorSetHistory().setAt(artifact.block().index());
         const consensus::BlockFinalizationResult finalization =
             consensus::BlockFinalizer::finalizeBlock(
                 context.runtime().mutableBlockchain(),
                 artifact.block(),
                 artifact.quorumCertificate(),
-                context.runtime().validatorRegistry(),
+                historicalValidatorSet,
                 context.runtime().mutableFinalizationRegistry(),
                 context.cryptoContext().policy(),
                 context.cryptoContext().signatureProvider(),

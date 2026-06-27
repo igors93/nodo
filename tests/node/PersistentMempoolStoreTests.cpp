@@ -94,8 +94,9 @@ PublicKey validatorPublicKey(
 KeyPair transactionKeyPair(
     const std::string& suffix
 ) {
+    (void)suffix;
     return KeyPair::createDeterministicEd25519KeyPair(
-        "persistent-mempool-transaction-key-" + suffix
+        "persistent-mempool-transaction-key"
     );
 }
 
@@ -136,9 +137,10 @@ Transaction signedTransfer(
     const std::string& suffix,
     std::uint64_t nonce
 ) {
+    const KeyPair keyPair = transactionKeyPair(suffix);
     Transaction transaction(
         TransactionType::TRANSFER,
-        "persistent-mempool-sender",
+        keyPair.address().value(),
         "persistent-mempool-recipient",
         Amount::fromRawUnits(1000),
         Amount::fromRawUnits(100),
@@ -146,9 +148,9 @@ Transaction signedTransfer(
         kTimestamp + static_cast<std::int64_t>(nonce)
     );
 
-    const KeyPair keyPair =
-        transactionKeyPair(suffix);
     const Ed25519SignatureProvider provider;
+
+    transaction.withChainId("nodo-localnet-1");
 
     transaction.attachSignatureBundle(
         SignatureBundle::createSignature(
@@ -172,7 +174,7 @@ AccountStateView accountStateWithSenderBalance(
     requireCondition(
         view.putAccount(
             AccountState(
-                "persistent-mempool-sender",
+                transactionKeyPair("state").address().value(),
                 Amount::fromRawUnits(balanceRawUnits),
                 0
             )
@@ -403,10 +405,9 @@ void testMalformedPersistentMempoolFileIsRejected() {
 
     {
         std::ofstream output(malformedPath);
-        output << "NODO_MEMPOOL_TRANSACTION_V2\n"
+        output << "NODO_MEMPOOL_TRANSACTION_V3\n"
                << "transactionId=abc\n"
                << "acceptedAt=" << (kTimestamp + 40) << "\n"
-               << "publicKeyMaterial=malformed-public-key\n"
                << "transaction=Transaction{bad}\n"
                << "unknownField=must-fail\n";
     }

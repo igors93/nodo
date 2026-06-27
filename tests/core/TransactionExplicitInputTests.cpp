@@ -138,7 +138,7 @@ void testExplicitInputsArePartOfTransactionIdentity() {
     );
 
     const Transaction loaded =
-        Transaction::deserializeForStateReplay(
+        Transaction::deserialize(
             first.serialize()
         );
 
@@ -158,8 +158,8 @@ void testExplicitInputsArePartOfTransactionIdentity() {
     );
 }
 
-void testLegacyTransactionPayloadRemainsBackwardCompatible() {
-    const Transaction legacy(
+void testAutomaticInputTransactionRoundTrip() {
+    const Transaction automaticInputs(
         TransactionType::TRANSFER,
         "nodo1igor",
         "nodo1ana",
@@ -170,28 +170,28 @@ void testLegacyTransactionPayloadRemainsBackwardCompatible() {
     );
 
     requireCondition(
-        !legacy.hasExplicitInputCoinLotIds(),
-        "Legacy transaction should not have explicit input lots."
+        !automaticInputs.hasExplicitInputCoinLotIds(),
+        "Automatic-input transaction should not declare explicit lots."
     );
 
     requireCondition(
-        legacy.signingPayload().find("inputLots=") == std::string::npos,
-        "Legacy transaction payload should not add empty inputLots field."
+        automaticInputs.signingPayload().find("inputLots=") == std::string::npos,
+        "Automatic-input transaction payload should not add an empty lot list."
     );
 
     const Transaction loaded =
-        Transaction::deserializeForStateReplay(
-            legacy.serialize()
+        Transaction::deserialize(
+            automaticInputs.serialize()
         );
 
     requireCondition(
-        loaded.id() == legacy.id(),
-        "Legacy transaction id changed after round-trip."
+        loaded.id() == automaticInputs.id(),
+        "Automatic-input transaction id changed after round-trip."
     );
 
     requireCondition(
-        loaded.signingPayload() == legacy.signingPayload(),
-        "Legacy transaction payload changed after round-trip."
+        loaded.signingPayload() == automaticInputs.signingPayload(),
+        "Automatic-input transaction payload changed after round-trip."
     );
 }
 
@@ -342,7 +342,7 @@ void testExplicitInputsRejectUnsafeOrInvalidLots() {
     );
 }
 
-void testAutomaticInputSelectionStillWorksForLegacyTransactions() {
+void testAutomaticInputSelectionWorksWithoutDeclaredLots() {
     CoinLotRegistry registry =
         sampleRegistry();
 
@@ -384,11 +384,11 @@ void testAutomaticInputSelectionStillWorksForLegacyTransactions() {
 int main() {
     try {
         testExplicitInputsArePartOfTransactionIdentity();
-        testLegacyTransactionPayloadRemainsBackwardCompatible();
+        testAutomaticInputTransactionRoundTrip();
         testExplicitInputsAreValidatedAndUsedOnly();
         testExplicitInputsRejectSilentInputSubstitution();
         testExplicitInputsRejectUnsafeOrInvalidLots();
-        testAutomaticInputSelectionStillWorksForLegacyTransactions();
+        testAutomaticInputSelectionWorksWithoutDeclaredLots();
 
         std::cout << "Nodo explicit transaction input tests passed.\n";
         return 0;

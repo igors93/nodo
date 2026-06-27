@@ -23,7 +23,7 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* MEMPOOL_TRANSACTION_SCHEMA_ID =
-    "NODO_MEMPOOL_TRANSACTION_V2";
+    "NODO_MEMPOOL_TRANSACTION_V3";
 
 serialization::KeyValueFileDocument parseTransactionDocument(
     const std::string& contents
@@ -38,12 +38,6 @@ serialization::KeyValueFileDocument parseTransactionDocument(
         {
             "transactionId",
             "acceptedAt",
-            "signatureSuite",
-            "signatureDomain",
-            "publicKeyAlgorithm",
-            "publicKeyMaterial",
-            "signatureHex",
-            "signatureCreatedAt",
             "transaction"
         }
     );
@@ -105,7 +99,8 @@ void validatePersistentTransactionSignature(
     const crypto::PublicKey& publicKey,
     const crypto::CryptoPolicy& policy,
     crypto::SecurityContext context,
-    const crypto::SignatureProvider& provider
+    const crypto::SignatureProvider& provider,
+    const std::string& expectedChainId
 ) {
     if (!allSignaturesUsePublicKey(
             transaction,
@@ -114,13 +109,12 @@ void validatePersistentTransactionSignature(
         throw std::invalid_argument("Persistent transaction signature does not use the declared public key.");
     }
 
-    if (!transaction.signatureBundle().verifyForPolicy(
-            transaction.signingPayload(),
-            policy,
-            context,
-            provider
+    if (!transaction.verifyAuthorization(
+            expectedChainId, policy, context, provider
         )) {
-        throw std::invalid_argument("Persistent transaction signature verification failed.");
+        throw std::invalid_argument(
+            "Persistent transaction chain, sender, or signature authorization failed."
+        );
     }
 }
 
@@ -399,6 +393,14 @@ PersistentMempoolWriteResult PersistentMempoolStore::persistTransaction(
     }
 
     const crypto::Ed25519SignatureProvider provider;
+    const NodeDataDirectoryReadResult manifest =
+        NodeDataDirectory::loadManifest(directoryConfig);
+    if (!manifest.loaded()) {
+        return PersistentMempoolWriteResult::rejected(
+            PersistentMempoolWriteStatus::INVALID_CONFIG,
+            "Persistent mempool cannot load the runtime manifest."
+        );
+    }
 
     try {
         validatePersistentTransactionSignature(
@@ -406,7 +408,8 @@ PersistentMempoolWriteResult PersistentMempoolStore::persistTransaction(
             publicKey,
             crypto::CryptoPolicy::developmentPolicy(),
             crypto::SecurityContext::USER_TRANSACTION,
-            provider
+            provider,
+            manifest.manifest().chainId()
         );
     } catch (const std::exception& error) {
         return PersistentMempoolWriteResult::rejected(
@@ -518,6 +521,14 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
 
     try {
         const crypto::Ed25519SignatureProvider provider;
+        const NodeDataDirectoryReadResult manifest =
+            NodeDataDirectory::loadManifest(directoryConfig);
+        if (!manifest.loaded()) {
+            return PersistentMempoolLoadResult::rejected(
+                PersistentMempoolLoadStatus::INVALID_CONFIG,
+                "Persistent mempool cannot load the runtime manifest."
+            );
+        }
 
         for (const std::filesystem::path& path :
              canonicalMempoolFiles(directoryConfig.mempoolDirectoryPath())) {
@@ -536,7 +547,8 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
                     transaction.signatureBundle().signatures().front().publicKey(),
                     policy,
                     context,
-                    provider
+                    provider,
+                    manifest.manifest().chainId()
                 );
 
                 const auto admission =
@@ -608,6 +620,14 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
     std::set<std::string> pendingSenders;
 
     try {
+        const NodeDataDirectoryReadResult manifest =
+            NodeDataDirectory::loadManifest(directoryConfig);
+        if (!manifest.loaded()) {
+            return PersistentMempoolLoadResult::rejected(
+                PersistentMempoolLoadStatus::INVALID_CONFIG,
+                "Persistent mempool cannot load the runtime manifest."
+            );
+        }
         for (const std::filesystem::path& path :
              canonicalMempoolFiles(directoryConfig.mempoolDirectoryPath())) {
             const std::string contents =
@@ -625,7 +645,8 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
                     transaction.signatureBundle().signatures().front().publicKey(),
                     policy,
                     context,
-                    provider
+                    provider,
+                    manifest.manifest().chainId()
                 );
 
                 validateTransactionAgainstAccountState(
@@ -725,20 +746,19 @@ std::string PersistentMempoolStore::transactionFileContents(
         throw std::invalid_argument("Persistent mempool requires a signed transaction.");
     }
 
-    const crypto::Signature& signature =
-        transaction.signatureBundle().signatures().front();
+    if (!publicKey.isValid() ||
+        transaction.signatureBundle().signatures().front().publicKey().serialize()
+            != publicKey.serialize()) {
+        throw std::invalid_argument(
+            "Persistent mempool public key does not match the transaction signature."
+        );
+    }
 
     return serialization::KeyValueFileCodec::serialize(
         MEMPOOL_TRANSACTION_SCHEMA_ID,
         {
             {"transactionId", transaction.id()},
             {"acceptedAt", std::to_string(acceptedAt)},
-            {"signatureSuite", crypto::cryptoSuiteIdToString(signature.suite())},
-            {"signatureDomain", crypto::signingDomainToString(signature.domain())},
-            {"publicKeyAlgorithm", crypto::cryptoAlgorithmToString(publicKey.algorithm())},
-            {"publicKeyMaterial", publicKey.keyMaterial()},
-            {"signatureHex", signature.signatureHex()},
-            {"signatureCreatedAt", std::to_string(signature.createdAt())},
             {"transaction", transaction.serialize()}
         }
     );
@@ -750,58 +770,14 @@ core::Transaction PersistentMempoolStore::decodeTransactionFile(
     const serialization::KeyValueFileDocument fields =
         parseTransactionDocument(contents);
 
-    core::Transaction transaction =
-        core::Transaction::deserializeForStateReplay(
-            fields.requireField("transaction")
-        );
-
-    const crypto::CryptoAlgorithm algorithm =
-        crypto::cryptoAlgorithmFromString(
-            fields.requireField("publicKeyAlgorithm")
-        );
-
-    if (crypto::cryptoAlgorithmToString(algorithm) !=
-        fields.requireField("publicKeyAlgorithm")) {
-        throw std::invalid_argument("Persistent transaction public key algorithm is unknown.");
-    }
-
-    const crypto::PublicKey publicKey(
-        algorithm,
-        fields.requireField("publicKeyMaterial")
+    core::Transaction transaction = core::Transaction::deserialize(
+        fields.requireField("transaction")
     );
 
-    crypto::SignatureBundle signatureBundle;
-
-    const crypto::CryptoSuiteId suite =
-        crypto::cryptoSuiteIdFromString(
-            fields.requireField("signatureSuite")
-        );
-
-    if (!crypto::isSupportedCryptoSuite(suite)) {
-        throw std::invalid_argument("Persistent transaction signature suite is unknown.");
+    if (!transaction.hasSignatureBundle() ||
+        transaction.signatureBundle().signatures().empty()) {
+        throw std::invalid_argument("Persistent mempool transaction is unsigned.");
     }
-
-    const crypto::SigningDomain domain =
-        crypto::signingDomainFromString(
-            fields.requireField("signatureDomain")
-        );
-
-    if (domain == crypto::SigningDomain::UNKNOWN) {
-        throw std::invalid_argument("Persistent transaction signature domain is unknown.");
-    }
-
-    signatureBundle.addSignature(
-        crypto::Signature(
-            suite,
-            domain,
-            algorithm,
-            publicKey,
-            fields.requireField("signatureHex"),
-            std::stoll(fields.requireField("signatureCreatedAt"))
-        )
-    );
-
-    transaction.attachSignatureBundle(signatureBundle);
 
     if (transaction.id() != fields.requireField("transactionId")) {
         throw std::invalid_argument("Persistent transaction id does not match transaction payload.");
@@ -812,7 +788,7 @@ core::Transaction PersistentMempoolStore::decodeTransactionFile(
 
     if (transactionFileContents(
             transaction,
-            publicKey,
+            transaction.signatureBundle().signatures().front().publicKey(),
             acceptedAt
         ) != contents) {
         throw std::invalid_argument("Persistent mempool file is not canonical.");
@@ -848,7 +824,8 @@ bool PersistentMempoolStore::deserializeGossipAndAdmit(
     const std::string& payload,
     mempool::Mempool& mempool,
     const crypto::CryptoPolicy& policy,
-    crypto::SecurityContext context
+    crypto::SecurityContext context,
+    const std::string& expectedChainId
 ) {
     try {
         const core::Transaction transaction = decodeTransactionFile(payload);
@@ -865,7 +842,8 @@ bool PersistentMempoolStore::deserializeGossipAndAdmit(
         const crypto::Ed25519SignatureProvider ed25519Provider;
 
         validatePersistentTransactionSignature(
-            transaction, publicKey, policy, context, ed25519Provider
+            transaction, publicKey, policy, context, ed25519Provider,
+            expectedChainId
         );
 
         const auto result = mempool.admitTransaction(

@@ -157,6 +157,8 @@ public:
     core::Blockchain& mutableBlockchain();
     const core::ValidatorRegistry& validatorRegistry() const;
     core::ValidatorRegistry& mutableValidatorRegistry();
+    const core::ValidatorSetHistory& validatorSetHistory() const;
+    core::ValidatorSetHistory& mutableValidatorSetHistory();
     const consensus::BlockFinalizationRegistry& finalizationRegistry() const;
     consensus::BlockFinalizationRegistry& mutableFinalizationRegistry();
     const consensus::ConsensusRoundManager& consensusRoundManager() const;
@@ -227,6 +229,7 @@ private:
     NodeRuntimeStatus m_status;
     core::Blockchain m_blockchain;
     core::ValidatorRegistry m_validatorRegistry;
+    core::ValidatorSetHistory m_validatorSetHistory;
     consensus::BlockFinalizationRegistry m_finalizationRegistry;
     consensus::ConsensusRoundManager m_consensusRoundManager;
     mempool::Mempool m_mempool;

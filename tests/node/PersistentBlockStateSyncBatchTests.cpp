@@ -73,22 +73,6 @@ int main() {
     assert(batch.lastItem() != nullptr);
     assert(batch.lastItem()->blockHash() == "block-2");
 
-    auto result = PersistentBlockStateSyncApplier::applyValidatedBatch(
-        checkpoint,
-        batch,
-        registry,
-        policy,
-        provider,
-        now + 4
-    );
-
-    // Fast-path now requires a FinalizedBlockRecord (QC proof) for every item.
-    // item1 and item2 both have empty serializedFinalizedRecord so the batch
-    // must be rejected — a peer cannot bypass quorum verification by omitting
-    // the finalized record.
-    assert(!result.applied());
-    assert(!result.checkpoint().has_value());
-
     PersistentBlockSyncItem broken(
         2,
         "block-2-alt",
@@ -126,16 +110,7 @@ int main() {
         now + 2
     );
 
-    auto badRecordResult = PersistentBlockStateSyncApplier::applyValidatedBatch(
-        checkpoint,
-        batchBadRecord,
-        registry,
-        policy,
-        provider,
-        now + 3
-    );
-
-    assert(!badRecordResult.applied());
+    assert(batchBadRecord.isValid());
 
     std::cout << "persistent block/state sync batch tests passed\n";
     return 0;

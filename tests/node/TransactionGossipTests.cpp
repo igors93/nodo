@@ -49,9 +49,10 @@ KeyPair txKeyPair() {
 }
 
 Transaction signedTransfer(std::uint64_t nonce) {
+    const KeyPair kp = txKeyPair();
     Transaction tx(
         TransactionType::TRANSFER,
-        "gossip-sender",
+        kp.address().value(),
         "gossip-recipient",
         Amount::fromRawUnits(1000),
         Amount::fromRawUnits(100),
@@ -59,8 +60,9 @@ Transaction signedTransfer(std::uint64_t nonce) {
         kTimestamp + static_cast<std::int64_t>(nonce)
     );
 
-    const KeyPair kp = txKeyPair();
     const Ed25519SignatureProvider provider;
+
+    tx.withChainId("nodo-localnet-1");
 
     tx.attachSignatureBundle(
         SignatureBundle::createSignature(
@@ -92,7 +94,8 @@ void testSerializeForGossipRoundTrip() {
         payload,
         mempool,
         policy,
-        SecurityContext::USER_TRANSACTION
+        SecurityContext::USER_TRANSACTION,
+        "nodo-localnet-1"
     );
 
     requireCondition(admitted, "deserializeGossipAndAdmit should admit a valid signed tx.");
@@ -127,7 +130,8 @@ void testInvalidGossipPayloadRejected() {
         "invalid-gossip-payload",
         mempool,
         policy,
-        SecurityContext::USER_TRANSACTION
+        SecurityContext::USER_TRANSACTION,
+        "nodo-localnet-1"
     );
 
     requireCondition(!admitted, "Invalid gossip payload should be rejected.");

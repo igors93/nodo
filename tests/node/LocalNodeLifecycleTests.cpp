@@ -135,7 +135,8 @@ core::Transaction signedTransfer(std::uint64_t nonce, std::int64_t ts) {
             Amount::fromRawUnits(100),
             nonce, ts
         ),
-        userSigner()
+        userSigner(),
+        "nodo-localnet-1"
     );
 }
 

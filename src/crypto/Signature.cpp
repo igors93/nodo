@@ -106,7 +106,7 @@ std::string Signature::serialize() const {
         << "suite=" << cryptoSuiteIdToString(m_suite)
         << ";domain=" << signingDomainToString(m_domain)
         << ";algorithm=" << cryptoAlgorithmToString(m_algorithm)
-        << ";publicKeyFingerprint=" << m_publicKey.fingerprint()
+        << ";publicKey=" << m_publicKey.serialize()
         << ";signatureHex=" << m_signatureHex
         << ";createdAt=" << m_createdAt
         << "}";

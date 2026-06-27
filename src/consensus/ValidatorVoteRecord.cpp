@@ -353,7 +353,7 @@ crypto::Signature parseSignature(
             "suite",
             "domain",
             "algorithm",
-            "publicKeyFingerprint",
+            "publicKey",
             "signatureHex",
             "createdAt"
         },
@@ -388,13 +388,13 @@ crypto::Signature parseSignature(
         throw std::invalid_argument("Unknown serialized Signature domain.");
     }
 
-    if (algorithm != expectedPublicKey.algorithm()) {
-        throw std::invalid_argument("Serialized Signature algorithm does not match vote public key.");
-    }
+    const crypto::PublicKey embeddedPublicKey = parsePublicKey(
+        requireField(fields, "publicKey", "Signature")
+    );
 
-    if (requireField(fields, "publicKeyFingerprint", "Signature") !=
-        expectedPublicKey.fingerprint()) {
-        throw std::invalid_argument("Serialized Signature public key fingerprint does not match vote public key.");
+    if (algorithm != expectedPublicKey.algorithm() ||
+        embeddedPublicKey.serialize() != expectedPublicKey.serialize()) {
+        throw std::invalid_argument("Serialized Signature algorithm does not match vote public key.");
     }
 
     crypto::Signature signature(

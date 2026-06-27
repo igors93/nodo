@@ -155,13 +155,13 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     }
 
     // -------------------------------------------------------------------------
-    // PHASE 1 (PRODUCTION) + PHASE 2 (PROPOSAL)
+    // (PRODUCTION) + PHASE 2 (PROPOSAL)
     //
     // When this node is the designated proposer and hasn't produced a block
     // for the current round yet:
-    //   1. Invoke the production callback to build a validated candidate block.
-    //   2. Broadcast it as a signed BLOCK_PROPOSAL for peers to validate.
-    //   3. Retain it outside the canonical chain until PRECOMMIT quorum.
+    // Invoke the production callback to build a validated candidate block.
+    // Broadcast it as a signed BLOCK_PROPOSAL for peers to validate.
+    // Retain it outside the canonical chain until PRECOMMIT quorum.
     //
     // After this block the proposer falls through to the same prevote/precommit
     // path as every other validator — no APPROVE shortcuts.
@@ -184,7 +184,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
                 std::optional<core::Block> blockOpt = m_blockProducer(height, round, now);
 
                 if (blockOpt.has_value()) {
-                    // Phase 2: sign and broadcast the proposal.
+                    // Sign and broadcast the proposal.
                     if (m_localSigner) {
                         const BlockProposalResult proposalResult = BlockProposalPhase::propose(
                             *blockOpt,
@@ -242,7 +242,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         );
 
     // -------------------------------------------------------------------------
-    // PHASE 3a (PREVOTE)
+    // A (PREVOTE)
     //
     // Cast a PREVOTE if:
     //   - We have not already voted at this height/round.
@@ -267,7 +267,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     }
 
     // -------------------------------------------------------------------------
-    // PHASE 3b (PRECOMMIT)
+    // B (PRECOMMIT)
     //
     // Cast a PRECOMMIT once the PREVOTE quorum threshold is reached.
     // This locks this validator to the block at (blockHash, round).
@@ -293,7 +293,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     }
 
     // -------------------------------------------------------------------------
-    // PHASE 4 (FINALIZATION)
+    // (FINALIZATION)
     //
     // Attempt to assemble a QuorumCertificate and finalize the block.
     // On success:
@@ -449,9 +449,7 @@ void ConsensusEventLoop::processBlockProposals() {
 
             const core::StateTransitionPreviewContext validationContext =
                 node::RuntimeAccountStateBuilder::previewContextAtTip(
-                    m_runtime.config().genesisConfig(),
-                    chain,
-                    effectiveMinimumFee(m_runtime)
+                    m_runtime, effectiveMinimumFee(m_runtime)
                 );
 
             const core::BlockValidationResult validation =

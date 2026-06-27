@@ -55,9 +55,10 @@ bool TransactionBuildRequest::isValid() const {
 
 Transaction TransactionBuilder::buildSignedTransfer(
     const TransactionBuildRequest& request,
-    const crypto::Signer& signer
+    const crypto::Signer& signer,
+    const std::string& chainId
 ) {
-    if (!request.isValid()) {
+    if (!request.isValid() || chainId.empty()) {
         throw std::invalid_argument("Transaction build request is invalid.");
     }
 
@@ -70,6 +71,7 @@ Transaction TransactionBuilder::buildSignedTransfer(
         request.nonce(),
         request.timestamp()
     );
+    transaction.withChainId(chainId);
 
     return signer.signTransaction(
         transaction,
@@ -79,9 +81,10 @@ Transaction TransactionBuilder::buildSignedTransfer(
 
 Transaction TransactionBuilder::buildSignedStakeLock(
     const TransactionBuildRequest& request,
-    const crypto::Signer& signer
+    const crypto::Signer& signer,
+    const std::string& chainId
 ) {
-    if (!request.isValid()) {
+    if (!request.isValid() || chainId.empty()) {
         throw std::invalid_argument("Stake lock build request is invalid.");
     }
 
@@ -94,14 +97,16 @@ Transaction TransactionBuilder::buildSignedStakeLock(
         request.nonce(),
         request.timestamp()
     );
+    tx.withChainId(chainId);
     return signer.signTransaction(tx, request.timestamp());
 }
 
 Transaction TransactionBuilder::buildSignedStakeTopUp(
     const TransactionBuildRequest& request,
-    const crypto::Signer& signer
+    const crypto::Signer& signer,
+    const std::string& chainId
 ) {
-    if (!request.isValid()) {
+    if (!request.isValid() || chainId.empty()) {
         throw std::invalid_argument("Stake top-up build request is invalid.");
     }
 
@@ -114,14 +119,16 @@ Transaction TransactionBuilder::buildSignedStakeTopUp(
         request.nonce(),
         request.timestamp()
     );
+    tx.withChainId(chainId);
     return signer.signTransaction(tx, request.timestamp());
 }
 
 Transaction TransactionBuilder::buildSignedStakeWithdraw(
     const TransactionBuildRequest& request,
-    const crypto::Signer& signer
+    const crypto::Signer& signer,
+    const std::string& chainId
 ) {
-    if (!request.isValid()) {
+    if (!request.isValid() || chainId.empty()) {
         throw std::invalid_argument("Stake withdraw build request is invalid.");
     }
 
@@ -134,14 +141,16 @@ Transaction TransactionBuilder::buildSignedStakeWithdraw(
         request.nonce(),
         request.timestamp()
     );
+    tx.withChainId(chainId);
     return signer.signTransaction(tx, request.timestamp());
 }
 
 Transaction TransactionBuilder::buildSignedValidatorExitRequest(
     const TransactionBuildRequest& request,
-    const crypto::Signer& signer
+    const crypto::Signer& signer,
+    const std::string& chainId
 ) {
-    if (request.toAddress().empty() || request.fee().isNegative()) {
+    if (request.toAddress().empty() || request.fee().isNegative() || chainId.empty()) {
         throw std::invalid_argument("Validator exit request requires a non-empty validator address and non-negative fee.");
     }
 
@@ -154,14 +163,16 @@ Transaction TransactionBuilder::buildSignedValidatorExitRequest(
         request.nonce(),
         request.timestamp()
     );
+    tx.withChainId(chainId);
     return signer.signTransaction(tx, request.timestamp());
 }
 
 Transaction TransactionBuilder::buildSignedValidatorUnjailRequest(
     const TransactionBuildRequest& request,
-    const crypto::Signer& signer
+    const crypto::Signer& signer,
+    const std::string& chainId
 ) {
-    if (request.toAddress().empty() || request.fee().isNegative()) {
+    if (request.toAddress().empty() || request.fee().isNegative() || chainId.empty()) {
         throw std::invalid_argument("Validator unjail request requires a non-empty validator address and non-negative fee.");
     }
 
@@ -174,6 +185,7 @@ Transaction TransactionBuilder::buildSignedValidatorUnjailRequest(
         request.nonce(),
         request.timestamp()
     );
+    tx.withChainId(chainId);
     return signer.signTransaction(tx, request.timestamp());
 }
 

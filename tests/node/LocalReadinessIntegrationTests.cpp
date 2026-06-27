@@ -143,7 +143,8 @@ node::RuntimeBlockPipelineResult produceBlock(
             Amount::fromRawUnits(100),
             nonce, ts - 10
         ),
-        userSigner()
+        userSigner(),
+        runtime.config().genesisConfig().networkParameters().chainId()
     );
     const auto admission = runtime.mutableMempool().admitTransaction(
         tx,

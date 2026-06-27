@@ -1,8 +1,12 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 
 #include "core/StateTransitionPreview.hpp"
+#include "node/NodeRuntime.hpp"
+#include "node/FeeEconomics.hpp"
 
 #include <stdexcept>
+#include <map>
+#include <utility>
 
 namespace nodo::node {
 
@@ -56,7 +60,11 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewAtTip(
             minimumFeeRawUnits,
             view,
             false,
-            true
+            true,
+            "",
+            0,
+            genesisConfig.networkParameters().chainId(),
+            genesisConfig.networkParameters().networkName()
         );
 
         const core::StateTransitionPreviewResult preview =
@@ -111,7 +119,11 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
             minimumFeeRawUnits,
             view,
             false,
-            true
+            true,
+            "",
+            0,
+            genesisConfig.networkParameters().chainId(),
+            genesisConfig.networkParameters().networkName()
         );
 
         const core::StateTransitionPreviewResult preview =
@@ -151,7 +163,47 @@ core::StateTransitionPreviewContext RuntimeAccountStateBuilder::previewContextAt
         false,
         true,
         "",
-        wallClockNow
+        wallClockNow,
+        genesisConfig.networkParameters().chainId(),
+        genesisConfig.networkParameters().networkName()
+    );
+}
+
+core::StateTransitionPreviewContext RuntimeAccountStateBuilder::previewContextAtTip(
+    const NodeRuntime& runtime,
+    std::int64_t minimumFeeRawUnits,
+    std::int64_t wallClockNow
+) {
+    const utils::Amount supplyBefore = runtime.supplyState().latestSupply();
+    const std::uint64_t nextBlockHeight = runtime.blockchain().size();
+    std::map<std::string, std::string> domains = {
+        {"governance", runtime.governanceExecutor().serialize()},
+        {"supply", "RuntimeSupply{latestRawUnits=" + std::to_string(supplyBefore.rawUnits()) + "}"},
+        {"validators", runtime.validatorRegistry().serialize()}
+    };
+    const core::DeterministicStateDomainTransition domainTransition =
+        [domains, supplyBefore, nextBlockHeight](utils::Amount totalFee) mutable {
+            const utils::Amount burn = FeeEconomics::buildFeeEconomicBalance(
+                nextBlockHeight, totalFee
+            ).burnAmount();
+            const utils::Amount supplyAfter = supplyBefore - burn;
+            domains["supply"] =
+                "RuntimeSupply{latestRawUnits="
+                + std::to_string(supplyAfter.rawUnits()) + "}";
+            return domains;
+        };
+    const config::GenesisConfig& genesisConfig = runtime.config().genesisConfig();
+    return core::StateTransitionPreviewContext(
+        minimumFeeRawUnits,
+        accountStateViewAtTip(genesisConfig, runtime.blockchain(), minimumFeeRawUnits),
+        false,
+        true,
+        "",
+        wallClockNow,
+        genesisConfig.networkParameters().chainId(),
+        genesisConfig.networkParameters().networkName(),
+        std::move(domains),
+        domainTransition
     );
 }
 

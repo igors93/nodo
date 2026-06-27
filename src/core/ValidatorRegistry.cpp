@@ -4,6 +4,7 @@
 #include "crypto/hash.h"
 
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace nodo::core {
@@ -1015,6 +1016,60 @@ std::string ValidatorRegistry::serialize() const {
     oss << "]}";
 
     return oss.str();
+}
+
+bool ValidatorSetHistory::recordSet(
+    std::uint64_t height,
+    const ValidatorRegistry& registry
+) {
+    if (height == 0 || !registry.isValid()) {
+        return false;
+    }
+    const auto existing = m_setsByHeight.find(height);
+    if (existing != m_setsByHeight.end()) {
+        return existing->second.serialize() == registry.serialize();
+    }
+    m_setsByHeight.emplace(height, registry);
+    return true;
+}
+
+bool ValidatorSetHistory::hasSet(std::uint64_t height) const {
+    return m_setsByHeight.find(height) != m_setsByHeight.end();
+}
+
+const ValidatorRegistry& ValidatorSetHistory::setAt(std::uint64_t height) const {
+    const auto found = m_setsByHeight.find(height);
+    if (found == m_setsByHeight.end()) {
+        throw std::out_of_range("No validator set recorded for block height.");
+    }
+    return found->second;
+}
+
+std::uint64_t ValidatorSetHistory::highestRecordedHeight() const {
+    return m_setsByHeight.empty() ? 0 : m_setsByHeight.rbegin()->first;
+}
+
+bool ValidatorSetHistory::isValid() const {
+    for (const auto& [height, registry] : m_setsByHeight) {
+        if (height == 0 || !registry.isValid()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::string ValidatorSetHistory::serialize() const {
+    std::ostringstream output;
+    output << "ValidatorSetHistory{size=" << m_setsByHeight.size() << ";sets=[";
+    bool first = true;
+    for (const auto& [height, registry] : m_setsByHeight) {
+        if (!first) output << ",";
+        output << "ValidatorSet{height=" << height
+               << ";registry=" << registry.serialize() << "}";
+        first = false;
+    }
+    output << "]}";
+    return output.str();
 }
 
 } // namespace nodo::core
