@@ -41,7 +41,7 @@ void testCheckpointRoundTrip() {
     );
 
     const auto writeResult = store.save(cp);
-    require(writeResult.saved(), "Checkpoint save must succeed.");
+    require(writeResult.isSaved(), "Checkpoint save must succeed.");
     require(store.exists(), "Checkpoint file must exist after save.");
 
     const auto readResult = store.read();
@@ -74,7 +74,7 @@ void testCheckpointAdvancesAcrossMultipleSaves() {
             "peer",
             kNow
         );
-        require(store.save(cp).saved(),
+        require(store.save(cp).isSaved(),
                 "Checkpoint save must succeed for height " + std::to_string(h));
     }
 

@@ -4,6 +4,7 @@
 #include "core/AccountState.hpp"
 #include "core/AccountStateView.hpp"
 #include "core/Blockchain.hpp"
+#include "crypto/KeyPair.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "utils/Amount.hpp"
 
@@ -106,11 +107,13 @@ void testSnapshotOverwritesPreviousSnapshot() {
 }
 
 void testPartialReplayMatchesFullReplay() {
-    // Build a genesis config and empty blockchain (only genesis block at height 0).
     const config::GenesisConfig genesis(
         config::NetworkParameters::developmentLocal(),
         kTs,
-        {},
+        { config::BootstrapValidatorConfig(
+            crypto::KeyPair::createDeterministicBls12381KeyPair("snap-val").publicKey(),
+            1, 1, "snap-val-meta"
+          ) },
         { config::GenesisAccountConfig("gap6-account", utils::Amount::fromRawUnits(5000), 0) },
         "gap6-partial-replay-test"
     );

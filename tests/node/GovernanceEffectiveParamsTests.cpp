@@ -1,4 +1,5 @@
 #include "config/NetworkParameters.hpp"
+#include "crypto/KeyPair.hpp"
 #include "node/GovernanceExecutor.hpp"
 #include "node/NodeRuntime.hpp"
 #include "p2p/PeerMessage.hpp"

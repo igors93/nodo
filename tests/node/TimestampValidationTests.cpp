@@ -2,6 +2,7 @@
 
 #include "config/NetworkParameters.hpp"
 #include "core/Blockchain.hpp"
+#include "crypto/KeyPair.hpp"
 
 #include <iostream>
 #include <stdexcept>
@@ -9,6 +10,8 @@
 
 namespace {
 
+using nodo::config::BootstrapValidatorConfig;
+using nodo::config::GenesisBuilder;
 using nodo::config::GenesisConfig;
 using nodo::config::NetworkParameters;
 using nodo::node::RuntimeAccountStateBuilder;
@@ -19,23 +22,33 @@ void require(bool condition, const std::string& msg) {
     if (!condition) throw std::runtime_error(msg);
 }
 
-// Build the minimal genesis config used by other tests in this suite.
 GenesisConfig minimalGenesisConfig() {
     return GenesisConfig(
         NetworkParameters::developmentLocal(),
         kNow,
-        {},
+        { BootstrapValidatorConfig(
+            nodo::crypto::KeyPair::createDeterministicBls12381KeyPair("ts-val").publicKey(),
+            1, 1, "ts-val-meta"
+          ) },
         "gap3-test"
     );
 }
 
+const nodo::core::Blockchain& genesisChain() {
+    static const GenesisConfig genesis = minimalGenesisConfig();
+    static const auto result = GenesisBuilder::build(genesis);
+    if (!result.built()) {
+        throw std::runtime_error("Genesis build failed in TimestampValidationTests");
+    }
+    return result.blockchain();
+}
+
 void testWallClockNowIsZeroByDefault() {
     const GenesisConfig genesis = minimalGenesisConfig();
-    const nodo::core::Blockchain chain;  // empty — genesis only
+    const nodo::core::Blockchain& chain = genesisChain();
 
     const auto context = RuntimeAccountStateBuilder::previewContextAtTip(
         genesis, chain, 0
-        // wallClockNow defaults to 0
     );
 
     require(context.wallClockNow() == 0,
@@ -44,7 +57,7 @@ void testWallClockNowIsZeroByDefault() {
 
 void testWallClockNowIsForwardedToContext() {
     const GenesisConfig genesis = minimalGenesisConfig();
-    const nodo::core::Blockchain chain;
+    const nodo::core::Blockchain& chain = genesisChain();
 
     const std::int64_t wallClock = kNow + 3600;
     const auto context = RuntimeAccountStateBuilder::previewContextAtTip(
@@ -57,7 +70,7 @@ void testWallClockNowIsForwardedToContext() {
 
 void testDifferentWallClockValuesProduceDifferentContexts() {
     const GenesisConfig genesis = minimalGenesisConfig();
-    const nodo::core::Blockchain chain;
+    const nodo::core::Blockchain& chain = genesisChain();
 
     const auto ctx0 = RuntimeAccountStateBuilder::previewContextAtTip(
         genesis, chain, 0, 0

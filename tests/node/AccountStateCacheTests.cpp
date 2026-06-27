@@ -1,5 +1,6 @@
 #include "config/NetworkParameters.hpp"
 #include "core/AccountStateView.hpp"
+#include "crypto/KeyPair.hpp"
 #include "node/NodeRuntime.hpp"
 #include "p2p/PeerMessage.hpp"
 
