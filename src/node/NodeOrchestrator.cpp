@@ -362,6 +362,7 @@ void NodeOrchestrator::tick(std::int64_t now) {
     // The account state view is served from the NodeRuntime cache: it is only
     // rebuilt when the chain tip height has changed since the last tick.
     core::StateTransitionPreviewContext announceValidationContext;
+    bool announceContextValid = true;
     try {
         announceValidationContext = core::StateTransitionPreviewContext(
             minFee,
@@ -372,16 +373,20 @@ void NodeOrchestrator::tick(std::int64_t now) {
             now
         );
     } catch (...) {
-        announceValidationContext = core::StateTransitionPreviewContext::structuralOnly(minFee);
+        announceContextValid = false;
     }
 
     // 3. Apply any incoming BLOCK_ANNOUNCE messages.
-    BlockAnnounceHandler::processInbox(
-        gossip,
-        m_runtime->mutableBlockchain(),
-        announceValidationContext,
-        now
-    );
+    if (announceContextValid) {
+        BlockAnnounceHandler::processInbox(
+            gossip,
+            m_runtime->mutableBlockchain(),
+            announceValidationContext,
+            now
+        );
+    } else {
+        gossip.drainInbox(p2p::NetworkMessageType::BLOCK_ANNOUNCE);
+    }
 
     // 4. Serve incoming BLOCK_REQUEST messages (fast-path sync).
     BlockSyncHandler::serveRequests(
@@ -444,28 +449,33 @@ void NodeOrchestrator::tick(std::int64_t now) {
     // applied so far in the batch. wallClockNow is captured so future-timestamp
     // drift is enforced even during sync. Each callback invalidates the cache so
     // the rebuilt view always matches the chain tip at the time of the call.
-    const std::size_t syncApplied = BlockSyncHandler::applyResponses(
-        gossip,
-        m_runtime->mutableBlockchain(),
-        [this, minFee, now](const core::Blockchain&) -> core::StateTransitionPreviewContext {
-            try {
-                m_runtime->invalidateAccountStateCache();
-                return core::StateTransitionPreviewContext(
-                    minFee,
-                    m_runtime->cachedAccountStateAtTip(minFee),
-                    false,
-                    true,
-                    "",
-                    now
-                );
-            } catch (...) {
-                return core::StateTransitionPreviewContext::structuralOnly(minFee);
-            }
-        },
-        m_runtime->finalizationRegistry(),
-        BlockSyncQcMode::QC_REQUIRED,
-        now
-    );
+    std::size_t syncApplied = 0;
+    try {
+        syncApplied = BlockSyncHandler::applyResponses(
+            gossip,
+            m_runtime->mutableBlockchain(),
+            [this, minFee, now](const core::Blockchain&) -> core::StateTransitionPreviewContext {
+                try {
+                    m_runtime->invalidateAccountStateCache();
+                    return core::StateTransitionPreviewContext(
+                        minFee,
+                        m_runtime->cachedAccountStateAtTip(minFee),
+                        false,
+                        true,
+                        "",
+                        now
+                    );
+                } catch (...) {
+                    throw std::runtime_error("State load failed, aborting block sync.");
+                }
+            },
+            m_runtime->finalizationRegistry(),
+            BlockSyncQcMode::QC_REQUIRED,
+            now
+        );
+    } catch (...) {
+        // Fail gracefully instead of bypassing consensus validation
+    }
 
     // Persist each block that was successfully synced via fast-path.
     // Also persist the QC record from the finalization registry — the
@@ -643,22 +653,27 @@ void NodeOrchestrator::tick(std::int64_t now) {
     // Only trust peers that have completed handshake (non-empty peerId and endpoint).
     // Cap the look-ahead window to guard against height-spoofing attacks.
     static constexpr std::uint64_t kMaxSyncLookAhead = 10000;
+    static std::int64_t lastFastSyncMs = 0;
     const std::uint64_t currentHeight =
         m_runtime->blockchain().empty() ? 0
         : m_runtime->blockchain().latestBlock().index();
     const auto peers = m_runtime->peerManager().peers();
-    for (const auto& peer : peers) {
-        if (peer.peerId().empty() || peer.endpoint().empty()) continue;
-        if (peer.latestKnownHeight() > currentHeight + kMaxSyncLookAhead) continue;
-        if (peer.latestKnownHeight() > currentHeight + 1) {
-            BlockSyncHandler::requestBlocks(
-                gossip,
-                m_config.localPeer().peerId(),
-                currentHeight + 1,
-                BlockSyncHandler::MAX_BLOCKS_PER_RESPONSE,
-                now
-            );
-            break;
+    
+    if (now - lastFastSyncMs >= 5) {
+        for (const auto& peer : peers) {
+            if (peer.peerId().empty() || peer.endpoint().empty()) continue;
+            if (peer.latestKnownHeight() > currentHeight + kMaxSyncLookAhead) continue;
+            if (peer.latestKnownHeight() > currentHeight + 1) {
+                BlockSyncHandler::requestBlocks(
+                    gossip,
+                    m_config.localPeer().peerId(),
+                    currentHeight + 1,
+                    BlockSyncHandler::MAX_BLOCKS_PER_RESPONSE,
+                    now
+                );
+                lastFastSyncMs = now;
+                break;
+            }
         }
     }
 }
