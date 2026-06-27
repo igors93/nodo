@@ -1,5 +1,8 @@
 #include "node/PersistentBlockStateSync.hpp"
 
+#include "consensus/BlockFinalizer.hpp"
+#include "consensus/QuorumCertificate.hpp"
+#include "consensus/ValidatorVoteRecord.hpp"
 #include "core/Block.hpp"
 #include "core/Blockchain.hpp"
 #include "core/LedgerRecord.hpp"
@@ -8,6 +11,7 @@
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
 #include "core/ValidatorRegistry.hpp"
+#include "crypto/AddressDerivation.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/Ed25519SignatureProvider.hpp"
@@ -118,6 +122,75 @@ core::Block buildBlockWithRealRoots(const core::Blockchain& blockchain, std::uin
         kTimestamp + 1,
         preview.stateRoot(),
         preview.receiptsRoot()
+    );
+}
+
+// ── QC helpers ────────────────────────────────────────────────────────────────
+
+std::string registerValidator(
+    core::ValidatorRegistry& registry,
+    const crypto::KeyPair& kp,
+    const std::string& seed
+) {
+    const std::string address =
+        crypto::AddressDerivation::deriveFromPublicKey(kp.publicKey()).value();
+    core::ValidatorRegistrationRecord rec(
+        address, kp.publicKey(), 1, "meta-" + seed, kTimestamp
+    );
+    requireCondition(
+        registry.registerValidator(rec).accepted(),
+        "registerValidator failed: " + seed
+    );
+    return address;
+}
+
+consensus::FinalizedBlockRecord buildFinalizedRecord(
+    const core::Block& block,
+    const crypto::KeyPair& validatorKp,
+    const core::ValidatorRegistry& registry
+) {
+    constexpr std::uint64_t kRound = 1;
+    const crypto::Bls12381SignatureProvider blsProvider;
+    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+    const std::string address =
+        crypto::AddressDerivation::deriveFromPublicKey(validatorKp.publicKey()).value();
+
+    const consensus::ValidatorVoteRecord vote =
+        consensus::ValidatorVoteRecord::createVote(
+            address,
+            validatorKp.publicKey(),
+            validatorKp.privateKeyForSigningOnly(),
+            block.index(),
+            block.hash(),
+            block.previousHash(),
+            kRound,
+            consensus::ValidatorVoteDecision::APPROVE,
+            "reason-" + block.hash(),
+            kTimestamp,
+            blsProvider
+        );
+
+    const consensus::QuorumCertificateBuildResult qcResult =
+        consensus::QuorumCertificateBuilder::buildFromVotes(
+            block.index(),
+            block.hash(),
+            block.previousHash(),
+            kRound,
+            {vote},
+            registry,
+            policy,
+            blsProvider
+        );
+
+    requireCondition(qcResult.certified(), "QC build failed: " + qcResult.reason());
+
+    return consensus::FinalizedBlockRecord(
+        block.index(),
+        block.hash(),
+        block.previousHash(),
+        kRound,
+        kTimestamp,
+        qcResult.certificate()
     );
 }
 
@@ -435,6 +508,77 @@ void testProtocolCommitmentStillAcceptsItemsWithoutFinalizedRecord() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Fast-path: accepts a valid QC record and advances the checkpoint
+// ---------------------------------------------------------------------------
+
+void testFastPathAcceptsValidQcRecord() {
+    // Build a validator and register it.
+    const crypto::KeyPair validatorKp =
+        crypto::KeyPair::createDeterministicBls12381KeyPair("psync-fast-path-val");
+    core::ValidatorRegistry registry;
+    registerValidator(registry, validatorKp, "psync-fast-path-val");
+
+    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+    const crypto::Bls12381SignatureProvider provider;
+
+    // Build a valid block with real state roots so the QC is over real data.
+    core::Blockchain blockchain = chainWithGenesis();
+    const core::Block goodBlock = buildBlockWithRealRoots(blockchain, 1);
+
+    // Build a structurally and cryptographically valid FinalizedBlockRecord.
+    const consensus::FinalizedBlockRecord record =
+        buildFinalizedRecord(goodBlock, validatorKp, registry);
+
+    requireCondition(
+        record.isStructurallyValid(),
+        "FinalizedBlockRecord must be structurally valid."
+    );
+
+    // Package it into a fast-path sync batch item.
+    const PersistentBlockSyncItem item(
+        goodBlock.index(),
+        goodBlock.hash(),
+        goodBlock.previousHash(),
+        goodBlock.serialize(),
+        goodBlock.stateRoot(),
+        kTimestamp + 1,
+        record.serialize()
+    );
+    const PersistentBlockSyncBatch batch(
+        "peer-fast-path",
+        goodBlock.index(),
+        goodBlock.index(),
+        {item},
+        kTimestamp + 2
+    );
+    const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
+
+    // Fast-path: no contextBuilder, no Blockchain mutation — relies on QC proof.
+    const PersistentSyncApplyResult result =
+        PersistentBlockStateSyncApplier::applyValidatedBatch(
+            checkpoint, batch, registry, policy, provider, kTimestamp + 3
+        );
+
+    requireCondition(
+        result.applied(),
+        "Fast-path must accept batch with a valid FinalizedBlockRecord. "
+        "Reason: " + result.reason()
+    );
+    requireCondition(
+        result.checkpoint().has_value(),
+        "Fast-path acceptance must return an advanced checkpoint."
+    );
+    requireCondition(
+        result.checkpoint()->finalizedHeight() == goodBlock.index(),
+        "Advanced checkpoint must be at the block's height."
+    );
+    requireCondition(
+        result.checkpoint()->finalizedBlockHash() == goodBlock.hash(),
+        "Advanced checkpoint must carry the block's hash."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -447,6 +591,7 @@ int main() {
         testFastPathRejectsMissingFinalizedRecord();
         testFastPathRejectsWhenAnyItemMissesFinalizedRecord();
         testProtocolCommitmentStillAcceptsItemsWithoutFinalizedRecord();
+        testFastPathAcceptsValidQcRecord();
 
         std::cout << "PersistentSync protocol validation tests passed.\n";
         return 0;

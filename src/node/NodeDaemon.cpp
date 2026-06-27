@@ -5,6 +5,7 @@
 #include "core/Block.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
 #include "node/BlockAnnounceHandler.hpp"
+#include "node/FinalizedBlockRecordStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/SignedBlockProposalMessage.hpp"
@@ -278,9 +279,20 @@ void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
             }
 
             // Record in the local finalization registry.
-            m_orchestrator.mutableRuntime()
+            const auto regResult = m_orchestrator.mutableRuntime()
                 .mutableFinalizationRegistry()
                 .registerFinalizedBlock(record);
+
+            // Persist to disk so BlockSyncQcMode::QC_REQUIRED works after
+            // restart and so sync responses to peers carry QC proofs.
+            if (regResult.registered()) {
+                try {
+                    FinalizedBlockRecordStore qcStore(
+                        m_config.orchestratorConfig.dataDirectory().rootPath()
+                    );
+                    qcStore.save(record);
+                } catch (...) {}
+            }
         } catch (...) {
             // Malformed artifact from peer — silently discard.
         }

@@ -7,6 +7,7 @@
 #include "crypto/Signer.hpp"
 #include "node/BlockAnnounceHandler.hpp"
 #include "node/BlockSyncHandler.hpp"
+#include "node/FinalizedBlockRecordStore.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/PeerHandshakeAutoRegistrar.hpp"
@@ -21,6 +22,7 @@
 #include <chrono>
 #include <filesystem>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -117,6 +119,20 @@ void persistFinalizedBlock(
     } catch (...) {}
 }
 
+// Persists a FinalizedBlockRecord (QC proof) for a finalized block to the
+// durable QC store. Called whenever a block is finalized — either by local
+// consensus or via gossip. Errors are swallowed: storage failures must not
+// crash the node.
+void persistFinalizedRecord(
+    const consensus::FinalizedBlockRecord& record,
+    const std::filesystem::path& dataRoot
+) {
+    try {
+        FinalizedBlockRecordStore qcStore(dataRoot);
+        qcStore.save(record);
+    } catch (...) {}
+}
+
 // Decode a canonical-hex gossip payload; returns std::nullopt if not in
 // canonical format or if hex decoding fails.
 std::optional<std::vector<unsigned char>> tryUnwrapCanonical(
@@ -135,9 +151,12 @@ std::optional<std::vector<unsigned char>> tryUnwrapCanonical(
 }
 
 // Build a PersistentBlockSyncBatch from [fromHeight, fromHeight+maxItems) of the
-// local chain, so we can respond to BLOCK_SYNC_REQUEST messages from peers.
+// local chain. When a durable QC record exists for a block, it is embedded in
+// the batch item so the receiver can perform fast-path QC-required sync without
+// needing to recompute the state root from scratch.
 PersistentBlockSyncBatch buildSyncResponseBatch(
     const core::Blockchain& blockchain,
+    const FinalizedBlockRecordStore& qcStore,
     const std::string& localPeerId,
     std::uint64_t fromHeight,
     std::uint64_t maxItems,
@@ -148,6 +167,11 @@ PersistentBlockSyncBatch buildSyncResponseBatch(
     for (const auto& block : blockchain.blocks()) {
         if (block.index() < fromHeight) continue;
         if (items.size() >= static_cast<std::size_t>(maxItems)) break;
+
+        const auto qcOpt = qcStore.load(block.index());
+        const std::string serializedQc =
+            qcOpt.has_value() ? qcOpt->serialize() : "";
+
         items.emplace_back(
             block.index(),
             block.hash(),
@@ -156,7 +180,8 @@ PersistentBlockSyncBatch buildSyncResponseBatch(
             block.hasCanonicalStateRoot()
                 ? block.stateRoot()
                 : "height-" + std::to_string(block.index()),
-            now
+            now,
+            serializedQc
         );
     }
     if (items.empty()) return PersistentBlockSyncBatch{};
@@ -379,8 +404,12 @@ void NodeOrchestrator::tick(std::int64_t now) {
                     req.locator().maxBlocks(),
                     static_cast<std::uint64_t>(BlockSyncHandler::MAX_BLOCKS_PER_RESPONSE)
                 );
+                const FinalizedBlockRecordStore qcStoreForResponse(
+                    m_config.dataDirectory().rootPath()
+                );
                 const PersistentBlockSyncBatch batch = buildSyncResponseBatch(
                     m_runtime->blockchain(),
+                    qcStoreForResponse,
                     m_config.localPeer().peerId(),
                     req.locator().fromHeight(),
                     maxItems,
@@ -422,7 +451,10 @@ void NodeOrchestrator::tick(std::int64_t now) {
     );
 
     // Persist each block that was successfully synced via fast-path.
+    // Also persist the QC record from the finalization registry — the
+    // QC_REQUIRED mode already verified these records before applying.
     if (syncApplied > 0 && !m_runtime->blockchain().empty()) {
+        const FinalizedBlockRecordStore qcStore(m_config.dataDirectory().rootPath());
         const auto& allBlocks = m_runtime->blockchain().blocks();
         const std::uint64_t newHeight = m_runtime->blockchain().latestBlock().index();
         const std::uint64_t firstSynced =
@@ -437,6 +469,11 @@ void NodeOrchestrator::tick(std::int64_t now) {
                     "sync",
                     now
                 );
+                const auto* rec =
+                    m_runtime->finalizationRegistry().recordForHeight(b.index());
+                if (rec != nullptr) {
+                    persistFinalizedRecord(*rec, m_config.dataDirectory().rootPath());
+                }
             }
         }
     }
@@ -492,7 +529,20 @@ void NodeOrchestrator::tick(std::int64_t now) {
                     );
 
                 if (applyResult.applied()) {
-                    // Persist each block from the applied batch.
+                    // Build a height→serializedQc lookup from batch items that
+                    // carry a FinalizedBlockRecord so we can persist the QC
+                    // alongside each block without searching the batch twice.
+                    std::map<std::uint64_t, std::string> serializedQcByHeight;
+                    for (const auto& item : batch.items()) {
+                        if (!item.serializedFinalizedRecord().empty()) {
+                            serializedQcByHeight[item.height()] =
+                                item.serializedFinalizedRecord();
+                        }
+                    }
+
+                    const FinalizedBlockRecordStore qcStore(
+                        m_config.dataDirectory().rootPath()
+                    );
                     const auto& allBlocks = m_runtime->blockchain().blocks();
                     for (const auto& b : allBlocks) {
                         if (b.index() >= batch.fromHeight() &&
@@ -503,6 +553,19 @@ void NodeOrchestrator::tick(std::int64_t now) {
                                 batch.sourcePeerId(),
                                 now
                             );
+                            const auto it = serializedQcByHeight.find(b.index());
+                            if (it != serializedQcByHeight.end()) {
+                                try {
+                                    const auto rec =
+                                        consensus::FinalizedBlockRecord::deserialize(
+                                            it->second
+                                        );
+                                    persistFinalizedRecord(
+                                        rec,
+                                        m_config.dataDirectory().rootPath()
+                                    );
+                                } catch (...) {}
+                            }
                         }
                     }
                 }
@@ -686,6 +749,16 @@ NodeOrchestratorStartResult NodeOrchestrator::initOrLoad() {
         m_runtime = std::make_unique<NodeRuntime>(std::move(loadResult.runtime()));
     }
 
+    // Restore durable QC records into the finalization registry so
+    // BlockSyncQcMode::QC_REQUIRED works correctly after restart and peers
+    // requesting sync via BLOCK_SYNC_REQUEST receive batches with QC proofs.
+    {
+        FinalizedBlockRecordStore qcStore(m_config.dataDirectory().rootPath());
+        for (const auto& rec : qcStore.loadAll()) {
+            m_runtime->mutableFinalizationRegistry().registerFinalizedBlock(rec);
+        }
+    }
+
     NodeOrchestratorStartResult result;
     result.status       = NodeOrchestratorStartStatus::RUNNING;
     result.freshGenesis = freshGenesis;
@@ -803,8 +876,9 @@ bool NodeOrchestrator::startConsensus() {
     // Wire the evidence pool for double-vote detection.
     m_consensusLoop->setEvidencePool(&m_evidencePool);
 
-    // Wire a finalized-block callback that broadcasts the block to peers and
-    // persists it to disk (BlockFileStore + PersistentSyncCheckpoint).
+    // Wire a finalized-block callback that broadcasts the block to peers,
+    // persists it to disk (BlockFileStore + PersistentSyncCheckpoint), and
+    // saves the QC record so peers that sync from this node can verify finality.
     m_consensusLoop->setFinalizedCallback(
         [this](const consensus::FinalizedBlockRecord& rec) {
             if (!m_tcpRuntime || m_runtime->blockchain().empty()) return;
@@ -829,6 +903,8 @@ bool NodeOrchestrator::startConsensus() {
                 m_config.localPeer().peerId(),
                 now
             );
+
+            persistFinalizedRecord(rec, m_config.dataDirectory().rootPath());
         }
     );
 
