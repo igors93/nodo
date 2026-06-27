@@ -35,6 +35,7 @@
 namespace nodo::node {
 
 class RuntimeBlockPipeline;
+class NodeDataDirectoryConfig;
 
 /*
  * RuntimeBlockPipelineConfig controls one local block production/finalization
@@ -80,7 +81,8 @@ enum class RuntimeBlockPipelineStatus {
     NOT_ENOUGH_VALIDATORS,
     VOTE_BUILD_FAILED,
     QUORUM_BUILD_FAILED,
-    FINALIZATION_FAILED
+    FINALIZATION_FAILED,
+    PERSISTENCE_FAILED
 };
 
 std::string runtimeBlockPipelineStatusToString(
@@ -548,20 +550,31 @@ private:
 };
 
 /*
- * RuntimeBlockPipeline connects the local pieces already implemented:
+ * RuntimeBlockPipeline owns the canonical post-quorum state transition:
  *
- *   Mempool -> MempoolBlockProducer -> Validator votes -> QuorumCertificate
- *   -> BlockFinalizer -> mempool cleanup.
- *
- * This is still a local runtime pipeline. P2P propagation and remote validator
- * networking are intentionally outside this class.
+ *   certified block -> state/economics/governance -> finality -> persistence.
+ * Local production and distributed consensus both converge on this operation.
  */
 class RuntimeBlockPipeline {
 public:
+    /*
+     * Apply every deterministic post-quorum effect as one transaction.
+     * The live runtime is replaced only after state validation and optional
+     * durable persistence both succeed.
+     */
+    static RuntimeBlockPipelineResult commitCertifiedBlock(
+        NodeRuntime& runtime,
+        const core::Block& block,
+        const consensus::QuorumCertificate& certificate,
+        std::int64_t finalizedAt,
+        const NodeDataDirectoryConfig* directoryConfig = nullptr
+    );
+
     static RuntimeBlockPipelineResult produceAndFinalizeNextBlock(
         NodeRuntime& runtime,
         const RuntimeBlockPipelineConfig& config,
-        const crypto::Signer& localValidatorSigner
+        const crypto::Signer& localValidatorSigner,
+        const NodeDataDirectoryConfig* directoryConfig = nullptr
     );
 
 private:
@@ -576,6 +589,13 @@ private:
     static void removeFinalizedTransactionsFromMempool(
         NodeRuntime& runtime,
         const std::vector<std::string>& transactionIds
+    );
+
+    static RuntimeBlockPipelineResult applyCertifiedBlock(
+        NodeRuntime& runtime,
+        const core::Block& block,
+        const consensus::QuorumCertificate& certificate,
+        std::int64_t finalizedAt
     );
 };
 

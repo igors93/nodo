@@ -10,6 +10,10 @@
 #include <cstdint>
 #include <string>
 
+namespace nodo::node {
+class NodeDataDirectoryConfig;
+}
+
 namespace nodo::consensus {
 
 struct BlockFinalizationPhaseResult {
@@ -81,7 +85,8 @@ public:
         std::uint64_t                    round,
         const crypto::CryptoPolicy&      policy,
         const crypto::SignatureProvider& provider,
-        std::int64_t                     now
+        std::int64_t                     now,
+        const node::NodeDataDirectoryConfig* directoryConfig = nullptr
     );
 };
 

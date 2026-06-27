@@ -107,7 +107,7 @@ void DiscoveryService::addPeer(
     std::uint16_t tcpPort,
     std::uint16_t udpPort
 ) {
-    if (peerId == m_localNodeId || peerId.empty()) {
+    if (peerId == m_localNodeId || peerId.empty() || host.empty() || tcpPort == 0 || udpPort == 0) {
         return;
     }
 
@@ -194,9 +194,13 @@ void DiscoveryService::bootstrap(
         std::uint16_t seedUdpPort = seed.second.second;
 
         try {
-            asio::ip::udp::endpoint ep(asio::ip::make_address(seedHost), seedUdpPort);
-            sendPing(ep);
-            sendFindNode(ep, m_localNodeId);
+            asio::ip::udp::resolver resolver(m_ioContext);
+            auto endpoints = resolver.resolve(seedHost, std::to_string(seedUdpPort));
+            for (auto ep : endpoints) {
+                sendPing(ep.endpoint());
+                sendFindNode(ep.endpoint(), m_localNodeId);
+                break; // Use the first resolved address
+            }
         } catch (...) {
             // Ignore resolution/endpoint parsing exceptions during bootstrap
         }
@@ -288,6 +292,7 @@ void DiscoveryService::handleReceive(const asio::error_code& ec, std::size_t byt
 }
 
 void DiscoveryService::sendPing(const asio::ip::udp::endpoint& endpoint) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_socket) return;
     std::ostringstream oss;
     oss << "KADEMLIA_MSG{"
@@ -301,6 +306,7 @@ void DiscoveryService::sendPing(const asio::ip::udp::endpoint& endpoint) {
 }
 
 void DiscoveryService::sendPong(const asio::ip::udp::endpoint& endpoint) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_socket) return;
     std::ostringstream oss;
     oss << "KADEMLIA_MSG{"
@@ -314,6 +320,7 @@ void DiscoveryService::sendPong(const asio::ip::udp::endpoint& endpoint) {
 }
 
 void DiscoveryService::sendFindNode(const asio::ip::udp::endpoint& endpoint, const std::string& targetId) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_socket) return;
     std::ostringstream oss;
     oss << "KADEMLIA_MSG{"
@@ -328,6 +335,7 @@ void DiscoveryService::sendFindNode(const asio::ip::udp::endpoint& endpoint, con
 }
 
 void DiscoveryService::sendNeighbors(const asio::ip::udp::endpoint& endpoint, const std::vector<DiscoveryPeerInfo>& neighbors) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_socket) return;
     std::ostringstream oss;
     oss << "KADEMLIA_MSG{"

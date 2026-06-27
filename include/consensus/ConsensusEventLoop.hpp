@@ -143,6 +143,11 @@ public:
      */
     void setRecoveryPath(std::filesystem::path path);
 
+    // Enable the same durable canonical commit used by the local CLI path.
+    void setDataDirectoryConfig(
+        const node::NodeDataDirectoryConfig* directoryConfig
+    );
+
     /*
      * Start the background consensus thread.
      * No-op if already running.
@@ -207,6 +212,7 @@ private:
     std::optional<PendingBlockCandidate> m_pendingCandidate;
 
     std::optional<std::filesystem::path> m_recoveryPath;
+    const node::NodeDataDirectoryConfig* m_dataDirectoryConfig = nullptr;
 
     std::atomic<bool> m_running;
     std::thread       m_thread;

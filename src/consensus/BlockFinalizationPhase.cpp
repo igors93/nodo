@@ -1,5 +1,7 @@
 #include "consensus/BlockFinalizationPhase.hpp"
 
+#include "node/RuntimeBlockPipeline.hpp"
+
 #include "consensus/NetworkVoteCollector.hpp"
 #include "consensus/QuorumCertificate.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
@@ -18,7 +20,8 @@ BlockFinalizationPhaseResult BlockFinalizationPhase::tryFinalize(
     std::uint64_t                    round,
     const crypto::CryptoPolicy&      policy,
     const crypto::SignatureProvider& provider,
-    std::int64_t                     now
+    std::int64_t                     now,
+    const node::NodeDataDirectoryConfig* directoryConfig
 ) {
     // Skip if already finalized at this height.
     if (runtime.finalizationRegistry().hasFinalizedHeight(blockIndex)) {
@@ -61,26 +64,20 @@ BlockFinalizationPhaseResult BlockFinalizationPhase::tryFinalize(
         return BlockFinalizationPhaseResult::notEnoughVotes();
     }
 
-    BlockFinalizationResult finResult = BlockFinalizer::finalizeBlock(
-        runtime.mutableBlockchain(),
+    const node::RuntimeBlockPipelineResult commitResult =
+        node::RuntimeBlockPipeline::commitCertifiedBlock(
+        runtime,
         block,
         qcResult.certificate(),
-        runtime.validatorRegistry(),
-        runtime.mutableFinalizationRegistry(),
-        policy,
-        provider,
-        now
+        now,
+        directoryConfig
     );
 
-    if (finResult.duplicate()) {
-        return BlockFinalizationPhaseResult::failed("Duplicate finalization.");
+    if (!commitResult.finalized()) {
+        return BlockFinalizationPhaseResult::failed(commitResult.reason());
     }
 
-    if (!finResult.success()) {
-        return BlockFinalizationPhaseResult::failed(finResult.reason());
-    }
-
-    return BlockFinalizationPhaseResult::ok(finResult.record());
+    return BlockFinalizationPhaseResult::ok(commitResult.finalizedRecord());
 }
 
 } // namespace nodo::consensus

@@ -8,7 +8,6 @@
 #include "node/BlockAnnounceHandler.hpp"
 #include "node/BlockSyncHandler.hpp"
 #include "node/FinalizedBlockRecordStore.hpp"
-#include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/PeerHandshakeAutoRegistrar.hpp"
 #include "node/PersistentBlockStateSync.hpp"
@@ -978,6 +977,7 @@ bool NodeOrchestrator::startConsensus() {
     const std::filesystem::path recoveryPath =
         m_config.dataDirectory().consensusRecoveryPath();
     m_consensusLoop->setRecoveryPath(recoveryPath);
+    m_consensusLoop->setDataDirectoryConfig(&m_config.dataDirectory());
 
     // Restore lock/vote state from disk so we don't double-vote after restart.
     const auto recoveryState =
@@ -1002,8 +1002,9 @@ bool NodeOrchestrator::startConsensus() {
     m_consensusLoop->setEvidencePool(&m_evidencePool);
 
     // Wire a finalized-block callback that broadcasts the block to peers,
-    // persists it to disk (BlockFileStore + PersistentSyncCheckpoint), and
-    // saves the QC record so peers that sync from this node can verify finality.
+    // announces it and saves a derived QC index for sync. The authoritative
+    // block artifact and runtime manifest are already committed atomically by
+    // RuntimeBlockPipeline before this callback runs.
     m_consensusLoop->setFinalizedCallback(
         [this](const consensus::FinalizedBlockRecord& rec) {
             if (!m_tcpRuntime || m_runtime->blockchain().empty()) return;
@@ -1019,13 +1020,6 @@ bool NodeOrchestrator::startConsensus() {
             BlockAnnounceHandler::broadcastBlock(
                 block,
                 m_tcpRuntime->gossipMesh(),
-                now
-            );
-
-            persistFinalizedBlock(
-                block,
-                m_config.dataDirectory().rootPath(),
-                m_config.localPeer().peerId(),
                 now
             );
 

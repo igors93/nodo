@@ -24,7 +24,6 @@
 #include "node/ChainAuditResult.hpp"
 #include "node/EpochTreasuryReportStore.hpp"
 #include "node/FinalizedBlockArtifactCodec.hpp"
-#include "node/FinalizedBlockStore.hpp"
 #include "node/FinalizedTreasuryAudit.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/NodeDataDirectory.hpp"
@@ -1777,7 +1776,8 @@ CommandLineResult CommandLineInterface::executeSubmitTransaction(
                 nonce,
                 options.timestamp + 10
             ),
-            signer
+            signer,
+            &directoryConfig
         );
 
     const node::TransactionAdmissionResult admission =
@@ -1936,23 +1936,6 @@ CommandLineResult CommandLineInterface::executeProduceBlock(
             CommandLineStatus::COMMAND_FAILED,
             "Failed to produce finalized block: "
             + pipeline.reason()
-            + "\n"
-        );
-    }
-
-    const node::FinalizedBlockStoreResult persistedBlock =
-        node::FinalizedBlockStore::persist(
-            directoryConfig,
-            runtime,
-            pipeline,
-            options.timestamp + 30
-        );
-
-    if (!persistedBlock.success()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to persist finalized block: "
-            + persistedBlock.reason()
             + "\n"
         );
     }

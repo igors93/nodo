@@ -1,6 +1,7 @@
 #include "node/RuntimeBlockPipeline.hpp"
 
 #include "node/FeeEconomics.hpp"
+#include "node/FinalizedBlockStore.hpp"
 #include "node/RuntimeMonetaryValidation.hpp"
 #include "node/StateSnapshot.hpp"
 #include "node/ValidatorLifecycle.hpp"
@@ -547,6 +548,8 @@ std::string runtimeBlockPipelineStatusToString(
             return "QUORUM_BUILD_FAILED";
         case RuntimeBlockPipelineStatus::FINALIZATION_FAILED:
             return "FINALIZATION_FAILED";
+        case RuntimeBlockPipelineStatus::PERSISTENCE_FAILED:
+            return "PERSISTENCE_FAILED";
         default:
             return "FINALIZATION_FAILED";
     }
@@ -1708,10 +1711,465 @@ std::string RuntimeBlockPipelineResult::serialize() const {
     return oss.str();
 }
 
+RuntimeBlockPipelineResult RuntimeBlockPipeline::commitCertifiedBlock(
+    NodeRuntime& runtime,
+    const core::Block& block,
+    const consensus::QuorumCertificate& certificate,
+    std::int64_t finalizedAt,
+    const NodeDataDirectoryConfig* directoryConfig
+) {
+    NodeRuntime stagedRuntime = runtime;
+    RuntimeBlockPipelineResult result = applyCertifiedBlock(
+        stagedRuntime,
+        block,
+        certificate,
+        finalizedAt
+    );
+
+    if (!result.finalized()) {
+        return result;
+    }
+
+    if (directoryConfig != nullptr) {
+        const FinalizedBlockStoreResult persisted = FinalizedBlockStore::persist(
+            *directoryConfig,
+            stagedRuntime,
+            result,
+            finalizedAt
+        );
+
+        if (!persisted.success()) {
+            return RuntimeBlockPipelineResult::rejected(
+                RuntimeBlockPipelineStatus::PERSISTENCE_FAILED,
+                "Canonical block persistence failed: " + persisted.reason()
+            );
+        }
+    }
+
+    runtime = std::move(stagedRuntime);
+    return result;
+}
+
+RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
+    NodeRuntime& runtime,
+    const core::Block& block,
+    const consensus::QuorumCertificate& certificate,
+    std::int64_t finalizedAt
+) {
+    if (!runtime.isValid()) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::INVALID_RUNTIME,
+            "Node runtime is invalid."
+        );
+    }
+
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::fromNetworkName(
+            runtime.config().genesisConfig().networkParameters().networkName()
+        );
+
+    if (!cryptoContext.isValid()) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::INVALID_CONFIG,
+            "Protocol crypto context is invalid: " + cryptoContext.rejectionReason()
+        );
+    }
+
+    core::BlockValidationResult transitionValidation;
+    try {
+        transitionValidation =
+            core::BlockStateTransitionValidator::validateCandidateBlock(
+                runtime.blockchain(),
+                block,
+                previewContextForRuntime(runtime)
+            );
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            error.what()
+        );
+    }
+
+    if (!transitionValidation.accepted()) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            transitionValidation.reason()
+        );
+    }
+
+    const FeeEconomicBalance preMintFeeBalance =
+        FeeEconomics::buildFeeEconomicBalance(
+            block.index(),
+            transitionValidation.totalFee()
+        );
+    const RuntimeMonetaryValidationResult monetaryValidationResult =
+        RuntimeMonetaryValidation::validateCandidate(
+            runtime.config().genesisConfig(),
+            block,
+            preMintFeeBalance.burnAmount(),
+            runtime.supplyState().latestSupply()
+        );
+
+    if (!monetaryValidationResult.isAccepted()) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::MONETARY_VALIDATION_FAILED,
+            "Monetary gate rejected certified block: "
+                + monetaryValidationResult.reason()
+        );
+    }
+
+    std::vector<RewardDistribution> rewardDistributions;
+    std::vector<LockedStakePosition> lockedStakePositions;
+    std::vector<SecurityScoreRecord> securityScoreRecords;
+    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints;
+    std::vector<ValidatorRiskAssessment> validatorRiskAssessments;
+    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions;
+    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies;
+    MonetaryFirewallAudit monetaryFirewallAudit;
+    GenesisTreasurySnapshot genesisTreasurySnapshot;
+    ProtectionRewardBudget protectionRewardBudget;
+    std::vector<ProtectionRewardGrant> protectionRewardGrants;
+    std::vector<ProtectionWorkRecord> protectionWorkRecords;
+    ProtectionRewardSummary protectionRewardSummary;
+    std::vector<ProtectionRewardSettlement> protectionRewardSettlements;
+    InflationEpochSnapshot inflationEpochSnapshot;
+    MintAuthorizationRecord mintAuthorizationRecord;
+    SupplyExpansionRecord supplyExpansionRecord;
+    FeeEconomicBalance feeEconomicBalance;
+    FeeBurnRecord feeBurnRecord;
+    TreasuryFeeRecord treasuryFeeRecord;
+    std::vector<SlashingEvidenceRecord> slashingEvidenceRecords;
+    std::vector<SlashingPreparationRecord> slashingPreparationRecords;
+    SlashingEvidenceSummary slashingEvidenceSummary;
+    std::vector<CryptographicSlashingEvidenceRecord>
+        cryptographicSlashingEvidenceRecords;
+    std::vector<StakePenaltyRecord> stakePenaltyRecords;
+    CryptographicSlashingSummary cryptographicSlashingSummary;
+    GovernancePolicySnapshot governancePolicySnapshot;
+    std::vector<GovernanceActionGuard> governanceActionGuards;
+    GovernanceSummary governanceSummary;
+
+    try {
+        feeEconomicBalance = FeeEconomics::buildFeeEconomicBalance(
+            block.index(), transitionValidation.totalFee()
+        );
+        rewardDistributions =
+            RewardDistributionCalculator::buildFromQuorumCertificate(
+                feeEconomicBalance.validatorRewardAmount(),
+                certificate,
+                block.index()
+            );
+        lockedStakePositions =
+            LockedStakePositionBuilder::buildFromRewardDistributions(
+                rewardDistributions
+            );
+        securityScoreRecords =
+            SecurityScoreCalculator::buildFromLockedStakePositions(
+                lockedStakePositions, block.index()
+            );
+        securityCheckpoints =
+            ValidatorSecurityCheckpointBuilder::buildFromSecurityScores(
+                securityScoreRecords, lockedStakePositions, block.index()
+            );
+        validatorRiskAssessments =
+            ValidatorRiskAssessmentBuilder::buildFromCheckpoints(
+                securityCheckpoints
+            );
+        validatorContainmentDecisions =
+            ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(
+                validatorRiskAssessments
+            );
+        validatorNetworkPolicies =
+            ValidatorNetworkPolicyBuilder::buildFromContainmentDecisions(
+                validatorContainmentDecisions
+            );
+        feeBurnRecord = FeeEconomics::buildFeeBurnRecord(
+            feeEconomicBalance,
+            monetaryValidationResult.supplyDelta().supplyBefore()
+        );
+        treasuryFeeRecord =
+            FeeEconomics::buildTreasuryFeeRecord(feeEconomicBalance);
+        monetaryFirewallAudit =
+            MonetaryFirewall::buildAuditWithSupplyBefore(
+                block.index(),
+                monetaryValidationResult.supplyDelta().supplyBefore(),
+                utils::Amount(),
+                feeBurnRecord.burnAmount(),
+                treasuryFeeRecord.treasuryAmount(),
+                utils::Amount()
+            );
+
+        if (!monetaryFirewallAudit.passed()) {
+            throw std::runtime_error("Monetary firewall audit did not pass.");
+        }
+
+        genesisTreasurySnapshot =
+            ProtectionTreasury::buildGenesisTreasurySnapshot(
+                runtime.config().genesisConfig(),
+                block.index(),
+                treasuryFeeRecord.treasuryAmount()
+            );
+        protectionRewardBudget =
+            ProtectionTreasury::buildProtectionRewardBudget(
+                genesisTreasurySnapshot, rewardDistributions
+            );
+        protectionRewardGrants =
+            ProtectionTreasury::buildProtectionRewardGrants(
+                protectionRewardBudget,
+                rewardDistributions,
+                securityScoreRecords
+            );
+        protectionWorkRecords = ProtectionRewards::buildWorkRecords(
+            protectionRewardGrants,
+            securityScoreRecords,
+            validatorRiskAssessments,
+            validatorNetworkPolicies
+        );
+        protectionRewardSettlements = ProtectionRewards::buildSettlements(
+            protectionRewardGrants, protectionWorkRecords
+        );
+        protectionRewardSummary = ProtectionRewards::buildSummary(
+            protectionRewardBudget, protectionRewardSettlements
+        );
+        inflationEpochSnapshot =
+            ControlledIssuance::buildInflationEpochSnapshot(
+                runtime.config().genesisConfig(),
+                block.index(),
+                monetaryFirewallAudit.annualMintUsedAfter()
+            );
+        mintAuthorizationRecord =
+            ControlledIssuance::buildNoMintAuthorization(
+                inflationEpochSnapshot
+            );
+        supplyExpansionRecord =
+            ControlledIssuance::buildNoSupplyExpansion(
+                mintAuthorizationRecord, inflationEpochSnapshot
+            );
+        slashingEvidenceRecords = SlashingEvidence::buildEvidenceRecords(
+            validatorRiskAssessments,
+            validatorNetworkPolicies,
+            protectionWorkRecords
+        );
+        slashingPreparationRecords =
+            SlashingEvidence::buildPreparationRecords(
+                slashingEvidenceRecords, lockedStakePositions
+            );
+        slashingEvidenceSummary = SlashingEvidence::buildSummary(
+            block.index(),
+            slashingEvidenceRecords,
+            slashingPreparationRecords
+        );
+        cryptographicSlashingEvidenceRecords =
+            CryptographicSlashing::buildEvidenceRecordsFromCertifiedVotes(
+                certificate.votes()
+            );
+        stakePenaltyRecords =
+            CryptographicSlashing::buildStakePenaltyRecords(
+                cryptographicSlashingEvidenceRecords,
+                lockedStakePositions
+            );
+        cryptographicSlashingSummary = CryptographicSlashing::buildSummary(
+            block.index(),
+            cryptographicSlashingEvidenceRecords,
+            stakePenaltyRecords
+        );
+        governancePolicySnapshot =
+            Governance::buildPolicySnapshot(block.index());
+        governanceActionGuards =
+            Governance::buildActionGuards(governancePolicySnapshot);
+        governanceSummary = Governance::buildSummary(
+            block.index(), governanceActionGuards
+        );
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            std::string("Economic accounting failed: ") + error.what()
+        );
+    }
+
+    try {
+        RuntimeSupplyState supplyStateProbe = runtime.supplyState();
+        supplyStateProbe.applyFinalizedDelta(
+            monetaryValidationResult.supplyDelta()
+        );
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            std::string("Supply continuity check failed: ") + error.what()
+        );
+    }
+
+    const consensus::BlockFinalizationResult finalization =
+        consensus::BlockFinalizer::finalizeBlock(
+            runtime.mutableBlockchain(),
+            block,
+            certificate,
+            runtime.validatorRegistry(),
+            runtime.mutableFinalizationRegistry(),
+            cryptoContext.policy(),
+            cryptoContext.signatureProvider(),
+            finalizedAt
+        );
+
+    if (!finalization.finalized()) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::FINALIZATION_FAILED,
+            finalization.duplicate()
+                ? "Certified block was already finalized."
+                : finalization.reason()
+        );
+    }
+
+    std::vector<std::string> finalizedTransactionIds;
+    for (const core::LedgerRecord& record : block.records()) {
+        if (record.type() == core::LedgerRecordType::TRANSACTION) {
+            finalizedTransactionIds.push_back(record.sourceId());
+        }
+    }
+
+    RuntimeBlockPipelineResult finalResult =
+        RuntimeBlockPipelineResult::finalized(
+            block,
+            certificate,
+            finalization.record(),
+            finalizedTransactionIds,
+            transitionValidation.stateRoot(),
+            transitionValidation.totalFee(),
+            rewardDistributions,
+            lockedStakePositions,
+            securityScoreRecords,
+            securityCheckpoints,
+            validatorRiskAssessments,
+            validatorContainmentDecisions,
+            validatorNetworkPolicies,
+            monetaryFirewallAudit,
+            genesisTreasurySnapshot,
+            protectionRewardBudget,
+            protectionRewardGrants,
+            protectionWorkRecords,
+            protectionRewardSummary,
+            protectionRewardSettlements,
+            inflationEpochSnapshot,
+            mintAuthorizationRecord,
+            supplyExpansionRecord,
+            feeEconomicBalance,
+            feeBurnRecord,
+            treasuryFeeRecord,
+            slashingEvidenceRecords,
+            slashingPreparationRecords,
+            slashingEvidenceSummary,
+            cryptographicSlashingEvidenceRecords,
+            stakePenaltyRecords,
+            cryptographicSlashingSummary,
+            governancePolicySnapshot,
+            governanceActionGuards,
+            governanceSummary,
+            monetaryValidationResult.supplyDelta()
+        );
+
+    try {
+        runtime.mutableSupplyState().applyFinalizedDelta(
+            monetaryValidationResult.supplyDelta()
+        );
+        removeFinalizedTransactionsFromMempool(
+            runtime, finalizedTransactionIds
+        );
+        runtime.applyGovernanceFromBlock(block, finalizedAt);
+        runtime.invalidateAccountStateCache();
+
+        finalResult.m_receiptsRoot = transitionValidation.receiptsRoot();
+
+        if (!finalResult.postStateRoot().empty()) {
+            runtime.mutableStatePruner().recordStateRoot(
+                block.index(), finalResult.postStateRoot()
+            );
+            runtime.mutableStatePruner().pruneHistory(block.index());
+        }
+
+        if (block.index() > 0 &&
+            block.index() % NODO_VALIDATOR_EPOCH_BLOCKS == 0) {
+            const std::uint64_t currentEpoch =
+                ValidatorLifecycle::epochIndexForBlock(block.index());
+            const std::int64_t boundaryTimestamp = finalizedAt + 1;
+
+            for (const std::string& address :
+                 runtime.validatorRegistry().pendingValidatorAddresses()) {
+                const core::ValidatorRegistryEntry* entry =
+                    runtime.validatorRegistry().entryForAddress(address);
+                if (entry != nullptr &&
+                    entry->registrationRecord().activationEpoch()
+                        <= currentEpoch) {
+                    runtime.mutableValidatorRegistry().activateValidator(
+                        address, currentEpoch, boundaryTimestamp
+                    );
+                }
+            }
+
+            for (const std::string& address :
+                 runtime.validatorRegistry()
+                     .exitRequestedValidatorAddresses()) {
+                const core::ValidatorRegistryEntry* entry =
+                    runtime.validatorRegistry().entryForAddress(address);
+                if (entry != nullptr &&
+                    entry->exitRequestHeight()
+                            + NODO_VALIDATOR_EPOCH_BLOCKS
+                        <= block.index()) {
+                    runtime.mutableValidatorRegistry().completeExit(
+                        address, boundaryTimestamp
+                    );
+                }
+            }
+
+            try {
+                const core::StateTransitionPreviewContext snapshotContext =
+                    previewContextForRuntime(runtime);
+                const StateSnapshot epochSnapshot = StateSnapshot::create(
+                    block.index(),
+                    block.hash(),
+                    snapshotContext.accountStateView(),
+                    runtime.validatorRegistry(),
+                    block.records(),
+                    boundaryTimestamp
+                );
+                finalResult.m_snapshotDigest =
+                    epochSnapshot.canonicalDigest();
+            } catch (...) {
+                // The canonical state remains valid without this derived cache.
+            }
+        }
+
+        constexpr std::uint64_t nextRound = 1;
+        const std::uint64_t nextHeight = block.index() + 1;
+        const std::string nextProposer =
+            consensus::ProposerSchedule::selectProposer(
+                runtime.validatorRegistry(),
+                runtime.config().genesisConfig().networkParameters().chainId(),
+                nextHeight,
+                nextRound
+            );
+        runtime.mutableConsensusRoundManager().advanceToHeight(
+            nextHeight,
+            nextRound,
+            nextProposer,
+            finalizedAt + 1,
+            runtime.config().genesisConfig().networkParameters()
+                .targetBlockTimeSeconds()
+        );
+    } catch (const std::exception& error) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            std::string("Canonical post-quorum commit failed: ") + error.what()
+        );
+    }
+
+    return finalResult;
+}
+
 RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     NodeRuntime& runtime,
     const RuntimeBlockPipelineConfig& config,
-    const crypto::Signer& localValidatorSigner
+    const crypto::Signer& localValidatorSigner,
+    const NodeDataDirectoryConfig* directoryConfig
 ) {
     if (!config.isValid()) {
         return RuntimeBlockPipelineResult::rejected(
@@ -1906,435 +2364,13 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         );
     }
 
-    std::vector<RewardDistribution> rewardDistributions;
-    std::vector<LockedStakePosition> lockedStakePositions;
-    std::vector<SecurityScoreRecord> securityScoreRecords;
-    std::vector<ValidatorSecurityCheckpoint> securityCheckpoints;
-    std::vector<ValidatorRiskAssessment> validatorRiskAssessments;
-    std::vector<ValidatorContainmentDecision> validatorContainmentDecisions;
-    std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies;
-    MonetaryFirewallAudit monetaryFirewallAudit;
-    GenesisTreasurySnapshot genesisTreasurySnapshot;
-    ProtectionRewardBudget protectionRewardBudget;
-    std::vector<ProtectionRewardGrant> protectionRewardGrants;
-    std::vector<ProtectionWorkRecord> protectionWorkRecords;
-    ProtectionRewardSummary protectionRewardSummary;
-    std::vector<ProtectionRewardSettlement> protectionRewardSettlements;
-    InflationEpochSnapshot inflationEpochSnapshot;
-    MintAuthorizationRecord mintAuthorizationRecord;
-    SupplyExpansionRecord supplyExpansionRecord;
-    FeeEconomicBalance feeEconomicBalance;
-    FeeBurnRecord feeBurnRecord;
-    TreasuryFeeRecord treasuryFeeRecord;
-    std::vector<SlashingEvidenceRecord> slashingEvidenceRecords;
-    std::vector<SlashingPreparationRecord> slashingPreparationRecords;
-    SlashingEvidenceSummary slashingEvidenceSummary;
-    std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords;
-    std::vector<StakePenaltyRecord> stakePenaltyRecords;
-    CryptographicSlashingSummary cryptographicSlashingSummary;
-    GovernancePolicySnapshot governancePolicySnapshot;
-    std::vector<GovernanceActionGuard> governanceActionGuards;
-    GovernanceSummary governanceSummary;
-    std::vector<ValidatorLifecycleRecord> validatorLifecycleRecords;
-    EpochAccountingRecord epochAccountingRecord;
-    ValidatorLifecycleSummary validatorLifecycleSummary;
-
-    try {
-        feeEconomicBalance =
-            FeeEconomics::buildFeeEconomicBalance(
-                production.block().index(),
-                transitionValidation.totalFee()
-            );
-
-        rewardDistributions =
-            RewardDistributionCalculator::buildFromQuorumCertificate(
-                feeEconomicBalance.validatorRewardAmount(),
-                certificate.certificate(),
-                production.block().index()
-            );
-
-        lockedStakePositions =
-            LockedStakePositionBuilder::buildFromRewardDistributions(
-                rewardDistributions
-            );
-
-        securityScoreRecords =
-            SecurityScoreCalculator::buildFromLockedStakePositions(
-                lockedStakePositions,
-                production.block().index()
-            );
-
-        securityCheckpoints =
-            ValidatorSecurityCheckpointBuilder::buildFromSecurityScores(
-                securityScoreRecords,
-                lockedStakePositions,
-                production.block().index()
-            );
-
-        validatorRiskAssessments =
-            ValidatorRiskAssessmentBuilder::buildFromCheckpoints(
-                securityCheckpoints
-            );
-
-        validatorContainmentDecisions =
-            ValidatorContainmentDecisionBuilder::buildFromRiskAssessments(
-                validatorRiskAssessments
-            );
-
-        validatorNetworkPolicies =
-            ValidatorNetworkPolicyBuilder::buildFromContainmentDecisions(
-                validatorContainmentDecisions
-            );
-
-        feeBurnRecord =
-            FeeEconomics::buildFeeBurnRecord(
-                feeEconomicBalance,
-                monetaryValidationResult.supplyDelta().supplyBefore()
-            );
-
-        treasuryFeeRecord =
-            FeeEconomics::buildTreasuryFeeRecord(
-                feeEconomicBalance
-            );
-
-        try {
-            monetaryFirewallAudit =
-                MonetaryFirewall::buildAuditWithSupplyBefore(
-                    production.block().index(),
-                    monetaryValidationResult.supplyDelta().supplyBefore(),
-                    utils::Amount(),
-                    feeBurnRecord.burnAmount(),
-                    treasuryFeeRecord.treasuryAmount(),
-                    utils::Amount()
-                );
-        } catch (const std::exception& error) {
-            runtime.halt();
-            throw;
-        }
-
-        if (!monetaryFirewallAudit.passed()) {
-            runtime.halt();
-            throw std::runtime_error("Monetary firewall audit did not pass.");
-        }
-
-        genesisTreasurySnapshot =
-            ProtectionTreasury::buildGenesisTreasurySnapshot(
-                runtime.config().genesisConfig(),
-                production.block().index(),
-                treasuryFeeRecord.treasuryAmount()
-            );
-
-        protectionRewardBudget =
-            ProtectionTreasury::buildProtectionRewardBudget(
-                genesisTreasurySnapshot,
-                rewardDistributions
-            );
-
-        protectionRewardGrants =
-            ProtectionTreasury::buildProtectionRewardGrants(
-                protectionRewardBudget,
-                rewardDistributions,
-                securityScoreRecords
-            );
-
-        protectionWorkRecords =
-            ProtectionRewards::buildWorkRecords(
-                protectionRewardGrants,
-                securityScoreRecords,
-                validatorRiskAssessments,
-                validatorNetworkPolicies
-            );
-
-        protectionRewardSettlements =
-            ProtectionRewards::buildSettlements(
-                protectionRewardGrants,
-                protectionWorkRecords
-            );
-
-        protectionRewardSummary =
-            ProtectionRewards::buildSummary(
-                protectionRewardBudget,
-                protectionRewardSettlements
-            );
-
-        inflationEpochSnapshot =
-            ControlledIssuance::buildInflationEpochSnapshot(
-                runtime.config().genesisConfig(),
-                production.block().index(),
-                monetaryFirewallAudit.annualMintUsedAfter()
-            );
-
-        mintAuthorizationRecord =
-            ControlledIssuance::buildNoMintAuthorization(
-                inflationEpochSnapshot
-            );
-
-        supplyExpansionRecord =
-            ControlledIssuance::buildNoSupplyExpansion(
-                mintAuthorizationRecord,
-                inflationEpochSnapshot
-            );
-
-        slashingEvidenceRecords =
-            SlashingEvidence::buildEvidenceRecords(
-                validatorRiskAssessments,
-                validatorNetworkPolicies,
-                protectionWorkRecords
-            );
-
-        slashingPreparationRecords =
-            SlashingEvidence::buildPreparationRecords(
-                slashingEvidenceRecords,
-                lockedStakePositions
-            );
-
-        slashingEvidenceSummary =
-            SlashingEvidence::buildSummary(
-                production.block().index(),
-                slashingEvidenceRecords,
-                slashingPreparationRecords
-            );
-
-        cryptographicSlashingEvidenceRecords =
-            CryptographicSlashing::buildEvidenceRecordsFromCertifiedVotes(
-                certificate.certificate().votes()
-            );
-
-        stakePenaltyRecords =
-            CryptographicSlashing::buildStakePenaltyRecords(
-                cryptographicSlashingEvidenceRecords,
-                lockedStakePositions
-            );
-
-        cryptographicSlashingSummary =
-            CryptographicSlashing::buildSummary(
-                production.block().index(),
-                cryptographicSlashingEvidenceRecords,
-                stakePenaltyRecords
-            );
-
-        governancePolicySnapshot =
-            Governance::buildPolicySnapshot(
-                production.block().index()
-            );
-
-        governanceActionGuards =
-            Governance::buildActionGuards(
-                governancePolicySnapshot
-            );
-
-        governanceSummary =
-            Governance::buildSummary(
-                production.block().index(),
-                governanceActionGuards
-            );
-
-        validatorLifecycleRecords =
-            ValidatorLifecycle::buildLifecycleRecords(
-                production.block().index(),
-                rewardDistributions,
-                lockedStakePositions,
-                securityScoreRecords,
-                protectionRewardSettlements,
-                stakePenaltyRecords
-            );
-
-        epochAccountingRecord =
-            ValidatorLifecycle::buildEpochAccountingRecord(
-                production.block().index(),
-                validatorLifecycleRecords
-            );
-
-        validatorLifecycleSummary =
-            ValidatorLifecycle::buildSummary(
-                production.block().index(),
-                validatorLifecycleRecords,
-                epochAccountingRecord
-            );
-    } catch (const std::exception& error) {
-        return RuntimeBlockPipelineResult::rejected(
-            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
-            std::string("Economic accounting failed: ") + error.what()
-        );
-    }
-
-    try {
-        RuntimeSupplyState supplyStateProbe = runtime.supplyState();
-        supplyStateProbe.applyFinalizedDelta(
-            monetaryValidationResult.supplyDelta()
-        );
-    } catch (const std::exception& error) {
-        return RuntimeBlockPipelineResult::rejected(
-            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
-            std::string("Supply state continuity check failed before finalization: ") +
-            error.what()
-        );
-    }
-
-    const consensus::BlockFinalizationResult finalization =
-        consensus::BlockFinalizer::finalizeBlock(
-            runtime.mutableBlockchain(),
-            production.block(),
-            certificate.certificate(),
-            runtime.validatorRegistry(),
-            runtime.mutableFinalizationRegistry(),
-            cryptoContext.policy(),
-            cryptoContext.signatureProvider(),
-            config.timestamp() + 2
-        );
-
-    if (!finalization.finalized() &&
-        !finalization.duplicate()) {
-        return RuntimeBlockPipelineResult::rejected(
-            RuntimeBlockPipelineStatus::FINALIZATION_FAILED,
-            finalization.reason()
-        );
-    }
-
-    const std::vector<std::string> finalizedTransactionIds =
-        production.plan().transactionIds();
-
-    removeFinalizedTransactionsFromMempool(
+    return commitCertifiedBlock(
         runtime,
-        finalizedTransactionIds
+        production.block(),
+        certificate.certificate(),
+        config.timestamp() + 2,
+        directoryConfig
     );
-
-    const std::uint64_t nextHeight =
-        production.block().index() + 1;
-
-    constexpr std::uint64_t nextRound = 1;
-
-    const std::string nextProposer =
-        consensus::ProposerSchedule::selectProposer(
-            runtime.validatorRegistry(),
-            runtime.config().genesisConfig().networkParameters().chainId(),
-            nextHeight,
-            nextRound
-        );
-
-    runtime.mutableConsensusRoundManager().advanceToHeight(
-        nextHeight,
-        nextRound,
-        nextProposer,
-        config.timestamp() + 3,
-        runtime.config().genesisConfig().networkParameters().targetBlockTimeSeconds()
-    );
-
-    RuntimeBlockPipelineResult finalResult =
-        RuntimeBlockPipelineResult::finalized(
-            production.block(),
-            certificate.certificate(),
-            finalization.record(),
-            finalizedTransactionIds,
-            transitionValidation.stateRoot(),
-            transitionValidation.totalFee(),
-            rewardDistributions,
-            lockedStakePositions,
-            securityScoreRecords,
-            securityCheckpoints,
-            validatorRiskAssessments,
-            validatorContainmentDecisions,
-            validatorNetworkPolicies,
-            monetaryFirewallAudit,
-            genesisTreasurySnapshot,
-            protectionRewardBudget,
-            protectionRewardGrants,
-            protectionWorkRecords,
-            protectionRewardSummary,
-            protectionRewardSettlements,
-            inflationEpochSnapshot,
-            mintAuthorizationRecord,
-            supplyExpansionRecord,
-            feeEconomicBalance,
-            feeBurnRecord,
-            treasuryFeeRecord,
-            slashingEvidenceRecords,
-            slashingPreparationRecords,
-            slashingEvidenceSummary,
-            cryptographicSlashingEvidenceRecords,
-            stakePenaltyRecords,
-            cryptographicSlashingSummary,
-            governancePolicySnapshot,
-            governanceActionGuards,
-            governanceSummary,
-            monetaryValidationResult.supplyDelta()
-        );
-
-    try {
-        runtime.mutableSupplyState().applyFinalizedDelta(
-            monetaryValidationResult.supplyDelta()
-        );
-    } catch (const std::exception& error) {
-        return RuntimeBlockPipelineResult::rejected(
-            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
-            std::string("Supply state update failed after finalization: ") +
-            error.what()
-        );
-    }
-
-    finalResult.m_receiptsRoot = transitionValidation.receiptsRoot();
-
-    // Record the finalized state root in the pruner and trim old entries.
-    const std::uint64_t finalizedHeight = production.block().index();
-    if (!finalResult.postStateRoot().empty()) {
-        runtime.mutableStatePruner().recordStateRoot(
-            finalizedHeight,
-            finalResult.postStateRoot()
-        );
-        runtime.mutableStatePruner().pruneHistory(finalizedHeight);
-    }
-
-    // Epoch boundary: activate pending validators, complete exits, and take snapshot.
-    if (finalizedHeight > 0 && finalizedHeight % NODO_VALIDATOR_EPOCH_BLOCKS == 0) {
-        const std::uint64_t currentEpoch =
-            ValidatorLifecycle::epochIndexForBlock(finalizedHeight);
-        const std::int64_t boundaryTimestamp = config.timestamp() + 4;
-
-        for (const std::string& addr :
-             runtime.validatorRegistry().pendingValidatorAddresses()) {
-            const core::ValidatorRegistryEntry* entry =
-                runtime.validatorRegistry().entryForAddress(addr);
-            if (entry &&
-                entry->registrationRecord().activationEpoch() <= currentEpoch) {
-                runtime.mutableValidatorRegistry().activateValidator(
-                    addr, currentEpoch, boundaryTimestamp
-                );
-            }
-        }
-
-        for (const std::string& addr :
-             runtime.validatorRegistry().exitRequestedValidatorAddresses()) {
-            const core::ValidatorRegistryEntry* entry =
-                runtime.validatorRegistry().entryForAddress(addr);
-            if (entry &&
-                entry->exitRequestHeight() + NODO_VALIDATOR_EPOCH_BLOCKS
-                    <= finalizedHeight) {
-                runtime.mutableValidatorRegistry().completeExit(
-                    addr, boundaryTimestamp
-                );
-            }
-        }
-
-        // Create a state snapshot commitment at the epoch boundary.
-        // Rebuilding the account state is acceptable here: epochs are 43,200 blocks apart.
-        try {
-            const core::StateTransitionPreviewContext snapshotCtx =
-                previewContextForRuntime(runtime);
-            const StateSnapshot epochSnapshot = StateSnapshot::create(
-                finalizedHeight,
-                production.block().hash(),
-                snapshotCtx.accountStateView(),
-                runtime.validatorRegistry(),
-                production.block().records(),
-                boundaryTimestamp
-            );
-            finalResult.m_snapshotDigest = epochSnapshot.canonicalDigest();
-        } catch (...) {
-            // Snapshot failure is non-fatal; the block is already finalized.
-        }
-    }
-
-    return finalResult;
 }
 
 std::vector<consensus::ValidatorVoteRecord> RuntimeBlockPipeline::buildValidatorVotes(

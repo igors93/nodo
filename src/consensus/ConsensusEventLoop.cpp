@@ -77,6 +77,12 @@ void ConsensusEventLoop::setRecoveryPath(std::filesystem::path path) {
     m_recoveryPath = std::move(path);
 }
 
+void ConsensusEventLoop::setDataDirectoryConfig(
+    const node::NodeDataDirectoryConfig* directoryConfig
+) {
+    m_dataDirectoryConfig = directoryConfig;
+}
+
 void ConsensusEventLoop::loadFromRecoveryState(const ConsensusRoundState& state) {
     m_lockedBlock         = state.lockedBlockHash();
     m_lockedRound         = state.lockedRound();
@@ -294,10 +300,19 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     //   - Broadcast the FinalizedBlockRecord to peers.
     //   - Advance the consensus round manager to the next height.
     //   - Reset per-height lock/vote state.
-    //   - Invoke the registered finalization callback (persistence, etc.).
+    //   - Invoke the registered notification callback.
     // -------------------------------------------------------------------------
     const BlockFinalizationPhaseResult finResult = BlockFinalizationPhase::tryFinalize(
-        m_runtime, candidate, height, blockHash, prevHash, round, m_policy, m_provider, now
+        m_runtime,
+        candidate,
+        height,
+        blockHash,
+        prevHash,
+        round,
+        m_policy,
+        m_provider,
+        now,
+        m_dataDirectoryConfig
     );
 
     if (finResult.finalized()) {
@@ -306,11 +321,6 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         result.finalizedBlockHash = finResult.record().blockHash();
         result.finalizedHeight   = finResult.record().blockIndex();
 
-        // State derived from block contents becomes visible only after the
-        // quorum-authorized append performed by BlockFinalizer.
-        m_runtime.applyGovernanceFromBlock(candidate, now);
-        m_runtime.invalidateAccountStateCache();
-
         // Broadcast the finalized record to lagging peers.
         m_gossip.broadcast(
             p2p::NetworkMessageType::FINALIZED_BLOCK_ARTIFACT,
@@ -318,20 +328,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
             now
         );
 
-        // Advance the consensus round to the next height.
         const std::uint64_t nextHeight = height + 1;
-        const std::string chainId =
-            m_runtime.config().genesisConfig().networkParameters().chainId();
-        const std::string nextProposer =
-            ProposerSchedule::selectProposer(
-                m_runtime.validatorRegistry(), chainId, nextHeight, 1
-            );
-        const std::int64_t targetBlockTimeSec =
-            m_runtime.config().genesisConfig().networkParameters().targetBlockTimeSeconds();
-        m_runtime.mutableConsensusRoundManager().advanceToHeight(
-            nextHeight, 1, nextProposer, now, targetBlockTimeSec
-        );
-
         // Reset per-height BFT state.
         m_lastProcessedHeight = nextHeight;
         m_lockedBlock         = "";
