@@ -400,6 +400,10 @@ void NodeOrchestrator::tick(std::int64_t now) {
                     );
                 if (!req.isValid()) continue;
 
+                if (req.requesterNodeId() != envelope.senderNodeId()) {
+                    continue;
+                }
+
                 const std::uint64_t maxItems = std::min(
                     req.locator().maxBlocks(),
                     static_cast<std::uint64_t>(BlockSyncHandler::MAX_BLOCKS_PER_RESPONSE)
@@ -416,6 +420,10 @@ void NodeOrchestrator::tick(std::int64_t now) {
                     now
                 );
                 if (!batch.isValid()) continue;
+
+                if (batch.sourcePeerId() != envelope.senderNodeId()) {
+                    continue;
+                }
 
                 const std::vector<unsigned char> encoded =
                     PersistentBlockStateSyncCodec::encodeBlockSyncBatch(batch);
