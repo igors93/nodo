@@ -1,16 +1,23 @@
 #ifndef NODO_NODE_BLOCK_SYNC_HANDLER_HPP
 #define NODO_NODE_BLOCK_SYNC_HANDLER_HPP
 
+#include "consensus/BlockFinalizer.hpp"
 #include "core/Blockchain.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "p2p/GossipMesh.hpp"
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
 
 namespace nodo::node {
+
+enum class BlockSyncQcMode {
+    STATE_ROOT_ONLY,
+    QC_REQUIRED
+};
 
 /*
  * BlockSyncHandler responds to BLOCK_REQUEST messages and applies BLOCK_RESPONSE.
@@ -52,19 +59,20 @@ public:
      * apply received blocks to local blockchain in order.
      * Returns number of blocks applied.
      *
-     * contextBuilder is called once per block, BEFORE the block is validated,
-     * with the current blockchain state (which grows after each successfully
-     * applied block).  It must return a real StateTransitionPreviewContext
-     * so that stateRoot and receiptsRoot can be recomputed and compared to
-     * the block's declared commitments (ProtocolCommitment mode).
+     * contextBuilder is called once per block with the current blockchain state.
+     * When qcMode is QC_REQUIRED, each block must be recorded as finalized in
+     * finalizationRegistry before it is accepted. This protects against accepting
+     * blocks that were never ratified by a supermajority of validators.
      *
-     * If any block fails validation the entire remaining batch is discarded;
-     * the function returns the count of blocks successfully applied so far.
+     * If any block fails validation (or QC check) the entire remaining batch is
+     * discarded; the function returns the count of blocks successfully applied.
      */
     static std::size_t applyResponses(
         p2p::GossipMesh&  gossip,
         core::Blockchain& blockchain,
         std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder,
+        const consensus::BlockFinalizationRegistry& finalizationRegistry,
+        BlockSyncQcMode   qcMode,
         std::int64_t      now
     );
 

@@ -175,6 +175,8 @@ public:
     const TcpTestnetNodeRuntime&    tcpRuntime()     const;
     const NodeOrchestratorConfig&   config()         const;
     const consensus::EvidencePool&  evidencePool()   const;
+    const crypto::CryptoPolicy&     cryptoPolicy()   const;
+    const crypto::SignatureProvider& signatureProvider() const;
 
     // ---- Gossip helpers for NodeDaemon ------------------------------------
 

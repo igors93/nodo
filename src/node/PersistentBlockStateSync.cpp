@@ -281,31 +281,206 @@ std::filesystem::path PersistentSyncCheckpointStore::checkpointFilePath() const 
     return m_dataDirectory / "sync" / "checkpoint.conf";
 }
 
+std::string persistentSyncCheckpointReadStatusToString(
+    PersistentSyncCheckpointReadStatus status
+) {
+    switch (status) {
+        case PersistentSyncCheckpointReadStatus::LOADED:     return "LOADED";
+        case PersistentSyncCheckpointReadStatus::MISSING:    return "MISSING";
+        case PersistentSyncCheckpointReadStatus::MALFORMED:  return "MALFORMED";
+        case PersistentSyncCheckpointReadStatus::INVALID:    return "INVALID";
+        case PersistentSyncCheckpointReadStatus::IO_FAILURE: return "IO_FAILURE";
+        default:                                             return "IO_FAILURE";
+    }
+}
+
+PersistentSyncCheckpointReadResult::PersistentSyncCheckpointReadResult()
+    : m_status(PersistentSyncCheckpointReadStatus::IO_FAILURE),
+      m_reason("Uninitialized."),
+      m_checkpoint() {}
+
+// static
+PersistentSyncCheckpointReadResult PersistentSyncCheckpointReadResult::loaded(
+    PersistentSyncCheckpoint checkpoint
+) {
+    PersistentSyncCheckpointReadResult result;
+    result.m_status = PersistentSyncCheckpointReadStatus::LOADED;
+    result.m_reason = "";
+    result.m_checkpoint = std::move(checkpoint);
+    return result;
+}
+
+// static
+PersistentSyncCheckpointReadResult PersistentSyncCheckpointReadResult::missing() {
+    PersistentSyncCheckpointReadResult result;
+    result.m_status = PersistentSyncCheckpointReadStatus::MISSING;
+    result.m_reason = "Checkpoint file does not exist.";
+    return result;
+}
+
+// static
+PersistentSyncCheckpointReadResult PersistentSyncCheckpointReadResult::malformed(std::string reason) {
+    PersistentSyncCheckpointReadResult result;
+    result.m_status = PersistentSyncCheckpointReadStatus::MALFORMED;
+    result.m_reason = std::move(reason);
+    return result;
+}
+
+// static
+PersistentSyncCheckpointReadResult PersistentSyncCheckpointReadResult::invalid(std::string reason) {
+    PersistentSyncCheckpointReadResult result;
+    result.m_status = PersistentSyncCheckpointReadStatus::INVALID;
+    result.m_reason = std::move(reason);
+    return result;
+}
+
+// static
+PersistentSyncCheckpointReadResult PersistentSyncCheckpointReadResult::ioFailure(std::string reason) {
+    PersistentSyncCheckpointReadResult result;
+    result.m_status = PersistentSyncCheckpointReadStatus::IO_FAILURE;
+    result.m_reason = std::move(reason);
+    return result;
+}
+
+PersistentSyncCheckpointReadStatus PersistentSyncCheckpointReadResult::status() const {
+    return m_status;
+}
+
+const std::string& PersistentSyncCheckpointReadResult::reason() const {
+    return m_reason;
+}
+
+bool PersistentSyncCheckpointReadResult::loaded() const {
+    return m_status == PersistentSyncCheckpointReadStatus::LOADED;
+}
+
+const PersistentSyncCheckpoint& PersistentSyncCheckpointReadResult::checkpoint() const {
+    return m_checkpoint;
+}
+
+std::string persistentSyncCheckpointWriteStatusToString(
+    PersistentSyncCheckpointWriteStatus status
+) {
+    switch (status) {
+        case PersistentSyncCheckpointWriteStatus::SAVED:              return "SAVED";
+        case PersistentSyncCheckpointWriteStatus::INVALID_CHECKPOINT: return "INVALID_CHECKPOINT";
+        case PersistentSyncCheckpointWriteStatus::IO_FAILURE:         return "IO_FAILURE";
+        default:                                                      return "IO_FAILURE";
+    }
+}
+
+PersistentSyncCheckpointWriteResult::PersistentSyncCheckpointWriteResult()
+    : m_status(PersistentSyncCheckpointWriteStatus::IO_FAILURE),
+      m_reason("Uninitialized.") {}
+
+// static
+PersistentSyncCheckpointWriteResult PersistentSyncCheckpointWriteResult::saved() {
+    PersistentSyncCheckpointWriteResult result;
+    result.m_status = PersistentSyncCheckpointWriteStatus::SAVED;
+    result.m_reason = "";
+    return result;
+}
+
+// static
+PersistentSyncCheckpointWriteResult PersistentSyncCheckpointWriteResult::invalidCheckpoint(
+    std::string reason
+) {
+    PersistentSyncCheckpointWriteResult result;
+    result.m_status = PersistentSyncCheckpointWriteStatus::INVALID_CHECKPOINT;
+    result.m_reason = std::move(reason);
+    return result;
+}
+
+// static
+PersistentSyncCheckpointWriteResult PersistentSyncCheckpointWriteResult::ioFailure(
+    std::string reason
+) {
+    PersistentSyncCheckpointWriteResult result;
+    result.m_status = PersistentSyncCheckpointWriteStatus::IO_FAILURE;
+    result.m_reason = std::move(reason);
+    return result;
+}
+
+PersistentSyncCheckpointWriteStatus PersistentSyncCheckpointWriteResult::status() const {
+    return m_status;
+}
+
+const std::string& PersistentSyncCheckpointWriteResult::reason() const {
+    return m_reason;
+}
+
+bool PersistentSyncCheckpointWriteResult::isSaved() const {
+    return m_status == PersistentSyncCheckpointWriteStatus::SAVED;
+}
+
 bool PersistentSyncCheckpointStore::exists() const {
     return std::filesystem::exists(checkpointFilePath());
 }
 
-std::optional<PersistentSyncCheckpoint> PersistentSyncCheckpointStore::load() const {
+PersistentSyncCheckpointReadResult PersistentSyncCheckpointStore::read() const {
     const auto path = checkpointFilePath();
-    if (!std::filesystem::exists(path)) {
-        return std::nullopt;
+
+    try {
+        if (!std::filesystem::exists(path)) {
+            return PersistentSyncCheckpointReadResult::missing();
+        }
+    } catch (const std::exception& error) {
+        return PersistentSyncCheckpointReadResult::ioFailure(
+            "Filesystem error checking checkpoint: " + std::string(error.what())
+        );
     }
 
-    return PersistentSyncCheckpoint::deserialize(
-        storage::AtomicFile::readTextFile(path)
-    );
+    std::string text;
+    try {
+        text = storage::AtomicFile::readTextFile(path);
+    } catch (const std::exception& error) {
+        return PersistentSyncCheckpointReadResult::ioFailure(
+            "Failed to read checkpoint file: " + std::string(error.what())
+        );
+    }
+
+    PersistentSyncCheckpoint checkpoint;
+    try {
+        checkpoint = PersistentSyncCheckpoint::deserialize(text);
+    } catch (const std::invalid_argument& error) {
+        return PersistentSyncCheckpointReadResult::malformed(
+            "Checkpoint file is malformed: " + std::string(error.what())
+        );
+    } catch (const std::exception& error) {
+        return PersistentSyncCheckpointReadResult::malformed(
+            "Checkpoint deserialization failed: " + std::string(error.what())
+        );
+    }
+
+    if (!checkpoint.isValid()) {
+        return PersistentSyncCheckpointReadResult::invalid(
+            "Checkpoint file parsed but failed validation."
+        );
+    }
+
+    return PersistentSyncCheckpointReadResult::loaded(std::move(checkpoint));
 }
 
-void PersistentSyncCheckpointStore::save(
+PersistentSyncCheckpointWriteResult PersistentSyncCheckpointStore::save(
     const PersistentSyncCheckpoint& checkpoint
 ) const {
     if (!checkpoint.isValid()) {
-        throw std::invalid_argument("Refusing to save invalid persistent sync checkpoint.");
+        return PersistentSyncCheckpointWriteResult::invalidCheckpoint(
+            "Refusing to save invalid persistent sync checkpoint."
+        );
     }
 
-    const auto path = checkpointFilePath();
-    std::filesystem::create_directories(path.parent_path());
-    storage::AtomicFile::writeTextFile(path, checkpoint.serialize());
+    try {
+        const auto path = checkpointFilePath();
+        std::filesystem::create_directories(path.parent_path());
+        storage::AtomicFile::writeTextFile(path, checkpoint.serialize());
+    } catch (const std::exception& error) {
+        return PersistentSyncCheckpointWriteResult::ioFailure(
+            "Failed to write checkpoint file: " + std::string(error.what())
+        );
+    }
+
+    return PersistentSyncCheckpointWriteResult::saved();
 }
 
 PersistentBlockSyncItem::PersistentBlockSyncItem()

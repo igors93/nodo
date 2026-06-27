@@ -14,6 +14,7 @@
 #include "crypto/SignatureBundle.hpp"
 #include "crypto/SigningDomain.hpp"
 #include "crypto/hash.h"
+#include "economics/MintRecord.hpp"
 #include "utils/Amount.hpp"
 
 #include <iostream>
@@ -122,32 +123,23 @@ core::LedgerRecord persistedTransactionRecord(
     );
 }
 
-core::LedgerRecord persistedNonTransactionRecord(
-    const std::string& sourceId,
-    const std::string& payload
+core::LedgerRecord mintLedgerRecord(
+    const std::string& recipientAddress = "mint-recipient",
+    std::int64_t amountRaw = 500,
+    std::int64_t ts = kTimestamp
 ) {
-    const std::string payloadHash =
-        hashString(payload);
-
-    const std::string recordId =
-        hashString(
-            "LedgerRecordId{type=MINT;sourceId="
-            + sourceId
-            + ";payloadHash="
-            + payloadHash
-            + ";timestamp="
-            + std::to_string(kTimestamp)
-            + "}"
-        );
-
-    return core::LedgerRecord::fromPersistedFields(
-        recordId,
-        core::LedgerRecordType::MINT,
-        sourceId,
-        payload,
-        payloadHash,
-        kTimestamp
+    economics::MintRecord mint(
+        "mint-id-" + recipientAddress,
+        "auth-id-" + recipientAddress,
+        recipientAddress,
+        utils::Amount::fromRawUnits(amountRaw),
+        economics::MintReason::GENESIS_ALLOCATION,
+        1,
+        0,
+        "genesis-block-hash",
+        ts
     );
+    return core::LedgerRecord::fromMintRecord(mint, ts);
 }
 
 core::StateTransitionPreviewContext economicContext(
@@ -557,10 +549,7 @@ void testNonTransactionRecordChangesStateRoot() {
         "previous-hash-2",
         {
             record(tx),
-            persistedNonTransactionRecord(
-                "mint-source-id",
-                "MintRecord{amount=500}"
-            )
+            mintLedgerRecord("mint-recipient", 500)
         },
         kTimestamp + 10
     );

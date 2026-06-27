@@ -14,6 +14,7 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeStateLoader.hpp"
+#include "node/SignedBlockProposalMessage.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
 #include "storage/BlockFileStore.hpp"
 
@@ -415,6 +416,8 @@ void NodeOrchestrator::tick(std::int64_t now) {
                 return core::StateTransitionPreviewContext::structuralOnly(minFee);
             }
         },
+        m_runtime->finalizationRegistry(),
+        BlockSyncQcMode::QC_REQUIRED,
         now
     );
 
@@ -447,9 +450,9 @@ void NodeOrchestrator::tick(std::int64_t now) {
         );
 
         PersistentSyncCheckpointStore cpStore(m_config.dataDirectory().rootPath());
-        const auto loadedCp = cpStore.load();
-        const PersistentSyncCheckpoint checkpoint = loadedCp.has_value()
-            ? loadedCp.value()
+        const PersistentSyncCheckpointReadResult readCp = cpStore.read();
+        const PersistentSyncCheckpoint checkpoint = readCp.loaded()
+            ? readCp.checkpoint()
             : PersistentSyncCheckpoint::genesis(
                 m_runtime->blockchain().empty()
                     ? "genesis"
@@ -548,8 +551,10 @@ const TcpTestnetNodeRuntime& NodeOrchestrator::tcpRuntime() const {
     return *m_tcpRuntime;
 }
 
-const NodeOrchestratorConfig&  NodeOrchestrator::config()        const { return m_config; }
-const consensus::EvidencePool& NodeOrchestrator::evidencePool()  const { return m_evidencePool; }
+const NodeOrchestratorConfig&        NodeOrchestrator::config()              const { return m_config; }
+const consensus::EvidencePool&       NodeOrchestrator::evidencePool()        const { return m_evidencePool; }
+const crypto::CryptoPolicy&          NodeOrchestrator::cryptoPolicy()        const { return m_policy; }
+const crypto::SignatureProvider&     NodeOrchestrator::signatureProvider()   const { return m_provider; }
 
 std::vector<p2p::NetworkEnvelope> NodeOrchestrator::drainGossipInbox(
     p2p::NetworkMessageType type
@@ -585,9 +590,9 @@ void NodeOrchestrator::triggerSyncIfBehind(
     );
 
     PersistentSyncCheckpoint checkpoint;
-    const auto loaded = store.load();
-    if (loaded.has_value()) {
-        checkpoint = loaded.value();
+    const PersistentSyncCheckpointReadResult readResult = store.read();
+    if (readResult.loaded()) {
+        checkpoint = readResult.checkpoint();
     } else {
         const auto& chain = m_runtime->blockchain();
         const std::uint64_t height =
@@ -885,7 +890,39 @@ bool NodeOrchestrator::produceBlock(
         pipelineConfig,
         m_localSigner.value()
     );
-    return result.status() == RuntimeBlockPipelineStatus::FINALIZED;
+
+    if (result.status() != RuntimeBlockPipelineStatus::FINALIZED) {
+        return false;
+    }
+
+    // Sign and broadcast the proposed block so peers can authenticate
+    // the proposer before adding it to their chains.
+    if (m_tcpRuntime && result.block().isValid()) {
+        try {
+            const crypto::Signer& signer = m_localSigner.value();
+            const SignedBlockProposalMessage proposal = SignedBlockProposalMessage::sign(
+                result.block(),
+                signer.address(),
+                signer.keyPair().publicKey(),
+                signer.keyPair().privateKeyForSigningOnly(),
+                round,
+                now,
+                m_provider
+            );
+
+            if (proposal.isValid()) {
+                m_tcpRuntime->gossipMesh().broadcast(
+                    p2p::NetworkMessageType::BLOCK_PROPOSAL,
+                    proposal.serialize(),
+                    now
+                );
+            }
+        } catch (...) {
+            // Broadcast failure is non-fatal; the block was already finalized locally.
+        }
+    }
+
+    return true;
 }
 
 ChainStatusMessage NodeOrchestrator::currentChainStatus() const {

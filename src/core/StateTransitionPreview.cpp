@@ -1,5 +1,6 @@
 #include "core/StateTransitionPreview.hpp"
 
+#include "core/LedgerRecordDomainValidator.hpp"
 #include "core/MerkleTree.hpp"
 #include "core/StateRootCalculator.hpp"
 #include "core/Transaction.hpp"
@@ -209,6 +210,15 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
         }
 
         if (record.type() != LedgerRecordType::TRANSACTION) {
+            const LedgerRecordDomainValidator::Result domainResult =
+                LedgerRecordDomainValidator::validate(record);
+            if (!domainResult.valid) {
+                return StateTransitionPreviewResult::rejected(
+                    StateTransitionPreviewStatus::INVALID_LEDGER_RECORD,
+                    "Non-transaction ledger record failed domain validation: " + domainResult.reason,
+                    processedTransactionCount
+                );
+            }
             nonTransactionDigests.push_back(record.sourceId());
             continue;
         }

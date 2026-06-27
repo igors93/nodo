@@ -1,5 +1,6 @@
 #include "node/BlockSyncHandler.hpp"
 
+#include "consensus/BlockFinalizer.hpp"
 #include "core/Block.hpp"
 #include "core/Blockchain.hpp"
 #include "core/LedgerRecord.hpp"
@@ -28,6 +29,8 @@ namespace {
 using namespace nodo;
 
 constexpr std::int64_t kTimestamp = 1900000000;
+
+static const consensus::BlockFinalizationRegistry kEmptyRegistry;
 
 // Canonical 64-char hex strings with wrong economic values.
 static const std::string kWrongStateRoot =
@@ -172,7 +175,9 @@ void testApplyResponsesRejectsBlockWithWrongStateRoot() {
     gp.deliverBlockResponse({badBlock});
 
     const std::size_t applied = node::BlockSyncHandler::applyResponses(
-        gp.meshB, blockchain, buildContext, kTimestamp + 2
+        gp.meshB, blockchain, buildContext,
+        kEmptyRegistry, node::BlockSyncQcMode::STATE_ROOT_ONLY,
+        kTimestamp + 2
     );
 
     requireCondition(
@@ -214,7 +219,9 @@ void testApplyResponsesRejectsBlockWithWrongReceiptsRoot() {
     gp.deliverBlockResponse({badBlock});
 
     const std::size_t applied = node::BlockSyncHandler::applyResponses(
-        gp.meshB, blockchain, buildContext, kTimestamp + 2
+        gp.meshB, blockchain, buildContext,
+        kEmptyRegistry, node::BlockSyncQcMode::STATE_ROOT_ONLY,
+        kTimestamp + 2
     );
 
     requireCondition(
@@ -236,7 +243,9 @@ void testApplyResponsesAcceptsBlockWithCorrectRoots() {
     gp.deliverBlockResponse({goodBlock});
 
     const std::size_t applied = node::BlockSyncHandler::applyResponses(
-        gp.meshB, blockchain, buildContext, kTimestamp + 2
+        gp.meshB, blockchain, buildContext,
+        kEmptyRegistry, node::BlockSyncQcMode::STATE_ROOT_ONLY,
+        kTimestamp + 2
     );
 
     requireCondition(
@@ -267,7 +276,9 @@ void testApplyResponsesStopsAtFirstInvalidBlock() {
     gp.deliverBlockResponse({badBlock, goodBlock});
 
     const std::size_t applied = node::BlockSyncHandler::applyResponses(
-        gp.meshB, blockchain, buildContext, kTimestamp + 3
+        gp.meshB, blockchain, buildContext,
+        kEmptyRegistry, node::BlockSyncQcMode::STATE_ROOT_ONLY,
+        kTimestamp + 3
     );
 
     // First block in the batch has wrong roots → stops at 0 applied.
@@ -293,7 +304,9 @@ void testApplyResponsesRejectsNonCanonicalRoots() {
     gp.deliverBlockResponse({badBlock});
 
     const std::size_t applied = node::BlockSyncHandler::applyResponses(
-        gp.meshB, blockchain, buildContext, kTimestamp + 2
+        gp.meshB, blockchain, buildContext,
+        kEmptyRegistry, node::BlockSyncQcMode::STATE_ROOT_ONLY,
+        kTimestamp + 2
     );
 
     requireCondition(

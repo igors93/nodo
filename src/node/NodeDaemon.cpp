@@ -7,6 +7,7 @@
 #include "node/BlockAnnounceHandler.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
+#include "node/SignedBlockProposalMessage.hpp"
 #include "p2p/Peer.hpp"
 #include "serialization/BlockCodec.hpp"
 
@@ -171,31 +172,25 @@ void NodeDaemon::processBlockProposals(std::int64_t now) {
     );
 
     const core::Blockchain& chain = m_orchestrator.runtime().blockchain();
+    const core::ValidatorRegistry& validatorRegistry =
+        m_orchestrator.runtime().validatorRegistry();
 
     for (const auto& envelope : messages) {
         if (envelope.payload().empty()) continue;
 
+        // Decode as a SignedBlockProposalMessage. Proposals that cannot be
+        // decoded (e.g. raw Block bytes from older peers) are dropped.
+        SignedBlockProposalMessage proposal;
         bool decodeFailed = false;
-        std::optional<core::Block> maybeBlock;
         try {
-            maybeBlock.emplace(serialization::BlockCodec::deserialize(envelope.payload()));
+            proposal = SignedBlockProposalMessage::deserialize(envelope.payload());
         } catch (...) {
             decodeFailed = true;
         }
-        if (decodeFailed || !maybeBlock.has_value()) continue;
+        if (decodeFailed || !proposal.isValid()) continue;
 
-        const core::Block& block = *maybeBlock;
-
-        // Structural validation.
-        if (!block.isValid()) continue;
-
-        // Chain-append pre-check: block must extend the current tip.
-        if (!chain.canAppendBlock(block)) continue;
-
-        // Verify the block comes from the expected proposer for this height/round.
-        // If the chain has no active validators yet, skip the proposer check.
-        const std::uint64_t activeValidators =
-            m_orchestrator.runtime().validatorRegistry().activeCount();
+        // Verify the proposer identity against the schedule and signature.
+        const std::uint64_t activeValidators = validatorRegistry.activeCount();
         if (activeValidators > 0) {
             const std::string chainId =
                 m_orchestrator.config().genesisConfig().networkParameters().chainId();
@@ -203,17 +198,41 @@ void NodeDaemon::processBlockProposals(std::int64_t now) {
                 m_orchestrator.runtime().consensusRoundManager().currentState().round();
             const std::string expectedProposer =
                 consensus::ProposerSchedule::selectProposer(
-                    m_orchestrator.runtime().validatorRegistry(),
+                    validatorRegistry,
                     chainId,
-                    block.index(),
+                    proposal.blockIndex(),
                     currentRound
                 );
-            // TODO: verify cryptographic signature of the proposer once
-            // ValidatorBlockProposalSignature is integrated into Block.
-            // For now the round/height consistency enforced by canAppendBlock
-            // and the selectProposer computation are both applied.
-            (void)expectedProposer;
+
+            if (!proposal.verify(
+                    expectedProposer,
+                    validatorRegistry,
+                    m_orchestrator.cryptoPolicy(),
+                    m_orchestrator.signatureProvider()
+                )) {
+                continue;
+            }
         }
+
+        // Deserialize the block from the verified proposal payload.
+        std::optional<core::Block> blockOpt;
+        try {
+            blockOpt = serialization::BlockCodec::deserialize(proposal.serializedBlock());
+        } catch (...) {
+            continue;
+        }
+
+        if (!blockOpt || !blockOpt->isValid()) continue;
+
+        const core::Block& block = *blockOpt;
+
+        // The signed proposal commits to the block hash; verify it matches.
+        if (block.hash() != proposal.blockHash() ||
+            block.index() != proposal.blockIndex()) {
+            continue;
+        }
+
+        if (!chain.canAppendBlock(block)) continue;
 
         core::StateTransitionPreviewContext validationContext;
         try {
@@ -222,7 +241,6 @@ void NodeDaemon::processBlockProposals(std::int64_t now) {
             continue;
         }
 
-        // Full state-transition validation before adding the block.
         const core::BlockValidationResult validation =
             core::BlockStateTransitionValidator::validateCandidateBlock(
                 chain,

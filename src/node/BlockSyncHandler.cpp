@@ -387,6 +387,8 @@ std::size_t BlockSyncHandler::applyResponses(
     p2p::GossipMesh&  gossip,
     core::Blockchain& blockchain,
     std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder,
+    const consensus::BlockFinalizationRegistry& finalizationRegistry,
+    BlockSyncQcMode   qcMode,
     std::int64_t      /*now*/
 ) {
     const auto messages = gossip.drainInbox(
@@ -399,11 +401,20 @@ std::size_t BlockSyncHandler::applyResponses(
         const std::vector<core::Block> blocks =
             deserializeBlockList(envelope.payload());
 
-        // Apply in order; stop at first block that fails full protocol
-        // commitment validation.  The context is rebuilt from the current
-        // chain state before each block so that the computed stateRoot and
-        // receiptsRoot reflect all previously applied blocks.
+        // Apply in order; stop at first block that fails validation.
+        // The context is rebuilt from the current chain state before each
+        // block so that the computed stateRoot and receiptsRoot reflect all
+        // previously applied blocks.
         for (const auto& block : blocks) {
+            // QC verification: when QC_REQUIRED, each block must be recorded
+            // as finalized in the registry (i.e. a valid QC was received and
+            // verified for this block before it is accepted via sync).
+            if (qcMode == BlockSyncQcMode::QC_REQUIRED) {
+                if (!finalizationRegistry.isFinalizedBlock(block.index(), block.hash())) {
+                    break;
+                }
+            }
+
             const core::StateTransitionPreviewContext context =
                 contextBuilder(blockchain);
 

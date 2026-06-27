@@ -88,6 +88,64 @@ private:
     std::int64_t m_updatedAt;
 };
 
+enum class PersistentSyncCheckpointReadStatus {
+    LOADED,
+    MISSING,
+    MALFORMED,
+    INVALID,
+    IO_FAILURE
+};
+
+std::string persistentSyncCheckpointReadStatusToString(
+    PersistentSyncCheckpointReadStatus status
+);
+
+class PersistentSyncCheckpointReadResult {
+public:
+    static PersistentSyncCheckpointReadResult loaded(PersistentSyncCheckpoint checkpoint);
+    static PersistentSyncCheckpointReadResult missing();
+    static PersistentSyncCheckpointReadResult malformed(std::string reason);
+    static PersistentSyncCheckpointReadResult invalid(std::string reason);
+    static PersistentSyncCheckpointReadResult ioFailure(std::string reason);
+
+    PersistentSyncCheckpointReadStatus status() const;
+    const std::string& reason() const;
+    bool loaded() const;
+    const PersistentSyncCheckpoint& checkpoint() const;
+
+private:
+    PersistentSyncCheckpointReadResult();
+    PersistentSyncCheckpointReadStatus m_status;
+    std::string m_reason;
+    PersistentSyncCheckpoint m_checkpoint;
+};
+
+enum class PersistentSyncCheckpointWriteStatus {
+    SAVED,
+    INVALID_CHECKPOINT,
+    IO_FAILURE
+};
+
+std::string persistentSyncCheckpointWriteStatusToString(
+    PersistentSyncCheckpointWriteStatus status
+);
+
+class PersistentSyncCheckpointWriteResult {
+public:
+    static PersistentSyncCheckpointWriteResult saved();
+    static PersistentSyncCheckpointWriteResult invalidCheckpoint(std::string reason);
+    static PersistentSyncCheckpointWriteResult ioFailure(std::string reason);
+
+    PersistentSyncCheckpointWriteStatus status() const;
+    const std::string& reason() const;
+    bool isSaved() const;
+
+private:
+    PersistentSyncCheckpointWriteResult();
+    PersistentSyncCheckpointWriteStatus m_status;
+    std::string m_reason;
+};
+
 class PersistentSyncCheckpointStore {
 public:
     explicit PersistentSyncCheckpointStore(
@@ -99,9 +157,9 @@ public:
 
     bool exists() const;
 
-    std::optional<PersistentSyncCheckpoint> load() const;
+    PersistentSyncCheckpointReadResult read() const;
 
-    void save(
+    PersistentSyncCheckpointWriteResult save(
         const PersistentSyncCheckpoint& checkpoint
     ) const;
 
