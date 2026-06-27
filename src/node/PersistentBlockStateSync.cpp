@@ -1121,9 +1121,8 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
         );
     }
 
-    // Defence-in-depth: verify QC for any item that includes a FinalizedBlockRecord.
-    // Items without a record are accepted here; state-root recomputation below
-    // provides the binding trust check for those items.
+    // Every synchronized block must carry a cryptographically valid
+    // FinalizedBlockRecord proving consensus finality.
     for (const auto& item : batch.items()) {
         if (item.serializedFinalizedRecord().empty()) {
             return PersistentSyncApplyResult(

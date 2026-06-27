@@ -753,9 +753,34 @@ NodeOrchestratorStartResult NodeOrchestrator::initOrLoad() {
     // BlockSyncQcMode::QC_REQUIRED works correctly after restart and peers
     // requesting sync via BLOCK_SYNC_REQUEST receive batches with QC proofs.
     {
-        FinalizedBlockRecordStore qcStore(m_config.dataDirectory().rootPath());
-        for (const auto& rec : qcStore.loadAll()) {
-            m_runtime->mutableFinalizationRegistry().registerFinalizedBlock(rec);
+        FinalizedBlockRecordStore qcStore(
+            m_config.dataDirectory().rootPath()
+        );
+
+        const auto& blocks = m_runtime->blockchain().blocks();
+
+        for (const auto& record : qcStore.loadAll()) {
+            if (record.blockIndex() >= blocks.size()) {
+                continue;
+            }
+
+            const core::Block& block =
+                blocks[static_cast<std::size_t>(record.blockIndex())];
+
+            if (!record.matchesBlock(block)) {
+                continue;
+            }
+
+            if (!record.verify(
+                    m_runtime->validatorRegistry(),
+                    m_policy,
+                    m_provider
+                )) {
+                continue;
+            }
+
+            m_runtime->mutableFinalizationRegistry()
+                .registerFinalizedBlock(record);
         }
     }
 
