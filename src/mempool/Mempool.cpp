@@ -696,7 +696,7 @@ MempoolStats Mempool::stats() const {
 
     std::int64_t highest = std::numeric_limits<std::int64_t>::min();
     std::int64_t lowest  = std::numeric_limits<std::int64_t>::max();
-    std::int64_t sum     = 0;
+    __int128 sum         = 0;
 
     for (const auto& [_, entry] : m_entriesById) {
         const std::int64_t fee = entry.priorityFeeRaw();
@@ -707,7 +707,7 @@ MempoolStats Mempool::stats() const {
         if (fee < lowest) {
             lowest = fee;
         }
-        sum += fee;
+        sum += static_cast<__int128>(fee);
 
         result.countPerSender[entry.transaction().fromAddress()]++;
     }
@@ -715,7 +715,7 @@ MempoolStats Mempool::stats() const {
     result.highestFee = utils::Amount::fromRawUnits(highest);
     result.lowestFee  = utils::Amount::fromRawUnits(lowest);
     result.averageFee = utils::Amount::fromRawUnits(
-        sum / static_cast<std::int64_t>(m_entriesById.size())
+        static_cast<std::int64_t>(sum / static_cast<__int128>(m_entriesById.size()))
     );
 
     return result;
