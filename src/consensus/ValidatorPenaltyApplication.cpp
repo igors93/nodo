@@ -683,6 +683,35 @@ ValidatorPenaltyApplicationResult ValidatorPenaltyLedger::applyEvidence(
     return applyDecision(decision);
 }
 
+ValidatorPenaltyApplicationResult ValidatorPenaltyLedger::applyEvidenceWithRegistryEffect(
+    const SlashingEvidenceRecord& evidence,
+    const ValidatorPenaltyPolicy& policy,
+    std::int64_t now,
+    std::uint64_t currentEpoch,
+    core::ValidatorRegistry& registry
+) {
+    const ValidatorPenaltyApplicationResult result =
+        applyEvidence(evidence, policy, now);
+
+    if (!result.applied() || !result.decision().has_value()) {
+        return result;
+    }
+
+    const ValidatorPenaltyDecision& decision = result.decision().value();
+
+    // TOMBSTONE permanently removes the validator from consensus.
+    // JAIL/SLASH suspends the validator until a future epoch.
+    // WARNING decisions have no registry effect.
+    if (decision.tombstonesValidator()) {
+        registry.deactivateValidator(decision.validatorAddress(), now);
+    } else if (decision.jailsValidator()) {
+        const std::uint64_t jailUntilEpoch = currentEpoch + decision.jailEpochs();
+        registry.jailValidator(decision.validatorAddress(), jailUntilEpoch, now);
+    }
+
+    return result;
+}
+
 ValidatorPenaltyApplicationResult ValidatorPenaltyLedger::applyDecision(
     const ValidatorPenaltyDecision& decision
 ) {

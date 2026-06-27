@@ -17,6 +17,7 @@
 #include "node/RuntimeStateLoader.hpp"
 #include "node/SignedBlockProposalMessage.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
+#include "storage/AccountStateSnapshotStore.hpp"
 #include "storage/BlockFileStore.hpp"
 
 #include <chrono>
@@ -299,9 +300,10 @@ void NodeOrchestrator::tick(std::int64_t now) {
         m_runtime->blockchain().empty() ? 0
         : m_runtime->blockchain().latestBlock().index();
 
-    // Compute minimum fee and genesis config once for context builders below.
+    // Compute effective minimum fee once. effectiveMinimumFeeRawUnits() checks any
+    // applied governance overrides before falling back to the genesis config value.
     const config::GenesisConfig& genesisConfig = m_runtime->config().genesisConfig();
-    const std::uint64_t minFeeRaw = genesisConfig.networkParameters().minimumFeeRawUnits();
+    const std::uint64_t minFeeRaw = m_runtime->effectiveMinimumFeeRawUnits();
     const std::int64_t minFee =
         (minFeeRaw > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
         ? std::numeric_limits<std::int64_t>::max()
@@ -356,13 +358,19 @@ void NodeOrchestrator::tick(std::int64_t now) {
 
     // Build a protocol validation context from the current chain state.
     // Used by both BLOCK_ANNOUNCE and BLOCK_RESPONSE validation below.
-    // Falls back to structural-only on context-construction failure.
+    // wallClockNow is passed so the validator can reject blocks with timestamps
+    // too far in the future. Falls back to structural-only on context failure.
+    // The account state view is served from the NodeRuntime cache: it is only
+    // rebuilt when the chain tip height has changed since the last tick.
     core::StateTransitionPreviewContext announceValidationContext;
     try {
-        announceValidationContext = RuntimeAccountStateBuilder::previewContextAtTip(
-            genesisConfig,
-            m_runtime->blockchain(),
-            minFee
+        announceValidationContext = core::StateTransitionPreviewContext(
+            minFee,
+            m_runtime->cachedAccountStateAtTip(minFee),
+            false,
+            true,
+            "",
+            now
         );
     } catch (...) {
         announceValidationContext = core::StateTransitionPreviewContext::structuralOnly(minFee);
@@ -434,16 +442,22 @@ void NodeOrchestrator::tick(std::int64_t now) {
 
     // 5. Apply any received BLOCK_RESPONSE messages (fast-path sync).
     // The context builder is called per-block so the state reflects all blocks
-    // applied so far in the batch.
+    // applied so far in the batch. wallClockNow is captured so future-timestamp
+    // drift is enforced even during sync. Each callback invalidates the cache so
+    // the rebuilt view always matches the chain tip at the time of the call.
     const std::size_t syncApplied = BlockSyncHandler::applyResponses(
         gossip,
         m_runtime->mutableBlockchain(),
-        [&genesisConfig, minFee](const core::Blockchain& chain) -> core::StateTransitionPreviewContext {
+        [this, minFee, now](const core::Blockchain&) -> core::StateTransitionPreviewContext {
             try {
-                return RuntimeAccountStateBuilder::previewContextAtTip(
-                    genesisConfig,
-                    chain,
-                    minFee
+                m_runtime->invalidateAccountStateCache();
+                return core::StateTransitionPreviewContext(
+                    minFee,
+                    m_runtime->cachedAccountStateAtTip(minFee),
+                    false,
+                    true,
+                    "",
+                    now
                 );
             } catch (...) {
                 return core::StateTransitionPreviewContext::structuralOnly(minFee);
@@ -467,6 +481,7 @@ void NodeOrchestrator::tick(std::int64_t now) {
             : 0;
         for (const auto& b : allBlocks) {
             if (b.index() >= firstSynced && b.index() <= newHeight) {
+                m_runtime->applyGovernanceFromBlock(b, now);
                 persistFinalizedBlock(
                     b,
                     m_config.dataDirectory().rootPath(),
@@ -492,7 +507,7 @@ void NodeOrchestrator::tick(std::int64_t now) {
 
         PersistentSyncCheckpointStore cpStore(m_config.dataDirectory().rootPath());
         const PersistentSyncCheckpointReadResult readCp = cpStore.read();
-        const PersistentSyncCheckpoint checkpoint = readCp.loaded()
+        PersistentSyncCheckpoint currentCheckpoint = readCp.loaded()
             ? readCp.checkpoint()
             : PersistentSyncCheckpoint::genesis(
                 m_runtime->blockchain().empty()
@@ -519,18 +534,24 @@ void NodeOrchestrator::tick(std::int64_t now) {
 
                 const PersistentSyncApplyResult applyResult =
                     PersistentBlockStateSyncApplier::applyValidatedBatch(
-                        checkpoint,
+                        currentCheckpoint,
                         batch,
                         m_runtime->mutableBlockchain(),
                         m_runtime->validatorRegistry(),
                         m_policy,
                         m_provider,
-                        [&genesisConfig, minFee](
-                            const core::Blockchain& chain
+                        [this, minFee, now](
+                            const core::Blockchain&
                         ) -> core::StateTransitionPreviewContext {
                             try {
-                                return RuntimeAccountStateBuilder::previewContextAtTip(
-                                    genesisConfig, chain, minFee
+                                m_runtime->invalidateAccountStateCache();
+                                return core::StateTransitionPreviewContext(
+                                    minFee,
+                                    m_runtime->cachedAccountStateAtTip(minFee),
+                                    false,
+                                    true,
+                                    "",
+                                    now
                                 );
                             } catch (...) {
                                 return core::StateTransitionPreviewContext::structuralOnly(minFee);
@@ -540,6 +561,12 @@ void NodeOrchestrator::tick(std::int64_t now) {
                     );
 
                 if (applyResult.applied()) {
+                    // Advance the in-memory checkpoint so the next batch in this
+                    // same tick starts from the correct height, then persist it
+                    // so restarts never re-request blocks we already have.
+                    currentCheckpoint = applyResult.checkpoint().value();
+                    cpStore.save(currentCheckpoint);
+
                     // Build a height→serializedQc lookup from batch items that
                     // carry a FinalizedBlockRecord so we can persist the QC
                     // alongside each block without searching the batch twice.
@@ -558,6 +585,7 @@ void NodeOrchestrator::tick(std::int64_t now) {
                     for (const auto& b : allBlocks) {
                         if (b.index() >= batch.fromHeight() &&
                             b.index() <= batch.toHeight()) {
+                            m_runtime->applyGovernanceFromBlock(b, now);
                             persistFinalizedBlock(
                                 b,
                                 m_config.dataDirectory().rootPath(),
@@ -581,6 +609,34 @@ void NodeOrchestrator::tick(std::int64_t now) {
                     }
                 }
             } catch (...) {}
+        }
+    }
+
+    // 5.8. Process any new slashing evidence accumulated by the ConsensusEventLoop.
+    // For each piece of evidence not already in the penalty ledger, compute a
+    // deterministic penalty decision and propagate its registry effect immediately
+    // so jailed/tombstoned validators lose consensus eligibility this tick.
+    {
+        const std::uint64_t chainHeight = m_runtime->blockchain().empty()
+            ? 0 : m_runtime->blockchain().latestBlock().index();
+        const std::uint64_t epochDuration =
+            genesisConfig.networkParameters().epochDurationSeconds();
+        const std::uint64_t currentEpoch =
+            (epochDuration > 0) ? (chainHeight / epochDuration) : 0;
+
+        const consensus::ValidatorPenaltyPolicy penaltyPolicy =
+            consensus::ValidatorPenaltyPolicy::conservativeTestnetPolicy();
+
+        for (const auto& evidence : m_evidencePool.allEvidence()) {
+            if (!m_penaltyLedger.containsEvidence(evidence.evidenceId())) {
+                m_penaltyLedger.applyEvidenceWithRegistryEffect(
+                    evidence,
+                    penaltyPolicy,
+                    now,
+                    currentEpoch,
+                    m_runtime->mutableValidatorRegistry()
+                );
+            }
         }
     }
 
@@ -795,6 +851,19 @@ NodeOrchestratorStartResult NodeOrchestrator::initOrLoad() {
         }
     }
 
+    // Replay governance transactions from all loaded blocks so effective
+    // network parameters reflect any changes approved before this restart.
+    {
+        const auto nowSec = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+        for (const auto& block : m_runtime->blockchain().blocks()) {
+            m_runtime->applyGovernanceFromBlock(
+                block, static_cast<std::int64_t>(nowSec)
+            );
+        }
+    }
+
     NodeOrchestratorStartResult result;
     result.status       = NodeOrchestratorStartStatus::RUNNING;
     result.freshGenesis = freshGenesis;
@@ -941,6 +1010,41 @@ bool NodeOrchestrator::startConsensus() {
             );
 
             persistFinalizedRecord(rec, m_config.dataDirectory().rootPath());
+
+            // Every 100 finalized blocks save an account-state snapshot so the
+            // next restart can do partial replay instead of O(N) full replay.
+            constexpr std::uint64_t kSnapshotInterval = 100;
+            if (block.index() > 0 && block.index() % kSnapshotInterval == 0) {
+                try {
+                    const auto& genesisConfig =
+                        m_runtime->config().genesisConfig();
+                    const std::uint64_t minFeeRaw =
+                        m_runtime->effectiveMinimumFeeRawUnits();
+                    const std::int64_t minFee =
+                        (minFeeRaw > static_cast<std::uint64_t>(
+                                         std::numeric_limits<std::int64_t>::max()))
+                        ? std::numeric_limits<std::int64_t>::max()
+                        : static_cast<std::int64_t>(minFeeRaw);
+
+                    const core::AccountStateView view =
+                        RuntimeAccountStateBuilder::accountStateViewAtTip(
+                            genesisConfig, m_runtime->blockchain(), minFee
+                        );
+
+                    storage::AccountStateSnapshotStore snapshotStore(
+                        m_config.dataDirectory().rootPath()
+                    );
+                    snapshotStore.save(storage::AccountStateSnapshot(
+                        genesisConfig.deterministicId(),
+                        block.index(),
+                        block.hash(),
+                        view
+                    ));
+                } catch (...) {
+                    // Snapshot failure is non-fatal; full replay will handle
+                    // the next restart.
+                }
+            }
         }
     );
 
@@ -1006,6 +1110,16 @@ bool NodeOrchestrator::produceBlock(
     if (result.status() != RuntimeBlockPipelineStatus::FINALIZED) {
         return false;
     }
+
+    // A block was just appended to the chain — process any governance proposals
+    // it contains so effective parameters update immediately, then drop the
+    // cached account state so the next tick rebuilds it from the updated tip.
+    if (!m_runtime->blockchain().empty()) {
+        m_runtime->applyGovernanceFromBlock(
+            m_runtime->blockchain().latestBlock(), now
+        );
+    }
+    m_runtime->invalidateAccountStateCache();
 
     // Sign and broadcast the proposed block so peers can authenticate
     // the proposer before adding it to their chains.

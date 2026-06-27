@@ -86,10 +86,60 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewAtTip(
     return view;
 }
 
+core::AccountStateView RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
+    const core::AccountStateView& snapshotView,
+    const core::Blockchain& blockchain,
+    std::uint64_t snapshotHeight,
+    std::int64_t minimumFeeRawUnits
+) {
+    if (minimumFeeRawUnits < 0) {
+        throw std::invalid_argument("Minimum fee cannot be negative when rebuilding from snapshot.");
+    }
+
+    if (!blockchain.isValid()) {
+        throw std::invalid_argument("Cannot rebuild from snapshot with invalid blockchain.");
+    }
+
+    core::AccountStateView view = snapshotView;
+
+    for (const core::Block& block : blockchain.blocks()) {
+        if (block.isGenesisBlock() || block.index() <= snapshotHeight) {
+            continue;
+        }
+
+        const core::StateTransitionPreviewContext context(
+            minimumFeeRawUnits,
+            view,
+            false,
+            true
+        );
+
+        const core::StateTransitionPreviewResult preview =
+            core::StateTransitionPreview::previewBlock(block, context);
+
+        if (!preview.accepted()) {
+            throw std::logic_error(
+                "Cannot rebuild account state from snapshot: " + preview.reason()
+            );
+        }
+
+        core::AccountStateView nextView;
+        for (const core::AccountState& account : preview.resultingAccounts()) {
+            if (!nextView.putAccount(account)) {
+                throw std::logic_error("Preview produced invalid account state during snapshot replay.");
+            }
+        }
+        view = nextView;
+    }
+
+    return view;
+}
+
 core::StateTransitionPreviewContext RuntimeAccountStateBuilder::previewContextAtTip(
     const config::GenesisConfig& genesisConfig,
     const core::Blockchain& blockchain,
-    std::int64_t minimumFeeRawUnits
+    std::int64_t minimumFeeRawUnits,
+    std::int64_t wallClockNow
 ) {
     return core::StateTransitionPreviewContext(
         minimumFeeRawUnits,
@@ -99,7 +149,9 @@ core::StateTransitionPreviewContext RuntimeAccountStateBuilder::previewContextAt
             minimumFeeRawUnits
         ),
         false,
-        true
+        true,
+        "",
+        wallClockNow
     );
 }
 

@@ -5,16 +5,19 @@
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/ConsensusRoundManager.hpp"
 #include "consensus/ForkChoice.hpp"
+#include "core/AccountStateView.hpp"
 #include "core/Blockchain.hpp"
 #include "core/StatePruner.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "mempool/Mempool.hpp"
+#include "node/GovernanceExecutor.hpp"
 #include "node/RuntimeSupplyState.hpp"
 #include "p2p/LocalNodeSync.hpp"
 #include "p2p/PeerMessage.hpp"
 
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -167,6 +170,30 @@ public:
     const core::StatePruner& statePruner() const;
     core::StatePruner& mutableStatePruner();
 
+    // Return a lazily-built account state view for the current chain tip.
+    // The view is cached by tip height; adding a block via mutableBlockchain()
+    // must be followed by invalidateAccountStateCache() to force a rebuild.
+    // minimumFeeRawUnits is only used on a cache miss (rebuild).
+    const core::AccountStateView& cachedAccountStateAtTip(
+        std::int64_t minimumFeeRawUnits
+    ) const;
+
+    // Discard the cached account state so the next call to
+    // cachedAccountStateAtTip() rebuilds from the updated chain.
+    void invalidateAccountStateCache();
+
+    // Access the governance executor that tracks applied parameter changes.
+    const GovernanceExecutor& governanceExecutor() const;
+    GovernanceExecutor& mutableGovernanceExecutor();
+
+    // Return the effective minimum fee raw units, accounting for any applied
+    // governance overrides on top of the genesis network parameters.
+    std::uint64_t effectiveMinimumFeeRawUnits() const;
+
+    // Process any GOVERNANCE_PROPOSE transactions in the given block and call
+    // executeProposal() for each, so governance changes take effect.
+    void applyGovernanceFromBlock(const core::Block& block, std::int64_t now);
+
     bool isRunning() const;
     bool isHalted() const;
     bool isValid() const;
@@ -206,6 +233,11 @@ private:
     LocalPeerManager m_peerManager;
     RuntimeSupplyState m_supplyState;
     core::StatePruner m_statePruner;
+    GovernanceExecutor m_governanceExecutor;
+
+    // Account-state cache: rebuilt lazily when the chain tip advances.
+    mutable std::optional<core::AccountStateView> m_accountStateCache;
+    mutable std::uint64_t m_accountStateCacheHeight = 0;
 };
 
 enum class NodeRuntimeStartStatus {

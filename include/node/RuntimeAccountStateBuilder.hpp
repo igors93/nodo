@@ -22,10 +22,20 @@ public:
         std::int64_t minimumFeeRawUnits
     );
 
+    // Replay only blocks with index > snapshotHeight starting from snapshotView.
+    // Avoids O(N) full replay when a fresh snapshot is available.
+    static core::AccountStateView accountStateViewFromSnapshot(
+        const core::AccountStateView& snapshotView,
+        const core::Blockchain& blockchain,
+        std::uint64_t snapshotHeight,
+        std::int64_t minimumFeeRawUnits
+    );
+
     static core::StateTransitionPreviewContext previewContextAtTip(
         const config::GenesisConfig& genesisConfig,
         const core::Blockchain& blockchain,
-        std::int64_t minimumFeeRawUnits
+        std::int64_t minimumFeeRawUnits,
+        std::int64_t wallClockNow = 0
     );
 };
 

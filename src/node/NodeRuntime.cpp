@@ -2,9 +2,13 @@
 
 #include "consensus/ProposerSchedule.hpp"
 #include "core/GenesisVerifier.hpp"
+#include "core/LedgerRecord.hpp"
+#include "core/Transaction.hpp"
+#include "core/TransactionType.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
+#include "node/RuntimeAccountStateBuilder.hpp"
 
 #include <sstream>
 #include <utility>
@@ -449,6 +453,68 @@ const core::StatePruner& NodeRuntime::statePruner() const {
 
 core::StatePruner& NodeRuntime::mutableStatePruner() {
     return m_statePruner;
+}
+
+const core::AccountStateView& NodeRuntime::cachedAccountStateAtTip(
+    std::int64_t minimumFeeRawUnits
+) const {
+    const std::uint64_t tipHeight =
+        m_blockchain.empty() ? 0 : m_blockchain.latestBlock().index();
+
+    if (m_accountStateCache.has_value() &&
+        m_accountStateCacheHeight == tipHeight) {
+        return *m_accountStateCache;
+    }
+
+    m_accountStateCache = RuntimeAccountStateBuilder::accountStateViewAtTip(
+        m_config.genesisConfig(),
+        m_blockchain,
+        minimumFeeRawUnits
+    );
+    m_accountStateCacheHeight = tipHeight;
+    return *m_accountStateCache;
+}
+
+void NodeRuntime::invalidateAccountStateCache() {
+    m_accountStateCache = std::nullopt;
+}
+
+const GovernanceExecutor& NodeRuntime::governanceExecutor() const {
+    return m_governanceExecutor;
+}
+
+GovernanceExecutor& NodeRuntime::mutableGovernanceExecutor() {
+    return m_governanceExecutor;
+}
+
+std::uint64_t NodeRuntime::effectiveMinimumFeeRawUnits() const {
+    const std::string governed = m_governanceExecutor.currentValueForTarget(
+        GovernanceParameterTarget::MINIMUM_FEE_RAW
+    );
+    if (!governed.empty()) {
+        try {
+            return std::stoull(governed);
+        } catch (...) {}
+    }
+    return m_config.genesisConfig().networkParameters().minimumFeeRawUnits();
+}
+
+void NodeRuntime::applyGovernanceFromBlock(
+    const core::Block& block,
+    std::int64_t now
+) {
+    const std::uint64_t height = block.index();
+    for (const auto& record : block.records()) {
+        if (record.type() != core::LedgerRecordType::TRANSACTION) continue;
+        try {
+            const core::Transaction tx =
+                core::Transaction::deserializeForStateReplay(record.payload());
+            if (tx.type() != core::TransactionType::GOVERNANCE_PROPOSE) continue;
+            if (m_governanceExecutor.hasBeenExecuted(tx.id())) continue;
+            // toAddress carries the proposal payload: "target=X;value=Y;effectiveHeight=N"
+            m_governanceExecutor.executeProposal(tx.id(), tx.toAddress(), height, now);
+        } catch (...) {}
+    }
 }
 
 LocalPeerManager& NodeRuntime::mutablePeerManager() {

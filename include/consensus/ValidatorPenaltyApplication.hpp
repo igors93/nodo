@@ -2,6 +2,7 @@
 #define NODO_CONSENSUS_VALIDATOR_PENALTY_APPLICATION_HPP
 
 #include "consensus/SlashingEvidence.hpp"
+#include "core/ValidatorRegistry.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -169,6 +170,20 @@ public:
         const SlashingEvidenceRecord& evidence,
         const ValidatorPenaltyPolicy& policy,
         std::int64_t now
+    );
+
+    // Apply evidence and immediately propagate the resulting penalty action
+    // (JAIL, TOMBSTONE) to the validator registry so slashed validators lose
+    // consensus eligibility in the same tick where the evidence is processed.
+    //
+    // currentEpoch is used to compute jailUntilEpoch; pass
+    // (blockHeight / epochDurationSeconds) or 0 if unavailable.
+    ValidatorPenaltyApplicationResult applyEvidenceWithRegistryEffect(
+        const SlashingEvidenceRecord& evidence,
+        const ValidatorPenaltyPolicy& policy,
+        std::int64_t now,
+        std::uint64_t currentEpoch,
+        core::ValidatorRegistry& registry
     );
 
     ValidatorPenaltyApplicationResult applyDecision(

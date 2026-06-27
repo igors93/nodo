@@ -4,6 +4,7 @@
 #include "config/NetworkParameters.hpp"
 #include "consensus/ConsensusEventLoop.hpp"
 #include "consensus/EvidencePool.hpp"
+#include "consensus/ValidatorPenaltyApplication.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureProvider.hpp"
 #include "crypto/Signer.hpp"
@@ -211,6 +212,7 @@ private:
     std::unique_ptr<consensus::ConsensusEventLoop> m_consensusLoop;
     std::unique_ptr<NodeRpcServer>           m_rpcServer;
     consensus::EvidencePool                  m_evidencePool;
+    consensus::ValidatorPenaltyLedger        m_penaltyLedger;
     std::unique_ptr<p2p::DiscoveryService>   m_discoveryService;
 
     std::atomic<bool> m_running;

@@ -1,6 +1,7 @@
 #include "node/RuntimeStateLoader.hpp"
 
 #include "consensus/ConsensusRecoveryStore.hpp"
+#include "core/StateRootCalculator.hpp"
 #include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedArtifactValidationContext.hpp"
 #include "node/FinalizedArtifactValidator.hpp"
@@ -12,6 +13,7 @@
 #include "node/RuntimeStateVerifier.hpp"
 #include "consensus/QuorumCertificate.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
+#include "storage/AccountStateSnapshotStore.hpp"
 
 #include <exception>
 #include <filesystem>
@@ -354,17 +356,50 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::MANIFEST_MISMATCH, "Rebuilt chain latest block does not match manifest.");
     }
 
-    const RuntimeStateVerificationResult stateRootVerification =
-        RuntimeStateVerifier::verifyLatestStateRoot(
-            genesisConfig,
-            runtime.blockchain(),
-            manifest.latestStateRoot()
+    // Build the account state at the chain tip. When a valid snapshot is
+    // available and its block hash matches the on-disk chain, we replay only
+    // the delta (blocks after the snapshot) instead of the full O(N) replay.
+    const std::int64_t minFee = minimumFeeRawUnits(genesisConfig);
+    core::AccountStateView tipAccountState;
+    {
+        const storage::AccountStateSnapshotStore snapshotStore(
+            directoryConfig.rootPath()
         );
+        const auto snapshotOpt = snapshotStore.load();
 
-    if (!stateRootVerification.verified()) {
+        bool usedSnapshot = false;
+        if (snapshotOpt.has_value()) {
+            const auto& snap = snapshotOpt.value();
+            const auto& blocks = runtime.blockchain().blocks();
+            if (snap.genesisConfigId() == genesisConfig.deterministicId() &&
+                snap.height() < blocks.size() &&
+                blocks[static_cast<std::size_t>(snap.height())].hash() == snap.blockHash()) {
+                try {
+                    tipAccountState = RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
+                        snap.view(),
+                        runtime.blockchain(),
+                        snap.height(),
+                        minFee
+                    );
+                    usedSnapshot = true;
+                } catch (...) {}
+            }
+        }
+
+        if (!usedSnapshot) {
+            tipAccountState = RuntimeAccountStateBuilder::accountStateViewAtTip(
+                genesisConfig, runtime.blockchain(), minFee
+            );
+        }
+    }
+
+    const std::string computedStateRoot =
+        core::StateRootCalculator::calculateAccountStateRoot(tipAccountState);
+
+    if (computedStateRoot.empty() || computedStateRoot != manifest.latestStateRoot()) {
         return RuntimeStateLoadResult::rejected(
             RuntimeStateLoadStatus::MANIFEST_MISMATCH,
-            stateRootVerification.reason()
+            "Manifest latestStateRoot does not match rebuilt account state."
         );
     }
 
@@ -374,8 +409,8 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             runtime.mutableMempool(),
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
-            RuntimeAccountStateBuilder::accountStateViewAtTip(genesisConfig, runtime.blockchain(), minimumFeeRawUnits(genesisConfig)),
-            minimumFeeRawUnits(genesisConfig),
+            tipAccountState,
+            minFee,
             cryptoContext.userSignatureProvider()
         );
 
