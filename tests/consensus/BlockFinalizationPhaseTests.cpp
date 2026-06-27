@@ -123,7 +123,7 @@ void testFinalizeSucceedsAfterPrecommitQuorum() {
             kTs + 5
         );
 
-    require(finResult.finalized(),
+    if (!finResult.finalized()) { std::cout << "tryFinalize failed: " << finResult.reason() << std::endl; } require(finResult.finalized(),
             "Finalization must succeed when quorum of PRECOMMIT votes is present.");
     require(finResult.record().blockIndex() == block.index(),
             "Finalized record must reference the correct block height.");

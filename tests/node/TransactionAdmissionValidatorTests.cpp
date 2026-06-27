@@ -119,7 +119,7 @@ core::Transaction buildTransaction(
             timestamp
         ),
         signer,
-        "nodo-localnet-1"
+        "nodo-localnet-admission-test"
     );
 }
 

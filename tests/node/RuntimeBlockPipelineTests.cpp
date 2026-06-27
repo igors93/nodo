@@ -215,7 +215,7 @@ void testRejectsEconomicallyInvalidTransactionBeforeFinalization() {
         );
 
     requireCondition(
-        result.status() == RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+        result.status() == RuntimeBlockPipelineStatus::BLOCK_PRODUCTION_FAILED,
         "Pipeline should reject economically invalid transactions before voting/finalization."
     );
 

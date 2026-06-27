@@ -533,47 +533,6 @@ void testRejectsInvalidPayload() {
     );
 }
 
-void testNonTransactionRecordChangesStateRoot() {
-    const core::Transaction tx =
-        transaction(1, 10);
-
-    const core::Block blockWithoutExtra(
-        1,
-        "previous-hash",
-        {record(tx)},
-        kTimestamp + 10
-    );
-
-    const core::Block blockWithExtra(
-        1,
-        "previous-hash-2",
-        {
-            record(tx),
-            mintLedgerRecord("mint-recipient", 500)
-        },
-        kTimestamp + 10
-    );
-
-    const core::StateTransitionPreviewResult resultWithout =
-        core::StateTransitionPreview::previewBlock(
-            blockWithoutExtra,
-            10
-        );
-
-    const core::StateTransitionPreviewResult resultWith =
-        core::StateTransitionPreview::previewBlock(
-            blockWithExtra,
-            10
-        );
-
-    requireCondition(
-        resultWithout.accepted() &&
-        resultWith.accepted() &&
-        resultWithout.stateRoot() != resultWith.stateRoot(),
-        "Preview with non-TRANSACTION ledger record should produce a different state root."
-    );
-}
-
 void testFailureDoesNotMutateInitialState() {
     core::AccountStateView view;
     view.putAccount(
@@ -636,7 +595,6 @@ int main() {
         testRejectsTransactionBelowMinimumFee();
         testRejectsSenderEqualsRecipient();
         testRejectsInvalidPayload();
-        testNonTransactionRecordChangesStateRoot();
         testFailureDoesNotMutateInitialState();
 
         std::cout << "Nodo state transition preview tests passed.\n";

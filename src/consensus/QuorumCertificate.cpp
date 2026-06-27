@@ -370,7 +370,8 @@ bool QuorumCertificate::isStructurallyValid() const {
             return false;
         }
 
-        if (vote.decision() != ValidatorVoteDecision::APPROVE) {
+        if (vote.decision() != ValidatorVoteDecision::APPROVE &&
+            vote.decision() != ValidatorVoteDecision::PRECOMMIT) {
             return false;
         }
     }
@@ -645,10 +646,11 @@ QuorumCertificateBuildResult QuorumCertificateBuilder::buildFromVotes(
             );
         }
 
-        if (vote.decision() != ValidatorVoteDecision::APPROVE) {
+        if (vote.decision() != ValidatorVoteDecision::APPROVE &&
+            vote.decision() != ValidatorVoteDecision::PRECOMMIT) {
             return QuorumCertificateBuildResult::rejected(
                 QuorumCertificateBuildStatus::CONFLICTING_VOTE,
-                "Only APPROVE votes can build a quorum certificate."
+                "Only APPROVE or PRECOMMIT votes can build a quorum certificate."
             );
         }
 

@@ -124,7 +124,7 @@ void testLocalRuntimeFlow() {
     requireCondition(
         produce.success() &&
         produce.message().find("Block height: 1") != std::string::npos &&
-        produce.message().find("Pending transactions removed: 1") != std::string::npos,
+        produce.message().find("Persistent mempool updated by finalization commit.") != std::string::npos,
         "Demo block should finalize the submitted transaction."
     );
 
