@@ -421,10 +421,6 @@ void NodeOrchestrator::tick(std::int64_t now) {
                 );
                 if (!batch.isValid()) continue;
 
-                if (batch.sourcePeerId() != envelope.senderNodeId()) {
-                    continue;
-                }
-
                 const std::vector<unsigned char> encoded =
                     PersistentBlockStateSyncCodec::encodeBlockSyncBatch(batch);
                 gossip.broadcast(
@@ -511,8 +507,15 @@ void NodeOrchestrator::tick(std::int64_t now) {
             if (!optBytes.has_value()) continue;
             try {
                 const PersistentBlockSyncBatch batch =
-                    PersistentBlockStateSyncCodec::decodeBlockSyncBatch(optBytes.value());
+                    PersistentBlockStateSyncCodec::decodeBlockSyncBatch(
+                        optBytes.value()
+                    );
+
                 if (!batch.isValid()) continue;
+
+                if (batch.sourcePeerId() != envelope.senderNodeId()) {
+                    continue;
+                }
 
                 const PersistentSyncApplyResult applyResult =
                     PersistentBlockStateSyncApplier::applyValidatedBatch(
