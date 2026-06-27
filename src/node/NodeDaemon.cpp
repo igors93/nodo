@@ -211,6 +211,11 @@ void NodeDaemon::processBlockProposals(std::int64_t now) {
                 .currentState()
                 .round();
 
+        // A proposal is valid only for the current consensus round.
+        if (proposal.round() != currentRound) {
+            continue;
+        }
+
         const std::string expectedProposer =
             consensus::ProposerSchedule::selectProposer(
                 validatorRegistry,
