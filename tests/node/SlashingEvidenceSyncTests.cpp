@@ -286,6 +286,10 @@ void testOfflineNodeSynchronizesAndPersistsEvidence() {
     );
     assert(unsolicitedResult.rejectedMessages == 1);
     assert(poolB.size() == 1);
+    assert(meshB.invalidMessageCountForPeer("node-a") == 1);
+    assert(meshB.peerRegistry().peer("node-a") != nullptr);
+    assert(meshB.peerRegistry().peer("node-a")->score() == -10);
+    assert(!meshB.peerRegistry().peer("node-a")->quarantined());
 
     constexpr std::int64_t floodStartedAt = kNow + 100;
     for (std::size_t index = 0; index < 20; ++index) {
@@ -318,6 +322,10 @@ void testOfflineNodeSynchronizesAndPersistsEvidence() {
     );
     assert(rateLimited.responsesSent == 16);
     assert(rateLimited.rateLimitedMessages == 4);
+    assert(meshA.invalidMessageCountForPeer("node-b") == 4);
+    assert(meshA.peerRegistry().peer("node-b") != nullptr);
+    assert(meshA.peerRegistry().peer("node-b")->score() == -20);
+    assert(meshA.peerRegistry().peer("node-b")->quarantined());
 
     std::filesystem::remove_all(evidenceDirectory, cleanupError);
 }

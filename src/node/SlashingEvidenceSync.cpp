@@ -51,6 +51,22 @@ std::int64_t saturatingAdd(std::int64_t value, std::int64_t increment) {
         : value + increment;
 }
 
+void rejectSyncMessage(
+    p2p::GossipMesh& gossip,
+    const p2p::NetworkEnvelope& envelope,
+    p2p::PeerMisbehaviorType type,
+    const std::string& reason,
+    std::int64_t now,
+    SlashingEvidenceSyncResult& result
+) {
+    if (type == p2p::PeerMisbehaviorType::RATE_LIMIT_EXCEEDED) {
+        ++result.rateLimitedMessages;
+    } else {
+        ++result.rejectedMessages;
+    }
+    gossip.reportPeerMisbehavior(envelope, type, reason, now);
+}
+
 } // namespace
 
 SlashingEvidenceSync::SlashingEvidenceSync()
@@ -105,12 +121,26 @@ void SlashingEvidenceSync::processInventories(
     );
     for (const p2p::NetworkEnvelope& envelope : messages) {
         if (!consumePeerBudget(envelope.senderNodeId(), now)) {
-            ++result.rateLimitedMessages;
+            rejectSyncMessage(
+                gossip,
+                envelope,
+                p2p::PeerMisbehaviorType::RATE_LIMIT_EXCEEDED,
+                "Slashing evidence inventory exceeded the peer sync budget.",
+                now,
+                result
+            );
             continue;
         }
         if (envelope.payload().empty() || envelope.payload().size() >
             core::ProtocolLimits::MAX_SLASHING_EVIDENCE_GOSSIP_BYTES) {
-            ++result.rejectedMessages;
+            rejectSyncMessage(
+                gossip,
+                envelope,
+                p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                "Slashing evidence inventory payload size is invalid.",
+                now,
+                result
+            );
             continue;
         }
         try {
@@ -126,7 +156,14 @@ void SlashingEvidenceSync::processInventories(
                     inventory.announcerNodeId(),
                     inventory.generatedAt(),
                     now)) {
-                ++result.rejectedMessages;
+                rejectSyncMessage(
+                    gossip,
+                    envelope,
+                    p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                    "Slashing evidence inventory binding is invalid.",
+                    now,
+                    result
+                );
                 continue;
             }
 
@@ -177,7 +214,14 @@ void SlashingEvidenceSync::processInventories(
                 ++result.requestsSent;
             }
         } catch (const std::exception&) {
-            ++result.rejectedMessages;
+            rejectSyncMessage(
+                gossip,
+                envelope,
+                p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                "Slashing evidence inventory payload is malformed.",
+                now,
+                result
+            );
         }
     }
 }
@@ -193,12 +237,26 @@ void SlashingEvidenceSync::processRequests(
     );
     for (const p2p::NetworkEnvelope& envelope : messages) {
         if (!consumePeerBudget(envelope.senderNodeId(), now, true)) {
-            ++result.rateLimitedMessages;
+            rejectSyncMessage(
+                gossip,
+                envelope,
+                p2p::PeerMisbehaviorType::RATE_LIMIT_EXCEEDED,
+                "Slashing evidence request exceeded the peer sync budget.",
+                now,
+                result
+            );
             continue;
         }
         if (envelope.payload().empty() || envelope.payload().size() >
             core::ProtocolLimits::MAX_SLASHING_EVIDENCE_GOSSIP_BYTES) {
-            ++result.rejectedMessages;
+            rejectSyncMessage(
+                gossip,
+                envelope,
+                p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                "Slashing evidence request payload size is invalid.",
+                now,
+                result
+            );
             continue;
         }
         try {
@@ -214,7 +272,14 @@ void SlashingEvidenceSync::processRequests(
                     request.requesterNodeId(),
                     request.requestedAt(),
                     now)) {
-                ++result.rejectedMessages;
+                rejectSyncMessage(
+                    gossip,
+                    envelope,
+                    p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                    "Slashing evidence request binding is invalid.",
+                    now,
+                    result
+                );
                 continue;
             }
 
@@ -240,7 +305,14 @@ void SlashingEvidenceSync::processRequests(
                 ++result.responsesSent;
             }
         } catch (const std::exception&) {
-            ++result.rejectedMessages;
+            rejectSyncMessage(
+                gossip,
+                envelope,
+                p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                "Slashing evidence request payload is malformed.",
+                now,
+                result
+            );
         }
     }
 }
@@ -260,12 +332,26 @@ void SlashingEvidenceSync::processResponses(
     );
     for (const p2p::NetworkEnvelope& envelope : messages) {
         if (!consumePeerBudget(envelope.senderNodeId(), now)) {
-            ++result.rateLimitedMessages;
+            rejectSyncMessage(
+                gossip,
+                envelope,
+                p2p::PeerMisbehaviorType::RATE_LIMIT_EXCEEDED,
+                "Slashing evidence response exceeded the peer sync budget.",
+                now,
+                result
+            );
             continue;
         }
         if (envelope.payload().empty() || envelope.payload().size() >
             core::ProtocolLimits::MAX_SLASHING_EVIDENCE_GOSSIP_BYTES) {
-            ++result.rejectedMessages;
+            rejectSyncMessage(
+                gossip,
+                envelope,
+                p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                "Slashing evidence response payload size is invalid.",
+                now,
+                result
+            );
             continue;
         }
         try {
@@ -281,7 +367,14 @@ void SlashingEvidenceSync::processResponses(
                     response.responderNodeId(),
                     response.respondedAt(),
                     now)) {
-                ++result.rejectedMessages;
+                rejectSyncMessage(
+                    gossip,
+                    envelope,
+                    p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                    "Slashing evidence response binding is invalid.",
+                    now,
+                    result
+                );
                 continue;
             }
 
@@ -289,12 +382,20 @@ void SlashingEvidenceSync::processResponses(
             const auto pending = m_pendingRequests.find(evidenceId);
             if (pending == m_pendingRequests.end() ||
                 pending->second.peerId != envelope.senderNodeId()) {
-                ++result.rejectedMessages;
+                rejectSyncMessage(
+                    gossip,
+                    envelope,
+                    p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                    "Slashing evidence response was not requested from this peer.",
+                    now,
+                    result
+                );
                 continue;
             }
 
-            const consensus::SlashingEvidenceValidationResult admitted =
-                VerifiedSlashingEvidenceAdmission::admit(
+            consensus::SlashingEvidenceValidationResult admitted;
+            try {
+                admitted = VerifiedSlashingEvidenceAdmission::admit(
                     response.evidence(),
                     currentConsensusHeight,
                     now,
@@ -303,16 +404,42 @@ void SlashingEvidenceSync::processResponses(
                     provider,
                     evidencePool
                 );
+            } catch (const std::exception&) {
+                // Local persistence or runtime failures are not evidence of
+                // remote misbehavior and must not damage the sender's score.
+                m_pendingRequests.erase(pending);
+                ++result.rejectedMessages;
+                continue;
+            } catch (...) {
+                m_pendingRequests.erase(pending);
+                ++result.rejectedMessages;
+                continue;
+            }
             m_pendingRequests.erase(pending);
             if (admitted.accepted()) {
                 ++result.evidenceAccepted;
             } else if (admitted.duplicate()) {
                 ++result.duplicatesSkipped;
             } else {
-                ++result.rejectedMessages;
+                rejectSyncMessage(
+                    gossip,
+                    envelope,
+                    p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                    "Slashing evidence response failed verification: " +
+                        admitted.reason(),
+                    now,
+                    result
+                );
             }
         } catch (const std::exception&) {
-            ++result.rejectedMessages;
+            rejectSyncMessage(
+                gossip,
+                envelope,
+                p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                "Slashing evidence response payload is malformed.",
+                now,
+                result
+            );
         }
     }
 }

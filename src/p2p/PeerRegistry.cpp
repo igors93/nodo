@@ -1,5 +1,6 @@
 #include "p2p/PeerRegistry.hpp"
 
+#include <algorithm>
 #include <sstream>
 #include <utility>
 
@@ -49,6 +50,26 @@ PeerRegistryResult PeerRegistry::registerPeer(PeerMetadata peerMetadata) {
             ? PeerRegistryStatus::REGISTERED
             : PeerRegistryStatus::UPDATED;
 
+    // A fresh handshake may update endpoint and liveness metadata, but it must
+    // never erase a reputation penalty already assigned to this node id.
+    if (existing != m_peersByNodeId.end()) {
+        peerMetadata = PeerMetadata(
+            peerMetadata.nodeId(),
+            peerMetadata.endpoint(),
+            peerMetadata.publicKeyFingerprint(),
+            std::min(
+                existing->second.firstSeenAt(),
+                peerMetadata.firstSeenAt()
+            ),
+            std::max(
+                existing->second.lastSeenAt(),
+                peerMetadata.lastSeenAt()
+            ),
+            existing->second.score(),
+            existing->second.quarantined()
+        );
+    }
+
     m_peersByNodeId[peerMetadata.nodeId()] = std::move(peerMetadata);
 
     return PeerRegistryResult(status, "Peer registry accepted peer metadata.");
@@ -69,6 +90,20 @@ PeerRegistryResult PeerRegistry::updateHeartbeat(
 
     found->second = found->second.withHeartbeat(seenAt);
     return PeerRegistryResult(PeerRegistryStatus::UPDATED, "Peer heartbeat updated.");
+}
+
+PeerRegistryResult PeerRegistry::adjustScore(
+    const std::string& nodeId,
+    std::int32_t delta,
+    std::string reason
+) {
+    const auto found = m_peersByNodeId.find(nodeId);
+    if (found == m_peersByNodeId.end()) {
+        return PeerRegistryResult(PeerRegistryStatus::NOT_FOUND, "Peer was not found.");
+    }
+
+    found->second = found->second.withScoreDelta(delta);
+    return PeerRegistryResult(PeerRegistryStatus::UPDATED, std::move(reason));
 }
 
 PeerRegistryResult PeerRegistry::quarantinePeer(

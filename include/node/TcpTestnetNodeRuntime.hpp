@@ -66,9 +66,26 @@ public:
         std::string publicKeyFingerprint
     );
 
+    TcpTestnetPeerFileEntry(
+        std::string nodeId,
+        p2p::PeerEndpoint endpoint,
+        std::string publicKeyFingerprint,
+        std::int64_t firstSeenAt,
+        std::int64_t lastSeenAt,
+        std::int32_t score,
+        bool quarantined,
+        std::size_t invalidMessageCount
+    );
+
     const std::string& nodeId() const;
     const p2p::PeerEndpoint& endpoint() const;
     const std::string& publicKeyFingerprint() const;
+    bool hasPersistentState() const;
+    std::int64_t firstSeenAt() const;
+    std::int64_t lastSeenAt() const;
+    std::int32_t score() const;
+    bool quarantined() const;
+    std::size_t invalidMessageCount() const;
 
     bool isValid() const;
     std::string serialize() const;
@@ -81,6 +98,12 @@ private:
     std::string m_nodeId;
     p2p::PeerEndpoint m_endpoint;
     std::string m_publicKeyFingerprint;
+    bool m_hasPersistentState;
+    std::int64_t m_firstSeenAt;
+    std::int64_t m_lastSeenAt;
+    std::int32_t m_score;
+    bool m_quarantined;
+    std::size_t m_invalidMessageCount;
 };
 
 class TcpTestnetPeerStore {

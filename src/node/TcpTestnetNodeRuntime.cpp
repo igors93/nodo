@@ -2,6 +2,7 @@
 
 #include "storage/AtomicFile.hpp"
 
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -48,6 +49,59 @@ std::uint16_t parsePort(const std::string& value) {
     }
 
     return static_cast<std::uint16_t>(parsed);
+}
+
+std::int64_t parseInt64(const std::string& value, const char* fieldName) {
+    std::size_t consumed = 0;
+    try {
+        const long long parsed = std::stoll(value, &consumed);
+        if (consumed != value.size()) {
+            throw std::invalid_argument("trailing characters");
+        }
+        return static_cast<std::int64_t>(parsed);
+    } catch (const std::exception&) {
+        throw std::invalid_argument(
+            std::string("Peer file ") + fieldName + " is malformed."
+        );
+    }
+}
+
+std::int32_t parseInt32(const std::string& value, const char* fieldName) {
+    const std::int64_t parsed = parseInt64(value, fieldName);
+    if (parsed < std::numeric_limits<std::int32_t>::min() ||
+        parsed > std::numeric_limits<std::int32_t>::max()) {
+        throw std::invalid_argument(
+            std::string("Peer file ") + fieldName + " is outside valid range."
+        );
+    }
+    return static_cast<std::int32_t>(parsed);
+}
+
+std::size_t parseSize(const std::string& value, const char* fieldName) {
+    if (value.empty() || value.front() == '-') {
+        throw std::invalid_argument(
+            std::string("Peer file ") + fieldName + " is malformed."
+        );
+    }
+    std::size_t consumed = 0;
+    try {
+        const unsigned long long parsed = std::stoull(value, &consumed);
+        if (consumed != value.size() ||
+            parsed > std::numeric_limits<std::size_t>::max()) {
+            throw std::invalid_argument("outside valid range");
+        }
+        return static_cast<std::size_t>(parsed);
+    } catch (const std::exception&) {
+        throw std::invalid_argument(
+            std::string("Peer file ") + fieldName + " is malformed."
+        );
+    }
+}
+
+bool parseBool(const std::string& value) {
+    if (value == "0") return false;
+    if (value == "1") return true;
+    throw std::invalid_argument("Peer file quarantine flag is malformed.");
 }
 
 } // namespace
@@ -116,7 +170,13 @@ bool TcpTestnetNodeRuntimeConfig::isValid() const {
 TcpTestnetPeerFileEntry::TcpTestnetPeerFileEntry()
     : m_nodeId(),
       m_endpoint(),
-      m_publicKeyFingerprint() {}
+      m_publicKeyFingerprint(),
+      m_hasPersistentState(false),
+      m_firstSeenAt(0),
+      m_lastSeenAt(0),
+      m_score(0),
+      m_quarantined(false),
+      m_invalidMessageCount(0) {}
 
 TcpTestnetPeerFileEntry::TcpTestnetPeerFileEntry(
     std::string nodeId,
@@ -124,16 +184,50 @@ TcpTestnetPeerFileEntry::TcpTestnetPeerFileEntry(
     std::string publicKeyFingerprint
 ) : m_nodeId(std::move(nodeId)),
     m_endpoint(std::move(endpoint)),
-    m_publicKeyFingerprint(std::move(publicKeyFingerprint)) {}
+    m_publicKeyFingerprint(std::move(publicKeyFingerprint)),
+    m_hasPersistentState(false),
+    m_firstSeenAt(0),
+    m_lastSeenAt(0),
+    m_score(0),
+    m_quarantined(false),
+    m_invalidMessageCount(0) {}
+
+TcpTestnetPeerFileEntry::TcpTestnetPeerFileEntry(
+    std::string nodeId,
+    p2p::PeerEndpoint endpoint,
+    std::string publicKeyFingerprint,
+    std::int64_t firstSeenAt,
+    std::int64_t lastSeenAt,
+    std::int32_t score,
+    bool quarantined,
+    std::size_t invalidMessageCount
+) : m_nodeId(std::move(nodeId)),
+    m_endpoint(std::move(endpoint)),
+    m_publicKeyFingerprint(std::move(publicKeyFingerprint)),
+    m_hasPersistentState(true),
+    m_firstSeenAt(firstSeenAt),
+    m_lastSeenAt(lastSeenAt),
+    m_score(score),
+    m_quarantined(quarantined),
+    m_invalidMessageCount(invalidMessageCount) {}
 
 const std::string& TcpTestnetPeerFileEntry::nodeId() const { return m_nodeId; }
 const p2p::PeerEndpoint& TcpTestnetPeerFileEntry::endpoint() const { return m_endpoint; }
 const std::string& TcpTestnetPeerFileEntry::publicKeyFingerprint() const { return m_publicKeyFingerprint; }
+bool TcpTestnetPeerFileEntry::hasPersistentState() const { return m_hasPersistentState; }
+std::int64_t TcpTestnetPeerFileEntry::firstSeenAt() const { return m_firstSeenAt; }
+std::int64_t TcpTestnetPeerFileEntry::lastSeenAt() const { return m_lastSeenAt; }
+std::int32_t TcpTestnetPeerFileEntry::score() const { return m_score; }
+bool TcpTestnetPeerFileEntry::quarantined() const { return m_quarantined; }
+std::size_t TcpTestnetPeerFileEntry::invalidMessageCount() const { return m_invalidMessageCount; }
 
 bool TcpTestnetPeerFileEntry::isValid() const {
-    return isSafeScalar(m_nodeId) &&
+    const bool identityValid = isSafeScalar(m_nodeId) &&
            m_endpoint.isValid() &&
            isSafeScalar(m_publicKeyFingerprint);
+    return identityValid &&
+           (!m_hasPersistentState ||
+            (m_firstSeenAt > 0 && m_lastSeenAt >= m_firstSeenAt));
 }
 
 std::string TcpTestnetPeerFileEntry::serialize() const {
@@ -142,6 +236,13 @@ std::string TcpTestnetPeerFileEntry::serialize() const {
            << m_endpoint.host() << " "
            << m_endpoint.port() << " "
            << m_publicKeyFingerprint;
+    if (m_hasPersistentState) {
+        output << " " << m_firstSeenAt
+               << " " << m_lastSeenAt
+               << " " << m_score
+               << " " << (m_quarantined ? 1 : 0)
+               << " " << m_invalidMessageCount;
+    }
     return output.str();
 }
 
@@ -149,22 +250,32 @@ TcpTestnetPeerFileEntry TcpTestnetPeerFileEntry::parseLine(
     const std::string& line
 ) {
     std::istringstream input(line);
-    std::string nodeId;
-    std::string host;
-    std::string port;
-    std::string fingerprint;
+    std::vector<std::string> fields;
+    std::string field;
+    while (input >> field) {
+        fields.push_back(std::move(field));
+    }
 
-    input >> nodeId >> host >> port >> fingerprint;
-
-    if (nodeId.empty() || host.empty() || port.empty() || fingerprint.empty()) {
+    if (fields.size() != 4 && fields.size() != 9) {
         throw std::invalid_argument("Peer file line is malformed.");
     }
 
-    TcpTestnetPeerFileEntry entry(
-        nodeId,
-        p2p::PeerEndpoint(host, parsePort(port)),
-        fingerprint
-    );
+    TcpTestnetPeerFileEntry entry = fields.size() == 4
+        ? TcpTestnetPeerFileEntry(
+            fields[0],
+            p2p::PeerEndpoint(fields[1], parsePort(fields[2])),
+            fields[3]
+        )
+        : TcpTestnetPeerFileEntry(
+            fields[0],
+            p2p::PeerEndpoint(fields[1], parsePort(fields[2])),
+            fields[3],
+            parseInt64(fields[4], "firstSeenAt"),
+            parseInt64(fields[5], "lastSeenAt"),
+            parseInt32(fields[6], "score"),
+            parseBool(fields[7]),
+            parseSize(fields[8], "invalidMessageCount")
+        );
 
     if (!entry.isValid()) {
         throw std::invalid_argument("Peer file entry is invalid.");
@@ -203,7 +314,8 @@ void TcpTestnetPeerStore::save(
     std::filesystem::create_directories(peersFile.parent_path());
 
     std::ostringstream output;
-    output << "# nodeId host port publicKeyFingerprint\n";
+    output << "# nodeId host port publicKeyFingerprint firstSeenAt "
+              "lastSeenAt score quarantined invalidMessageCount\n";
 
     for (const auto& peer : peers) {
         if (peer.isValid()) {
@@ -219,7 +331,11 @@ TcpTestnetNodeRuntime::TcpTestnetNodeRuntime(
 ) : m_config(std::move(config)),
     m_transport(),
     m_gossipMesh(makeGossipConfig(), m_transport),
-    m_running(false) {}
+    m_running(false) {
+    m_gossipMesh.setPeerPenaltyPersistenceHandler(
+        [this]() { savePeersToDisk(); }
+    );
+}
 
 const TcpTestnetNodeRuntimeConfig& TcpTestnetNodeRuntime::config() const {
     return m_config;
@@ -293,17 +409,27 @@ std::size_t TcpTestnetNodeRuntime::loadPeersFromDisk(
     std::size_t loaded = 0;
 
     for (const auto& entry : entries) {
+        const std::int64_t firstSeenAt =
+            entry.hasPersistentState() ? entry.firstSeenAt() : now;
+        const std::int64_t lastSeenAt =
+            entry.hasPersistentState() ? entry.lastSeenAt() : now;
         p2p::PeerMetadata peer(
             entry.nodeId(),
             entry.endpoint(),
             entry.publicKeyFingerprint(),
-            now,
-            now,
-            0,
-            false
+            firstSeenAt,
+            lastSeenAt,
+            entry.hasPersistentState() ? entry.score() : 0,
+            entry.hasPersistentState() && entry.quarantined()
         );
 
         if (addPeer(peer).success()) {
+            if (entry.hasPersistentState()) {
+                m_gossipMesh.restorePeerPenaltyState(
+                    entry.nodeId(),
+                    entry.invalidMessageCount()
+                );
+            }
             ++loaded;
         }
     }
@@ -315,13 +441,16 @@ void TcpTestnetNodeRuntime::savePeersToDisk() const {
     std::vector<TcpTestnetPeerFileEntry> entries;
 
     for (const auto& peer : m_gossipMesh.peerRegistry().allPeers()) {
-        if (!peer.quarantined()) {
-            entries.emplace_back(
-                peer.nodeId(),
-                peer.endpoint(),
-                peer.publicKeyFingerprint()
-            );
-        }
+        entries.emplace_back(
+            peer.nodeId(),
+            peer.endpoint(),
+            peer.publicKeyFingerprint(),
+            peer.firstSeenAt(),
+            peer.lastSeenAt(),
+            peer.score(),
+            peer.quarantined(),
+            m_gossipMesh.invalidMessageCountForPeer(peer.nodeId())
+        );
     }
 
     TcpTestnetPeerStore::save(

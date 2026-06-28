@@ -26,9 +26,31 @@ int main() {
     assert(registry.peer("node-A") != nullptr);
     assert(registry.peer("node-A")->lastSeenAt() == 1010);
 
+    const auto penalized = registry.adjustScore(
+        "node-A",
+        -10,
+        "invalid synchronization message"
+    );
+    assert(penalized.success());
+    assert(registry.peer("node-A")->score() == -10);
+
     const auto quarantined = registry.quarantinePeer("node-A", "test quarantine");
     assert(quarantined.success());
     assert(registry.activePeers().empty());
+
+    nodo::p2p::PeerMetadata refreshedPeer(
+        "node-A",
+        nodo::p2p::PeerEndpoint("127.0.0.1", 18182),
+        "fingerprint-A-refreshed",
+        1020,
+        1020,
+        0,
+        false
+    );
+    assert(registry.registerPeer(refreshedPeer).success());
+    assert(registry.peer("node-A")->endpoint().port() == 18182);
+    assert(registry.peer("node-A")->score() == -10);
+    assert(registry.peer("node-A")->quarantined());
     assert(registry.isValid());
 
     return 0;

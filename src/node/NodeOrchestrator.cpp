@@ -707,6 +707,9 @@ bool NodeOrchestrator::startTransport() {
 
     const auto entries = TcpTestnetPeerStore::load(m_tcpRuntime->config().peersFilePath());
     for (const auto& entry : entries) {
+        if (entry.hasPersistentState() && entry.quarantined()) {
+            continue;
+        }
         m_discoveryService->addPeer(
             entry.nodeId(),
             entry.endpoint().host(),

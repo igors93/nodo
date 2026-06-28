@@ -101,8 +101,58 @@ int main() {
         p2p::NetworkMessageType::CHAIN_STATUS
     ) == 1);
 
+    const p2p::NetworkEnvelope invalidSyncMessage(
+        "nodo-localnet",
+        "localnet-chain",
+        "1.0.0",
+        p2p::NetworkMessageType::SLASHING_EVIDENCE_REQUEST,
+        "node-b",
+        1010,
+        30,
+        "malformed-sync-request"
+    );
+    for (std::int64_t offset = 0; offset < 3; ++offset) {
+        nodeA.gossipMesh().reportPeerMisbehavior(
+            invalidSyncMessage,
+            p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+            "Slashing evidence request payload is malformed.",
+            1010 + offset
+        );
+    }
+
+    const p2p::PeerMetadata* penalized =
+        nodeA.gossipMesh().peerRegistry().peer("node-b");
+    assert(penalized != nullptr);
+    assert(penalized->score() == -30);
+    assert(penalized->quarantined());
+    assert(nodeA.gossipMesh().invalidMessageCountForPeer("node-b") == 3);
+    assert(nodeA.gossipMesh().peerPenaltyPersistenceHealthy());
+
     nodeA.savePeersToDisk();
     assert(std::filesystem::exists(nodeA.config().peersFilePath()));
+
+    node::TcpTestnetNodeRuntime reloadedNodeA(
+        node::TcpTestnetNodeRuntimeConfig(
+            "node-a",
+            "127.0.0.1",
+            0,
+            "nodo-localnet",
+            "localnet-chain",
+            "1.0.0",
+            genesisId,
+            root / "node-a",
+            30,
+            3
+        )
+    );
+    assert(reloadedNodeA.loadPeersFromDisk(2000) == 1);
+    const p2p::PeerMetadata* restored =
+        reloadedNodeA.gossipMesh().peerRegistry().peer("node-b");
+    assert(restored != nullptr);
+    assert(restored->score() == -30);
+    assert(restored->quarantined());
+    assert(reloadedNodeA.gossipMesh().invalidMessageCountForPeer("node-b") == 3);
+    assert(!reloadedNodeA.connectPeer("node-b").success());
 
     nodeA.stop();
     nodeB.stop();

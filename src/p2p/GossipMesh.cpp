@@ -8,12 +8,16 @@
 
 #include <stdexcept>
 
+#include <algorithm>
 #include <sstream>
 #include <utility>
 
 namespace nodo::p2p {
 
 namespace {
+
+constexpr std::int32_t kInvalidMessageScorePenalty = -10;
+constexpr std::int32_t kRateLimitScorePenalty = -5;
 
 bool isSafeScalar(const std::string& value) {
     if (value.empty() || value.size() > 200) {
@@ -198,7 +202,9 @@ GossipMesh::GossipMesh(
     m_inbox(),
     m_invalidMessagesByPeer(),
     m_lastEvidenceAt(),
-    m_evidenceCaptureHealth()
+    m_evidenceCaptureHealth(),
+    m_peerPenaltyPersistenceHandler(),
+    m_lastPeerPenaltyPersistenceError()
 {
     m_evidenceCaptureHealth.markUnavailable();
 }
@@ -217,7 +223,9 @@ GossipMesh::GossipMesh(
     m_inbox(),
     m_invalidMessagesByPeer(),
     m_lastEvidenceAt(),
-    m_evidenceCaptureHealth()
+    m_evidenceCaptureHealth(),
+    m_peerPenaltyPersistenceHandler(),
+    m_lastPeerPenaltyPersistenceError()
 {
     if (evidenceStore == nullptr) {
         m_evidenceCaptureHealth.markUnavailable();
@@ -256,10 +264,18 @@ PeerRegistryResult GossipMesh::registerPeer(PeerMetadata peer) {
 }
 
 TransportResult GossipMesh::connectPeer(const std::string& remoteNodeId) {
-    if (!m_peerRegistry.contains(remoteNodeId)) {
+    const PeerMetadata* peer = m_peerRegistry.peer(remoteNodeId);
+    if (peer == nullptr) {
         return TransportResult(
             TransportStatus::REJECTED,
             "Cannot connect unknown peer."
+        );
+    }
+
+    if (peer->quarantined()) {
+        return TransportResult(
+            TransportStatus::REJECTED,
+            "Cannot connect quarantined peer."
         );
     }
 
@@ -403,6 +419,13 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
             continue;
         }
 
+        const PeerMetadata* senderPeer =
+            m_peerRegistry.peer(message->fromNodeId());
+        if (senderPeer != nullptr && senderPeer->quarantined()) {
+            ++rejected;
+            continue;
+        }
+
         if (!m_rateLimiter.shouldAllow(message->fromNodeId(), now)) {
             recordInvalidMessage(message->fromNodeId(), "Peer exceeded message rate limit.", now);
             ++rejected;
@@ -458,6 +481,56 @@ std::uint32_t GossipMesh::rateLimitedMessageCountForPeer(
     return m_rateLimiter.messageCount(nodeId, now);
 }
 
+void GossipMesh::reportPeerMisbehavior(
+    const NetworkEnvelope& envelope,
+    PeerMisbehaviorType type,
+    const std::string& reason,
+    std::int64_t now
+) {
+    recordInvalidMessage(
+        envelope.senderNodeId(),
+        reason,
+        now,
+        type,
+        &envelope
+    );
+}
+
+bool GossipMesh::restorePeerPenaltyState(
+    const std::string& nodeId,
+    std::size_t invalidMessageCount
+) {
+    if (!m_peerRegistry.contains(nodeId)) {
+        return false;
+    }
+
+    m_invalidMessagesByPeer[nodeId] = std::min(
+        invalidMessageCount,
+        m_config.invalidMessageQuarantineThreshold()
+    );
+    if (shouldQuarantinePeer(nodeId)) {
+        m_peerRegistry.quarantinePeer(
+            nodeId,
+            "Peer quarantine restored from persistent state."
+        );
+    }
+    return true;
+}
+
+void GossipMesh::setPeerPenaltyPersistenceHandler(
+    std::function<void()> handler
+) {
+    m_peerPenaltyPersistenceHandler = std::move(handler);
+}
+
+bool GossipMesh::peerPenaltyPersistenceHealthy() const {
+    return m_lastPeerPenaltyPersistenceError.empty();
+}
+
+const std::string& GossipMesh::lastPeerPenaltyPersistenceError() const {
+    return m_lastPeerPenaltyPersistenceError;
+}
+
 bool GossipMesh::shouldQuarantinePeer(const std::string& nodeId) const {
     return invalidMessageCountForPeer(nodeId) >=
            m_config.invalidMessageQuarantineThreshold();
@@ -466,19 +539,50 @@ bool GossipMesh::shouldQuarantinePeer(const std::string& nodeId) const {
 void GossipMesh::recordInvalidMessage(
     const std::string& nodeId,
     const std::string& reason,
-    std::int64_t now
+    std::int64_t now,
+    PeerMisbehaviorType type,
+    const NetworkEnvelope* envelope
 ) {
     if (nodeId.empty()) {
         return;
     }
 
-    m_invalidMessagesByPeer[nodeId] += 1;
+    std::size_t& invalidCount = m_invalidMessagesByPeer[nodeId];
+    if (invalidCount < m_config.invalidMessageQuarantineThreshold()) {
+        ++invalidCount;
+    }
 
     const PeerMetadata* peerMeta = m_peerRegistry.peer(nodeId);
     const bool wasQuarantinedBefore = peerMeta != nullptr && peerMeta->quarantined();
+    bool peerStateChanged = false;
+
+    if (peerMeta != nullptr && !wasQuarantinedBefore) {
+        const std::int32_t scorePenalty =
+            type == PeerMisbehaviorType::RATE_LIMIT_EXCEEDED
+                ? kRateLimitScorePenalty
+                : kInvalidMessageScorePenalty;
+        peerStateChanged = m_peerRegistry.adjustScore(
+            nodeId,
+            scorePenalty,
+            reason
+        ).success();
+    }
 
     if (shouldQuarantinePeer(nodeId) && m_peerRegistry.contains(nodeId)) {
-        m_peerRegistry.quarantinePeer(nodeId, reason);
+        if (!wasQuarantinedBefore) {
+            peerStateChanged =
+                m_peerRegistry.quarantinePeer(nodeId, reason).success() ||
+                peerStateChanged;
+        }
+    }
+
+    const PeerMetadata* updatedPeer = m_peerRegistry.peer(nodeId);
+    const bool newlyQuarantined =
+        !wasQuarantinedBefore && updatedPeer != nullptr &&
+        updatedPeer->quarantined();
+
+    if (peerStateChanged || !peerPenaltyPersistenceHealthy()) {
+        persistPeerPenaltyState();
     }
 
     if (m_evidenceStore == nullptr || m_config.localNodeId().empty()) {
@@ -488,10 +592,10 @@ void GossipMesh::recordInvalidMessage(
     // Determine evidence type from context.
     economics::ProtocolEvidenceType evidenceType;
     std::string ruleId;
-    if (!wasQuarantinedBefore && shouldQuarantinePeer(nodeId)) {
+    if (newlyQuarantined) {
         evidenceType = economics::ProtocolEvidenceType::P2P_PEER_QUARANTINED;
         ruleId = "p2p.quarantine.threshold";
-    } else if (reason.find("rate limit") != std::string::npos) {
+    } else if (type == PeerMisbehaviorType::RATE_LIMIT_EXCEEDED) {
         evidenceType = economics::ProtocolEvidenceType::P2P_RATE_LIMIT_EXCEEDED;
         ruleId = "p2p.rate-limit";
     } else {
@@ -531,9 +635,12 @@ void GossipMesh::recordInvalidMessage(
 
     m_lastEvidenceAt[coalescingKey] = now;
 
-    // Build a stable payload digest from the reason string.
+    // Bind evidence to the offending payload when an application layer
+    // supplies the original envelope; transport failures fall back to reason.
     char digestBuf[NODO_HASH_BUFFER_SIZE] = {};
-    nodo_hash_string(reason.c_str(), digestBuf, NODO_HASH_BUFFER_SIZE);
+    const std::string digestSource =
+        envelope == nullptr ? reason : envelope->payload();
+    nodo_hash_string(digestSource.c_str(), digestBuf, NODO_HASH_BUFFER_SIZE);
     const std::string payloadDigest(digestBuf);
 
     // Evidence id encodes subject, type, and timestamp to be unique per event.
@@ -569,6 +676,22 @@ void GossipMesh::recordInvalidMessage(
         m_evidenceCaptureHealth.recordFailure(e.what(), now);
     } catch (...) {
         m_evidenceCaptureHealth.recordFailure("unknown exception in evidence store", now);
+    }
+}
+
+void GossipMesh::persistPeerPenaltyState() {
+    if (!m_peerPenaltyPersistenceHandler) {
+        return;
+    }
+
+    try {
+        m_peerPenaltyPersistenceHandler();
+        m_lastPeerPenaltyPersistenceError.clear();
+    } catch (const std::exception& error) {
+        m_lastPeerPenaltyPersistenceError = error.what();
+    } catch (...) {
+        m_lastPeerPenaltyPersistenceError =
+            "Unknown exception while persisting peer penalty state.";
     }
 }
 

@@ -38,6 +38,11 @@ public:
 
     PeerRegistryResult registerPeer(PeerMetadata peer);
     PeerRegistryResult updateHeartbeat(const std::string& nodeId, std::int64_t seenAt);
+    PeerRegistryResult adjustScore(
+        const std::string& nodeId,
+        std::int32_t delta,
+        std::string reason
+    );
     PeerRegistryResult quarantinePeer(const std::string& nodeId, std::string reason);
 
     bool contains(const std::string& nodeId) const;

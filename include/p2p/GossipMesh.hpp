@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 #include <utility>
@@ -20,6 +21,11 @@ class ProtocolEvidenceStore;
 } // namespace nodo::storage
 
 namespace nodo::p2p {
+
+enum class PeerMisbehaviorType {
+    INVALID_MESSAGE,
+    RATE_LIMIT_EXCEEDED
+};
 
 class GossipMeshConfig {
 public:
@@ -156,6 +162,25 @@ public:
         std::int64_t now
     ) const;
 
+    void reportPeerMisbehavior(
+        const NetworkEnvelope& envelope,
+        PeerMisbehaviorType type,
+        const std::string& reason,
+        std::int64_t now
+    );
+
+    bool restorePeerPenaltyState(
+        const std::string& nodeId,
+        std::size_t invalidMessageCount
+    );
+
+    void setPeerPenaltyPersistenceHandler(
+        std::function<void()> handler
+    );
+
+    bool peerPenaltyPersistenceHealthy() const;
+    const std::string& lastPeerPenaltyPersistenceError() const;
+
     // Drains (removes and returns) all messages of the given type from the inbox.
     // Use instead of inbox().messagesForType() to avoid replay on each tick.
     std::vector<NetworkEnvelope> drainInbox(NetworkMessageType type);
@@ -177,6 +202,8 @@ private:
     // Coalescing: tracks (nodeId, ruleId) -> last evidence timestamp (seconds).
     std::map<std::pair<std::string, std::string>, std::int64_t> m_lastEvidenceAt;
     node::EvidenceCaptureHealth m_evidenceCaptureHealth;
+    std::function<void()> m_peerPenaltyPersistenceHandler;
+    std::string m_lastPeerPenaltyPersistenceError;
 
     bool shouldQuarantinePeer(
         const std::string& nodeId
@@ -185,8 +212,12 @@ private:
     void recordInvalidMessage(
         const std::string& nodeId,
         const std::string& reason,
-        std::int64_t now = 0
+        std::int64_t now,
+        PeerMisbehaviorType type = PeerMisbehaviorType::INVALID_MESSAGE,
+        const NetworkEnvelope* envelope = nullptr
     );
+
+    void persistPeerPenaltyState();
 };
 
 } // namespace nodo::p2p

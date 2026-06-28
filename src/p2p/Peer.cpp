@@ -1,5 +1,7 @@
 #include "p2p/Peer.hpp"
 
+#include <algorithm>
+#include <limits>
 #include <sstream>
 #include <utility>
 
@@ -97,13 +99,22 @@ PeerMetadata PeerMetadata::withHeartbeat(std::int64_t lastSeenAt) const {
 }
 
 PeerMetadata PeerMetadata::withScoreDelta(std::int32_t delta) const {
+    const std::int64_t adjusted =
+        static_cast<std::int64_t>(m_score) + static_cast<std::int64_t>(delta);
+    const std::int64_t bounded = std::max(
+        static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::min()),
+        std::min(
+            static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::max()),
+            adjusted
+        )
+    );
     return PeerMetadata(
         m_nodeId,
         m_endpoint,
         m_publicKeyFingerprint,
         m_firstSeenAt,
         m_lastSeenAt,
-        static_cast<std::int32_t>(m_score + delta),
+        static_cast<std::int32_t>(bounded),
         m_quarantined
     );
 }

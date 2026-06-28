@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <memory>
+#include <stdexcept>
 
 using namespace nodo::p2p;
 
@@ -30,6 +31,14 @@ int main() {
     GossipMeshConfig configB("node-b", "localnet", "chain-localnet", "1", "test-genesis-v1", 60, 1);
     GossipMesh meshB(configB, transportB);
 
+    std::size_t persistenceAttempts = 0;
+    meshB.setPeerPenaltyPersistenceHandler([&persistenceAttempts]() {
+        ++persistenceAttempts;
+        if (persistenceAttempts == 1) {
+            throw std::runtime_error("temporary peer store failure");
+        }
+    });
+
     assert(meshB.registerPeer(makePeer("node-a", 19001)).success());
     assert(transportA.connect("node-a", "node-b").sent());
     assert(transportB.connect("node-b", "node-a").sent());
@@ -56,6 +65,36 @@ int main() {
     const PeerMetadata* peer = meshB.peerRegistry().peer("node-a");
     assert(peer != nullptr);
     assert(peer->quarantined());
+    assert(!meshB.peerPenaltyPersistenceHealthy());
+
+    meshB.reportPeerMisbehavior(
+        wrongNetwork,
+        PeerMisbehaviorType::INVALID_MESSAGE,
+        "Repeated invalid synchronization message.",
+        1002
+    );
+    assert(persistenceAttempts == 2);
+    assert(meshB.peerPenaltyPersistenceHealthy());
+    assert(peer->score() == -10);
+
+    NetworkEnvelope validAfterQuarantine(
+        "localnet",
+        "chain-localnet",
+        "1",
+        NetworkMessageType::PING,
+        "node-a",
+        1003,
+        60,
+        "ping"
+    );
+    assert(transportA.send(
+        TransportMessage("node-a", "node-b", validAfterQuarantine, 1003)
+    ).sent());
+    const GossipDeliveryReport quarantinedDelivery =
+        meshB.receiveAvailable(1003);
+    assert(quarantinedDelivery.acceptedCount() == 0);
+    assert(quarantinedDelivery.rejectedCount() == 1);
+    assert(meshB.inbox().countForType(NetworkMessageType::PING) == 0);
 
     return 0;
 }
