@@ -325,10 +325,60 @@ bool socketHasReadableData(SocketHandle fd) {
 
 } // namespace
 
+TcpIpRateLimitPolicy::TcpIpRateLimitPolicy()
+    : m_bucketCapacity(DEFAULT_BUCKET_CAPACITY),
+      m_refillTokens(DEFAULT_REFILL_TOKENS),
+      m_refillInterval(DEFAULT_REFILL_INTERVAL_MILLISECONDS),
+      m_initialBackoff(DEFAULT_INITIAL_BACKOFF_MILLISECONDS),
+      m_maxBackoff(DEFAULT_MAX_BACKOFF_MILLISECONDS) {}
+
+TcpIpRateLimitPolicy::TcpIpRateLimitPolicy(
+    std::size_t bucketCapacity,
+    std::size_t refillTokens,
+    std::chrono::milliseconds refillInterval,
+    std::chrono::milliseconds initialBackoff,
+    std::chrono::milliseconds maxBackoff
+) : m_bucketCapacity(bucketCapacity),
+    m_refillTokens(refillTokens),
+    m_refillInterval(refillInterval),
+    m_initialBackoff(initialBackoff),
+    m_maxBackoff(maxBackoff) {}
+
+std::size_t TcpIpRateLimitPolicy::bucketCapacity() const {
+    return m_bucketCapacity;
+}
+std::size_t TcpIpRateLimitPolicy::refillTokens() const {
+    return m_refillTokens;
+}
+std::chrono::milliseconds TcpIpRateLimitPolicy::refillInterval() const {
+    return m_refillInterval;
+}
+std::chrono::milliseconds TcpIpRateLimitPolicy::initialBackoff() const {
+    return m_initialBackoff;
+}
+std::chrono::milliseconds TcpIpRateLimitPolicy::maxBackoff() const {
+    return m_maxBackoff;
+}
+
+bool TcpIpRateLimitPolicy::isValid() const {
+    const auto maximumDuration = std::chrono::hours(24);
+    return m_bucketCapacity > 0 &&
+           m_bucketCapacity <= 1'000'000 &&
+           m_refillTokens > 0 &&
+           m_refillTokens <= m_bucketCapacity &&
+           m_refillInterval.count() > 0 &&
+           m_refillInterval <= maximumDuration &&
+           m_initialBackoff.count() > 0 &&
+           m_initialBackoff <= maximumDuration &&
+           m_maxBackoff >= m_initialBackoff &&
+           m_maxBackoff <= maximumDuration;
+}
+
 TcpCandidatePolicy::TcpCandidatePolicy()
     : m_maxTotal(DEFAULT_MAX_TOTAL),
       m_maxPerIp(DEFAULT_MAX_PER_IP),
-      m_authenticationTimeout(DEFAULT_TIMEOUT_MILLISECONDS) {}
+      m_authenticationTimeout(DEFAULT_TIMEOUT_MILLISECONDS),
+      m_ipRateLimit() {}
 
 TcpCandidatePolicy::TcpCandidatePolicy(
     std::size_t maxTotal,
@@ -336,19 +386,34 @@ TcpCandidatePolicy::TcpCandidatePolicy(
     std::chrono::milliseconds authenticationTimeout
 ) : m_maxTotal(maxTotal),
     m_maxPerIp(maxPerIp),
-    m_authenticationTimeout(authenticationTimeout) {}
+    m_authenticationTimeout(authenticationTimeout),
+    m_ipRateLimit() {}
+
+TcpCandidatePolicy::TcpCandidatePolicy(
+    std::size_t maxTotal,
+    std::size_t maxPerIp,
+    std::chrono::milliseconds authenticationTimeout,
+    TcpIpRateLimitPolicy ipRateLimit
+) : m_maxTotal(maxTotal),
+    m_maxPerIp(maxPerIp),
+    m_authenticationTimeout(authenticationTimeout),
+    m_ipRateLimit(std::move(ipRateLimit)) {}
 
 std::size_t TcpCandidatePolicy::maxTotal() const { return m_maxTotal; }
 std::size_t TcpCandidatePolicy::maxPerIp() const { return m_maxPerIp; }
 std::chrono::milliseconds TcpCandidatePolicy::authenticationTimeout() const {
     return m_authenticationTimeout;
 }
+const TcpIpRateLimitPolicy& TcpCandidatePolicy::ipRateLimit() const {
+    return m_ipRateLimit;
+}
 
 bool TcpCandidatePolicy::isValid() const {
     return m_maxTotal > 0 &&
            m_maxPerIp > 0 &&
            m_maxPerIp <= m_maxTotal &&
-           m_authenticationTimeout.count() > 0;
+           m_authenticationTimeout.count() > 0 &&
+           m_ipRateLimit.isValid();
 }
 
 TcpTransport::TcpTransport()
@@ -364,9 +429,11 @@ TcpTransport::TcpTransport(TcpCandidatePolicy candidatePolicy)
       m_candidateInboundConnections(),
       m_candidateByPeer(),
       m_candidateCountByIp(),
+      m_ipAdmissionByAddress(),
       m_candidatePolicy(std::move(candidatePolicy)),
       m_expiredCandidateCount(0),
       m_rateLimitedCandidateCount(0),
+      m_temporalRateLimitedConnectionCount(0),
       m_nextConnectionId(1) {
     if (!m_candidatePolicy.isValid()) {
         throw std::invalid_argument("TCP candidate policy is invalid.");
@@ -577,6 +644,41 @@ std::size_t TcpTransport::expiredCandidateCount() const {
 std::size_t TcpTransport::rateLimitedCandidateCount() const {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     return m_rateLimitedCandidateCount;
+}
+
+std::size_t TcpTransport::temporalRateLimitedConnectionCount() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return m_temporalRateLimitedConnectionCount;
+}
+
+std::size_t TcpTransport::ipAdmissionStateCount() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return m_ipAdmissionByAddress.size();
+}
+
+bool TcpTransport::ipBackedOff(const std::string& remoteIp) const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    const auto found = m_ipAdmissionByAddress.find(remoteIp);
+    return found != m_ipAdmissionByAddress.end() &&
+           std::chrono::steady_clock::now() < found->second.blockedUntil;
+}
+
+std::chrono::milliseconds TcpTransport::ipBackoffRemaining(
+    const std::string& remoteIp
+) const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    const auto found = m_ipAdmissionByAddress.find(remoteIp);
+    const auto now = std::chrono::steady_clock::now();
+    if (found == m_ipAdmissionByAddress.end() ||
+        now >= found->second.blockedUntil) {
+        return std::chrono::milliseconds(0);
+    }
+    const auto remaining = found->second.blockedUntil - now;
+    const auto milliseconds =
+        std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
+    return milliseconds.count() > 0
+        ? milliseconds
+        : std::chrono::milliseconds(1);
 }
 
 TransportResult TcpTransport::connect(
@@ -930,6 +1032,7 @@ bool TcpTransport::authenticateConnection(
         closeSocket(oldFd);
         m_connectionsByPeer.erase(active);
     }
+    recordSuccessfulIpAuthentication(candidate->second.remoteIp);
     decrementCandidateIpCount(candidate->second.remoteIp);
     m_candidateByPeer.erase(remoteNodeId);
     m_candidateInboundConnections.erase(candidate);
@@ -984,6 +1087,7 @@ void TcpTransport::closeAll() {
     m_candidateInboundConnections.clear();
     m_candidateByPeer.clear();
     m_candidateCountByIp.clear();
+    m_ipAdmissionByAddress.clear();
 
     closeSocket(m_listenFd);
 }
@@ -1001,7 +1105,9 @@ TransportResult TcpTransport::acceptAvailableConnections() {
         );
     }
 
-    pruneExpiredCandidateConnections(std::chrono::steady_clock::now());
+    const auto admissionNow = std::chrono::steady_clock::now();
+    pruneExpiredCandidateConnections(admissionNow);
+    pruneIdleIpAdmissionStates(admissionNow);
 
     while (true) {
         sockaddr_in remoteAddress;
@@ -1044,6 +1150,13 @@ TransportResult TcpTransport::acceptAvailableConnections() {
             continue;
         }
         const std::string remoteIp(convertedIp);
+        const auto now = std::chrono::steady_clock::now();
+        if (!consumeIpAdmissionToken(remoteIp, now)) {
+            ++m_temporalRateLimitedConnectionCount;
+            SocketHandle closeFd = fd;
+            closeSocket(closeFd);
+            continue;
+        }
         const std::size_t candidatesForIp =
             pendingCandidateCountForIp(remoteIp);
         if (m_candidateInboundConnections.size() >=
@@ -1068,7 +1181,7 @@ TransportResult TcpTransport::acceptAvailableConnections() {
                 connectionId,
                 "",
                 remoteIp,
-                std::chrono::steady_clock::now()
+                now
             }
         );
         ++m_candidateCountByIp[remoteIp];
@@ -1304,6 +1417,111 @@ void TcpTransport::decrementCandidateIpCount(
     } else {
         --found->second;
     }
+}
+
+bool TcpTransport::consumeIpAdmissionToken(
+    const std::string& remoteIp,
+    std::chrono::steady_clock::time_point now
+) {
+    const TcpIpRateLimitPolicy& policy = m_candidatePolicy.ipRateLimit();
+    const auto inserted = m_ipAdmissionByAddress.emplace(
+        remoteIp,
+        IpAdmissionState{
+            policy.bucketCapacity(),
+            0,
+            now,
+            now,
+            now
+        }
+    );
+    IpAdmissionState& state = inserted.first->second;
+    state.lastActivityAt = now;
+
+    if (now < state.blockedUntil) return false;
+
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - state.lastRefillAt);
+    const std::int64_t refillIntervals =
+        elapsed.count() / policy.refillInterval().count();
+    if (refillIntervals > 0) {
+        const std::size_t missingTokens =
+            policy.bucketCapacity() - state.tokens;
+        const std::uint64_t intervals =
+            static_cast<std::uint64_t>(refillIntervals);
+        const std::uint64_t intervalsToFill =
+            (missingTokens + policy.refillTokens() - 1) /
+            policy.refillTokens();
+        if (intervals >= intervalsToFill) {
+            state.tokens = policy.bucketCapacity();
+        } else {
+            state.tokens += static_cast<std::size_t>(intervals) *
+                            policy.refillTokens();
+        }
+        state.lastRefillAt +=
+            policy.refillInterval() * refillIntervals;
+        if (state.tokens == policy.bucketCapacity()) {
+            state.consecutiveLimitHits = 0;
+        }
+    }
+
+    if (state.tokens > 0) {
+        --state.tokens;
+        return true;
+    }
+
+    ++state.consecutiveLimitHits;
+    state.blockedUntil = now +
+        backoffForLimitHits(state.consecutiveLimitHits);
+    return false;
+}
+
+void TcpTransport::recordSuccessfulIpAuthentication(
+    const std::string& remoteIp
+) {
+    const auto found = m_ipAdmissionByAddress.find(remoteIp);
+    if (found == m_ipAdmissionByAddress.end()) return;
+    const auto now = std::chrono::steady_clock::now();
+    found->second.consecutiveLimitHits = 0;
+    found->second.blockedUntil = now;
+    found->second.lastActivityAt = now;
+}
+
+void TcpTransport::pruneIdleIpAdmissionStates(
+    std::chrono::steady_clock::time_point now
+) {
+    const auto retention = std::max(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::minutes(5)),
+        m_candidatePolicy.ipRateLimit().maxBackoff() * 2
+    );
+    for (auto iterator = m_ipAdmissionByAddress.begin();
+         iterator != m_ipAdmissionByAddress.end();) {
+        const bool hasCandidates =
+            m_candidateCountByIp.find(iterator->first) !=
+            m_candidateCountByIp.end();
+        if (!hasCandidates && now >= iterator->second.blockedUntil &&
+            now - iterator->second.lastActivityAt >= retention) {
+            iterator = m_ipAdmissionByAddress.erase(iterator);
+        } else {
+            ++iterator;
+        }
+    }
+}
+
+std::chrono::milliseconds TcpTransport::backoffForLimitHits(
+    std::size_t limitHits
+) const {
+    const TcpIpRateLimitPolicy& policy = m_candidatePolicy.ipRateLimit();
+    std::chrono::milliseconds backoff = policy.initialBackoff();
+    for (std::size_t hit = 1;
+         hit < limitHits && backoff < policy.maxBackoff();
+         ++hit) {
+        if (backoff > policy.maxBackoff() - backoff) {
+            return policy.maxBackoff();
+        }
+        backoff *= 2;
+    }
+    return std::min(backoff, policy.maxBackoff());
 }
 
 void TcpTransport::closeFd(SocketHandle fd) {

@@ -15,6 +15,38 @@
 
 namespace nodo::p2p {
 
+class TcpIpRateLimitPolicy {
+public:
+    static constexpr std::size_t DEFAULT_BUCKET_CAPACITY = 16;
+    static constexpr std::size_t DEFAULT_REFILL_TOKENS = 4;
+    static constexpr std::int64_t DEFAULT_REFILL_INTERVAL_MILLISECONDS = 1'000;
+    static constexpr std::int64_t DEFAULT_INITIAL_BACKOFF_MILLISECONDS = 1'000;
+    static constexpr std::int64_t DEFAULT_MAX_BACKOFF_MILLISECONDS = 60'000;
+
+    TcpIpRateLimitPolicy();
+    TcpIpRateLimitPolicy(
+        std::size_t bucketCapacity,
+        std::size_t refillTokens,
+        std::chrono::milliseconds refillInterval,
+        std::chrono::milliseconds initialBackoff,
+        std::chrono::milliseconds maxBackoff
+    );
+
+    std::size_t bucketCapacity() const;
+    std::size_t refillTokens() const;
+    std::chrono::milliseconds refillInterval() const;
+    std::chrono::milliseconds initialBackoff() const;
+    std::chrono::milliseconds maxBackoff() const;
+    bool isValid() const;
+
+private:
+    std::size_t m_bucketCapacity;
+    std::size_t m_refillTokens;
+    std::chrono::milliseconds m_refillInterval;
+    std::chrono::milliseconds m_initialBackoff;
+    std::chrono::milliseconds m_maxBackoff;
+};
+
 class TcpCandidatePolicy {
 public:
     static constexpr std::size_t DEFAULT_MAX_TOTAL = 64;
@@ -27,16 +59,24 @@ public:
         std::size_t maxPerIp,
         std::chrono::milliseconds authenticationTimeout
     );
+    TcpCandidatePolicy(
+        std::size_t maxTotal,
+        std::size_t maxPerIp,
+        std::chrono::milliseconds authenticationTimeout,
+        TcpIpRateLimitPolicy ipRateLimit
+    );
 
     std::size_t maxTotal() const;
     std::size_t maxPerIp() const;
     std::chrono::milliseconds authenticationTimeout() const;
+    const TcpIpRateLimitPolicy& ipRateLimit() const;
     bool isValid() const;
 
 private:
     std::size_t m_maxTotal;
     std::size_t m_maxPerIp;
     std::chrono::milliseconds m_authenticationTimeout;
+    TcpIpRateLimitPolicy m_ipRateLimit;
 };
 
 /*
@@ -90,6 +130,12 @@ public:
     ) const;
     std::size_t expiredCandidateCount() const;
     std::size_t rateLimitedCandidateCount() const;
+    std::size_t temporalRateLimitedConnectionCount() const;
+    std::size_t ipAdmissionStateCount() const;
+    bool ipBackedOff(const std::string& remoteIp) const;
+    std::chrono::milliseconds ipBackoffRemaining(
+        const std::string& remoteIp
+    ) const;
 
     TransportResult connect(
         const std::string& localNodeId,
@@ -151,6 +197,14 @@ private:
         std::chrono::steady_clock::time_point acceptedAt;
     };
 
+    struct IpAdmissionState {
+        std::size_t tokens;
+        std::size_t consecutiveLimitHits;
+        std::chrono::steady_clock::time_point lastRefillAt;
+        std::chrono::steady_clock::time_point blockedUntil;
+        std::chrono::steady_clock::time_point lastActivityAt;
+    };
+
     SocketHandle m_listenFd;
     bool m_socketRuntimeReady;
     std::string m_localNodeId;
@@ -161,9 +215,11 @@ private:
         m_candidateInboundConnections;
     std::map<std::string, TransportConnectionId> m_candidateByPeer;
     std::map<std::string, std::size_t> m_candidateCountByIp;
+    std::map<std::string, IpAdmissionState> m_ipAdmissionByAddress;
     TcpCandidatePolicy m_candidatePolicy;
     std::size_t m_expiredCandidateCount;
     std::size_t m_rateLimitedCandidateCount;
+    std::size_t m_temporalRateLimitedConnectionCount;
     TransportConnectionId m_nextConnectionId;
     // Guards all public methods that access shared maps/fds.
     // Recursive because send() may call connect() internally.
@@ -205,6 +261,17 @@ private:
         std::chrono::steady_clock::time_point now
     );
     void decrementCandidateIpCount(const std::string& remoteIp);
+    bool consumeIpAdmissionToken(
+        const std::string& remoteIp,
+        std::chrono::steady_clock::time_point now
+    );
+    void recordSuccessfulIpAuthentication(const std::string& remoteIp);
+    void pruneIdleIpAdmissionStates(
+        std::chrono::steady_clock::time_point now
+    );
+    std::chrono::milliseconds backoffForLimitHits(
+        std::size_t limitHits
+    ) const;
 
     void closeFd(SocketHandle fd);
     void closePeerConnection(const std::string& remoteNodeId);
