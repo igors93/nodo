@@ -5,6 +5,7 @@
 #include "p2p/AuthenticatedConnectionTransport.hpp"
 #include "p2p/Transport.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <map>
 #include <mutex>
@@ -13,6 +14,30 @@
 #include <vector>
 
 namespace nodo::p2p {
+
+class TcpCandidatePolicy {
+public:
+    static constexpr std::size_t DEFAULT_MAX_TOTAL = 64;
+    static constexpr std::size_t DEFAULT_MAX_PER_IP = 8;
+    static constexpr std::int64_t DEFAULT_TIMEOUT_MILLISECONDS = 10'000;
+
+    TcpCandidatePolicy();
+    TcpCandidatePolicy(
+        std::size_t maxTotal,
+        std::size_t maxPerIp,
+        std::chrono::milliseconds authenticationTimeout
+    );
+
+    std::size_t maxTotal() const;
+    std::size_t maxPerIp() const;
+    std::chrono::milliseconds authenticationTimeout() const;
+    bool isValid() const;
+
+private:
+    std::size_t m_maxTotal;
+    std::size_t m_maxPerIp;
+    std::chrono::milliseconds m_authenticationTimeout;
+};
 
 /*
  * TcpTransport is the first real socket-backed transport for Nodo testnet
@@ -26,6 +51,7 @@ class TcpTransport final
       public AuthenticatedConnectionTransport {
 public:
     TcpTransport();
+    explicit TcpTransport(TcpCandidatePolicy candidatePolicy);
     ~TcpTransport() override;
 
     TcpTransport(const TcpTransport&) = delete;
@@ -57,6 +83,13 @@ public:
     ) const;
 
     std::vector<std::string> connectedPeers() const;
+
+    std::size_t pendingCandidateCount() const;
+    std::size_t pendingCandidateCountForIp(
+        const std::string& remoteIp
+    ) const;
+    std::size_t expiredCandidateCount() const;
+    std::size_t rateLimitedCandidateCount() const;
 
     TransportResult connect(
         const std::string& localNodeId,
@@ -114,6 +147,8 @@ private:
         SocketHandle fd;
         TransportConnectionId id;
         std::string claimedNodeId;
+        std::string remoteIp;
+        std::chrono::steady_clock::time_point acceptedAt;
     };
 
     SocketHandle m_listenFd;
@@ -125,6 +160,10 @@ private:
     std::map<TransportConnectionId, CandidateConnection>
         m_candidateInboundConnections;
     std::map<std::string, TransportConnectionId> m_candidateByPeer;
+    std::map<std::string, std::size_t> m_candidateCountByIp;
+    TcpCandidatePolicy m_candidatePolicy;
+    std::size_t m_expiredCandidateCount;
+    std::size_t m_rateLimitedCandidateCount;
     TransportConnectionId m_nextConnectionId;
     // Guards all public methods that access shared maps/fds.
     // Recursive because send() may call connect() internally.
@@ -162,6 +201,10 @@ private:
         const TransportMessage& message
     ) const;
     void closeCandidateConnection(TransportConnectionId connectionId);
+    void pruneExpiredCandidateConnections(
+        std::chrono::steady_clock::time_point now
+    );
+    void decrementCandidateIpCount(const std::string& remoteIp);
 
     void closeFd(SocketHandle fd);
     void closePeerConnection(const std::string& remoteNodeId);

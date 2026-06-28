@@ -51,7 +51,6 @@ using IoctlAvailableBytes = int;
 #endif
 
 constexpr int LISTEN_BACKLOG = 16;
-constexpr std::size_t MAX_UNIDENTIFIED_INBOUND_CONNECTIONS = 64;
 constexpr int TCP_CONNECT_TIMEOUT_MS = 1000;
 constexpr int TCP_IO_WAIT_TIMEOUT_MS = 250;
 constexpr std::uint32_t MAX_WIRE_FRAME_BYTES =
@@ -326,16 +325,54 @@ bool socketHasReadableData(SocketHandle fd) {
 
 } // namespace
 
+TcpCandidatePolicy::TcpCandidatePolicy()
+    : m_maxTotal(DEFAULT_MAX_TOTAL),
+      m_maxPerIp(DEFAULT_MAX_PER_IP),
+      m_authenticationTimeout(DEFAULT_TIMEOUT_MILLISECONDS) {}
+
+TcpCandidatePolicy::TcpCandidatePolicy(
+    std::size_t maxTotal,
+    std::size_t maxPerIp,
+    std::chrono::milliseconds authenticationTimeout
+) : m_maxTotal(maxTotal),
+    m_maxPerIp(maxPerIp),
+    m_authenticationTimeout(authenticationTimeout) {}
+
+std::size_t TcpCandidatePolicy::maxTotal() const { return m_maxTotal; }
+std::size_t TcpCandidatePolicy::maxPerIp() const { return m_maxPerIp; }
+std::chrono::milliseconds TcpCandidatePolicy::authenticationTimeout() const {
+    return m_authenticationTimeout;
+}
+
+bool TcpCandidatePolicy::isValid() const {
+    return m_maxTotal > 0 &&
+           m_maxPerIp > 0 &&
+           m_maxPerIp <= m_maxTotal &&
+           m_authenticationTimeout.count() > 0;
+}
+
 TcpTransport::TcpTransport()
+    : TcpTransport(TcpCandidatePolicy()) {}
+
+TcpTransport::TcpTransport(TcpCandidatePolicy candidatePolicy)
     : m_listenFd(INVALID_FD),
-      m_socketRuntimeReady(startupSocketRuntime()),
+      m_socketRuntimeReady(false),
       m_localNodeId(),
       m_localEndpoint(),
       m_peerEndpoints(),
       m_connectionsByPeer(),
       m_candidateInboundConnections(),
       m_candidateByPeer(),
-      m_nextConnectionId(1) {}
+      m_candidateCountByIp(),
+      m_candidatePolicy(std::move(candidatePolicy)),
+      m_expiredCandidateCount(0),
+      m_rateLimitedCandidateCount(0),
+      m_nextConnectionId(1) {
+    if (!m_candidatePolicy.isValid()) {
+        throw std::invalid_argument("TCP candidate policy is invalid.");
+    }
+    m_socketRuntimeReady = startupSocketRuntime();
+}
 
 TcpTransport::~TcpTransport() {
     closeAll();
@@ -517,6 +554,29 @@ std::vector<std::string> TcpTransport::connectedPeers() const {
     }
 
     return peers;
+}
+
+std::size_t TcpTransport::pendingCandidateCount() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return m_candidateInboundConnections.size();
+}
+
+std::size_t TcpTransport::pendingCandidateCountForIp(
+    const std::string& remoteIp
+) const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    const auto found = m_candidateCountByIp.find(remoteIp);
+    return found == m_candidateCountByIp.end() ? 0 : found->second;
+}
+
+std::size_t TcpTransport::expiredCandidateCount() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return m_expiredCandidateCount;
+}
+
+std::size_t TcpTransport::rateLimitedCandidateCount() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return m_rateLimitedCandidateCount;
 }
 
 TransportResult TcpTransport::connect(
@@ -870,6 +930,7 @@ bool TcpTransport::authenticateConnection(
         closeSocket(oldFd);
         m_connectionsByPeer.erase(active);
     }
+    decrementCandidateIpCount(candidate->second.remoteIp);
     m_candidateByPeer.erase(remoteNodeId);
     m_candidateInboundConnections.erase(candidate);
     m_connectionsByPeer[remoteNodeId] = promoted;
@@ -922,6 +983,7 @@ void TcpTransport::closeAll() {
     }
     m_candidateInboundConnections.clear();
     m_candidateByPeer.clear();
+    m_candidateCountByIp.clear();
 
     closeSocket(m_listenFd);
 }
@@ -938,6 +1000,8 @@ TransportResult TcpTransport::acceptAvailableConnections() {
             "TCP listener is not bound."
         );
     }
+
+    pruneExpiredCandidateConnections(std::chrono::steady_clock::now());
 
     while (true) {
         sockaddr_in remoteAddress;
@@ -967,8 +1031,25 @@ TransportResult TcpTransport::acceptAvailableConnections() {
             continue;
         }
 
+        std::array<char, INET_ADDRSTRLEN> remoteIpBuffer = {};
+        const char* convertedIp = ::inet_ntop(
+            AF_INET,
+            &remoteAddress.sin_addr,
+            remoteIpBuffer.data(),
+            static_cast<SocketLength>(remoteIpBuffer.size())
+        );
+        if (convertedIp == nullptr) {
+            SocketHandle closeFd = fd;
+            closeSocket(closeFd);
+            continue;
+        }
+        const std::string remoteIp(convertedIp);
+        const std::size_t candidatesForIp =
+            pendingCandidateCountForIp(remoteIp);
         if (m_candidateInboundConnections.size() >=
-            MAX_UNIDENTIFIED_INBOUND_CONNECTIONS) {
+                m_candidatePolicy.maxTotal() ||
+            candidatesForIp >= m_candidatePolicy.maxPerIp()) {
+            ++m_rateLimitedCandidateCount;
             SocketHandle closeFd = fd;
             closeSocket(closeFd);
             continue;
@@ -982,8 +1063,15 @@ TransportResult TcpTransport::acceptAvailableConnections() {
         }
         m_candidateInboundConnections.emplace(
             connectionId,
-            CandidateConnection{fd, connectionId, ""}
+            CandidateConnection{
+                fd,
+                connectionId,
+                "",
+                remoteIp,
+                std::chrono::steady_clock::now()
+            }
         );
+        ++m_candidateCountByIp[remoteIp];
     }
 
     return TransportResult(
@@ -1183,9 +1271,39 @@ void TcpTransport::closeCandidateConnection(
             m_candidateByPeer.erase(claimed);
         }
     }
+    decrementCandidateIpCount(found->second.remoteIp);
     SocketHandle fd = found->second.fd;
     closeSocket(fd);
     m_candidateInboundConnections.erase(found);
+}
+
+void TcpTransport::pruneExpiredCandidateConnections(
+    std::chrono::steady_clock::time_point now
+) {
+    std::vector<TransportConnectionId> expired;
+    for (const auto& [connectionId, candidate] :
+         m_candidateInboundConnections) {
+        if (now - candidate.acceptedAt >=
+            m_candidatePolicy.authenticationTimeout()) {
+            expired.push_back(connectionId);
+        }
+    }
+    for (const TransportConnectionId connectionId : expired) {
+        closeCandidateConnection(connectionId);
+        ++m_expiredCandidateCount;
+    }
+}
+
+void TcpTransport::decrementCandidateIpCount(
+    const std::string& remoteIp
+) {
+    const auto found = m_candidateCountByIp.find(remoteIp);
+    if (found == m_candidateCountByIp.end()) return;
+    if (found->second <= 1) {
+        m_candidateCountByIp.erase(found);
+    } else {
+        --found->second;
+    }
 }
 
 void TcpTransport::closeFd(SocketHandle fd) {
