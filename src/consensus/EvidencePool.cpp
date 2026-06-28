@@ -6,7 +6,8 @@
 namespace nodo::consensus {
 
 EvidencePool::EvidencePool()
-    : m_evidenceById() {}
+    : m_evidenceById(),
+      m_doubleVoteEvidenceById() {}
 
 SlashingEvidenceValidationResult EvidencePool::submitRecord(
     const SlashingEvidenceRecord& record
@@ -46,7 +47,14 @@ SlashingEvidenceValidationResult EvidencePool::submitDoubleVoteEvidence(
         return validation;
     }
 
-    return submitRecord(validation.record());
+    const SlashingEvidenceValidationResult stored =
+        submitRecord(validation.record());
+    if (stored.accepted()) {
+        m_doubleVoteEvidenceById.emplace(
+            validation.record().evidenceId(), evidence
+        );
+    }
+    return stored;
 }
 
 bool EvidencePool::contains(const std::string& evidenceId) const {
@@ -69,6 +77,22 @@ std::vector<SlashingEvidenceRecord> EvidencePool::allEvidence() const {
     }
 
     return records;
+}
+
+std::vector<DoubleVoteEvidence> EvidencePool::allDoubleVoteEvidence() const {
+    std::vector<DoubleVoteEvidence> evidence;
+    evidence.reserve(m_doubleVoteEvidenceById.size());
+    for (const auto& [id, value] : m_doubleVoteEvidenceById) {
+        (void)id;
+        evidence.push_back(value);
+    }
+    return evidence;
+}
+
+bool EvidencePool::removeEvidence(const std::string& evidenceId) {
+    const bool removed = m_evidenceById.erase(evidenceId) > 0;
+    m_doubleVoteEvidenceById.erase(evidenceId);
+    return removed;
 }
 
 std::vector<SlashingEvidenceRecord> EvidencePool::evidenceForValidator(
@@ -104,6 +128,7 @@ void EvidencePool::pruneOlderThan(std::int64_t cutoffTimestamp, std::int64_t now
 
     for (auto it = m_evidenceById.begin(); it != m_evidenceById.end(); ) {
         if (it->second.createdAt() < safeCutoff) {
+            m_doubleVoteEvidenceById.erase(it->first);
             it = m_evidenceById.erase(it);
         } else {
             ++it;
@@ -115,6 +140,15 @@ bool EvidencePool::isValid() const {
     for (const auto& entry : m_evidenceById) {
         if (entry.first != entry.second.evidenceId() ||
             !entry.second.isValid()) {
+            return false;
+        }
+    }
+
+    for (const auto& [evidenceId, evidence] : m_doubleVoteEvidenceById) {
+        const auto record = m_evidenceById.find(evidenceId);
+        if (record == m_evidenceById.end() ||
+            evidence.evidenceId() != evidenceId ||
+            evidence.toRecord().serialize() != record->second.serialize()) {
             return false;
         }
     }

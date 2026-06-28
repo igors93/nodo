@@ -34,7 +34,8 @@ enum class LedgerRecordType {
     VALIDATOR_SCORE,
     PROTECTION_EPOCH,
     GENESIS_REWARD,
-    VALIDATOR_PENALTY
+    VALIDATOR_PENALTY,
+    SLASHING_EVIDENCE
 };
 
 std::string ledgerRecordTypeToString(LedgerRecordType type);
@@ -86,6 +87,12 @@ public:
 
     static LedgerRecord fromValidatorPenaltyRecord(
         const economics::ValidatorPenaltyRecord& validatorPenaltyRecord,
+        std::int64_t timestamp
+    );
+
+    static LedgerRecord fromSlashingEvidencePayload(
+        std::string evidenceId,
+        std::string payload,
         std::int64_t timestamp
     );
 

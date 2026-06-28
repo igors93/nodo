@@ -25,6 +25,8 @@ std::string ledgerRecordTypeToString(LedgerRecordType type) {
             return "GENESIS_REWARD";
         case LedgerRecordType::VALIDATOR_PENALTY:
             return "VALIDATOR_PENALTY";
+        case LedgerRecordType::SLASHING_EVIDENCE:
+            return "SLASHING_EVIDENCE";
         default:
             return "UNKNOWN";
     }
@@ -59,6 +61,10 @@ LedgerRecordType ledgerRecordTypeFromString(
 
     if (value == "VALIDATOR_PENALTY") {
         return LedgerRecordType::VALIDATOR_PENALTY;
+    }
+
+    if (value == "SLASHING_EVIDENCE") {
+        return LedgerRecordType::SLASHING_EVIDENCE;
     }
 
     throw std::invalid_argument("Unknown LedgerRecordType: " + value);
@@ -332,6 +338,36 @@ LedgerRecord LedgerRecord::fromValidatorPenaltyRecord(
         LedgerRecordType::VALIDATOR_PENALTY,
         sourceId,
         payload,
+        payloadHash,
+        timestamp
+    );
+}
+
+LedgerRecord LedgerRecord::fromSlashingEvidencePayload(
+    std::string evidenceId,
+    std::string payload,
+    std::int64_t timestamp
+) {
+    if (evidenceId.empty() ||
+        payload.rfind("DoubleVoteEvidence{", 0) != 0 ||
+        timestamp <= 0) {
+        throw std::invalid_argument(
+            "Invalid slashing evidence payload rejected by LedgerRecord."
+        );
+    }
+
+    const std::string payloadHash = hashPayload(payload);
+    const std::string recordId = computeRecordId(
+        LedgerRecordType::SLASHING_EVIDENCE,
+        evidenceId,
+        payloadHash,
+        timestamp
+    );
+    return LedgerRecord(
+        recordId,
+        LedgerRecordType::SLASHING_EVIDENCE,
+        std::move(evidenceId),
+        std::move(payload),
         payloadHash,
         timestamp
     );

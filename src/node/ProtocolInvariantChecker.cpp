@@ -175,6 +175,12 @@ ProtocolInvariantCheckResult ProtocolInvariantChecker::checkRuntime(
         return audit.fail("Validator registry is invalid.");
     }
 
+    const ProtocolInvariantCheckResult penaltyLedgerCheck =
+        checkPenaltyLedger(runtime.validatorPenaltyLedger());
+    if (!penaltyLedgerCheck.passed()) {
+        return penaltyLedgerCheck;
+    }
+
     audit.checked();
     if (runtime.validatorRegistry().activeCount() <
         runtime.config().genesisConfig().networkParameters().minimumValidatorCount()) {
@@ -236,7 +242,9 @@ ProtocolInvariantCheckResult ProtocolInvariantChecker::checkRuntime(
         return audit.fail("Peer manager is invalid.");
     }
 
-    return ProtocolInvariantCheckResult::passed(audit.count());
+    return ProtocolInvariantCheckResult::passed(
+        audit.count() + penaltyLedgerCheck.checkedInvariantCount()
+    );
 }
 
 ProtocolInvariantCheckResult ProtocolInvariantChecker::checkRuntimeAgainstManifest(

@@ -1,6 +1,8 @@
 #include "node/ProtocolStateTransition.hpp"
 
 #include "core/State.hpp"
+#include "crypto/ProtocolCryptoContext.hpp"
+#include "node/CanonicalSlashingTransition.hpp"
 #include "node/FeeEconomics.hpp"
 #include "node/GovernanceExecutor.hpp"
 #include "node/NodeRuntime.hpp"
@@ -44,6 +46,24 @@ core::ValidatorRegistry projectValidatorSet(
         projected, blockHeight, blockTimestamp
     );
     return projected;
+}
+
+std::map<std::string, std::string> protocolDomains(
+    const GovernanceExecutor& governance,
+    utils::Amount supply,
+    const core::ValidatorRegistry& validators,
+    const consensus::ValidatorPenaltyLedger& penaltyLedger
+) {
+    std::map<std::string, std::string> domains = {
+        {"governance", governance.serialize()},
+        {"supply", "RuntimeSupply{latestRawUnits="
+            + std::to_string(supply.rawUnits()) + "}"},
+        {"validators", validators.serialize()}
+    };
+    if (penaltyLedger.size() > 0) {
+        domains.emplace("slashing", penaltyLedger.serialize());
+    }
+    return domains;
 }
 
 } // namespace
@@ -97,11 +117,15 @@ core::DeterministicStateTransitionResult transitionFullState(
     const core::AccountStateView& transactionAccounts,
     utils::Amount totalFee,
     const std::vector<core::Transaction>& transactions,
+    const std::vector<core::LedgerRecord>& protocolRecords,
     std::int64_t blockTimestamp,
     std::uint64_t blockHeight,
     utils::Amount supplyBefore,
     GovernanceExecutor governance,
-    core::ValidatorRegistry validators
+    core::ValidatorRegistry validators,
+    core::ValidatorSetHistory validatorSetHistory,
+    consensus::ValidatorPenaltyLedger penaltyLedger,
+    std::string networkName
 ) {
     try {
         const FeeEconomicBalance feeBalance =
@@ -129,6 +153,24 @@ core::DeterministicStateTransitionResult transitionFullState(
         }
         governance.advanceToHeight(blockHeight + 1, blockTimestamp);
 
+        const crypto::ProtocolCryptoContext cryptoContext =
+            crypto::ProtocolCryptoContext::fromNetworkName(networkName);
+        if (!cryptoContext.isValid()) {
+            throw std::logic_error(
+                "Protocol crypto context is invalid during slashing transition."
+            );
+        }
+        CanonicalSlashingTransition::applyEvidenceRecords(
+            protocolRecords,
+            blockHeight,
+            blockTimestamp,
+            validatorSetHistory,
+            cryptoContext.policy(),
+            cryptoContext.signatureProvider(),
+            penaltyLedger,
+            validators
+        );
+
         const core::ValidatorRegistry projectedValidators =
             projectValidatorSet(validators, blockHeight, blockTimestamp);
         const utils::Amount supplyAfter =
@@ -136,12 +178,12 @@ core::DeterministicStateTransitionResult transitionFullState(
 
         return core::DeterministicStateTransitionResult::accepted(
             std::move(accounts),
-            {
-                {"governance", governance.serialize()},
-                {"supply", "RuntimeSupply{latestRawUnits="
-                    + std::to_string(supplyAfter.rawUnits()) + "}"},
-                {"validators", projectedValidators.serialize()}
-            }
+            protocolDomains(
+                governance,
+                supplyAfter,
+                projectedValidators,
+                penaltyLedger
+            )
         );
     } catch (const std::exception& error) {
         return core::DeterministicStateTransitionResult::rejected(
@@ -180,6 +222,7 @@ ProtocolStateTransition::accountSettlementForReplay(
         const core::AccountStateView& accounts,
         utils::Amount totalFee,
         const std::vector<core::Transaction>&,
+        const std::vector<core::LedgerRecord>&,
         std::int64_t
     ) {
         try {
@@ -206,6 +249,10 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
     const utils::Amount supplyBefore = runtime.supplyState().latestSupply();
     const GovernanceExecutor governance = runtime.governanceExecutor();
     const core::ValidatorRegistry validators = runtime.validatorRegistry();
+    const core::ValidatorSetHistory validatorSetHistory =
+        runtime.validatorSetHistory();
+    const consensus::ValidatorPenaltyLedger penaltyLedger =
+        runtime.validatorPenaltyLedger();
     const config::GenesisConfig& genesis = runtime.config().genesisConfig();
     const std::uint64_t genesisMinimumFeeRaw =
         genesis.networkParameters().minimumFeeRawUnits();
@@ -217,21 +264,32 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
     }
 
     core::DeterministicStateDomainTransition transition =
-        [blockHeight, supplyBefore, governance, validators](
+        [blockHeight,
+         supplyBefore,
+         governance,
+         validators,
+         validatorSetHistory,
+         penaltyLedger,
+         networkName = genesis.networkParameters().networkName()](
             const core::AccountStateView& accounts,
             utils::Amount totalFee,
             const std::vector<core::Transaction>& transactions,
+            const std::vector<core::LedgerRecord>& protocolRecords,
             std::int64_t blockTimestamp
         ) {
             return transitionFullState(
                 accounts,
                 totalFee,
                 transactions,
+                protocolRecords,
                 blockTimestamp,
                 blockHeight,
                 supplyBefore,
                 governance,
-                validators
+                validators,
+                validatorSetHistory,
+                penaltyLedger,
+                networkName
             );
         };
 
@@ -248,12 +306,12 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
         wallClockNow,
         genesis.networkParameters().chainId(),
         genesis.networkParameters().networkName(),
-        {
-            {"governance", governance.serialize()},
-            {"supply", "RuntimeSupply{latestRawUnits="
-                + std::to_string(supplyBefore.rawUnits()) + "}"},
-            {"validators", validators.serialize()}
-        },
+        protocolDomains(
+            governance,
+            supplyBefore,
+            validators,
+            penaltyLedger
+        ),
         std::move(transition)
     );
 }

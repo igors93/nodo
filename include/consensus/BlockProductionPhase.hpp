@@ -2,6 +2,7 @@
 #define NODO_CONSENSUS_BLOCK_PRODUCTION_PHASE_HPP
 
 #include "core/Block.hpp"
+#include "consensus/SlashingEvidence.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 
@@ -55,7 +56,8 @@ public:
      */
     static BlockCandidateResult produce(
         node::NodeRuntime&                     runtime,
-        const node::RuntimeBlockPipelineConfig& config
+        const node::RuntimeBlockPipelineConfig& config,
+        std::vector<DoubleVoteEvidence> slashingEvidence = {}
     );
 };
 

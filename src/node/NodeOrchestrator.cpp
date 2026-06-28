@@ -1,5 +1,7 @@
 #include "node/NodeOrchestrator.hpp"
 
+#include "node/CanonicalSlashingTransition.hpp"
+
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
@@ -447,26 +449,6 @@ void NodeOrchestrator::tick(std::int64_t now) {
         }
     }
 
-    // Process any new slashing evidence accumulated by the ConsensusEventLoop.
-    // For each piece of evidence not already in the penalty ledger, compute a
-    // deterministic penalty decision. Registry effects must enter through the
-    // canonical block transition; mutating the active set mid-height can make
-    // otherwise valid votes impossible to finalize.
-    {
-        const consensus::ValidatorPenaltyPolicy penaltyPolicy =
-            consensus::ValidatorPenaltyPolicy::conservativeTestnetPolicy();
-
-        for (const auto& evidence : m_evidencePool.allEvidence()) {
-            if (!m_penaltyLedger.containsEvidence(evidence.evidenceId())) {
-                m_penaltyLedger.applyEvidence(
-                    evidence,
-                    penaltyPolicy,
-                    now
-                );
-            }
-        }
-    }
-
 }
 
 // ---- Accessors ------------------------------------------------------------
@@ -760,6 +742,14 @@ bool NodeOrchestrator::startConsensus() {
             if (rec.blockIndex() >= blocks.size()) return;
 
             const core::Block& block = blocks[static_cast<std::size_t>(rec.blockIndex())];
+            try {
+                for (const consensus::DoubleVoteEvidence& evidence :
+                     CanonicalSlashingTransition::evidenceFromBlock(block)) {
+                    m_evidencePool.removeEvidence(evidence.evidenceId());
+                }
+            } catch (...) {
+                return;
+            }
             const auto now = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
@@ -856,7 +846,11 @@ std::optional<core::Block> NodeOrchestrator::produceBlock(
     );
 
     const consensus::BlockCandidateResult candidate =
-        consensus::BlockProductionPhase::produce(*m_runtime, pipelineConfig);
+        consensus::BlockProductionPhase::produce(
+            *m_runtime,
+            pipelineConfig,
+            m_evidencePool.allDoubleVoteEvidence()
+        );
 
     if (!candidate.produced()) return std::nullopt;
 

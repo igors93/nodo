@@ -145,6 +145,7 @@ StateTransitionPreviewContext::transitionProtocolState(
     const AccountStateView& accounts,
     utils::Amount totalFee,
     const std::vector<Transaction>& transactions,
+    const std::vector<LedgerRecord>& protocolRecords,
     std::int64_t blockTimestamp
 ) const {
     if (!m_stateDomainTransition) {
@@ -153,7 +154,11 @@ StateTransitionPreviewContext::transitionProtocolState(
         );
     }
     return m_stateDomainTransition(
-        accounts, totalFee, transactions, blockTimestamp
+        accounts,
+        totalFee,
+        transactions,
+        protocolRecords,
+        blockTimestamp
     );
 }
 

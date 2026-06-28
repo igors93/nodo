@@ -5,6 +5,7 @@
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/ConsensusRoundManager.hpp"
 #include "consensus/ForkChoice.hpp"
+#include "consensus/ValidatorPenaltyApplication.hpp"
 #include "core/AccountStateView.hpp"
 #include "core/Blockchain.hpp"
 #include "core/StatePruner.hpp"
@@ -171,6 +172,8 @@ public:
     RuntimeSupplyState& mutableSupplyState();
     const core::StatePruner& statePruner() const;
     core::StatePruner& mutableStatePruner();
+    const consensus::ValidatorPenaltyLedger& validatorPenaltyLedger() const;
+    consensus::ValidatorPenaltyLedger& mutableValidatorPenaltyLedger();
 
     // Return a lazily-built account state view for the current chain tip.
     // The view is cached by tip height; adding a block via mutableBlockchain()
@@ -195,6 +198,8 @@ public:
     // Process any GOVERNANCE_PROPOSE transactions in the given block and call
     // executeProposal() for each, so governance changes take effect.
     void applyGovernanceFromBlock(const core::Block& block, std::int64_t now);
+
+    void applySlashingEvidenceFromBlock(const core::Block& block);
 
     bool isRunning() const;
     bool isHalted() const;
@@ -237,6 +242,7 @@ private:
     RuntimeSupplyState m_supplyState;
     core::StatePruner m_statePruner;
     GovernanceExecutor m_governanceExecutor;
+    consensus::ValidatorPenaltyLedger m_validatorPenaltyLedger;
 
     // Account-state cache: rebuilt lazily when the chain tip advances.
     mutable std::optional<core::AccountStateView> m_accountStateCache;

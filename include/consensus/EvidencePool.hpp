@@ -30,6 +30,10 @@ public:
 
     std::vector<SlashingEvidenceRecord> allEvidence() const;
 
+    std::vector<DoubleVoteEvidence> allDoubleVoteEvidence() const;
+
+    bool removeEvidence(const std::string& evidenceId);
+
     std::vector<SlashingEvidenceRecord> evidenceForValidator(
         const std::string& validatorAddress
     ) const;
@@ -49,6 +53,7 @@ public:
 
 private:
     std::map<std::string, SlashingEvidenceRecord> m_evidenceById;
+    std::map<std::string, DoubleVoteEvidence> m_doubleVoteEvidenceById;
 };
 
 } // namespace nodo::consensus

@@ -1,5 +1,6 @@
 #include "core/LedgerRecordDomainValidator.hpp"
 
+#include "consensus/SlashingEvidence.hpp"
 #include "economics/GenesisRewardRecord.hpp"
 #include "economics/MintRecord.hpp"
 #include "economics/ValidatorPenaltyRecord.hpp"
@@ -120,6 +121,31 @@ LedgerRecordDomainValidator::Result LedgerRecordDomainValidator::validateValidat
     return Result::ok();
 }
 
+LedgerRecordDomainValidator::Result LedgerRecordDomainValidator::validateSlashingEvidence(
+    const LedgerRecord& record
+) {
+    try {
+        const consensus::DoubleVoteEvidence evidence =
+            consensus::DoubleVoteEvidence::deserialize(record.payload());
+        const consensus::SlashingEvidenceValidationResult validation =
+            consensus::SlashingEvidenceVerifier::validateDoubleVoteStructure(
+                evidence
+            );
+        if (!validation.accepted() ||
+            record.sourceId() != evidence.evidenceId()) {
+            return Result::fail(
+                "SLASHING_EVIDENCE record does not contain canonical double-vote evidence."
+            );
+        }
+    } catch (const std::exception& error) {
+        return Result::fail(
+            std::string("SLASHING_EVIDENCE payload failed validation: ") +
+            error.what()
+        );
+    }
+    return Result::ok();
+}
+
 // static
 LedgerRecordDomainValidator::Result LedgerRecordDomainValidator::validate(
     const LedgerRecord& record
@@ -137,6 +163,8 @@ LedgerRecordDomainValidator::Result LedgerRecordDomainValidator::validate(
             return validateGenesisReward(record);
         case LedgerRecordType::VALIDATOR_PENALTY:
             return validateValidatorPenalty(record);
+        case LedgerRecordType::SLASHING_EVIDENCE:
+            return validateSlashingEvidence(record);
         case LedgerRecordType::TRANSACTION:
             return Result::fail("TRANSACTION records must not be validated via domain validator.");
         default:

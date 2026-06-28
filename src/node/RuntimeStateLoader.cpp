@@ -346,6 +346,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             runtime.applyGovernanceFromBlock(
                 artifact.block(), artifact.block().timestamp()
             );
+            runtime.applySlashingEvidenceFromBlock(artifact.block());
             ProtocolStateTransition::applyValidatorEpochTransition(
                 runtime.mutableValidatorRegistry(),
                 artifact.block().index(),

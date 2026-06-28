@@ -367,7 +367,11 @@ DoubleVoteEvidence::DoubleVoteEvidence(
     std::int64_t detectedAt
 ) : m_firstVote(std::move(firstVote)),
     m_secondVote(std::move(secondVote)),
-    m_detectedAt(detectedAt) {}
+    m_detectedAt(detectedAt) {
+    if (m_secondVote.deterministicId() < m_firstVote.deterministicId()) {
+        std::swap(m_firstVote, m_secondVote);
+    }
+}
 
 const ValidatorVoteRecord& DoubleVoteEvidence::firstVote() const {
     return m_firstVote;
@@ -394,8 +398,7 @@ std::string DoubleVoteEvidence::validatorAddress() const {
 std::string DoubleVoteEvidence::payload() const {
     std::ostringstream output;
     output << "DoubleVoteEvidencePayload{"
-           << "detectedAt=" << m_detectedAt
-           << ";firstVote=" << m_firstVote.serialize()
+           << "firstVote=" << m_firstVote.serialize()
            << ";secondVote=" << m_secondVote.serialize()
            << "}";
     return output.str();
@@ -435,6 +438,42 @@ std::string DoubleVoteEvidence::serialize() const {
            << ";secondVote=" << m_secondVote.serialize()
            << "}";
     return output.str();
+}
+
+DoubleVoteEvidence DoubleVoteEvidence::deserialize(
+    const std::string& serialized
+) {
+    const auto fields = parseObjectFields(serialized, "DoubleVoteEvidence");
+    requireExactFields(
+        fields,
+        {
+            "evidenceId",
+            "validatorAddress",
+            "detectedAt",
+            "payloadHash",
+            "firstVote",
+            "secondVote"
+        },
+        "DoubleVoteEvidence"
+    );
+
+    DoubleVoteEvidence evidence(
+        ValidatorVoteRecord::deserialize(fields.at("firstVote")),
+        ValidatorVoteRecord::deserialize(fields.at("secondVote")),
+        parseI64Strict(fields.at("detectedAt"), "detectedAt")
+    );
+
+    if (!evidence.isConflictPair() ||
+        evidence.evidenceId() != fields.at("evidenceId") ||
+        evidence.validatorAddress() != fields.at("validatorAddress") ||
+        evidence.payloadHash() != fields.at("payloadHash") ||
+        evidence.serialize() != serialized) {
+        throw std::invalid_argument(
+            "Serialized double-vote evidence is invalid or non-canonical."
+        );
+    }
+
+    return evidence;
 }
 
 SlashingEvidenceValidationResult::SlashingEvidenceValidationResult()

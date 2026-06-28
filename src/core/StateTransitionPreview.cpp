@@ -188,11 +188,14 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
     std::set<std::string> touchedAccountSet;
     std::vector<std::string> orderedTransactionIds;
     std::vector<Transaction> orderedTransactions;
+    std::vector<LedgerRecord> orderedProtocolRecords;
     std::vector<TransactionReceipt> receipts;
     AccountStateView workingAccountState =
         context.accountStateView();
     utils::Amount totalFee;
     std::size_t processedTransactionCount = 0;
+    bool evidenceSectionStarted = false;
+    std::string previousEvidenceId;
 
     for (const LedgerRecord& record : block.records()) {
         if (!record.isValid()) {
@@ -221,9 +224,32 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                     processedTransactionCount
                 );
             }
+            if (record.type() != LedgerRecordType::SLASHING_EVIDENCE) {
+                return StateTransitionPreviewResult::rejected(
+                    StateTransitionPreviewStatus::UNSUPPORTED_TRANSITION,
+                    "Non-genesis block contains a record without an implemented deterministic state transition.",
+                    processedTransactionCount
+                );
+            }
+            if (record.timestamp() != block.timestamp() ||
+                (!previousEvidenceId.empty() &&
+                 record.sourceId() <= previousEvidenceId)) {
+                return StateTransitionPreviewResult::rejected(
+                    StateTransitionPreviewStatus::INVALID_LEDGER_RECORD,
+                    "Slashing evidence records must use the block timestamp and canonical id order.",
+                    processedTransactionCount
+                );
+            }
+            evidenceSectionStarted = true;
+            previousEvidenceId = record.sourceId();
+            orderedProtocolRecords.push_back(record);
+            continue;
+        }
+
+        if (evidenceSectionStarted) {
             return StateTransitionPreviewResult::rejected(
-                StateTransitionPreviewStatus::UNSUPPORTED_TRANSITION,
-                "Non-genesis block contains a record without an implemented deterministic state transition.",
+                StateTransitionPreviewStatus::INVALID_LEDGER_RECORD,
+                "Transactions cannot appear after slashing evidence records.",
                 processedTransactionCount
             );
         }
@@ -465,6 +491,7 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
             workingAccountState,
             totalFee,
             orderedTransactions,
+            orderedProtocolRecords,
             block.timestamp()
         );
     } catch (const std::exception& error) {

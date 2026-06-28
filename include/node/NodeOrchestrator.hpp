@@ -213,7 +213,6 @@ private:
     std::unique_ptr<consensus::ConsensusEventLoop> m_consensusLoop;
     std::unique_ptr<NodeRpcServer>           m_rpcServer;
     consensus::EvidencePool                  m_evidencePool;
-    consensus::ValidatorPenaltyLedger        m_penaltyLedger;
     std::unique_ptr<p2p::DiscoveryService>   m_discoveryService;
 
     std::atomic<bool> m_running;

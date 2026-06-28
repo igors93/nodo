@@ -2122,6 +2122,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
             runtime, finalizedTransactionIds
         );
         runtime.applyGovernanceFromBlock(block, block.timestamp());
+        runtime.applySlashingEvidenceFromBlock(block);
         runtime.invalidateAccountStateCache();
 
         finalResult.m_receiptsRoot = transitionValidation.receiptsRoot();

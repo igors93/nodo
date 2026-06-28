@@ -97,6 +97,8 @@ public:
     SlashingEvidenceRecord toRecord() const;
     std::string serialize() const;
 
+    static DoubleVoteEvidence deserialize(const std::string& serialized);
+
 private:
     ValidatorVoteRecord m_firstVote;
     ValidatorVoteRecord m_secondVote;

@@ -78,10 +78,15 @@ int main() {
     assert(pool.size() == 1);
     assert(pool.contains(accepted.record().evidenceId()));
     assert(pool.countForValidator("validator-alpha") == 1);
+    assert(pool.allDoubleVoteEvidence().size() == 1);
 
     const auto duplicate = pool.submitDoubleVoteEvidence(evidence);
     assert(duplicate.duplicate());
     assert(pool.size() == 1);
+    assert(pool.isValid());
+    assert(pool.removeEvidence(evidence.evidenceId()));
+    assert(pool.size() == 0);
+    assert(pool.allDoubleVoteEvidence().empty());
     assert(pool.isValid());
 
     std::cout << "evidence pool tests passed\n";

@@ -75,6 +75,20 @@ int main() {
     assert(!evidence.payloadHash().empty());
     assert(!evidence.evidenceId().empty());
 
+    const nodo::consensus::DoubleVoteEvidence reversed(
+        second, first, 201
+    );
+    assert(
+        reversed.evidenceId() == evidence.evidenceId() &&
+        reversed.payloadHash() == evidence.payloadHash()
+    );
+
+    const auto restored =
+        nodo::consensus::DoubleVoteEvidence::deserialize(
+            evidence.serialize()
+        );
+    assert(restored.serialize() == evidence.serialize());
+
     const auto result =
         nodo::consensus::SlashingEvidenceVerifier::validateDoubleVoteStructure(evidence);
 

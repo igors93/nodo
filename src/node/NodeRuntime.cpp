@@ -1,5 +1,7 @@
 #include "node/NodeRuntime.hpp"
 
+#include "node/CanonicalSlashingTransition.hpp"
+
 #include "consensus/ProposerSchedule.hpp"
 #include "core/GenesisVerifier.hpp"
 #include "core/LedgerRecord.hpp"
@@ -361,7 +363,8 @@ NodeRuntime::NodeRuntime()
       m_finalizationRegistry(),
       m_consensusRoundManager(),
       m_mempool(),
-      m_peerManager(1) {}
+      m_peerManager(1),
+      m_validatorPenaltyLedger() {}
 
 NodeRuntime::NodeRuntime(
     NodeRuntimeConfig config,
@@ -376,7 +379,8 @@ NodeRuntime::NodeRuntime(
       m_finalizationRegistry(),
       m_consensusRoundManager(),
       m_mempool(),
-      m_peerManager(m_config.maxPeers()) {
+      m_peerManager(m_config.maxPeers()),
+      m_validatorPenaltyLedger() {
     if (m_config.genesisConfig().isValid() &&
         !m_blockchain.empty() &&
         m_validatorRegistry.isValid()) {
@@ -466,6 +470,16 @@ core::StatePruner& NodeRuntime::mutableStatePruner() {
     return m_statePruner;
 }
 
+const consensus::ValidatorPenaltyLedger&
+NodeRuntime::validatorPenaltyLedger() const {
+    return m_validatorPenaltyLedger;
+}
+
+consensus::ValidatorPenaltyLedger&
+NodeRuntime::mutableValidatorPenaltyLedger() {
+    return m_validatorPenaltyLedger;
+}
+
 const core::AccountStateView& NodeRuntime::cachedAccountStateAtTip(
     std::int64_t minimumFeeRawUnits
 ) const {
@@ -544,6 +558,26 @@ void NodeRuntime::applyGovernanceFromBlock(
     m_governanceExecutor.advanceToHeight(height + 1, now);
 }
 
+void NodeRuntime::applySlashingEvidenceFromBlock(const core::Block& block) {
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::fromNetworkName(
+            m_config.genesisConfig().networkParameters().networkName()
+        );
+    if (!cryptoContext.isValid()) {
+        throw std::logic_error(
+            "Cannot apply slashing evidence without a valid crypto context."
+        );
+    }
+    CanonicalSlashingTransition::applyBlockEvidence(
+        block,
+        m_validatorSetHistory,
+        cryptoContext.policy(),
+        cryptoContext.signatureProvider(),
+        m_validatorPenaltyLedger,
+        m_validatorRegistry
+    );
+}
+
 LocalPeerManager& NodeRuntime::mutablePeerManager() {
     return m_peerManager;
 }
@@ -562,6 +596,7 @@ bool NodeRuntime::isValid() const {
            !m_blockchain.empty() &&
            m_blockchain.isValid(false) &&
            m_validatorRegistry.isValid() &&
+           m_validatorPenaltyLedger.isValid() &&
            m_validatorSetHistory.isValid() &&
            m_validatorSetHistory.hasSet(
                m_consensusRoundManager.currentState().height()
@@ -660,6 +695,7 @@ std::string NodeRuntime::serialize() const {
         << ";blockchainSize=" << m_blockchain.size()
         << ";validatorRegistrySize=" << m_validatorRegistry.size()
         << ";validatorSetHistory=" << m_validatorSetHistory.serialize()
+        << ";validatorPenaltyLedger=" << m_validatorPenaltyLedger.serialize()
         << ";finalizationRegistrySize=" << m_finalizationRegistry.size()
         << ";consensusRound=" << m_consensusRoundManager.currentState().serialize()
         << ";peerManager=" << m_peerManager.serialize()

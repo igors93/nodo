@@ -2,6 +2,7 @@
 #define NODO_CORE_STATE_TRANSITION_PREVIEW_CONTEXT_HPP
 
 #include "core/AccountStateView.hpp"
+#include "core/LedgerRecord.hpp"
 #include "core/Transaction.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "utils/Amount.hpp"
@@ -40,6 +41,7 @@ using DeterministicStateDomainTransition = std::function<
         const AccountStateView&,
         utils::Amount,
         const std::vector<Transaction>&,
+        const std::vector<LedgerRecord>&,
         std::int64_t
     )
 >;
@@ -79,6 +81,7 @@ public:
         const AccountStateView& accounts,
         utils::Amount totalFee,
         const std::vector<Transaction>& transactions,
+        const std::vector<LedgerRecord>& protocolRecords,
         std::int64_t blockTimestamp
     ) const;
 

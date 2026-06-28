@@ -179,6 +179,8 @@ StateRebuildReport ChainStateRebuilder::auditBlockchain(
                 report.incrementTransactionRecordCount();
             } else if (record.type() == LedgerRecordType::VALIDATOR_PENALTY) {
                 report.incrementValidatorPenaltyRecordCount();
+            } else if (record.type() == LedgerRecordType::SLASHING_EVIDENCE) {
+                report.incrementValidatorPenaltyRecordCount();
             } else if (record.type() == LedgerRecordType::VALIDATION_WORK ||
                        record.type() == LedgerRecordType::VALIDATOR_SCORE ||
                        record.type() == LedgerRecordType::PROTECTION_EPOCH) {
@@ -286,7 +288,8 @@ State ChainStateRebuilder::rebuildStateFromLedgerRecords(
             if (record.type() == LedgerRecordType::VALIDATION_WORK ||
                 record.type() == LedgerRecordType::VALIDATOR_SCORE ||
                 record.type() == LedgerRecordType::PROTECTION_EPOCH ||
-                record.type() == LedgerRecordType::VALIDATOR_PENALTY) {
+                record.type() == LedgerRecordType::VALIDATOR_PENALTY ||
+                record.type() == LedgerRecordType::SLASHING_EVIDENCE) {
                 /*
                  * These records are part of official ledger history but do not
                  * directly mutate public coin ownership State.

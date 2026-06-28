@@ -119,6 +119,10 @@ core::LedgerRecordType LedgerRecordCodec::parseLedgerRecordType(
         return core::LedgerRecordType::VALIDATOR_PENALTY;
     }
 
+    if (value == "SLASHING_EVIDENCE") {
+        return core::LedgerRecordType::SLASHING_EVIDENCE;
+    }
+
     throw std::invalid_argument("Unknown LedgerRecordType: " + value);
 }
 
@@ -200,6 +204,14 @@ void LedgerRecordCodec::assertSafePayloadPrefixForType(
         case core::LedgerRecordType::VALIDATOR_PENALTY:
             if (payload.rfind("ValidatorPenaltyRecord{", 0) != 0) {
                 throw std::invalid_argument("VALIDATOR_PENALTY LedgerRecord payload type mismatch.");
+            }
+            return;
+
+        case core::LedgerRecordType::SLASHING_EVIDENCE:
+            if (payload.rfind("DoubleVoteEvidence{", 0) != 0) {
+                throw std::invalid_argument(
+                    "SLASHING_EVIDENCE LedgerRecord payload type mismatch."
+                );
             }
             return;
 

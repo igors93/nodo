@@ -40,6 +40,7 @@ private:
     static Result validateProtectionEpoch(const LedgerRecord& record);
     static Result validateGenesisReward(const LedgerRecord& record);
     static Result validateValidatorPenalty(const LedgerRecord& record);
+    static Result validateSlashingEvidence(const LedgerRecord& record);
 };
 
 } // namespace nodo::core
