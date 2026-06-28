@@ -2,6 +2,7 @@
 #define NODO_NODE_PEER_HANDSHAKE_AUTO_REGISTRAR_HPP
 
 #include "node/ChainSyncMessages.hpp"
+#include "crypto/KeyPair.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/Peer.hpp"
 
@@ -49,6 +50,16 @@ public:
         p2p::GossipMesh&          gossip,
         const p2p::PeerMetadata&  localPeer,
         const ChainStatusMessage& localChainStatus,
+        const crypto::KeyPair&    nodeIdentityKey,
+        std::int64_t              now
+    );
+
+    static p2p::GossipDeliveryReport sendHelloTo(
+        p2p::GossipMesh&          gossip,
+        const std::string&        targetNodeId,
+        const p2p::PeerMetadata&  localPeer,
+        const ChainStatusMessage& localChainStatus,
+        const crypto::KeyPair&    nodeIdentityKey,
         std::int64_t              now
     );
 };

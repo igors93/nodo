@@ -145,6 +145,13 @@ public:
         std::int64_t now
     );
 
+    // The only message allowed before a peer enters the authenticated registry.
+    GossipDeliveryReport sendHandshakeTo(
+        const std::string& targetNodeId,
+        const std::string& payload,
+        std::int64_t now
+    );
+
     GossipDeliveryReport flushOutbound(
         std::int64_t now
     );

@@ -468,6 +468,34 @@ p2p::TransportResult TcpTestnetNodeRuntime::connectPeer(
     return m_gossipMesh.connectPeer(remoteNodeId);
 }
 
+p2p::TransportResult TcpTestnetNodeRuntime::connectUnverifiedPeer(
+    const std::string& remoteNodeId,
+    const p2p::PeerEndpoint& endpoint
+) {
+    if (remoteNodeId.empty() || !endpoint.isValid()) {
+        return p2p::TransportResult(
+            p2p::TransportStatus::REJECTED,
+            "Unverified peer endpoint is invalid."
+        );
+    }
+    const p2p::PeerMetadata* knownPeer =
+        m_gossipMesh.peerRegistry().peer(remoteNodeId);
+    if (knownPeer != nullptr && knownPeer->quarantined()) {
+        return p2p::TransportResult(
+            p2p::TransportStatus::REJECTED,
+            "Cannot connect quarantined peer for handshake."
+        );
+    }
+    m_transport.registerPeerEndpoint(remoteNodeId, endpoint);
+    if (!m_transport.hasPeerEndpoint(remoteNodeId)) {
+        return p2p::TransportResult(
+            p2p::TransportStatus::REJECTED,
+            "Unverified peer node id is invalid."
+        );
+    }
+    return m_transport.connect(m_config.nodeId(), remoteNodeId);
+}
+
 p2p::GossipDeliveryReport TcpTestnetNodeRuntime::broadcast(
     p2p::NetworkMessageType type,
     const std::string& payload,

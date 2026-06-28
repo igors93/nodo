@@ -149,6 +149,11 @@ public:
         const std::string& remoteNodeId
     );
 
+    p2p::TransportResult connectUnverifiedPeer(
+        const std::string& remoteNodeId,
+        const p2p::PeerEndpoint& endpoint
+    );
+
     p2p::GossipDeliveryReport broadcast(
         p2p::NetworkMessageType type,
         const std::string& payload,

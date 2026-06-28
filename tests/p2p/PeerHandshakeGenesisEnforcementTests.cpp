@@ -7,6 +7,10 @@ using namespace nodo::node;
 using namespace nodo::p2p;
 
 int main() {
+    const nodo::crypto::KeyPair remoteIdentity =
+        nodo::crypto::KeyPair::createDeterministicEd25519KeyPair(
+            "peer-handshake-genesis-remote"
+        );
     const std::string genesisA = "genesis-network-a-v1";
     const std::string genesisB = "genesis-network-b-v1";
 
@@ -17,7 +21,7 @@ int main() {
     PeerMetadata remotePeer(
         "node-remote",
         PeerEndpoint("127.0.0.1", 19002),
-        "fingerprint-node-remote",
+        remoteIdentity.publicKey().fingerprint(),
         1000, 1000, 0, false
     );
 
@@ -29,7 +33,13 @@ int main() {
 
     // Peer with same genesis must be accepted.
     NetworkEnvelope helloSameGenesis =
-        PeerHandshakeManager::createHelloEnvelope(remoteConfigSameGenesis, remotePeer, status, 1000);
+        PeerHandshakeManager::createHelloEnvelope(
+            remoteConfigSameGenesis,
+            remotePeer,
+            status,
+            remoteIdentity,
+            1000
+        );
 
     const PeerHandshakeResult acceptedResult =
         PeerHandshakeManager::validateHello(localConfig, helloSameGenesis, 1001);
@@ -37,7 +47,13 @@ int main() {
 
     // Peer with different genesis must be rejected.
     NetworkEnvelope helloDifferentGenesis =
-        PeerHandshakeManager::createHelloEnvelope(remoteConfigDifferentGenesis, remotePeer, status, 1000);
+        PeerHandshakeManager::createHelloEnvelope(
+            remoteConfigDifferentGenesis,
+            remotePeer,
+            status,
+            remoteIdentity,
+            1000
+        );
 
     const PeerHandshakeResult rejectedResult =
         PeerHandshakeManager::validateHello(localConfig, helloDifferentGenesis, 1001);
@@ -46,8 +62,19 @@ int main() {
 
     // Peer with wrong network must also be rejected.
     GossipMeshConfig wrongNetConfig("node-remote", "wrongnet", "chain-1", "1", genesisA, 60, 2);
+    ChainStatusMessage wrongNetStatus(
+        "wrongnet", "chain-1", "1",
+        10, "block-hash-10",
+        10, "block-hash-10"
+    );
     NetworkEnvelope helloWrongNet =
-        PeerHandshakeManager::createHelloEnvelope(wrongNetConfig, remotePeer, status, 1000);
+        PeerHandshakeManager::createHelloEnvelope(
+            wrongNetConfig,
+            remotePeer,
+            wrongNetStatus,
+            remoteIdentity,
+            1000
+        );
 
     const PeerHandshakeResult networkRejected =
         PeerHandshakeManager::validateHello(localConfig, helloWrongNet, 1001);

@@ -210,6 +210,36 @@ void testSignatureBundleRejectsWrongMessage() {
     );
 }
 
+void testPeerAuthenticationUsesDedicatedSigningDomain() {
+    const Ed25519SignatureProvider provider;
+    const CryptoPolicy policy = CryptoPolicy::developmentPolicy();
+    const SignatureBundle peerProof = SignatureBundle::createSignature(
+        "canonical-peer-hello",
+        userPublicKey(),
+        userPrivateKey(),
+        kTestTimestamp,
+        provider,
+        SigningDomain::PEER_HANDSHAKE
+    );
+
+    requireCondition(
+        peerProof.verifyForPolicy(
+            "canonical-peer-hello",
+            policy,
+            SecurityContext::PEER_AUTHENTICATION,
+            provider
+        ),
+        "Peer handshake signature failed its dedicated security context."
+    );
+    requireCondition(
+        !peerProof.isValidForPolicy(
+            policy,
+            SecurityContext::USER_TRANSACTION
+        ),
+        "Peer handshake signature was reusable as transaction authorization."
+    );
+}
+
 void testSignatureRejectsUnsafeHex() {
     const Signature invalidSignature(
         CryptoAlgorithm::DEVELOPMENT_FAKE_SIGNATURE,
@@ -233,6 +263,7 @@ int main() {
         testEd25519ProviderRejectsTamperedSignatureHex();
         testSignatureBundleUsesProviderBoundary();
         testSignatureBundleRejectsWrongMessage();
+        testPeerAuthenticationUsesDedicatedSigningDomain();
         testSignatureRejectsUnsafeHex();
 
         std::cout << "Nodo signature provider tests passed.\n";

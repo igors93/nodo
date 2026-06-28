@@ -83,6 +83,8 @@ public:
     // Inject a validator signer (Ed25519/BLS) so this node can vote and propose.
     void setLocalSigner(crypto::Signer signer);
 
+    void setLocalNodeIdentity(crypto::KeyPair nodeIdentityKey);
+
     // Execute one combined tick: network + gossip + new message types.
     void tick(std::int64_t now);
 

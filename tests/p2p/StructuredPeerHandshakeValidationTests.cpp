@@ -3,6 +3,7 @@
 // wrong genesis rejected via structured parse, self-handshake rejected.
 
 #include "node/ChainSyncMessages.hpp"
+#include "crypto/KeyPair.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 #include "p2p/PeerHandshakeManager.hpp"
@@ -16,6 +17,8 @@ using namespace nodo::p2p;
 
 namespace {
 
+namespace crypto = nodo::crypto;
+
 GossipMeshConfig makeConfig(
     const std::string& nodeId,
     const std::string& genesisId
@@ -23,8 +26,18 @@ GossipMeshConfig makeConfig(
     return GossipMeshConfig(nodeId, "testnet", "chain-1", "1", genesisId, 60, 2);
 }
 
-PeerMetadata makePeer(const std::string& nodeId) {
-    return PeerMetadata(nodeId, PeerEndpoint("127.0.0.1", 19800), "fp-" + nodeId,
+crypto::KeyPair makeIdentity(const std::string& nodeId) {
+    return crypto::KeyPair::createDeterministicEd25519KeyPair(
+        "structured-peer-hello-" + nodeId
+    );
+}
+
+PeerMetadata makePeer(
+    const std::string& nodeId,
+    const crypto::KeyPair& identity
+) {
+    return PeerMetadata(nodeId, PeerEndpoint("127.0.0.1", 19800),
+                        identity.publicKey().fingerprint(),
                         1000, 1000, 0, false);
 }
 
@@ -38,8 +51,11 @@ void testWellFormedHelloAccepted() {
     const std::string genesis = "genesis-correct";
     const GossipMeshConfig local  = makeConfig("node-local",  genesis);
     const GossipMeshConfig remote = makeConfig("node-remote", genesis);
+    const crypto::KeyPair identity = makeIdentity("node-remote");
     const NetworkEnvelope hello =
-        PeerHandshakeManager::createHelloEnvelope(remote, makePeer("node-remote"), makeStatus(), 1000);
+        PeerHandshakeManager::createHelloEnvelope(
+            remote, makePeer("node-remote", identity), makeStatus(), identity, 1000
+        );
 
     const PeerHandshakeResult result = PeerHandshakeManager::validateHello(local, hello, 1001);
     assert(result.accepted());
@@ -50,8 +66,11 @@ void testWellFormedHelloAccepted() {
 void testDifferentGenesisRejected() {
     const GossipMeshConfig local  = makeConfig("node-local",  "genesis-correct");
     const GossipMeshConfig remote = makeConfig("node-remote", "genesis-wrong");
+    const crypto::KeyPair identity = makeIdentity("node-remote");
     const NetworkEnvelope hello =
-        PeerHandshakeManager::createHelloEnvelope(remote, makePeer("node-remote"), makeStatus(), 1000);
+        PeerHandshakeManager::createHelloEnvelope(
+            remote, makePeer("node-remote", identity), makeStatus(), identity, 1000
+        );
 
     const PeerHandshakeResult result = PeerHandshakeManager::validateHello(local, hello, 1001);
     assert(!result.accepted());
@@ -86,8 +105,11 @@ void testSelfHandshakeRejected() {
     const std::string genesis = "genesis-correct";
     const GossipMeshConfig local  = makeConfig("node-self", genesis);
     const GossipMeshConfig remote = makeConfig("node-self", genesis);  // same node id
+    const crypto::KeyPair identity = makeIdentity("node-self");
     const NetworkEnvelope hello =
-        PeerHandshakeManager::createHelloEnvelope(remote, makePeer("node-self"), makeStatus(), 1000);
+        PeerHandshakeManager::createHelloEnvelope(
+            remote, makePeer("node-self", identity), makeStatus(), identity, 1000
+        );
 
     const PeerHandshakeResult result = PeerHandshakeManager::validateHello(local, hello, 1001);
     assert(!result.accepted());
@@ -103,8 +125,14 @@ void testWrongNetworkRejected() {
     const GossipMeshConfig remote(
         "node-remote", "different-network", "chain-1", "1", "genesis-ok", 60, 2
     );
+    const crypto::KeyPair identity = makeIdentity("node-remote");
+    const ChainStatusMessage remoteStatus(
+        "different-network", "chain-1", "1", 5, "hash-5", 5, "hash-5"
+    );
     const NetworkEnvelope hello =
-        PeerHandshakeManager::createHelloEnvelope(remote, makePeer("node-remote"), makeStatus(), 1000);
+        PeerHandshakeManager::createHelloEnvelope(
+            remote, makePeer("node-remote", identity), remoteStatus, identity, 1000
+        );
 
     const PeerHandshakeResult result = PeerHandshakeManager::validateHello(local, hello, 1001);
     assert(!result.accepted());
@@ -116,9 +144,12 @@ void testExpiredEnvelopeRejected() {
     const std::string genesis = "genesis-correct";
     const GossipMeshConfig local  = makeConfig("node-local",  genesis);
     const GossipMeshConfig remote = makeConfig("node-remote", genesis);
+    const crypto::KeyPair identity = makeIdentity("node-remote");
     // Create hello at time=1000 with 60-second TTL, then validate at time=2000 (expired).
     const NetworkEnvelope hello =
-        PeerHandshakeManager::createHelloEnvelope(remote, makePeer("node-remote"), makeStatus(), 1000);
+        PeerHandshakeManager::createHelloEnvelope(
+            remote, makePeer("node-remote", identity), makeStatus(), identity, 1000
+        );
 
     const PeerHandshakeResult result = PeerHandshakeManager::validateHello(local, hello, 2000);
     assert(!result.accepted());
@@ -130,11 +161,13 @@ void testEmbeddedNodeIdMustMatchSender() {
     const std::string genesis = "genesis-correct";
     const GossipMeshConfig local = makeConfig("node-local", genesis);
     const GossipMeshConfig remote = makeConfig("node-remote", genesis);
+    const crypto::KeyPair identity = makeIdentity("node-remote");
     const NetworkEnvelope valid =
         PeerHandshakeManager::createHelloEnvelope(
             remote,
-            makePeer("node-remote"),
+            makePeer("node-remote", identity),
             makeStatus(),
+            identity,
             1000
         );
     const NetworkEnvelope impersonated(
@@ -162,11 +195,13 @@ void testNestedGenesisCannotShadowTopLevelField() {
         makeConfig("node-local", "genesis-correct");
     const GossipMeshConfig remote =
         makeConfig("node-remote", "genesis-wrong");
+    const crypto::KeyPair identity = makeIdentity("node-remote");
     const NetworkEnvelope original =
         PeerHandshakeManager::createHelloEnvelope(
             remote,
-            makePeer("node-remote"),
+            makePeer("node-remote", identity),
             makeStatus(),
+            identity,
             1000
         );
 
@@ -191,6 +226,98 @@ void testNestedGenesisCannotShadowTopLevelField() {
     assert(result.reason().find("genesis") != std::string::npos);
 }
 
+// ---- Test 9: Signed identity metadata cannot be changed in transit ----
+
+void testTamperedIdentityProofRejected() {
+    const GossipMeshConfig local = makeConfig("node-local", "genesis-correct");
+    const GossipMeshConfig remote = makeConfig("node-remote", "genesis-correct");
+    const crypto::KeyPair identity = makeIdentity("node-remote");
+    const NetworkEnvelope original =
+        PeerHandshakeManager::createHelloEnvelope(
+            remote,
+            makePeer("node-remote", identity),
+            makeStatus(),
+            identity,
+            1000
+        );
+
+    std::string payload = original.payload();
+    const std::size_t port = payload.find("port=19800");
+    assert(port != std::string::npos);
+    payload.replace(port, std::string("port=19800").size(), "port=19801");
+    const NetworkEnvelope tampered(
+        original.networkId(), original.chainId(), original.protocolVersion(),
+        original.messageType(), original.senderNodeId(), original.createdAt(),
+        original.ttlSeconds(), payload
+    );
+
+    const PeerHandshakeResult result =
+        PeerHandshakeManager::validateHello(local, tampered, 1001);
+    assert(!result.accepted());
+    assert(result.reason().find("proof") != std::string::npos ||
+           result.reason().find("signature") != std::string::npos);
+}
+
+// ---- Test 10: The advertised fingerprint must belong to the signing key ----
+
+void testMismatchedSigningKeyRejectedAtCreation() {
+    const GossipMeshConfig remote =
+        makeConfig("node-remote", "genesis-correct");
+    const crypto::KeyPair advertisedIdentity = makeIdentity("node-remote");
+    const crypto::KeyPair attackerIdentity = makeIdentity("node-attacker");
+
+    bool rejected = false;
+    try {
+        (void)PeerHandshakeManager::createHelloEnvelope(
+            remote,
+            makePeer("node-remote", advertisedIdentity),
+            makeStatus(),
+            attackerIdentity,
+            1000
+        );
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+}
+
+// ---- Test 11: An unsigned PEER_HELLO is never accepted ----
+
+void testMissingIdentityProofRejected() {
+    const GossipMeshConfig local = makeConfig("node-local", "genesis-correct");
+    const GossipMeshConfig remote = makeConfig("node-remote", "genesis-correct");
+    const crypto::KeyPair identity = makeIdentity("node-remote");
+    const NetworkEnvelope original =
+        PeerHandshakeManager::createHelloEnvelope(
+            remote,
+            makePeer("node-remote", identity),
+            makeStatus(),
+            identity,
+            1000
+        );
+
+    std::string payload = original.payload();
+    const std::size_t proofStart = payload.find(";identityProof=");
+    const std::size_t createdAt = payload.rfind(";createdAt=");
+    assert(proofStart != std::string::npos);
+    assert(createdAt != std::string::npos);
+    assert(createdAt > proofStart);
+    payload.erase(
+        proofStart + std::string(";identityProof=").size(),
+        createdAt - proofStart - std::string(";identityProof=").size()
+    );
+
+    const NetworkEnvelope unsignedHello(
+        original.networkId(), original.chainId(), original.protocolVersion(),
+        original.messageType(), original.senderNodeId(), original.createdAt(),
+        original.ttlSeconds(), payload
+    );
+    const PeerHandshakeResult result =
+        PeerHandshakeManager::validateHello(local, unsignedHello, 1001);
+    assert(!result.accepted());
+    assert(result.reason().find("proof") != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -203,6 +330,9 @@ int main() {
         testExpiredEnvelopeRejected();
         testEmbeddedNodeIdMustMatchSender();
         testNestedGenesisCannotShadowTopLevelField();
+        testTamperedIdentityProofRejected();
+        testMismatchedSigningKeyRejectedAtCreation();
+        testMissingIdentityProofRejected();
 
         std::cout << "Structured peer handshake validation tests passed.\n";
         return 0;

@@ -1,5 +1,6 @@
 #include "node/PeerHandshakeAutoRegistrar.hpp"
 
+#include "crypto/KeyPair.hpp"
 #include "p2p/LoopbackTransport.hpp"
 #include "p2p/PeerHandshakeManager.hpp"
 
@@ -13,13 +14,13 @@ using namespace nodo;
 
 p2p::PeerMetadata peer(
     const std::string& nodeId,
-    const std::string& fingerprint,
+    const crypto::KeyPair& identity,
     std::int64_t now
 ) {
     return p2p::PeerMetadata(
         nodeId,
         p2p::PeerEndpoint("127.0.0.1", 19002),
-        fingerprint,
+        identity.publicKey().fingerprint(),
         now,
         now,
         0,
@@ -44,8 +45,10 @@ void deliverHello(
     p2p::GossipMesh& localMesh,
     const p2p::GossipMeshConfig& remoteConfig,
     const p2p::PeerMetadata& remotePeer,
+    const crypto::KeyPair& remoteIdentity,
     std::int64_t now
 ) {
+    p2p::GossipMesh remoteMesh(remoteConfig, remoteTransport);
     assert(remoteTransport.connect(
         remotePeer.nodeId(),
         localMesh.config().localNodeId()
@@ -55,14 +58,14 @@ void deliverHello(
             remoteConfig,
             remotePeer,
             chainStatus(),
+            remoteIdentity,
             now
         );
-    assert(remoteTransport.send(p2p::TransportMessage(
-        remotePeer.nodeId(),
+    assert(remoteMesh.sendHandshakeTo(
         localMesh.config().localNodeId(),
-        hello,
+        hello.payload(),
         now
-    )).success());
+    ).allAccepted());
     assert(localMesh.receiveAvailable(now).acceptedCount() == 1);
 }
 
@@ -94,13 +97,22 @@ int main() {
         60,
         3
     );
+    const crypto::KeyPair originalIdentity =
+        crypto::KeyPair::createDeterministicEd25519KeyPair(
+            "peer-identity-binding-original"
+        );
+    const crypto::KeyPair attackerIdentity =
+        crypto::KeyPair::createDeterministicEd25519KeyPair(
+            "peer-identity-binding-attacker"
+        );
     const p2p::PeerMetadata original =
-        peer("node-remote", "fingerprint-remote", 1000);
+        peer("node-remote", originalIdentity, 1000);
     deliverHello(
         remoteTransport,
         localMesh,
         originalConfig,
         original,
+        originalIdentity,
         1000
     );
     const auto registered = node::PeerHandshakeAutoRegistrar::processInbox(
@@ -112,12 +124,13 @@ int main() {
     assert(registered[0].registered);
 
     const p2p::PeerMetadata refreshed =
-        peer("node-remote", "FINGERPRINT-REMOTE", 1001);
+        peer("node-remote", originalIdentity, 1001);
     deliverHello(
         remoteTransport,
         localMesh,
         originalConfig,
         refreshed,
+        originalIdentity,
         1001
     );
     const auto refreshedResult =
@@ -131,12 +144,13 @@ int main() {
     assert(refreshedResult[0].alreadyKnown);
 
     const p2p::PeerMetadata takeover =
-        peer("node-remote", "fingerprint-attacker", 1002);
+        peer("node-remote", attackerIdentity, 1002);
     deliverHello(
         remoteTransport,
         localMesh,
         originalConfig,
         takeover,
+        attackerIdentity,
         1002
     );
     const auto takeoverResult =
@@ -150,7 +164,8 @@ int main() {
     assert(!takeoverResult[0].alreadyKnown);
     assert(localMesh.peerRegistry().peer("node-remote") != nullptr);
     assert(localMesh.peerRegistry().peer("node-remote")
-               ->publicKeyFingerprint() == "fingerprint-remote");
+               ->publicKeyFingerprint() ==
+           originalIdentity.publicKey().fingerprint());
 
     const p2p::GossipMeshConfig aliasConfig(
         "node-remote-rotated",
@@ -162,12 +177,13 @@ int main() {
         3
     );
     const p2p::PeerMetadata alias =
-        peer("node-remote-rotated", "FINGERPRINT-REMOTE", 1003);
+        peer("node-remote-rotated", originalIdentity, 1003);
     deliverHello(
         remoteTransport,
         localMesh,
         aliasConfig,
         alias,
+        originalIdentity,
         1003
     );
     const auto aliasResult = node::PeerHandshakeAutoRegistrar::processInbox(

@@ -162,6 +162,8 @@ public:
      */
     void setLocalSigner(crypto::Signer signer);
 
+    void setLocalNodeIdentity(crypto::KeyPair nodeIdentityKey);
+
     // ---- Single tick (usable from tests without a background thread) ------
 
     /*
@@ -195,8 +197,12 @@ public:
         std::int64_t now
     );
 
-    // Register and connect a static peer (e.g. from --peer CLI flag).
-    void addAndConnectPeer(const p2p::PeerMetadata& peer);
+    // Connect a peer provisionally and initiate its authenticated handshake.
+    // Registration occurs only after its signed PEER_HELLO is verified.
+    void addAndConnectPeer(
+        const p2p::PeerMetadata& peer,
+        std::int64_t now
+    );
 
     // Evaluate a remote peer's ChainStatusMessage and broadcast a
     // BLOCK_SYNC_REQUEST if the durable sync checkpoint is behind.
@@ -222,6 +228,7 @@ private:
 
     std::atomic<bool> m_running;
     std::optional<crypto::Signer> m_localSigner;
+    std::optional<crypto::KeyPair> m_localNodeIdentity;
 
     // ---- Internal startup helpers ----------------------------------------
 
@@ -239,6 +246,10 @@ private:
 
     // Build chain status from current runtime state.
     ChainStatusMessage currentChainStatus() const;
+
+    std::optional<p2p::PeerMetadata> localHandshakePeer(
+        std::int64_t now
+    ) const;
 
     TcpTestnetNodeRuntimeConfig buildTransportConfig() const;
 };

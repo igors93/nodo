@@ -4,6 +4,8 @@ namespace nodo::crypto {
 
 std::string signingDomainToString(SigningDomain domain) {
     switch (domain) {
+        case SigningDomain::PEER_HANDSHAKE:
+            return "NODO_PEER_HANDSHAKE_V1";
         case SigningDomain::USER_TRANSACTION:
             return "NODO_TX_V1";
         case SigningDomain::VALIDATOR_VOTE:
@@ -25,6 +27,10 @@ std::string signingDomainToString(SigningDomain domain) {
 }
 
 SigningDomain signingDomainFromString(const std::string& value) {
+    if (value == "NODO_PEER_HANDSHAKE_V1") {
+        return SigningDomain::PEER_HANDSHAKE;
+    }
+
     if (value == "NODO_TX_V1") {
         return SigningDomain::USER_TRANSACTION;
     }
@@ -58,6 +64,8 @@ SigningDomain signingDomainFromString(const std::string& value) {
 
 SigningDomain signingDomainForSecurityContext(SecurityContext context) {
     switch (context) {
+        case SecurityContext::PEER_AUTHENTICATION:
+            return SigningDomain::PEER_HANDSHAKE;
         case SecurityContext::USER_TRANSACTION:
             return SigningDomain::USER_TRANSACTION;
         case SecurityContext::VALIDATOR_OPERATION:

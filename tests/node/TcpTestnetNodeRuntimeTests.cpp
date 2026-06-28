@@ -49,6 +49,12 @@ int main() {
     assert(nodeA.running());
     assert(nodeB.running());
 
+    assert(nodeA.connectUnverifiedPeer(
+        "node-b",
+        nodeB.transport().localEndpoint()
+    ).success());
+    assert(!nodeA.gossipMesh().peerRegistry().contains("node-b"));
+
     p2p::PeerMetadata peerA(
         "node-a",
         nodeA.transport().localEndpoint(),

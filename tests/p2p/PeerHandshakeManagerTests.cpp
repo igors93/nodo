@@ -7,6 +7,10 @@ using namespace nodo::node;
 using namespace nodo::p2p;
 
 int main() {
+    const nodo::crypto::KeyPair remoteIdentity =
+        nodo::crypto::KeyPair::createDeterministicEd25519KeyPair(
+            "peer-handshake-manager-remote"
+        );
     const std::string sharedGenesisId = "localnet-genesis-test-v1";
     GossipMeshConfig localConfig("node-a", "localnet", "chain-localnet", "1", sharedGenesisId, 60, 2);
     GossipMeshConfig remoteConfig("node-b", "localnet", "chain-localnet", "1", sharedGenesisId, 60, 2);
@@ -14,7 +18,7 @@ int main() {
     PeerMetadata remotePeer(
         "node-b",
         PeerEndpoint("127.0.0.1", 19002),
-        "fingerprint-node-b",
+        remoteIdentity.publicKey().fingerprint(),
         1000,
         1000,
         0,
@@ -32,7 +36,13 @@ int main() {
     );
 
     NetworkEnvelope hello =
-        PeerHandshakeManager::createHelloEnvelope(remoteConfig, remotePeer, status, 1000);
+        PeerHandshakeManager::createHelloEnvelope(
+            remoteConfig,
+            remotePeer,
+            status,
+            remoteIdentity,
+            1000
+        );
 
     assert(hello.messageType() == NetworkMessageType::PEER_HELLO);
     assert(hello.senderNodeId() == "node-b");

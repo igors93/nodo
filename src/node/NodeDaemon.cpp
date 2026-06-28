@@ -65,6 +65,12 @@ void NodeDaemon::setLocalSigner(crypto::Signer signer) {
     m_orchestrator.setLocalSigner(std::move(signer));
 }
 
+void NodeDaemon::setLocalNodeIdentity(
+    crypto::KeyPair nodeIdentityKey
+) {
+    m_orchestrator.setLocalNodeIdentity(std::move(nodeIdentityKey));
+}
+
 void NodeDaemon::tick(std::int64_t now) {
     m_orchestrator.tick(now);
     processTransactionGossip(now);
@@ -89,7 +95,7 @@ void NodeDaemon::registerStaticPeers(std::int64_t now) {
             false
         );
 
-        m_orchestrator.addAndConnectPeer(meta);
+        m_orchestrator.addAndConnectPeer(meta, now);
     }
 }
 

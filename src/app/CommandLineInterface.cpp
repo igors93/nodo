@@ -2171,6 +2171,35 @@ CommandLineResult CommandLineInterface::executeNodeRun(
         localValidatorAddress = localSigner->address();
     }
 
+    const crypto::KeyStoreLoadResult nodeIdentityKey =
+        loadKeyWithPrompt(
+            directoryConfig.keysDirectoryPath(),
+            defaultLocalnetUserKeyId()
+        );
+    if (!nodeIdentityKey.loaded() ||
+        nodeIdentityKey.metadata().keyType() !=
+            crypto::KeyStoreKeyType::USER ||
+        nodeIdentityKey.keyPair().algorithm() !=
+            crypto::CryptoAlgorithm::CLASSIC_ED25519) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "node run: an Ed25519 local-user key is required for signed peer identity. "
+            "Run 'nodo keys create --type both' for this data directory.\n"
+        );
+    }
+    const node::KeySafetyCheckResult nodeKeySafety =
+        node::ProductionKeySafetyGate::check(
+            nodeIdentityKey.metadata(),
+            params.networkName()
+        );
+    if (!nodeKeySafety.isApproved()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "node run: node identity key safety check failed: " +
+                nodeKeySafety.reason() + "\n"
+        );
+    }
+
     // Parse static peers.
     std::vector<node::NodeDaemonPeerEntry> staticPeers;
     for (const auto& rawPeer : options.peers) {
@@ -2203,6 +2232,8 @@ CommandLineResult CommandLineInterface::executeNodeRun(
     daemonConfig.staticPeers        = std::move(staticPeers);
 
     node::NodeDaemon daemon(daemonConfig, policy, blsProvider);
+
+    daemon.setLocalNodeIdentity(nodeIdentityKey.keyPair());
 
     if (localSigner.has_value()) {
         daemon.setLocalSigner(std::move(*localSigner));

@@ -1,9 +1,11 @@
 #include "p2p/PeerHandshakeManager.hpp"
 
 #include "core/ProtocolLimits.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace nodo::p2p {
@@ -136,6 +138,28 @@ bool hasHelloMessageWrapper(const std::string& payload) {
            payload.back() == '}';
 }
 
+std::string buildIdentityProofPayload(
+    const std::string& peer,
+    const std::string& networkId,
+    const std::string& chainId,
+    const std::string& protocolVersion,
+    const std::string& genesisId,
+    const std::string& chainStatus,
+    std::int64_t createdAt
+) {
+    std::ostringstream output;
+    output << "PeerHelloIdentityProofPayload{"
+           << "peer=" << peer
+           << ";networkId=" << networkId
+           << ";chainId=" << chainId
+           << ";protocolVersion=" << protocolVersion
+           << ";genesisId=" << genesisId
+           << ";chainStatus=" << chainStatus
+           << ";createdAt=" << createdAt
+           << "}";
+    return output.str();
+}
+
 } // namespace
 
 PeerHelloMessage::PeerHelloMessage()
@@ -145,6 +169,7 @@ PeerHelloMessage::PeerHelloMessage()
       m_protocolVersion(""),
       m_genesisId(""),
       m_chainStatus(),
+      m_identityProof(),
       m_createdAt(0) {}
 
 PeerHelloMessage::PeerHelloMessage(
@@ -154,6 +179,7 @@ PeerHelloMessage::PeerHelloMessage(
     std::string protocolVersion,
     std::string genesisId,
     node::ChainStatusMessage chainStatus,
+    crypto::SignatureBundle identityProof,
     std::int64_t createdAt
 ) : m_peer(std::move(peer)),
     m_networkId(std::move(networkId)),
@@ -161,6 +187,7 @@ PeerHelloMessage::PeerHelloMessage(
     m_protocolVersion(std::move(protocolVersion)),
     m_genesisId(std::move(genesisId)),
     m_chainStatus(std::move(chainStatus)),
+    m_identityProof(std::move(identityProof)),
     m_createdAt(createdAt) {}
 
 const PeerMetadata& PeerHelloMessage::peer() const { return m_peer; }
@@ -169,6 +196,7 @@ const std::string& PeerHelloMessage::chainId() const { return m_chainId; }
 const std::string& PeerHelloMessage::protocolVersion() const { return m_protocolVersion; }
 const std::string& PeerHelloMessage::genesisId() const { return m_genesisId; }
 const node::ChainStatusMessage& PeerHelloMessage::chainStatus() const { return m_chainStatus; }
+const crypto::SignatureBundle& PeerHelloMessage::identityProof() const { return m_identityProof; }
 std::int64_t PeerHelloMessage::createdAt() const { return m_createdAt; }
 
 bool PeerHelloMessage::isValid() const {
@@ -181,7 +209,20 @@ bool PeerHelloMessage::isValid() const {
            m_networkId == m_chainStatus.networkId() &&
            m_chainId == m_chainStatus.chainId() &&
            m_protocolVersion == m_chainStatus.protocolVersion() &&
+           !m_identityProof.empty() &&
            m_createdAt > 0;
+}
+
+std::string PeerHelloMessage::signingPayload() const {
+    return buildIdentityProofPayload(
+        m_peer.serialize(),
+        m_networkId,
+        m_chainId,
+        m_protocolVersion,
+        m_genesisId,
+        m_chainStatus.serialize(),
+        m_createdAt
+    );
 }
 
 std::string PeerHelloMessage::serialize() const {
@@ -193,6 +234,7 @@ std::string PeerHelloMessage::serialize() const {
            << ";protocolVersion=" << m_protocolVersion
            << ";genesisId=" << m_genesisId
            << ";chainStatus=" << m_chainStatus.serialize()
+           << ";identityProof=" << m_identityProof.serialize()
            << ";createdAt=" << m_createdAt
            << "}";
     return output.str();
@@ -231,15 +273,58 @@ NetworkEnvelope PeerHandshakeManager::createHelloEnvelope(
     const GossipMeshConfig& config,
     const PeerMetadata& localPeer,
     const node::ChainStatusMessage& chainStatus,
+    const crypto::KeyPair& nodeIdentityKey,
     std::int64_t now
 ) {
-    const PeerHelloMessage hello(
-        localPeer,
+    if (!config.isValid() || !localPeer.isValid() ||
+        !chainStatus.isValid() || !nodeIdentityKey.isValid() || now <= 0 ||
+        nodeIdentityKey.algorithm() !=
+            crypto::CryptoAlgorithm::CLASSIC_ED25519 ||
+        localPeer.nodeId() != config.localNodeId() ||
+        chainStatus.networkId() != config.networkId() ||
+        chainStatus.chainId() != config.chainId() ||
+        chainStatus.protocolVersion() != config.protocolVersion() ||
+        localPeer.publicKeyFingerprint() !=
+            nodeIdentityKey.publicKey().fingerprint()) {
+        throw std::invalid_argument(
+            "Cannot create PEER_HELLO from mismatched node identity."
+        );
+    }
+
+    const PeerMetadata handshakePeer(
+        localPeer.nodeId(),
+        localPeer.endpoint(),
+        localPeer.publicKeyFingerprint(),
+        localPeer.firstSeenAt(),
+        localPeer.lastSeenAt(),
+        0,
+        false
+    );
+    const PeerHelloMessage unsignedHello(
+        handshakePeer,
         config.networkId(),
         config.chainId(),
         config.protocolVersion(),
         config.genesisId(),
         chainStatus,
+        crypto::SignatureBundle(),
+        now
+    );
+    const crypto::Ed25519SignatureProvider provider;
+    const crypto::SignatureBundle identityProof = nodeIdentityKey.sign(
+        unsignedHello.signingPayload(),
+        now,
+        provider,
+        crypto::SigningDomain::PEER_HANDSHAKE
+    );
+    const PeerHelloMessage hello(
+        handshakePeer,
+        config.networkId(),
+        config.chainId(),
+        config.protocolVersion(),
+        config.genesisId(),
+        chainStatus,
+        identityProof,
         now
     );
 
@@ -378,6 +463,77 @@ PeerHandshakeResult PeerHandshakeManager::validateHello(
         return PeerHandshakeResult(
             PeerHandshakeStatus::REJECTED,
             "Peer hello node id does not match envelope sender identity."
+        );
+    }
+
+
+    const std::string peerBlock =
+        extractNestedField(envelope.payload(), "peer");
+    if (peerBlock != peer->serialize()) {
+        return PeerHandshakeResult(
+            PeerHandshakeStatus::REJECTED,
+            "Peer hello identity metadata is not canonical."
+        );
+    }
+
+    const std::string chainStatusBlock =
+        extractSerializedField(envelope.payload(), "chainStatus");
+    if (chainStatusBlock.rfind("ChainStatusMessage{", 0) != 0) {
+        return PeerHandshakeResult(
+            PeerHandshakeStatus::REJECTED,
+            "Peer hello chain status is malformed."
+        );
+    }
+
+    try {
+        const crypto::SignatureBundle proof =
+            crypto::SignatureBundle::deserialize(
+                extractSerializedField(envelope.payload(), "identityProof")
+            );
+        if (proof.signatures().size() != 1) {
+            return PeerHandshakeResult(
+                PeerHandshakeStatus::REJECTED,
+                "Peer hello must contain exactly one identity signature."
+            );
+        }
+
+        const crypto::Signature& signature = proof.signatures().front();
+        if (signature.algorithm() !=
+                crypto::CryptoAlgorithm::CLASSIC_ED25519 ||
+            signature.domain() != crypto::SigningDomain::PEER_HANDSHAKE ||
+            signature.createdAt() != envelope.createdAt() ||
+            signature.publicKey().fingerprint() !=
+                peer->publicKeyFingerprint()) {
+            return PeerHandshakeResult(
+                PeerHandshakeStatus::REJECTED,
+                "Peer hello identity signature does not match its fingerprint."
+            );
+        }
+
+        const std::string proofPayload = buildIdentityProofPayload(
+            peerBlock,
+            extractSerializedField(envelope.payload(), "networkId"),
+            extractSerializedField(envelope.payload(), "chainId"),
+            extractSerializedField(envelope.payload(), "protocolVersion"),
+            extractSerializedField(envelope.payload(), "genesisId"),
+            chainStatusBlock,
+            envelope.createdAt()
+        );
+        const crypto::Ed25519SignatureProvider provider;
+        if (!proof.verifyForPolicy(
+                proofPayload,
+                crypto::CryptoPolicy::developmentPolicy(),
+                crypto::SecurityContext::PEER_AUTHENTICATION,
+                provider)) {
+            return PeerHandshakeResult(
+                PeerHandshakeStatus::REJECTED,
+                "Peer hello identity proof verification failed."
+            );
+        }
+    } catch (const std::exception&) {
+        return PeerHandshakeResult(
+            PeerHandshakeStatus::REJECTED,
+            "Peer hello identity proof is malformed."
         );
     }
 

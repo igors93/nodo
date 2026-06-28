@@ -96,6 +96,7 @@ p2p::GossipDeliveryReport PeerHandshakeAutoRegistrar::sendHello(
     p2p::GossipMesh&          gossip,
     const p2p::PeerMetadata&  localPeer,
     const ChainStatusMessage& localChainStatus,
+    const crypto::KeyPair&    nodeIdentityKey,
     std::int64_t              now
 ) {
     // Build the PEER_HELLO envelope using the canonical factory.
@@ -104,12 +105,36 @@ p2p::GossipDeliveryReport PeerHandshakeAutoRegistrar::sendHello(
             gossip.config(),
             localPeer,
             localChainStatus,
+            nodeIdentityKey,
             now
         );
 
     // Broadcast its payload to all connected peers.
     return gossip.broadcast(
         p2p::NetworkMessageType::PEER_HELLO,
+        helloEnvelope.payload(),
+        now
+    );
+}
+
+p2p::GossipDeliveryReport PeerHandshakeAutoRegistrar::sendHelloTo(
+    p2p::GossipMesh&          gossip,
+    const std::string&        targetNodeId,
+    const p2p::PeerMetadata&  localPeer,
+    const ChainStatusMessage& localChainStatus,
+    const crypto::KeyPair&    nodeIdentityKey,
+    std::int64_t              now
+) {
+    const p2p::NetworkEnvelope helloEnvelope =
+        p2p::PeerHandshakeManager::createHelloEnvelope(
+            gossip.config(),
+            localPeer,
+            localChainStatus,
+            nodeIdentityKey,
+            now
+        );
+    return gossip.sendHandshakeTo(
+        targetNodeId,
         helloEnvelope.payload(),
         now
     );

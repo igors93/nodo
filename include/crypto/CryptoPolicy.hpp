@@ -15,6 +15,7 @@ namespace nodo::crypto {
  * - emissão de moeda é extremamente importante.
  */
 enum class SecurityContext {
+    PEER_AUTHENTICATION,
     USER_TRANSACTION,
     VALIDATOR_OPERATION,
     TREASURY_OPERATION,

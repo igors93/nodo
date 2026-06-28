@@ -366,6 +366,37 @@ GossipDeliveryReport GossipMesh::sendTo(
     return result.enqueued() ? GossipDeliveryReport(1, 0) : GossipDeliveryReport(0, 1);
 }
 
+GossipDeliveryReport GossipMesh::sendHandshakeTo(
+    const std::string& targetNodeId,
+    const std::string& payload,
+    std::int64_t now
+) {
+    if (!m_config.isValid() || targetNodeId.empty() ||
+        targetNodeId == m_config.localNodeId()) {
+        return GossipDeliveryReport(0, 1);
+    }
+
+    const NetworkEnvelope envelope = createEnvelope(
+        NetworkMessageType::PEER_HELLO,
+        payload,
+        now
+    );
+    if (!envelope.isStructurallyValid(
+            core::ProtocolLimits::MAX_NETWORK_PAYLOAD_BYTES)) {
+        return GossipDeliveryReport(0, 1);
+    }
+
+    const TransportResult sent = m_transport.send(TransportMessage(
+        m_config.localNodeId(),
+        targetNodeId,
+        envelope,
+        now
+    ));
+    return sent.sent()
+        ? GossipDeliveryReport(1, 0)
+        : GossipDeliveryReport(0, 1);
+}
+
 GossipDeliveryReport GossipMesh::flushOutbound(std::int64_t now) {
     std::size_t accepted = 0;
     std::size_t rejected = 0;

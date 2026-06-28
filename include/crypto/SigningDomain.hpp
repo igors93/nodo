@@ -9,6 +9,7 @@ namespace nodo::crypto {
 
 enum class SigningDomain {
     UNKNOWN,
+    PEER_HANDSHAKE,
     USER_TRANSACTION,
     VALIDATOR_VOTE,
     QUORUM_CERTIFICATE,

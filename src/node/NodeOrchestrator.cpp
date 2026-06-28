@@ -262,11 +262,27 @@ void NodeOrchestrator::tick(std::int64_t now) {
     // applied governance overrides before falling back to the genesis config value.
     const config::GenesisConfig& genesisConfig = m_runtime->config().genesisConfig();
     // Auto-register new peers that sent PEER_HELLO.
-    PeerHandshakeAutoRegistrar::processInbox(
+    const auto handshakeResults = PeerHandshakeAutoRegistrar::processInbox(
         gossip,
         currentChainStatus(),
         now
     );
+    if (m_localNodeIdentity.has_value()) {
+        const auto localPeer = localHandshakePeer(now);
+        if (localPeer.has_value()) {
+            for (const auto& handshake : handshakeResults) {
+                if (!handshake.registered) continue;
+                PeerHandshakeAutoRegistrar::sendHelloTo(
+                    gossip,
+                    handshake.peerId,
+                    *localPeer,
+                    currentChainStatus(),
+                    *m_localNodeIdentity,
+                    now
+                );
+            }
+        }
+    }
 
     // Drain incoming CHAIN_STATUS messages.
     // These are broadcast by peers after round advances or on handshake. We use
@@ -491,10 +507,31 @@ p2p::GossipDeliveryReport NodeOrchestrator::gossipBroadcast(
     return m_tcpRuntime->gossipMesh().broadcast(type, payload, now);
 }
 
-void NodeOrchestrator::addAndConnectPeer(const p2p::PeerMetadata& peer) {
-    if (!m_tcpRuntime) return;
-    if (m_tcpRuntime->addPeer(peer).success()) {
-        m_tcpRuntime->connectPeer(peer.nodeId());
+void NodeOrchestrator::addAndConnectPeer(
+    const p2p::PeerMetadata& peer,
+    std::int64_t now
+) {
+    if (!m_tcpRuntime || !m_localNodeIdentity.has_value() || now <= 0) {
+        return;
+    }
+
+    const p2p::TransportResult connected =
+        m_tcpRuntime->connectUnverifiedPeer(
+            peer.nodeId(),
+            peer.endpoint()
+        );
+    if (!connected.success()) return;
+
+    const auto localPeer = localHandshakePeer(now);
+    if (localPeer.has_value()) {
+        PeerHandshakeAutoRegistrar::sendHelloTo(
+            m_tcpRuntime->gossipMesh(),
+            peer.nodeId(),
+            *localPeer,
+            currentChainStatus(),
+            *m_localNodeIdentity,
+            now
+        );
     }
 }
 
@@ -689,9 +726,7 @@ bool NodeOrchestrator::startTransport() {
                     0,
                     false
                 );
-                if (m_tcpRuntime->addPeer(peerMeta).success()) {
-                    m_tcpRuntime->connectPeer(peerId);
-                }
+                addAndConnectPeer(peerMeta, nowSec);
             }
         }
     );
@@ -857,6 +892,19 @@ void NodeOrchestrator::setLocalSigner(crypto::Signer signer) {
     m_localSigner = std::move(signer);
 }
 
+void NodeOrchestrator::setLocalNodeIdentity(
+    crypto::KeyPair nodeIdentityKey
+) {
+    if (!nodeIdentityKey.isValid() ||
+        nodeIdentityKey.algorithm() !=
+            crypto::CryptoAlgorithm::CLASSIC_ED25519) {
+        throw std::invalid_argument(
+            "Local node identity requires a valid Ed25519 key pair."
+        );
+    }
+    m_localNodeIdentity = std::move(nodeIdentityKey);
+}
+
 std::optional<core::Block> NodeOrchestrator::produceBlock(
     std::uint64_t height,
     std::uint64_t round,
@@ -924,6 +972,23 @@ ChainStatusMessage NodeOrchestrator::currentChainStatus() const {
         latestHash,
         finalizedHeight,
         finalizedHash
+    );
+}
+
+std::optional<p2p::PeerMetadata> NodeOrchestrator::localHandshakePeer(
+    std::int64_t now
+) const {
+    if (!m_tcpRuntime || !m_localNodeIdentity.has_value() || now <= 0) {
+        return std::nullopt;
+    }
+    return p2p::PeerMetadata(
+        m_config.localPeer().peerId(),
+        m_tcpRuntime->transport().localEndpoint(),
+        m_localNodeIdentity->publicKey().fingerprint(),
+        now,
+        now,
+        0,
+        false
     );
 }
 

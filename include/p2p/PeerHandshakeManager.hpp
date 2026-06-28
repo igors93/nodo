@@ -2,6 +2,8 @@
 #define NODO_P2P_PEER_HANDSHAKE_MANAGER_HPP
 
 #include "node/ChainSyncMessages.hpp"
+#include "crypto/KeyPair.hpp"
+#include "crypto/SignatureBundle.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 #include "p2p/Peer.hpp"
@@ -23,6 +25,7 @@ public:
         std::string protocolVersion,
         std::string genesisId,
         node::ChainStatusMessage chainStatus,
+        crypto::SignatureBundle identityProof,
         std::int64_t createdAt
     );
 
@@ -32,9 +35,11 @@ public:
     const std::string& protocolVersion() const;
     const std::string& genesisId() const;
     const node::ChainStatusMessage& chainStatus() const;
+    const crypto::SignatureBundle& identityProof() const;
     std::int64_t createdAt() const;
 
     bool isValid() const;
+    std::string signingPayload() const;
     std::string serialize() const;
 
 private:
@@ -44,6 +49,7 @@ private:
     std::string m_protocolVersion;
     std::string m_genesisId;
     node::ChainStatusMessage m_chainStatus;
+    crypto::SignatureBundle m_identityProof;
     std::int64_t m_createdAt;
 };
 
@@ -73,6 +79,7 @@ public:
         const GossipMeshConfig& config,
         const PeerMetadata& localPeer,
         const node::ChainStatusMessage& chainStatus,
+        const crypto::KeyPair& nodeIdentityKey,
         std::int64_t now
     );
 

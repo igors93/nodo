@@ -24,6 +24,10 @@ bool CryptoPolicy::isAlgorithmAllowed(
         return algorithm == CryptoAlgorithm::CLASSIC_ED25519;
     }
 
+    if (context == SecurityContext::PEER_AUTHENTICATION) {
+        return algorithm == CryptoAlgorithm::CLASSIC_ED25519;
+    }
+
     if (context == SecurityContext::VALIDATOR_OPERATION) {
         return algorithm == CryptoAlgorithm::BLS12_381;
     }
