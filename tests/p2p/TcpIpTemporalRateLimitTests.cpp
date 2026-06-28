@@ -23,9 +23,7 @@ std::unique_ptr<TcpTransport> connectClient(
     return client;
 }
 
-} // namespace
-
-int main() {
+void testPolicyValidation() {
     assert(!TcpIpRateLimitPolicy(
         0,
         1,
@@ -40,11 +38,13 @@ int main() {
         std::chrono::milliseconds(30),
         std::chrono::milliseconds(20)
     ).isValid());
+}
 
-    const TcpIpRateLimitPolicy temporalPolicy(
+void testBackoffGrowth() {
+    const TcpIpRateLimitPolicy backoffPolicy(
         1,
         1,
-        std::chrono::milliseconds(500),
+        std::chrono::seconds(5),
         std::chrono::milliseconds(30),
         std::chrono::milliseconds(80)
     );
@@ -52,7 +52,7 @@ int main() {
         8,
         8,
         std::chrono::milliseconds(2'000),
-        temporalPolicy
+        backoffPolicy
     ));
     assert(server.bind("server", "127.0.0.1", 0).success());
 
@@ -87,12 +87,45 @@ int main() {
     clients.push_back(connectClient(server, 5));
     assert(server.temporalRateLimitedConnectionCount() == 5);
     assert(server.ipBackoffRemaining("127.0.0.1").count() > 60);
+    assert(server.pendingCandidateCount() == 1);
+    assert(server.ipAdmissionStateCount() == 1);
+}
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(320));
-    clients.push_back(connectClient(server, 6));
+void testTokenRefill() {
+    const TcpIpRateLimitPolicy refillPolicy(
+        1,
+        1,
+        std::chrono::milliseconds(100),
+        std::chrono::milliseconds(30),
+        std::chrono::milliseconds(30)
+    );
+    TcpTransport server(TcpCandidatePolicy(
+        8,
+        8,
+        std::chrono::milliseconds(2'000),
+        refillPolicy
+    ));
+    assert(server.bind("server", "127.0.0.1", 0).success());
+
+    std::vector<std::unique_ptr<TcpTransport>> clients;
+    clients.push_back(connectClient(server, 10));
+    clients.push_back(connectClient(server, 11));
+    assert(server.pendingCandidateCount() == 1);
+    assert(server.temporalRateLimitedConnectionCount() == 1);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(120));
+    clients.push_back(connectClient(server, 12));
     assert(!server.ipBackedOff("127.0.0.1"));
     assert(server.pendingCandidateCount() == 2);
+    assert(server.temporalRateLimitedConnectionCount() == 1);
     assert(server.ipAdmissionStateCount() == 1);
+}
 
+} // namespace
+
+int main() {
+    testPolicyValidation();
+    testBackoffGrowth();
+    testTokenRefill();
     return 0;
 }
