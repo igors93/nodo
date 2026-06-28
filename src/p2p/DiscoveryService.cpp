@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iostream>
+#include <initializer_list>
 #include <sstream>
 
 namespace nodo::p2p {
@@ -52,6 +53,50 @@ bool parseDiscoveryPort(const std::string& value, std::uint16_t& out) {
     } catch (...) {
         return false;
     }
+}
+
+bool parseDiscoveryFields(
+    const std::string& body,
+    std::map<std::string, std::string>& outFields
+) {
+    if (body.empty() || body.front() == ';' || body.back() == ';') {
+        return false;
+    }
+
+    std::stringstream stream(body);
+    std::string part;
+    while (std::getline(stream, part, ';')) {
+        const std::size_t separator = part.find('=');
+        if (part.empty() || separator == std::string::npos || separator == 0 ||
+            part.find('=', separator + 1) != std::string::npos) {
+            return false;
+        }
+
+        const bool inserted = outFields.emplace(
+            part.substr(0, separator),
+            part.substr(separator + 1)
+        ).second;
+        if (!inserted) {
+            return false;
+        }
+    }
+
+    return !outFields.empty();
+}
+
+bool hasExactDiscoveryFields(
+    const std::map<std::string, std::string>& fields,
+    std::initializer_list<const char*> requiredFields
+) {
+    if (fields.size() != requiredFields.size()) {
+        return false;
+    }
+    for (const char* field : requiredFields) {
+        if (fields.find(field) == fields.end()) {
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace
@@ -159,7 +204,8 @@ void DiscoveryService::addPeer(
     std::uint16_t udpPort
 ) {
     // Inserts or updates a peer in the Kademlia routing table based on distance to the local node.
-    if (peerId == m_localNodeId || peerId.empty() || host.empty() || tcpPort == 0 || udpPort == 0) {
+    const DiscoveryPeerInfo candidate{peerId, host, tcpPort, udpPort, 0};
+    if (peerId == m_localNodeId || !candidate.isValid()) {
         return;
     }
 
@@ -312,55 +358,100 @@ void DiscoveryService::handleReceive(const asio::error_code& ec, std::size_t byt
     try {
         std::string message(m_recvBuffer.data(), bytesTransferred);
 
-        // Parse message envelope
-        if (message.rfind("KADEMLIA_MSG{", 0) == 0 && message.back() == '}') {
+        const auto processMessage = [&]() {
+            // Parse message envelope
+            if (message.size() < 14 ||
+                message.rfind("KADEMLIA_MSG{", 0) != 0 ||
+                message.back() != '}') {
+                return;
+            }
+
             std::string body = message.substr(13, message.size() - 14);
             std::map<std::string, std::string> fields;
-            std::stringstream ss(body);
-            std::string part;
-            while (std::getline(ss, part, ';')) {
-                auto eq = part.find('=');
-                if (eq != std::string::npos) {
-                    fields[part.substr(0, eq)] = part.substr(eq + 1);
-                }
+            if (!parseDiscoveryFields(body, fields)) {
+                return;
             }
 
-            std::string type = fields["type"];
-            std::string senderId = fields["senderId"];
-            auto parsePort = [](const std::string& s) -> std::uint16_t {
-                try {
-                    const unsigned long v = std::stoul(s);
-                    return (v > 0 && v <= 65535) ? static_cast<std::uint16_t>(v) : 0;
-                } catch (...) { return 0; }
+            const auto typeIt = fields.find("type");
+            if (typeIt == fields.end()) {
+                return;
+            }
+            const std::string& type = typeIt->second;
+            const bool isBasicMessage = type == "PING" || type == "PONG";
+            const bool isFindNode = type == "FIND_NODE";
+            const bool isNeighbors = type == "NEIGHBORS";
+            if ((!isBasicMessage && !isFindNode && !isNeighbors) ||
+                (isBasicMessage && !hasExactDiscoveryFields(
+                    fields,
+                    {"type", "senderId", "senderUdpPort", "senderTcpPort"}
+                )) ||
+                (isFindNode && !hasExactDiscoveryFields(
+                    fields,
+                    {"type", "senderId", "senderUdpPort", "senderTcpPort", "targetId"}
+                )) ||
+                (isNeighbors && !hasExactDiscoveryFields(
+                    fields,
+                    {"type", "senderId", "senderUdpPort", "senderTcpPort", "neighbors"}
+                ))) {
+                return;
+            }
+
+            std::uint16_t senderUdpPort = 0;
+            std::uint16_t senderTcpPort = 0;
+            if (!parseDiscoveryPort(fields.at("senderUdpPort"), senderUdpPort) ||
+                !parseDiscoveryPort(fields.at("senderTcpPort"), senderTcpPort)) {
+                return;
+            }
+
+            const std::string& senderId = fields.at("senderId");
+            const std::string senderHost = m_recvEndpoint.address().to_string();
+            const DiscoveryPeerInfo sender{
+                senderId, senderHost, senderTcpPort, senderUdpPort, 0
             };
-            std::uint16_t senderUdpPort = fields.count("senderUdpPort") ? parsePort(fields["senderUdpPort"]) : 0;
-            std::uint16_t senderTcpPort = fields.count("senderTcpPort") ? parsePort(fields["senderTcpPort"]) : 0;
+            if (senderId == m_localNodeId || !sender.isValid()) {
+                return;
+            }
 
-            if (!senderId.empty() && senderId != m_localNodeId && senderUdpPort > 0) {
-                // Update routing table with sender info
-                addPeer(senderId, m_recvEndpoint.address().to_string(), senderTcpPort, senderUdpPort);
-
-                if (type == "PING") {
-                    sendPong(m_recvEndpoint);
-                } else if (type == "PONG") {
-                    // Already updated peer in addPeer
-                } else if (type == "FIND_NODE") {
-                    std::string targetId = fields["targetId"];
-                    auto closest = findClosestPeers(targetId, 8);
-                    sendNeighbors(m_recvEndpoint, closest);
-                } else if (type == "NEIGHBORS") {
-                    std::string neighborsStr = fields["neighbors"];
-                    std::stringstream nss(neighborsStr);
-                    std::string peerSer;
-                    while (std::getline(nss, peerSer, ',')) {
-                        DiscoveryPeerInfo peer = DiscoveryPeerInfo::deserialize(peerSer);
-                        if (peer.isValid()) {
-                            addPeer(peer.peerId, peer.host, peer.tcpPort, peer.udpPort);
-                        }
+            std::vector<DiscoveryPeerInfo> neighbors;
+            if (isFindNode && !isSafeDiscoveryScalar(fields.at("targetId"), 160)) {
+                return;
+            }
+            if (isNeighbors && !fields.at("neighbors").empty()) {
+                if (fields.at("neighbors").front() == ',' ||
+                    fields.at("neighbors").back() == ',') {
+                    return;
+                }
+                std::stringstream neighborStream(fields.at("neighbors"));
+                std::string serializedPeer;
+                while (std::getline(neighborStream, serializedPeer, ',')) {
+                    if (neighbors.size() >= 8) {
+                        return;
                     }
+                    DiscoveryPeerInfo peer =
+                        DiscoveryPeerInfo::deserialize(serializedPeer);
+                    if (!peer.isValid()) {
+                        return;
+                    }
+                    neighbors.push_back(std::move(peer));
                 }
             }
-        }
+
+            // Promote only senders of fully validated, supported messages.
+            addPeer(senderId, senderHost, senderTcpPort, senderUdpPort);
+
+            if (type == "PING") {
+                sendPong(m_recvEndpoint);
+            } else if (type == "FIND_NODE") {
+                auto closest = findClosestPeers(fields.at("targetId"), 8);
+                sendNeighbors(m_recvEndpoint, closest);
+            } else if (type == "NEIGHBORS") {
+                for (const DiscoveryPeerInfo& peer : neighbors) {
+                    addPeer(peer.peerId, peer.host, peer.tcpPort, peer.udpPort);
+                }
+            }
+        };
+
+        processMessage();
     } catch (...) {
         // Ignore malformed messages safely
     }

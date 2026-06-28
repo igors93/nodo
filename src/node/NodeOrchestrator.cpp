@@ -677,26 +677,23 @@ NodeOrchestratorStartResult NodeOrchestrator::initOrLoad() {
 }
 
 bool NodeOrchestrator::startTransport() {
+    const TcpTestnetNodeRuntimeConfig transportConfig = buildTransportConfig();
+    if (transportConfig.port() == std::numeric_limits<std::uint16_t>::max()) {
+        // Discovery uses the TCP successor port; 65535 has no valid successor.
+        return false;
+    }
+
     m_tcpRuntime = std::make_unique<TcpTestnetNodeRuntime>(
-        buildTransportConfig()
+        transportConfig
     );
 
     const auto transportResult = m_tcpRuntime->start();
     if (!transportResult.success()) return false;
 
-    // Extract TCP port to compute UDP port
+    // Discovery uses the port immediately after the validated TCP port.
     const auto& peer = m_config.localPeer();
-    const std::string& endpoint = peer.endpoint();
-    std::uint16_t tcpPort = 30333;
-    const auto colon = endpoint.rfind(':');
-    if (colon != std::string::npos) {
-        try {
-            tcpPort = static_cast<std::uint16_t>(
-                std::stoul(endpoint.substr(colon + 1))
-            );
-        } catch (...) {}
-    }
-    std::uint16_t udpPort = tcpPort + 1;
+    const std::uint16_t tcpPort = transportConfig.port();
+    const std::uint16_t udpPort = static_cast<std::uint16_t>(tcpPort + 1);
 
     m_discoveryService = std::make_unique<p2p::DiscoveryService>(
         peer.peerId(),
@@ -738,11 +735,15 @@ bool NodeOrchestrator::startTransport() {
         if (entry.hasPersistentState() && entry.quarantined()) {
             continue;
         }
+        if (entry.endpoint().port() ==
+            std::numeric_limits<std::uint16_t>::max()) {
+            continue;
+        }
         m_discoveryService->addPeer(
             entry.nodeId(),
             entry.endpoint().host(),
             entry.endpoint().port(),
-            entry.endpoint().port() + 1
+            static_cast<std::uint16_t>(entry.endpoint().port() + 1)
         );
     }
 

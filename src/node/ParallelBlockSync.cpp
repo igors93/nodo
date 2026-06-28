@@ -96,6 +96,7 @@ SyncProgress ParallelBlockSync::beginSync(
     m_pendingHeaders.clear();
     m_pendingBodies.clear();
     m_verifiedHeaders.clear();
+    m_lastAppliedHeaderHash.clear();
 
     return m_progress;
 }
@@ -105,7 +106,8 @@ bool ParallelBlockSync::onHeadersReceived(
     std::uint64_t fromHeight,
     const std::string& /*peerId*/
 ) {
-    if (serializedHeaders.empty()) {
+    if (serializedHeaders.empty() ||
+        serializedHeaders.size() > HEADERS_PER_REQUEST) {
         return false;
     }
 
@@ -117,7 +119,33 @@ bool ParallelBlockSync::onHeadersReceived(
         return false;
     }
 
-    // Deserialize headers and validate hash linkage + checkpoint matches
+    if (m_progress.targetHeight <= m_progress.localHeight) {
+        return false;
+    }
+    const std::uint64_t totalNeeded =
+        m_progress.targetHeight - m_progress.localHeight;
+    if (m_progress.blocksApplied > totalNeeded) {
+        return false;
+    }
+    const std::uint64_t nextRequiredHeight =
+        m_progress.localHeight + m_progress.blocksApplied;
+
+    if (fromHeight < nextRequiredHeight ||
+        fromHeight >= m_progress.targetHeight ||
+        static_cast<std::uint64_t>(serializedHeaders.size()) >
+            m_progress.targetHeight - fromHeight) {
+        return false;
+    }
+
+    struct StagedHeader {
+        std::uint64_t height;
+        std::string serialized;
+        std::string hash;
+    };
+    std::vector<StagedHeader> stagedHeaders;
+    stagedHeaders.reserve(serializedHeaders.size());
+
+    // Validate the complete batch before mutating sync state.
     std::uint64_t height = fromHeight;
     for (const auto& serializedHeader : serializedHeaders) {
         const auto blockOpt = nodo::core::Block::deserialize(serializedHeader);
@@ -132,6 +160,34 @@ bool ParallelBlockSync::onHeadersReceived(
             return false;
         }
 
+        const auto existing = m_verifiedHeaders.find(height);
+        if (existing != m_verifiedHeaders.end() &&
+            existing->second != block.hash()) {
+            return false;
+        }
+
+        if (!stagedHeaders.empty() &&
+            block.previousHash() != stagedHeaders.back().hash) {
+            return false;
+        }
+
+        if (stagedHeaders.empty() && height > nextRequiredHeight) {
+            const auto predecessor = m_verifiedHeaders.find(height - 1);
+            if (predecessor == m_verifiedHeaders.end() ||
+                block.previousHash() != predecessor->second) {
+                return false;
+            }
+        }
+
+        if (stagedHeaders.empty() &&
+            height == nextRequiredHeight &&
+            m_progress.blocksApplied > 0) {
+            if (m_lastAppliedHeaderHash.empty() ||
+                block.previousHash() != m_lastAppliedHeaderHash) {
+                return false;
+            }
+        }
+
         // Checkpoint validation: if this height has a known checkpoint,
         // the block hash must match.
         if (matchesCheckpoint(height, block.hash()) == false) {
@@ -143,13 +199,32 @@ bool ParallelBlockSync::onHeadersReceived(
             }
         }
 
-        const bool isNew = m_pendingHeaders.find(height) == m_pendingHeaders.end();
-        m_pendingHeaders[height] = serializedHeader;
-        m_verifiedHeaders[height] = block.hash();
+        stagedHeaders.push_back({
+            height,
+            serializedHeader,
+            block.hash()
+        });
+        ++height;
+    }
+
+    const auto successor = m_pendingHeaders.find(height);
+    if (successor != m_pendingHeaders.end()) {
+        const auto successorBlock =
+            nodo::core::Block::deserialize(successor->second);
+        if (!successorBlock.has_value() ||
+            successorBlock->previousHash() != stagedHeaders.back().hash) {
+            return false;
+        }
+    }
+
+    for (const StagedHeader& header : stagedHeaders) {
+        const bool isNew =
+            m_pendingHeaders.find(header.height) == m_pendingHeaders.end();
+        m_pendingHeaders[header.height] = header.serialized;
+        m_verifiedHeaders[header.height] = header.hash;
         if (isNew) {
             ++m_progress.headersDownloaded;
         }
-        ++height;
     }
 
     updatePhase();
@@ -256,6 +331,7 @@ std::vector<std::string> ParallelBlockSync::drainReadyBlocks() {
         }
 
         ready.push_back(m_pendingBodies.at(nextExpected));
+        m_lastAppliedHeaderHash = m_verifiedHeaders.at(nextExpected);
 
         m_verifiedHeaders.erase(nextExpected);
         m_pendingHeaders.erase(nextExpected);
@@ -291,6 +367,7 @@ void ParallelBlockSync::reset() {
     m_pendingHeaders.clear();
     m_pendingBodies.clear();
     m_verifiedHeaders.clear();
+    m_lastAppliedHeaderHash.clear();
 }
 
 void ParallelBlockSync::updatePhase() {

@@ -113,6 +113,7 @@ private:
     std::map<std::uint64_t, std::string> m_pendingHeaders;   // height → serialized header
     std::map<std::uint64_t, std::string> m_pendingBodies;    // height → serialized block
     std::map<std::uint64_t, std::string> m_verifiedHeaders;  // height → block hash
+    std::string m_lastAppliedHeaderHash;
 
     void updatePhase();
 };
