@@ -1,5 +1,7 @@
 #include "p2p/PeerHandshakeManager.hpp"
 
+#include "core/ProtocolLimits.hpp"
+
 #include <sstream>
 #include <utility>
 
@@ -177,7 +179,8 @@ PeerHandshakeResult PeerHandshakeManager::validateHello(
         );
     }
 
-    if (!envelope.isStructurallyValid(1024 * 1024)) {
+    if (!envelope.isStructurallyValid(
+            core::ProtocolLimits::MAX_NETWORK_PAYLOAD_BYTES)) {
         return PeerHandshakeResult(
             PeerHandshakeStatus::REJECTED,
             "Peer hello envelope is structurally invalid."

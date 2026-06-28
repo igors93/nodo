@@ -46,6 +46,16 @@ BlockFinalizationPhaseResult BlockFinalizationPhase::tryFinalize(
         }
     }
 
+    if (!runtime.validatorSetHistory().hasSet(blockIndex)) {
+        return BlockFinalizationPhaseResult::failed(
+            "Validator set history is missing for block height " +
+            std::to_string(blockIndex) + "."
+        );
+    }
+
+    const core::ValidatorRegistry& finalizingValidatorSet =
+        runtime.validatorSetHistory().setAt(blockIndex);
+
     const QuorumCertificateBuildResult qcResult =
         QuorumCertificateBuilder::buildFromVotes(
             blockIndex,
@@ -53,11 +63,13 @@ BlockFinalizationPhaseResult BlockFinalizationPhase::tryFinalize(
             previousHash,
             round,
             certificateVotes,
-            runtime.validatorRegistry(),
+            finalizingValidatorSet,
             policy,
             provider,
-            QUORUM_NUMERATOR,
-            QUORUM_DENOMINATOR
+            runtime.config().genesisConfig().networkParameters()
+                .quorumThresholdNumerator(),
+            runtime.config().genesisConfig().networkParameters()
+                .quorumThresholdDenominator()
         );
 
     if (!qcResult.certified()) {

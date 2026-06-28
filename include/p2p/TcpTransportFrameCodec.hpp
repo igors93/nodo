@@ -1,6 +1,7 @@
 #ifndef NODO_P2P_TCP_TRANSPORT_FRAME_CODEC_HPP
 #define NODO_P2P_TCP_TRANSPORT_FRAME_CODEC_HPP
 
+#include "core/ProtocolLimits.hpp"
 #include "p2p/Transport.hpp"
 
 #include <cstddef>
@@ -17,7 +18,8 @@ namespace nodo::p2p {
  */
 class TcpTransportFrameCodec {
 public:
-    static constexpr std::size_t MAX_TCP_FRAME_BYTES = 1024 * 1024;
+    static constexpr std::size_t MAX_TCP_FRAME_BYTES =
+        core::ProtocolLimits::MAX_TRANSPORT_FRAME_BYTES;
 
     static std::vector<unsigned char> encodeTransportMessage(
         const TransportMessage& message

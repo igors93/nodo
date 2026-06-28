@@ -1,5 +1,7 @@
 #include "p2p/GossipMesh.hpp"
 
+#include "core/ProtocolLimits.hpp"
+
 #include "crypto/hash.h"
 #include "economics/ProtocolEvidence.hpp"
 #include "storage/ProtocolEvidenceStore.hpp"
@@ -296,7 +298,8 @@ GossipDeliveryReport GossipMesh::broadcast(
 
     const NetworkEnvelope envelope = createEnvelope(type, payload, now);
 
-    if (!envelope.isStructurallyValid(1024 * 1024)) {
+    if (!envelope.isStructurallyValid(
+            core::ProtocolLimits::MAX_NETWORK_PAYLOAD_BYTES)) {
         return GossipDeliveryReport(0, 1);
     }
 
@@ -333,7 +336,8 @@ GossipDeliveryReport GossipMesh::sendTo(
 
     const NetworkEnvelope envelope = createEnvelope(type, payload, now);
 
-    if (!envelope.isStructurallyValid(1024 * 1024)) {
+    if (!envelope.isStructurallyValid(
+            core::ProtocolLimits::MAX_NETWORK_PAYLOAD_BYTES)) {
         return GossipDeliveryReport(0, 1);
     }
 

@@ -276,7 +276,8 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateLocalSubmissio
     const config::NetworkParameters& networkParameters,
     const crypto::CryptoPolicy& policy,
     crypto::SecurityContext context,
-    const crypto::SignatureProvider& provider
+    const crypto::SignatureProvider& provider,
+    std::optional<std::uint64_t> effectiveMinimumFeeRawUnits
 ) {
     if (!networkParameters.isValid()) {
         return TransactionAdmissionResult::rejected(
@@ -318,7 +319,8 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateLocalSubmissio
         );
     }
 
-    if (transaction.type() != core::TransactionType::TRANSFER) {
+    if (transaction.type() != core::TransactionType::TRANSFER &&
+        transaction.type() != core::TransactionType::GOVERNANCE_PROPOSE) {
         return TransactionAdmissionResult::rejected(
             TransactionAdmissionStatus::INVALID_TRANSACTION,
             "Transaction type has no implemented authoritative state transition."
@@ -335,8 +337,9 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateLocalSubmissio
         );
     }
 
-    const std::uint64_t minimumFee =
-        networkParameters.minimumFeeRawUnits();
+    const std::uint64_t minimumFee = effectiveMinimumFeeRawUnits.value_or(
+        networkParameters.minimumFeeRawUnits()
+    );
 
     if (minimumFee > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
         return TransactionAdmissionResult::rejected(
@@ -372,7 +375,8 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateRuntimeSubmiss
     const mempool::Mempool& mempool,
     const crypto::CryptoPolicy& policy,
     crypto::SecurityContext context,
-    const crypto::SignatureProvider& provider
+    const crypto::SignatureProvider& provider,
+    std::optional<std::uint64_t> effectiveMinimumFeeRawUnits
 ) {
     const TransactionAdmissionResult local =
         validateLocalSubmission(
@@ -381,7 +385,8 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateRuntimeSubmiss
             networkParameters,
             policy,
             context,
-            provider
+            provider,
+            effectiveMinimumFeeRawUnits
         );
 
     if (!local.accepted()) {
@@ -402,7 +407,8 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateNetworkSubmiss
     const mempool::Mempool& mempool,
     const crypto::CryptoPolicy& policy,
     crypto::SecurityContext context,
-    const crypto::SignatureProvider& provider
+    const crypto::SignatureProvider& provider,
+    std::optional<std::uint64_t> effectiveMinimumFeeRawUnits
 ) {
     if (!networkParameters.isValid()) {
         return TransactionAdmissionResult::rejected(
@@ -421,15 +427,17 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateNetworkSubmiss
         );
     }
 
-    if (transaction.type() != core::TransactionType::TRANSFER) {
+    if (transaction.type() != core::TransactionType::TRANSFER &&
+        transaction.type() != core::TransactionType::GOVERNANCE_PROPOSE) {
         return TransactionAdmissionResult::rejected(
             TransactionAdmissionStatus::INVALID_TRANSACTION,
             "Transaction type has no implemented authoritative state transition."
         );
     }
 
-    const std::uint64_t minimumFee =
-        networkParameters.minimumFeeRawUnits();
+    const std::uint64_t minimumFee = effectiveMinimumFeeRawUnits.value_or(
+        networkParameters.minimumFeeRawUnits()
+    );
 
     if (minimumFee > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
         return TransactionAdmissionResult::rejected(

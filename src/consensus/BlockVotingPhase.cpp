@@ -4,7 +4,25 @@
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 
+#include <stdexcept>
+
 namespace nodo::consensus {
+
+namespace {
+
+const core::ValidatorRegistry& validatorSetForBlock(
+    const node::NodeRuntime& runtime,
+    const core::Block& block
+) {
+    if (!runtime.validatorSetHistory().hasSet(block.index())) {
+        throw std::runtime_error(
+            "Validator set history is missing for vote height."
+        );
+    }
+    return runtime.validatorSetHistory().setAt(block.index());
+}
+
+} // namespace
 
 VoteCastResult BlockVotingPhase::castPrevote(
     node::NodeRuntime&    runtime,
@@ -16,7 +34,7 @@ VoteCastResult BlockVotingPhase::castPrevote(
 ) {
     try {
         ValidatorVoteRecord prevote = ValidatorVoteBuilder::buildPrevote(
-            runtime.validatorRegistry(),
+            validatorSetForBlock(runtime, block),
             block,
             round,
             now,
@@ -52,7 +70,7 @@ VoteCastResult BlockVotingPhase::castPrecommit(
 ) {
     try {
         ValidatorVoteRecord precommit = ValidatorVoteBuilder::buildPrecommit(
-            runtime.validatorRegistry(),
+            validatorSetForBlock(runtime, block),
             block,
             round,
             now,

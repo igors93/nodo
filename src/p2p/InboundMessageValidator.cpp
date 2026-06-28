@@ -1,5 +1,7 @@
 #include "p2p/InboundMessageValidator.hpp"
 
+#include "core/ProtocolLimits.hpp"
+
 #include <cstdlib>
 #include <limits>
 #include <utility>
@@ -7,7 +9,7 @@
 namespace nodo::p2p {
 
 InboundMessagePolicy::InboundMessagePolicy()
-    : m_maxPayloadBytes(1024 * 1024),
+    : m_maxPayloadBytes(core::ProtocolLimits::MAX_NETWORK_PAYLOAD_BYTES),
       m_maxTtlSeconds(120),
       m_maxClockSkewSeconds(30),
       m_maxMessagesPerPeerWindow(1000),

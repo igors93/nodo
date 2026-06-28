@@ -1,6 +1,7 @@
 #ifndef NODO_NODE_BLOCK_SYNC_HANDLER_HPP
 #define NODO_NODE_BLOCK_SYNC_HANDLER_HPP
 
+#include "core/ProtocolLimits.hpp"
 #include "consensus/BlockFinalizer.hpp"
 #include "core/Blockchain.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
@@ -30,7 +31,8 @@ enum class BlockSyncQcMode {
  */
 class BlockSyncHandler {
 public:
-    static constexpr std::size_t MAX_BLOCKS_PER_RESPONSE = 50;
+    static constexpr std::size_t MAX_BLOCKS_PER_RESPONSE =
+        core::ProtocolLimits::MAX_PERSISTENT_SYNC_BLOCK_BATCH;
 
     /*
      * Called on the SERVING node: read BLOCK_REQUEST messages from inbox,

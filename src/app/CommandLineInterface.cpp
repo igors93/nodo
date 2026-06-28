@@ -1790,7 +1790,8 @@ CommandLineResult CommandLineInterface::executeSubmitTransaction(
             load.runtime().mempool(),
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
-            provider
+            provider,
+            load.runtime().effectiveMinimumFeeRawUnits()
         );
 
     if (!admission.accepted()) {
@@ -2434,7 +2435,8 @@ CommandLineResult CommandLineInterface::executeValidatorExit(
             load.runtime().mempool(),
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
-            provider
+            provider,
+            load.runtime().effectiveMinimumFeeRawUnits()
         );
     if (!admission.accepted()) {
         return CommandLineResult::failure(
@@ -2580,7 +2582,8 @@ CommandLineResult CommandLineInterface::executeValidatorUnjail(
             load.runtime().mempool(),
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
-            provider
+            provider,
+            load.runtime().effectiveMinimumFeeRawUnits()
         );
     if (!admission.accepted()) {
         return CommandLineResult::failure(
@@ -2735,7 +2738,8 @@ CommandLineResult CommandLineInterface::executeStakeLock(
             load.runtime().mempool(),
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
-            provider
+            provider,
+            load.runtime().effectiveMinimumFeeRawUnits()
         );
     if (!admission.accepted()) {
         return CommandLineResult::failure(

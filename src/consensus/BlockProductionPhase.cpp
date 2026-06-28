@@ -18,8 +18,7 @@ namespace nodo::consensus {
 namespace {
 
 std::int64_t effectiveMinFeeRaw(const node::NodeRuntime& runtime) {
-    const std::uint64_t raw =
-        runtime.config().genesisConfig().networkParameters().minimumFeeRawUnits();
+    const std::uint64_t raw = runtime.effectiveMinimumFeeRawUnits();
     if (raw > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
         return std::numeric_limits<std::int64_t>::max();
     return static_cast<std::int64_t>(raw);

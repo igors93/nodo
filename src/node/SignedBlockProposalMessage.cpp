@@ -1,5 +1,6 @@
 #include "node/SignedBlockProposalMessage.hpp"
 
+#include "core/ProtocolLimits.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureBundle.hpp"
@@ -18,7 +19,8 @@ namespace nodo::node {
 namespace {
 
 constexpr const char* kPayloadVersion = "NODO_BLOCK_PROPOSAL_V1";
-constexpr std::size_t kMaxSerializedBlockBytes = 2 * 1024 * 1024;
+constexpr std::size_t kMaxSerializedBlockBytes =
+    core::ProtocolLimits::MAX_SERIALIZED_BLOCK_BYTES;
 
 bool isSafeScalar(const std::string& s, std::size_t maxLen = 240) {
     if (s.empty() || s.size() > maxLen) return false;

@@ -137,6 +137,15 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     const std::uint64_t height     = state.height();
     const std::uint64_t round      = state.round();
 
+    if (!m_runtime.validatorSetHistory().hasSet(height)) {
+        result.errorMessage =
+            "Validator set history is missing for consensus height " +
+            std::to_string(height) + ".";
+        return result;
+    }
+    const core::ValidatorRegistry& validators =
+        m_runtime.validatorSetHistory().setAt(height);
+
     // After a restart, the recovery store sets m_lastProcessedHeight to the
     // height at which we last voted. If the finalization registry shows that
     // height already finalized, clear lock/vote flags so the next height starts clean.
@@ -177,7 +186,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
             const std::string chainId =
                 m_runtime.config().genesisConfig().networkParameters().chainId();
             const std::string proposer = ProposerSchedule::selectProposer(
-                m_runtime.validatorRegistry(), chainId, height, round
+                validators, chainId, height, round
             );
 
             if (proposer == m_localValidatorAddress) {
@@ -235,10 +244,14 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     }
 
     const std::uint64_t activeValidators =
-        m_runtime.validatorRegistry().activeCount();
+        validators.activeCount();
     const std::uint64_t requiredVotes =
         QuorumCertificateBuilder::requiredVoteCount(
-            activeValidators, QUORUM_NUMERATOR, QUORUM_DENOMINATOR
+            activeValidators,
+            m_runtime.config().genesisConfig().networkParameters()
+                .quorumThresholdNumerator(),
+            m_runtime.config().genesisConfig().networkParameters()
+                .quorumThresholdDenominator()
         );
 
     // -------------------------------------------------------------------------
@@ -251,7 +264,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     // -------------------------------------------------------------------------
     if (!m_votedPrevote &&
         m_localSigner &&
-        m_runtime.validatorRegistry().isActiveValidator(m_localSigner->address())) {
+        validators.isActiveValidator(m_localSigner->address())) {
 
         if (m_lockedBlock.empty() || blockHash == m_lockedBlock || round > m_lockedRound) {
             const VoteCastResult prevoteResult = BlockVotingPhase::castPrevote(
@@ -275,7 +288,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     if (m_votedPrevote &&
         !m_votedPrecommit &&
         m_localSigner &&
-        m_runtime.validatorRegistry().isActiveValidator(m_localSigner->address())) {
+        validators.isActiveValidator(m_localSigner->address())) {
 
         if (prevoteCount >= requiredVotes) {
             m_lockedBlock = blockHash;
@@ -399,9 +412,12 @@ void ConsensusEventLoop::processBlockProposals() {
     if (messages.empty() || m_runtime.blockchain().empty()) return;
 
     const core::Blockchain& chain = m_runtime.blockchain();
-    const core::ValidatorRegistry& validators = m_runtime.validatorRegistry();
     const ConsensusRoundState& state =
         m_runtime.consensusRoundManager().currentState();
+
+    if (!m_runtime.validatorSetHistory().hasSet(state.height())) return;
+    const core::ValidatorRegistry& validators =
+        m_runtime.validatorSetHistory().setAt(state.height());
 
     if (validators.activeCount() == 0) return;
 

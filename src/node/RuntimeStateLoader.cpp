@@ -9,6 +9,7 @@
 #include "node/FinalizedBlockStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
+#include "node/ProtocolStateTransition.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeStateVerifier.hpp"
 #include "consensus/QuorumCertificate.hpp"
@@ -223,20 +224,14 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
     NodeRuntime runtime = start.runtime();
 
-    if (const std::optional<consensus::ConsensusRoundState> recoveredRound =
-            consensus::ConsensusRecoveryStore::load(
-                directoryConfig.consensusRecoveryPath()
-            );
-        recoveredRound.has_value() &&
-        recoveredRound->height() <= manifest.latestBlockHeight() + 1) {
-        runtime.mutableConsensusRoundManager().advanceToHeight(
-            recoveredRound->height(),
-            recoveredRound->round(),
-            recoveredRound->proposerAddress(),
-            recoveredRound->roundStartedAt(),
-            genesisConfig.networkParameters().targetBlockTimeSeconds()
+    // Load the persisted consensus round but defer its application until after
+    // block replay. Applying it here would advance the consensus height before
+    // the validator-set history has entries for that height, causing
+    // NodeRuntime::isValid() to return false during artifact validation.
+    const std::optional<consensus::ConsensusRoundState> recoveredRound =
+        consensus::ConsensusRecoveryStore::load(
+            directoryConfig.consensusRecoveryPath()
         );
-    }
 
     const crypto::ProtocolCryptoContext cryptoContext =
         crypto::ProtocolCryptoContext::fromNetworkName(manifest.networkName());
@@ -347,9 +342,23 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             );
         }
 
-        runtime.applyGovernanceFromBlock(
-            artifact.block(), artifact.finalizedRecord().finalizedAt()
-        );
+        try {
+            runtime.applyGovernanceFromBlock(
+                artifact.block(), artifact.block().timestamp()
+            );
+            ProtocolStateTransition::applyValidatorEpochTransition(
+                runtime.mutableValidatorRegistry(),
+                artifact.block().index(),
+                artifact.block().timestamp()
+            );
+        } catch (const std::exception& error) {
+            return RuntimeStateLoadResult::rejected(
+                RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                "Protocol state replay failed at block " +
+                    std::to_string(artifact.block().index()) + ": " +
+                    error.what()
+            );
+        }
         if (!runtime.mutableValidatorSetHistory().recordSet(
                 artifact.block().index() + 1, runtime.validatorRegistry()
             )) {
@@ -390,6 +399,20 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             nextRound,
             proposer,
             runtime.blockchain().latestBlock().timestamp() + 1,
+            genesisConfig.networkParameters().targetBlockTimeSeconds()
+        );
+    }
+
+    // Apply the deferred consensus recovery now that the validator-set history
+    // is fully populated. Only restore the round if it targets the current
+    // working height; a lower height means those blocks are already finalized.
+    if (recoveredRound.has_value() &&
+        recoveredRound->height() == nextConsensusHeight) {
+        runtime.mutableConsensusRoundManager().advanceToHeight(
+            recoveredRound->height(),
+            recoveredRound->round(),
+            recoveredRound->proposerAddress(),
+            recoveredRound->roundStartedAt(),
             genesisConfig.networkParameters().targetBlockTimeSeconds()
         );
     }
@@ -451,6 +474,16 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         );
     }
 
+    const std::uint64_t effectiveMinimumFeeRaw =
+        runtime.effectiveMinimumFeeRawUnits();
+    if (effectiveMinimumFeeRaw > static_cast<std::uint64_t>(
+            std::numeric_limits<std::int64_t>::max())) {
+        return RuntimeStateLoadResult::rejected(
+            RuntimeStateLoadStatus::MEMPOOL_LOAD_FAILED,
+            "Governed minimum fee exceeds supported Amount range."
+        );
+    }
+
     const PersistentMempoolLoadResult mempoolLoad =
         PersistentMempoolStore::loadIntoMempool(
             directoryConfig,
@@ -458,7 +491,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             tipAccountState,
-            minFee,
+            static_cast<std::int64_t>(effectiveMinimumFeeRaw),
             cryptoContext.userSignatureProvider()
         );
 

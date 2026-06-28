@@ -1,5 +1,7 @@
 #include "p2p/PeerMessage.hpp"
 
+#include "core/ProtocolLimits.hpp"
+
 #include "crypto/hash.h"
 #include "crypto/Hex.hpp"
 
@@ -14,7 +16,8 @@ namespace nodo::p2p {
 namespace {
 
 constexpr std::int64_t DEFAULT_TTL_SECONDS = 120;
-constexpr std::size_t MAX_PEER_MESSAGE_PAYLOAD_BYTES = 1024 * 1024;
+constexpr std::size_t MAX_PEER_MESSAGE_PAYLOAD_BYTES =
+    core::ProtocolLimits::MAX_NETWORK_PAYLOAD_BYTES;
 
 bool isSafeIdentifier(
     const std::string& value

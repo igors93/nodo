@@ -1,6 +1,7 @@
 #ifndef NODO_P2P_TRANSPORT_FRAME_CODEC_HPP
 #define NODO_P2P_TRANSPORT_FRAME_CODEC_HPP
 
+#include "core/ProtocolLimits.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 
 #include <cstddef>
@@ -11,7 +12,8 @@ namespace nodo::p2p {
 
 class TransportFrameCodec {
 public:
-    static constexpr std::size_t MAX_FRAME_BYTES = 1024 * 1024;
+    static constexpr std::size_t MAX_FRAME_BYTES =
+        core::ProtocolLimits::MAX_TRANSPORT_FRAME_BYTES;
 
     static std::vector<unsigned char> encodeFrame(
         const NetworkEnvelope& envelope

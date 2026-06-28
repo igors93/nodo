@@ -1,6 +1,7 @@
 #ifndef NODO_NODE_GOVERNANCE_EXECUTOR_HPP
 #define NODO_NODE_GOVERNANCE_EXECUTOR_HPP
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -144,6 +145,13 @@ public:
         const std::string& proposalPayload,
         std::uint64_t currentHeight,
         std::int64_t  now
+    );
+
+    // Activates every pending change whose effective height has been reached.
+    // Returns the number of changes activated in deterministic insertion order.
+    std::size_t advanceToHeight(
+        std::uint64_t currentHeight,
+        std::int64_t now
     );
 
     // Returns all applied changes in chronological order.

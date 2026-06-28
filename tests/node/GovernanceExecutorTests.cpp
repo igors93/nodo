@@ -204,6 +204,46 @@ void testAppliedChangesAreOrderedChronologically() {
     );
 }
 
+void testPendingProposalActivatesAtHeightBoundary() {
+    GovernanceExecutor executor;
+    const auto pending = executor.executeProposal(
+        "proposal-pending-boundary",
+        "target=MINIMUM_FEE_RAW,value=750,effectiveHeight=25",
+        24,
+        kTimestamp
+    );
+    requireCondition(
+        pending.isPending() && executor.pendingChanges().size() == 1,
+        "A future comma-delimited proposal must remain pending."
+    );
+    requireCondition(
+        executor.advanceToHeight(24, kTimestamp + 1) == 0,
+        "A pending proposal must not activate before its height."
+    );
+    requireCondition(
+        executor.advanceToHeight(25, kTimestamp + 2) == 1 &&
+        executor.currentValueForTarget(
+            GovernanceParameterTarget::MINIMUM_FEE_RAW
+        ) == "750" &&
+        executor.pendingChanges().empty(),
+        "A pending proposal must activate exactly at its height boundary."
+    );
+}
+
+void testProposalRequiresExplicitActivationHeight() {
+    GovernanceExecutor executor;
+    const auto result = executor.executeProposal(
+        "proposal-without-height",
+        "target=MINIMUM_FEE_RAW,value=100",
+        1,
+        kTimestamp
+    );
+    requireCondition(
+        result.status() == GovernanceExecutionStatus::REJECTED_INVALID_VALUE,
+        "A governance proposal without a positive activation height must be rejected."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -214,6 +254,8 @@ int main() {
         testRejectedForUnknownTarget();
         testCurrentValueForTargetReturnsLastApplied();
         testAppliedChangesAreOrderedChronologically();
+        testPendingProposalActivatesAtHeightBoundary();
+        testProposalRequiresExplicitActivationHeight();
 
         std::cout << "Nodo GovernanceExecutor tests passed.\n";
         return 0;

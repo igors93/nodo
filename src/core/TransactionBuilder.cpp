@@ -189,4 +189,30 @@ Transaction TransactionBuilder::buildSignedValidatorUnjailRequest(
     return signer.signTransaction(tx, request.timestamp());
 }
 
+Transaction TransactionBuilder::buildSignedGovernanceProposal(
+    const std::string& proposalPayload,
+    utils::Amount fee,
+    std::uint64_t nonce,
+    std::int64_t timestamp,
+    const crypto::Signer& signer,
+    const std::string& chainId
+) {
+    if (proposalPayload.empty() || fee.isNegative() || nonce == 0 ||
+        timestamp <= 0 || chainId.empty()) {
+        throw std::invalid_argument("Governance proposal request is invalid.");
+    }
+
+    Transaction transaction(
+        TransactionType::GOVERNANCE_PROPOSE,
+        signer.address(),
+        proposalPayload,
+        utils::Amount(),
+        fee,
+        nonce,
+        timestamp
+    );
+    transaction.withChainId(chainId);
+    return signer.signTransaction(transaction, timestamp);
+}
+
 } // namespace nodo::core

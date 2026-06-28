@@ -319,6 +319,41 @@ BlockProductionResult produceCandidateBlockImpl(
         );
     }
 
+    // Bound selection by the serialized block limit as well as transaction
+    // count. Reserve the exact commitment-root widths used by the final block
+    // so a draft that fits cannot overflow after roots are calculated.
+    while (ledgerRecords.size() >= config.minTransactionsPerBlock()) {
+        try {
+            const Block sizeProbe(
+                blockchain.size(),
+                blockchain.latestBlock().hash(),
+                ledgerRecords,
+                timestamp,
+                std::string(64, '0'),
+                std::string(64, '0')
+            );
+            (void)sizeProbe;
+            break;
+        } catch (const std::invalid_argument& error) {
+            if (std::string(error.what()) !=
+                "Block exceeds canonical protocol resource limits.") {
+                return BlockProductionResult::rejected(
+                    BlockProductionStatus::BLOCK_AUDIT_FAILED,
+                    error.what()
+                );
+            }
+            ledgerRecords.pop_back();
+            transactions.pop_back();
+        }
+    }
+
+    if (transactions.size() < config.minTransactionsPerBlock()) {
+        return BlockProductionResult::rejected(
+            BlockProductionStatus::NOT_ENOUGH_TRANSACTIONS,
+            "Transactions selected from the mempool do not fit in one canonical block."
+        );
+    }
+
     BlockProductionPlan plan(
         blockchain.size(),
         blockchain.latestBlock().hash(),

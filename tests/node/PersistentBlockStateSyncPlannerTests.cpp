@@ -58,7 +58,7 @@ int main() {
     assert(blockPlan.blockRequest().has_value());
     assert(blockPlan.blockRequest()->requesterNodeId() == "node-a");
     assert(blockPlan.blockRequest()->locator().fromHeight() == 1);
-    assert(blockPlan.blockRequest()->locator().maxBlocks() == 4);
+    assert(blockPlan.blockRequest()->locator().maxBlocks() == 1);
     assert(blockPlan.blockRequest()->locator().knownAncestorHashes().front() == "genesis-hash");
 
     ChainStatusMessage farAhead(
@@ -82,7 +82,7 @@ int main() {
 
     assert(farAheadPlan.requestBlocks());
     assert(farAheadPlan.blockRequest().has_value());
-    assert(farAheadPlan.blockRequest()->locator().maxBlocks() == 512);
+    assert(farAheadPlan.blockRequest()->locator().maxBlocks() == 1);
 
     // Manifest deserialize round-trip.
     const PersistentSnapshotSyncManifest original(

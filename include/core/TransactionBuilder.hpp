@@ -73,6 +73,15 @@ public:
         const crypto::Signer& signer,
         const std::string& chainId
     );
+
+    static Transaction buildSignedGovernanceProposal(
+        const std::string& proposalPayload,
+        utils::Amount fee,
+        std::uint64_t nonce,
+        std::int64_t timestamp,
+        const crypto::Signer& signer,
+        const std::string& chainId
+    );
 };
 
 } // namespace nodo::core

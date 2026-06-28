@@ -10,6 +10,7 @@
 #include "mempool/Mempool.hpp"
 
 #include <string>
+#include <optional>
 
 namespace nodo::node {
 
@@ -70,7 +71,8 @@ public:
         const config::NetworkParameters& networkParameters,
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context,
-        const crypto::SignatureProvider& provider
+        const crypto::SignatureProvider& provider,
+        std::optional<std::uint64_t> effectiveMinimumFeeRawUnits = std::nullopt
     );
 
     static TransactionAdmissionResult validateRuntimeSubmission(
@@ -81,7 +83,8 @@ public:
         const mempool::Mempool& mempool,
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context,
-        const crypto::SignatureProvider& provider
+        const crypto::SignatureProvider& provider,
+        std::optional<std::uint64_t> effectiveMinimumFeeRawUnits = std::nullopt
     );
 
     static TransactionAdmissionResult validateNetworkSubmission(
@@ -91,7 +94,8 @@ public:
         const mempool::Mempool& mempool,
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context,
-        const crypto::SignatureProvider& provider
+        const crypto::SignatureProvider& provider,
+        std::optional<std::uint64_t> effectiveMinimumFeeRawUnits = std::nullopt
     );
 };
 

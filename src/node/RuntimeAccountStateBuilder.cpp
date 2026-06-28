@@ -1,14 +1,65 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 
 #include "core/StateTransitionPreview.hpp"
+#include "node/GovernanceExecutor.hpp"
 #include "node/NodeRuntime.hpp"
-#include "node/FeeEconomics.hpp"
+#include "node/ProtocolStateTransition.hpp"
 
+#include <limits>
 #include <stdexcept>
-#include <map>
 #include <utility>
 
 namespace nodo::node {
+
+namespace {
+
+std::int64_t replayMinimumFee(
+    const GovernanceExecutor& governance,
+    std::int64_t genesisMinimumFee
+) {
+    const std::string governed = governance.currentValueForTarget(
+        GovernanceParameterTarget::MINIMUM_FEE_RAW
+    );
+    if (governed.empty()) {
+        return genesisMinimumFee;
+    }
+    const std::uint64_t raw = std::stoull(governed);
+    if (raw > static_cast<std::uint64_t>(
+            std::numeric_limits<std::int64_t>::max())) {
+        throw std::overflow_error(
+            "Governed minimum fee exceeds supported Amount range."
+        );
+    }
+    return static_cast<std::int64_t>(raw);
+}
+
+void replayGovernanceBlock(
+    GovernanceExecutor& governance,
+    const core::Block& block
+) {
+    for (const core::LedgerRecord& record : block.records()) {
+        if (record.type() != core::LedgerRecordType::TRANSACTION) continue;
+        const core::Transaction transaction =
+            core::Transaction::deserialize(record.payload());
+        if (transaction.type() != core::TransactionType::GOVERNANCE_PROPOSE) {
+            continue;
+        }
+        const GovernanceExecutionResult result = governance.executeProposal(
+            transaction.id(),
+            transaction.toAddress(),
+            block.index(),
+            block.timestamp()
+        );
+        if (!result.isApplied() && !result.isPending()) {
+            throw std::logic_error(
+                "Governance replay failed: " + result.detail()
+            );
+        }
+    }
+    governance.advanceToHeight(block.index() + 1, block.timestamp());
+}
+
+} // namespace
 
 core::AccountStateView RuntimeAccountStateBuilder::initialAccountStateView(
     const config::GenesisConfig& genesisConfig
@@ -50,21 +101,26 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewAtTip(
 
     core::AccountStateView view =
         initialAccountStateView(genesisConfig);
+    GovernanceExecutor governance;
 
     for (const core::Block& block : blockchain.blocks()) {
         if (block.isGenesisBlock()) {
             continue;
         }
 
+        const std::int64_t blockMinimumFee =
+            replayMinimumFee(governance, minimumFeeRawUnits);
         const core::StateTransitionPreviewContext context(
-            minimumFeeRawUnits,
+            blockMinimumFee,
             view,
             false,
             true,
             "",
             0,
             genesisConfig.networkParameters().chainId(),
-            genesisConfig.networkParameters().networkName()
+            genesisConfig.networkParameters().networkName(),
+            {},
+            ProtocolStateTransition::accountSettlementForReplay(block.index())
         );
 
         const core::StateTransitionPreviewResult preview =
@@ -89,6 +145,7 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewAtTip(
         }
 
         view = nextView;
+        replayGovernanceBlock(governance, block);
     }
 
     return view;
@@ -110,21 +167,31 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
     }
 
     core::AccountStateView view = snapshotView;
+    GovernanceExecutor governance;
 
     for (const core::Block& block : blockchain.blocks()) {
-        if (block.isGenesisBlock() || block.index() <= snapshotHeight) {
+        if (block.isGenesisBlock()) {
+            continue;
+        }
+
+        const std::int64_t blockMinimumFee =
+            replayMinimumFee(governance, minimumFeeRawUnits);
+        if (block.index() <= snapshotHeight) {
+            replayGovernanceBlock(governance, block);
             continue;
         }
 
         const core::StateTransitionPreviewContext context(
-            minimumFeeRawUnits,
+            blockMinimumFee,
             view,
             false,
             true,
             "",
             0,
             genesisConfig.networkParameters().chainId(),
-            genesisConfig.networkParameters().networkName()
+            genesisConfig.networkParameters().networkName(),
+            {},
+            ProtocolStateTransition::accountSettlementForReplay(block.index())
         );
 
         const core::StateTransitionPreviewResult preview =
@@ -143,6 +210,7 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
             }
         }
         view = nextView;
+        replayGovernanceBlock(governance, block);
     }
 
     return view;
@@ -154,6 +222,7 @@ core::StateTransitionPreviewContext RuntimeAccountStateBuilder::previewContextAt
     std::int64_t minimumFeeRawUnits,
     std::int64_t wallClockNow
 ) {
+    const std::uint64_t nextBlockHeight = blockchain.size();
     return core::StateTransitionPreviewContext(
         minimumFeeRawUnits,
         accountStateViewAtTip(
@@ -166,7 +235,9 @@ core::StateTransitionPreviewContext RuntimeAccountStateBuilder::previewContextAt
         "",
         wallClockNow,
         genesisConfig.networkParameters().chainId(),
-        genesisConfig.networkParameters().networkName()
+        genesisConfig.networkParameters().networkName(),
+        {},
+        ProtocolStateTransition::accountSettlementForReplay(nextBlockHeight)
     );
 }
 
@@ -175,36 +246,8 @@ core::StateTransitionPreviewContext RuntimeAccountStateBuilder::previewContextAt
     std::int64_t minimumFeeRawUnits,
     std::int64_t wallClockNow
 ) {
-    const utils::Amount supplyBefore = runtime.supplyState().latestSupply();
-    const std::uint64_t nextBlockHeight = runtime.blockchain().size();
-    std::map<std::string, std::string> domains = {
-        {"governance", runtime.governanceExecutor().serialize()},
-        {"supply", "RuntimeSupply{latestRawUnits=" + std::to_string(supplyBefore.rawUnits()) + "}"},
-        {"validators", runtime.validatorRegistry().serialize()}
-    };
-    const core::DeterministicStateDomainTransition domainTransition =
-        [domains, supplyBefore, nextBlockHeight](utils::Amount totalFee) mutable {
-            const utils::Amount burn = FeeEconomics::buildFeeEconomicBalance(
-                nextBlockHeight, totalFee
-            ).burnAmount();
-            const utils::Amount supplyAfter = supplyBefore - burn;
-            domains["supply"] =
-                "RuntimeSupply{latestRawUnits="
-                + std::to_string(supplyAfter.rawUnits()) + "}";
-            return domains;
-        };
-    const config::GenesisConfig& genesisConfig = runtime.config().genesisConfig();
-    return core::StateTransitionPreviewContext(
-        minimumFeeRawUnits,
-        accountStateViewAtTip(genesisConfig, runtime.blockchain(), minimumFeeRawUnits),
-        false,
-        true,
-        "",
-        wallClockNow,
-        genesisConfig.networkParameters().chainId(),
-        genesisConfig.networkParameters().networkName(),
-        std::move(domains),
-        domainTransition
+    return ProtocolStateTransition::contextForNextBlock(
+        runtime, minimumFeeRawUnits, wallClockNow
     );
 }
 

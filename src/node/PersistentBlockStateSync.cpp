@@ -2,6 +2,7 @@
 
 #include "consensus/BlockFinalizer.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
+#include "core/ProtocolLimits.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/NodeRuntime.hpp"
@@ -22,7 +23,8 @@ namespace nodo::node {
 
 namespace {
 
-constexpr std::size_t MAX_SERIALIZED_BLOCK_BYTES = 1024 * 1024;
+constexpr std::size_t MAX_SERIALIZED_BLOCK_BYTES =
+    core::ProtocolLimits::MAX_SERIALIZED_BLOCK_BYTES;
 constexpr std::size_t MAX_SYNC_CODEC_FIELD_BYTES = 16 * 1024 * 1024;
 constexpr const char* CODEC_VERSION = "NODO_PERSISTENT_BLOCK_STATE_SYNC_CODEC_V1";
 

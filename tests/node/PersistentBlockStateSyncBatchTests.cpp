@@ -61,17 +61,26 @@ int main() {
     PersistentBlockSyncBatch batch(
         "node-b",
         1,
-        2,
-        {item1, item2},
+        1,
+        {item1},
         now + 3
     );
 
     assert(item1.isValid());
     assert(item2.isValid());
     assert(batch.isValid());
-    assert(batch.blockCount() == 2);
+    assert(batch.blockCount() == 1);
     assert(batch.lastItem() != nullptr);
-    assert(batch.lastItem()->blockHash() == "block-2");
+    assert(batch.lastItem()->blockHash() == "block-1");
+
+    PersistentBlockSyncBatch oversizedBatch(
+        "node-b",
+        1,
+        2,
+        {item1, item2},
+        now + 4
+    );
+    assert(!oversizedBatch.isValid());
 
     PersistentBlockSyncItem broken(
         2,

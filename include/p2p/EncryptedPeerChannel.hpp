@@ -1,6 +1,7 @@
 #ifndef NODO_P2P_ENCRYPTED_PEER_CHANNEL_HPP
 #define NODO_P2P_ENCRYPTED_PEER_CHANNEL_HPP
 
+#include "core/ProtocolLimits.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 
 #include <cstdint>
@@ -144,7 +145,8 @@ private:
 
 class EncryptedPeerChannelCodec {
 public:
-    static constexpr std::size_t MAX_ENCRYPTED_FRAME_BYTES = 1024 * 1024;
+    static constexpr std::size_t MAX_ENCRYPTED_FRAME_BYTES =
+        core::ProtocolLimits::MAX_TRANSPORT_FRAME_BYTES;
 
     static std::vector<unsigned char> encodeFrame(
         const EncryptedPeerChannelFrame& frame

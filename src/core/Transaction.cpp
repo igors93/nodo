@@ -35,6 +35,23 @@ bool isSafeTransactionAddress(const std::string& address) {
     return true;
 }
 
+bool isSafeGovernancePayload(const std::string& payload) {
+    if (payload.empty() || payload.size() > 240) {
+        return false;
+    }
+    for (const char c : payload) {
+        const bool allowed =
+            (c >= 'a' && c <= 'z') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') ||
+            c == '_' || c == '-' || c == ',' || c == '=';
+        if (!allowed) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::string extractField(
     const std::string& serialized,
     const std::string& key
@@ -619,7 +636,12 @@ bool Transaction::isStructurallyValid(
         return false;
     }
 
-    if (!m_amount.isPositive()) {
+    const bool amountMustBeZero =
+        m_type == TransactionType::VALIDATOR_EXIT_REQUEST ||
+        m_type == TransactionType::VALIDATOR_UNJAIL_REQUEST ||
+        m_type == TransactionType::GOVERNANCE_PROPOSE;
+    if ((amountMustBeZero && !m_amount.isZero()) ||
+        (!amountMustBeZero && !m_amount.isPositive())) {
         return false;
     }
 
@@ -639,7 +661,18 @@ bool Transaction::isStructurallyValid(
         return false;
     }
 
-    if (m_type == TransactionType::TRANSFER) {
+    if (requiresUserSignature(m_type) &&
+        !isSafeTransactionAddress(m_fromAddress)) {
+        return false;
+    }
+
+    if (m_type == TransactionType::GOVERNANCE_PROPOSE) {
+        if (!isSafeGovernancePayload(m_toAddress)) {
+            return false;
+        }
+    } else if (m_type == TransactionType::TRANSFER ||
+               isStakingTransaction(m_type) ||
+               isValidatorLifecycleTransaction(m_type)) {
         if (m_fromAddress.empty() || m_toAddress.empty()) {
             return false;
         }
@@ -649,7 +682,8 @@ bool Transaction::isStructurallyValid(
             return false;
         }
 
-        if (m_fromAddress == m_toAddress) {
+        if (m_type == TransactionType::TRANSFER &&
+            m_fromAddress == m_toAddress) {
             return false;
         }
     }

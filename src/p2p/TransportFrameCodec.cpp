@@ -49,7 +49,9 @@ bool TransportFrameCodec::isValidFrame(
 ) {
     try {
         const NetworkEnvelope envelope = decodeFrame(frame);
-        return envelope.isStructurallyValid(MAX_FRAME_BYTES);
+        return envelope.isStructurallyValid(
+            core::ProtocolLimits::MAX_NETWORK_PAYLOAD_BYTES
+        );
     } catch (...) {
         return false;
     }

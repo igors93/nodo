@@ -2,6 +2,7 @@
 #define NODO_CORE_BLOCK_HPP
 
 #include "core/LedgerRecord.hpp"
+#include "core/ProtocolLimits.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -19,9 +20,12 @@ namespace nodo::core {
  */
 class Block {
 public:
-    static constexpr std::size_t MAX_RECORDS = 10'000;
-    static constexpr std::size_t MAX_SERIALIZED_BYTES = 16 * 1024 * 1024;
-    static constexpr std::size_t MAX_RECORD_PAYLOAD_BYTES = 1024 * 1024;
+    static constexpr std::size_t MAX_RECORDS =
+        ProtocolLimits::MAX_BLOCK_RECORDS;
+    static constexpr std::size_t MAX_SERIALIZED_BYTES =
+        ProtocolLimits::MAX_SERIALIZED_BLOCK_BYTES;
+    static constexpr std::size_t MAX_RECORD_PAYLOAD_BYTES =
+        ProtocolLimits::MAX_RECORD_PAYLOAD_BYTES;
 
     Block(
         std::uint64_t index,

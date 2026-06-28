@@ -2,12 +2,16 @@
 #include "consensus/BlockProductionPhase.hpp"
 #include "consensus/BlockVotingPhase.hpp"
 #include "config/NetworkParameters.hpp"
+#include "core/State.hpp"
+#include "core/TransactionBuilder.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
+#include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/KeyPair.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "crypto/Signer.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
+#include "node/ProtectionTreasury.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/LoopbackTransport.hpp"
@@ -74,6 +78,28 @@ node::NodeRuntime startRuntime() {
 crypto::Signer validatorSigner() {
     static const crypto::Bls12381SignatureProvider provider;
     return crypto::Signer(validatorKey(), provider);
+}
+
+utils::Amount balanceAt(
+    node::NodeRuntime& runtime,
+    const std::string& address
+) {
+    return runtime.cachedAccountStateAtTip(
+        static_cast<std::int64_t>(runtime.effectiveMinimumFeeRawUnits())
+    ).accountOrDefault(address).balance();
+}
+
+utils::Amount totalAccountBalance(node::NodeRuntime& runtime) {
+    utils::Amount total;
+    for (const core::AccountState& account :
+         runtime.cachedAccountStateAtTip(
+             static_cast<std::int64_t>(
+                 runtime.effectiveMinimumFeeRawUnits()
+             )
+         ).accounts()) {
+        total = total + account.balance();
+    }
+    return total;
 }
 
 struct TestGossipMesh {
@@ -184,6 +210,30 @@ void testLocalAndDistributedPipelinesProduceEquivalentState() {
         "Both pipelines must expose the same governance state."
     );
     require(
+        localRuntime.cachedAccountStateAtTip(1).serialize()
+            == distributedRuntime.cachedAccountStateAtTip(1).serialize(),
+        "Both pipelines must commit identical account state."
+    );
+    require(
+        balanceAt(localRuntime, core::State::feePoolAddress()).rawUnits() == 50,
+        "The canonical transition must credit the validator fee share."
+    );
+    require(
+        balanceAt(localRuntime, node::ProtectionTreasury::TREASURY_ADDRESS)
+                .rawUnits() == 30,
+        "The canonical transition must credit the treasury fee share."
+    );
+    require(
+        totalAccountBalance(localRuntime)
+            == localRuntime.supplyState().latestSupply(),
+        "Account balances and canonical supply must remain conserved."
+    );
+    require(
+        localRuntime.blockchain().latestBlock().stateRoot()
+            == localResult.postStateRoot(),
+        "The finalized block must commit the complete post-state root."
+    );
+    require(
         localRuntime.consensusRoundManager().currentState().height()
             == distributedRuntime.consensusRoundManager().currentState().height(),
         "Both pipelines must advance to the same consensus height."
@@ -191,6 +241,64 @@ void testLocalAndDistributedPipelinesProduceEquivalentState() {
     require(
         distributedRuntime.statePruner().hasStateRoot(candidate.block().index()),
         "Distributed finalization must record the canonical state root."
+    );
+}
+
+void testGovernanceProposalUsesCanonicalTransition() {
+    node::NodeRuntime runtime = startRuntime();
+    const crypto::Ed25519SignatureProvider provider;
+    const core::Transaction proposal =
+        core::TransactionBuilder::buildSignedGovernanceProposal(
+            "target=MINIMUM_FEE_RAW,value=250,effectiveHeight=1",
+            utils::Amount::fromRawUnits(100),
+            1,
+            kTimestamp + 1,
+            crypto::Signer(userKey(), provider),
+            genesisConfig().networkParameters().chainId()
+        );
+    const mempool::MempoolAdmissionResult admission =
+        runtime.mutableMempool().admitTransaction(
+            proposal,
+            crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            kTimestamp + 1
+        );
+    require(admission.accepted(), "Governance proposal must enter the mempool.");
+
+    const node::RuntimeBlockPipelineResult result =
+        node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            runtime,
+            node::RuntimeBlockPipelineConfig(10, 1, 1, kTimestamp + 2),
+            validatorSigner()
+        );
+
+    require(result.finalized(), "Governance block must finalize.");
+    require(
+        runtime.effectiveMinimumFeeRawUnits() == 250,
+        "Finalization must apply the governed minimum fee atomically."
+    );
+    require(
+        runtime.blockchain().latestBlock().stateRoot()
+            == result.postStateRoot(),
+        "Governance state must be included in the signed post-state root."
+    );
+    require(
+        totalAccountBalance(runtime) == runtime.supplyState().latestSupply(),
+        "Governance transaction fees must preserve account/supply conservation."
+    );
+
+    test::admitConsensusTestTransfer(
+        runtime, userKey(), 2, kTimestamp + 3
+    );
+    const node::RuntimeBlockPipelineResult belowGovernedMinimum =
+        node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            runtime,
+            node::RuntimeBlockPipelineConfig(10, 1, 1, kTimestamp + 4),
+            validatorSigner()
+        );
+    require(
+        !belowGovernedMinimum.finalized(),
+        "Block production must reject transactions below the governed fee."
     );
 }
 
@@ -244,6 +352,7 @@ void testPersistenceFailureDoesNotPartiallyCommitRuntime() {
 int main() {
     try {
         testLocalAndDistributedPipelinesProduceEquivalentState();
+        testGovernanceProposalUsesCanonicalTransition();
         testPersistenceFailureDoesNotPartiallyCommitRuntime();
         std::cout << "Runtime canonical block commit tests passed.\n";
         return 0;

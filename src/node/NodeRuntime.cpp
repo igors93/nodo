@@ -469,6 +469,7 @@ core::StatePruner& NodeRuntime::mutableStatePruner() {
 const core::AccountStateView& NodeRuntime::cachedAccountStateAtTip(
     std::int64_t minimumFeeRawUnits
 ) const {
+    (void)minimumFeeRawUnits;
     const std::uint64_t tipHeight =
         m_blockchain.empty() ? 0 : m_blockchain.latestBlock().index();
 
@@ -477,10 +478,19 @@ const core::AccountStateView& NodeRuntime::cachedAccountStateAtTip(
         return *m_accountStateCache;
     }
 
+    const std::uint64_t genesisMinimumFee =
+        m_config.genesisConfig().networkParameters().minimumFeeRawUnits();
+    if (genesisMinimumFee > static_cast<std::uint64_t>(
+            std::numeric_limits<std::int64_t>::max())) {
+        throw std::overflow_error(
+            "Genesis minimum fee exceeds supported Amount range."
+        );
+    }
+
     m_accountStateCache = RuntimeAccountStateBuilder::accountStateViewAtTip(
         m_config.genesisConfig(),
         m_blockchain,
-        minimumFeeRawUnits
+        static_cast<std::int64_t>(genesisMinimumFee)
     );
     m_accountStateCacheHeight = tipHeight;
     return *m_accountStateCache;
@@ -517,15 +527,21 @@ void NodeRuntime::applyGovernanceFromBlock(
     const std::uint64_t height = block.index();
     for (const auto& record : block.records()) {
         if (record.type() != core::LedgerRecordType::TRANSACTION) continue;
-        try {
-            const core::Transaction tx =
-                core::Transaction::deserialize(record.payload());
-            if (tx.type() != core::TransactionType::GOVERNANCE_PROPOSE) continue;
-            if (m_governanceExecutor.hasBeenExecuted(tx.id())) continue;
-            // toAddress carries the proposal payload: "target=X;value=Y;effectiveHeight=N"
-            m_governanceExecutor.executeProposal(tx.id(), tx.toAddress(), height, now);
-        } catch (...) {}
+        const core::Transaction tx =
+            core::Transaction::deserialize(record.payload());
+        if (tx.type() != core::TransactionType::GOVERNANCE_PROPOSE) continue;
+        if (m_governanceExecutor.hasBeenExecuted(tx.id())) continue;
+        const GovernanceExecutionResult result =
+            m_governanceExecutor.executeProposal(
+                tx.id(), tx.toAddress(), height, now
+            );
+        if (!result.isApplied() && !result.isPending()) {
+            throw std::logic_error(
+                "Finalized governance proposal failed: " + result.detail()
+            );
+        }
     }
+    m_governanceExecutor.advanceToHeight(height + 1, now);
 }
 
 LocalPeerManager& NodeRuntime::mutablePeerManager() {

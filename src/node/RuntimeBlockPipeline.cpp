@@ -2,6 +2,7 @@
 
 #include "node/FeeEconomics.hpp"
 #include "node/FinalizedBlockStore.hpp"
+#include "node/ProtocolStateTransition.hpp"
 #include "node/RuntimeMonetaryValidation.hpp"
 #include "node/StateSnapshot.hpp"
 #include "node/ValidatorLifecycle.hpp"
@@ -32,7 +33,7 @@ std::int64_t minimumFeeRawUnitsForRuntime(
     const NodeRuntime& runtime
 ) {
     const std::uint64_t minimumFee =
-        runtime.config().genesisConfig().networkParameters().minimumFeeRawUnits();
+        runtime.effectiveMinimumFeeRawUnits();
 
     if (minimumFee > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
         return std::numeric_limits<std::int64_t>::max();
@@ -2035,12 +2036,10 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         );
     }
 
-    if (!runtime.mutableValidatorSetHistory().recordSet(
-            block.index(), runtime.validatorRegistry()
-        )) {
+    if (!runtime.validatorSetHistory().hasSet(block.index())) {
         return RuntimeBlockPipelineResult::rejected(
             RuntimeBlockPipelineStatus::FINALIZATION_FAILED,
-            "Validator set history conflicts with the set active for this block height."
+            "Validator set history is missing for the finalized block height."
         );
     }
 
@@ -2122,7 +2121,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         removeFinalizedTransactionsFromMempool(
             runtime, finalizedTransactionIds
         );
-        runtime.applyGovernanceFromBlock(block, finalizedAt);
+        runtime.applyGovernanceFromBlock(block, block.timestamp());
         runtime.invalidateAccountStateCache();
 
         finalResult.m_receiptsRoot = transitionValidation.receiptsRoot();
@@ -2136,37 +2135,12 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
 
         if (block.index() > 0 &&
             block.index() % NODO_VALIDATOR_EPOCH_BLOCKS == 0) {
-            const std::uint64_t currentEpoch =
-                ValidatorLifecycle::epochIndexForBlock(block.index());
-            const std::int64_t boundaryTimestamp = finalizedAt + 1;
-
-            for (const std::string& address :
-                 runtime.validatorRegistry().pendingValidatorAddresses()) {
-                const core::ValidatorRegistryEntry* entry =
-                    runtime.validatorRegistry().entryForAddress(address);
-                if (entry != nullptr &&
-                    entry->registrationRecord().activationEpoch()
-                        <= currentEpoch) {
-                    runtime.mutableValidatorRegistry().activateValidator(
-                        address, currentEpoch, boundaryTimestamp
-                    );
-                }
-            }
-
-            for (const std::string& address :
-                 runtime.validatorRegistry()
-                     .exitRequestedValidatorAddresses()) {
-                const core::ValidatorRegistryEntry* entry =
-                    runtime.validatorRegistry().entryForAddress(address);
-                if (entry != nullptr &&
-                    entry->exitRequestHeight()
-                            + NODO_VALIDATOR_EPOCH_BLOCKS
-                        <= block.index()) {
-                    runtime.mutableValidatorRegistry().completeExit(
-                        address, boundaryTimestamp
-                    );
-                }
-            }
+            const std::int64_t boundaryTimestamp = block.timestamp();
+            ProtocolStateTransition::applyValidatorEpochTransition(
+                runtime.mutableValidatorRegistry(),
+                block.index(),
+                boundaryTimestamp
+            );
 
             try {
                 const core::StateTransitionPreviewContext snapshotContext =
@@ -2451,7 +2425,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             candidateBlock.previousHash(),
             activeRound.round(),
             votes,
-            runtime.validatorRegistry(),
+            runtime.validatorSetHistory().setAt(candidateBlock.index()),
             cryptoContext.policy(),
             cryptoContext.signatureProvider(),
             runtime.config().genesisConfig().networkParameters().quorumThresholdNumerator(),
@@ -2483,9 +2457,15 @@ std::vector<consensus::ValidatorVoteRecord> RuntimeBlockPipeline::buildValidator
 ) {
     std::vector<consensus::ValidatorVoteRecord> votes;
 
+    if (!runtime.validatorSetHistory().hasSet(block.index())) {
+        throw std::runtime_error(
+            "Validator set history is missing for vote height."
+        );
+    }
+
     votes.push_back(
         consensus::ValidatorVoteBuilder::buildApprovalVote(
-            runtime.validatorRegistry(),
+            runtime.validatorSetHistory().setAt(block.index()),
             block,
             consensusRound,
             timestamp,

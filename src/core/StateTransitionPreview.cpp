@@ -187,6 +187,7 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
     std::set<std::string> transactionIds;
     std::set<std::string> touchedAccountSet;
     std::vector<std::string> orderedTransactionIds;
+    std::vector<Transaction> orderedTransactions;
     std::vector<TransactionReceipt> receipts;
     AccountStateView workingAccountState =
         context.accountStateView();
@@ -241,7 +242,11 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                 );
             }
 
-            if (transaction.type() != TransactionType::TRANSFER) {
+            const bool isTransfer =
+                transaction.type() == TransactionType::TRANSFER;
+            const bool isGovernanceProposal =
+                transaction.type() == TransactionType::GOVERNANCE_PROPOSE;
+            if (!isTransfer && !isGovernanceProposal) {
                 return StateTransitionPreviewResult::rejected(
                     StateTransitionPreviewStatus::UNSUPPORTED_TRANSITION,
                     "Transaction type has no authoritative deterministic state transition.",
@@ -267,11 +272,12 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
             }
 
             if (transaction.nonce() == 0 ||
-                !transaction.amount().isPositive() ||
+                (isTransfer && !transaction.amount().isPositive()) ||
+                (isGovernanceProposal && !transaction.amount().isZero()) ||
                 transaction.fee().isNegative() ||
                 transaction.fromAddress().empty() ||
                 transaction.toAddress().empty() ||
-                transaction.fromAddress() == transaction.toAddress()) {
+                (isTransfer && transaction.fromAddress() == transaction.toAddress())) {
                 return StateTransitionPreviewResult::rejected(
                     StateTransitionPreviewStatus::INVALID_TRANSACTION,
                     "Block contains an invalid transaction ledger payload.",
@@ -308,11 +314,12 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                 const AccountState sender =
                     workingAccountState.accountOrDefault(transaction.fromAddress());
 
-                const AccountState recipient =
-                    workingAccountState.accountOrDefault(transaction.toAddress());
+                const AccountState recipient = isTransfer
+                    ? workingAccountState.accountOrDefault(transaction.toAddress())
+                    : AccountState();
 
                 if (!sender.isValid() ||
-                    !recipient.isValid()) {
+                    (isTransfer && !recipient.isValid())) {
                     return StateTransitionPreviewResult::rejected(
                         StateTransitionPreviewStatus::INVALID_TRANSACTION,
                         "Preview account state is invalid.",
@@ -339,8 +346,9 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                     );
                 }
 
-                const utils::Amount required =
-                    transaction.amount() + transaction.fee();
+                const utils::Amount required = isTransfer
+                    ? transaction.amount() + transaction.fee()
+                    : transaction.fee();
 
                 if (sender.balance() < required) {
                     return StateTransitionPreviewResult::rejected(
@@ -353,26 +361,31 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                 const utils::Amount senderBalance =
                     sender.balance() - required;
 
-                const utils::Amount recipientBalance =
-                    recipient.balance() + transaction.amount();
-
                 if (!workingAccountState.putAccount(
                         AccountState(
                             sender.address(),
                             senderBalance,
                             transaction.nonce()
                         )
-                    ) ||
+                    )) {
+                    return StateTransitionPreviewResult::rejected(
+                        StateTransitionPreviewStatus::INVALID_TRANSACTION,
+                        "Preview account state update failed.",
+                        processedTransactionCount
+                    );
+                }
+
+                if (isTransfer &&
                     !workingAccountState.putAccount(
                         AccountState(
                             recipient.address(),
-                            recipientBalance,
+                            recipient.balance() + transaction.amount(),
                             recipient.nonce()
                         )
                     )) {
                     return StateTransitionPreviewResult::rejected(
                         StateTransitionPreviewStatus::INVALID_TRANSACTION,
-                        "Preview account state update failed.",
+                        "Preview recipient account update failed.",
                         processedTransactionCount
                     );
                 }
@@ -404,7 +417,7 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                     TransactionReceipt::applied(
                         transaction.id(),
                         transaction.fromAddress(),
-                        transaction.toAddress(),
+                        isTransfer ? transaction.toAddress() : "nodo_governance",
                         transaction.amount(),
                         transaction.fee(),
                         sender.nonce(),
@@ -418,8 +431,11 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
 
             totalFee = totalFee + transaction.fee();
             touchedAccountSet.insert(transaction.fromAddress());
-            touchedAccountSet.insert(transaction.toAddress());
+            if (isTransfer) {
+                touchedAccountSet.insert(transaction.toAddress());
+            }
             orderedTransactionIds.push_back(transaction.id());
+            orderedTransactions.push_back(transaction);
             ++processedTransactionCount;
         } catch (const std::exception& error) {
             return StateTransitionPreviewResult::rejected(
@@ -443,10 +459,35 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
         receiptPayloads.push_back(receipt.serialize());
     }
 
+    DeterministicStateTransitionResult protocolTransition;
+    try {
+        protocolTransition = context.transitionProtocolState(
+            workingAccountState,
+            totalFee,
+            orderedTransactions,
+            block.timestamp()
+        );
+    } catch (const std::exception& error) {
+        return StateTransitionPreviewResult::rejected(
+            StateTransitionPreviewStatus::INVALID_CONTEXT,
+            std::string("Protocol state transition failed: ") + error.what(),
+            processedTransactionCount
+        );
+    }
+
+    if (!protocolTransition.valid()) {
+        return StateTransitionPreviewResult::rejected(
+            StateTransitionPreviewStatus::INVALID_TRANSACTION,
+            protocolTransition.reason(),
+            processedTransactionCount
+        );
+    }
+
+    workingAccountState = protocolTransition.accounts();
     const std::string combinedStateRoot =
         StateRootCalculator::calculateProtocolStateRoot(
             workingAccountState,
-            context.transitionedStateDomains(totalFee)
+            protocolTransition.domains()
         );
 
     return StateTransitionPreviewResult::valid(

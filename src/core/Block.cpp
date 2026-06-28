@@ -46,11 +46,11 @@ Block::Block(
         }
     }
 
+    m_hash = calculateHash();
+
     if (!isWithinResourceLimits()) {
         throw std::invalid_argument("Block exceeds canonical protocol resource limits.");
     }
-
-    m_hash = calculateHash();
 }
 
 Block Block::createGenesisBlock(
@@ -184,7 +184,8 @@ bool Block::isWithinResourceLimits() const {
         }
         totalBytes += recordBytes;
     }
-    return totalBytes <= MAX_SERIALIZED_BYTES;
+    return totalBytes <= MAX_SERIALIZED_BYTES &&
+           serialize().size() <= MAX_SERIALIZED_BYTES;
 }
 
 std::string Block::headerPayload() const {

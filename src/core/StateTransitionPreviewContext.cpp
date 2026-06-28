@@ -6,6 +6,40 @@
 
 namespace nodo::core {
 
+DeterministicStateTransitionResult DeterministicStateTransitionResult::accepted(
+    AccountStateView accounts,
+    std::map<std::string, std::string> domains
+) {
+    DeterministicStateTransitionResult result;
+    result.m_valid = accounts.isValid();
+    result.m_reason = result.m_valid ? "" : "Protocol transition produced invalid accounts.";
+    result.m_accounts = std::move(accounts);
+    result.m_domains = std::move(domains);
+    for (const auto& [domain, payload] : result.m_domains) {
+        if (domain.empty() || payload.empty()) {
+            result.m_valid = false;
+            result.m_reason = "Protocol transition produced an invalid state domain.";
+            break;
+        }
+    }
+    return result;
+}
+
+DeterministicStateTransitionResult DeterministicStateTransitionResult::rejected(
+    std::string reason
+) {
+    DeterministicStateTransitionResult result;
+    result.m_reason = std::move(reason);
+    return result;
+}
+
+bool DeterministicStateTransitionResult::valid() const { return m_valid; }
+const std::string& DeterministicStateTransitionResult::reason() const { return m_reason; }
+const AccountStateView& DeterministicStateTransitionResult::accounts() const { return m_accounts; }
+const std::map<std::string, std::string>& DeterministicStateTransitionResult::domains() const {
+    return m_domains;
+}
+
 StateTransitionPreviewContext::StateTransitionPreviewContext()
     : m_minimumFeeRawUnits(-1),
       m_accountStateView(),
@@ -106,14 +140,21 @@ StateTransitionPreviewContext::deterministicStateDomains() const {
     return m_deterministicStateDomains;
 }
 
-std::map<std::string, std::string>
-StateTransitionPreviewContext::transitionedStateDomains(
-    utils::Amount totalFee
+DeterministicStateTransitionResult
+StateTransitionPreviewContext::transitionProtocolState(
+    const AccountStateView& accounts,
+    utils::Amount totalFee,
+    const std::vector<Transaction>& transactions,
+    std::int64_t blockTimestamp
 ) const {
     if (!m_stateDomainTransition) {
-        return m_deterministicStateDomains;
+        return DeterministicStateTransitionResult::accepted(
+            accounts, m_deterministicStateDomains
+        );
     }
-    return m_stateDomainTransition(totalFee);
+    return m_stateDomainTransition(
+        accounts, totalFee, transactions, blockTimestamp
+    );
 }
 
 bool StateTransitionPreviewContext::coinLotPreviewEnabled() const {

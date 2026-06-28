@@ -2,6 +2,7 @@
 #define NODO_NODE_PERSISTENT_BLOCK_STATE_SYNC_HPP
 
 #include "core/Blockchain.hpp"
+#include "core/ProtocolLimits.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "crypto/CryptoPolicy.hpp"
@@ -20,7 +21,8 @@ namespace nodo::node {
 class NodeRuntime;
 class NodeDataDirectoryConfig;
 
-constexpr std::uint64_t NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH = 512;
+constexpr std::uint64_t NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH =
+    core::ProtocolLimits::MAX_PERSISTENT_SYNC_BLOCK_BATCH;
 
 /*
  * PersistentBlock/State sync is the durable boundary used by the testnet node

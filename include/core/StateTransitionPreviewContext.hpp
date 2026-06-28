@@ -2,6 +2,7 @@
 #define NODO_CORE_STATE_TRANSITION_PREVIEW_CONTEXT_HPP
 
 #include "core/AccountStateView.hpp"
+#include "core/Transaction.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "utils/Amount.hpp"
 
@@ -13,8 +14,34 @@
 
 namespace nodo::core {
 
+class DeterministicStateTransitionResult {
+public:
+    static DeterministicStateTransitionResult accepted(
+        AccountStateView accounts,
+        std::map<std::string, std::string> domains
+    );
+
+    static DeterministicStateTransitionResult rejected(std::string reason);
+
+    bool valid() const;
+    const std::string& reason() const;
+    const AccountStateView& accounts() const;
+    const std::map<std::string, std::string>& domains() const;
+
+private:
+    bool m_valid = false;
+    std::string m_reason;
+    AccountStateView m_accounts;
+    std::map<std::string, std::string> m_domains;
+};
+
 using DeterministicStateDomainTransition = std::function<
-    std::map<std::string, std::string>(utils::Amount)
+    DeterministicStateTransitionResult(
+        const AccountStateView&,
+        utils::Amount,
+        const std::vector<Transaction>&,
+        std::int64_t
+    )
 >;
 
 class StateTransitionPreviewContext {
@@ -48,8 +75,11 @@ public:
     bool protocolAuthorizationEnabled() const;
     const crypto::ProtocolCryptoContext& cryptoContext() const;
     const std::map<std::string, std::string>& deterministicStateDomains() const;
-    std::map<std::string, std::string> transitionedStateDomains(
-        utils::Amount totalFee
+    DeterministicStateTransitionResult transitionProtocolState(
+        const AccountStateView& accounts,
+        utils::Amount totalFee,
+        const std::vector<Transaction>& transactions,
+        std::int64_t blockTimestamp
     ) const;
 
     bool coinLotPreviewEnabled() const;

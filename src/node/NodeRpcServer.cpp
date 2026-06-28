@@ -604,7 +604,8 @@ std::string NodeRpcServer::handleSubmit(const std::string& body) {
             m_runtime.mempool(),
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
-            cryptoContext.userSignatureProvider()
+            cryptoContext.userSignatureProvider(),
+            m_runtime.effectiveMinimumFeeRawUnits()
         );
 
     if (!validation.accepted()) {

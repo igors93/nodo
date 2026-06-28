@@ -1,7 +1,11 @@
 #include "node/GovernanceExecutor.hpp"
 
+#include "core/ProtocolLimits.hpp"
+
 #include <algorithm>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace nodo::node {
@@ -234,7 +238,8 @@ std::string GovernanceExecutionResult::serialize() const {
 
 namespace {
 
-// Extract value for key from a "key=value;key=value" payload string.
+// Extract value from the canonical transaction-safe "key=value,key=value" form.
+// Semicolons remain accepted for durable data created by earlier revisions.
 std::string extractPayloadField(const std::string& payload, const std::string& key) {
     const std::string search = key + "=";
     const std::size_t pos = payload.find(search);
@@ -242,7 +247,12 @@ std::string extractPayloadField(const std::string& payload, const std::string& k
         return "";
     }
     const std::size_t valueStart = pos + search.size();
-    const std::size_t valueEnd = payload.find(';', valueStart);
+    const std::size_t semicolonEnd = payload.find(';', valueStart);
+    const std::size_t commaEnd = payload.find(',', valueStart);
+    const std::size_t valueEnd =
+        semicolonEnd == std::string::npos ? commaEnd :
+        commaEnd == std::string::npos ? semicolonEnd :
+        std::min(semicolonEnd, commaEnd);
     if (valueEnd == std::string::npos) {
         return payload.substr(valueStart);
     }
@@ -299,10 +309,13 @@ bool GovernanceExecutor::validateValue(
             return numericValue >= 2;
 
         case GovernanceParameterTarget::MAX_TRANSACTIONS_PER_BLOCK:
-            return numericValue >= 1;
+            return numericValue >= 1 &&
+                   numericValue <= core::ProtocolLimits::MAX_BLOCK_RECORDS;
 
         case GovernanceParameterTarget::MINIMUM_FEE_RAW:
-            return true;  // zero is valid (no fee)
+            return numericValue <= static_cast<std::uint64_t>(
+                std::numeric_limits<std::int64_t>::max()
+            );
 
         case GovernanceParameterTarget::TREASURY_ALLOCATION_BASIS_POINTS:
             return numericValue <= 10000;  // max 100%
@@ -349,7 +362,7 @@ GovernanceExecutionResult GovernanceExecutor::executeProposal(
     const std::string newValue = parseNewValue(proposalPayload);
     const std::uint64_t effectiveAtHeight = parseEffectiveHeight(proposalPayload);
 
-    if (!validateValue(target, newValue)) {
+    if (effectiveAtHeight == 0 || !validateValue(target, newValue)) {
         return GovernanceExecutionResult::rejected(
             GovernanceExecutionStatus::REJECTED_INVALID_VALUE,
             "Invalid value '" + newValue + "' for target " +
@@ -408,6 +421,39 @@ GovernanceExecutionResult GovernanceExecutor::executeProposal(
     );
 
     return GovernanceExecutionResult::applied(appliedChange);
+}
+
+std::size_t GovernanceExecutor::advanceToHeight(
+    std::uint64_t currentHeight,
+    std::int64_t now
+) {
+    if (currentHeight == 0 || now <= 0) {
+        throw std::invalid_argument("Governance activation boundary is invalid.");
+    }
+
+    std::size_t activated = 0;
+    std::vector<GovernanceParameterChange> remaining;
+    remaining.reserve(m_pendingChanges.size());
+
+    for (const GovernanceParameterChange& pending : m_pendingChanges) {
+        if (pending.effectiveAtHeight() > currentHeight) {
+            remaining.push_back(pending);
+            continue;
+        }
+
+        m_appliedChanges.emplace_back(
+            pending.proposalId(),
+            pending.target(),
+            currentValueForTarget(pending.target()),
+            pending.newValue(),
+            pending.effectiveAtHeight(),
+            now
+        );
+        ++activated;
+    }
+
+    m_pendingChanges = std::move(remaining);
+    return activated;
 }
 
 const std::vector<GovernanceParameterChange>& GovernanceExecutor::appliedChanges() const {

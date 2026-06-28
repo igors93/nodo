@@ -449,27 +449,19 @@ void NodeOrchestrator::tick(std::int64_t now) {
 
     // Process any new slashing evidence accumulated by the ConsensusEventLoop.
     // For each piece of evidence not already in the penalty ledger, compute a
-    // deterministic penalty decision and propagate its registry effect immediately
-    // so jailed/tombstoned validators lose consensus eligibility this tick.
+    // deterministic penalty decision. Registry effects must enter through the
+    // canonical block transition; mutating the active set mid-height can make
+    // otherwise valid votes impossible to finalize.
     {
-        const std::uint64_t chainHeight = m_runtime->blockchain().empty()
-            ? 0 : m_runtime->blockchain().latestBlock().index();
-        const std::uint64_t epochDuration =
-            genesisConfig.networkParameters().epochDurationSeconds();
-        const std::uint64_t currentEpoch =
-            (epochDuration > 0) ? (chainHeight / epochDuration) : 0;
-
         const consensus::ValidatorPenaltyPolicy penaltyPolicy =
             consensus::ValidatorPenaltyPolicy::conservativeTestnetPolicy();
 
         for (const auto& evidence : m_evidencePool.allEvidence()) {
             if (!m_penaltyLedger.containsEvidence(evidence.evidenceId())) {
-                m_penaltyLedger.applyEvidenceWithRegistryEffect(
+                m_penaltyLedger.applyEvidence(
                     evidence,
                     penaltyPolicy,
-                    now,
-                    currentEpoch,
-                    m_runtime->mutableValidatorRegistry()
+                    now
                 );
             }
         }
@@ -785,8 +777,8 @@ bool NodeOrchestrator::startConsensus() {
                 try {
                     const auto& genesisConfig =
                         m_runtime->config().genesisConfig();
-                    const std::uint64_t minFeeRaw =
-                        m_runtime->effectiveMinimumFeeRawUnits();
+                    const std::uint64_t minFeeRaw = genesisConfig
+                        .networkParameters().minimumFeeRawUnits();
                     const std::int64_t minFee =
                         (minFeeRaw > static_cast<std::uint64_t>(
                                          std::numeric_limits<std::int64_t>::max()))

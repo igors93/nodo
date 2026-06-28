@@ -1,5 +1,7 @@
 #include "p2p/Transport.hpp"
 
+#include "core/ProtocolLimits.hpp"
+
 #include <sstream>
 #include <utility>
 
@@ -115,7 +117,8 @@ bool TransportMessage::isValid() const {
            m_fromNodeId != m_toNodeId &&
            m_sentAt > 0 &&
            m_envelope.senderNodeId() == m_fromNodeId &&
-           m_envelope.isStructurallyValid(1024 * 1024);
+           m_envelope.isStructurallyValid(
+               core::ProtocolLimits::MAX_NETWORK_PAYLOAD_BYTES);
 }
 
 std::string TransportMessage::serialize() const {
