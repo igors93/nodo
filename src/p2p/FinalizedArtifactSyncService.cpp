@@ -287,6 +287,28 @@ FinalizedArtifactSyncResult FinalizedArtifactSyncService::processResponse(
         );
     }
 
+    if (artifact.block().index() != response.height()) {
+        return FinalizedArtifactSyncResult::rejected(
+            FinalizedArtifactSyncRejectionReason::MALFORMED_RESPONSE,
+            "Decoded artifact height does not match the sync response height."
+        );
+    }
+
+    if (artifact.block().hash() != response.blockHash()) {
+        return FinalizedArtifactSyncResult::rejected(
+            FinalizedArtifactSyncRejectionReason::MALFORMED_RESPONSE,
+            "Decoded artifact block hash does not match the sync response hash."
+        );
+    }
+
+    const std::string decodedDigest = artifact.artifactDigest();
+    if (decodedDigest.empty() || decodedDigest != response.artifactDigest()) {
+        return FinalizedArtifactSyncResult::rejected(
+            FinalizedArtifactSyncRejectionReason::DIGEST_MISMATCH,
+            "Decoded artifact digest does not match the sync response digest."
+        );
+    }
+
     // Route the decoded candidate through the official import validation pipeline.
     const node::FinalizedArtifactImportResult importResult =
         node::LocalArtifactImportService::importArtifact(

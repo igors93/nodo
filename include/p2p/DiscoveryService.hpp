@@ -83,6 +83,7 @@ private:
     asio::ip::udp::endpoint m_recvEndpoint;
 
     void startReceive();
+    void startReceiveLocked();
     void handleReceive(const asio::error_code& ec, std::size_t bytesTransferred);
     void sendPing(const asio::ip::udp::endpoint& endpoint);
     void sendPong(const asio::ip::udp::endpoint& endpoint);

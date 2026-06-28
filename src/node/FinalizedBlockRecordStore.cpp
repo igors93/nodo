@@ -44,7 +44,9 @@ bool FinalizedBlockRecordStore::save(
             }
             return false; // divergent record — protocol violation
         } catch (...) {
-            // Unreadable existing file — overwrite below.
+            // Never replace an unreadable finality proof silently. Recovery or
+            // operator intervention must resolve the corrupt record first.
+            return false;
         }
     }
 

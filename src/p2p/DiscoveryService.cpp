@@ -124,7 +124,7 @@ void DiscoveryService::start() {
         // Learn actual bound port
         m_localUdpPort = m_socket->local_endpoint().port();
 
-        startReceive();
+        startReceiveLocked();
 
         m_ioThread = std::thread([this]() {
             m_ioContext.run();
@@ -165,6 +165,8 @@ void DiscoveryService::addPeer(
 
     std::size_t bucketIndex = getBucketIndex(peerId);
     bool isNewPeer = false;
+    std::function<void(const std::string&, const std::string&, std::uint16_t)>
+        discoveredCallback;
 
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -196,10 +198,14 @@ void DiscoveryService::addPeer(
                 }
             }
         }
+
+        if (isNewPeer) {
+            discoveredCallback = m_discoveredCallback;
+        }
     }
 
-    if (isNewPeer && m_discoveredCallback) {
-        m_discoveredCallback(peerId, host, tcpPort);
+    if (discoveredCallback) {
+        discoveredCallback(peerId, host, tcpPort);
     }
 }
 
@@ -273,6 +279,14 @@ std::uint16_t DiscoveryService::localUdpPort() const {
 }
 
 void DiscoveryService::startReceive() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    startReceiveLocked();
+}
+
+void DiscoveryService::startReceiveLocked() {
+    if (!m_socket || !m_socket->is_open()) {
+        return;
+    }
     m_socket->async_receive_from(
         asio::buffer(m_recvBuffer),
         m_recvEndpoint,
@@ -284,6 +298,14 @@ void DiscoveryService::startReceive() {
 void DiscoveryService::handleReceive(const asio::error_code& ec, std::size_t bytesTransferred) {
     // Processes incoming UDP packets, updates the routing table, and responds to discovery requests.
     if (ec) {
+        if (ec != asio::error::operation_aborted) {
+            try {
+                startReceive();
+            } catch (...) {
+                // A failed re-arm leaves discovery stopped but does not crash
+                // the node's IO thread.
+            }
+        }
         return;
     }
 
@@ -343,7 +365,11 @@ void DiscoveryService::handleReceive(const asio::error_code& ec, std::size_t byt
         // Ignore malformed messages safely
     }
 
-    startReceive();
+    try {
+        startReceive();
+    } catch (...) {
+        // Keep malformed or transient socket state from terminating the IO thread.
+    }
 }
 
 void DiscoveryService::sendPing(const asio::ip::udp::endpoint& endpoint) {

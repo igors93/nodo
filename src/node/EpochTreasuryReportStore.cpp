@@ -1,6 +1,7 @@
 #include "node/EpochTreasuryReportStore.hpp"
 
 #include "serialization/KeyValueFileCodec.hpp"
+#include "storage/AtomicFile.hpp"
 
 #include <fstream>
 #include <limits>
@@ -36,18 +37,7 @@ std::string readFile(const std::filesystem::path& path) {
 }
 
 void writeFile(const std::filesystem::path& path, const std::string& contents) {
-    std::ofstream f(path);
-    if (!f.is_open()) {
-        throw std::runtime_error(
-            "EpochTreasuryReportStore: cannot write file: " + path.string()
-        );
-    }
-    f << contents;
-    if (!f.good()) {
-        throw std::runtime_error(
-            "EpochTreasuryReportStore: write error for file: " + path.string()
-        );
-    }
+    storage::AtomicFile::writeTextFile(path, contents);
 }
 
 std::uint64_t requireUint64(
