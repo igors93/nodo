@@ -1,8 +1,27 @@
 #include "node/NodePruningConfig.hpp"
 
+#include <limits>
 #include <sstream>
 
 namespace nodo::node {
+
+namespace {
+
+bool retainedBlockCount(
+    std::size_t retainEpochs,
+    std::uint64_t epochDurationBlocks,
+    std::uint64_t& result
+) {
+    if (retainEpochs == 0 || epochDurationBlocks == 0 ||
+        retainEpochs >
+            std::numeric_limits<std::uint64_t>::max() / epochDurationBlocks) {
+        return false;
+    }
+    result = static_cast<std::uint64_t>(retainEpochs) * epochDurationBlocks;
+    return true;
+}
+
+} // namespace
 
 std::string nodePruningModeToString(NodePruningMode mode) {
     switch (mode) {
@@ -51,11 +70,12 @@ bool NodePruningConfig::shouldPruneBlockAtHeight(
             return false;
 
         case NodePruningMode::FULL: {
-            if (m_retainEpochs == 0 || epochDurationBlocks == 0) {
+            std::uint64_t retainBlocks = 0;
+            if (!retainedBlockCount(
+                    m_retainEpochs, epochDurationBlocks, retainBlocks
+                )) {
                 return false;
             }
-            const std::uint64_t retainBlocks =
-                static_cast<std::uint64_t>(m_retainEpochs) * epochDurationBlocks;
 
             if (currentHeight < retainBlocks) {
                 return false;
@@ -90,11 +110,12 @@ std::uint64_t NodePruningConfig::retainFromHeight(
             return 0;
 
         case NodePruningMode::FULL: {
-            if (m_retainEpochs == 0 || epochDurationBlocks == 0) {
+            std::uint64_t retainBlocks = 0;
+            if (!retainedBlockCount(
+                    m_retainEpochs, epochDurationBlocks, retainBlocks
+                )) {
                 return 0;
             }
-            const std::uint64_t retainBlocks =
-                static_cast<std::uint64_t>(m_retainEpochs) * epochDurationBlocks;
 
             if (currentHeight < retainBlocks) {
                 return 0;

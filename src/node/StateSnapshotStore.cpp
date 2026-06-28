@@ -2,12 +2,12 @@
 
 #include "core/StateRootCalculator.hpp"
 #include "crypto/hash.h"
+#include "storage/AtomicFile.hpp"
 
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <system_error>
 #include <utility>
 
 namespace nodo::node {
@@ -74,51 +74,17 @@ bool StateSnapshotStore::save(
         // slashed amounts, or applied transaction ids).
         const std::string fullStateHash = hashStatePayload(serializedState);
 
-        const std::filesystem::path parent = m_path.parent_path();
-        if (!parent.empty()) {
-            std::error_code createError;
-            std::filesystem::create_directories(parent, createError);
-            if (createError) {
-                return false;
-            }
-        }
+        std::ostringstream contents;
+        contents << HEADER << "\n"
+                 << blockHeight << "\n"
+                 << stateRoot << "\n"
+                 << fullStateHash << "\n"
+                 << serializedState;
 
-        std::filesystem::path tmp = m_path;
-        tmp += ".tmp";
-
-        {
-            std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-            if (!out) {
-                return false;
-            }
-
-            out << HEADER << "\n"
-                << blockHeight << "\n"
-                << stateRoot << "\n"
-                << fullStateHash << "\n"
-                << serializedState;
-
-            if (!out) {
-                std::error_code removeError;
-                std::filesystem::remove(tmp, removeError);
-                return false;
-            }
-        }
-
-        std::error_code renameError;
-        std::filesystem::rename(tmp, m_path, renameError);
-        if (renameError) {
-            std::error_code removeError;
-            std::filesystem::remove(tmp, removeError);
-            return false;
-        }
+        storage::AtomicFile::writeTextFile(m_path, contents.str());
 
         return true;
     } catch (...) {
-        std::filesystem::path tmp = m_path;
-        tmp += ".tmp";
-        std::error_code removeError;
-        std::filesystem::remove(tmp, removeError);
         return false;
     }
 }

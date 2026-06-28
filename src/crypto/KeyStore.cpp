@@ -8,9 +8,11 @@
 #include "storage/AtomicFile.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
 #include <utility>
 
 
@@ -512,7 +514,16 @@ KeyStoreCreateResult KeyStore::createLocalKey(
         );
 
 #if defined(__unix__) || defined(__APPLE__)
-        ::chmod(path.c_str(), S_IRUSR | S_IWUSR);
+        if (::chmod(path.c_str(), S_IRUSR | S_IWUSR) != 0) {
+            const int permissionError = errno;
+            std::error_code cleanupError;
+            std::filesystem::remove(path, cleanupError);
+            throw std::system_error(
+                permissionError,
+                std::generic_category(),
+                "Unable to secure key file permissions"
+            );
+        }
 #endif
 
         writeIndex(keysDirectory);
@@ -558,16 +569,26 @@ KeyStoreLoadResult KeyStore::loadKey(
 #if defined(__unix__) || defined(__APPLE__)
         {
             struct ::stat info{};
-            if (::stat(path.c_str(), &info) == 0) {
-                const mode_t publicBits = info.st_mode & (S_IRWXG | S_IRWXO);
-                if (publicBits != 0) {
-                    return KeyStoreLoadResult::rejected(
-                        KeyStoreStatus::INVALID_INPUT,
-                        "Key file has unsafe permissions (group/other access detected). "
-                        "This key store is localnet-only — it is not production custody. "
-                        "Fix permissions with: chmod 600 " + path.string()
-                    );
-                }
+            if (::lstat(path.c_str(), &info) != 0) {
+                return KeyStoreLoadResult::rejected(
+                    KeyStoreStatus::IO_ERROR,
+                    "Unable to inspect key file permissions."
+                );
+            }
+            if (!S_ISREG(info.st_mode)) {
+                return KeyStoreLoadResult::rejected(
+                    KeyStoreStatus::INVALID_INPUT,
+                    "Key file path is not a regular file."
+                );
+            }
+            const mode_t publicBits = info.st_mode & (S_IRWXG | S_IRWXO);
+            if (publicBits != 0) {
+                return KeyStoreLoadResult::rejected(
+                    KeyStoreStatus::INVALID_INPUT,
+                    "Key file has unsafe permissions (group/other access detected). "
+                    "This key store is localnet-only — it is not production custody. "
+                    "Fix permissions with: chmod 600 " + path.string()
+                );
             }
         }
 #endif

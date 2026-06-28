@@ -1,6 +1,7 @@
 #include "node/FinalizedBlockStore.hpp"
 
 #include "economics/SupplyDelta.hpp"
+#include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedArtifactSchema.hpp"
 #include "node/FinalizedMonetarySectionCodec.hpp"
 #include "node/FinalizedTreasurySection.hpp"
@@ -10,6 +11,8 @@
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
+#include <limits>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -21,6 +24,41 @@ namespace {
 
 constexpr const char* FINALIZATION_JOURNAL_SCHEMA =
     "NODO_FINALIZATION_COMMIT_V1";
+
+std::uint64_t parseJournalU64(
+    const std::string& value,
+    const std::string& fieldName
+) {
+    if (value.empty()) {
+        throw std::invalid_argument("Empty finalization journal field: " + fieldName);
+    }
+    for (const char character : value) {
+        if (character < '0' || character > '9') {
+            throw std::invalid_argument(
+                "Malformed finalization journal field: " + fieldName
+            );
+        }
+    }
+
+    std::size_t parsedCharacters = 0;
+    const unsigned long long parsed = std::stoull(value, &parsedCharacters);
+    if (parsedCharacters != value.size() || std::to_string(parsed) != value) {
+        throw std::invalid_argument(
+            "Non-canonical finalization journal field: " + fieldName
+        );
+    }
+    return static_cast<std::uint64_t>(parsed);
+}
+
+void removeJournalFile(const std::filesystem::path& path) {
+    std::error_code removeError;
+    std::filesystem::remove(path, removeError);
+    if (removeError) {
+        throw std::runtime_error(
+            "Failed to remove finalization journal: " + removeError.message()
+        );
+    }
+}
 
 std::string commitJournalContents(
     const RuntimeBlockPipelineResult& result
@@ -372,7 +410,7 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
             PersistentMempoolStore::removeTransactions(
                 directoryConfig, pipelineResult.finalizedTransactionIds()
             );
-            std::filesystem::remove(commitJournalPath(directoryConfig));
+            removeJournalFile(commitJournalPath(directoryConfig));
 
             return FinalizedBlockStoreResult::alreadyStored(
                 snapshot.manifest(),
@@ -429,7 +467,7 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
             }
         }
 
-        std::filesystem::remove(commitJournalPath(directoryConfig));
+        removeJournalFile(commitJournalPath(directoryConfig));
 
         return FinalizedBlockStoreResult::stored(
             snapshot.manifest(),
@@ -532,7 +570,7 @@ FinalizedBlockStoreResult FinalizedBlockStore::persistBatch(
         PersistentMempoolStore::removeTransactions(
             directoryConfig, finalizedTransactionIds
         );
-        std::filesystem::remove(commitJournalPath(directoryConfig));
+        removeJournalFile(commitJournalPath(directoryConfig));
         return FinalizedBlockStoreResult::stored(
             snapshot.manifest(),
             blockFilePath(directoryConfig, results.back().block().index())
@@ -563,12 +601,39 @@ void FinalizedBlockStore::recoverInterruptedCommit(
             storage::AtomicFile::readTextFile(journalPath),
             FINALIZATION_JOURNAL_SCHEMA
         );
-    const std::uint64_t targetHeight =
-        std::stoull(journal.requireField("targetHeight"));
-    const std::string targetHash = journal.requireField("targetBlockHash");
-    const std::size_t transactionCount = static_cast<std::size_t>(
-        std::stoull(journal.requireField("transactionCount"))
+    const std::uint64_t targetHeight = parseJournalU64(
+        journal.requireField("targetHeight"), "targetHeight"
     );
+    const std::string targetHash = journal.requireField("targetBlockHash");
+    const std::string targetStateRoot = journal.requireField("targetStateRoot");
+    const std::uint64_t rawTransactionCount = parseJournalU64(
+        journal.requireField("transactionCount"), "transactionCount"
+    );
+    if (targetHeight == 0 ||
+        !core::Block::isCanonicalCommitmentRoot(targetHash) ||
+        !core::Block::isCanonicalCommitmentRoot(targetStateRoot) ||
+        rawTransactionCount > journal.fields().size() ||
+        rawTransactionCount > std::numeric_limits<std::size_t>::max()) {
+        throw std::invalid_argument("Finalization journal bounds are invalid.");
+    }
+    const std::size_t transactionCount =
+        static_cast<std::size_t>(rawTransactionCount);
+    if (transactionCount != journal.fields().size() - 4) {
+        throw std::invalid_argument(
+            "Finalization journal transaction field count is inconsistent."
+        );
+    }
+
+    std::set<std::string> expectedFields = {
+        "targetHeight",
+        "targetBlockHash",
+        "targetStateRoot",
+        "transactionCount"
+    };
+    for (std::size_t index = 0; index < transactionCount; ++index) {
+        expectedFields.insert("transaction." + std::to_string(index));
+    }
+    journal.requireOnlyFields(expectedFields);
 
     const NodeDataDirectoryReadResult manifestResult =
         NodeDataDirectory::loadManifest(directoryConfig);
@@ -576,10 +641,18 @@ void FinalizedBlockStore::recoverInterruptedCommit(
         throw std::runtime_error("Cannot recover finalization without a valid manifest.");
     }
 
-    const bool published =
-        manifestResult.manifest().latestBlockHeight() >= targetHeight &&
-        (manifestResult.manifest().latestBlockHeight() != targetHeight ||
-         manifestResult.manifest().latestBlockHash() == targetHash);
+    bool published = false;
+    if (manifestResult.manifest().latestBlockHeight() == targetHeight) {
+        published = manifestResult.manifest().latestBlockHash() == targetHash &&
+                    manifestResult.manifest().latestStateRoot() == targetStateRoot;
+    } else if (manifestResult.manifest().latestBlockHeight() > targetHeight) {
+        const FinalizedBlockArtifact targetArtifact =
+            FinalizedBlockArtifactCodec::readBlockArtifactFile(
+                blockFilePath(directoryConfig, targetHeight)
+            );
+        published = targetArtifact.block().hash() == targetHash &&
+                    targetArtifact.postStateRoot() == targetStateRoot;
+    }
 
     if (published) {
         std::vector<std::string> transactionIds;
@@ -592,7 +665,7 @@ void FinalizedBlockStore::recoverInterruptedCommit(
         PersistentMempoolStore::removeTransactions(directoryConfig, transactionIds);
     }
 
-    std::filesystem::remove(journalPath);
+    removeJournalFile(journalPath);
 }
 
 std::filesystem::path FinalizedBlockStore::blockFilePath(

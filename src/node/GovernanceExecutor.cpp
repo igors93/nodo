@@ -238,6 +238,35 @@ std::string GovernanceExecutionResult::serialize() const {
 
 namespace {
 
+bool parseUint64Strict(
+    const std::string& value,
+    std::uint64_t& parsedValue
+) {
+    if (value.empty()) {
+        return false;
+    }
+    for (const char character : value) {
+        if (character < '0' || character > '9') {
+            return false;
+        }
+    }
+
+    try {
+        std::size_t parsedCharacters = 0;
+        const unsigned long long parsed =
+            std::stoull(value, &parsedCharacters);
+        if (parsedCharacters != value.size() ||
+            parsed > std::numeric_limits<std::uint64_t>::max() ||
+            std::to_string(parsed) != value) {
+            return false;
+        }
+        parsedValue = static_cast<std::uint64_t>(parsed);
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 // Extract value from the canonical transaction-safe "key=value,key=value" form.
 // Semicolons remain accepted for durable data created by earlier revisions.
 std::string extractPayloadField(const std::string& payload, const std::string& key) {
@@ -275,7 +304,10 @@ std::uint64_t GovernanceExecutor::parseEffectiveHeight(const std::string& payloa
     if (heightStr.empty()) {
         return 0;
     }
-    return std::stoull(heightStr);
+    std::uint64_t effectiveHeight = 0;
+    return parseUint64Strict(heightStr, effectiveHeight)
+        ? effectiveHeight
+        : 0;
 }
 
 bool GovernanceExecutor::validateValue(
@@ -286,14 +318,10 @@ bool GovernanceExecutor::validateValue(
         return false;
     }
 
-    // All current targets expect positive integers
-    for (const char c : value) {
-        if (c < '0' || c > '9') {
-            return false;
-        }
+    std::uint64_t numericValue = 0;
+    if (!parseUint64Strict(value, numericValue)) {
+        return false;
     }
-
-    const std::uint64_t numericValue = std::stoull(value);
 
     switch (target) {
         case GovernanceParameterTarget::EPOCH_DURATION_SECONDS:

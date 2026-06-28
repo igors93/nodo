@@ -1,6 +1,8 @@
 #include "node/JsonRpcServer.hpp"
 
+#include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace nodo::node {
@@ -83,6 +85,32 @@ std::string buildErrorObject(int code, const std::string& message) {
     oss << "{\"code\":" << code
         << ",\"message\":\"" << jsonEscape(message) << "\"}";
     return oss.str();
+}
+
+bool parseUint64Strict(const std::string& value, std::uint64_t& parsedValue) {
+    if (value.empty()) {
+        return false;
+    }
+    for (const char character : value) {
+        if (character < '0' || character > '9') {
+            return false;
+        }
+    }
+
+    try {
+        std::size_t parsedCharacters = 0;
+        const unsigned long long parsed =
+            std::stoull(value, &parsedCharacters);
+        if (parsedCharacters != value.size() ||
+            parsed > std::numeric_limits<std::uint64_t>::max() ||
+            std::to_string(parsed) != value) {
+            return false;
+        }
+        parsedValue = static_cast<std::uint64_t>(parsed);
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 } // namespace
@@ -236,7 +264,21 @@ JsonRpcResponse JsonRpcDispatcher::dispatch(const std::string& rawJson) const {
         );
     }
 
-    return it->second(req);
+    try {
+        return it->second(req);
+    } catch (const std::exception&) {
+        return JsonRpcResponse::makeError(
+            req.id,
+            JsonRpcError::INTERNAL_ERROR,
+            "RPC handler failed"
+        );
+    } catch (...) {
+        return JsonRpcResponse::makeError(
+            req.id,
+            JsonRpcError::INTERNAL_ERROR,
+            "RPC handler failed"
+        );
+    }
 }
 
 std::string JsonRpcDispatcher::extractParam(
@@ -265,7 +307,14 @@ void JsonRpcDispatcher::registerStandardMethods(
                     req.id, JsonRpcError::INVALID_PARAMS, "Missing param: height"
                 );
             }
-            const std::uint64_t height = std::stoull(heightStr);
+            std::uint64_t height = 0;
+            if (!parseUint64Strict(heightStr, height)) {
+                return JsonRpcResponse::makeError(
+                    req.id,
+                    JsonRpcError::INVALID_PARAMS,
+                    "Invalid param: height"
+                );
+            }
             const std::string result = fn(height);
             return JsonRpcResponse::success(req.id, result.empty() ? "null" : result);
         }

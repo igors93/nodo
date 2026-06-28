@@ -71,12 +71,42 @@ std::string jsonString(const std::string& s) {
 }
 
 bool sendAll(int fd, const std::string& data) {
+#if !defined(_WIN32) && defined(SO_NOSIGPIPE)
+    int suppressSigPipe = 1;
+    if (::setsockopt(
+            fd,
+            SOL_SOCKET,
+            SO_NOSIGPIPE,
+            &suppressSigPipe,
+            sizeof(suppressSigPipe)
+        ) != 0) {
+        return false;
+    }
+#endif
+
     const char* cursor = data.data();
     std::size_t remaining = data.size();
 
     while (remaining > 0) {
-        const platform_ssize_t sent = ::send(fd, cursor, remaining, 0);
-        if (sent <= 0) {
+        const platform_ssize_t sent = ::send(
+            fd,
+            cursor,
+            remaining,
+#if !defined(_WIN32) && defined(MSG_NOSIGNAL)
+            MSG_NOSIGNAL
+#else
+            0
+#endif
+        );
+        if (sent < 0) {
+#if !defined(_WIN32)
+            if (errno == EINTR) {
+                continue;
+            }
+#endif
+            return false;
+        }
+        if (sent == 0) {
             return false;
         }
 

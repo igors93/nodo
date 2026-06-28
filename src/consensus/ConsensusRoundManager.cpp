@@ -99,10 +99,16 @@ ConsensusRoundState ConsensusRoundState::deserialize(const std::string& text) {
     const bool votedPrevote = (std::stoi(extractField("votedPrevote")) != 0);
     const bool votedPrecommit = (std::stoi(extractField("votedPrecommit")) != 0);
 
-    return ConsensusRoundState(
+    const ConsensusRoundState state(
         height, round, proposer, startedAt,
         lockedBlockHash, lockedRound, votedPrevote, votedPrecommit
     );
+    if (!state.isValid() || state.serialize() != text) {
+        throw std::invalid_argument(
+            "ConsensusRoundState::deserialize: non-canonical state"
+        );
+    }
+    return state;
 }
 
 ConsensusRoundManager::ConsensusRoundManager()
