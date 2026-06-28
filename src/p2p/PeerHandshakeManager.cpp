@@ -2,6 +2,7 @@
 
 #include "core/ProtocolLimits.hpp"
 #include "crypto/Ed25519SignatureProvider.hpp"
+#include "p2p/PeerHandshakeReplayGuard.hpp"
 
 #include <limits>
 #include <sstream>
@@ -119,6 +120,25 @@ bool parseUnsigned16(const std::string& value, std::uint16_t& parsed) {
     }
 }
 
+bool parseUnsigned32(const std::string& value, std::uint32_t& parsed) {
+    if (value.empty()) return false;
+    for (const char character : value) {
+        if (character < '0' || character > '9') return false;
+    }
+    try {
+        std::size_t consumed = 0;
+        const unsigned long long number = std::stoull(value, &consumed);
+        if (consumed != value.size() || number == 0 ||
+            number > std::numeric_limits<std::uint32_t>::max()) {
+            return false;
+        }
+        parsed = static_cast<std::uint32_t>(number);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 bool parseInt64(const std::string& value, std::int64_t& parsed) {
     if (value.empty()) return false;
     try {
@@ -138,6 +158,20 @@ bool hasHelloMessageWrapper(const std::string& payload) {
            payload.back() == '}';
 }
 
+bool isSafeNodeId(const std::string& value) {
+    if (value.empty() || value.size() > 160) return false;
+    for (const char character : value) {
+        const bool allowed =
+            (character >= 'a' && character <= 'z') ||
+            (character >= 'A' && character <= 'Z') ||
+            (character >= '0' && character <= '9') ||
+            character == '_' || character == '-' || character == '.' ||
+            character == ':' || character == '/';
+        if (!allowed) return false;
+    }
+    return true;
+}
+
 std::string buildIdentityProofPayload(
     const std::string& peer,
     const std::string& networkId,
@@ -145,6 +179,8 @@ std::string buildIdentityProofPayload(
     const std::string& protocolVersion,
     const std::string& genesisId,
     const std::string& chainStatus,
+    const std::string& challengeIssuerNodeId,
+    const std::string& challengeNonce,
     std::int64_t createdAt
 ) {
     std::ostringstream output;
@@ -155,12 +191,81 @@ std::string buildIdentityProofPayload(
            << ";protocolVersion=" << protocolVersion
            << ";genesisId=" << genesisId
            << ";chainStatus=" << chainStatus
+           << ";challengeIssuerNodeId=" << challengeIssuerNodeId
+           << ";challengeNonce=" << challengeNonce
            << ";createdAt=" << createdAt
            << "}";
     return output.str();
 }
 
 } // namespace
+
+PeerChallengeMessage::PeerChallengeMessage()
+    : m_challengerNodeId(""),
+      m_challengedNodeId(""),
+      m_nonce(""),
+      m_createdAt(0),
+      m_ttlSeconds(0) {}
+
+PeerChallengeMessage::PeerChallengeMessage(
+    std::string challengerNodeId,
+    std::string challengedNodeId,
+    std::string nonce,
+    std::int64_t createdAt,
+    std::uint32_t ttlSeconds
+) : m_challengerNodeId(std::move(challengerNodeId)),
+    m_challengedNodeId(std::move(challengedNodeId)),
+    m_nonce(std::move(nonce)),
+    m_createdAt(createdAt),
+    m_ttlSeconds(ttlSeconds) {}
+
+const std::string& PeerChallengeMessage::challengerNodeId() const {
+    return m_challengerNodeId;
+}
+
+const std::string& PeerChallengeMessage::challengedNodeId() const {
+    return m_challengedNodeId;
+}
+
+const std::string& PeerChallengeMessage::nonce() const {
+    return m_nonce;
+}
+
+std::int64_t PeerChallengeMessage::createdAt() const {
+    return m_createdAt;
+}
+
+std::uint32_t PeerChallengeMessage::ttlSeconds() const {
+    return m_ttlSeconds;
+}
+
+std::int64_t PeerChallengeMessage::expiresAt() const {
+    if (!isValid()) return 0;
+    return m_createdAt + static_cast<std::int64_t>(m_ttlSeconds);
+}
+
+bool PeerChallengeMessage::isValid() const {
+    return isSafeNodeId(m_challengerNodeId) &&
+           isSafeNodeId(m_challengedNodeId) &&
+           m_challengerNodeId != m_challengedNodeId &&
+           PeerHandshakeReplayGuard::isValidNonce(m_nonce) &&
+           m_createdAt > 0 &&
+           m_ttlSeconds > 0 &&
+           m_createdAt <= std::numeric_limits<std::int64_t>::max() -
+               m_ttlSeconds;
+}
+
+std::string PeerChallengeMessage::serialize() const {
+    std::ostringstream output;
+    output << "PeerChallengeMessage{"
+           << "challengerNodeId=" << m_challengerNodeId
+           << ";challengedNodeId=" << m_challengedNodeId
+           << ";nonce=" << m_nonce
+           << ";createdAt=" << m_createdAt
+           << ";ttlSeconds=" << m_ttlSeconds
+           << "}";
+    return output.str();
+}
 
 PeerHelloMessage::PeerHelloMessage()
     : m_peer(),
@@ -169,6 +274,8 @@ PeerHelloMessage::PeerHelloMessage()
       m_protocolVersion(""),
       m_genesisId(""),
       m_chainStatus(),
+      m_challengeIssuerNodeId(""),
+      m_challengeNonce(""),
       m_identityProof(),
       m_createdAt(0) {}
 
@@ -179,6 +286,8 @@ PeerHelloMessage::PeerHelloMessage(
     std::string protocolVersion,
     std::string genesisId,
     node::ChainStatusMessage chainStatus,
+    std::string challengeIssuerNodeId,
+    std::string challengeNonce,
     crypto::SignatureBundle identityProof,
     std::int64_t createdAt
 ) : m_peer(std::move(peer)),
@@ -187,6 +296,8 @@ PeerHelloMessage::PeerHelloMessage(
     m_protocolVersion(std::move(protocolVersion)),
     m_genesisId(std::move(genesisId)),
     m_chainStatus(std::move(chainStatus)),
+    m_challengeIssuerNodeId(std::move(challengeIssuerNodeId)),
+    m_challengeNonce(std::move(challengeNonce)),
     m_identityProof(std::move(identityProof)),
     m_createdAt(createdAt) {}
 
@@ -196,6 +307,10 @@ const std::string& PeerHelloMessage::chainId() const { return m_chainId; }
 const std::string& PeerHelloMessage::protocolVersion() const { return m_protocolVersion; }
 const std::string& PeerHelloMessage::genesisId() const { return m_genesisId; }
 const node::ChainStatusMessage& PeerHelloMessage::chainStatus() const { return m_chainStatus; }
+const std::string& PeerHelloMessage::challengeIssuerNodeId() const {
+    return m_challengeIssuerNodeId;
+}
+const std::string& PeerHelloMessage::challengeNonce() const { return m_challengeNonce; }
 const crypto::SignatureBundle& PeerHelloMessage::identityProof() const { return m_identityProof; }
 std::int64_t PeerHelloMessage::createdAt() const { return m_createdAt; }
 
@@ -209,6 +324,9 @@ bool PeerHelloMessage::isValid() const {
            m_networkId == m_chainStatus.networkId() &&
            m_chainId == m_chainStatus.chainId() &&
            m_protocolVersion == m_chainStatus.protocolVersion() &&
+           isSafeNodeId(m_challengeIssuerNodeId) &&
+           m_challengeIssuerNodeId != m_peer.nodeId() &&
+           PeerHandshakeReplayGuard::isValidNonce(m_challengeNonce) &&
            !m_identityProof.empty() &&
            m_createdAt > 0;
 }
@@ -221,6 +339,8 @@ std::string PeerHelloMessage::signingPayload() const {
         m_protocolVersion,
         m_genesisId,
         m_chainStatus.serialize(),
+        m_challengeIssuerNodeId,
+        m_challengeNonce,
         m_createdAt
     );
 }
@@ -234,6 +354,8 @@ std::string PeerHelloMessage::serialize() const {
            << ";protocolVersion=" << m_protocolVersion
            << ";genesisId=" << m_genesisId
            << ";chainStatus=" << m_chainStatus.serialize()
+           << ";challengeIssuerNodeId=" << m_challengeIssuerNodeId
+           << ";challengeNonce=" << m_challengeNonce
            << ";identityProof=" << m_identityProof.serialize()
            << ";createdAt=" << m_createdAt
            << "}";
@@ -269,15 +391,100 @@ std::string PeerHandshakeResult::serialize() const {
     return output.str();
 }
 
+NetworkEnvelope PeerHandshakeManager::createChallengeEnvelope(
+    const GossipMeshConfig& config,
+    const std::string& challengedNodeId,
+    const std::string& nonce,
+    std::int64_t now
+) {
+    const PeerChallengeMessage challenge(
+        config.localNodeId(),
+        challengedNodeId,
+        nonce,
+        now,
+        config.defaultTtlSeconds()
+    );
+    if (!config.isValid() || !challenge.isValid()) {
+        throw std::invalid_argument(
+            "Cannot create invalid peer handshake challenge."
+        );
+    }
+
+    return NetworkEnvelope(
+        config.networkId(),
+        config.chainId(),
+        config.protocolVersion(),
+        NetworkMessageType::PEER_CHALLENGE,
+        config.localNodeId(),
+        now,
+        config.defaultTtlSeconds(),
+        challenge.serialize()
+    );
+}
+
+std::optional<PeerChallengeMessage> PeerHandshakeManager::challengeFromEnvelope(
+    const GossipMeshConfig& config,
+    const NetworkEnvelope& envelope,
+    std::int64_t now
+) {
+    if (!config.isValid() || now <= 0 ||
+        !envelope.isStructurallyValid(
+            core::ProtocolLimits::MAX_NETWORK_PAYLOAD_BYTES) ||
+        envelope.messageType() != NetworkMessageType::PEER_CHALLENGE ||
+        envelope.networkId() != config.networkId() ||
+        envelope.chainId() != config.chainId() ||
+        envelope.protocolVersion() != config.protocolVersion() ||
+        envelope.senderNodeId() == config.localNodeId() ||
+        envelope.expiredAt(now) ||
+        envelope.payload().rfind("PeerChallengeMessage{", 0) != 0 ||
+        envelope.payload().back() != '}') {
+        return std::nullopt;
+    }
+
+    std::int64_t createdAt = 0;
+    std::uint32_t ttlSeconds = 0;
+    if (!parseInt64(
+            extractSerializedField(envelope.payload(), "createdAt"),
+            createdAt) ||
+        !parseUnsigned32(
+            extractSerializedField(envelope.payload(), "ttlSeconds"),
+            ttlSeconds)) {
+        return std::nullopt;
+    }
+
+    const PeerChallengeMessage challenge(
+        extractNestedField(envelope.payload(), "challengerNodeId"),
+        extractSerializedField(envelope.payload(), "challengedNodeId"),
+        extractSerializedField(envelope.payload(), "nonce"),
+        createdAt,
+        ttlSeconds
+    );
+    if (!challenge.isValid() || challenge.serialize() != envelope.payload() ||
+        challenge.challengerNodeId() != envelope.senderNodeId() ||
+        challenge.challengedNodeId() != config.localNodeId() ||
+        challenge.createdAt() != envelope.createdAt() ||
+        challenge.ttlSeconds() != envelope.ttlSeconds() ||
+        now > challenge.expiresAt()) {
+        return std::nullopt;
+    }
+    return challenge;
+}
+
 NetworkEnvelope PeerHandshakeManager::createHelloEnvelope(
     const GossipMeshConfig& config,
     const PeerMetadata& localPeer,
     const node::ChainStatusMessage& chainStatus,
+    const std::string& challengeIssuerNodeId,
+    const std::string& challengeNonce,
     const crypto::KeyPair& nodeIdentityKey,
     std::int64_t now
 ) {
     if (!config.isValid() || !localPeer.isValid() ||
-        !chainStatus.isValid() || !nodeIdentityKey.isValid() || now <= 0 ||
+        !chainStatus.isValid() ||
+        !isSafeNodeId(challengeIssuerNodeId) ||
+        challengeIssuerNodeId == config.localNodeId() ||
+        !PeerHandshakeReplayGuard::isValidNonce(challengeNonce) ||
+        !nodeIdentityKey.isValid() || now <= 0 ||
         nodeIdentityKey.algorithm() !=
             crypto::CryptoAlgorithm::CLASSIC_ED25519 ||
         localPeer.nodeId() != config.localNodeId() ||
@@ -307,6 +514,8 @@ NetworkEnvelope PeerHandshakeManager::createHelloEnvelope(
         config.protocolVersion(),
         config.genesisId(),
         chainStatus,
+        challengeIssuerNodeId,
+        challengeNonce,
         crypto::SignatureBundle(),
         now
     );
@@ -324,6 +533,8 @@ NetworkEnvelope PeerHandshakeManager::createHelloEnvelope(
         config.protocolVersion(),
         config.genesisId(),
         chainStatus,
+        challengeIssuerNodeId,
+        challengeNonce,
         identityProof,
         now
     );
@@ -343,12 +554,20 @@ NetworkEnvelope PeerHandshakeManager::createHelloEnvelope(
 PeerHandshakeResult PeerHandshakeManager::validateHello(
     const GossipMeshConfig& config,
     const NetworkEnvelope& envelope,
+    const std::string& expectedChallengeNonce,
     std::int64_t now
 ) {
     if (!config.isValid()) {
         return PeerHandshakeResult(
             PeerHandshakeStatus::REJECTED,
             "Local gossip mesh config is invalid."
+        );
+    }
+
+    if (!PeerHandshakeReplayGuard::isValidNonce(expectedChallengeNonce)) {
+        return PeerHandshakeResult(
+            PeerHandshakeStatus::REJECTED,
+            "Expected peer handshake challenge nonce is invalid."
         );
     }
 
@@ -485,6 +704,27 @@ PeerHandshakeResult PeerHandshakeManager::validateHello(
         );
     }
 
+    const std::string challengeIssuerNodeId =
+        extractSerializedField(
+            envelope.payload(),
+            "challengeIssuerNodeId"
+        );
+    if (challengeIssuerNodeId != config.localNodeId()) {
+        return PeerHandshakeResult(
+            PeerHandshakeStatus::REJECTED,
+            "Peer hello challenge issuer does not match the local node."
+        );
+    }
+
+    const std::string challengeNonce =
+        extractSerializedField(envelope.payload(), "challengeNonce");
+    if (challengeNonce != expectedChallengeNonce) {
+        return PeerHandshakeResult(
+            PeerHandshakeStatus::REJECTED,
+            "Peer hello does not answer the outstanding challenge nonce."
+        );
+    }
+
     try {
         const crypto::SignatureBundle proof =
             crypto::SignatureBundle::deserialize(
@@ -517,6 +757,8 @@ PeerHandshakeResult PeerHandshakeManager::validateHello(
             extractSerializedField(envelope.payload(), "protocolVersion"),
             extractSerializedField(envelope.payload(), "genesisId"),
             chainStatusBlock,
+            challengeIssuerNodeId,
+            challengeNonce,
             envelope.createdAt()
         );
         const crypto::Ed25519SignatureProvider provider;
@@ -608,6 +850,18 @@ std::optional<PeerMetadata> PeerHandshakeManager::peerMetadataFromHello(
         return std::nullopt;
     }
     return peer;
+}
+
+std::string PeerHandshakeManager::challengeNonceFromHello(
+    const NetworkEnvelope& envelope
+) {
+    if (envelope.messageType() != NetworkMessageType::PEER_HELLO ||
+        !hasHelloMessageWrapper(envelope.payload())) {
+        return "";
+    }
+    const std::string nonce =
+        extractSerializedField(envelope.payload(), "challengeNonce");
+    return PeerHandshakeReplayGuard::isValidNonce(nonce) ? nonce : "";
 }
 
 } // namespace nodo::p2p

@@ -40,7 +40,7 @@ node::ChainStatusMessage chainStatus() {
     );
 }
 
-void deliverHello(
+p2p::NetworkEnvelope deliverHello(
     p2p::LoopbackTransport& remoteTransport,
     p2p::GossipMesh& localMesh,
     const p2p::GossipMeshConfig& remoteConfig,
@@ -53,20 +53,31 @@ void deliverHello(
         remotePeer.nodeId(),
         localMesh.config().localNodeId()
     ).success());
+    const std::optional<std::string> challenge =
+        localMesh.handshakeReplayGuard().issueChallenge(
+            remotePeer.nodeId(),
+            now,
+            localMesh.config().defaultTtlSeconds()
+        );
+    assert(challenge.has_value());
     const p2p::NetworkEnvelope hello =
         p2p::PeerHandshakeManager::createHelloEnvelope(
             remoteConfig,
             remotePeer,
             chainStatus(),
+            localMesh.config().localNodeId(),
+            *challenge,
             remoteIdentity,
             now
         );
     assert(remoteMesh.sendHandshakeTo(
         localMesh.config().localNodeId(),
+        p2p::NetworkMessageType::PEER_HELLO,
         hello.payload(),
         now
     ).allAccepted());
     assert(localMesh.receiveAvailable(now).acceptedCount() == 1);
+    return hello;
 }
 
 } // namespace
@@ -87,6 +98,12 @@ int main() {
         ),
         localTransport
     );
+    const crypto::KeyPair localIdentity =
+        crypto::KeyPair::createDeterministicEd25519KeyPair(
+            "peer-identity-binding-local"
+        );
+    const p2p::PeerMetadata localPeer =
+        peer("node-local", localIdentity, 1000);
 
     const p2p::GossipMeshConfig originalConfig(
         "node-remote",
@@ -107,7 +124,7 @@ int main() {
         );
     const p2p::PeerMetadata original =
         peer("node-remote", originalIdentity, 1000);
-    deliverHello(
+    const p2p::NetworkEnvelope originalHello = deliverHello(
         remoteTransport,
         localMesh,
         originalConfig,
@@ -117,11 +134,42 @@ int main() {
     );
     const auto registered = node::PeerHandshakeAutoRegistrar::processInbox(
         localMesh,
+        localPeer,
         chainStatus(),
+        localIdentity,
         1000
     );
     assert(registered.size() == 1);
     assert(registered[0].registered);
+
+    const p2p::NetworkEnvelope replayWrappedHello(
+        originalHello.networkId(),
+        originalHello.chainId(),
+        originalHello.protocolVersion(),
+        originalHello.messageType(),
+        originalHello.senderNodeId(),
+        originalHello.createdAt(),
+        originalHello.ttlSeconds() - 1,
+        originalHello.payload()
+    );
+    assert(remoteTransport.send(p2p::TransportMessage(
+        "node-remote",
+        "node-local",
+        replayWrappedHello,
+        1000
+    )).success());
+    assert(localMesh.receiveAvailable(1000).acceptedCount() == 1);
+    const auto replayed = node::PeerHandshakeAutoRegistrar::processInbox(
+        localMesh,
+        localPeer,
+        chainStatus(),
+        localIdentity,
+        1000
+    );
+    assert(replayed.size() == 1);
+    assert(!replayed[0].registered);
+    assert(replayed[0].reason.find("already consumed") !=
+           std::string::npos);
 
     const p2p::PeerMetadata refreshed =
         peer("node-remote", originalIdentity, 1001);
@@ -135,9 +183,11 @@ int main() {
     );
     const auto refreshedResult =
         node::PeerHandshakeAutoRegistrar::processInbox(
-            localMesh,
-            chainStatus(),
-            1001
+        localMesh,
+        localPeer,
+        chainStatus(),
+        localIdentity,
+        1001
         );
     assert(refreshedResult.size() == 1);
     assert(!refreshedResult[0].registered);
@@ -156,7 +206,9 @@ int main() {
     const auto takeoverResult =
         node::PeerHandshakeAutoRegistrar::processInbox(
             localMesh,
+            localPeer,
             chainStatus(),
+            localIdentity,
             1002
         );
     assert(takeoverResult.size() == 1);
@@ -188,7 +240,9 @@ int main() {
     );
     const auto aliasResult = node::PeerHandshakeAutoRegistrar::processInbox(
         localMesh,
+        localPeer,
         chainStatus(),
+        localIdentity,
         1003
     );
     assert(aliasResult.size() == 1);

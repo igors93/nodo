@@ -258,29 +258,17 @@ void NodeOrchestrator::tick(std::int64_t now) {
         m_runtime->blockchain().empty() ? 0
         : m_runtime->blockchain().latestBlock().index();
 
-    // Compute effective minimum fee once. effectiveMinimumFeeRawUnits() checks any
-    // applied governance overrides before falling back to the genesis config value.
-    const config::GenesisConfig& genesisConfig = m_runtime->config().genesisConfig();
-    // Auto-register new peers that sent PEER_HELLO.
-    const auto handshakeResults = PeerHandshakeAutoRegistrar::processInbox(
-        gossip,
-        currentChainStatus(),
-        now
-    );
+    // Drive challenge/response authentication before other peer messages.
     if (m_localNodeIdentity.has_value()) {
         const auto localPeer = localHandshakePeer(now);
         if (localPeer.has_value()) {
-            for (const auto& handshake : handshakeResults) {
-                if (!handshake.registered) continue;
-                PeerHandshakeAutoRegistrar::sendHelloTo(
-                    gossip,
-                    handshake.peerId,
-                    *localPeer,
-                    currentChainStatus(),
-                    *m_localNodeIdentity,
-                    now
-                );
-            }
+            PeerHandshakeAutoRegistrar::processInbox(
+                gossip,
+                *localPeer,
+                currentChainStatus(),
+                *m_localNodeIdentity,
+                now
+            );
         }
     }
 
@@ -524,12 +512,9 @@ void NodeOrchestrator::addAndConnectPeer(
 
     const auto localPeer = localHandshakePeer(now);
     if (localPeer.has_value()) {
-        PeerHandshakeAutoRegistrar::sendHelloTo(
+        PeerHandshakeAutoRegistrar::initiateHandshake(
             m_tcpRuntime->gossipMesh(),
             peer.nodeId(),
-            *localPeer,
-            currentChainStatus(),
-            *m_localNodeIdentity,
             now
         );
     }

@@ -196,6 +196,7 @@ GossipMesh::GossipMesh(
     m_transport(transport),
     m_evidenceStore(nullptr),
     m_peerRegistry(),
+    m_handshakeReplayGuard(),
     m_outboundQueue(1024),
     m_inboundValidator(),
     m_rateLimiter(),
@@ -217,6 +218,7 @@ GossipMesh::GossipMesh(
     m_transport(transport),
     m_evidenceStore(evidenceStore),
     m_peerRegistry(),
+    m_handshakeReplayGuard(),
     m_outboundQueue(1024),
     m_inboundValidator(),
     m_rateLimiter(),
@@ -235,6 +237,12 @@ GossipMesh::GossipMesh(
 const GossipMeshConfig& GossipMesh::config() const { return m_config; }
 PeerRegistry& GossipMesh::peerRegistry() { return m_peerRegistry; }
 const PeerRegistry& GossipMesh::peerRegistry() const { return m_peerRegistry; }
+PeerHandshakeReplayGuard& GossipMesh::handshakeReplayGuard() {
+    return m_handshakeReplayGuard;
+}
+const PeerHandshakeReplayGuard& GossipMesh::handshakeReplayGuard() const {
+    return m_handshakeReplayGuard;
+}
 const GossipInbox& GossipMesh::inbox() const { return m_inbox; }
 
 std::vector<NetworkEnvelope> GossipMesh::drainInbox(NetworkMessageType type) {
@@ -368,16 +376,20 @@ GossipDeliveryReport GossipMesh::sendTo(
 
 GossipDeliveryReport GossipMesh::sendHandshakeTo(
     const std::string& targetNodeId,
+    NetworkMessageType type,
     const std::string& payload,
     std::int64_t now
 ) {
-    if (!m_config.isValid() || targetNodeId.empty() ||
+    if (!m_config.isValid() ||
+        (type != NetworkMessageType::PEER_CHALLENGE &&
+         type != NetworkMessageType::PEER_HELLO) ||
+        targetNodeId.empty() ||
         targetNodeId == m_config.localNodeId()) {
         return GossipDeliveryReport(0, 1);
     }
 
     const NetworkEnvelope envelope = createEnvelope(
-        NetworkMessageType::PEER_HELLO,
+        type,
         payload,
         now
     );
@@ -487,9 +499,11 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
             continue;
         }
 
+        const NetworkMessageType messageType =
+            message->envelope().messageType();
         if (!m_peerRegistry.contains(message->fromNodeId()) &&
-            message->envelope().messageType() !=
-                NetworkMessageType::PEER_HELLO) {
+            messageType != NetworkMessageType::PEER_CHALLENGE &&
+            messageType != NetworkMessageType::PEER_HELLO) {
             recordInvalidMessage(
                 message->fromNodeId(),
                 "Unauthenticated peer sent a non-handshake message.",

@@ -20,6 +20,8 @@ int main() {
     assert(!envelope.expiredAt(1010));
     assert(envelope.expiredAt(2000));
     assert(nodo::p2p::networkMessageTypeFromString("PING") == nodo::p2p::NetworkMessageType::PING);
+    assert(nodo::p2p::networkMessageTypeFromString("PEER_CHALLENGE") ==
+           nodo::p2p::NetworkMessageType::PEER_CHALLENGE);
     assert(
         nodo::p2p::networkMessageTypeFromString(
             "SLASHING_EVIDENCE_RESPONSE"

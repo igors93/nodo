@@ -5,6 +5,7 @@
 #include "p2p/InboundMessageValidator.hpp"
 #include "p2p/OutboundMessageQueue.hpp"
 #include "p2p/PeerRegistry.hpp"
+#include "p2p/PeerHandshakeReplayGuard.hpp"
 #include "p2p/PeerRateLimiter.hpp"
 #include "p2p/Transport.hpp"
 
@@ -114,6 +115,8 @@ public:
     const GossipMeshConfig& config() const;
     PeerRegistry& peerRegistry();
     const PeerRegistry& peerRegistry() const;
+    PeerHandshakeReplayGuard& handshakeReplayGuard();
+    const PeerHandshakeReplayGuard& handshakeReplayGuard() const;
     const GossipInbox& inbox() const;
 
     PeerRegistryResult registerPeer(PeerMetadata peer);
@@ -145,9 +148,10 @@ public:
         std::int64_t now
     );
 
-    // The only message allowed before a peer enters the authenticated registry.
+    // Only challenge and hello messages are allowed before authentication.
     GossipDeliveryReport sendHandshakeTo(
         const std::string& targetNodeId,
+        NetworkMessageType type,
         const std::string& payload,
         std::int64_t now
     );
@@ -201,6 +205,7 @@ private:
     Transport& m_transport;
     storage::ProtocolEvidenceStore* m_evidenceStore;
     PeerRegistry m_peerRegistry;
+    PeerHandshakeReplayGuard m_handshakeReplayGuard;
     OutboundMessageQueue m_outboundQueue;
     InboundMessageValidator m_inboundValidator;
     PeerRateLimiter m_rateLimiter;

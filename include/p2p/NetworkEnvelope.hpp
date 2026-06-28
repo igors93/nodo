@@ -11,6 +11,7 @@ enum class NetworkMessageType {
     UNKNOWN,
     PING,
     PONG,
+    PEER_CHALLENGE,
     PEER_HELLO,
     PEER_STATUS,
     TRANSACTION_ANNOUNCE,

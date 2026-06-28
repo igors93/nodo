@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <string>
+#include <unordered_set>
 
 namespace nodo::node {
 
@@ -15,10 +16,15 @@ namespace nodo::node {
 
 std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbox(
     p2p::GossipMesh&          gossip,
+    const p2p::PeerMetadata&  localPeer,
     const ChainStatusMessage& localChainStatus,
+    const crypto::KeyPair&    nodeIdentityKey,
     std::int64_t              now
 ) {
     std::vector<HandshakeRegistrationResult> results;
+    std::unordered_set<std::string> authenticatedThisTick;
+    auto& replayGuard = gossip.handshakeReplayGuard();
+    replayGuard.prune(now);
 
     const auto messages = gossip.drainInbox(
         p2p::NetworkMessageType::PEER_HELLO
@@ -27,15 +33,45 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
     for (const auto& envelope : messages) {
         HandshakeRegistrationResult result;
         result.peerId = envelope.senderNodeId();
+        const std::string answeredChallenge =
+            p2p::PeerHandshakeManager::challengeNonceFromHello(envelope);
 
-        // Validate the hello envelope (network, chain, genesis, expiry).
+        const std::optional<std::string> expectedChallenge =
+            replayGuard.outstandingChallenge(result.peerId, now);
+        if (!expectedChallenge.has_value()) {
+            result.reason = replayGuard.wasChallengeConsumed(
+                result.peerId,
+                answeredChallenge,
+                now
+            )
+                ? "Handshake validation rejected: challenge nonce was already consumed."
+                : "Handshake validation rejected: no outstanding challenge for peer.";
+            results.push_back(result);
+            continue;
+        }
+
         const p2p::PeerHandshakeResult validation =
-            p2p::PeerHandshakeManager::validateHello(gossip.config(), envelope, now);
+            p2p::PeerHandshakeManager::validateHello(
+                gossip.config(),
+                envelope,
+                *expectedChallenge,
+                now
+            );
 
         if (!validation.accepted()) {
             result.registered   = false;
             result.alreadyKnown = false;
             result.reason       = "Handshake validation rejected: " + validation.reason();
+            results.push_back(result);
+            continue;
+        }
+
+        if (!replayGuard.consumeChallenge(
+                result.peerId,
+                answeredChallenge,
+                now)) {
+            result.reason =
+                "Handshake validation rejected: challenge was already consumed.";
             results.push_back(result);
             continue;
         }
@@ -82,62 +118,100 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
         result.reason       = wasAlreadyKnown
             ? "Peer cryptographic identity revalidated; heartbeat updated."
             : "Peer registered and CHAIN_STATUS sent.";
+        authenticatedThisTick.insert(result.peerId);
         results.push_back(result);
+    }
+
+    const auto challenges = gossip.drainInbox(
+        p2p::NetworkMessageType::PEER_CHALLENGE
+    );
+    for (const auto& envelope : challenges) {
+        const std::optional<p2p::PeerChallengeMessage> challenge =
+            p2p::PeerHandshakeManager::challengeFromEnvelope(
+                gossip.config(),
+                envelope,
+                now
+            );
+        if (!challenge.has_value()) {
+            continue;
+        }
+
+        const p2p::NetworkEnvelope hello =
+            p2p::PeerHandshakeManager::createHelloEnvelope(
+                gossip.config(),
+                localPeer,
+                localChainStatus,
+                challenge->challengerNodeId(),
+                challenge->nonce(),
+                nodeIdentityKey,
+                now
+            );
+        const p2p::GossipDeliveryReport response = gossip.sendHandshakeTo(
+            challenge->challengerNodeId(),
+            p2p::NetworkMessageType::PEER_HELLO,
+            hello.payload(),
+            now
+        );
+        if (!response.allAccepted()) continue;
+
+        if (authenticatedThisTick.find(challenge->challengerNodeId()) ==
+                authenticatedThisTick.end() &&
+            !replayGuard.outstandingChallenge(
+                challenge->challengerNodeId(), now).has_value()) {
+            (void)initiateHandshake(
+                gossip,
+                challenge->challengerNodeId(),
+                now
+            );
+        }
     }
 
     return results;
 }
 
-// ---------------------------------------------------------------------------
-// sendHello
-// ---------------------------------------------------------------------------
-
-p2p::GossipDeliveryReport PeerHandshakeAutoRegistrar::sendHello(
-    p2p::GossipMesh&          gossip,
-    const p2p::PeerMetadata&  localPeer,
-    const ChainStatusMessage& localChainStatus,
-    const crypto::KeyPair&    nodeIdentityKey,
-    std::int64_t              now
+p2p::GossipDeliveryReport PeerHandshakeAutoRegistrar::initiateHandshake(
+    p2p::GossipMesh&   gossip,
+    const std::string& targetNodeId,
+    std::int64_t       now
 ) {
-    // Build the PEER_HELLO envelope using the canonical factory.
-    const p2p::NetworkEnvelope helloEnvelope =
-        p2p::PeerHandshakeManager::createHelloEnvelope(
+    const std::optional<std::string> nonce =
+        gossip.handshakeReplayGuard().issueChallenge(
+            targetNodeId,
+            now,
+            gossip.config().defaultTtlSeconds()
+        );
+    if (!nonce.has_value()) {
+        return p2p::GossipDeliveryReport(0, 1);
+    }
+
+    try {
+        const p2p::NetworkEnvelope challenge =
+            p2p::PeerHandshakeManager::createChallengeEnvelope(
             gossip.config(),
-            localPeer,
-            localChainStatus,
-            nodeIdentityKey,
+            targetNodeId,
+            *nonce,
             now
         );
-
-    // Broadcast its payload to all connected peers.
-    return gossip.broadcast(
-        p2p::NetworkMessageType::PEER_HELLO,
-        helloEnvelope.payload(),
-        now
-    );
-}
-
-p2p::GossipDeliveryReport PeerHandshakeAutoRegistrar::sendHelloTo(
-    p2p::GossipMesh&          gossip,
-    const std::string&        targetNodeId,
-    const p2p::PeerMetadata&  localPeer,
-    const ChainStatusMessage& localChainStatus,
-    const crypto::KeyPair&    nodeIdentityKey,
-    std::int64_t              now
-) {
-    const p2p::NetworkEnvelope helloEnvelope =
-        p2p::PeerHandshakeManager::createHelloEnvelope(
-            gossip.config(),
-            localPeer,
-            localChainStatus,
-            nodeIdentityKey,
+        const p2p::GossipDeliveryReport sent = gossip.sendHandshakeTo(
+            targetNodeId,
+            p2p::NetworkMessageType::PEER_CHALLENGE,
+            challenge.payload(),
             now
         );
-    return gossip.sendHandshakeTo(
-        targetNodeId,
-        helloEnvelope.payload(),
-        now
-    );
+        if (!sent.allAccepted()) {
+            (void)gossip.handshakeReplayGuard().discardChallenge(
+                targetNodeId,
+                *nonce
+            );
+        }
+        return sent;
+    } catch (const std::exception&) {
+        (void)gossip.handshakeReplayGuard().discardChallenge(
+            targetNodeId,
+            *nonce
+        );
+        return p2p::GossipDeliveryReport(0, 1);
+    }
 }
 
 } // namespace nodo::node

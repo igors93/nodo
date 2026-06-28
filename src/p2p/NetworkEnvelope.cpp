@@ -45,6 +45,7 @@ std::string networkMessageTypeToString(NetworkMessageType type) {
     switch (type) {
         case NetworkMessageType::PING:                        return "PING";
         case NetworkMessageType::PONG:                        return "PONG";
+        case NetworkMessageType::PEER_CHALLENGE:              return "PEER_CHALLENGE";
         case NetworkMessageType::PEER_HELLO:                  return "PEER_HELLO";
         case NetworkMessageType::PEER_STATUS:                 return "PEER_STATUS";
         case NetworkMessageType::TRANSACTION_ANNOUNCE:        return "TRANSACTION_ANNOUNCE";
@@ -75,6 +76,7 @@ std::string networkMessageTypeToString(NetworkMessageType type) {
 NetworkMessageType networkMessageTypeFromString(const std::string& value) {
     if (value == "PING")                        return NetworkMessageType::PING;
     if (value == "PONG")                        return NetworkMessageType::PONG;
+    if (value == "PEER_CHALLENGE")              return NetworkMessageType::PEER_CHALLENGE;
     if (value == "PEER_HELLO")                  return NetworkMessageType::PEER_HELLO;
     if (value == "PEER_STATUS")                 return NetworkMessageType::PEER_STATUS;
     if (value == "TRANSACTION_ANNOUNCE")        return NetworkMessageType::TRANSACTION_ANNOUNCE;

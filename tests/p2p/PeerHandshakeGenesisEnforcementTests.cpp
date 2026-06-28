@@ -7,6 +7,7 @@ using namespace nodo::node;
 using namespace nodo::p2p;
 
 int main() {
+    const std::string challengeNonce(64, 'b');
     const nodo::crypto::KeyPair remoteIdentity =
         nodo::crypto::KeyPair::createDeterministicEd25519KeyPair(
             "peer-handshake-genesis-remote"
@@ -37,12 +38,16 @@ int main() {
             remoteConfigSameGenesis,
             remotePeer,
             status,
+            "node-local",
+            challengeNonce,
             remoteIdentity,
             1000
         );
 
     const PeerHandshakeResult acceptedResult =
-        PeerHandshakeManager::validateHello(localConfig, helloSameGenesis, 1001);
+        PeerHandshakeManager::validateHello(
+            localConfig, helloSameGenesis, challengeNonce, 1001
+        );
     assert(acceptedResult.accepted());
 
     // Peer with different genesis must be rejected.
@@ -51,12 +56,16 @@ int main() {
             remoteConfigDifferentGenesis,
             remotePeer,
             status,
+            "node-local",
+            challengeNonce,
             remoteIdentity,
             1000
         );
 
     const PeerHandshakeResult rejectedResult =
-        PeerHandshakeManager::validateHello(localConfig, helloDifferentGenesis, 1001);
+        PeerHandshakeManager::validateHello(
+            localConfig, helloDifferentGenesis, challengeNonce, 1001
+        );
     assert(!rejectedResult.accepted());
     assert(rejectedResult.reason().find("genesis") != std::string::npos);
 
@@ -72,12 +81,16 @@ int main() {
             wrongNetConfig,
             remotePeer,
             wrongNetStatus,
+            "node-local",
+            challengeNonce,
             remoteIdentity,
             1000
         );
 
     const PeerHandshakeResult networkRejected =
-        PeerHandshakeManager::validateHello(localConfig, helloWrongNet, 1001);
+        PeerHandshakeManager::validateHello(
+            localConfig, helloWrongNet, challengeNonce, 1001
+        );
     assert(!networkRejected.accepted());
 
     return 0;

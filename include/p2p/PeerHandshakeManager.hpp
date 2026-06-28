@@ -14,6 +14,36 @@
 
 namespace nodo::p2p {
 
+class PeerChallengeMessage {
+public:
+    PeerChallengeMessage();
+
+    PeerChallengeMessage(
+        std::string challengerNodeId,
+        std::string challengedNodeId,
+        std::string nonce,
+        std::int64_t createdAt,
+        std::uint32_t ttlSeconds
+    );
+
+    const std::string& challengerNodeId() const;
+    const std::string& challengedNodeId() const;
+    const std::string& nonce() const;
+    std::int64_t createdAt() const;
+    std::uint32_t ttlSeconds() const;
+    std::int64_t expiresAt() const;
+
+    bool isValid() const;
+    std::string serialize() const;
+
+private:
+    std::string m_challengerNodeId;
+    std::string m_challengedNodeId;
+    std::string m_nonce;
+    std::int64_t m_createdAt;
+    std::uint32_t m_ttlSeconds;
+};
+
 class PeerHelloMessage {
 public:
     PeerHelloMessage();
@@ -25,6 +55,8 @@ public:
         std::string protocolVersion,
         std::string genesisId,
         node::ChainStatusMessage chainStatus,
+        std::string challengeIssuerNodeId,
+        std::string challengeNonce,
         crypto::SignatureBundle identityProof,
         std::int64_t createdAt
     );
@@ -35,6 +67,8 @@ public:
     const std::string& protocolVersion() const;
     const std::string& genesisId() const;
     const node::ChainStatusMessage& chainStatus() const;
+    const std::string& challengeIssuerNodeId() const;
+    const std::string& challengeNonce() const;
     const crypto::SignatureBundle& identityProof() const;
     std::int64_t createdAt() const;
 
@@ -49,6 +83,8 @@ private:
     std::string m_protocolVersion;
     std::string m_genesisId;
     node::ChainStatusMessage m_chainStatus;
+    std::string m_challengeIssuerNodeId;
+    std::string m_challengeNonce;
     crypto::SignatureBundle m_identityProof;
     std::int64_t m_createdAt;
 };
@@ -75,10 +111,25 @@ private:
 
 class PeerHandshakeManager {
 public:
+    static NetworkEnvelope createChallengeEnvelope(
+        const GossipMeshConfig& config,
+        const std::string& challengedNodeId,
+        const std::string& nonce,
+        std::int64_t now
+    );
+
+    static std::optional<PeerChallengeMessage> challengeFromEnvelope(
+        const GossipMeshConfig& config,
+        const NetworkEnvelope& envelope,
+        std::int64_t now
+    );
+
     static NetworkEnvelope createHelloEnvelope(
         const GossipMeshConfig& config,
         const PeerMetadata& localPeer,
         const node::ChainStatusMessage& chainStatus,
+        const std::string& challengeIssuerNodeId,
+        const std::string& challengeNonce,
         const crypto::KeyPair& nodeIdentityKey,
         std::int64_t now
     );
@@ -86,12 +137,17 @@ public:
     static PeerHandshakeResult validateHello(
         const GossipMeshConfig& config,
         const NetworkEnvelope& envelope,
+        const std::string& expectedChallengeNonce,
         std::int64_t now
     );
 
     static std::optional<PeerMetadata> peerMetadataFromHello(
         const NetworkEnvelope& envelope,
         std::int64_t now
+    );
+
+    static std::string challengeNonceFromHello(
+        const NetworkEnvelope& envelope
     );
 };
 
