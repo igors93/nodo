@@ -2,6 +2,7 @@
 #define NODO_P2P_TCP_TRANSPORT_HPP
 
 #include "p2p/Peer.hpp"
+#include "p2p/AuthenticatedConnectionTransport.hpp"
 #include "p2p/Transport.hpp"
 
 #include <cstdint>
@@ -20,7 +21,9 @@ namespace nodo::p2p {
  * threads. Future production transports can use the same Transport interface
  * with event loops, encryption and peer discovery.
  */
-class TcpTransport final : public Transport {
+class TcpTransport final
+    : public Transport,
+      public AuthenticatedConnectionTransport {
 public:
     TcpTransport();
     ~TcpTransport() override;
@@ -78,6 +81,20 @@ public:
         const std::string& localNodeId
     ) override;
 
+    bool authenticateConnection(
+        TransportConnectionId connectionId,
+        const std::string& remoteNodeId
+    ) override;
+
+    bool rejectConnection(
+        TransportConnectionId connectionId
+    ) override;
+
+    bool isConnectionAuthenticated(
+        TransportConnectionId connectionId,
+        const std::string& remoteNodeId
+    ) const override;
+
     void closeAll();
 
 #ifdef _WIN32
@@ -87,13 +104,28 @@ public:
 #endif
 
 private:
+    struct ManagedConnection {
+        SocketHandle fd;
+        TransportConnectionId id;
+        bool authenticated;
+    };
+
+    struct CandidateConnection {
+        SocketHandle fd;
+        TransportConnectionId id;
+        std::string claimedNodeId;
+    };
+
     SocketHandle m_listenFd;
     bool m_socketRuntimeReady;
     std::string m_localNodeId;
     PeerEndpoint m_localEndpoint;
     std::map<std::string, PeerEndpoint> m_peerEndpoints;
-    std::map<std::string, SocketHandle> m_connectionsByPeer;
-    std::vector<SocketHandle> m_unidentifiedInboundFds;
+    std::map<std::string, ManagedConnection> m_connectionsByPeer;
+    std::map<TransportConnectionId, CandidateConnection>
+        m_candidateInboundConnections;
+    std::map<std::string, TransportConnectionId> m_candidateByPeer;
+    TransportConnectionId m_nextConnectionId;
     // Guards all public methods that access shared maps/fds.
     // Recursive because send() may call connect() internally.
     mutable std::recursive_mutex m_mutex;
@@ -121,8 +153,15 @@ private:
 
     void rememberConnection(
         const std::string& remoteNodeId,
-        SocketHandle fd
+        SocketHandle fd,
+        bool authenticated
     );
+
+    TransportConnectionId nextConnectionId();
+    SocketHandle socketForSend(
+        const TransportMessage& message
+    ) const;
+    void closeCandidateConnection(TransportConnectionId connectionId);
 
     void closeFd(SocketHandle fd);
     void closePeerConnection(const std::string& remoteNodeId);

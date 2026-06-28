@@ -155,7 +155,12 @@ public:
         const std::string& targetNodeId,
         NetworkMessageType type,
         const std::string& payload,
-        std::int64_t now
+        std::int64_t now,
+        TransportConnectionId connectionId = 0
+    );
+
+    TransportConnectionId takeConnectionIdForEnvelope(
+        const NetworkEnvelope& envelope
     );
 
     GossipDeliveryReport flushOutbound(
@@ -212,6 +217,7 @@ private:
     InboundMessageValidator m_inboundValidator;
     PeerRateLimiter m_rateLimiter;
     GossipInbox m_inbox;
+    std::map<std::string, TransportConnectionId> m_connectionByMessageId;
     std::map<std::string, std::size_t> m_invalidMessagesByIdentity;
     // Coalescing: tracks (identityKey, ruleId) -> last evidence timestamp.
     std::map<std::pair<std::string, std::string>, std::int64_t> m_lastEvidenceAt;

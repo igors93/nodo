@@ -2,6 +2,7 @@
 #define NODO_P2P_TRANSPORT_HPP
 
 #include "p2p/NetworkEnvelope.hpp"
+#include "p2p/AuthenticatedConnectionTransport.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -45,10 +46,20 @@ public:
         std::int64_t sentAt
     );
 
+    TransportMessage(
+        std::string fromNodeId,
+        std::string toNodeId,
+        NetworkEnvelope envelope,
+        std::int64_t sentAt,
+        TransportConnectionId connectionId
+    );
+
     const std::string& fromNodeId() const;
     const std::string& toNodeId() const;
     const NetworkEnvelope& envelope() const;
     std::int64_t sentAt() const;
+    TransportConnectionId connectionId() const;
+    bool hasConnectionId() const;
 
     bool isValid() const;
     std::string serialize() const;
@@ -58,6 +69,7 @@ private:
     std::string m_toNodeId;
     NetworkEnvelope m_envelope;
     std::int64_t m_sentAt;
+    TransportConnectionId m_connectionId;
 };
 
 class Transport {

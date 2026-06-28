@@ -34,6 +34,11 @@ public:
         const std::string& remoteNodeId
     ) = 0;
 
+    virtual bool rejectPendingConnection(
+        const std::string& localNodeId,
+        const std::string& remoteNodeId
+    ) = 0;
+
     virtual bool hasOutboundSession(
         const std::string& localNodeId,
         const std::string& remoteNodeId

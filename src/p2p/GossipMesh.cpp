@@ -201,6 +201,7 @@ GossipMesh::GossipMesh(
     m_inboundValidator(),
     m_rateLimiter(),
     m_inbox(),
+    m_connectionByMessageId(),
     m_invalidMessagesByIdentity(),
     m_lastEvidenceAt(),
     m_evidenceCaptureHealth(),
@@ -223,6 +224,7 @@ GossipMesh::GossipMesh(
     m_inboundValidator(),
     m_rateLimiter(),
     m_inbox(),
+    m_connectionByMessageId(),
     m_invalidMessagesByIdentity(),
     m_lastEvidenceAt(),
     m_evidenceCaptureHealth(),
@@ -380,7 +382,8 @@ GossipDeliveryReport GossipMesh::sendHandshakeTo(
     const std::string& targetNodeId,
     NetworkMessageType type,
     const std::string& payload,
-    std::int64_t now
+    std::int64_t now,
+    TransportConnectionId connectionId
 ) {
     if (!m_config.isValid() ||
         (type != NetworkMessageType::PEER_CHALLENGE &&
@@ -404,11 +407,22 @@ GossipDeliveryReport GossipMesh::sendHandshakeTo(
         m_config.localNodeId(),
         targetNodeId,
         envelope,
-        now
+        now,
+        connectionId
     ));
     return sent.sent()
         ? GossipDeliveryReport(1, 0)
         : GossipDeliveryReport(0, 1);
+}
+
+TransportConnectionId GossipMesh::takeConnectionIdForEnvelope(
+    const NetworkEnvelope& envelope
+) {
+    const auto found = m_connectionByMessageId.find(envelope.messageId());
+    if (found == m_connectionByMessageId.end()) return 0;
+    const TransportConnectionId connectionId = found->second;
+    m_connectionByMessageId.erase(found);
+    return connectionId;
 }
 
 GossipDeliveryReport GossipMesh::flushOutbound(std::int64_t now) {
@@ -516,6 +530,12 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
         }
 
         m_peerRegistry.updateHeartbeat(message->fromNodeId(), now);
+        if (message->hasConnectionId() &&
+            (messageType == NetworkMessageType::PEER_CHALLENGE ||
+             messageType == NetworkMessageType::PEER_HELLO)) {
+            m_connectionByMessageId[message->envelope().messageId()] =
+                message->connectionId();
+        }
         m_inbox.add(message->envelope());
         ++accepted;
     }

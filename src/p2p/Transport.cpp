@@ -83,7 +83,8 @@ TransportMessage::TransportMessage()
     : m_fromNodeId(""),
       m_toNodeId(""),
       m_envelope(),
-      m_sentAt(0) {}
+      m_sentAt(0),
+      m_connectionId(0) {}
 
 TransportMessage::TransportMessage(
     std::string fromNodeId,
@@ -93,7 +94,20 @@ TransportMessage::TransportMessage(
 ) : m_fromNodeId(std::move(fromNodeId)),
     m_toNodeId(std::move(toNodeId)),
     m_envelope(std::move(envelope)),
-    m_sentAt(sentAt) {}
+    m_sentAt(sentAt),
+    m_connectionId(0) {}
+
+TransportMessage::TransportMessage(
+    std::string fromNodeId,
+    std::string toNodeId,
+    NetworkEnvelope envelope,
+    std::int64_t sentAt,
+    TransportConnectionId connectionId
+) : m_fromNodeId(std::move(fromNodeId)),
+    m_toNodeId(std::move(toNodeId)),
+    m_envelope(std::move(envelope)),
+    m_sentAt(sentAt),
+    m_connectionId(connectionId) {}
 
 const std::string& TransportMessage::fromNodeId() const {
     return m_fromNodeId;
@@ -109,6 +123,14 @@ const NetworkEnvelope& TransportMessage::envelope() const {
 
 std::int64_t TransportMessage::sentAt() const {
     return m_sentAt;
+}
+
+TransportConnectionId TransportMessage::connectionId() const {
+    return m_connectionId;
+}
+
+bool TransportMessage::hasConnectionId() const {
+    return m_connectionId != 0;
 }
 
 bool TransportMessage::isValid() const {
@@ -127,6 +149,7 @@ std::string TransportMessage::serialize() const {
            << "fromNodeId=" << m_fromNodeId
            << ";toNodeId=" << m_toNodeId
            << ";sentAt=" << m_sentAt
+           << ";connectionId=" << m_connectionId
            << ";envelope=" << m_envelope.serialize()
            << "}";
     return output.str();

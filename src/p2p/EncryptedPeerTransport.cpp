@@ -10,6 +10,10 @@ EncryptedPeerTransport::EncryptedPeerTransport(Transport& underlyingTransport)
       m_outboundSessions(),
       m_inboundSessions(),
       m_stagedOutboundSessions(),
+      m_pendingConnections(),
+      m_connectionTransport(
+          dynamic_cast<AuthenticatedConnectionTransport*>(
+              &underlyingTransport)),
       m_rejectedFrameCount(0) {}
 
 bool EncryptedPeerTransport::establishSession(
@@ -66,8 +70,17 @@ bool EncryptedPeerTransport::establishInboundSession(
     EncryptedPeerSession session(
         localNodeId, remoteNodeId, sharedSecret, now);
     if (!session.isValid()) return false;
-    m_inboundSessions[directionKey(localNodeId, remoteNodeId)] =
-        std::move(session);
+    const std::string key = directionKey(localNodeId, remoteNodeId);
+    if (m_connectionTransport != nullptr) {
+        const auto pending = m_pendingConnections.find(key);
+        if (pending == m_pendingConnections.end() ||
+            !m_connectionTransport->authenticateConnection(
+                pending->second, remoteNodeId)) {
+            return false;
+        }
+        m_pendingConnections.erase(pending);
+    }
+    m_inboundSessions[key] = std::move(session);
     return true;
 }
 
@@ -79,7 +92,21 @@ bool EncryptedPeerTransport::removeSession(
     const std::size_t removed = m_outboundSessions.erase(key) +
         m_inboundSessions.erase(key) +
         m_stagedOutboundSessions.erase(key);
-    return removed > 0;
+    const bool rejected = rejectPendingConnection(localNodeId, remoteNodeId);
+    return removed > 0 || rejected;
+}
+
+bool EncryptedPeerTransport::rejectPendingConnection(
+    const std::string& localNodeId,
+    const std::string& remoteNodeId
+) {
+    const std::string key = directionKey(localNodeId, remoteNodeId);
+    const auto pending = m_pendingConnections.find(key);
+    if (pending == m_pendingConnections.end()) return false;
+    const TransportConnectionId connectionId = pending->second;
+    m_pendingConnections.erase(pending);
+    return m_connectionTransport != nullptr &&
+           m_connectionTransport->rejectConnection(connectionId);
 }
 
 bool EncryptedPeerTransport::hasOutboundSession(
@@ -116,9 +143,16 @@ std::size_t EncryptedPeerTransport::rejectedFrameCount() const {
 }
 
 void EncryptedPeerTransport::clearSessions() {
+    if (m_connectionTransport != nullptr) {
+        for (const auto& [key, connectionId] : m_pendingConnections) {
+            (void)key;
+            (void)m_connectionTransport->rejectConnection(connectionId);
+        }
+    }
     m_outboundSessions.clear();
     m_inboundSessions.clear();
     m_stagedOutboundSessions.clear();
+    m_pendingConnections.clear();
 }
 
 TransportResult EncryptedPeerTransport::connect(
@@ -199,6 +233,14 @@ std::optional<TransportMessage> EncryptedPeerTransport::poll(
     if (!message.has_value()) return std::nullopt;
 
     if (isHandshakeMessage(message->envelope().messageType())) {
+        if (m_connectionTransport != nullptr &&
+            message->hasConnectionId() &&
+            message->envelope().messageType() ==
+                NetworkMessageType::PEER_HELLO) {
+            m_pendingConnections[directionKey(
+                message->toNodeId(), message->fromNodeId())] =
+                message->connectionId();
+        }
         return message;
     }
 
@@ -206,6 +248,10 @@ std::optional<TransportMessage> EncryptedPeerTransport::poll(
         message->toNodeId(), message->fromNodeId());
     if (session == nullptr) {
         ++m_rejectedFrameCount;
+        if (m_connectionTransport != nullptr && message->hasConnectionId()) {
+            (void)m_connectionTransport->rejectConnection(
+                message->connectionId());
+        }
         return std::nullopt;
     }
 
@@ -219,16 +265,37 @@ std::optional<TransportMessage> EncryptedPeerTransport::poll(
                 message->envelope().messageType() ||
             opened.envelope()->senderNodeId() != message->fromNodeId()) {
             ++m_rejectedFrameCount;
+            if (m_connectionTransport != nullptr &&
+                message->hasConnectionId()) {
+                (void)m_connectionTransport->rejectConnection(
+                    message->connectionId());
+            }
+            return std::nullopt;
+        }
+        if (m_connectionTransport != nullptr &&
+            message->hasConnectionId() &&
+            !m_connectionTransport->isConnectionAuthenticated(
+                message->connectionId(), message->fromNodeId()) &&
+            !m_connectionTransport->authenticateConnection(
+                message->connectionId(), message->fromNodeId())) {
+            ++m_rejectedFrameCount;
+            (void)m_connectionTransport->rejectConnection(
+                message->connectionId());
             return std::nullopt;
         }
         return TransportMessage(
             message->fromNodeId(),
             message->toNodeId(),
             *opened.envelope(),
-            message->sentAt()
+            message->sentAt(),
+            message->connectionId()
         );
     } catch (...) {
         ++m_rejectedFrameCount;
+        if (m_connectionTransport != nullptr && message->hasConnectionId()) {
+            (void)m_connectionTransport->rejectConnection(
+                message->connectionId());
+        }
         return std::nullopt;
     }
 }

@@ -83,6 +83,9 @@ int main() {
     assert(received->fromNodeId() == "node-a");
     assert(received->toNodeId() == "node-b");
     assert(received->envelope().payload() == "hello-node-b");
+    assert(received->hasConnectionId());
+    assert(nodeB.authenticateConnection(
+        received->connectionId(), "node-a"));
     assert(nodeB.connected("node-b", "node-a"));
     assert(!nodeB.connected("wrong-local-node", "node-a"));
 
@@ -111,6 +114,9 @@ int main() {
     assert(replyReceived->fromNodeId() == "node-b");
     assert(replyReceived->toNodeId() == "node-a");
     assert(replyReceived->envelope().payload() == "hello-node-a");
+    assert(replyReceived->hasConnectionId());
+    assert(nodeA.authenticateConnection(
+        replyReceived->connectionId(), "node-b"));
 
     nodeA.closeAll();
     assert(waitForDisconnect(nodeB, "node-b", "node-a"));

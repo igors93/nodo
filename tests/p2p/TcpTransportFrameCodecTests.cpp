@@ -37,6 +37,7 @@ int main() {
     assert(decoded.fromNodeId() == "node-a");
     assert(decoded.toNodeId() == "node-b");
     assert(decoded.sentAt() == 1000);
+    assert(!decoded.hasConnectionId());
     assert(decoded.envelope().messageId() == envelope.messageId());
     assert(decoded.envelope().payload() == "chain-status-payload");
 

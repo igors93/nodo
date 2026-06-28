@@ -51,6 +51,11 @@ public:
         const std::string& remoteNodeId
     ) override;
 
+    bool rejectPendingConnection(
+        const std::string& localNodeId,
+        const std::string& remoteNodeId
+    ) override;
+
     bool hasOutboundSession(
         const std::string& localNodeId,
         const std::string& remoteNodeId
@@ -100,6 +105,8 @@ private:
     std::map<std::string, EncryptedPeerSession> m_outboundSessions;
     std::map<std::string, EncryptedPeerSession> m_inboundSessions;
     std::map<std::string, EncryptedPeerSession> m_stagedOutboundSessions;
+    std::map<std::string, TransportConnectionId> m_pendingConnections;
+    AuthenticatedConnectionTransport* m_connectionTransport;
     std::size_t m_rejectedFrameCount;
 
     static std::string directionKey(

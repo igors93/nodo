@@ -28,6 +28,12 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
     std::unordered_set<std::string> reregisteredThisTick;
     auto* authenticatedTransport =
         dynamic_cast<p2p::AuthenticatedSessionTransport*>(&gossip.transport());
+    const auto rejectPendingPeer = [&](const std::string& peerId) {
+        if (authenticatedTransport != nullptr) {
+            (void)authenticatedTransport->rejectPendingConnection(
+                gossip.config().localNodeId(), peerId);
+        }
+    };
     auto& replayGuard = gossip.handshakeReplayGuard();
     replayGuard.prune(now);
 
@@ -36,6 +42,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
     );
 
     for (const auto& envelope : messages) {
+        (void)gossip.takeConnectionIdForEnvelope(envelope);
         HandshakeRegistrationResult result;
         result.peerId = envelope.senderNodeId();
         const std::string answeredChallenge =
@@ -44,6 +51,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
         const auto expectedChallenge =
             replayGuard.outstandingChallengeMaterial(result.peerId, now);
         if (!expectedChallenge.has_value()) {
+            rejectPendingPeer(result.peerId);
             result.reason = replayGuard.wasChallengeConsumed(
                 result.peerId,
                 answeredChallenge,
@@ -65,12 +73,14 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             );
 
         if (!validation.accepted()) {
+            rejectPendingPeer(result.peerId);
             result.registered   = false;
             result.alreadyKnown = false;
             result.reason       = "Handshake validation rejected: " + validation.reason();
             results.push_back(result);
             continue;
         }
+
         std::optional<std::string> inboundSessionSecret;
         if (authenticatedTransport != nullptr) {
             const p2p::PeerSessionContext context{
@@ -91,6 +101,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
                     context
                 );
             if (!inboundSessionSecret.has_value()) {
+                rejectPendingPeer(result.peerId);
                 result.reason =
                     "Handshake validation rejected: session key agreement failed.";
                 results.push_back(result);
@@ -102,6 +113,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
                 result.peerId,
                 answeredChallenge,
                 now)) {
+            rejectPendingPeer(result.peerId);
             result.reason =
                 "Handshake validation rejected: challenge was already consumed.";
             results.push_back(result);
@@ -111,6 +123,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
         const std::optional<p2p::PeerMetadata> parsedPeer =
             p2p::PeerHandshakeManager::peerMetadataFromHello(envelope, now);
         if (!parsedPeer.has_value()) {
+            rejectPendingPeer(result.peerId);
             result.registered   = false;
             result.alreadyKnown = false;
             result.reason       = "Could not parse PeerMetadata from PEER_HELLO payload.";
@@ -124,6 +137,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             gossip.registerPeer(*parsedPeer);
 
         if (!regResult.success()) {
+            rejectPendingPeer(result.peerId);
             result.registered   = false;
             result.alreadyKnown = false;
             result.reason       = "Peer registration rejected: " + regResult.reason();
@@ -137,6 +151,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
                 result.peerId,
                 *inboundSessionSecret,
                 now)) {
+            rejectPendingPeer(result.peerId);
             result.registered = false;
             result.alreadyKnown = false;
             result.reason =
@@ -183,6 +198,8 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
         p2p::NetworkMessageType::PEER_CHALLENGE
     );
     for (const auto& envelope : challenges) {
+        const p2p::TransportConnectionId connectionId =
+            gossip.takeConnectionIdForEnvelope(envelope);
         const std::optional<p2p::PeerChallengeMessage> challenge =
             p2p::PeerHandshakeManager::challengeFromEnvelope(
                 gossip.config(),
@@ -241,7 +258,8 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             challenge->challengerNodeId(),
             p2p::NetworkMessageType::PEER_HELLO,
             hello.payload(),
-            now
+            now,
+            connectionId
         );
         if (!response.allAccepted()) {
             if (authenticatedTransport != nullptr) {
@@ -276,7 +294,8 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             (void)initiateHandshake(
                 gossip,
                 challenge->challengerNodeId(),
-                now
+                now,
+                connectionId
             );
         }
     }
@@ -287,7 +306,8 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
 p2p::GossipDeliveryReport PeerHandshakeAutoRegistrar::initiateHandshake(
     p2p::GossipMesh&   gossip,
     const std::string& targetNodeId,
-    std::int64_t       now
+    std::int64_t       now,
+    p2p::TransportConnectionId connectionId
 ) {
     const auto challengeMaterial =
         gossip.handshakeReplayGuard().issueChallengeMaterial(
@@ -312,7 +332,8 @@ p2p::GossipDeliveryReport PeerHandshakeAutoRegistrar::initiateHandshake(
             targetNodeId,
             p2p::NetworkMessageType::PEER_CHALLENGE,
             challenge.payload(),
-            now
+            now,
+            connectionId
         );
         if (!sent.allAccepted()) {
             (void)gossip.handshakeReplayGuard().discardChallenge(

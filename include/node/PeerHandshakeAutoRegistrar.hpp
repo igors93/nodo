@@ -50,7 +50,8 @@ public:
     static p2p::GossipDeliveryReport initiateHandshake(
         p2p::GossipMesh&          gossip,
         const std::string&        targetNodeId,
-        std::int64_t              now
+        std::int64_t              now,
+        p2p::TransportConnectionId connectionId = 0
     );
 };
 

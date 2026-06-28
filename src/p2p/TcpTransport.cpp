@@ -333,7 +333,9 @@ TcpTransport::TcpTransport()
       m_localEndpoint(),
       m_peerEndpoints(),
       m_connectionsByPeer(),
-      m_unidentifiedInboundFds() {}
+      m_candidateInboundConnections(),
+      m_candidateByPeer(),
+      m_nextConnectionId(1) {}
 
 TcpTransport::~TcpTransport() {
     closeAll();
@@ -509,8 +511,8 @@ std::vector<std::string> TcpTransport::connectedPeers() const {
     std::vector<std::string> peers;
     peers.reserve(m_connectionsByPeer.size());
 
-    for (const auto& [peer, ignored] : m_connectionsByPeer) {
-        (void)ignored;
+    for (const auto& [peer, connection] : m_connectionsByPeer) {
+        (void)connection;
         peers.push_back(peer);
     }
 
@@ -628,7 +630,7 @@ TransportResult TcpTransport::connect(
         }
     }
 
-    rememberConnection(remoteNodeId, fd);
+    rememberConnection(remoteNodeId, fd, false);
 
     return TransportResult(
         TransportStatus::SENT,
@@ -686,7 +688,9 @@ TransportResult TcpTransport::send(
         );
     }
 
-    if (!connected(m_localNodeId, message.toNodeId())) {
+    SocketHandle destinationFd = socketForSend(message);
+    if (destinationFd == INVALID_FD &&
+        !connected(m_localNodeId, message.toNodeId())) {
         const TransportResult connectionResult =
             connect(m_localNodeId, message.toNodeId());
 
@@ -695,8 +699,8 @@ TransportResult TcpTransport::send(
         }
     }
 
-    const auto found = m_connectionsByPeer.find(message.toNodeId());
-    if (found == m_connectionsByPeer.end()) {
+    destinationFd = socketForSend(message);
+    if (destinationFd == INVALID_FD) {
         return TransportResult(
             TransportStatus::NOT_CONNECTED,
             "TCP peer is not connected."
@@ -723,8 +727,8 @@ TransportResult TcpTransport::send(
     wireData.insert(wireData.end(), lengthPrefix.begin(), lengthPrefix.end());
     wireData.insert(wireData.end(), frame.begin(), frame.end());
 
-    if (!writeAll(found->second, wireData.data(), wireData.size())) {
-        closePeerConnection(message.toNodeId());
+    if (!writeAll(destinationFd, wireData.data(), wireData.size())) {
+        closeFd(destinationFd);
         return TransportResult(
             TransportStatus::NOT_CONNECTED,
             "Unable to write full TCP frame."
@@ -750,12 +754,11 @@ std::optional<TransportMessage> TcpTransport::poll(
 
     for (auto iterator = m_connectionsByPeer.begin();
          iterator != m_connectionsByPeer.end();) {
-        const SocketHandle fd = iterator->second;
+        const SocketHandle fd = iterator->second.fd;
         PollFdResult result = pollFd(fd, false);
 
         if (result.status == PollFdResult::Status::MESSAGE) {
-            // A socket is bound to the identity established by its first frame.
-            // Reject identity changes before per-peer controls see the message.
+            // An active socket may never change the identity it authenticated.
             if (!result.message.has_value() ||
                 result.message->fromNodeId() != iterator->first) {
                 SocketHandle closedFd = fd;
@@ -764,7 +767,14 @@ std::optional<TransportMessage> TcpTransport::poll(
                 continue;
             }
 
-            return result.message;
+            const TransportMessage& message = *result.message;
+            return TransportMessage(
+                message.fromNodeId(),
+                message.toNodeId(),
+                message.envelope(),
+                message.sentAt(),
+                iterator->second.id
+            );
         }
 
         if (result.status == PollFdResult::Status::CLOSED) {
@@ -777,28 +787,50 @@ std::optional<TransportMessage> TcpTransport::poll(
         ++iterator;
     }
 
-    for (auto iterator = m_unidentifiedInboundFds.begin();
-         iterator != m_unidentifiedInboundFds.end();) {
-        const SocketHandle fd = *iterator;
+    for (auto iterator = m_candidateInboundConnections.begin();
+         iterator != m_candidateInboundConnections.end();) {
+        const SocketHandle fd = iterator->second.fd;
         PollFdResult result = pollFd(fd, true);
 
         if (result.status == PollFdResult::Status::MESSAGE) {
             const std::string fromId = result.message->fromNodeId();
-            iterator = m_unidentifiedInboundFds.erase(iterator);
-            if (isSafeNodeId(fromId)) {
-                rememberConnection(fromId, fd);
-            } else {
-                // nodeId is unsafe: close the socket to prevent fd leak.
-                SocketHandle closeFd = fd;
-                closeSocket(closeFd);
+            if (!isSafeNodeId(fromId) ||
+                (!iterator->second.claimedNodeId.empty() &&
+                 iterator->second.claimedNodeId != fromId)) {
+                const TransportConnectionId rejectedId = iterator->first;
+                ++iterator;
+                closeCandidateConnection(rejectedId);
+                continue;
             }
-            return result.message;
+
+            if (iterator->second.claimedNodeId.empty()) {
+                const auto claimed = m_candidateByPeer.find(fromId);
+                if (claimed != m_candidateByPeer.end() &&
+                    claimed->second != iterator->first) {
+                    const TransportConnectionId rejectedId = iterator->first;
+                    ++iterator;
+                    closeCandidateConnection(rejectedId);
+                    continue;
+                }
+                iterator->second.claimedNodeId = fromId;
+                m_candidateByPeer[fromId] = iterator->first;
+            }
+
+            const TransportConnectionId connectionId = iterator->first;
+            const TransportMessage& message = *result.message;
+            return TransportMessage(
+                message.fromNodeId(),
+                message.toNodeId(),
+                message.envelope(),
+                message.sentAt(),
+                connectionId
+            );
         }
 
         if (result.status == PollFdResult::Status::CLOSED) {
-            SocketHandle closedFd = fd;
-            closeSocket(closedFd);
-            iterator = m_unidentifiedInboundFds.erase(iterator);
+            const TransportConnectionId closedId = iterator->first;
+            ++iterator;
+            closeCandidateConnection(closedId);
             continue;
         }
 
@@ -808,17 +840,88 @@ std::optional<TransportMessage> TcpTransport::poll(
     return std::nullopt;
 }
 
+bool TcpTransport::authenticateConnection(
+    TransportConnectionId connectionId,
+    const std::string& remoteNodeId
+) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    if (connectionId == 0 || !isSafeNodeId(remoteNodeId)) return false;
+
+    const auto active = m_connectionsByPeer.find(remoteNodeId);
+    if (active != m_connectionsByPeer.end() &&
+        active->second.id == connectionId) {
+        active->second.authenticated = true;
+        return true;
+    }
+
+    const auto candidate = m_candidateInboundConnections.find(connectionId);
+    if (candidate == m_candidateInboundConnections.end() ||
+        candidate->second.claimedNodeId != remoteNodeId) {
+        return false;
+    }
+
+    const ManagedConnection promoted{
+        candidate->second.fd,
+        candidate->second.id,
+        true
+    };
+    if (active != m_connectionsByPeer.end()) {
+        SocketHandle oldFd = active->second.fd;
+        closeSocket(oldFd);
+        m_connectionsByPeer.erase(active);
+    }
+    m_candidateByPeer.erase(remoteNodeId);
+    m_candidateInboundConnections.erase(candidate);
+    m_connectionsByPeer[remoteNodeId] = promoted;
+    return true;
+}
+
+bool TcpTransport::rejectConnection(TransportConnectionId connectionId) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    if (connectionId == 0) return false;
+
+    const auto candidate = m_candidateInboundConnections.find(connectionId);
+    if (candidate != m_candidateInboundConnections.end()) {
+        closeCandidateConnection(connectionId);
+        return true;
+    }
+
+    for (auto iterator = m_connectionsByPeer.begin();
+         iterator != m_connectionsByPeer.end(); ++iterator) {
+        if (iterator->second.id == connectionId) {
+            SocketHandle fd = iterator->second.fd;
+            closeSocket(fd);
+            m_connectionsByPeer.erase(iterator);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TcpTransport::isConnectionAuthenticated(
+    TransportConnectionId connectionId,
+    const std::string& remoteNodeId
+) const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    const auto found = m_connectionsByPeer.find(remoteNodeId);
+    return found != m_connectionsByPeer.end() &&
+           found->second.id == connectionId &&
+           found->second.authenticated;
+}
+
 void TcpTransport::closeAll() {
-    for (auto& [peer, fd] : m_connectionsByPeer) {
+    for (auto& [peer, connection] : m_connectionsByPeer) {
         (void)peer;
-        closeSocket(fd);
+        closeSocket(connection.fd);
     }
     m_connectionsByPeer.clear();
 
-    for (SocketHandle& fd : m_unidentifiedInboundFds) {
-        closeSocket(fd);
+    for (auto& [id, candidate] : m_candidateInboundConnections) {
+        (void)id;
+        closeSocket(candidate.fd);
     }
-    m_unidentifiedInboundFds.clear();
+    m_candidateInboundConnections.clear();
+    m_candidateByPeer.clear();
 
     closeSocket(m_listenFd);
 }
@@ -864,14 +967,23 @@ TransportResult TcpTransport::acceptAvailableConnections() {
             continue;
         }
 
-        if (m_unidentifiedInboundFds.size() >=
+        if (m_candidateInboundConnections.size() >=
             MAX_UNIDENTIFIED_INBOUND_CONNECTIONS) {
             SocketHandle closeFd = fd;
             closeSocket(closeFd);
             continue;
         }
 
-        m_unidentifiedInboundFds.push_back(fd);
+        const TransportConnectionId connectionId = nextConnectionId();
+        if (connectionId == 0) {
+            SocketHandle closeFd = fd;
+            closeSocket(closeFd);
+            continue;
+        }
+        m_candidateInboundConnections.emplace(
+            connectionId,
+            CandidateConnection{fd, connectionId, ""}
+        );
     }
 
     return TransportResult(
@@ -977,19 +1089,103 @@ TcpTransport::PollFdResult TcpTransport::pollFd(
 
 void TcpTransport::rememberConnection(
     const std::string& remoteNodeId,
-    SocketHandle fd
+    SocketHandle fd,
+    bool authenticated
 ) {
     if (!isSafeNodeId(remoteNodeId) || fd == INVALID_FD) {
         return;
     }
 
     const auto existing = m_connectionsByPeer.find(remoteNodeId);
-    if (existing != m_connectionsByPeer.end() && existing->second != fd) {
-        SocketHandle oldFd = existing->second;
+    if (existing != m_connectionsByPeer.end() && existing->second.fd != fd) {
+        SocketHandle oldFd = existing->second.fd;
         closeSocket(oldFd);
     }
 
-    m_connectionsByPeer[remoteNodeId] = fd;
+    const TransportConnectionId connectionId = nextConnectionId();
+    if (connectionId == 0) {
+        SocketHandle closeFd = fd;
+        closeSocket(closeFd);
+        return;
+    }
+    m_connectionsByPeer[remoteNodeId] =
+        ManagedConnection{fd, connectionId, authenticated};
+}
+
+TransportConnectionId TcpTransport::nextConnectionId() {
+    for (std::size_t attempt = 0; attempt < 1024; ++attempt) {
+        const TransportConnectionId candidate = m_nextConnectionId++;
+        if (m_nextConnectionId == 0) m_nextConnectionId = 1;
+        if (candidate == 0) continue;
+
+        bool used = m_candidateInboundConnections.find(candidate) !=
+                    m_candidateInboundConnections.end();
+        for (const auto& [peer, connection] : m_connectionsByPeer) {
+            (void)peer;
+            if (connection.id == candidate) {
+                used = true;
+                break;
+            }
+        }
+        if (!used) return candidate;
+    }
+    return 0;
+}
+
+SocketHandle TcpTransport::socketForSend(
+    const TransportMessage& message
+) const {
+    if (message.hasConnectionId()) {
+        const auto active = m_connectionsByPeer.find(message.toNodeId());
+        if (active != m_connectionsByPeer.end() &&
+            active->second.id == message.connectionId()) {
+            return active->second.fd;
+        }
+        const auto candidate =
+            m_candidateInboundConnections.find(message.connectionId());
+        if (candidate != m_candidateInboundConnections.end() &&
+            candidate->second.claimedNodeId == message.toNodeId()) {
+            return candidate->second.fd;
+        }
+        return INVALID_FD;
+    }
+
+    const NetworkMessageType type = message.envelope().messageType();
+    const bool handshake = type == NetworkMessageType::PEER_CHALLENGE ||
+                           type == NetworkMessageType::PEER_HELLO;
+    if (handshake) {
+        const auto candidateId = m_candidateByPeer.find(message.toNodeId());
+        if (candidateId != m_candidateByPeer.end()) {
+            const auto candidate =
+                m_candidateInboundConnections.find(candidateId->second);
+            if (candidate != m_candidateInboundConnections.end()) {
+                return candidate->second.fd;
+            }
+        }
+    }
+
+    const auto active = m_connectionsByPeer.find(message.toNodeId());
+    return active == m_connectionsByPeer.end()
+        ? INVALID_FD
+        : active->second.fd;
+}
+
+void TcpTransport::closeCandidateConnection(
+    TransportConnectionId connectionId
+) {
+    const auto found = m_candidateInboundConnections.find(connectionId);
+    if (found == m_candidateInboundConnections.end()) return;
+    if (!found->second.claimedNodeId.empty()) {
+        const auto claimed =
+            m_candidateByPeer.find(found->second.claimedNodeId);
+        if (claimed != m_candidateByPeer.end() &&
+            claimed->second == connectionId) {
+            m_candidateByPeer.erase(claimed);
+        }
+    }
+    SocketHandle fd = found->second.fd;
+    closeSocket(fd);
+    m_candidateInboundConnections.erase(found);
 }
 
 void TcpTransport::closeFd(SocketHandle fd) {
@@ -999,8 +1195,8 @@ void TcpTransport::closeFd(SocketHandle fd) {
 
     for (auto iterator = m_connectionsByPeer.begin();
          iterator != m_connectionsByPeer.end();) {
-        if (iterator->second == fd) {
-            SocketHandle socketFd = iterator->second;
+        if (iterator->second.fd == fd) {
+            SocketHandle socketFd = iterator->second.fd;
             closeSocket(socketFd);
             iterator = m_connectionsByPeer.erase(iterator);
         } else {
@@ -1008,14 +1204,12 @@ void TcpTransport::closeFd(SocketHandle fd) {
         }
     }
 
-    for (auto iterator = m_unidentifiedInboundFds.begin();
-         iterator != m_unidentifiedInboundFds.end();) {
-        if (*iterator == fd) {
-            SocketHandle socketFd = *iterator;
-            closeSocket(socketFd);
-            iterator = m_unidentifiedInboundFds.erase(iterator);
-        } else {
-            ++iterator;
+    for (auto iterator = m_candidateInboundConnections.begin();
+         iterator != m_candidateInboundConnections.end(); ++iterator) {
+        if (iterator->second.fd == fd) {
+            const TransportConnectionId connectionId = iterator->first;
+            closeCandidateConnection(connectionId);
+            return;
         }
     }
 }
@@ -1024,13 +1218,16 @@ void TcpTransport::closePeerConnection(
     const std::string& remoteNodeId
 ) {
     const auto found = m_connectionsByPeer.find(remoteNodeId);
-    if (found == m_connectionsByPeer.end()) {
-        return;
+    if (found != m_connectionsByPeer.end()) {
+        SocketHandle fd = found->second.fd;
+        closeSocket(fd);
+        m_connectionsByPeer.erase(found);
     }
 
-    SocketHandle fd = found->second;
-    closeSocket(fd);
-    m_connectionsByPeer.erase(found);
+    const auto candidate = m_candidateByPeer.find(remoteNodeId);
+    if (candidate != m_candidateByPeer.end()) {
+        closeCandidateConnection(candidate->second);
+    }
 }
 
 bool TcpTransport::isSafeNodeId(const std::string& nodeId) {
