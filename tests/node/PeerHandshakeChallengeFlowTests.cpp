@@ -1,6 +1,7 @@
 #include "node/PeerHandshakeAutoRegistrar.hpp"
 
 #include "crypto/KeyPair.hpp"
+#include "p2p/EncryptedPeerTransport.hpp"
 #include "p2p/LoopbackTransport.hpp"
 
 #include <cassert>
@@ -55,8 +56,10 @@ node::ChainStatusMessage status() {
 
 int main() {
     auto bus = std::make_shared<p2p::LoopbackTransportBus>();
-    p2p::LoopbackTransport transportA(bus);
-    p2p::LoopbackTransport transportB(bus);
+    p2p::LoopbackTransport rawTransportA(bus);
+    p2p::LoopbackTransport rawTransportB(bus);
+    p2p::EncryptedPeerTransport transportA(rawTransportA);
+    p2p::EncryptedPeerTransport transportB(rawTransportB);
     p2p::GossipMesh meshA(config("node-a"), transportA);
     p2p::GossipMesh meshB(config("node-b"), transportB);
 
@@ -113,6 +116,8 @@ int main() {
     assert(thirdStep.size() == 1);
     assert(thirdStep.front().registered);
     assert(meshB.peerRegistry().contains("node-a"));
+    assert(transportA.hasSession("node-a", "node-b"));
+    assert(transportB.hasSession("node-b", "node-a"));
 
     const p2p::NetworkEnvelope replayWrappedHello(
         originalHello.networkId(),
@@ -136,6 +141,23 @@ int main() {
     assert(!replayedHello.front().registered);
     assert(replayedHello.front().reason.find("already consumed") !=
            std::string::npos);
+
+    const p2p::NetworkEnvelope forgedPing(
+        "localnet",
+        "chain-localnet",
+        "1",
+        p2p::NetworkMessageType::PING,
+        "node-b",
+        1004,
+        60,
+        "forged-after-handshake"
+    );
+    assert(rawTransportB.send(p2p::TransportMessage(
+        "node-b", "node-a", forgedPing, 1004
+    )).success());
+    assert(meshA.receiveAvailable(1004).acceptedCount() == 0);
+    assert(meshA.inbox().countForType(p2p::NetworkMessageType::PING) == 0);
+    assert(transportA.rejectedFrameCount() == 1);
 
     return 0;
 }

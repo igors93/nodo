@@ -2,6 +2,7 @@
 #define NODO_NODE_TCP_TESTNET_NODE_RUNTIME_HPP
 
 #include "node/ChainSyncMessages.hpp"
+#include "p2p/EncryptedPeerTransport.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/TcpTransport.hpp"
 
@@ -172,6 +173,7 @@ public:
 private:
     TcpTestnetNodeRuntimeConfig m_config;
     p2p::TcpTransport m_transport;
+    p2p::EncryptedPeerTransport m_authenticatedTransport;
     p2p::GossipMesh m_gossipMesh;
     bool m_running;
 

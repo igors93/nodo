@@ -3,6 +3,7 @@
 #include "core/ProtocolLimits.hpp"
 #include "crypto/Ed25519SignatureProvider.hpp"
 #include "p2p/PeerHandshakeReplayGuard.hpp"
+#include "p2p/PeerSessionKeyAgreement.hpp"
 
 #include <limits>
 #include <sstream>
@@ -181,6 +182,8 @@ std::string buildIdentityProofPayload(
     const std::string& chainStatus,
     const std::string& challengeIssuerNodeId,
     const std::string& challengeNonce,
+    const std::string& challengeEphemeralPublicKeyHex,
+    const std::string& ephemeralPublicKeyHex,
     std::int64_t createdAt
 ) {
     std::ostringstream output;
@@ -193,6 +196,9 @@ std::string buildIdentityProofPayload(
            << ";chainStatus=" << chainStatus
            << ";challengeIssuerNodeId=" << challengeIssuerNodeId
            << ";challengeNonce=" << challengeNonce
+           << ";challengeEphemeralPublicKey="
+           << challengeEphemeralPublicKeyHex
+           << ";ephemeralPublicKey=" << ephemeralPublicKeyHex
            << ";createdAt=" << createdAt
            << "}";
     return output.str();
@@ -204,6 +210,7 @@ PeerChallengeMessage::PeerChallengeMessage()
     : m_challengerNodeId(""),
       m_challengedNodeId(""),
       m_nonce(""),
+      m_ephemeralPublicKeyHex(""),
       m_createdAt(0),
       m_ttlSeconds(0) {}
 
@@ -211,11 +218,13 @@ PeerChallengeMessage::PeerChallengeMessage(
     std::string challengerNodeId,
     std::string challengedNodeId,
     std::string nonce,
+    std::string ephemeralPublicKeyHex,
     std::int64_t createdAt,
     std::uint32_t ttlSeconds
 ) : m_challengerNodeId(std::move(challengerNodeId)),
     m_challengedNodeId(std::move(challengedNodeId)),
     m_nonce(std::move(nonce)),
+    m_ephemeralPublicKeyHex(std::move(ephemeralPublicKeyHex)),
     m_createdAt(createdAt),
     m_ttlSeconds(ttlSeconds) {}
 
@@ -229,6 +238,10 @@ const std::string& PeerChallengeMessage::challengedNodeId() const {
 
 const std::string& PeerChallengeMessage::nonce() const {
     return m_nonce;
+}
+
+const std::string& PeerChallengeMessage::ephemeralPublicKeyHex() const {
+    return m_ephemeralPublicKeyHex;
 }
 
 std::int64_t PeerChallengeMessage::createdAt() const {
@@ -249,6 +262,8 @@ bool PeerChallengeMessage::isValid() const {
            isSafeNodeId(m_challengedNodeId) &&
            m_challengerNodeId != m_challengedNodeId &&
            PeerHandshakeReplayGuard::isValidNonce(m_nonce) &&
+           PeerSessionKeyAgreement::isValidPublicKey(
+               m_ephemeralPublicKeyHex) &&
            m_createdAt > 0 &&
            m_ttlSeconds > 0 &&
            m_createdAt <= std::numeric_limits<std::int64_t>::max() -
@@ -261,6 +276,7 @@ std::string PeerChallengeMessage::serialize() const {
            << "challengerNodeId=" << m_challengerNodeId
            << ";challengedNodeId=" << m_challengedNodeId
            << ";nonce=" << m_nonce
+           << ";ephemeralPublicKey=" << m_ephemeralPublicKeyHex
            << ";createdAt=" << m_createdAt
            << ";ttlSeconds=" << m_ttlSeconds
            << "}";
@@ -276,6 +292,8 @@ PeerHelloMessage::PeerHelloMessage()
       m_chainStatus(),
       m_challengeIssuerNodeId(""),
       m_challengeNonce(""),
+      m_challengeEphemeralPublicKeyHex(""),
+      m_ephemeralPublicKeyHex(""),
       m_identityProof(),
       m_createdAt(0) {}
 
@@ -288,6 +306,8 @@ PeerHelloMessage::PeerHelloMessage(
     node::ChainStatusMessage chainStatus,
     std::string challengeIssuerNodeId,
     std::string challengeNonce,
+    std::string challengeEphemeralPublicKeyHex,
+    std::string ephemeralPublicKeyHex,
     crypto::SignatureBundle identityProof,
     std::int64_t createdAt
 ) : m_peer(std::move(peer)),
@@ -298,6 +318,9 @@ PeerHelloMessage::PeerHelloMessage(
     m_chainStatus(std::move(chainStatus)),
     m_challengeIssuerNodeId(std::move(challengeIssuerNodeId)),
     m_challengeNonce(std::move(challengeNonce)),
+    m_challengeEphemeralPublicKeyHex(
+        std::move(challengeEphemeralPublicKeyHex)),
+    m_ephemeralPublicKeyHex(std::move(ephemeralPublicKeyHex)),
     m_identityProof(std::move(identityProof)),
     m_createdAt(createdAt) {}
 
@@ -311,6 +334,12 @@ const std::string& PeerHelloMessage::challengeIssuerNodeId() const {
     return m_challengeIssuerNodeId;
 }
 const std::string& PeerHelloMessage::challengeNonce() const { return m_challengeNonce; }
+const std::string& PeerHelloMessage::challengeEphemeralPublicKeyHex() const {
+    return m_challengeEphemeralPublicKeyHex;
+}
+const std::string& PeerHelloMessage::ephemeralPublicKeyHex() const {
+    return m_ephemeralPublicKeyHex;
+}
 const crypto::SignatureBundle& PeerHelloMessage::identityProof() const { return m_identityProof; }
 std::int64_t PeerHelloMessage::createdAt() const { return m_createdAt; }
 
@@ -327,6 +356,10 @@ bool PeerHelloMessage::isValid() const {
            isSafeNodeId(m_challengeIssuerNodeId) &&
            m_challengeIssuerNodeId != m_peer.nodeId() &&
            PeerHandshakeReplayGuard::isValidNonce(m_challengeNonce) &&
+           PeerSessionKeyAgreement::isValidPublicKey(
+               m_challengeEphemeralPublicKeyHex) &&
+           PeerSessionKeyAgreement::isValidPublicKey(
+               m_ephemeralPublicKeyHex) &&
            !m_identityProof.empty() &&
            m_createdAt > 0;
 }
@@ -341,6 +374,8 @@ std::string PeerHelloMessage::signingPayload() const {
         m_chainStatus.serialize(),
         m_challengeIssuerNodeId,
         m_challengeNonce,
+        m_challengeEphemeralPublicKeyHex,
+        m_ephemeralPublicKeyHex,
         m_createdAt
     );
 }
@@ -356,6 +391,9 @@ std::string PeerHelloMessage::serialize() const {
            << ";chainStatus=" << m_chainStatus.serialize()
            << ";challengeIssuerNodeId=" << m_challengeIssuerNodeId
            << ";challengeNonce=" << m_challengeNonce
+           << ";challengeEphemeralPublicKey="
+           << m_challengeEphemeralPublicKeyHex
+           << ";ephemeralPublicKey=" << m_ephemeralPublicKeyHex
            << ";identityProof=" << m_identityProof.serialize()
            << ";createdAt=" << m_createdAt
            << "}";
@@ -397,10 +435,33 @@ NetworkEnvelope PeerHandshakeManager::createChallengeEnvelope(
     const std::string& nonce,
     std::int64_t now
 ) {
+    const auto keyPair = PeerSessionKeyAgreement::generateEphemeralKeyPair();
+    if (!keyPair.has_value()) {
+        throw std::runtime_error(
+            "Could not generate peer handshake ephemeral key."
+        );
+    }
+    return createChallengeEnvelope(
+        config,
+        challengedNodeId,
+        nonce,
+        keyPair->publicKeyHex,
+        now
+    );
+}
+
+NetworkEnvelope PeerHandshakeManager::createChallengeEnvelope(
+    const GossipMeshConfig& config,
+    const std::string& challengedNodeId,
+    const std::string& nonce,
+    const std::string& ephemeralPublicKeyHex,
+    std::int64_t now
+) {
     const PeerChallengeMessage challenge(
         config.localNodeId(),
         challengedNodeId,
         nonce,
+        ephemeralPublicKeyHex,
         now,
         config.defaultTtlSeconds()
     );
@@ -456,6 +517,7 @@ std::optional<PeerChallengeMessage> PeerHandshakeManager::challengeFromEnvelope(
         extractNestedField(envelope.payload(), "challengerNodeId"),
         extractSerializedField(envelope.payload(), "challengedNodeId"),
         extractSerializedField(envelope.payload(), "nonce"),
+        extractSerializedField(envelope.payload(), "ephemeralPublicKey"),
         createdAt,
         ttlSeconds
     );
@@ -479,11 +541,47 @@ NetworkEnvelope PeerHandshakeManager::createHelloEnvelope(
     const crypto::KeyPair& nodeIdentityKey,
     std::int64_t now
 ) {
+    const auto challengeKeyPair =
+        PeerSessionKeyAgreement::generateEphemeralKeyPair();
+    const auto responseKeyPair =
+        PeerSessionKeyAgreement::generateEphemeralKeyPair();
+    if (!challengeKeyPair.has_value() || !responseKeyPair.has_value()) {
+        throw std::runtime_error(
+            "Could not generate peer handshake response key."
+        );
+    }
+    return createHelloEnvelope(
+        config,
+        localPeer,
+        chainStatus,
+        challengeIssuerNodeId,
+        challengeNonce,
+        challengeKeyPair->publicKeyHex,
+        responseKeyPair->publicKeyHex,
+        nodeIdentityKey,
+        now
+    );
+}
+
+NetworkEnvelope PeerHandshakeManager::createHelloEnvelope(
+    const GossipMeshConfig& config,
+    const PeerMetadata& localPeer,
+    const node::ChainStatusMessage& chainStatus,
+    const std::string& challengeIssuerNodeId,
+    const std::string& challengeNonce,
+    const std::string& challengeEphemeralPublicKeyHex,
+    const std::string& ephemeralPublicKeyHex,
+    const crypto::KeyPair& nodeIdentityKey,
+    std::int64_t now
+) {
     if (!config.isValid() || !localPeer.isValid() ||
         !chainStatus.isValid() ||
         !isSafeNodeId(challengeIssuerNodeId) ||
         challengeIssuerNodeId == config.localNodeId() ||
         !PeerHandshakeReplayGuard::isValidNonce(challengeNonce) ||
+        !PeerSessionKeyAgreement::isValidPublicKey(
+            challengeEphemeralPublicKeyHex) ||
+        !PeerSessionKeyAgreement::isValidPublicKey(ephemeralPublicKeyHex) ||
         !nodeIdentityKey.isValid() || now <= 0 ||
         nodeIdentityKey.algorithm() !=
             crypto::CryptoAlgorithm::CLASSIC_ED25519 ||
@@ -516,6 +614,8 @@ NetworkEnvelope PeerHandshakeManager::createHelloEnvelope(
         chainStatus,
         challengeIssuerNodeId,
         challengeNonce,
+        challengeEphemeralPublicKeyHex,
+        ephemeralPublicKeyHex,
         crypto::SignatureBundle(),
         now
     );
@@ -535,6 +635,8 @@ NetworkEnvelope PeerHandshakeManager::createHelloEnvelope(
         chainStatus,
         challengeIssuerNodeId,
         challengeNonce,
+        challengeEphemeralPublicKeyHex,
+        ephemeralPublicKeyHex,
         identityProof,
         now
     );
@@ -557,6 +659,23 @@ PeerHandshakeResult PeerHandshakeManager::validateHello(
     const std::string& expectedChallengeNonce,
     std::int64_t now
 ) {
+    return validateHello(
+        config,
+        envelope,
+        expectedChallengeNonce,
+        extractSerializedField(
+            envelope.payload(), "challengeEphemeralPublicKey"),
+        now
+    );
+}
+
+PeerHandshakeResult PeerHandshakeManager::validateHello(
+    const GossipMeshConfig& config,
+    const NetworkEnvelope& envelope,
+    const std::string& expectedChallengeNonce,
+    const std::string& expectedChallengeEphemeralPublicKeyHex,
+    std::int64_t now
+) {
     if (!config.isValid()) {
         return PeerHandshakeResult(
             PeerHandshakeStatus::REJECTED,
@@ -568,6 +687,14 @@ PeerHandshakeResult PeerHandshakeManager::validateHello(
         return PeerHandshakeResult(
             PeerHandshakeStatus::REJECTED,
             "Expected peer handshake challenge nonce is invalid."
+        );
+    }
+
+    if (!PeerSessionKeyAgreement::isValidPublicKey(
+            expectedChallengeEphemeralPublicKeyHex)) {
+        return PeerHandshakeResult(
+            PeerHandshakeStatus::REJECTED,
+            "Expected peer handshake session public key is invalid."
         );
     }
 
@@ -725,6 +852,27 @@ PeerHandshakeResult PeerHandshakeManager::validateHello(
         );
     }
 
+    const std::string ephemeralPublicKeyHex =
+        extractSerializedField(envelope.payload(), "ephemeralPublicKey");
+    if (!PeerSessionKeyAgreement::isValidPublicKey(
+            ephemeralPublicKeyHex)) {
+        return PeerHandshakeResult(
+            PeerHandshakeStatus::REJECTED,
+            "Peer hello session public key is malformed."
+        );
+    }
+
+    const std::string challengeEphemeralPublicKeyHex =
+        extractSerializedField(
+            envelope.payload(), "challengeEphemeralPublicKey");
+    if (challengeEphemeralPublicKeyHex !=
+            expectedChallengeEphemeralPublicKeyHex) {
+        return PeerHandshakeResult(
+            PeerHandshakeStatus::REJECTED,
+            "Peer hello does not bind the issued session public key."
+        );
+    }
+
     try {
         const crypto::SignatureBundle proof =
             crypto::SignatureBundle::deserialize(
@@ -759,6 +907,8 @@ PeerHandshakeResult PeerHandshakeManager::validateHello(
             chainStatusBlock,
             challengeIssuerNodeId,
             challengeNonce,
+            challengeEphemeralPublicKeyHex,
+            ephemeralPublicKeyHex,
             envelope.createdAt()
         );
         const crypto::Ed25519SignatureProvider provider;
@@ -862,6 +1012,20 @@ std::string PeerHandshakeManager::challengeNonceFromHello(
     const std::string nonce =
         extractSerializedField(envelope.payload(), "challengeNonce");
     return PeerHandshakeReplayGuard::isValidNonce(nonce) ? nonce : "";
+}
+
+std::string PeerHandshakeManager::ephemeralPublicKeyFromHello(
+    const NetworkEnvelope& envelope
+) {
+    if (envelope.messageType() != NetworkMessageType::PEER_HELLO ||
+        !hasHelloMessageWrapper(envelope.payload())) {
+        return "";
+    }
+    const std::string publicKey =
+        extractSerializedField(envelope.payload(), "ephemeralPublicKey");
+    return PeerSessionKeyAgreement::isValidPublicKey(publicKey)
+        ? publicKey
+        : "";
 }
 
 } // namespace nodo::p2p

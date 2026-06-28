@@ -2,6 +2,7 @@
 #define NODO_P2P_ENCRYPTED_PEER_TRANSPORT_HPP
 
 #include "p2p/EncryptedPeerChannel.hpp"
+#include "p2p/AuthenticatedSessionTransport.hpp"
 #include "p2p/Transport.hpp"
 
 #include <map>
@@ -11,7 +12,9 @@
 
 namespace nodo::p2p {
 
-class EncryptedPeerTransport final : public Transport {
+class EncryptedPeerTransport final
+    : public Transport,
+      public AuthenticatedSessionTransport {
 public:
     explicit EncryptedPeerTransport(
         Transport& underlyingTransport
@@ -24,6 +27,40 @@ public:
         std::int64_t now
     );
 
+    bool stageOutboundSession(
+        const std::string& localNodeId,
+        const std::string& remoteNodeId,
+        const std::string& sharedSecret,
+        std::int64_t now
+    ) override;
+
+    bool activateOutboundSession(
+        const std::string& localNodeId,
+        const std::string& remoteNodeId
+    ) override;
+
+    bool establishInboundSession(
+        const std::string& localNodeId,
+        const std::string& remoteNodeId,
+        const std::string& sharedSecret,
+        std::int64_t now
+    ) override;
+
+    bool removeSession(
+        const std::string& localNodeId,
+        const std::string& remoteNodeId
+    ) override;
+
+    bool hasOutboundSession(
+        const std::string& localNodeId,
+        const std::string& remoteNodeId
+    ) const override;
+
+    bool hasInboundSession(
+        const std::string& localNodeId,
+        const std::string& remoteNodeId
+    ) const override;
+
     bool hasSession(
         const std::string& localNodeId,
         const std::string& remoteNodeId
@@ -32,6 +69,8 @@ public:
     std::size_t sessionCount() const;
 
     std::size_t rejectedFrameCount() const;
+
+    void clearSessions();
 
     TransportResult connect(
         const std::string& localNodeId,
@@ -58,7 +97,9 @@ public:
 
 private:
     Transport& m_underlyingTransport;
-    std::map<std::string, EncryptedPeerSession> m_sessionsByDirection;
+    std::map<std::string, EncryptedPeerSession> m_outboundSessions;
+    std::map<std::string, EncryptedPeerSession> m_inboundSessions;
+    std::map<std::string, EncryptedPeerSession> m_stagedOutboundSessions;
     std::size_t m_rejectedFrameCount;
 
     static std::string directionKey(
@@ -66,12 +107,24 @@ private:
         const std::string& remoteNodeId
     );
 
-    EncryptedPeerSession* sessionForDirection(
+    static bool isHandshakeMessage(NetworkMessageType type);
+
+    EncryptedPeerSession* outboundSession(
         const std::string& localNodeId,
         const std::string& remoteNodeId
     );
 
-    const EncryptedPeerSession* sessionForDirection(
+    const EncryptedPeerSession* outboundSession(
+        const std::string& localNodeId,
+        const std::string& remoteNodeId
+    ) const;
+
+    EncryptedPeerSession* inboundSession(
+        const std::string& localNodeId,
+        const std::string& remoteNodeId
+    );
+
+    const EncryptedPeerSession* inboundSession(
         const std::string& localNodeId,
         const std::string& remoteNodeId
     ) const;

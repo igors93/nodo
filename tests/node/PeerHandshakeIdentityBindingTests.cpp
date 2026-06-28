@@ -3,6 +3,7 @@
 #include "crypto/KeyPair.hpp"
 #include "p2p/LoopbackTransport.hpp"
 #include "p2p/PeerHandshakeManager.hpp"
+#include "p2p/PeerSessionKeyAgreement.hpp"
 
 #include <cassert>
 #include <memory>
@@ -53,20 +54,25 @@ p2p::NetworkEnvelope deliverHello(
         remotePeer.nodeId(),
         localMesh.config().localNodeId()
     ).success());
-    const std::optional<std::string> challenge =
-        localMesh.handshakeReplayGuard().issueChallenge(
+    const auto challenge =
+        localMesh.handshakeReplayGuard().issueChallengeMaterial(
             remotePeer.nodeId(),
             now,
             localMesh.config().defaultTtlSeconds()
         );
     assert(challenge.has_value());
+    const auto responseKey =
+        p2p::PeerSessionKeyAgreement::generateEphemeralKeyPair();
+    assert(responseKey.has_value());
     const p2p::NetworkEnvelope hello =
         p2p::PeerHandshakeManager::createHelloEnvelope(
             remoteConfig,
             remotePeer,
             chainStatus(),
             localMesh.config().localNodeId(),
-            *challenge,
+            challenge->nonce,
+            challenge->ephemeralPublicKeyHex,
+            responseKey->publicKeyHex,
             remoteIdentity,
             now
         );

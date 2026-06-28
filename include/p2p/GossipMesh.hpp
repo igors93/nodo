@@ -113,6 +113,8 @@ public:
     );
 
     const GossipMeshConfig& config() const;
+    Transport& transport();
+    const Transport& transport() const;
     PeerRegistry& peerRegistry();
     const PeerRegistry& peerRegistry() const;
     PeerHandshakeReplayGuard& handshakeReplayGuard();

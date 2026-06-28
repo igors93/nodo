@@ -1,8 +1,10 @@
 #include "node/PeerHandshakeAutoRegistrar.hpp"
 
 #include "p2p/NetworkEnvelope.hpp"
+#include "p2p/AuthenticatedSessionTransport.hpp"
 #include "p2p/PeerHandshakeManager.hpp"
 #include "p2p/PeerRegistry.hpp"
+#include "p2p/PeerSessionKeyAgreement.hpp"
 
 #include <optional>
 #include <string>
@@ -23,6 +25,9 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
 ) {
     std::vector<HandshakeRegistrationResult> results;
     std::unordered_set<std::string> authenticatedThisTick;
+    std::unordered_set<std::string> reregisteredThisTick;
+    auto* authenticatedTransport =
+        dynamic_cast<p2p::AuthenticatedSessionTransport*>(&gossip.transport());
     auto& replayGuard = gossip.handshakeReplayGuard();
     replayGuard.prune(now);
 
@@ -36,8 +41,8 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
         const std::string answeredChallenge =
             p2p::PeerHandshakeManager::challengeNonceFromHello(envelope);
 
-        const std::optional<std::string> expectedChallenge =
-            replayGuard.outstandingChallenge(result.peerId, now);
+        const auto expectedChallenge =
+            replayGuard.outstandingChallengeMaterial(result.peerId, now);
         if (!expectedChallenge.has_value()) {
             result.reason = replayGuard.wasChallengeConsumed(
                 result.peerId,
@@ -54,7 +59,8 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             p2p::PeerHandshakeManager::validateHello(
                 gossip.config(),
                 envelope,
-                *expectedChallenge,
+                expectedChallenge->nonce,
+                expectedChallenge->ephemeralPublicKeyHex,
                 now
             );
 
@@ -64,6 +70,32 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             result.reason       = "Handshake validation rejected: " + validation.reason();
             results.push_back(result);
             continue;
+        }
+        std::optional<std::string> inboundSessionSecret;
+        if (authenticatedTransport != nullptr) {
+            const p2p::PeerSessionContext context{
+                gossip.config().networkId(),
+                gossip.config().chainId(),
+                gossip.config().protocolVersion(),
+                gossip.config().localNodeId(),
+                result.peerId,
+                expectedChallenge->nonce,
+                expectedChallenge->ephemeralPublicKeyHex,
+                p2p::PeerHandshakeManager::ephemeralPublicKeyFromHello(
+                    envelope)
+            };
+            inboundSessionSecret =
+                p2p::PeerSessionKeyAgreement::deriveSessionSecret(
+                    expectedChallenge->ephemeralPrivateKeyHex,
+                    context.challengedEphemeralPublicKeyHex,
+                    context
+                );
+            if (!inboundSessionSecret.has_value()) {
+                result.reason =
+                    "Handshake validation rejected: session key agreement failed.";
+                results.push_back(result);
+                continue;
+            }
         }
 
         if (!replayGuard.consumeChallenge(
@@ -99,19 +131,44 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             continue;
         }
 
+        if (authenticatedTransport != nullptr &&
+            !authenticatedTransport->establishInboundSession(
+                gossip.config().localNodeId(),
+                result.peerId,
+                *inboundSessionSecret,
+                now)) {
+            result.registered = false;
+            result.alreadyKnown = false;
+            result.reason =
+                "Peer registration rejected: inbound secure session failed.";
+            results.push_back(result);
+            continue;
+        }
+
         if (wasAlreadyKnown) {
             gossip.peerRegistry().updateHeartbeat(
                 envelope.senderNodeId(),
                 now
             );
+            reregisteredThisTick.insert(result.peerId);
         }
 
-        // Broadcast our CHAIN_STATUS so the peer knows our height.
-        gossip.broadcast(
-            p2p::NetworkMessageType::CHAIN_STATUS,
-            localChainStatus.serialize(),
-            now
-        );
+        if (authenticatedTransport == nullptr) {
+            gossip.sendTo(
+                result.peerId,
+                p2p::NetworkMessageType::CHAIN_STATUS,
+                localChainStatus.serialize(),
+                now
+            );
+        } else if (authenticatedTransport->activateOutboundSession(
+                       gossip.config().localNodeId(), result.peerId)) {
+            gossip.sendTo(
+                result.peerId,
+                p2p::NetworkMessageType::CHAIN_STATUS,
+                localChainStatus.serialize(),
+                now
+            );
+        }
 
         result.registered   = !wasAlreadyKnown;
         result.alreadyKnown = wasAlreadyKnown;
@@ -136,6 +193,38 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             continue;
         }
 
+        const auto responseKeyPair =
+            p2p::PeerSessionKeyAgreement::generateEphemeralKeyPair();
+        if (!responseKeyPair.has_value()) continue;
+
+        std::optional<std::string> outboundSessionSecret;
+        if (authenticatedTransport != nullptr) {
+            const p2p::PeerSessionContext context{
+                gossip.config().networkId(),
+                gossip.config().chainId(),
+                gossip.config().protocolVersion(),
+                challenge->challengerNodeId(),
+                gossip.config().localNodeId(),
+                challenge->nonce(),
+                challenge->ephemeralPublicKeyHex(),
+                responseKeyPair->publicKeyHex
+            };
+            outboundSessionSecret =
+                p2p::PeerSessionKeyAgreement::deriveSessionSecret(
+                    responseKeyPair->privateKeyHex,
+                    challenge->ephemeralPublicKeyHex(),
+                    context
+                );
+            if (!outboundSessionSecret.has_value() ||
+                !authenticatedTransport->stageOutboundSession(
+                    gossip.config().localNodeId(),
+                    challenge->challengerNodeId(),
+                    *outboundSessionSecret,
+                    now)) {
+                continue;
+            }
+        }
+
         const p2p::NetworkEnvelope hello =
             p2p::PeerHandshakeManager::createHelloEnvelope(
                 gossip.config(),
@@ -143,6 +232,8 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
                 localChainStatus,
                 challenge->challengerNodeId(),
                 challenge->nonce(),
+                challenge->ephemeralPublicKeyHex(),
+                responseKeyPair->publicKeyHex,
                 nodeIdentityKey,
                 now
             );
@@ -152,7 +243,31 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             hello.payload(),
             now
         );
-        if (!response.allAccepted()) continue;
+        if (!response.allAccepted()) {
+            if (authenticatedTransport != nullptr) {
+                authenticatedTransport->removeSession(
+                    gossip.config().localNodeId(),
+                    challenge->challengerNodeId()
+                );
+            }
+            continue;
+        }
+
+        if (authenticatedTransport != nullptr &&
+            authenticatedThisTick.find(challenge->challengerNodeId()) !=
+                authenticatedThisTick.end() &&
+            authenticatedTransport->activateOutboundSession(
+                gossip.config().localNodeId(),
+                challenge->challengerNodeId())) {
+            if (reregisteredThisTick.count(challenge->challengerNodeId()) > 0) {
+                gossip.sendTo(
+                    challenge->challengerNodeId(),
+                    p2p::NetworkMessageType::CHAIN_STATUS,
+                    localChainStatus.serialize(),
+                    now
+                );
+            }
+        }
 
         if (authenticatedThisTick.find(challenge->challengerNodeId()) ==
                 authenticatedThisTick.end() &&
@@ -174,23 +289,24 @@ p2p::GossipDeliveryReport PeerHandshakeAutoRegistrar::initiateHandshake(
     const std::string& targetNodeId,
     std::int64_t       now
 ) {
-    const std::optional<std::string> nonce =
-        gossip.handshakeReplayGuard().issueChallenge(
+    const auto challengeMaterial =
+        gossip.handshakeReplayGuard().issueChallengeMaterial(
             targetNodeId,
             now,
             gossip.config().defaultTtlSeconds()
         );
-    if (!nonce.has_value()) {
+    if (!challengeMaterial.has_value()) {
         return p2p::GossipDeliveryReport(0, 1);
     }
 
     try {
         const p2p::NetworkEnvelope challenge =
             p2p::PeerHandshakeManager::createChallengeEnvelope(
-            gossip.config(),
-            targetNodeId,
-            *nonce,
-            now
+                gossip.config(),
+                targetNodeId,
+                challengeMaterial->nonce,
+                challengeMaterial->ephemeralPublicKeyHex,
+                now
         );
         const p2p::GossipDeliveryReport sent = gossip.sendHandshakeTo(
             targetNodeId,
@@ -201,14 +317,14 @@ p2p::GossipDeliveryReport PeerHandshakeAutoRegistrar::initiateHandshake(
         if (!sent.allAccepted()) {
             (void)gossip.handshakeReplayGuard().discardChallenge(
                 targetNodeId,
-                *nonce
+                challengeMaterial->nonce
             );
         }
         return sent;
     } catch (const std::exception&) {
         (void)gossip.handshakeReplayGuard().discardChallenge(
             targetNodeId,
-            *nonce
+            challengeMaterial->nonce
         );
         return p2p::GossipDeliveryReport(0, 1);
     }

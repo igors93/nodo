@@ -9,6 +9,14 @@
 
 namespace nodo::p2p {
 
+struct PeerHandshakeChallengeMaterial {
+    std::string nonce;
+    std::string ephemeralPublicKeyHex;
+    std::string ephemeralPrivateKeyHex;
+
+    bool isValid() const;
+};
+
 class PeerHandshakeReplayGuard {
 public:
     static constexpr std::size_t DEFAULT_MAX_ENTRIES = 4096;
@@ -24,7 +32,19 @@ public:
         std::uint32_t ttlSeconds
     );
 
+    std::optional<PeerHandshakeChallengeMaterial> issueChallengeMaterial(
+        const std::string& peerNodeId,
+        std::int64_t now,
+        std::uint32_t ttlSeconds
+    );
+
     std::optional<std::string> outstandingChallenge(
+        const std::string& peerNodeId,
+        std::int64_t now
+    );
+
+    std::optional<PeerHandshakeChallengeMaterial>
+    outstandingChallengeMaterial(
         const std::string& peerNodeId,
         std::int64_t now
     );
@@ -55,7 +75,7 @@ public:
 
 private:
     struct ChallengeEntry {
-        std::string nonce;
+        PeerHandshakeChallengeMaterial material;
         std::int64_t expiresAt;
     };
 

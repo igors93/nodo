@@ -1,6 +1,7 @@
 #include "p2p/PeerHandshakeReplayGuard.hpp"
 
 #include "crypto/Hex.hpp"
+#include "p2p/PeerSessionKeyAgreement.hpp"
 
 #include <openssl/rand.h>
 
@@ -9,6 +10,12 @@
 #include <stdexcept>
 
 namespace nodo::p2p {
+
+bool PeerHandshakeChallengeMaterial::isValid() const {
+    return PeerHandshakeReplayGuard::isValidNonce(nonce) &&
+           PeerSessionKeyAgreement::isValidPublicKey(ephemeralPublicKeyHex) &&
+           PeerSessionKeyAgreement::isValidPrivateKey(ephemeralPrivateKeyHex);
+}
 
 PeerHandshakeReplayGuard::PeerHandshakeReplayGuard(std::size_t maxEntries)
     : m_maxEntries(maxEntries),
@@ -22,6 +29,17 @@ PeerHandshakeReplayGuard::PeerHandshakeReplayGuard(std::size_t maxEntries)
 }
 
 std::optional<std::string> PeerHandshakeReplayGuard::issueChallenge(
+    const std::string& peerNodeId,
+    std::int64_t now,
+    std::uint32_t ttlSeconds
+) {
+    const auto material = issueChallengeMaterial(peerNodeId, now, ttlSeconds);
+    if (!material.has_value()) return std::nullopt;
+    return material->nonce;
+}
+
+std::optional<PeerHandshakeChallengeMaterial>
+PeerHandshakeReplayGuard::issueChallengeMaterial(
     const std::string& peerNodeId,
     std::int64_t now,
     std::uint32_t ttlSeconds
@@ -40,17 +58,21 @@ std::optional<std::string> PeerHandshakeReplayGuard::issueChallenge(
         return std::nullopt;
     }
 
-    std::array<unsigned char, NONCE_BYTES> bytes = {};
     for (int attempt = 0; attempt < 8; ++attempt) {
-        if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
+        const auto keyPair =
+            PeerSessionKeyAgreement::generateEphemeralKeyPair();
+        std::array<unsigned char, NONCE_BYTES> nonceBytes = {};
+        if (!keyPair.has_value() ||
+            RAND_bytes(nonceBytes.data(),
+                       static_cast<int>(nonceBytes.size())) != 1) {
             return std::nullopt;
         }
         const std::string nonce =
-            crypto::hexEncode(bytes.data(), bytes.size());
+            crypto::hexEncode(nonceBytes.data(), nonceBytes.size());
 
         bool collision = false;
         for (const auto& [_, entry] : m_outstandingByPeer) {
-            if (entry.nonce == nonce) {
+            if (entry.material.nonce == nonce) {
                 collision = true;
                 break;
             }
@@ -61,11 +83,16 @@ std::optional<std::string> PeerHandshakeReplayGuard::issueChallenge(
         }
         if (collision) continue;
 
-        m_outstandingByPeer[peerNodeId] = ChallengeEntry{
+        const PeerHandshakeChallengeMaterial material{
             nonce,
+            keyPair->publicKeyHex,
+            keyPair->privateKeyHex
+        };
+        m_outstandingByPeer[peerNodeId] = ChallengeEntry{
+            material,
             now + static_cast<std::int64_t>(ttlSeconds)
         };
-        return nonce;
+        return material;
     }
 
     return std::nullopt;
@@ -83,7 +110,23 @@ std::optional<std::string> PeerHandshakeReplayGuard::outstandingChallenge(
     if (found == m_outstandingByPeer.end()) {
         return std::nullopt;
     }
-    return found->second.nonce;
+    return found->second.material.nonce;
+}
+
+std::optional<PeerHandshakeChallengeMaterial>
+PeerHandshakeReplayGuard::outstandingChallengeMaterial(
+    const std::string& peerNodeId,
+    std::int64_t now
+) {
+    if (!isValidPeerNodeId(peerNodeId) || now <= 0) {
+        return std::nullopt;
+    }
+    prune(now);
+    const auto found = m_outstandingByPeer.find(peerNodeId);
+    if (found == m_outstandingByPeer.end()) {
+        return std::nullopt;
+    }
+    return found->second.material;
 }
 
 bool PeerHandshakeReplayGuard::consumeChallenge(
@@ -96,7 +139,8 @@ bool PeerHandshakeReplayGuard::consumeChallenge(
     }
     prune(now);
     const auto found = m_outstandingByPeer.find(peerNodeId);
-    if (found == m_outstandingByPeer.end() || found->second.nonce != nonce) {
+    if (found == m_outstandingByPeer.end() ||
+        found->second.material.nonce != nonce) {
         return false;
     }
     if (m_outstandingByPeer.size() + m_consumedChallenges.size() >
@@ -117,7 +161,8 @@ bool PeerHandshakeReplayGuard::discardChallenge(
         return false;
     }
     const auto found = m_outstandingByPeer.find(peerNodeId);
-    if (found == m_outstandingByPeer.end() || found->second.nonce != nonce) {
+    if (found == m_outstandingByPeer.end() ||
+        found->second.material.nonce != nonce) {
         return false;
     }
     m_outstandingByPeer.erase(found);

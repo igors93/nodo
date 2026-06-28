@@ -330,7 +330,8 @@ TcpTestnetNodeRuntime::TcpTestnetNodeRuntime(
     TcpTestnetNodeRuntimeConfig config
 ) : m_config(std::move(config)),
     m_transport(),
-    m_gossipMesh(makeGossipConfig(), m_transport),
+    m_authenticatedTransport(m_transport),
+    m_gossipMesh(makeGossipConfig(), m_authenticatedTransport),
     m_running(false) {
     m_gossipMesh.setPeerPenaltyPersistenceHandler(
         [this]() { savePeersToDisk(); }
@@ -383,6 +384,7 @@ p2p::TransportResult TcpTestnetNodeRuntime::start() {
 }
 
 void TcpTestnetNodeRuntime::stop() {
+    m_authenticatedTransport.clearSessions();
     m_transport.closeAll();
     m_running = false;
 }

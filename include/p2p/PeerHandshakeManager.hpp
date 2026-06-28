@@ -22,6 +22,7 @@ public:
         std::string challengerNodeId,
         std::string challengedNodeId,
         std::string nonce,
+        std::string ephemeralPublicKeyHex,
         std::int64_t createdAt,
         std::uint32_t ttlSeconds
     );
@@ -29,6 +30,7 @@ public:
     const std::string& challengerNodeId() const;
     const std::string& challengedNodeId() const;
     const std::string& nonce() const;
+    const std::string& ephemeralPublicKeyHex() const;
     std::int64_t createdAt() const;
     std::uint32_t ttlSeconds() const;
     std::int64_t expiresAt() const;
@@ -40,6 +42,7 @@ private:
     std::string m_challengerNodeId;
     std::string m_challengedNodeId;
     std::string m_nonce;
+    std::string m_ephemeralPublicKeyHex;
     std::int64_t m_createdAt;
     std::uint32_t m_ttlSeconds;
 };
@@ -57,6 +60,8 @@ public:
         node::ChainStatusMessage chainStatus,
         std::string challengeIssuerNodeId,
         std::string challengeNonce,
+        std::string challengeEphemeralPublicKeyHex,
+        std::string ephemeralPublicKeyHex,
         crypto::SignatureBundle identityProof,
         std::int64_t createdAt
     );
@@ -69,6 +74,8 @@ public:
     const node::ChainStatusMessage& chainStatus() const;
     const std::string& challengeIssuerNodeId() const;
     const std::string& challengeNonce() const;
+    const std::string& challengeEphemeralPublicKeyHex() const;
+    const std::string& ephemeralPublicKeyHex() const;
     const crypto::SignatureBundle& identityProof() const;
     std::int64_t createdAt() const;
 
@@ -85,6 +92,8 @@ private:
     node::ChainStatusMessage m_chainStatus;
     std::string m_challengeIssuerNodeId;
     std::string m_challengeNonce;
+    std::string m_challengeEphemeralPublicKeyHex;
+    std::string m_ephemeralPublicKeyHex;
     crypto::SignatureBundle m_identityProof;
     std::int64_t m_createdAt;
 };
@@ -118,6 +127,14 @@ public:
         std::int64_t now
     );
 
+    static NetworkEnvelope createChallengeEnvelope(
+        const GossipMeshConfig& config,
+        const std::string& challengedNodeId,
+        const std::string& nonce,
+        const std::string& ephemeralPublicKeyHex,
+        std::int64_t now
+    );
+
     static std::optional<PeerChallengeMessage> challengeFromEnvelope(
         const GossipMeshConfig& config,
         const NetworkEnvelope& envelope,
@@ -134,10 +151,30 @@ public:
         std::int64_t now
     );
 
+    static NetworkEnvelope createHelloEnvelope(
+        const GossipMeshConfig& config,
+        const PeerMetadata& localPeer,
+        const node::ChainStatusMessage& chainStatus,
+        const std::string& challengeIssuerNodeId,
+        const std::string& challengeNonce,
+        const std::string& challengeEphemeralPublicKeyHex,
+        const std::string& ephemeralPublicKeyHex,
+        const crypto::KeyPair& nodeIdentityKey,
+        std::int64_t now
+    );
+
     static PeerHandshakeResult validateHello(
         const GossipMeshConfig& config,
         const NetworkEnvelope& envelope,
         const std::string& expectedChallengeNonce,
+        std::int64_t now
+    );
+
+    static PeerHandshakeResult validateHello(
+        const GossipMeshConfig& config,
+        const NetworkEnvelope& envelope,
+        const std::string& expectedChallengeNonce,
+        const std::string& expectedChallengeEphemeralPublicKeyHex,
         std::int64_t now
     );
 
@@ -147,6 +184,10 @@ public:
     );
 
     static std::string challengeNonceFromHello(
+        const NetworkEnvelope& envelope
+    );
+
+    static std::string ephemeralPublicKeyFromHello(
         const NetworkEnvelope& envelope
     );
 };

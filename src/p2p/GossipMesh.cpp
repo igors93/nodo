@@ -235,6 +235,8 @@ GossipMesh::GossipMesh(
 }
 
 const GossipMeshConfig& GossipMesh::config() const { return m_config; }
+Transport& GossipMesh::transport() { return m_transport; }
+const Transport& GossipMesh::transport() const { return m_transport; }
 PeerRegistry& GossipMesh::peerRegistry() { return m_peerRegistry; }
 const PeerRegistry& GossipMesh::peerRegistry() const { return m_peerRegistry; }
 PeerHandshakeReplayGuard& GossipMesh::handshakeReplayGuard() {

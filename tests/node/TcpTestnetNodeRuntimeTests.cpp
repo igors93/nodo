@@ -1,4 +1,7 @@
 #include "node/TcpTestnetNodeRuntime.hpp"
+#include "node/PeerHandshakeAutoRegistrar.hpp"
+
+#include "crypto/KeyPair.hpp"
 
 #include <cassert>
 #include <filesystem>
@@ -55,10 +58,17 @@ int main() {
     ).success());
     assert(!nodeA.gossipMesh().peerRegistry().contains("node-b"));
 
+    const crypto::KeyPair identityA =
+        crypto::KeyPair::createDeterministicEd25519KeyPair(
+            "tcp-runtime-node-a");
+    const crypto::KeyPair identityB =
+        crypto::KeyPair::createDeterministicEd25519KeyPair(
+            "tcp-runtime-node-b");
+
     p2p::PeerMetadata peerA(
         "node-a",
         nodeA.transport().localEndpoint(),
-        "fingerprint-a",
+        identityA.publicKey().fingerprint(),
         1000,
         1000,
         0,
@@ -68,16 +78,12 @@ int main() {
     p2p::PeerMetadata peerB(
         "node-b",
         nodeB.transport().localEndpoint(),
-        "fingerprint-b",
+        identityB.publicKey().fingerprint(),
         1000,
         1000,
         0,
         false
     );
-
-    assert(nodeA.addPeer(peerB).success());
-    assert(nodeB.addPeer(peerA).success());
-    assert(nodeA.connectPeer("node-b").success());
 
     node::ChainStatusMessage status(
         "nodo-localnet",
@@ -91,16 +97,37 @@ int main() {
 
     assert(status.isValid());
 
-    const auto broadcastReport = nodeA.broadcastChainStatus(status, 1000);
+    assert(node::PeerHandshakeAutoRegistrar::initiateHandshake(
+        nodeA.gossipMesh(), "node-b", 1000
+    ).allAccepted());
+
+    for (std::int64_t attempt = 0;
+         attempt < 20 &&
+         (!nodeA.gossipMesh().peerRegistry().contains("node-b") ||
+          !nodeB.gossipMesh().peerRegistry().contains("node-a"));
+         ++attempt) {
+        const std::int64_t now = 1000 + attempt;
+        (void)nodeB.tick(now);
+        (void)node::PeerHandshakeAutoRegistrar::processInbox(
+            nodeB.gossipMesh(), peerB, status, identityB, now);
+        (void)nodeA.tick(now);
+        (void)node::PeerHandshakeAutoRegistrar::processInbox(
+            nodeA.gossipMesh(), peerA, status, identityA, now);
+    }
+
+    assert(nodeA.gossipMesh().peerRegistry().contains("node-b"));
+    assert(nodeB.gossipMesh().peerRegistry().contains("node-a"));
+
+    const auto broadcastReport = nodeA.broadcastChainStatus(status, 1010);
     assert(broadcastReport.acceptedCount() == 1);
 
-    (void)nodeA.tick(1000);
+    (void)nodeA.tick(1010);
 
     for (int attempt = 0;
          attempt < 1000 &&
          nodeB.gossipMesh().inbox().countForType(p2p::NetworkMessageType::CHAIN_STATUS) == 0;
          ++attempt) {
-        (void)nodeB.tick(1000);
+        (void)nodeB.tick(1010);
     }
 
     assert(nodeB.gossipMesh().inbox().countForType(
@@ -163,7 +190,7 @@ int main() {
     p2p::PeerMetadata rotatedIdentity(
         "node-b-rotated",
         nodeB.transport().localEndpoint(),
-        "FINGERPRINT-B",
+        identityB.publicKey().fingerprint(),
         2000,
         2000,
         0,

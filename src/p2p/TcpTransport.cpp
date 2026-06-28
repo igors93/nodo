@@ -716,8 +716,14 @@ TransportResult TcpTransport::send(
     const auto lengthPrefix =
         encodeU32BigEndian(static_cast<std::uint32_t>(frame.size()));
 
-    if (!writeAll(found->second, lengthPrefix.data(), lengthPrefix.size()) ||
-        !writeAll(found->second, frame.data(), frame.size())) {
+    // Send prefix and body as one write so Nagle's algorithm cannot hold the
+    // body waiting for an ACK on the prefix, which would stall the receiver.
+    std::vector<unsigned char> wireData;
+    wireData.reserve(lengthPrefix.size() + frame.size());
+    wireData.insert(wireData.end(), lengthPrefix.begin(), lengthPrefix.end());
+    wireData.insert(wireData.end(), frame.begin(), frame.end());
+
+    if (!writeAll(found->second, wireData.data(), wireData.size())) {
         closePeerConnection(message.toNodeId());
         return TransportResult(
             TransportStatus::NOT_CONNECTED,
@@ -899,7 +905,8 @@ TcpTransport::PollFdResult TcpTransport::pollFd(
 ) {
     (void)unidentified;
 
-    if (fd == INVALID_FD || !socketHasReadableData(fd)) {
+    const bool hasData = socketHasReadableData(fd);
+    if (fd == INVALID_FD || !hasData) {
         return PollFdResult::none();
     }
 
