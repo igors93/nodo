@@ -8,6 +8,7 @@
 #include "crypto/Hex.hpp"
 #include "crypto/Signer.hpp"
 #include "node/BlockAnnounceHandler.hpp"
+#include "node/ChainStatusGossipCodec.hpp"
 #include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
@@ -144,10 +145,12 @@ PersistentBlockSyncBatch buildSyncResponseBatch(
         );
     }
     if (items.empty()) return PersistentBlockSyncBatch{};
+    const std::uint64_t firstHeight = items.front().height();
+    const std::uint64_t lastHeight = items.back().height();
     return PersistentBlockSyncBatch(
         localPeerId,
-        items.front().height(),
-        items.back().height(),
+        firstHeight,
+        lastHeight,
         std::move(items),
         now
     );
@@ -281,14 +284,11 @@ void NodeOrchestrator::tick(std::int64_t now) {
             p2p::NetworkMessageType::CHAIN_STATUS
         );
         for (const auto& envelope : chainStatusMsgs) {
-            const auto optBytes = tryUnwrapCanonical(envelope.payload());
-            if (!optBytes.has_value()) continue;
+            const std::optional<ChainStatusMessage> statusMessage =
+                ChainStatusGossipCodec::decode(envelope.payload());
+            if (!statusMessage.has_value()) continue;
             try {
-                const ChainStatusMessage status =
-                    serialization::ProtocolMessageCodec::decodeChainStatusMessage(
-                        optBytes.value()
-                    );
-                if (!status.isValid()) continue;
+                const ChainStatusMessage& status = statusMessage.value();
                 const auto& localParameters =
                     m_config.genesisConfig().networkParameters();
                 if (status.chainId() != localParameters.chainId() ||
@@ -478,6 +478,14 @@ const NodeOrchestratorConfig&        NodeOrchestrator::config()              con
 const consensus::EvidencePool&       NodeOrchestrator::evidencePool()        const { return m_evidencePool; }
 const crypto::CryptoPolicy&          NodeOrchestrator::cryptoPolicy()        const { return m_policy; }
 const crypto::SignatureProvider&     NodeOrchestrator::signatureProvider()   const { return m_provider; }
+
+bool NodeOrchestrator::rpcRunning() const {
+    return m_rpcServer != nullptr && m_rpcServer->isRunning();
+}
+
+const std::string& NodeOrchestrator::rpcStartError() const {
+    return m_rpcStartError;
+}
 
 std::vector<p2p::NetworkEnvelope> NodeOrchestrator::drainGossipInbox(
     p2p::NetworkMessageType type
@@ -858,16 +866,23 @@ bool NodeOrchestrator::startConsensus() {
 }
 
 bool NodeOrchestrator::startRpc() {
+    m_rpcStartError.clear();
     try {
         m_rpcServer = std::make_unique<NodeRpcServer>(
             *m_runtime,
+            m_tcpRuntime->gossipMesh(),
             m_config.rpcPort(),
             m_config.rpcBindAddr()
         );
         m_rpcServer->start();
         return true;
-    } catch (...) {
+    } catch (const std::exception& error) {
         // RPC failure is non-fatal — node still participates in consensus.
+        m_rpcStartError = error.what();
+        m_rpcServer.reset();
+        return false;
+    } catch (...) {
+        m_rpcStartError = "Unknown RPC startup error.";
         m_rpcServer.reset();
         return false;
     }
@@ -910,15 +925,19 @@ std::optional<core::Block> NodeOrchestrator::produceBlock(
     // Production only — no voting, no QC, no finalization.
     // ConsensusEventLoop is responsible for adding the block to the chain,
     // broadcasting the proposal, voting, and finalizing.
+    const std::vector<consensus::DoubleVoteEvidence> pendingEvidence =
+        m_evidencePool.doubleVoteEvidenceBeforeHeight(height);
+    const std::size_t minimumTransactions =
+        pendingEvidence.empty() ? 1U : 0U;
     const RuntimeBlockPipelineConfig pipelineConfig(
-        m_config.maxBlockTransactions(), 0, round, now
+        m_config.maxBlockTransactions(), minimumTransactions, round, now
     );
 
     const consensus::BlockCandidateResult candidate =
         consensus::BlockProductionPhase::produce(
             *m_runtime,
             pipelineConfig,
-            m_evidencePool.doubleVoteEvidenceBeforeHeight(height)
+            pendingEvidence
         );
 
     if (!candidate.produced()) return std::nullopt;

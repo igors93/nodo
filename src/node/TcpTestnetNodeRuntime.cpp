@@ -1,5 +1,6 @@
 #include "node/TcpTestnetNodeRuntime.hpp"
 
+#include "node/ChainStatusGossipCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
 #include <limits>
@@ -362,6 +363,16 @@ bool TcpTestnetNodeRuntime::running() const {
     return m_running;
 }
 
+bool TcpTestnetNodeRuntime::hasAuthenticatedSession(
+    const std::string& remoteNodeId
+) const {
+    return m_transport.connected(m_config.nodeId(), remoteNodeId) &&
+        m_authenticatedTransport.hasSession(
+            m_config.nodeId(),
+            remoteNodeId
+        );
+}
+
 p2p::TransportResult TcpTestnetNodeRuntime::start() {
     if (!m_config.isValid()) {
         return p2p::TransportResult(
@@ -512,7 +523,7 @@ p2p::GossipDeliveryReport TcpTestnetNodeRuntime::broadcastChainStatus(
 ) {
     return broadcast(
         p2p::NetworkMessageType::CHAIN_STATUS,
-        chainStatus.serialize(),
+        ChainStatusGossipCodec::encode(chainStatus),
         now
     );
 }

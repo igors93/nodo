@@ -184,6 +184,8 @@ public:
     const consensus::EvidencePool&  evidencePool()   const;
     const crypto::CryptoPolicy&     cryptoPolicy()   const;
     const crypto::SignatureProvider& signatureProvider() const;
+    bool rpcRunning() const;
+    const std::string& rpcStartError() const;
 
     // ---- Gossip helpers for NodeDaemon ------------------------------------
 
@@ -222,6 +224,7 @@ private:
     std::unique_ptr<TcpTestnetNodeRuntime>   m_tcpRuntime;
     std::unique_ptr<consensus::ConsensusEventLoop> m_consensusLoop;
     std::unique_ptr<NodeRpcServer>           m_rpcServer;
+    std::string                              m_rpcStartError;
     std::unique_ptr<storage::SlashingEvidenceStore> m_slashingEvidenceStore;
     consensus::EvidencePool                  m_evidencePool;
     std::unique_ptr<p2p::DiscoveryService>   m_discoveryService;

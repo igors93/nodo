@@ -7,9 +7,12 @@
 #include "crypto/Address.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "crypto/PublicKey.hpp"
+#include "crypto/SignatureBundle.hpp"
 #include "mempool/Mempool.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
+#include "node/PersistentMempoolStore.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
+#include "p2p/EncryptedPeerTransport.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "utils/Amount.hpp"
 
@@ -141,6 +144,115 @@ bool parseUint64Strict(const std::string& value, std::uint64_t& out) {
     }
 }
 
+bool asciiCaseEqual(const std::string& value, const std::string& expected) {
+    if (value.size() != expected.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        char left = value[index];
+        char right = expected[index];
+        if (left >= 'A' && left <= 'Z') left = static_cast<char>(left + ('a' - 'A'));
+        if (right >= 'A' && right <= 'Z') right = static_cast<char>(right + ('a' - 'A'));
+        if (left != right) return false;
+    }
+    return true;
+}
+
+std::string trimHttpWhitespace(const std::string& value) {
+    std::size_t begin = 0;
+    while (begin < value.size() &&
+           (value[begin] == ' ' || value[begin] == '\t')) {
+        ++begin;
+    }
+    std::size_t end = value.size();
+    while (end > begin &&
+           (value[end - 1] == ' ' || value[end - 1] == '\t')) {
+        --end;
+    }
+    return value.substr(begin, end - begin);
+}
+
+bool receiveHttpRequest(int fd, std::string& request) {
+    request.clear();
+    std::optional<std::size_t> expectedSize;
+
+    while (request.size() < NodeRpcServer::MAX_REQUEST_LEN) {
+        char buffer[4096];
+        const std::size_t remaining =
+            NodeRpcServer::MAX_REQUEST_LEN - request.size();
+        const std::size_t capacity =
+            remaining < sizeof(buffer) ? remaining : sizeof(buffer);
+        const platform_ssize_t received = ::recv(fd, buffer, capacity, 0);
+        if (received < 0) {
+#if !defined(_WIN32)
+            if (errno == EINTR) continue;
+#endif
+            return false;
+        }
+        if (received == 0) {
+            return false;
+        }
+        request.append(buffer, static_cast<std::size_t>(received));
+
+        if (!expectedSize.has_value()) {
+            const std::size_t headerEnd = request.find("\r\n\r\n");
+            if (headerEnd == std::string::npos) {
+                continue;
+            }
+
+            std::uint64_t contentLength = 0;
+            bool contentLengthSeen = false;
+            const std::size_t requestLineEnd = request.find("\r\n");
+            if (requestLineEnd == std::string::npos ||
+                requestLineEnd > headerEnd) {
+                return false;
+            }
+
+            std::size_t cursor = requestLineEnd + 2;
+            while (cursor < headerEnd) {
+                const std::size_t lineEnd = request.find("\r\n", cursor);
+                if (lineEnd == std::string::npos || lineEnd > headerEnd) {
+                    return false;
+                }
+                const std::string line = request.substr(cursor, lineEnd - cursor);
+                const std::size_t colon = line.find(':');
+                if (colon == std::string::npos) {
+                    return false;
+                }
+                const std::string name = trimHttpWhitespace(line.substr(0, colon));
+                const std::string value = trimHttpWhitespace(line.substr(colon + 1));
+
+                if (asciiCaseEqual(name, "content-length")) {
+                    if (contentLengthSeen ||
+                        !parseUint64Strict(value, contentLength)) {
+                        return false;
+                    }
+                    contentLengthSeen = true;
+                } else if (asciiCaseEqual(name, "transfer-encoding")) {
+                    // Chunked requests are intentionally unsupported. Rejecting
+                    // them also prevents ambiguous request framing.
+                    return false;
+                }
+                cursor = lineEnd + 2;
+            }
+
+            const std::uint64_t prefixSize =
+                static_cast<std::uint64_t>(headerEnd + 4);
+            if (contentLength > NodeRpcServer::MAX_REQUEST_LEN ||
+                prefixSize > NodeRpcServer::MAX_REQUEST_LEN - contentLength) {
+                return false;
+            }
+            expectedSize = static_cast<std::size_t>(prefixSize + contentLength);
+        }
+
+        if (request.size() >= expectedSize.value()) {
+            request.resize(expectedSize.value());
+            return true;
+        }
+    }
+    return false;
+}
+
 core::Transaction parseSignedTransactionSubmission(
     const std::string& body
 ) {
@@ -203,49 +315,62 @@ bool NodeRpcServer::isRunning() const { return m_running.load(); }
 void NodeRpcServer::start() {
     if (m_running.load()) return;
 
-    m_serverFd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (m_serverFd < 0) {
+    const int serverFd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (serverFd < 0) {
         throw std::runtime_error(
             std::string("NodeRpcServer: socket() failed: ") + strerror(errno)
         );
     }
 
     int yes = 1;
-    ::setsockopt(m_serverFd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&yes), sizeof(yes));
+    ::setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&yes), sizeof(yes));
 
     struct sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port   = htons(m_port);
     if (::inet_pton(AF_INET, m_bindAddr.c_str(), &addr.sin_addr) <= 0) {
-        close_socket(m_serverFd);
+        close_socket(serverFd);
         throw std::runtime_error(
             "NodeRpcServer: invalid bind address: " + m_bindAddr
         );
     }
 
-    if (::bind(m_serverFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-        close_socket(m_serverFd);
+    if (::bind(serverFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+        close_socket(serverFd);
         throw std::runtime_error(
             std::string("NodeRpcServer: bind() failed: ") + strerror(errno)
         );
     }
 
-    if (::listen(m_serverFd, 16) < 0) {
-        close_socket(m_serverFd);
+    if (::listen(serverFd, 16) < 0) {
+        close_socket(serverFd);
         throw std::runtime_error(
             std::string("NodeRpcServer: listen() failed: ") + strerror(errno)
         );
     }
 
+    m_serverFd.store(serverFd);
     m_running.store(true);
-    m_thread = std::thread([this]{ runLoop(); });
+    try {
+        m_thread = std::thread([this]{ runLoop(); });
+    } catch (...) {
+        m_running.store(false);
+        const int fd = m_serverFd.exchange(-1);
+        if (fd >= 0) close_socket(fd);
+        throw;
+    }
 }
 
 void NodeRpcServer::stop() {
     m_running.store(false);
-    if (m_serverFd >= 0) {
-        close_socket(m_serverFd);
-        m_serverFd = -1;
+    const int serverFd = m_serverFd.exchange(-1);
+    if (serverFd >= 0) {
+#ifdef _WIN32
+        (void)::shutdown(static_cast<SOCKET>(serverFd), SD_BOTH);
+#else
+        (void)::shutdown(serverFd, SHUT_RDWR);
+#endif
+        close_socket(serverFd);
     }
     if (m_thread.joinable()) {
         m_thread.join();
@@ -254,10 +379,12 @@ void NodeRpcServer::stop() {
 
 void NodeRpcServer::runLoop() {
     while (m_running.load()) {
+        const int serverFd = m_serverFd.load();
+        if (serverFd < 0) break;
         struct sockaddr_in clientAddr{};
         socklen_t addrLen = sizeof(clientAddr);
         int clientFd = ::accept(
-            m_serverFd,
+            serverFd,
             reinterpret_cast<sockaddr*>(&clientAddr),
             &addrLen
         );
@@ -265,7 +392,39 @@ void NodeRpcServer::runLoop() {
             if (!m_running.load()) break;
             continue;
         }
-        handleClient(clientFd);
+
+#ifdef _WIN32
+        const DWORD timeoutMs = 2000;
+        (void)::setsockopt(
+            static_cast<SOCKET>(clientFd),
+            SOL_SOCKET,
+            SO_RCVTIMEO,
+            reinterpret_cast<const char*>(&timeoutMs),
+            sizeof(timeoutMs)
+        );
+        (void)::setsockopt(
+            static_cast<SOCKET>(clientFd),
+            SOL_SOCKET,
+            SO_SNDTIMEO,
+            reinterpret_cast<const char*>(&timeoutMs),
+            sizeof(timeoutMs)
+        );
+#else
+        timeval timeout{};
+        timeout.tv_sec = 2;
+        (void)::setsockopt(
+            clientFd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)
+        );
+        (void)::setsockopt(
+            clientFd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)
+        );
+#endif
+
+        try {
+            handleClient(clientFd);
+        } catch (...) {
+            // A malformed or aborted client must not terminate the RPC loop.
+        }
         close_socket(clientFd);
     }
 }
@@ -275,12 +434,8 @@ void NodeRpcServer::runLoop() {
 // ---------------------------------------------------------------------------
 
 void NodeRpcServer::handleClient(int clientFd) {
-    char buf[MAX_REQUEST_LEN + 1];
-    platform_ssize_t n = ::recv(clientFd, buf, MAX_REQUEST_LEN, 0);
-    if (n <= 0) return;
-    buf[n] = '\0';
-
-    std::string request(buf, static_cast<std::size_t>(n));
+    std::string request;
+    if (!receiveHttpRequest(clientFd, request)) return;
 
     std::string method, path, body;
     if (!parseRequestLine(request, method, path, body)) {
@@ -352,14 +507,17 @@ std::string NodeRpcServer::jsonError(const std::string& message) {
 }
 
 std::string NodeRpcServer::pathSegment(const std::string& path, int index) {
+    if (index < 0) return "";
+
     std::size_t pos = 0;
-    int seg = -1;
-    while (pos < path.size()) {
+    int seg = 0;
+    while (pos <= path.size()) {
         std::size_t slash = path.find('/', pos);
         if (slash == std::string::npos) slash = path.size();
         if (seg == index) {
             return path.substr(pos, slash - pos);
         }
+        if (slash == path.size()) break;
         ++seg;
         pos = slash + 1;
     }
@@ -431,12 +589,28 @@ std::string NodeRpcServer::handleStatus() const {
     const std::uint64_t round =
         mgr.currentState().round();
     const bool running = m_runtime.isRunning();
+    const std::uint64_t finalizedHeight =
+        m_runtime.finalizationRegistry().highestFinalizedHeight();
+    const auto* encryptedTransport = m_gossip != nullptr
+        ? dynamic_cast<const p2p::EncryptedPeerTransport*>(
+            &m_gossip->transport()
+          )
+        : nullptr;
+    const std::size_t authenticatedSessionCount = encryptedTransport != nullptr
+        ? encryptedTransport->sessionCount()
+        : 0;
+    const std::string latestHash =
+        chain.empty() ? "" : chain.latestBlock().hash();
 
     std::ostringstream oss;
     oss << "{"
         << "\"height\":" << height
+        << ",\"finalizedHeight\":" << finalizedHeight
+        << ",\"latestHash\":" << jsonString(latestHash)
         << ",\"round\":" << round
         << ",\"peerCount\":" << peers.size()
+        << ",\"authenticatedPeerCount\":" << authenticatedSessionCount
+        << ",\"encryptedSessionCount\":" << authenticatedSessionCount
         << ",\"mempoolSize\":" << mempool.size()
         << ",\"running\":" << (running ? "true" : "false")
         << "}";
@@ -647,6 +821,22 @@ std::string NodeRpcServer::handleSubmit(const std::string& body) {
         );
     }
 
+    std::string gossipPayload;
+    if (m_gossip != nullptr) {
+        const crypto::SignatureBundle& signatures = tx.signatureBundle();
+        if (signatures.signatures().empty()) {
+            return jsonError("Transaction signature bundle is empty.");
+        }
+        gossipPayload = PersistentMempoolStore::serializeForGossip(
+            tx,
+            signatures.signatures().front().publicKey(),
+            now
+        );
+        if (gossipPayload.empty()) {
+            return jsonError("Unable to build canonical transaction gossip payload.");
+        }
+    }
+
     const mempool::MempoolAdmissionResult result =
         m_runtime.mutableMempool().admitTransaction(
             tx,
@@ -655,12 +845,12 @@ std::string NodeRpcServer::handleSubmit(const std::string& body) {
             now
         );
 
-    // Broadcast to peers if gossip is wired in and the transaction was accepted.
+    // Broadcast the same self-contained schema consumed by NodeDaemon peers.
     if (m_gossip != nullptr &&
-        result.status() == mempool::MempoolAdmissionStatus::ACCEPTED) {
+        result.success()) {
         m_gossip->broadcast(
-            p2p::NetworkMessageType::TRANSACTION_ANNOUNCE,
-            body,
+            p2p::NetworkMessageType::TRANSACTION_GOSSIP,
+            gossipPayload,
             now
         );
     }

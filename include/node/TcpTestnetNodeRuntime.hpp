@@ -133,6 +133,10 @@ public:
 
     bool running() const;
 
+    bool hasAuthenticatedSession(
+        const std::string& remoteNodeId
+    ) const;
+
     p2p::TransportResult start();
     void stop();
 

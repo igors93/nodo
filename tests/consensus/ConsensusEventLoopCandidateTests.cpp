@@ -30,6 +30,12 @@ void require(bool condition, const std::string& message) {
     if (!condition) throw std::runtime_error(message);
 }
 
+const crypto::CryptoPolicy& developmentPolicy() {
+    static const crypto::CryptoPolicy policy =
+        crypto::CryptoPolicy::developmentPolicy();
+    return policy;
+}
+
 crypto::KeyPair userKey() {
     return test::consensusTestUserKey("consensus-event-loop-user");
 }
@@ -170,7 +176,7 @@ void testCandidateDoesNotEnterChainWithoutQuorum() {
     consensus::ConsensusEventLoop loop(
         runtime,
         network.mesh,
-        crypto::CryptoPolicy::developmentPolicy(),
+        developmentPolicy(),
         provider
     );
     configureProducer(loop, runtime, signer);
@@ -198,7 +204,7 @@ void testSingleValidatorCandidateAppendsOnlyDuringFinalization() {
     consensus::ConsensusEventLoop loop(
         runtime,
         network.mesh,
-        crypto::CryptoPolicy::developmentPolicy(),
+        developmentPolicy(),
         provider
     );
     configureProducer(loop, runtime, signer);
@@ -227,7 +233,7 @@ void testMissingProposalStillAdvancesRound() {
     consensus::ConsensusEventLoop loop(
         runtime,
         network.mesh,
-        crypto::CryptoPolicy::developmentPolicy(),
+        developmentPolicy(),
         provider
     );
 
@@ -243,6 +249,62 @@ void testMissingProposalStillAdvancesRound() {
             "A timeout without a proposal must not modify the blockchain.");
 }
 
+void testProposerRetriesAfterTransientProductionFailure() {
+    const auto validators = makeValidators(1);
+    const config::GenesisConfig genesis =
+        makeGenesis(validators, "candidate-production-retry");
+    node::NodeRuntime runtime = startRuntime(genesis);
+    test::admitConsensusTestTransfer(runtime, userKey(), 1, kTimestamp + 1);
+    TestNetwork network(genesis);
+    const crypto::Bls12381SignatureProvider provider;
+    const crypto::Signer signer(validators.front().keyPair, provider);
+
+    consensus::ConsensusEventLoop loop(
+        runtime,
+        network.mesh,
+        developmentPolicy(),
+        provider
+    );
+    loop.setLocalValidatorAddress(signer.address());
+    loop.setLocalSigner(&signer);
+
+    std::size_t productionAttempts = 0;
+    loop.setBlockProducerCallback(
+        [&runtime, &productionAttempts](
+            std::uint64_t,
+            std::uint64_t round,
+            std::int64_t now
+        ) -> std::optional<core::Block> {
+            ++productionAttempts;
+            if (productionAttempts == 1) {
+                return std::nullopt;
+            }
+            const consensus::BlockCandidateResult candidate =
+                consensus::BlockProductionPhase::produce(
+                    runtime,
+                    node::RuntimeBlockPipelineConfig(16, 1, round, now)
+                );
+            return candidate.produced()
+                ? std::optional<core::Block>(candidate.block())
+                : std::nullopt;
+        }
+    );
+
+    const consensus::ConsensusTickResult first = loop.tick(kTimestamp + 3);
+    require(!first.blockFinalized,
+            "A failed production attempt must not finalize a block.");
+    require(productionAttempts == 1,
+            "The first tick must invoke production exactly once.");
+
+    const consensus::ConsensusTickResult second = loop.tick(kTimestamp + 4);
+    require(productionAttempts == 2,
+            "The proposer must retry production in the same round.");
+    require(second.blockFinalized,
+            "A successful retry must proceed through finalization.");
+    require(runtime.blockchain().size() == 2,
+            "The retried candidate must be appended exactly once.");
+}
+
 } // namespace
 
 int main() {
@@ -250,6 +312,7 @@ int main() {
         testCandidateDoesNotEnterChainWithoutQuorum();
         testSingleValidatorCandidateAppendsOnlyDuringFinalization();
         testMissingProposalStillAdvancesRound();
+        testProposerRetriesAfterTransientProductionFailure();
         std::cout << "Consensus event loop candidate tests passed.\n";
         return 0;
     } catch (const std::exception& error) {

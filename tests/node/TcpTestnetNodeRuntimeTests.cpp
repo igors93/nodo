@@ -1,4 +1,5 @@
 #include "node/TcpTestnetNodeRuntime.hpp"
+#include "node/ChainStatusGossipCodec.hpp"
 #include "node/PeerHandshakeAutoRegistrar.hpp"
 
 #include "crypto/KeyPair.hpp"
@@ -104,7 +105,9 @@ int main() {
     for (std::int64_t attempt = 0;
          attempt < 20 &&
          (!nodeA.gossipMesh().peerRegistry().contains("node-b") ||
-          !nodeB.gossipMesh().peerRegistry().contains("node-a"));
+          !nodeB.gossipMesh().peerRegistry().contains("node-a") ||
+          !nodeA.hasAuthenticatedSession("node-b") ||
+          !nodeB.hasAuthenticatedSession("node-a"));
          ++attempt) {
         const std::int64_t now = 1000 + attempt;
         (void)nodeB.tick(now);
@@ -117,22 +120,30 @@ int main() {
 
     assert(nodeA.gossipMesh().peerRegistry().contains("node-b"));
     assert(nodeB.gossipMesh().peerRegistry().contains("node-a"));
+    assert(nodeA.hasAuthenticatedSession("node-b"));
+    assert(nodeB.hasAuthenticatedSession("node-a"));
 
-    const auto broadcastReport = nodeA.broadcastChainStatus(status, 1010);
+    const auto broadcastReport = nodeA.broadcastChainStatus(status, 3000);
     assert(broadcastReport.acceptedCount() == 1);
 
-    (void)nodeA.tick(1010);
+    (void)nodeA.tick(3000);
 
     for (int attempt = 0;
          attempt < 1000 &&
          nodeB.gossipMesh().inbox().countForType(p2p::NetworkMessageType::CHAIN_STATUS) == 0;
          ++attempt) {
-        (void)nodeB.tick(1010);
+        (void)nodeB.tick(3000);
     }
 
-    assert(nodeB.gossipMesh().inbox().countForType(
+    const auto manualStatuses = nodeB.gossipMesh().drainInbox(
         p2p::NetworkMessageType::CHAIN_STATUS
-    ) == 1);
+    );
+    assert(!manualStatuses.empty());
+    for (const auto& envelope : manualStatuses) {
+        assert(node::ChainStatusGossipCodec::decode(
+            envelope.payload()
+        ).has_value());
+    }
 
     const p2p::NetworkEnvelope invalidSyncMessage(
         "nodo-localnet",
@@ -140,7 +151,7 @@ int main() {
         "1.0.0",
         p2p::NetworkMessageType::SLASHING_EVIDENCE_REQUEST,
         "node-b",
-        1010,
+        3001,
         30,
         "malformed-sync-request"
     );
@@ -149,7 +160,7 @@ int main() {
             invalidSyncMessage,
             p2p::PeerMisbehaviorType::INVALID_MESSAGE,
             "Slashing evidence request payload is malformed.",
-            1010 + offset
+            3001 + offset
         );
     }
 

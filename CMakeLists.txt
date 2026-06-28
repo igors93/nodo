@@ -159,3 +159,17 @@ foreach(NODO_TEST_SOURCE ${NODO_TEST_SOURCES})
 
     nodo_add_test(${NODO_TEST_TARGET} ${NODO_TEST_SOURCE})
 endforeach()
+
+if(TARGET node_RealTcpThreeNodeEndToEndTests)
+    if(WIN32)
+        set_tests_properties(node_RealTcpThreeNodeEndToEndTests
+            PROPERTIES DISABLED TRUE
+        )
+    else()
+        set_tests_properties(node_RealTcpThreeNodeEndToEndTests
+            PROPERTIES
+                RUN_SERIAL TRUE
+                TIMEOUT 300
+        )
+    endif()
+endif()

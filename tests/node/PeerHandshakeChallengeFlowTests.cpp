@@ -1,4 +1,5 @@
 #include "node/PeerHandshakeAutoRegistrar.hpp"
+#include "node/ChainStatusGossipCodec.hpp"
 
 #include "crypto/KeyPair.hpp"
 #include "p2p/EncryptedPeerTransport.hpp"
@@ -118,6 +119,19 @@ int main() {
     assert(meshB.peerRegistry().contains("node-a"));
     assert(transportA.hasSession("node-a", "node-b"));
     assert(transportB.hasSession("node-b", "node-a"));
+
+    assert(meshB.flushOutbound(1002).acceptedCount() == 1);
+    assert(meshA.receiveAvailable(1002).acceptedCount() == 1);
+    const auto chainStatuses = meshA.drainInbox(
+        p2p::NetworkMessageType::CHAIN_STATUS
+    );
+    assert(chainStatuses.size() == 1);
+    const auto decodedStatus = node::ChainStatusGossipCodec::decode(
+        chainStatuses.front().payload()
+    );
+    assert(decodedStatus.has_value());
+    assert(decodedStatus->latestHeight() == status().latestHeight());
+    assert(decodedStatus->latestBlockHash() == status().latestBlockHash());
 
     const p2p::NetworkEnvelope replayWrappedHello(
         originalHello.networkId(),

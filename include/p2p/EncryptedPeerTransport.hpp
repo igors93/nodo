@@ -6,6 +6,7 @@
 #include "p2p/Transport.hpp"
 
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -101,6 +102,7 @@ public:
     ) override;
 
 private:
+    mutable std::mutex m_mutex;
     Transport& m_underlyingTransport;
     std::map<std::string, EncryptedPeerSession> m_outboundSessions;
     std::map<std::string, EncryptedPeerSession> m_inboundSessions;

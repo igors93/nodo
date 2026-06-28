@@ -1,5 +1,7 @@
 #include "node/PeerHandshakeAutoRegistrar.hpp"
 
+#include "node/ChainStatusGossipCodec.hpp"
+
 #include "p2p/NetworkEnvelope.hpp"
 #include "p2p/AuthenticatedSessionTransport.hpp"
 #include "p2p/PeerHandshakeManager.hpp"
@@ -11,6 +13,14 @@
 #include <unordered_set>
 
 namespace nodo::node {
+
+namespace {
+
+std::string encodedChainStatus(const ChainStatusMessage& status) {
+    return ChainStatusGossipCodec::encode(status);
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // processInbox
@@ -172,7 +182,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             gossip.sendTo(
                 result.peerId,
                 p2p::NetworkMessageType::CHAIN_STATUS,
-                localChainStatus.serialize(),
+                encodedChainStatus(localChainStatus),
                 now
             );
         } else if (authenticatedTransport->activateOutboundSession(
@@ -180,7 +190,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
             gossip.sendTo(
                 result.peerId,
                 p2p::NetworkMessageType::CHAIN_STATUS,
-                localChainStatus.serialize(),
+                encodedChainStatus(localChainStatus),
                 now
             );
         }
@@ -281,7 +291,7 @@ std::vector<HandshakeRegistrationResult> PeerHandshakeAutoRegistrar::processInbo
                 gossip.sendTo(
                     challenge->challengerNodeId(),
                     p2p::NetworkMessageType::CHAIN_STATUS,
-                    localChainStatus.serialize(),
+                    encodedChainStatus(localChainStatus),
                     now
                 );
             }

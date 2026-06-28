@@ -66,7 +66,7 @@ private:
     std::string        m_bindAddr;
     std::atomic<bool>  m_running;
     std::thread        m_thread;
-    int                m_serverFd;
+    std::atomic<int>   m_serverFd;
 
     void runLoop();
     void handleClient(int clientFd);

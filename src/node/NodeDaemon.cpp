@@ -152,17 +152,35 @@ void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
 
             if (!record.isStructurallyValid()) continue;
 
-            // Verify the QC against the local validator registry.
+            NodeRuntime& runtime = m_orchestrator.mutableRuntime();
+            const std::uint64_t blockIndex = record.blockIndex();
+            const auto& blocks = runtime.blockchain().blocks();
+
+            // A quorum certificate alone is not canonical state. Never advance
+            // the finalization registry unless the exact block is already in
+            // the local canonical chain. Missing blocks must arrive through the
+            // validated, atomic BLOCK_SYNC_RESPONSE pipeline.
+            if (blockIndex >= blocks.size() ||
+                !record.matchesBlock(
+                    blocks[static_cast<std::size_t>(blockIndex)])) {
+                continue;
+            }
+
+            if (!runtime.validatorSetHistory().hasSet(blockIndex)) {
+                continue;
+            }
+
+            // Verify against the validator set committed for this height, not
+            // the mutable current registry.
             if (!record.verify(
-                    m_orchestrator.runtime().validatorRegistry(),
+                    runtime.validatorSetHistory().setAt(blockIndex),
                     m_policy,
                     m_provider)) {
                 continue;
             }
 
             // Record in the local finalization registry.
-            const auto regResult = m_orchestrator.mutableRuntime()
-                .mutableFinalizationRegistry()
+            const auto regResult = runtime.mutableFinalizationRegistry()
                 .registerFinalizedBlock(record);
 
             // Persist to disk so BlockSyncQcMode::QC_REQUIRED works after

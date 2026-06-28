@@ -214,7 +214,10 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
                     }
                 }
 
-                m_producedThisRound = true;
+                // An empty mempool or a failed proposal broadcast must not
+                // consume the round. Retry until a proposal is retained, or
+                // until the round timeout advances.
+                m_producedThisRound = m_pendingCandidate.has_value();
             }
         }
     }
