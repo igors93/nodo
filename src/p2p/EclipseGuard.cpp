@@ -1,6 +1,7 @@
 #include "p2p/EclipseGuard.hpp"
 
 #include <algorithm>
+#include <array>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -43,17 +44,21 @@ std::string PeerSubnetInfo::extractSubnetPrefix(const std::string& ip) {
         return ""; // IPv4 must have exactly 4 octets
     }
 
+    std::array<int, 4> octets{};
     for (int i = 0; i < 4; ++i) {
         if (parts[i].size() > 3) {
             return ""; // An octet can have at most 3 digits
         }
-        int val = std::stoi(parts[i]);
-        if (val < 0 || val > 255) {
+        octets[static_cast<std::size_t>(i)] = std::stoi(parts[i]);
+        if (octets[static_cast<std::size_t>(i)] < 0 ||
+            octets[static_cast<std::size_t>(i)] > 255) {
             return "";
         }
     }
 
-    return parts[0] + "." + parts[1] + "." + parts[2];
+    return std::to_string(octets[0]) + "." +
+           std::to_string(octets[1]) + "." +
+           std::to_string(octets[2]);
 }
 
 bool PeerSubnetInfo::isValid() const {

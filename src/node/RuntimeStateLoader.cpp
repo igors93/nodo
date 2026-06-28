@@ -428,13 +428,13 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
     // the delta (blocks after the snapshot) instead of the full O(N) replay.
     const std::int64_t minFee = minimumFeeRawUnits(genesisConfig);
     core::AccountStateView tipAccountState;
+    bool usedAccountStateSnapshot = false;
     {
         const storage::AccountStateSnapshotStore snapshotStore(
             directoryConfig.rootPath()
         );
         const auto snapshotOpt = snapshotStore.load();
 
-        bool usedSnapshot = false;
         if (snapshotOpt.has_value()) {
             const auto& snap = snapshotOpt.value();
             const auto& blocks = runtime.blockchain().blocks();
@@ -449,12 +449,12 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
                         snap.height(),
                         minFee
                     );
-                    usedSnapshot = true;
+                    usedAccountStateSnapshot = true;
                 } catch (...) {}
             }
         }
 
-        if (!usedSnapshot) {
+        if (!usedAccountStateSnapshot) {
             tipAccountState = RuntimeAccountStateBuilder::accountStateViewAtTip(
                 genesisConfig, runtime.blockchain(), minFee
             );
@@ -463,10 +463,22 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
     const core::StateTransitionPreviewContext tipContext =
         RuntimeAccountStateBuilder::previewContextAtTip(runtime, minFee);
-    const std::string computedStateRoot =
+    std::string computedStateRoot =
         core::StateRootCalculator::calculateProtocolStateRoot(
             tipAccountState, tipContext.deterministicStateDomains()
         );
+
+    if ((computedStateRoot.empty() ||
+         computedStateRoot != manifest.latestStateRoot()) &&
+        usedAccountStateSnapshot) {
+        tipAccountState = RuntimeAccountStateBuilder::accountStateViewAtTip(
+            genesisConfig, runtime.blockchain(), minFee
+        );
+        computedStateRoot =
+            core::StateRootCalculator::calculateProtocolStateRoot(
+                tipAccountState, tipContext.deterministicStateDomains()
+            );
+    }
 
     if (computedStateRoot.empty() || computedStateRoot != manifest.latestStateRoot()) {
         return RuntimeStateLoadResult::rejected(

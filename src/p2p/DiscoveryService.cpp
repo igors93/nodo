@@ -8,9 +8,59 @@
 
 namespace nodo::p2p {
 
+namespace {
+
+bool isSafeDiscoveryScalar(
+    const std::string& value,
+    std::size_t maxSize
+) {
+    if (value.empty() || value.size() > maxSize) {
+        return false;
+    }
+
+    for (const char character : value) {
+        const bool allowed =
+            (character >= 'a' && character <= 'z') ||
+            (character >= 'A' && character <= 'Z') ||
+            (character >= '0' && character <= '9') ||
+            character == '_' || character == '-' || character == '.' ||
+            character == ':' || character == '/';
+        if (!allowed) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool parseDiscoveryPort(const std::string& value, std::uint16_t& out) {
+    if (value.empty()) {
+        return false;
+    }
+    for (const char character : value) {
+        if (character < '0' || character > '9') {
+            return false;
+        }
+    }
+    try {
+        std::size_t consumed = 0;
+        const unsigned long parsed = std::stoul(value, &consumed);
+        if (consumed != value.size() || parsed == 0 || parsed > 65535) {
+            return false;
+        }
+        out = static_cast<std::uint16_t>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+} // namespace
+
 // DiscoveryPeerInfo Implementation
 bool DiscoveryPeerInfo::isValid() const {
-    return !peerId.empty() && !host.empty() && tcpPort > 0 && udpPort > 0;
+    return isSafeDiscoveryScalar(peerId, 160) &&
+           isSafeDiscoveryScalar(host, 255) &&
+           tcpPort > 0 && udpPort > 0;
 }
 
 std::string DiscoveryPeerInfo::serialize() const {
@@ -24,25 +74,24 @@ DiscoveryPeerInfo DiscoveryPeerInfo::deserialize(const std::string& serialized) 
     while (std::getline(ss, item, '|')) {
         parts.push_back(item);
     }
-    if (parts.size() < 4) {
+    if (parts.size() != 4) {
         return DiscoveryPeerInfo{};
     }
-    try {
-        const unsigned long tcp = std::stoul(parts[2]);
-        const unsigned long udp = std::stoul(parts[3]);
-        if (tcp == 0 || tcp > 65535 || udp == 0 || udp > 65535) {
-            return DiscoveryPeerInfo{};
-        }
-        return DiscoveryPeerInfo{
-            parts[0],
-            parts[1],
-            static_cast<std::uint16_t>(tcp),
-            static_cast<std::uint16_t>(udp),
-            0
-        };
-    } catch (...) {
+
+    std::uint16_t tcpPort = 0;
+    std::uint16_t udpPort = 0;
+    if (!parseDiscoveryPort(parts[2], tcpPort) ||
+        !parseDiscoveryPort(parts[3], udpPort)) {
         return DiscoveryPeerInfo{};
     }
+
+    const DiscoveryPeerInfo peer{
+        parts[0], parts[1], tcpPort, udpPort, 0
+    };
+    if (!peer.isValid() || peer.serialize() != serialized) {
+        return DiscoveryPeerInfo{};
+    }
+    return peer;
 }
 
 // DiscoveryService Implementation

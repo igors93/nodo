@@ -84,10 +84,10 @@ economics::ProtocolEvidence ProtocolEvidenceStore::load(
     const economics::ProtocolEvidence evidence =
         economics::ProtocolEvidence::deserialize(content);
 
-    if (!evidence.isValid()) {
+    if (!evidence.isValid() || evidence.evidenceId() != evidenceId) {
         throw std::runtime_error(
-            "ProtocolEvidenceStore::load: decoded evidence is invalid: " +
-            evidence.rejectionReason()
+            "ProtocolEvidenceStore::load: decoded evidence is invalid or "
+            "does not match its file name."
         );
     }
 

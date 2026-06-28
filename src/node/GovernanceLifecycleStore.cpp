@@ -132,6 +132,13 @@ GovernanceLifecycleStoreResult GovernanceLifecycleStore::load(
         economics::GovernanceLifecycleRecord lifecycle =
             GovernanceLifecycleCodec::decode(storage::AtomicFile::readTextFile(path));
 
+        if (lifecycle.lifecycleId() != lifecycleId) {
+            return GovernanceLifecycleStoreResult::rejected(
+                GovernanceLifecycleStoreStatus::INVALID_RECORD,
+                "GovernanceLifecycleStore: file name does not match stored lifecycleId."
+            );
+        }
+
         const economics::GovernanceLifecycleVerificationResult verification =
             economics::GovernanceLifecycleVerifier::verify(lifecycle);
 

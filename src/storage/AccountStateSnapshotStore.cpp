@@ -4,12 +4,47 @@
 #include "storage/AtomicFile.hpp"
 #include "utils/Amount.hpp"
 
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
 namespace nodo::storage {
+
+namespace {
+
+bool parseUint64Strict(const std::string& value, std::uint64_t& out) {
+    try {
+        std::size_t consumed = 0;
+        const unsigned long long parsed = std::stoull(value, &consumed);
+        if (consumed != value.size() ||
+            parsed > std::numeric_limits<std::uint64_t>::max() ||
+            std::to_string(parsed) != value) {
+            return false;
+        }
+        out = static_cast<std::uint64_t>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool parseInt64Strict(const std::string& value, std::int64_t& out) {
+    try {
+        std::size_t consumed = 0;
+        const long long parsed = std::stoll(value, &consumed);
+        if (consumed != value.size() || std::to_string(parsed) != value) {
+            return false;
+        }
+        out = static_cast<std::int64_t>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+} // namespace
 
 AccountStateSnapshot::AccountStateSnapshot()
     : m_genesisConfigId("")
@@ -120,8 +155,7 @@ std::optional<AccountStateSnapshot> AccountStateSnapshotStore::load() const {
 
     if (!std::getline(iss, line)) return std::nullopt;
     const std::string heightStr = parseField(line, "height=");
-    if (heightStr.empty()) return std::nullopt;
-    try { height = std::stoull(heightStr); } catch (...) { return std::nullopt; }
+    if (!parseUint64Strict(heightStr, height)) return std::nullopt;
 
     if (!std::getline(iss, line)) return std::nullopt;
     blockHash = parseField(line, "blockHash=");
@@ -138,13 +172,17 @@ std::optional<AccountStateSnapshot> AccountStateSnapshotStore::load() const {
         const std::string address = line.substr(0, tab1);
         std::int64_t balanceRaw = 0;
         std::uint64_t nonce = 0;
-        try {
-            balanceRaw = std::stoll(line.substr(tab1 + 1, tab2 - tab1 - 1));
-            nonce = std::stoull(line.substr(tab2 + 1));
-        } catch (...) {
+        if (!parseInt64Strict(
+                line.substr(tab1 + 1, tab2 - tab1 - 1),
+                balanceRaw) ||
+            !parseUint64Strict(line.substr(tab2 + 1), nonce) ||
+            view.hasAccount(address)) {
             return std::nullopt;
         }
-        view.putAccount(core::AccountState(address, utils::Amount(balanceRaw), nonce));
+        if (!view.putAccount(
+                core::AccountState(address, utils::Amount(balanceRaw), nonce))) {
+            return std::nullopt;
+        }
     }
 
     AccountStateSnapshot snapshot(genesisConfigId, height, blockHash, std::move(view));

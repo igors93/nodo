@@ -69,7 +69,8 @@ std::optional<consensus::FinalizedBlockRecord> FinalizedBlockRecordStore::load(
         const std::string contents = storage::AtomicFile::readTextFile(path);
         const consensus::FinalizedBlockRecord record =
             consensus::FinalizedBlockRecord::deserialize(contents);
-        if (!record.isStructurallyValid()) {
+        if (!record.isStructurallyValid() ||
+            record.blockIndex() != height) {
             return std::nullopt;
         }
         return record;

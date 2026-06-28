@@ -1,6 +1,7 @@
 #ifndef NODO_P2P_PEER_RATE_LIMITER_HPP
 #define NODO_P2P_PEER_RATE_LIMITER_HPP
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -9,6 +10,7 @@ namespace nodo::p2p {
 
 constexpr std::uint32_t DEFAULT_RATE_LIMIT_MESSAGES = 100;
 constexpr std::uint64_t DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60;
+constexpr std::size_t MAX_TRACKED_RATE_LIMIT_PEERS = 4096;
 
 /*
  * PeerRateLimiter enforces a per-peer message rate cap.
@@ -48,6 +50,7 @@ private:
     std::uint64_t m_windowSeconds;
 
     void advanceWindowIfExpired(PeerWindow& window, std::int64_t now) const;
+    void pruneExpiredWindows(std::int64_t now);
 };
 
 } // namespace nodo::p2p
