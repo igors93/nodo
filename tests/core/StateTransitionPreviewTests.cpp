@@ -578,6 +578,52 @@ void testFailureDoesNotMutateInitialState() {
     );
 }
 
+void testRejectsEmptyProtocolStateCommitment() {
+    core::AccountStateView view;
+    view.putAccount(core::AccountState(
+        "preview-sender",
+        utils::Amount::fromRawUnits(1000),
+        0
+    ));
+
+    const core::StateTransitionPreviewContext context(
+        10,
+        view,
+        false,
+        true,
+        "",
+        0,
+        "",
+        "",
+        {},
+        [](const core::AccountStateView& accounts,
+           utils::Amount,
+           const std::vector<core::Transaction>&,
+           const std::vector<core::LedgerRecord>&,
+           std::int64_t) {
+            return core::DeterministicStateTransitionResult::accepted(
+                accounts,
+                {{"accounts", "shadowed-account-state"}}
+            );
+        }
+    );
+
+    const core::Block block(
+        1,
+        "previous-hash",
+        {record(transaction(1, 10))},
+        kTimestamp + 10
+    );
+    const core::StateTransitionPreviewResult result =
+        core::StateTransitionPreview::previewBlock(block, context);
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::StateTransitionPreviewStatus::INVALID_CONTEXT,
+        "Preview must reject a transition that cannot produce a state commitment."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -596,6 +642,7 @@ int main() {
         testRejectsSenderEqualsRecipient();
         testRejectsInvalidPayload();
         testFailureDoesNotMutateInitialState();
+        testRejectsEmptyProtocolStateCommitment();
 
         std::cout << "Nodo state transition preview tests passed.\n";
         return 0;

@@ -545,6 +545,11 @@ void Transaction::attachSignatureBundle(
     if (signatureBundle.empty()) {
         throw std::invalid_argument("Empty SignatureBundle rejected by Transaction.");
     }
+    if (m_hasSignatureBundle) {
+        throw std::logic_error(
+            "Transaction SignatureBundle is immutable once attached."
+        );
+    }
 
     m_signatureBundle = signatureBundle;
     m_hasSignatureBundle = true;

@@ -35,6 +35,24 @@ int main() {
 
     assert(noSync.notRequired());
 
+    ChainStatusMessage unfinalizedAhead(
+        "localnet",
+        "chain-a",
+        "proto-v1",
+        10,
+        "block-10",
+        0,
+        "genesis-hash"
+    );
+    assert(PersistentBlockStateSyncPlanner::planFromRemoteStatus(
+        checkpoint,
+        unfinalizedAhead,
+        "node-a",
+        "node-b",
+        32,
+        now + 1
+    ).notRequired());
+
     ChainStatusMessage ahead(
         "localnet",
         "chain-a",

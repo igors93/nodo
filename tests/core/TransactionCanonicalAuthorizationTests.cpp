@@ -8,6 +8,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <stdexcept>
 
 int main() {
     using namespace nodo;
@@ -55,6 +56,15 @@ int main() {
         "nodo-other-chain", policy,
         crypto::SecurityContext::USER_TRANSACTION, provider
     ));
+
+    bool rejectedSignatureReplacement = false;
+    try {
+        core::Transaction replacementAttempt = restored;
+        replacementAttempt.attachSignatureBundle(transaction.signatureBundle());
+    } catch (const std::logic_error&) {
+        rejectedSignatureReplacement = true;
+    }
+    assert(rejectedSignatureReplacement);
 
     core::Transaction wrongSignature(
         core::TransactionType::TRANSFER,

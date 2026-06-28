@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <string>
 
 using namespace nodo::node;
 using namespace nodo::core;
@@ -13,6 +14,13 @@ using namespace nodo::crypto;
 
 int main() {
     const std::int64_t now = 1700000100;
+    const std::string genesisHash(64, '0');
+    const std::string block1Hash(64, '1');
+    const std::string block2Hash(64, '2');
+    const std::string block3Hash(64, '3');
+    const std::string stateRoot1(64, 'a');
+    const std::string stateRoot2(64, 'b');
+    const std::string stateRoot3(64, 'c');
 
     const ValidatorRegistry registry;
     const CryptoPolicy policy = CryptoPolicy::developmentPolicy();
@@ -26,31 +34,41 @@ int main() {
 
     PersistentBlockSyncItem item1(
         1,
-        "block-1",
-        "genesis-hash",
+        block1Hash,
+        genesisHash,
         "Block{index=1}",
-        "state-root-1",
-        now + 1
+        stateRoot1,
+        now + 1,
+        "FINALIZED_RECORD_1"
     );
 
     PersistentBlockSyncItem item2(
         2,
-        "block-2",
-        "block-1",
+        block2Hash,
+        block1Hash,
         "Block{index=2}",
-        "state-root-2",
-        now + 2
+        stateRoot2,
+        now + 2,
+        "FINALIZED_RECORD_2"
     );
 
-    assert(item1.serializedFinalizedRecord().empty());
-    assert(item2.serializedFinalizedRecord().empty());
+    PersistentBlockSyncItem missingFinalityRecord(
+        1,
+        block1Hash,
+        genesisHash,
+        "Block{index=1}",
+        stateRoot1,
+        now + 1
+    );
+    assert(missingFinalityRecord.isValid());
+    assert(missingFinalityRecord.serializedFinalizedRecord().empty());
 
     PersistentBlockSyncItem itemWithRecord(
         3,
-        "block-3",
-        "block-2",
+        block3Hash,
+        block2Hash,
         "Block{index=3}",
-        "state-root-3",
+        stateRoot3,
         now + 3,
         "FINALIZED_RECORD_PAYLOAD"
     );
@@ -71,7 +89,7 @@ int main() {
     assert(batch.isValid());
     assert(batch.blockCount() == 1);
     assert(batch.lastItem() != nullptr);
-    assert(batch.lastItem()->blockHash() == "block-1");
+    assert(batch.lastItem()->blockHash() == block1Hash);
 
     PersistentBlockSyncBatch oversizedBatch(
         "node-b",
@@ -84,11 +102,12 @@ int main() {
 
     PersistentBlockSyncItem broken(
         2,
-        "block-2-alt",
-        "wrong-parent",
+        std::string(64, '4'),
+        std::string(64, '9'),
         "Block{index=2}",
-        "state-root-2",
-        now + 5
+        stateRoot2,
+        now + 5,
+        "FINALIZED_RECORD_BROKEN"
     );
 
     PersistentBlockSyncBatch brokenBatch(
@@ -103,10 +122,10 @@ int main() {
 
     PersistentBlockSyncItem itemBadRecord(
         1,
-        "block-1",
-        "genesis-hash",
+        block1Hash,
+        genesisHash,
         "Block{index=1}",
-        "state-root-1",
+        stateRoot1,
         now + 1,
         "NOT_VALID_SERIALIZED_RECORD_DATA_XXXX"
     );
@@ -120,6 +139,15 @@ int main() {
     );
 
     assert(batchBadRecord.isValid());
+
+    PersistentBlockSyncBatch impossibleChronology(
+        "node-b",
+        1,
+        1,
+        {item1},
+        now
+    );
+    assert(!impossibleChronology.isValid());
 
     std::cout << "persistent block/state sync batch tests passed\n";
     return 0;

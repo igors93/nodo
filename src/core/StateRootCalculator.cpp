@@ -3,6 +3,7 @@
 #include "core/MerkleTree.hpp"
 #include "core/SparseMerkleTree.hpp"
 #include "crypto/hash.h"
+#include "serialization/CanonicalWriter.hpp"
 
 #include <sstream>
 #include <vector>
@@ -71,14 +72,22 @@ std::string StateRootCalculator::calculateProtocolStateRoot(
     }
 
     std::vector<std::string> leaves;
-    leaves.push_back("NODO_STATE_DOMAIN_V1{domain=accounts;root=" + accountRoot + "}");
+    serialization::CanonicalWriter accountLeaf;
+    accountLeaf.writeString("NODO_STATE_DOMAIN_V2");
+    accountLeaf.writeString("accounts");
+    accountLeaf.writeString(accountRoot);
+    leaves.push_back(accountLeaf.byteString());
+
     for (const auto& [domain, payload] : deterministicDomains) {
-        if (domain.empty() || payload.empty()) {
+        if (domain.empty() || domain == "accounts" || payload.empty()) {
             return "";
         }
-        leaves.push_back(
-            "NODO_STATE_DOMAIN_V1{domain=" + domain + ";payload=" + payload + "}"
-        );
+
+        serialization::CanonicalWriter domainLeaf;
+        domainLeaf.writeString("NODO_STATE_DOMAIN_V2");
+        domainLeaf.writeString(domain);
+        domainLeaf.writeString(payload);
+        leaves.push_back(domainLeaf.byteString());
     }
     return MerkleTree::buildRoot(leaves);
 }

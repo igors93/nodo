@@ -175,6 +175,7 @@ std::optional<AccountStateSnapshot> AccountStateSnapshotStore::load() const {
         if (!parseInt64Strict(
                 line.substr(tab1 + 1, tab2 - tab1 - 1),
                 balanceRaw) ||
+            balanceRaw < 0 ||
             !parseUint64Strict(line.substr(tab2 + 1), nonce) ||
             view.hasAccount(address)) {
             return std::nullopt;

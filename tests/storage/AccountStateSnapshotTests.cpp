@@ -6,6 +6,7 @@
 #include "core/Blockchain.hpp"
 #include "crypto/KeyPair.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
+#include "storage/AtomicFile.hpp"
 #include "utils/Amount.hpp"
 
 #include <filesystem>
@@ -106,6 +107,24 @@ void testSnapshotOverwritesPreviousSnapshot() {
             "Overwritten snapshot must NOT contain addr-1 from first save.");
 }
 
+void testNegativeBalanceSnapshotIsRejectedWithoutThrowing() {
+    const std::filesystem::path dir = tempDir();
+    AccountStateSnapshotStore store(dir);
+    storage::AtomicFile::writeTextFile(
+        store.snapshotPath(),
+        "NODO_ACCOUNT_SNAPSHOT_V1\n"
+        "genesisConfigId=genesis\n"
+        "height=1\n"
+        "blockHash=block-hash-1\n"
+        "addr-negative\t-1\t0\n"
+    );
+
+    require(
+        !store.load().has_value(),
+        "Snapshot with a negative account balance must be rejected."
+    );
+}
+
 void testPartialReplayMatchesFullReplay() {
     const config::GenesisConfig genesis(
         config::NetworkParameters::developmentLocal(),
@@ -165,6 +184,7 @@ int main() {
         testSnapshotRoundTrip();
         testMissingSnapshotReturnsNullopt();
         testSnapshotOverwritesPreviousSnapshot();
+        testNegativeBalanceSnapshotIsRejectedWithoutThrowing();
         testPartialReplayMatchesFullReplay();
 
         std::cout << "Nodo Gap6 account-state-snapshot tests passed.\n";

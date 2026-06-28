@@ -1,5 +1,6 @@
 #include "storage/AtomicFile.hpp"
 
+#include <cerrno>
 #include <chrono>
 #include <fstream>
 #include <stdexcept>
@@ -34,6 +35,39 @@ bool hasTemporaryWriteMarker(
 
     return filename.find(TEMPORARY_WRITE_MARKER) != std::string::npos;
 }
+
+#if defined(__unix__) || defined(__APPLE__)
+void syncAndCloseOrThrow(
+    int descriptor,
+    const std::string& description
+) {
+    if (descriptor < 0) {
+        throw std::system_error(
+            errno,
+            std::generic_category(),
+            "Unable to open " + description + " for durable sync"
+        );
+    }
+
+    if (::fsync(descriptor) != 0) {
+        const int syncError = errno;
+        ::close(descriptor);
+        throw std::system_error(
+            syncError,
+            std::generic_category(),
+            "Unable to sync " + description
+        );
+    }
+
+    if (::close(descriptor) != 0) {
+        throw std::system_error(
+            errno,
+            std::generic_category(),
+            "Unable to close " + description + " after durable sync"
+        );
+    }
+}
+#endif
 
 } // namespace
 
@@ -91,11 +125,7 @@ void AtomicFile::writeTextFile(
                 temporaryPath.c_str(),
                 O_RDONLY
             );
-
-            if (fd >= 0) {
-                ::fsync(fd);
-                ::close(fd);
-            }
+            syncAndCloseOrThrow(fd, "temporary file " + temporaryPath.string());
 #endif
         }
 
@@ -125,11 +155,7 @@ void AtomicFile::writeTextFile(
                 dirPath.c_str(),
                 O_RDONLY
             );
-
-            if (dirFd >= 0) {
-                ::fsync(dirFd);
-                ::close(dirFd);
-            }
+            syncAndCloseOrThrow(dirFd, "directory " + dirPath.string());
         }
 #endif
     } catch (...) {

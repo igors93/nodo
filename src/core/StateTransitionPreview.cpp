@@ -516,6 +516,13 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
             workingAccountState,
             protocolTransition.domains()
         );
+    if (combinedStateRoot.empty()) {
+        return StateTransitionPreviewResult::rejected(
+            StateTransitionPreviewStatus::INVALID_CONTEXT,
+            "Protocol state transition produced an invalid state commitment.",
+            processedTransactionCount
+        );
+    }
 
     return StateTransitionPreviewResult::valid(
         processedTransactionCount,

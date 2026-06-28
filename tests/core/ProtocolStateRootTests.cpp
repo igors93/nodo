@@ -39,6 +39,21 @@ int main() {
         accounts, changedDomains
     ));
 
+    const std::map<std::string, std::string> formerlyAmbiguousA = {
+        {"alpha;payload=beta", "gamma"}
+    };
+    const std::map<std::string, std::string> formerlyAmbiguousB = {
+        {"alpha", "beta;payload=gamma"}
+    };
+    assert(nodo::core::StateRootCalculator::calculateProtocolStateRoot(
+        accounts, formerlyAmbiguousA
+    ) != nodo::core::StateRootCalculator::calculateProtocolStateRoot(
+        accounts, formerlyAmbiguousB
+    ));
+    assert(nodo::core::StateRootCalculator::calculateProtocolStateRoot(
+        accounts, {{"accounts", "shadowed-account-state"}}
+    ).empty());
+
     std::cout << "protocol state root tests passed\n";
     return 0;
 }

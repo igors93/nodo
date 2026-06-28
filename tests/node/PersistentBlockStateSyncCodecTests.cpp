@@ -2,11 +2,15 @@
 
 #include <cassert>
 #include <iostream>
+#include <string>
 
 using namespace nodo::node;
 
 int main() {
     const std::int64_t now = 1700000300;
+    const std::string genesisHash(64, '0');
+    const std::string block1Hash(64, '1');
+    const std::string stateRoot1(64, 'a');
 
     PersistentSyncCheckpoint checkpoint = PersistentSyncCheckpoint::genesis(
         "genesis-hash",
@@ -21,11 +25,12 @@ int main() {
 
     PersistentBlockSyncItem item(
         1,
-        "block-1",
-        "genesis-hash",
+        block1Hash,
+        genesisHash,
         "Block{index=1}",
-        "state-root-1",
-        now + 1
+        stateRoot1,
+        now + 1,
+        "FINALIZED_RECORD_1"
     );
 
     PersistentBlockSyncBatch batch(
@@ -40,7 +45,7 @@ int main() {
     const auto decodedBatch = PersistentBlockStateSyncCodec::decodeBlockSyncBatch(batchBytes);
     assert(decodedBatch.isValid());
     assert(decodedBatch.fromHeight() == 1);
-    assert(decodedBatch.items().front().blockHash() == "block-1");
+    assert(decodedBatch.items().front().blockHash() == block1Hash);
     assert(!PersistentBlockStateSyncCodec::hashBlockSyncBatch(batch).empty());
 
     PersistentSnapshotSyncManifest manifest(

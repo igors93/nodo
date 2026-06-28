@@ -14,6 +14,7 @@ namespace {
 using nodo::core::ValidatorRegistrationRecord;
 using nodo::core::ValidatorRegistry;
 using nodo::core::ValidatorRegistryUpdateStatus;
+using nodo::core::ValidatorSetHistory;
 using nodo::crypto::Address;
 using nodo::crypto::AddressDerivation;
 using nodo::crypto::KeyPair;
@@ -298,6 +299,33 @@ void testDeactivateValidator() {
     );
 }
 
+void testValidatorSetHistoryRejectsHeightGaps() {
+    ValidatorRegistry registry;
+    requireCondition(
+        registry.registerValidator(registrationFor(
+            publicKey("history"),
+            1,
+            "metadata-hash-history",
+            kTimestamp
+        )).accepted(),
+        "History test validator registration should succeed."
+    );
+
+    ValidatorSetHistory history;
+    requireCondition(
+        !history.recordSet(2, registry),
+        "Validator-set history must start at height one."
+    );
+    requireCondition(
+        history.recordSet(1, registry) && history.recordSet(2, registry),
+        "Validator-set history must accept contiguous heights."
+    );
+    requireCondition(
+        !history.recordSet(4, registry) && history.isValid(),
+        "Validator-set history must reject gaps without corrupting prior history."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -308,6 +336,7 @@ int main() {
         testConflictingPublicKeyIsRejected();
         testInvalidAddressPublicKeyBindingIsRejected();
         testDeactivateValidator();
+        testValidatorSetHistoryRejectsHeightGaps();
 
         std::cout << "Nodo validator registry tests passed.\n";
         return 0;

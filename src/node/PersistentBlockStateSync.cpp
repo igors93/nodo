@@ -25,6 +25,8 @@ namespace {
 
 constexpr std::size_t MAX_SERIALIZED_BLOCK_BYTES =
     core::ProtocolLimits::MAX_SERIALIZED_BLOCK_BYTES;
+constexpr std::size_t MAX_SERIALIZED_FINALIZED_RECORD_BYTES =
+    core::ProtocolLimits::MAX_SERIALIZED_BLOCK_BYTES;
 constexpr std::size_t MAX_SYNC_CODEC_FIELD_BYTES = 16 * 1024 * 1024;
 constexpr const char* CODEC_VERSION = "NODO_PERSISTENT_BLOCK_STATE_SYNC_CODEC_V1";
 
@@ -524,11 +526,13 @@ const std::string& PersistentBlockSyncItem::serializedFinalizedRecord() const { 
 
 bool PersistentBlockSyncItem::isValid() const {
     return m_height > 0 &&
-           isSafeScalar(m_blockHash) &&
-           isSafeScalar(m_previousBlockHash) &&
+           core::Block::isCanonicalCommitmentRoot(m_blockHash) &&
+           core::Block::isCanonicalCommitmentRoot(m_previousBlockHash) &&
            !m_serializedBlock.empty() &&
            m_serializedBlock.size() <= MAX_SERIALIZED_BLOCK_BYTES &&
-           isSafeScalar(m_finalizedStateRoot) &&
+           core::Block::isCanonicalCommitmentRoot(m_finalizedStateRoot) &&
+           m_serializedFinalizedRecord.size() <=
+               MAX_SERIALIZED_FINALIZED_RECORD_BYTES &&
            m_createdAt > 0;
 }
 
@@ -603,6 +607,10 @@ bool PersistentBlockSyncBatch::isValid() const {
         }
 
         if (item.height() != m_fromHeight + index) {
+            return false;
+        }
+
+        if (item.createdAt() > m_createdAt) {
             return false;
         }
 
@@ -808,10 +816,10 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
         );
     }
 
-    if (remoteStatus.latestHeight() <= localCheckpoint.finalizedHeight()) {
+    if (remoteStatus.finalizedHeight() <= localCheckpoint.finalizedHeight()) {
         return PersistentSyncPlan(
             PersistentSyncPlanStatus::NOT_REQUIRED,
-            "Local checkpoint is already at or ahead of remote peer.",
+            "Local checkpoint is already at or ahead of remote finalized state.",
             std::nullopt
         );
     }
@@ -820,7 +828,8 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
         maxBlocksPerRequest = NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH;
     }
 
-    const std::uint64_t heightGap = remoteStatus.latestHeight() - localCheckpoint.finalizedHeight();
+    const std::uint64_t heightGap =
+        remoteStatus.finalizedHeight() - localCheckpoint.finalizedHeight();
 
     const std::uint64_t fromHeight = localCheckpoint.finalizedHeight() + 1;
     const std::uint64_t requestedCount = std::min(heightGap, maxBlocksPerRequest);
@@ -890,10 +899,9 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
     std::int64_t now,
     const core::ValidatorSetHistory* validatorSetHistory
 ) {
-    // Shape validation — same rules as the fast path, minus the QC
-    // requirement.  Protocol-commitment mode trusts state-root recomputation as
-    // its primary trust mechanism; QC is verified as defence-in-depth only when
-    // the peer supplies a FinalizedBlockRecord.
+    // Shape validation runs before mandatory finality-proof and protocol-state
+    // verification. A synchronized block is never accepted from commitments
+    // alone.
     if (!checkpoint.isValid()) {
         return PersistentSyncApplyResult(
             PersistentSyncApplyStatus::REJECTED,

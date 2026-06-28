@@ -209,14 +209,14 @@ PersistentSyncCheckpoint genesisCheckpoint(const core::Blockchain& blockchain) {
 PersistentBlockSyncBatch singleBlockBatch(
     const core::Block& block,
     const std::string& genesisHash,
-    const std::string& finalizedStateRoot = "finalized-state-root-1"
+    const std::string& finalizedStateRoot = ""
 ) {
     const PersistentBlockSyncItem item(
         1,
         block.hash(),
         genesisHash,
         block.serialize(),
-        finalizedStateRoot,
+        finalizedStateRoot.empty() ? block.stateRoot() : finalizedStateRoot,
         kTimestamp + 1
     );
     return PersistentBlockSyncBatch("peer-a", 1, 1, {item}, kTimestamp + 2);
@@ -433,8 +433,6 @@ void testProtocolCommitmentRejectsItemsWithoutFinalizedRecord() {
     const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
     const crypto::Bls12381SignatureProvider provider;
 
-    // Protocol-commitment mode verifies state roots from scratch; QC records
-    // are optional (verified as defence-in-depth only when present).
     // Use nonce 1 — matches the senderContext() account nonce of 0 (next = 1).
     const core::Block goodBlock = buildBlockWithRealRoots(blockchain, 1);
     const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);

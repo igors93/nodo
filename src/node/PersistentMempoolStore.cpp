@@ -703,7 +703,9 @@ std::size_t PersistentMempoolStore::removeTransactions(
     const std::vector<std::string>& transactionIds
 ) {
     if (!directoryConfig.isValid()) {
-        return 0;
+        throw std::invalid_argument(
+            "Invalid node data directory for persistent mempool removal."
+        );
     }
 
     std::size_t removed = 0;
@@ -716,7 +718,14 @@ std::size_t PersistentMempoolStore::removeTransactions(
             );
 
         std::error_code error;
-        if (std::filesystem::remove(path, error)) {
+        const bool fileRemoved = std::filesystem::remove(path, error);
+        if (error) {
+            throw std::runtime_error(
+                "Failed to remove persistent mempool transaction "
+                + transactionId + ": " + error.message()
+            );
+        }
+        if (fileRemoved) {
             ++removed;
         }
     }

@@ -3,6 +3,7 @@
 #include "crypto/AddressDerivation.hpp"
 #include "crypto/hash.h"
 
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -1029,6 +1030,16 @@ bool ValidatorSetHistory::recordSet(
     if (existing != m_setsByHeight.end()) {
         return existing->second.serialize() == registry.serialize();
     }
+    if (!m_setsByHeight.empty() &&
+        m_setsByHeight.rbegin()->first ==
+            std::numeric_limits<std::uint64_t>::max()) {
+        return false;
+    }
+    const std::uint64_t expectedHeight =
+        m_setsByHeight.empty() ? 1 : m_setsByHeight.rbegin()->first + 1;
+    if (height != expectedHeight) {
+        return false;
+    }
     m_setsByHeight.emplace(height, registry);
     return true;
 }
@@ -1050,10 +1061,12 @@ std::uint64_t ValidatorSetHistory::highestRecordedHeight() const {
 }
 
 bool ValidatorSetHistory::isValid() const {
+    std::uint64_t expectedHeight = 1;
     for (const auto& [height, registry] : m_setsByHeight) {
-        if (height == 0 || !registry.isValid()) {
+        if (height != expectedHeight || !registry.isValid()) {
             return false;
         }
+        ++expectedHeight;
     }
     return true;
 }
