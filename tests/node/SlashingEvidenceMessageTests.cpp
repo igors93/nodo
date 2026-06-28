@@ -93,13 +93,45 @@ int main() {
     }
     assert(tamperRejected);
 
+    const nodo::node::SlashingEvidenceInventory inventory(
+        "localnet",
+        "chain-alpha",
+        "node-alpha",
+        {std::string(64, 'b'), evidence.evidenceId()},
+        202
+    );
+    assert(inventory.isValid());
+    const auto restoredInventory =
+        nodo::node::SlashingEvidenceInventory::deserialize(
+            inventory.serialize()
+        );
+    assert(restoredInventory.serialize() == inventory.serialize());
+    assert(restoredInventory.evidenceIds().size() == 2);
+
     const nodo::node::SlashingEvidenceRequest request(
+        "localnet",
+        "chain-alpha",
         "node-beta",
         evidence.evidenceId(),
-        202
+        203
     );
     assert(request.isValid());
     assert(request.evidenceId() == evidence.evidenceId());
+    assert(
+        nodo::node::SlashingEvidenceRequest::deserialize(
+            request.serialize()
+        ).serialize() == request.serialize()
+    );
+
+    const nodo::node::SlashingEvidenceResponse response(
+        "localnet", "chain-alpha", "node-alpha", evidence, 204
+    );
+    assert(response.isValid());
+    assert(
+        nodo::node::SlashingEvidenceResponse::deserialize(
+            response.serialize()
+        ).serialize() == response.serialize()
+    );
 
     std::cout << "slashing evidence messages tests passed\n";
     return 0;

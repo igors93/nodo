@@ -64,6 +64,9 @@ std::string networkMessageTypeToString(NetworkMessageType type) {
         case NetworkMessageType::BLOCK_SYNC_REQUEST:          return "BLOCK_SYNC_REQUEST";
         case NetworkMessageType::BLOCK_SYNC_RESPONSE:         return "BLOCK_SYNC_RESPONSE";
         case NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE:  return "SLASHING_EVIDENCE_ANNOUNCE";
+        case NetworkMessageType::SLASHING_EVIDENCE_INVENTORY: return "SLASHING_EVIDENCE_INVENTORY";
+        case NetworkMessageType::SLASHING_EVIDENCE_REQUEST:   return "SLASHING_EVIDENCE_REQUEST";
+        case NetworkMessageType::SLASHING_EVIDENCE_RESPONSE:  return "SLASHING_EVIDENCE_RESPONSE";
         case NetworkMessageType::UNKNOWN:
         default: return "UNKNOWN";
     }
@@ -91,6 +94,9 @@ NetworkMessageType networkMessageTypeFromString(const std::string& value) {
     if (value == "BLOCK_SYNC_REQUEST")          return NetworkMessageType::BLOCK_SYNC_REQUEST;
     if (value == "BLOCK_SYNC_RESPONSE")         return NetworkMessageType::BLOCK_SYNC_RESPONSE;
     if (value == "SLASHING_EVIDENCE_ANNOUNCE")  return NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE;
+    if (value == "SLASHING_EVIDENCE_INVENTORY") return NetworkMessageType::SLASHING_EVIDENCE_INVENTORY;
+    if (value == "SLASHING_EVIDENCE_REQUEST")   return NetworkMessageType::SLASHING_EVIDENCE_REQUEST;
+    if (value == "SLASHING_EVIDENCE_RESPONSE")  return NetworkMessageType::SLASHING_EVIDENCE_RESPONSE;
     return NetworkMessageType::UNKNOWN;
 }
 

@@ -748,6 +748,16 @@ std::optional<TransportMessage> TcpTransport::poll(
         PollFdResult result = pollFd(fd, false);
 
         if (result.status == PollFdResult::Status::MESSAGE) {
+            // A socket is bound to the identity established by its first frame.
+            // Reject identity changes before per-peer controls see the message.
+            if (!result.message.has_value() ||
+                result.message->fromNodeId() != iterator->first) {
+                SocketHandle closedFd = fd;
+                closeSocket(closedFd);
+                iterator = m_connectionsByPeer.erase(iterator);
+                continue;
+            }
+
             return result.message;
         }
 

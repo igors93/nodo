@@ -2,6 +2,7 @@
 
 #include "core/ProtocolLimits.hpp"
 #include "node/SlashingEvidenceMessages.hpp"
+#include "node/VerifiedSlashingEvidenceAdmission.hpp"
 
 #include <cstdlib>
 #include <exception>
@@ -98,17 +99,9 @@ SlashingEvidenceGossipResult SlashingEvidenceGossipAdmission::admit(
         const consensus::DoubleVoteEvidence& evidence =
             announcement.evidence();
         const std::string evidenceId = evidence.evidenceId();
-        const std::uint64_t offenseHeight =
-            evidence.firstVote().blockIndex();
-
         if (evidence.detectedAt() > announcement.announcedAt() ||
-            evidence.firstVote().createdAt() >
-                announcement.announcedAt() +
-                    MAX_SLASHING_EVIDENCE_CLOCK_SKEW_SECONDS ||
-            evidence.secondVote().createdAt() >
-                announcement.announcedAt() +
-                    MAX_SLASHING_EVIDENCE_CLOCK_SKEW_SECONDS ||
-            offenseHeight == 0 || offenseHeight > currentConsensusHeight) {
+            evidence.firstVote().blockIndex() == 0 ||
+            evidence.firstVote().blockIndex() > currentConsensusHeight) {
             return {
                 SlashingEvidenceGossipStatus::REJECTED,
                 "Slashing evidence has an invalid height or timestamp.",
@@ -116,37 +109,16 @@ SlashingEvidenceGossipResult SlashingEvidenceGossipAdmission::admit(
             };
         }
 
-        if (evidencePool.contains(evidenceId)) {
-            return {
-                SlashingEvidenceGossipStatus::DUPLICATE,
-                "Slashing evidence is already known.",
-                evidenceId
-            };
-        }
-
-        const consensus::SlashingEvidenceValidationResult verified =
-            consensus::SlashingEvidenceVerifier::
-                verifyDoubleVoteEvidenceForHistory(
-                    evidence,
-                    currentConsensusHeight,
-                    validatorSetHistory,
-                    policy,
-                    provider
-                );
-        if (!verified.accepted()) {
-            return {
-                SlashingEvidenceGossipStatus::REJECTED,
-                "Slashing evidence verification failed: " +
-                    verified.reason(),
-                evidenceId
-            };
-        }
-
-        const consensus::DoubleVoteEvidence locallyTimestampedEvidence(
-            evidence.firstVote(), evidence.secondVote(), now
-        );
         const consensus::SlashingEvidenceValidationResult stored =
-            evidencePool.submitDoubleVoteEvidence(locallyTimestampedEvidence);
+            VerifiedSlashingEvidenceAdmission::admit(
+                evidence,
+                currentConsensusHeight,
+                now,
+                validatorSetHistory,
+                policy,
+                provider,
+                evidencePool
+            );
         if (stored.duplicate()) {
             return {
                 SlashingEvidenceGossipStatus::DUPLICATE,

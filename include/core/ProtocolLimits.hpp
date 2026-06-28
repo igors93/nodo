@@ -22,6 +22,14 @@ inline constexpr std::size_t MAX_SLASHING_EVIDENCE_PER_PEER_WINDOW = 16;
 inline constexpr std::uint32_t SLASHING_EVIDENCE_PEER_WINDOW_SECONDS = 60;
 inline constexpr std::size_t MAX_TRACKED_SLASHING_EVIDENCE_PEERS = 4096;
 inline constexpr std::int64_t MAX_SLASHING_EVIDENCE_CLOCK_SKEW_SECONDS = 30;
+inline constexpr std::size_t MAX_SLASHING_EVIDENCE_INVENTORY_IDS = 64;
+inline constexpr std::size_t MAX_PENDING_SLASHING_EVIDENCE_REQUESTS = 256;
+inline constexpr std::size_t MAX_SLASHING_EVIDENCE_REQUESTS_PER_INVENTORY = 16;
+inline constexpr std::size_t MAX_SLASHING_EVIDENCE_SYNC_MESSAGES_PER_PEER_WINDOW = 32;
+inline constexpr std::size_t MAX_SLASHING_EVIDENCE_RESPONSES_PER_PEER_WINDOW = 16;
+inline constexpr std::uint32_t SLASHING_EVIDENCE_SYNC_WINDOW_SECONDS = 60;
+inline constexpr std::int64_t SLASHING_EVIDENCE_INVENTORY_INTERVAL_SECONDS = 30;
+inline constexpr std::int64_t SLASHING_EVIDENCE_REQUEST_TIMEOUT_SECONDS = 60;
 
 } // namespace nodo::core::ProtocolLimits
 

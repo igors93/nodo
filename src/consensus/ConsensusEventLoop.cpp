@@ -368,6 +368,24 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
 
     drainSlashingEvidence(now, result);
 
+    if (m_evidencePool != nullptr && !m_runtime.blockchain().empty()) {
+        const node::SlashingEvidenceSyncResult sync =
+            m_evidenceSync.tick(
+                m_gossip,
+                *m_evidencePool,
+                m_runtime.consensusRoundManager().currentState().height(),
+                m_runtime.validatorSetHistory(),
+                m_policy,
+                m_provider,
+                now
+            );
+        result.evidenceAccepted += sync.evidenceAccepted;
+        result.evidenceRejected += sync.rejectedMessages;
+        result.evidenceRateLimited += sync.rateLimitedMessages;
+        result.evidenceSyncRequestsSent += sync.requestsSent;
+        result.evidenceSyncResponsesSent += sync.responsesSent;
+    }
+
     const std::array<p2p::NetworkMessageType, 2> voteTypes = {
         p2p::NetworkMessageType::VOTE_ANNOUNCE,
         p2p::NetworkMessageType::VALIDATOR_VOTE

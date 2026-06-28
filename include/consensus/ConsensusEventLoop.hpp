@@ -16,6 +16,7 @@
 #include "crypto/Signer.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/SlashingEvidenceGossipAdmission.hpp"
+#include "node/SlashingEvidenceSync.hpp"
 #include "p2p/GossipMesh.hpp"
 
 #include <atomic>
@@ -39,6 +40,8 @@ struct ConsensusTickResult {
     std::uint32_t evidenceAccepted = 0;
     std::uint32_t evidenceRejected = 0;
     std::uint32_t evidenceRateLimited = 0;
+    std::uint32_t evidenceSyncRequestsSent = 0;
+    std::uint32_t evidenceSyncResponsesSent = 0;
     bool          quorumFormed    = false;
     bool          blockFinalized  = false;
     bool          roundAdvanced   = false;
@@ -170,13 +173,14 @@ public:
      * Execute one consensus tick synchronously.
      *
      * Steps:
-     *   1. Drain VOTE_ANNOUNCE / VALIDATOR_VOTE messages from gossip inbox.
-     *   2. Forward double-votes to EvidencePool if wired.
-     *   3. Phase 1+2: If proposer, produce candidate + broadcast proposal.
-     *   4. Phase 3a: Cast PREVOTE if eligible and not yet voted.
-     *   5. Phase 3b: Cast PRECOMMIT if PREVOTE quorum is reached.
-     *   6. Phase 4:  Try to assemble QC and finalize. Advances round on success.
-     *   7. Check round timeout and advance round if expired.
+     *   1. Admit live and synchronized slashing evidence from gossip.
+     *   2. Drain VOTE_ANNOUNCE / VALIDATOR_VOTE messages from gossip inbox.
+     *   3. Forward newly detected double-votes to EvidencePool if wired.
+     *   4. Phase 1+2: If proposer, produce candidate + broadcast proposal.
+     *   5. Phase 3a: Cast PREVOTE if eligible and not yet voted.
+     *   6. Phase 3b: Cast PRECOMMIT if PREVOTE quorum is reached.
+     *   7. Phase 4: Try to assemble QC and finalize.
+     *   8. Check round timeout and advance round if expired.
      */
     ConsensusTickResult tick(std::int64_t now);
 
@@ -197,6 +201,7 @@ private:
     std::string           m_localValidatorAddress;
     EvidencePool*         m_evidencePool  = nullptr;
     node::SlashingEvidenceGossipAdmission m_evidenceGossipAdmission;
+    node::SlashingEvidenceSync m_evidenceSync;
     const crypto::Signer* m_localSigner   = nullptr;
 
     // BFT lock/vote state — reset when a new height is confirmed.

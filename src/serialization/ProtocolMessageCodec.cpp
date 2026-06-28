@@ -51,7 +51,7 @@ p2p::NetworkMessageType decodeMessageType(
     std::uint32_t value
 ) {
     if (value > static_cast<std::uint32_t>(
-            p2p::NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE)) {
+            p2p::NetworkMessageType::SLASHING_EVIDENCE_RESPONSE)) {
         return p2p::NetworkMessageType::UNKNOWN;
     }
 
