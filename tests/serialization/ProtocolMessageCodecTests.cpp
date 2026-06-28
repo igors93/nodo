@@ -152,7 +152,7 @@ int main() {
         "nodo-localnet",
         "nodo-localnet-1",
         "nodo/0.1",
-        nodo::p2p::NetworkMessageType::CHAIN_STATUS,
+        nodo::p2p::NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE,
         "node-a",
         1700000000,
         60,

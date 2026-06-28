@@ -28,7 +28,8 @@ enum class NetworkMessageType {
     FINALIZED_BLOCK_ARTIFACT,
     CHAIN_STATUS,
     BLOCK_SYNC_REQUEST,
-    BLOCK_SYNC_RESPONSE
+    BLOCK_SYNC_RESPONSE,
+    SLASHING_EVIDENCE_ANNOUNCE
 };
 
 std::string networkMessageTypeToString(NetworkMessageType type);

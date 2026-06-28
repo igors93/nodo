@@ -50,7 +50,8 @@ std::uint32_t encodeMessageType(
 p2p::NetworkMessageType decodeMessageType(
     std::uint32_t value
 ) {
-    if (value > static_cast<std::uint32_t>(p2p::NetworkMessageType::CHAIN_STATUS)) {
+    if (value > static_cast<std::uint32_t>(
+            p2p::NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE)) {
         return p2p::NetworkMessageType::UNKNOWN;
     }
 

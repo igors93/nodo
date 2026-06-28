@@ -63,6 +63,7 @@ std::string networkMessageTypeToString(NetworkMessageType type) {
         case NetworkMessageType::CHAIN_STATUS:                return "CHAIN_STATUS";
         case NetworkMessageType::BLOCK_SYNC_REQUEST:          return "BLOCK_SYNC_REQUEST";
         case NetworkMessageType::BLOCK_SYNC_RESPONSE:         return "BLOCK_SYNC_RESPONSE";
+        case NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE:  return "SLASHING_EVIDENCE_ANNOUNCE";
         case NetworkMessageType::UNKNOWN:
         default: return "UNKNOWN";
     }
@@ -89,6 +90,7 @@ NetworkMessageType networkMessageTypeFromString(const std::string& value) {
     if (value == "CHAIN_STATUS")                return NetworkMessageType::CHAIN_STATUS;
     if (value == "BLOCK_SYNC_REQUEST")          return NetworkMessageType::BLOCK_SYNC_REQUEST;
     if (value == "BLOCK_SYNC_RESPONSE")         return NetworkMessageType::BLOCK_SYNC_RESPONSE;
+    if (value == "SLASHING_EVIDENCE_ANNOUNCE")  return NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE;
     return NetworkMessageType::UNKNOWN;
 }
 

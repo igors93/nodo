@@ -79,6 +79,9 @@ int main() {
     assert(pool.contains(accepted.record().evidenceId()));
     assert(pool.countForValidator("validator-alpha") == 1);
     assert(pool.allDoubleVoteEvidence().size() == 1);
+    assert(pool.doubleVoteEvidenceById(evidence.evidenceId()) != nullptr);
+    assert(pool.doubleVoteEvidenceBeforeHeight(7).empty());
+    assert(pool.doubleVoteEvidenceBeforeHeight(8).size() == 1);
 
     const auto duplicate = pool.submitDoubleVoteEvidence(evidence);
     assert(duplicate.duplicate());

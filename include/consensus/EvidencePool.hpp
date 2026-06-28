@@ -28,9 +28,17 @@ public:
         const std::string& evidenceId
     ) const;
 
+    const DoubleVoteEvidence* doubleVoteEvidenceById(
+        const std::string& evidenceId
+    ) const;
+
     std::vector<SlashingEvidenceRecord> allEvidence() const;
 
     std::vector<DoubleVoteEvidence> allDoubleVoteEvidence() const;
+
+    std::vector<DoubleVoteEvidence> doubleVoteEvidenceBeforeHeight(
+        std::uint64_t blockHeight
+    ) const;
 
     bool removeEvidence(const std::string& evidenceId);
 

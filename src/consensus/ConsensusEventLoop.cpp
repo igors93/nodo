@@ -9,6 +9,7 @@
 #include "node/DoubleVoteDetector.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/SignedBlockProposalMessage.hpp"
+#include "node/SlashingEvidenceMessages.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 #include "serialization/BlockCodec.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
@@ -365,6 +366,8 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
 ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
     ConsensusTickResult result;
 
+    drainSlashingEvidence(now, result);
+
     const std::array<p2p::NetworkMessageType, 2> voteTypes = {
         p2p::NetworkMessageType::VOTE_ANNOUNCE,
         p2p::NetworkMessageType::VALIDATOR_VOTE
@@ -398,10 +401,90 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
     if (m_evidencePool) {
         const VotePool& pool =
             m_runtime.consensusRoundManager().voteCollector().votePool();
-        node::DoubleVoteDetector::detect(pool, *m_evidencePool, m_policy, now);
+        const node::DoubleVoteDetectionResult detected =
+            node::DoubleVoteDetector::detect(
+                pool, *m_evidencePool, m_policy, now
+            );
+        for (const std::string& evidenceId : detected.newEvidenceIds) {
+            const DoubleVoteEvidence* evidence =
+                m_evidencePool->doubleVoteEvidenceById(evidenceId);
+            if (evidence != nullptr) {
+                broadcastSlashingEvidence(*evidence, now);
+            }
+        }
     }
 
     return result;
+}
+
+void ConsensusEventLoop::drainSlashingEvidence(
+    std::int64_t now,
+    ConsensusTickResult& result
+) {
+    const auto messages = m_gossip.drainInbox(
+        p2p::NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE
+    );
+    if (messages.empty()) return;
+
+    if (m_evidencePool == nullptr || m_runtime.blockchain().empty()) {
+        result.evidenceRejected +=
+            static_cast<std::uint32_t>(messages.size());
+        return;
+    }
+
+    const std::uint64_t currentHeight =
+        m_runtime.consensusRoundManager().currentState().height();
+    for (const p2p::NetworkEnvelope& envelope : messages) {
+        const node::SlashingEvidenceGossipResult admitted =
+            m_evidenceGossipAdmission.admit(
+                envelope,
+                m_gossip.config().networkId(),
+                m_gossip.config().chainId(),
+                currentHeight,
+                m_runtime.validatorSetHistory(),
+                m_policy,
+                m_provider,
+                *m_evidencePool,
+                now
+            );
+        if (admitted.rateLimited()) {
+            ++result.evidenceRateLimited;
+            continue;
+        }
+        if (!admitted.accepted()) {
+            if (!admitted.duplicate()) {
+                ++result.evidenceRejected;
+            }
+            continue;
+        }
+
+        ++result.evidenceAccepted;
+        const DoubleVoteEvidence* evidence =
+            m_evidencePool->doubleVoteEvidenceById(admitted.evidenceId());
+        if (evidence != nullptr) {
+            broadcastSlashingEvidence(*evidence, now);
+        }
+    }
+}
+
+void ConsensusEventLoop::broadcastSlashingEvidence(
+    const DoubleVoteEvidence& evidence,
+    std::int64_t now
+) {
+    const node::SlashingEvidenceAnnouncement announcement(
+        m_gossip.config().networkId(),
+        m_gossip.config().chainId(),
+        m_gossip.config().localNodeId(),
+        evidence,
+        now
+    );
+    if (!announcement.isValid()) return;
+
+    m_gossip.broadcast(
+        p2p::NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE,
+        announcement.serialize(),
+        now
+    );
 }
 
 void ConsensusEventLoop::processBlockProposals() {

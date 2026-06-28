@@ -849,7 +849,7 @@ std::optional<core::Block> NodeOrchestrator::produceBlock(
         consensus::BlockProductionPhase::produce(
             *m_runtime,
             pipelineConfig,
-            m_evidencePool.allDoubleVoteEvidence()
+            m_evidencePool.doubleVoteEvidenceBeforeHeight(height)
         );
 
     if (!candidate.produced()) return std::nullopt;

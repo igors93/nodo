@@ -20,6 +20,16 @@ int main() {
     assert(!envelope.expiredAt(1010));
     assert(envelope.expiredAt(2000));
     assert(nodo::p2p::networkMessageTypeFromString("PING") == nodo::p2p::NetworkMessageType::PING);
+    assert(
+        nodo::p2p::networkMessageTypeFromString(
+            "SLASHING_EVIDENCE_ANNOUNCE"
+        ) == nodo::p2p::NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE
+    );
+    assert(
+        nodo::p2p::networkMessageTypeToString(
+            nodo::p2p::NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE
+        ) == "SLASHING_EVIDENCE_ANNOUNCE"
+    );
     assert(nodo::p2p::networkMessageTypeToString(envelope.messageType()) == "PING");
     assert(!envelope.messageId().empty());
     assert(envelope.serialize().find("NetworkEnvelope") != std::string::npos);

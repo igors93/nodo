@@ -68,6 +68,13 @@ const SlashingEvidenceRecord* EvidencePool::evidenceById(
     return found == m_evidenceById.end() ? nullptr : &found->second;
 }
 
+const DoubleVoteEvidence* EvidencePool::doubleVoteEvidenceById(
+    const std::string& evidenceId
+) const {
+    const auto found = m_doubleVoteEvidenceById.find(evidenceId);
+    return found == m_doubleVoteEvidenceById.end() ? nullptr : &found->second;
+}
+
 std::vector<SlashingEvidenceRecord> EvidencePool::allEvidence() const {
     std::vector<SlashingEvidenceRecord> records;
     records.reserve(m_evidenceById.size());
@@ -85,6 +92,19 @@ std::vector<DoubleVoteEvidence> EvidencePool::allDoubleVoteEvidence() const {
     for (const auto& [id, value] : m_doubleVoteEvidenceById) {
         (void)id;
         evidence.push_back(value);
+    }
+    return evidence;
+}
+
+std::vector<DoubleVoteEvidence> EvidencePool::doubleVoteEvidenceBeforeHeight(
+    std::uint64_t blockHeight
+) const {
+    std::vector<DoubleVoteEvidence> evidence;
+    for (const auto& [id, value] : m_doubleVoteEvidenceById) {
+        (void)id;
+        if (value.firstVote().blockIndex() < blockHeight) {
+            evidence.push_back(value);
+        }
     }
     return evidence;
 }

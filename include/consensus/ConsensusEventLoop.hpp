@@ -15,6 +15,7 @@
 #include "crypto/SignatureProvider.hpp"
 #include "crypto/Signer.hpp"
 #include "node/NodeRuntime.hpp"
+#include "node/SlashingEvidenceGossipAdmission.hpp"
 #include "p2p/GossipMesh.hpp"
 
 #include <atomic>
@@ -35,6 +36,9 @@ namespace nodo::consensus {
  */
 struct ConsensusTickResult {
     std::uint32_t votesCollected  = 0;
+    std::uint32_t evidenceAccepted = 0;
+    std::uint32_t evidenceRejected = 0;
+    std::uint32_t evidenceRateLimited = 0;
     bool          quorumFormed    = false;
     bool          blockFinalized  = false;
     bool          roundAdvanced   = false;
@@ -192,6 +196,7 @@ private:
     BlockProducerCallback m_blockProducer;
     std::string           m_localValidatorAddress;
     EvidencePool*         m_evidencePool  = nullptr;
+    node::SlashingEvidenceGossipAdmission m_evidenceGossipAdmission;
     const crypto::Signer* m_localSigner   = nullptr;
 
     // BFT lock/vote state — reset when a new height is confirmed.
@@ -221,6 +226,16 @@ private:
     void runLoop();
 
     ConsensusTickResult drainVotesAndCollect(std::int64_t now);
+
+    void drainSlashingEvidence(
+        std::int64_t now,
+        ConsensusTickResult& result
+    );
+
+    void broadcastSlashingEvidence(
+        const DoubleVoteEvidence& evidence,
+        std::int64_t now
+    );
 
     // Validate proposals on the consensus thread and retain at most one
     // candidate for the active height and round.
