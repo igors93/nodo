@@ -1,6 +1,9 @@
 #include "p2p/Peer.hpp"
 
+#include "crypto/hash.h"
+
 #include <algorithm>
+#include <cctype>
 #include <limits>
 #include <sstream>
 #include <utility>
@@ -85,6 +88,23 @@ std::int64_t PeerMetadata::firstSeenAt() const { return m_firstSeenAt; }
 std::int64_t PeerMetadata::lastSeenAt() const { return m_lastSeenAt; }
 std::int32_t PeerMetadata::score() const { return m_score; }
 bool PeerMetadata::quarantined() const { return m_quarantined; }
+
+std::string PeerMetadata::identityKey() const {
+    std::string canonicalFingerprint = m_publicKeyFingerprint;
+    std::transform(
+        canonicalFingerprint.begin(),
+        canonicalFingerprint.end(),
+        canonicalFingerprint.begin(),
+        [](unsigned char character) {
+            return static_cast<char>(std::tolower(character));
+        }
+    );
+    char digest[NODO_HASH_BUFFER_SIZE] = {};
+    const std::string payload =
+        "NODO_PEER_IDENTITY_V1|" + canonicalFingerprint;
+    nodo_hash_string(payload.c_str(), digest, sizeof(digest));
+    return "peer-key-" + std::string(digest);
+}
 
 PeerMetadata PeerMetadata::withHeartbeat(std::int64_t lastSeenAt) const {
     return PeerMetadata(

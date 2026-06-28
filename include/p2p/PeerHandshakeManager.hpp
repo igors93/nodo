@@ -7,6 +7,7 @@
 #include "p2p/Peer.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace nodo::p2p {
@@ -77,6 +78,11 @@ public:
 
     static PeerHandshakeResult validateHello(
         const GossipMeshConfig& config,
+        const NetworkEnvelope& envelope,
+        std::int64_t now
+    );
+
+    static std::optional<PeerMetadata> peerMetadataFromHello(
         const NetworkEnvelope& envelope,
         std::int64_t now
     );

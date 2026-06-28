@@ -1,7 +1,9 @@
 #include "p2p/GossipMesh.hpp"
 #include "p2p/LoopbackTransport.hpp"
+#include "storage/ProtocolEvidenceStore.hpp"
 
 #include <cassert>
+#include <filesystem>
 #include <memory>
 #include <stdexcept>
 
@@ -24,12 +26,19 @@ PeerMetadata makePeer(const std::string& nodeId, std::uint16_t port) {
 } // namespace
 
 int main() {
+    const std::filesystem::path evidenceDirectory =
+        std::filesystem::temp_directory_path() /
+        "nodo_peer_identity_evidence_test";
+    std::error_code cleanupError;
+    std::filesystem::remove_all(evidenceDirectory, cleanupError);
+    nodo::storage::ProtocolEvidenceStore evidenceStore(evidenceDirectory);
+
     auto bus = std::make_shared<LoopbackTransportBus>();
     LoopbackTransport transportA(bus);
     LoopbackTransport transportB(bus);
 
     GossipMeshConfig configB("node-b", "localnet", "chain-localnet", "1", "test-genesis-v1", 60, 1);
-    GossipMesh meshB(configB, transportB);
+    GossipMesh meshB(configB, transportB, &evidenceStore);
 
     std::size_t persistenceAttempts = 0;
     meshB.setPeerPenaltyPersistenceHandler([&persistenceAttempts]() {
@@ -65,6 +74,9 @@ int main() {
     const PeerMetadata* peer = meshB.peerRegistry().peer("node-a");
     assert(peer != nullptr);
     assert(peer->quarantined());
+    const auto persistedEvidence = evidenceStore.loadAll();
+    assert(persistedEvidence.size() == 1);
+    assert(persistedEvidence[0].subjectId() == peer->identityKey());
     assert(!meshB.peerPenaltyPersistenceHealthy());
 
     meshB.reportPeerMisbehavior(
@@ -95,6 +107,8 @@ int main() {
     assert(quarantinedDelivery.acceptedCount() == 0);
     assert(quarantinedDelivery.rejectedCount() == 1);
     assert(meshB.inbox().countForType(NetworkMessageType::PING) == 0);
+
+    std::filesystem::remove_all(evidenceDirectory, cleanupError);
 
     return 0;
 }

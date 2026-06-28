@@ -200,7 +200,7 @@ GossipMesh::GossipMesh(
     m_inboundValidator(),
     m_rateLimiter(),
     m_inbox(),
-    m_invalidMessagesByPeer(),
+    m_invalidMessagesByIdentity(),
     m_lastEvidenceAt(),
     m_evidenceCaptureHealth(),
     m_peerPenaltyPersistenceHandler(),
@@ -221,7 +221,7 @@ GossipMesh::GossipMesh(
     m_inboundValidator(),
     m_rateLimiter(),
     m_inbox(),
-    m_invalidMessagesByPeer(),
+    m_invalidMessagesByIdentity(),
     m_lastEvidenceAt(),
     m_evidenceCaptureHealth(),
     m_peerPenaltyPersistenceHandler(),
@@ -456,6 +456,18 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
             continue;
         }
 
+        if (!m_peerRegistry.contains(message->fromNodeId()) &&
+            message->envelope().messageType() !=
+                NetworkMessageType::PEER_HELLO) {
+            recordInvalidMessage(
+                message->fromNodeId(),
+                "Unauthenticated peer sent a non-handshake message.",
+                now
+            );
+            ++rejected;
+            continue;
+        }
+
         m_peerRegistry.updateHeartbeat(message->fromNodeId(), now);
         m_inbox.add(message->envelope());
         ++accepted;
@@ -465,9 +477,11 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
 }
 
 std::size_t GossipMesh::invalidMessageCountForPeer(const std::string& nodeId) const {
-    const auto found = m_invalidMessagesByPeer.find(nodeId);
+    const auto found = m_invalidMessagesByIdentity.find(
+        identityKeyForNodeId(nodeId)
+    );
 
-    if (found == m_invalidMessagesByPeer.end()) {
+    if (found == m_invalidMessagesByIdentity.end()) {
         return 0;
     }
 
@@ -504,7 +518,7 @@ bool GossipMesh::restorePeerPenaltyState(
         return false;
     }
 
-    m_invalidMessagesByPeer[nodeId] = std::min(
+    m_invalidMessagesByIdentity[identityKeyForNodeId(nodeId)] = std::min(
         invalidMessageCount,
         m_config.invalidMessageQuarantineThreshold()
     );
@@ -536,6 +550,15 @@ bool GossipMesh::shouldQuarantinePeer(const std::string& nodeId) const {
            m_config.invalidMessageQuarantineThreshold();
 }
 
+std::string GossipMesh::identityKeyForNodeId(
+    const std::string& nodeId
+) const {
+    const PeerMetadata* peer = m_peerRegistry.peer(nodeId);
+    return peer == nullptr
+        ? "unverified-node-" + nodeId
+        : peer->identityKey();
+}
+
 void GossipMesh::recordInvalidMessage(
     const std::string& nodeId,
     const std::string& reason,
@@ -547,7 +570,9 @@ void GossipMesh::recordInvalidMessage(
         return;
     }
 
-    std::size_t& invalidCount = m_invalidMessagesByPeer[nodeId];
+    const std::string identityKey = identityKeyForNodeId(nodeId);
+    std::size_t& invalidCount =
+        m_invalidMessagesByIdentity[identityKey];
     if (invalidCount < m_config.invalidMessageQuarantineThreshold()) {
         ++invalidCount;
     }
@@ -603,11 +628,12 @@ void GossipMesh::recordInvalidMessage(
         ruleId = "p2p.inbound-validation";
     }
 
-    // Coalescing: skip if evidence of this type was already recorded for this
-    // peer within the last 60 seconds to prevent evidence DoS.
+    // Coalesce by cryptographic identity so changing a display node id cannot
+    // bypass evidence throttling.
     constexpr std::int64_t kCoalescingWindowSeconds = 60;
     constexpr std::size_t kMaxCoalescingEntries = 4096;
-    const std::pair<std::string, std::string> coalescingKey = {nodeId, ruleId};
+    const std::pair<std::string, std::string> coalescingKey =
+        {identityKey, ruleId};
     const auto lastIt = m_lastEvidenceAt.find(coalescingKey);
     if (lastIt != m_lastEvidenceAt.end() &&
         now - lastIt->second < kCoalescingWindowSeconds) {
@@ -645,7 +671,8 @@ void GossipMesh::recordInvalidMessage(
 
     // Evidence id encodes subject, type, and timestamp to be unique per event.
     const std::string evidenceIdRaw =
-        "p2p-evidence:" + nodeId + ":" + ruleId + ":" + std::to_string(now);
+        "p2p-evidence:" + identityKey + ":" + ruleId + ":" +
+        std::to_string(now);
     char idBuf[NODO_HASH_BUFFER_SIZE] = {};
     nodo_hash_string(evidenceIdRaw.c_str(), idBuf, NODO_HASH_BUFFER_SIZE);
     const std::string evidenceId(idBuf);
@@ -653,7 +680,7 @@ void GossipMesh::recordInvalidMessage(
     const economics::ProtocolEvidence evidence(
         evidenceId,
         evidenceType,
-        nodeId,
+        identityKey,
         m_config.localNodeId(),
         0,   // blockHeight unknown at P2P layer
         0,   // epoch unknown at P2P layer

@@ -32,7 +32,8 @@ bool PeerRegistryResult::success() const {
 }
 
 PeerRegistry::PeerRegistry()
-    : m_peersByNodeId() {}
+    : m_peersByNodeId(),
+      m_nodeIdByIdentityKey() {}
 
 PeerRegistryResult PeerRegistry::registerPeer(PeerMetadata peerMetadata) {
     if (!peerMetadata.isValid()) {
@@ -45,18 +46,36 @@ PeerRegistryResult PeerRegistry::registerPeer(PeerMetadata peerMetadata) {
     const auto existing =
         m_peersByNodeId.find(peerMetadata.nodeId());
 
+    if (existing != m_peersByNodeId.end() &&
+        existing->second.identityKey() != peerMetadata.identityKey()) {
+        return PeerRegistryResult(
+            PeerRegistryStatus::REJECTED,
+            "Peer node id is already bound to a different cryptographic identity."
+        );
+    }
+
+    const auto identityOwner =
+        m_nodeIdByIdentityKey.find(peerMetadata.identityKey());
+    if (identityOwner != m_nodeIdByIdentityKey.end() &&
+        identityOwner->second != peerMetadata.nodeId()) {
+        return PeerRegistryResult(
+            PeerRegistryStatus::REJECTED,
+            "Peer cryptographic identity is already bound to a different node id."
+        );
+    }
+
     const PeerRegistryStatus status =
         existing == m_peersByNodeId.end()
             ? PeerRegistryStatus::REGISTERED
             : PeerRegistryStatus::UPDATED;
 
-    // A fresh handshake may update endpoint and liveness metadata, but it must
-    // never erase a reputation penalty already assigned to this node id.
+    // A fresh authenticated handshake may update endpoint and liveness
+    // metadata, but never identity or reputation state.
     if (existing != m_peersByNodeId.end()) {
         peerMetadata = PeerMetadata(
             peerMetadata.nodeId(),
             peerMetadata.endpoint(),
-            peerMetadata.publicKeyFingerprint(),
+            existing->second.publicKeyFingerprint(),
             std::min(
                 existing->second.firstSeenAt(),
                 peerMetadata.firstSeenAt()
@@ -70,7 +89,10 @@ PeerRegistryResult PeerRegistry::registerPeer(PeerMetadata peerMetadata) {
         );
     }
 
-    m_peersByNodeId[peerMetadata.nodeId()] = std::move(peerMetadata);
+    const std::string nodeId = peerMetadata.nodeId();
+    const std::string identityKey = peerMetadata.identityKey();
+    m_peersByNodeId[nodeId] = std::move(peerMetadata);
+    m_nodeIdByIdentityKey[identityKey] = nodeId;
 
     return PeerRegistryResult(status, "Peer registry accepted peer metadata.");
 }
@@ -123,9 +145,24 @@ bool PeerRegistry::contains(const std::string& nodeId) const {
     return m_peersByNodeId.find(nodeId) != m_peersByNodeId.end();
 }
 
+bool PeerRegistry::containsIdentityKey(const std::string& identityKey) const {
+    return m_nodeIdByIdentityKey.find(identityKey) !=
+           m_nodeIdByIdentityKey.end();
+}
+
 const PeerMetadata* PeerRegistry::peer(const std::string& nodeId) const {
     const auto found = m_peersByNodeId.find(nodeId);
     return found == m_peersByNodeId.end() ? nullptr : &found->second;
+}
+
+const PeerMetadata* PeerRegistry::peerByIdentityKey(
+    const std::string& identityKey
+) const {
+    const auto identityOwner = m_nodeIdByIdentityKey.find(identityKey);
+    if (identityOwner == m_nodeIdByIdentityKey.end()) {
+        return nullptr;
+    }
+    return peer(identityOwner->second);
 }
 
 std::vector<PeerMetadata> PeerRegistry::activePeers() const {
@@ -153,8 +190,17 @@ std::vector<PeerMetadata> PeerRegistry::allPeers() const {
 std::size_t PeerRegistry::size() const { return m_peersByNodeId.size(); }
 
 bool PeerRegistry::isValid() const {
+    if (m_nodeIdByIdentityKey.size() != m_peersByNodeId.size()) {
+        return false;
+    }
     for (const auto& [nodeId, peerMetadata] : m_peersByNodeId) {
         if (nodeId != peerMetadata.nodeId() || !peerMetadata.isValid()) {
+            return false;
+        }
+        const auto identityOwner =
+            m_nodeIdByIdentityKey.find(peerMetadata.identityKey());
+        if (identityOwner == m_nodeIdByIdentityKey.end() ||
+            identityOwner->second != nodeId) {
             return false;
         }
     }

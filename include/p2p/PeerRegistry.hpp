@@ -46,7 +46,11 @@ public:
     PeerRegistryResult quarantinePeer(const std::string& nodeId, std::string reason);
 
     bool contains(const std::string& nodeId) const;
+    bool containsIdentityKey(const std::string& identityKey) const;
     const PeerMetadata* peer(const std::string& nodeId) const;
+    const PeerMetadata* peerByIdentityKey(
+        const std::string& identityKey
+    ) const;
     std::vector<PeerMetadata> activePeers() const;
     std::vector<PeerMetadata> allPeers() const;
     std::size_t size() const;
@@ -55,6 +59,7 @@ public:
 
 private:
     std::map<std::string, PeerMetadata> m_peersByNodeId;
+    std::map<std::string, std::string> m_nodeIdByIdentityKey;
 };
 
 } // namespace nodo::p2p

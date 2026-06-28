@@ -44,6 +44,10 @@ public:
     std::int32_t score() const;
     bool quarantined() const;
 
+    // Stable reputation key derived from the cryptographic identity rather
+    // than the operator-selected node id.
+    std::string identityKey() const;
+
     PeerMetadata withHeartbeat(std::int64_t lastSeenAt) const;
     PeerMetadata withScoreDelta(std::int32_t delta) const;
     PeerMetadata quarantinedCopy() const;

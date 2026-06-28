@@ -154,6 +154,24 @@ int main() {
     assert(reloadedNodeA.gossipMesh().invalidMessageCountForPeer("node-b") == 3);
     assert(!reloadedNodeA.connectPeer("node-b").success());
 
+    p2p::PeerMetadata rotatedIdentity(
+        "node-b-rotated",
+        nodeB.transport().localEndpoint(),
+        "FINGERPRINT-B",
+        2000,
+        2000,
+        0,
+        false
+    );
+    assert(!reloadedNodeA.addPeer(rotatedIdentity).success());
+    assert(!reloadedNodeA.gossipMesh().peerRegistry().contains(
+        "node-b-rotated"
+    ));
+    assert(!reloadedNodeA.transport().hasPeerEndpoint("node-b-rotated"));
+    assert(reloadedNodeA.gossipMesh().peerRegistry().peerByIdentityKey(
+        restored->identityKey()
+    )->quarantined());
+
     nodeA.stop();
     nodeB.stop();
     std::filesystem::remove_all(root);

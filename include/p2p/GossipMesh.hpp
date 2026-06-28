@@ -198,14 +198,18 @@ private:
     InboundMessageValidator m_inboundValidator;
     PeerRateLimiter m_rateLimiter;
     GossipInbox m_inbox;
-    std::map<std::string, std::size_t> m_invalidMessagesByPeer;
-    // Coalescing: tracks (nodeId, ruleId) -> last evidence timestamp (seconds).
+    std::map<std::string, std::size_t> m_invalidMessagesByIdentity;
+    // Coalescing: tracks (identityKey, ruleId) -> last evidence timestamp.
     std::map<std::pair<std::string, std::string>, std::int64_t> m_lastEvidenceAt;
     node::EvidenceCaptureHealth m_evidenceCaptureHealth;
     std::function<void()> m_peerPenaltyPersistenceHandler;
     std::string m_lastPeerPenaltyPersistenceError;
 
     bool shouldQuarantinePeer(
+        const std::string& nodeId
+    ) const;
+
+    std::string identityKeyForNodeId(
         const std::string& nodeId
     ) const;
 

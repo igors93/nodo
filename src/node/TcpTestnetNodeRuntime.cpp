@@ -390,14 +390,17 @@ void TcpTestnetNodeRuntime::stop() {
 p2p::PeerRegistryResult TcpTestnetNodeRuntime::addPeer(
     const p2p::PeerMetadata& peer
 ) {
-    if (peer.isValid()) {
-        m_transport.registerPeerEndpoint(
-            peer.nodeId(),
-            peer.endpoint()
-        );
+    const p2p::PeerRegistryResult registered =
+        m_gossipMesh.registerPeer(peer);
+    if (!registered.success()) {
+        return registered;
     }
 
-    return m_gossipMesh.registerPeer(peer);
+    m_transport.registerPeerEndpoint(
+        peer.nodeId(),
+        peer.endpoint()
+    );
+    return registered;
 }
 
 std::size_t TcpTestnetNodeRuntime::loadPeersFromDisk(

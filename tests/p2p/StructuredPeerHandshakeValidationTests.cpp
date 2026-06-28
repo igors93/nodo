@@ -124,6 +124,73 @@ void testExpiredEnvelopeRejected() {
     assert(!result.accepted());
 }
 
+// ---- Test 7: Envelope sender cannot claim another embedded node id ----
+
+void testEmbeddedNodeIdMustMatchSender() {
+    const std::string genesis = "genesis-correct";
+    const GossipMeshConfig local = makeConfig("node-local", genesis);
+    const GossipMeshConfig remote = makeConfig("node-remote", genesis);
+    const NetworkEnvelope valid =
+        PeerHandshakeManager::createHelloEnvelope(
+            remote,
+            makePeer("node-remote"),
+            makeStatus(),
+            1000
+        );
+    const NetworkEnvelope impersonated(
+        valid.networkId(),
+        valid.chainId(),
+        valid.protocolVersion(),
+        valid.messageType(),
+        "node-attacker",
+        valid.createdAt(),
+        valid.ttlSeconds(),
+        valid.payload()
+    );
+
+    const PeerHandshakeResult result =
+        PeerHandshakeManager::validateHello(local, impersonated, 1001);
+    assert(!result.accepted());
+    assert(result.reason().find("node id") != std::string::npos ||
+           result.reason().find("identity") != std::string::npos);
+}
+
+// ---- Test 8: Nested fields cannot shadow the top-level genesis id ----
+
+void testNestedGenesisCannotShadowTopLevelField() {
+    const GossipMeshConfig local =
+        makeConfig("node-local", "genesis-correct");
+    const GossipMeshConfig remote =
+        makeConfig("node-remote", "genesis-wrong");
+    const NetworkEnvelope original =
+        PeerHandshakeManager::createHelloEnvelope(
+            remote,
+            makePeer("node-remote"),
+            makeStatus(),
+            1000
+        );
+
+    std::string payload = original.payload();
+    const std::size_t insertion = payload.find(";firstSeenAt=");
+    assert(insertion != std::string::npos);
+    payload.insert(insertion, ";genesisId=genesis-correct");
+    const NetworkEnvelope shadowed(
+        original.networkId(),
+        original.chainId(),
+        original.protocolVersion(),
+        original.messageType(),
+        original.senderNodeId(),
+        original.createdAt(),
+        original.ttlSeconds(),
+        payload
+    );
+
+    const PeerHandshakeResult result =
+        PeerHandshakeManager::validateHello(local, shadowed, 1001);
+    assert(!result.accepted());
+    assert(result.reason().find("genesis") != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -134,6 +201,8 @@ int main() {
         testSelfHandshakeRejected();
         testWrongNetworkRejected();
         testExpiredEnvelopeRejected();
+        testEmbeddedNodeIdMustMatchSender();
+        testNestedGenesisCannotShadowTopLevelField();
 
         std::cout << "Structured peer handshake validation tests passed.\n";
         return 0;

@@ -41,7 +41,7 @@ int main() {
     nodo::p2p::PeerMetadata refreshedPeer(
         "node-A",
         nodo::p2p::PeerEndpoint("127.0.0.1", 18182),
-        "fingerprint-A-refreshed",
+        "fingerprint-A",
         1020,
         1020,
         0,
@@ -51,6 +51,35 @@ int main() {
     assert(registry.peer("node-A")->endpoint().port() == 18182);
     assert(registry.peer("node-A")->score() == -10);
     assert(registry.peer("node-A")->quarantined());
+    assert(registry.containsIdentityKey(peer.identityKey()));
+    assert(registry.peerByIdentityKey(peer.identityKey()) != nullptr);
+    assert(registry.peerByIdentityKey(peer.identityKey())->nodeId() == "node-A");
+
+    nodo::p2p::PeerMetadata nodeIdTakeover(
+        "node-A",
+        nodo::p2p::PeerEndpoint("127.0.0.1", 18183),
+        "fingerprint-attacker",
+        1030,
+        1030,
+        0,
+        false
+    );
+    assert(!registry.registerPeer(nodeIdTakeover).success());
+    assert(registry.peer("node-A")->publicKeyFingerprint() == "fingerprint-A");
+    assert(registry.peer("node-A")->score() == -10);
+
+    nodo::p2p::PeerMetadata identityAlias(
+        "node-A-rotated",
+        nodo::p2p::PeerEndpoint("127.0.0.1", 18184),
+        "FINGERPRINT-A",
+        1040,
+        1040,
+        0,
+        false
+    );
+    assert(!registry.registerPeer(identityAlias).success());
+    assert(!registry.contains("node-A-rotated"));
+    assert(registry.size() == 1);
     assert(registry.isValid());
 
     return 0;
