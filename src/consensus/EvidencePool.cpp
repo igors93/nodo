@@ -1,41 +1,18 @@
 #include "consensus/EvidencePool.hpp"
 
+#include "core/ProtocolLimits.hpp"
+
 #include <algorithm>
+#include <exception>
 #include <sstream>
+#include <stdexcept>
 
 namespace nodo::consensus {
 
 EvidencePool::EvidencePool()
     : m_evidenceById(),
-      m_doubleVoteEvidenceById() {}
-
-SlashingEvidenceValidationResult EvidencePool::submitRecord(
-    const SlashingEvidenceRecord& record
-) {
-    if (!record.isValid()) {
-        return SlashingEvidenceValidationResult(
-            SlashingEvidenceValidationStatus::REJECTED,
-            "Slashing evidence record is invalid.",
-            record
-        );
-    }
-
-    if (contains(record.evidenceId())) {
-        return SlashingEvidenceValidationResult(
-            SlashingEvidenceValidationStatus::DUPLICATE,
-            "Slashing evidence record is already present.",
-            record
-        );
-    }
-
-    m_evidenceById.emplace(record.evidenceId(), record);
-
-    return SlashingEvidenceValidationResult(
-        SlashingEvidenceValidationStatus::ACCEPTED,
-        "Slashing evidence record accepted.",
-        record
-    );
-}
+      m_doubleVoteEvidenceById(),
+      m_persistence(nullptr) {}
 
 SlashingEvidenceValidationResult EvidencePool::submitDoubleVoteEvidence(
     const DoubleVoteEvidence& evidence
@@ -47,14 +24,63 @@ SlashingEvidenceValidationResult EvidencePool::submitDoubleVoteEvidence(
         return validation;
     }
 
-    const SlashingEvidenceValidationResult stored =
-        submitRecord(validation.record());
-    if (stored.accepted()) {
-        m_doubleVoteEvidenceById.emplace(
-            validation.record().evidenceId(), evidence
+    const SlashingEvidenceRecord& record = validation.record();
+    if (contains(record.evidenceId())) {
+        return SlashingEvidenceValidationResult(
+            SlashingEvidenceValidationStatus::DUPLICATE,
+            "Slashing evidence record is already present.",
+            record
         );
     }
-    return stored;
+
+    if (m_evidenceById.size() >=
+        core::ProtocolLimits::MAX_PENDING_SLASHING_EVIDENCE) {
+        return SlashingEvidenceValidationResult(
+            SlashingEvidenceValidationStatus::REJECTED,
+            "Pending slashing evidence pool reached its protocol limit.",
+            record
+        );
+    }
+
+    if (m_persistence != nullptr) {
+        try {
+            m_persistence->persist(evidence);
+        } catch (const std::exception&) {
+            return SlashingEvidenceValidationResult(
+                SlashingEvidenceValidationStatus::REJECTED,
+                "Slashing evidence could not be persisted atomically.",
+                record
+            );
+        }
+    }
+
+    m_evidenceById.emplace(record.evidenceId(), record);
+    m_doubleVoteEvidenceById.emplace(record.evidenceId(), evidence);
+    return SlashingEvidenceValidationResult(
+        SlashingEvidenceValidationStatus::ACCEPTED,
+        "Slashing evidence record accepted.",
+        record
+    );
+}
+
+void EvidencePool::setPersistence(EvidencePoolPersistence* persistence) {
+    if (!m_evidenceById.empty() && persistence != m_persistence) {
+        throw std::logic_error(
+            "Evidence persistence cannot change after pool admission."
+        );
+    }
+    if (m_persistence != nullptr &&
+        persistence != nullptr &&
+        m_persistence != persistence) {
+        throw std::logic_error(
+            "Evidence persistence cannot be replaced while bound."
+        );
+    }
+    m_persistence = persistence;
+}
+
+bool EvidencePool::hasPersistence() const {
+    return m_persistence != nullptr;
 }
 
 bool EvidencePool::contains(const std::string& evidenceId) const {
@@ -112,7 +138,10 @@ std::vector<DoubleVoteEvidence> EvidencePool::doubleVoteEvidenceBeforeHeight(
 bool EvidencePool::removeEvidence(const std::string& evidenceId) {
     const bool removed = m_evidenceById.erase(evidenceId) > 0;
     m_doubleVoteEvidenceById.erase(evidenceId);
-    return removed;
+    if (!removed || m_persistence == nullptr) {
+        return removed;
+    }
+    return m_persistence->erase(evidenceId);
 }
 
 std::vector<SlashingEvidenceRecord> EvidencePool::evidenceForValidator(
@@ -148,6 +177,11 @@ void EvidencePool::pruneOlderThan(std::int64_t cutoffTimestamp, std::int64_t now
 
     for (auto it = m_evidenceById.begin(); it != m_evidenceById.end(); ) {
         if (it->second.createdAt() < safeCutoff) {
+            if (m_persistence != nullptr &&
+                !m_persistence->erase(it->first)) {
+                ++it;
+                continue;
+            }
             m_doubleVoteEvidenceById.erase(it->first);
             it = m_evidenceById.erase(it);
         } else {

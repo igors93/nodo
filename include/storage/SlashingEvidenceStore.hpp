@@ -1,7 +1,7 @@
 #ifndef NODO_STORAGE_SLASHING_EVIDENCE_STORE_HPP
 #define NODO_STORAGE_SLASHING_EVIDENCE_STORE_HPP
 
-#include "consensus/SlashingEvidence.hpp"
+#include "consensus/EvidencePoolPersistence.hpp"
 
 #include <filesystem>
 #include <string>
@@ -9,21 +9,26 @@
 
 namespace nodo::storage {
 
-class SlashingEvidenceStore {
+class SlashingEvidenceStore final
+    : public consensus::EvidencePoolPersistence {
 public:
     explicit SlashingEvidenceStore(std::filesystem::path evidenceDirectory);
 
     const std::filesystem::path& evidenceDirectory() const;
 
-    void save(const consensus::SlashingEvidenceRecord& record) const;
+    void persist(
+        const consensus::DoubleVoteEvidence& evidence
+    ) override;
 
     bool contains(const std::string& evidenceId) const;
 
-    consensus::SlashingEvidenceRecord load(
+    consensus::DoubleVoteEvidence load(
         const std::string& evidenceId
     ) const;
 
-    std::vector<consensus::SlashingEvidenceRecord> loadAll() const;
+    std::vector<consensus::DoubleVoteEvidence> loadAll() const;
+
+    bool erase(const std::string& evidenceId) override;
 
     std::size_t count() const;
 

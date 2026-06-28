@@ -272,6 +272,11 @@ std::filesystem::path NodeDataDirectoryConfig::consensusRecoveryPath() const {
     return m_rootPath / "runtime" / "consensus_round.nodo";
 }
 
+std::filesystem::path
+NodeDataDirectoryConfig::pendingSlashingEvidenceDirectoryPath() const {
+    return m_rootPath / "runtime" / "pending_slashing_evidence";
+}
+
 std::filesystem::path NodeDataDirectoryConfig::blocksDirectoryPath() const {
     return m_rootPath / "blocks";
 }
@@ -1039,6 +1044,9 @@ void NodeDataDirectory::ensureDirectoryTree(
     std::filesystem::create_directories(directoryConfig.peersDirectoryPath());
     std::filesystem::create_directories(directoryConfig.mempoolDirectoryPath());
     std::filesystem::create_directories(directoryConfig.runtimeDirectoryPath());
+    std::filesystem::create_directories(
+        directoryConfig.pendingSlashingEvidenceDirectoryPath()
+    );
     std::filesystem::create_directories(
         directoryConfig.governanceLifecycleDirectoryPath()
     );

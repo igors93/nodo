@@ -131,7 +131,10 @@ void testInitializeCreatesDurableFiles() {
         std::filesystem::exists(config.genesisConfigPath()) &&
         std::filesystem::exists(config.localPeerPath()) &&
         std::filesystem::exists(config.runtimeSnapshotPath()) &&
-        std::filesystem::exists(config.consensusRecoveryPath()),
+        std::filesystem::exists(config.consensusRecoveryPath()) &&
+        std::filesystem::is_directory(
+            config.pendingSlashingEvidenceDirectoryPath()
+        ),
         "Initialization should create durable files."
     );
 

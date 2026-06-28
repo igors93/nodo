@@ -2,6 +2,7 @@
 #define NODO_CONSENSUS_EVIDENCE_POOL_HPP
 
 #include "consensus/SlashingEvidence.hpp"
+#include "consensus/EvidencePoolPersistence.hpp"
 
 #include <cstddef>
 #include <map>
@@ -14,13 +15,12 @@ class EvidencePool {
 public:
     EvidencePool();
 
-    SlashingEvidenceValidationResult submitRecord(
-        const SlashingEvidenceRecord& record
-    );
-
     SlashingEvidenceValidationResult submitDoubleVoteEvidence(
         const DoubleVoteEvidence& evidence
     );
+
+    void setPersistence(EvidencePoolPersistence* persistence);
+    bool hasPersistence() const;
 
     bool contains(const std::string& evidenceId) const;
 
@@ -62,6 +62,7 @@ public:
 private:
     std::map<std::string, SlashingEvidenceRecord> m_evidenceById;
     std::map<std::string, DoubleVoteEvidence> m_doubleVoteEvidenceById;
+    EvidencePoolPersistence* m_persistence;
 };
 
 } // namespace nodo::consensus

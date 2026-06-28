@@ -83,15 +83,14 @@ int main() {
     const auto record = evidence.toRecord();
 
     nodo::storage::SlashingEvidenceStore store(directory);
-    store.save(record);
+    store.persist(evidence);
+    store.persist(evidence);
 
     assert(store.contains(record.evidenceId()));
     assert(store.count() == 1);
 
     const auto loaded = store.load(record.evidenceId());
-    assert(loaded.evidenceId() == record.evidenceId());
-    assert(loaded.validatorAddress() == record.validatorAddress());
-    assert(loaded.payloadHash() == record.payloadHash());
+    assert(loaded.serialize() == evidence.serialize());
 
     const auto all = store.loadAll();
     assert(all.size() == 1);
@@ -99,7 +98,7 @@ int main() {
     const std::string wrongEvidenceId = std::string(64, 'f');
     nodo::storage::AtomicFile::writeTextFile(
         directory / (wrongEvidenceId + ".evidence"),
-        record.serialize()
+        evidence.serialize()
     );
 
     bool rejectedMismatchedFile = false;
@@ -109,6 +108,10 @@ int main() {
         rejectedMismatchedFile = true;
     }
     assert(rejectedMismatchedFile);
+
+    assert(store.erase(record.evidenceId()));
+    assert(!store.contains(record.evidenceId()));
+    assert(store.erase(record.evidenceId()));
 
     std::filesystem::remove_all(directory);
 

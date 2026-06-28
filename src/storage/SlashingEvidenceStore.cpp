@@ -1,5 +1,6 @@
 #include "storage/SlashingEvidenceStore.hpp"
 
+#include "core/ProtocolLimits.hpp"
 #include "storage/AtomicFile.hpp"
 
 #include <algorithm>
@@ -14,7 +15,10 @@ constexpr const char* EVIDENCE_FILE_EXTENSION = ".evidence";
 bool isEvidenceFile(
     const std::filesystem::directory_entry& entry
 ) {
-    return entry.is_regular_file() &&
+    std::error_code statusError;
+    const std::filesystem::file_status status =
+        entry.symlink_status(statusError);
+    return !statusError && std::filesystem::is_regular_file(status) &&
            entry.path().extension() == EVIDENCE_FILE_EXTENSION;
 }
 
@@ -46,18 +50,43 @@ const std::filesystem::path& SlashingEvidenceStore::evidenceDirectory() const {
     return m_evidenceDirectory;
 }
 
-void SlashingEvidenceStore::save(
-    const consensus::SlashingEvidenceRecord& record
-) const {
-    if (!record.isValid()) {
-        throw std::invalid_argument("Cannot persist invalid slashing evidence record.");
+void SlashingEvidenceStore::persist(
+    const consensus::DoubleVoteEvidence& evidence
+) {
+    const consensus::SlashingEvidenceValidationResult validation =
+        consensus::SlashingEvidenceVerifier::validateDoubleVoteStructure(
+            evidence
+        );
+    if (!validation.accepted()) {
+        throw std::invalid_argument(
+            "Cannot persist invalid double-vote evidence."
+        );
+    }
+
+    const std::string serialized = evidence.serialize();
+    if (serialized.size() >
+        core::ProtocolLimits::MAX_SLASHING_EVIDENCE_GOSSIP_BYTES) {
+        throw std::length_error(
+            "Double-vote evidence exceeds its persistence limit."
+        );
+    }
+
+    const std::string evidenceId = evidence.evidenceId();
+    if (contains(evidenceId)) {
+        const consensus::DoubleVoteEvidence existing = load(evidenceId);
+        if (existing.serialize() != serialized) {
+            throw std::runtime_error(
+                "Stored slashing evidence conflicts with the same evidence id."
+            );
+        }
+        return;
     }
 
     std::filesystem::create_directories(m_evidenceDirectory);
 
     AtomicFile::writeTextFile(
-        pathForEvidenceId(record.evidenceId()),
-        record.serialize()
+        pathForEvidenceId(evidenceId),
+        serialized
     );
 }
 
@@ -68,56 +97,101 @@ bool SlashingEvidenceStore::contains(
         return false;
     }
 
-    return std::filesystem::exists(pathForEvidenceId(evidenceId));
+    std::error_code statusError;
+    const std::filesystem::file_status status =
+        std::filesystem::symlink_status(
+            pathForEvidenceId(evidenceId), statusError
+        );
+    return !statusError && std::filesystem::is_regular_file(status);
 }
 
-consensus::SlashingEvidenceRecord SlashingEvidenceStore::load(
+consensus::DoubleVoteEvidence SlashingEvidenceStore::load(
     const std::string& evidenceId
 ) const {
     if (!contains(evidenceId)) {
         throw std::invalid_argument("Slashing evidence record was not found.");
     }
 
-    consensus::SlashingEvidenceRecord record =
-        consensus::SlashingEvidenceRecord::deserialize(
-            AtomicFile::readTextFile(pathForEvidenceId(evidenceId))
+    const std::filesystem::path path = pathForEvidenceId(evidenceId);
+    std::error_code sizeError;
+    const std::uintmax_t fileSize = std::filesystem::file_size(
+        path, sizeError
+    );
+    if (sizeError || fileSize == 0 || fileSize >
+        core::ProtocolLimits::MAX_SLASHING_EVIDENCE_GOSSIP_BYTES) {
+        throw std::runtime_error(
+            "Stored slashing evidence has an invalid size."
         );
+    }
 
-    if (record.evidenceId() != evidenceId) {
+    const std::string serialized = AtomicFile::readTextFile(path);
+
+    consensus::DoubleVoteEvidence evidence =
+        consensus::DoubleVoteEvidence::deserialize(serialized);
+
+    if (evidence.evidenceId() != evidenceId) {
         throw std::runtime_error(
             "Slashing evidence file name does not match stored evidence id."
         );
     }
 
-    return record;
+    return evidence;
 }
 
-std::vector<consensus::SlashingEvidenceRecord> SlashingEvidenceStore::loadAll() const {
-    std::vector<consensus::SlashingEvidenceRecord> records;
+std::vector<consensus::DoubleVoteEvidence> SlashingEvidenceStore::loadAll() const {
+    std::vector<consensus::DoubleVoteEvidence> evidence;
 
     if (!std::filesystem::exists(m_evidenceDirectory)) {
-        return records;
+        return evidence;
     }
 
-    records.reserve(evidenceFileCount(m_evidenceDirectory));
+    const std::size_t fileCount = evidenceFileCount(m_evidenceDirectory);
+    if (fileCount > core::ProtocolLimits::MAX_PENDING_SLASHING_EVIDENCE) {
+        throw std::length_error(
+            "Stored slashing evidence pool exceeds its protocol limit."
+        );
+    }
+    evidence.reserve(fileCount);
 
     for (const auto& entry : std::filesystem::directory_iterator(m_evidenceDirectory)) {
         if (!isEvidenceFile(entry)) {
             continue;
         }
 
-        records.push_back(load(entry.path().stem().string()));
+        evidence.push_back(load(entry.path().stem().string()));
     }
 
     std::sort(
-        records.begin(),
-        records.end(),
+        evidence.begin(),
+        evidence.end(),
         [](const auto& left, const auto& right) {
             return left.evidenceId() < right.evidenceId();
         }
     );
 
-    return records;
+    return evidence;
+}
+
+bool SlashingEvidenceStore::erase(
+    const std::string& evidenceId
+) {
+    if (!isSafeEvidenceId(evidenceId)) {
+        return false;
+    }
+
+    std::error_code existsError;
+    const std::filesystem::path path = pathForEvidenceId(evidenceId);
+    const bool exists = std::filesystem::exists(path, existsError);
+    if (existsError) {
+        return false;
+    }
+    if (!exists) {
+        return true;
+    }
+
+    std::error_code removeError;
+    const bool removed = std::filesystem::remove(path, removeError);
+    return removed && !removeError;
 }
 
 std::size_t SlashingEvidenceStore::count() const {

@@ -120,34 +120,18 @@ void CanonicalSlashingTransition::applyEvidenceRecords(
                 "Slashing evidence must refer to a prior block height."
             );
         }
-        if (!validatorSetHistory.hasSet(offenseHeight)) {
-            throw std::invalid_argument(
-                "Historical validator set is missing for slashing evidence."
-            );
-        }
-
-        const core::ValidatorRegistry& historicalValidators =
-            validatorSetHistory.setAt(offenseHeight);
-        if (!historicalValidators.verifyValidatorIdentity(
-                evidence.validatorAddress(),
-                evidence.firstVote().validatorPublicKey()
-            ) ||
-            !historicalValidators.verifyValidatorIdentity(
-                evidence.validatorAddress(),
-                evidence.secondVote().validatorPublicKey()
-            )) {
-            throw std::invalid_argument(
-                "Slashing evidence signer was not active at the offense height."
-            );
-        }
-
         const consensus::SlashingEvidenceValidationResult verified =
-            consensus::SlashingEvidenceVerifier::verifyDoubleVoteEvidence(
-                evidence, policy, provider
-            );
+            consensus::SlashingEvidenceVerifier::
+                verifyDoubleVoteEvidenceForHistory(
+                    evidence,
+                    blockHeight - 1,
+                    validatorSetHistory,
+                    policy,
+                    provider
+                );
         if (!verified.accepted()) {
             throw std::invalid_argument(
-                "Slashing evidence signature verification failed: " +
+                "Slashing evidence verification failed: " +
                 verified.reason()
             );
         }

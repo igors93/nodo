@@ -13,11 +13,13 @@
 #include "node/NodeDataDirectory.hpp"
 #include "node/PeerHandshakeAutoRegistrar.hpp"
 #include "node/PersistentBlockStateSync.hpp"
+#include "node/PersistentSlashingEvidencePool.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeStateLoader.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
 #include "storage/AccountStateSnapshotStore.hpp"
+#include "storage/SlashingEvidenceStore.hpp"
 
 #include <chrono>
 #include <algorithm>
@@ -556,6 +558,8 @@ void NodeOrchestrator::triggerSyncIfBehind(
 // ---- Internal startup helpers ---------------------------------------------
 
 NodeOrchestratorStartResult NodeOrchestrator::initOrLoad() {
+    m_evidencePool = consensus::EvidencePool();
+    m_slashingEvidenceStore.reset();
     bool freshGenesis = false;
 
     if (!NodeDataDirectory::isInitialized(m_config.dataDirectory())) {
@@ -605,6 +609,35 @@ NodeOrchestratorStartResult NodeOrchestrator::initOrLoad() {
         }
 
         m_runtime = std::make_unique<NodeRuntime>(std::move(loadResult.runtime()));
+    }
+
+    m_slashingEvidenceStore =
+        std::make_unique<storage::SlashingEvidenceStore>(
+            m_config.dataDirectory().pendingSlashingEvidenceDirectoryPath()
+        );
+    const auto evidenceRestoreNow =
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+    const PersistentSlashingEvidencePoolLoadResult evidenceRestore =
+        PersistentSlashingEvidencePool::restore(
+            m_evidencePool,
+            *m_slashingEvidenceStore,
+            m_runtime->consensusRoundManager().currentState().height(),
+            static_cast<std::int64_t>(evidenceRestoreNow),
+            m_runtime->validatorSetHistory(),
+            m_policy,
+            m_provider,
+            m_runtime->validatorPenaltyLedger()
+        );
+    if (!evidenceRestore.success()) {
+        m_evidencePool = consensus::EvidencePool();
+        m_slashingEvidenceStore.reset();
+        return {
+            NodeOrchestratorStartStatus::STATE_LOAD_FAILED,
+            "Pending slashing evidence restore failed: " +
+                evidenceRestore.reason()
+        };
     }
 
     NodeOrchestratorStartResult result;

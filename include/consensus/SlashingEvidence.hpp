@@ -2,6 +2,7 @@
 #define NODO_CONSENSUS_SLASHING_EVIDENCE_HPP
 
 #include "consensus/ValidatorVoteRecord.hpp"
+#include "core/ValidatorRegistry.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureProvider.hpp"
 
@@ -140,6 +141,14 @@ public:
 
     static SlashingEvidenceValidationResult validateDoubleVoteStructure(
         const DoubleVoteEvidence& evidence
+    );
+
+    static SlashingEvidenceValidationResult verifyDoubleVoteEvidenceForHistory(
+        const DoubleVoteEvidence& evidence,
+        std::uint64_t maximumOffenseHeight,
+        const core::ValidatorSetHistory& validatorSetHistory,
+        const crypto::CryptoPolicy& policy,
+        const crypto::SignatureProvider& provider
     );
 
 private:

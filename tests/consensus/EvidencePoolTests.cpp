@@ -56,6 +56,33 @@ nodo::consensus::ValidatorVoteRecord makeVote(
 
 #include <cassert>
 #include <iostream>
+#include <stdexcept>
+
+namespace {
+
+class TestPersistence final
+    : public nodo::consensus::EvidencePoolPersistence {
+public:
+    bool failWrites = false;
+    std::size_t persisted = 0;
+    std::size_t erased = 0;
+
+    void persist(
+        const nodo::consensus::DoubleVoteEvidence&
+    ) override {
+        if (failWrites) {
+            throw std::runtime_error("test persistence failure");
+        }
+        ++persisted;
+    }
+
+    bool erase(const std::string&) override {
+        ++erased;
+        return true;
+    }
+};
+
+} // namespace
 
 int main() {
     const auto first = makeVote(
@@ -71,10 +98,20 @@ int main() {
     );
 
     nodo::consensus::DoubleVoteEvidence evidence(first, second, 200);
+    TestPersistence persistence;
     nodo::consensus::EvidencePool pool;
+    pool.setPersistence(&persistence);
+
+    persistence.failWrites = true;
+    const auto failedPersistence = pool.submitDoubleVoteEvidence(evidence);
+    assert(failedPersistence.rejected());
+    assert(pool.size() == 0);
+
+    persistence.failWrites = false;
 
     const auto accepted = pool.submitDoubleVoteEvidence(evidence);
     assert(accepted.accepted());
+    assert(persistence.persisted == 1);
     assert(pool.size() == 1);
     assert(pool.contains(accepted.record().evidenceId()));
     assert(pool.countForValidator("validator-alpha") == 1);
@@ -88,6 +125,7 @@ int main() {
     assert(pool.size() == 1);
     assert(pool.isValid());
     assert(pool.removeEvidence(evidence.evidenceId()));
+    assert(persistence.erased == 1);
     assert(pool.size() == 0);
     assert(pool.allDoubleVoteEvidence().empty());
     assert(pool.isValid());

@@ -124,37 +124,19 @@ SlashingEvidenceGossipResult SlashingEvidenceGossipAdmission::admit(
             };
         }
 
-        if (!validatorSetHistory.hasSet(offenseHeight)) {
-            return {
-                SlashingEvidenceGossipStatus::REJECTED,
-                "Historical validator set is unavailable for the evidence.",
-                evidenceId
-            };
-        }
-
-        const core::ValidatorRegistry& historicalValidators =
-            validatorSetHistory.setAt(offenseHeight);
-        if (!historicalValidators.verifyValidatorIdentity(
-                evidence.validatorAddress(),
-                evidence.firstVote().validatorPublicKey()) ||
-            !historicalValidators.verifyValidatorIdentity(
-                evidence.validatorAddress(),
-                evidence.secondVote().validatorPublicKey())) {
-            return {
-                SlashingEvidenceGossipStatus::REJECTED,
-                "Evidence signer was not active at the offense height.",
-                evidenceId
-            };
-        }
-
         const consensus::SlashingEvidenceValidationResult verified =
-            consensus::SlashingEvidenceVerifier::verifyDoubleVoteEvidence(
-                evidence, policy, provider
-            );
+            consensus::SlashingEvidenceVerifier::
+                verifyDoubleVoteEvidenceForHistory(
+                    evidence,
+                    currentConsensusHeight,
+                    validatorSetHistory,
+                    policy,
+                    provider
+                );
         if (!verified.accepted()) {
             return {
                 SlashingEvidenceGossipStatus::REJECTED,
-                "Slashing evidence signature verification failed: " +
+                "Slashing evidence verification failed: " +
                     verified.reason(),
                 evidenceId
             };

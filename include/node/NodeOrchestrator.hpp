@@ -26,6 +26,10 @@
 #include <string>
 #include <thread>
 
+namespace nodo::storage {
+class SlashingEvidenceStore;
+}
+
 namespace nodo::node {
 
 /*
@@ -212,6 +216,7 @@ private:
     std::unique_ptr<TcpTestnetNodeRuntime>   m_tcpRuntime;
     std::unique_ptr<consensus::ConsensusEventLoop> m_consensusLoop;
     std::unique_ptr<NodeRpcServer>           m_rpcServer;
+    std::unique_ptr<storage::SlashingEvidenceStore> m_slashingEvidenceStore;
     consensus::EvidencePool                  m_evidencePool;
     std::unique_ptr<p2p::DiscoveryService>   m_discoveryService;
 

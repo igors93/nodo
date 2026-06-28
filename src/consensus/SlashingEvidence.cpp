@@ -577,6 +577,55 @@ SlashingEvidenceValidationResult SlashingEvidenceVerifier::verifyDoubleVoteEvide
     );
 }
 
+SlashingEvidenceValidationResult
+SlashingEvidenceVerifier::verifyDoubleVoteEvidenceForHistory(
+    const DoubleVoteEvidence& evidence,
+    std::uint64_t maximumOffenseHeight,
+    const core::ValidatorSetHistory& validatorSetHistory,
+    const crypto::CryptoPolicy& policy,
+    const crypto::SignatureProvider& provider
+) {
+    const SlashingEvidenceValidationResult structural =
+        validateDoubleVoteStructure(evidence);
+    if (!structural.accepted()) {
+        return structural;
+    }
+
+    const std::uint64_t offenseHeight =
+        evidence.firstVote().blockIndex();
+    if (offenseHeight == 0 || offenseHeight > maximumOffenseHeight) {
+        return SlashingEvidenceValidationResult(
+            SlashingEvidenceValidationStatus::REJECTED,
+            "Double-vote evidence refers to an unavailable consensus height.",
+            structural.record()
+        );
+    }
+    if (!validatorSetHistory.hasSet(offenseHeight)) {
+        return SlashingEvidenceValidationResult(
+            SlashingEvidenceValidationStatus::REJECTED,
+            "Historical validator set is unavailable for the evidence.",
+            structural.record()
+        );
+    }
+
+    const core::ValidatorRegistry& historicalValidators =
+        validatorSetHistory.setAt(offenseHeight);
+    if (!historicalValidators.verifyValidatorIdentity(
+            evidence.validatorAddress(),
+            evidence.firstVote().validatorPublicKey()) ||
+        !historicalValidators.verifyValidatorIdentity(
+            evidence.validatorAddress(),
+            evidence.secondVote().validatorPublicKey())) {
+        return SlashingEvidenceValidationResult(
+            SlashingEvidenceValidationStatus::REJECTED,
+            "Evidence signer was not active at the offense height.",
+            structural.record()
+        );
+    }
+
+    return verifyDoubleVoteEvidence(evidence, policy, provider);
+}
+
 bool SlashingEvidenceVerifier::bothVotesVerify(
     const DoubleVoteEvidence& evidence,
     const crypto::CryptoPolicy& policy,
