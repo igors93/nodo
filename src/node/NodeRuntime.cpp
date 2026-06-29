@@ -8,6 +8,7 @@
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
+#include "economics/StakeAccount.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
@@ -384,6 +385,19 @@ NodeRuntime::NodeRuntime(
     if (m_config.genesisConfig().isValid() &&
         !m_blockchain.empty() &&
         m_validatorRegistry.isValid()) {
+        for (const std::string& address : m_validatorRegistry.activeValidatorAddresses()) {
+            const core::ValidatorRegistryEntry* entry =
+                m_validatorRegistry.entryForAddress(address);
+            if (entry != nullptr && entry->stakeAmount() > 0 &&
+                !m_stakingRegistry.hasAccount(address)) {
+                m_stakingRegistry.setAccount(address, economics::StakeAccount(
+                    address,
+                    utils::Amount::fromRawUnits(
+                        static_cast<std::int64_t>(entry->stakeAmount())
+                    )
+                ));
+            }
+        }
         initializeConsensusRound(
             m_consensusRoundManager,
             m_config.genesisConfig(),

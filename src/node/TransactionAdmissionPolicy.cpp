@@ -23,9 +23,8 @@ std::uint64_t governanceVotingWeight(
     const core::ValidatorRegistryEntry& entry,
     const std::string& validatorAddress
 ) {
-    const auto stake = staking.accountOrDefault(validatorAddress);
     const std::int64_t availableStake =
-        stake.bondedAmount().rawUnits() - stake.slashedAmount().rawUnits();
+        staking.activeStakeFor(validatorAddress).rawUnits();
     if (availableStake > 0) {
         return core::ValidatorRegistry::consensusWeightFromStake(
             static_cast<std::uint64_t>(availableStake)
@@ -109,9 +108,46 @@ bool TransactionAdmissionPolicy::validateDomain(
                     return false;
                 }
                 break;
-            case core::TransactionType::STAKE_WITHDRAW: {
-                const utils::Amount owned = context.staking().ownedStake(
+            case core::TransactionType::STAKE_UNLOCK: {
+                const auto account = context.staking().accountOrDefault(transaction.toAddress());
+                if (account.jailed() || account.tombstoned()) {
+                    reason = "Jailed or tombstoned validator stake cannot be unlocked.";
+                    return false;
+                }
+                const utils::Amount active = context.staking().activeStake(
                     transaction.fromAddress(), transaction.toAddress());
+                utils::Amount reserved;
+                for (const auto& queued : pending) {
+                    if (queued.type() == core::TransactionType::STAKE_UNLOCK &&
+                        queued.fromAddress() == transaction.fromAddress() &&
+                        queued.toAddress() == transaction.toAddress() &&
+                        queued.nonce() != transaction.nonce()) {
+                        reserved = reserved + queued.amount();
+                    }
+                }
+                if (active < reserved + transaction.amount()) {
+                    reason = "Stake unlock exceeds active ownership.";
+                    return false;
+                }
+                const auto* entry =
+                    context.validators().entryForAddress(transaction.toAddress());
+                if (entry != nullptr && entry->eligibleForConsensus()) {
+                    const std::int64_t available =
+                        context.staking().activeStakeFor(transaction.toAddress()).rawUnits();
+                    const std::int64_t requested =
+                        (reserved + transaction.amount()).rawUnits();
+                    if (available < requested ||
+                        available - requested < static_cast<std::int64_t>(
+                            core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS)) {
+                        reason = "Active validator stake cannot be unlocked below the protocol minimum.";
+                        return false;
+                    }
+                }
+                break;
+            }
+            case core::TransactionType::STAKE_WITHDRAW: {
+                const utils::Amount withdrawable = context.staking().withdrawableStake(
+                    transaction.fromAddress(), transaction.toAddress(), context.nextBlockHeight());
                 utils::Amount reserved;
                 for (const auto& queued : pending) {
                     if (queued.type() == core::TransactionType::STAKE_WITHDRAW &&
@@ -121,27 +157,14 @@ bool TransactionAdmissionPolicy::validateDomain(
                         reserved = reserved + queued.amount();
                     }
                 }
-                if (owned < reserved + transaction.amount() ||
-                    context.nextBlockHeight() < context.staking().unlockHeight(
-                        transaction.fromAddress(), transaction.toAddress())) {
-                    reason = "Stake withdrawal exceeds ownership or is still cooling down.";
+                if (withdrawable < reserved + transaction.amount()) {
+                    reason = "Stake withdrawal exceeds withdrawable unbonded stake or is still cooling down.";
                     return false;
                 }
-                const auto* entry =
-                    context.validators().entryForAddress(transaction.toAddress());
-                if (entry != nullptr && entry->eligibleForConsensus()) {
-                    const auto stake =
-                        context.staking().accountOrDefault(transaction.toAddress());
-                    const std::int64_t available =
-                        stake.bondedAmount().rawUnits() - stake.slashedAmount().rawUnits();
-                    const std::int64_t requested =
-                        (reserved + transaction.amount()).rawUnits();
-                    if (available < requested ||
-                        available - requested < static_cast<std::int64_t>(
-                            core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS)) {
-                        reason = "Active validator stake cannot be withdrawn below the protocol minimum.";
-                        return false;
-                    }
+                const auto account = context.staking().accountOrDefault(transaction.toAddress());
+                if (account.jailed() || account.tombstoned()) {
+                    reason = "Jailed or tombstoned validator stake cannot be withdrawn.";
+                    return false;
                 }
                 break;
             }

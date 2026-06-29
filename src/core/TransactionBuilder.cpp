@@ -146,6 +146,28 @@ Transaction TransactionBuilder::buildSignedStakeWithdraw(
     return signer.signTransaction(tx, request.timestamp());
 }
 
+Transaction TransactionBuilder::buildSignedStakeUnlock(
+    const TransactionBuildRequest& request,
+    const crypto::Signer& signer,
+    const std::string& chainId
+) {
+    if (!request.isValid() || chainId.empty()) {
+        throw std::invalid_argument("Stake unlock build request is invalid.");
+    }
+
+    Transaction tx(
+        TransactionType::STAKE_UNLOCK,
+        signer.address(),
+        request.toAddress(),
+        request.amount(),
+        request.fee(),
+        request.nonce(),
+        request.timestamp()
+    );
+    tx.withChainId(chainId);
+    return signer.signTransaction(tx, request.timestamp());
+}
+
 Transaction TransactionBuilder::buildSignedBurn(
     const TransactionBuildRequest& request,
     const crypto::Signer& signer,

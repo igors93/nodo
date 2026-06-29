@@ -43,6 +43,7 @@ public:
 
     HANDLER(applyBurn, "BURN")
     HANDLER(applyStakeDeposit, "STAKE_DEPOSIT")
+    HANDLER(applyStakeUnlock, "STAKE_UNLOCK")
     HANDLER(applyStakeWithdraw, "STAKE_WITHDRAW")
     HANDLER(applyStakeTopUp, "STAKE_TOP_UP")
     HANDLER(applyValidatorRegister, "VALIDATOR_REGISTER")

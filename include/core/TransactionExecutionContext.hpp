@@ -44,6 +44,7 @@ public:
 
     virtual TransactionDomainExecutionResult applyBurn(const Transaction&, const AccountStateView&, std::uint64_t, std::int64_t) = 0;
     virtual TransactionDomainExecutionResult applyStakeDeposit(const Transaction&, const AccountStateView&, std::uint64_t, std::int64_t) = 0;
+    virtual TransactionDomainExecutionResult applyStakeUnlock(const Transaction&, const AccountStateView&, std::uint64_t, std::int64_t) = 0;
     virtual TransactionDomainExecutionResult applyStakeWithdraw(const Transaction&, const AccountStateView&, std::uint64_t, std::int64_t) = 0;
     virtual TransactionDomainExecutionResult applyStakeTopUp(const Transaction&, const AccountStateView&, std::uint64_t, std::int64_t) = 0;
     virtual TransactionDomainExecutionResult applyValidatorRegister(const Transaction&, const AccountStateView&, std::uint64_t, std::int64_t) = 0;

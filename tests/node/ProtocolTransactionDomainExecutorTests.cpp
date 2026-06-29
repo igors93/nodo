@@ -44,9 +44,10 @@ Fixture fixture() {
     node::StakingRegistry staking;
     staking.deposit(
         kOwner, address,
-        utils::Amount::fromRawUnits(core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS),
+        utils::Amount::fromRawUnits(core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + 2000),
         1, false
     );
+    staking.activatePending(2);
 
     return {
         node::ProtocolExecutionState{
@@ -110,8 +111,9 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
             tx(core::TransactionType::BURN, "nodo_burn", 100, 1),
             tx(core::TransactionType::STAKE_DEPOSIT, base.validatorAddress, 1000, 2),
             tx(core::TransactionType::STAKE_TOP_UP, base.validatorAddress, 1000, 3),
-            tx(core::TransactionType::STAKE_WITHDRAW, base.validatorAddress, 500, 4),
-            tx(core::TransactionType::GOVERNANCE_PROPOSE, "nodo_governance", 0, 5,
+            tx(core::TransactionType::STAKE_UNLOCK, base.validatorAddress, 500, 4),
+            tx(core::TransactionType::STAKE_WITHDRAW, base.validatorAddress, 500, 5),
+            tx(core::TransactionType::GOVERNANCE_PROPOSE, "nodo_governance", 0, 6,
                core::GovernanceProposalPayload::parameterChange(
                    "Minimum fee",
                    "Set minimum fee through on-chain governance",
@@ -127,7 +129,9 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
         std::vector<std::string> receiptHashes;
         for (const auto& transaction : transactions) {
             const std::uint64_t executionHeight =
-                transaction.nonce() >= 4 ? 200 : 100;
+                transaction.type() == core::TransactionType::STAKE_UNLOCK
+                    ? 100
+                    : (transaction.nonce() >= 5 ? 200 : 100);
             const auto result = execute(transaction, view, *executor, executionHeight);
             require(result.success(), "protocol handler rejected valid transaction: " + result.reason());
             require(result.receipt().isValid(), "protocol handler generated invalid receipt");
@@ -141,7 +145,7 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
         const core::GovernanceVotePayload vote(
             proposalId, base.validatorAddress, core::GovernanceVoteChoice::YES);
         const auto voteResult = execute(
-            tx(core::TransactionType::GOVERNANCE_VOTE, proposalId, 0, 6, vote.serialize()),
+            tx(core::TransactionType::GOVERNANCE_VOTE, proposalId, 0, 7, vote.serialize()),
             view, *executor, 200);
         require(voteResult.success(), "authorized governance vote must execute: " + voteResult.reason());
         view = voteResult.accounts();
@@ -149,7 +153,7 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
 
         const auto finalized = executor->finalizeBlock(
             view,
-            utils::Amount::fromRawUnits(60),
+            utils::Amount::fromRawUnits(70),
             {},
             200,
             kTimestamp + 200
@@ -161,12 +165,12 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
             base.state.supply -
             utils::Amount::fromRawUnits(100) -
             node::FeeEconomics::buildFeeEconomicBalance(
-                200, utils::Amount::fromRawUnits(60)).burnAmount();
+                200, utils::Amount::fromRawUnits(70)).burnAmount();
         require(tracker->supply == expectedSupply,
             "voluntary and fee burns must reduce canonical supply");
         require(tracker->staking.ownedStake(kOwner, base.validatorAddress).rawUnits() ==
-            core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + 1500,
-            "deposit, top-up and withdrawal must update the owned stake position");
+            core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + 3500,
+            "deposit, top-up, unlock and withdrawal must update the owned stake position");
         require(tracker->governance.proposalApproved(proposalId) &&
                 tracker->governance.currentValueForTarget(
                     node::GovernanceParameterTarget::MINIMUM_FEE_RAW) == "250",

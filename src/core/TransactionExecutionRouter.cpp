@@ -33,6 +33,7 @@ TransactionDomainExecutionResult dispatchDomain(
     switch (handler) {
         case TransactionHandler::BURN: return domain->applyBurn(tx, accounts, context.blockHeight(), context.blockTimestamp());
         case TransactionHandler::STAKE_DEPOSIT: return domain->applyStakeDeposit(tx, accounts, context.blockHeight(), context.blockTimestamp());
+        case TransactionHandler::STAKE_UNLOCK: return domain->applyStakeUnlock(tx, accounts, context.blockHeight(), context.blockTimestamp());
         case TransactionHandler::STAKE_WITHDRAW: return domain->applyStakeWithdraw(tx, accounts, context.blockHeight(), context.blockTimestamp());
         case TransactionHandler::STAKE_TOP_UP: return domain->applyStakeTopUp(tx, accounts, context.blockHeight(), context.blockTimestamp());
         case TransactionHandler::VALIDATOR_REGISTER: return domain->applyValidatorRegister(tx, accounts, context.blockHeight(), context.blockTimestamp());

@@ -483,6 +483,94 @@ void JsonRpcDispatcher::registerGovernanceMethods(
     );
 }
 
+void JsonRpcDispatcher::registerStakingMethods(
+    std::function<std::string(const std::string&)> stakeStatus,
+    std::function<std::string(const std::string&)> stakePositions,
+    std::function<std::string(const std::string&)> stakeGetPosition,
+    std::function<std::string(const std::string&)> stakeSubmitSignedTransaction,
+    std::function<std::string(const std::string&)> stakePendingUnbonding,
+    std::function<std::string(const std::string&)> stakeValidatorStake,
+    std::function<std::string()> stakeAuditStatus
+) {
+    auto validatorHandler = [](auto fn, const char* missing) {
+        return [fn = std::move(fn), missing](const JsonRpcRequest& req) -> JsonRpcResponse {
+            const std::string validator = extractParam(req.params, "validator");
+            if (validator.empty()) {
+                return JsonRpcResponse::makeError(
+                    req.id, JsonRpcError::INVALID_PARAMS, missing
+                );
+            }
+            const std::string result = fn(validator);
+            return JsonRpcResponse::success(req.id, result.empty() ? "null" : result);
+        };
+    };
+
+    registerHandler(
+        "stake_status",
+        validatorHandler(std::move(stakeStatus), "Missing param: validator")
+    );
+
+    registerHandler("stake_positions",
+        [fn = std::move(stakePositions)](const JsonRpcRequest& req) -> JsonRpcResponse {
+            const std::string address = extractParam(req.params, "address");
+            const std::string result = fn(address);
+            return JsonRpcResponse::success(req.id, result.empty() ? "null" : result);
+        }
+    );
+
+    registerHandler("stake_getPosition",
+        [fn = std::move(stakeGetPosition)](const JsonRpcRequest& req) -> JsonRpcResponse {
+            const std::string positionId = extractParam(req.params, "positionId");
+            if (positionId.empty()) {
+                return JsonRpcResponse::makeError(
+                    req.id, JsonRpcError::INVALID_PARAMS, "Missing param: positionId"
+                );
+            }
+            const std::string result = fn(positionId);
+            return JsonRpcResponse::success(req.id, result.empty() ? "null" : result);
+        }
+    );
+
+    auto signedStakeTxHandler = [](auto fn, const char* methodName) {
+        return [fn = std::move(fn), methodName](const JsonRpcRequest& req) -> JsonRpcResponse {
+            const std::string transaction = extractParam(req.params, "transaction");
+            if (transaction.empty()) {
+                return JsonRpcResponse::makeError(
+                    req.id,
+                    JsonRpcError::INVALID_PARAMS,
+                    std::string(methodName) + " requires a serialized signed transaction"
+                );
+            }
+            const std::string result = fn(transaction);
+            return JsonRpcResponse::success(req.id, result.empty() ? "null" : result);
+        };
+    };
+
+    registerHandler("stake_deposit",
+        signedStakeTxHandler(stakeSubmitSignedTransaction, "stake_deposit"));
+    registerHandler("stake_topUp",
+        signedStakeTxHandler(stakeSubmitSignedTransaction, "stake_topUp"));
+    registerHandler("stake_unlock",
+        signedStakeTxHandler(stakeSubmitSignedTransaction, "stake_unlock"));
+    registerHandler("stake_withdraw",
+        signedStakeTxHandler(std::move(stakeSubmitSignedTransaction), "stake_withdraw"));
+
+    registerHandler(
+        "stake_pendingUnbonding",
+        validatorHandler(std::move(stakePendingUnbonding), "Missing param: validator")
+    );
+    registerHandler(
+        "stake_validatorStake",
+        validatorHandler(std::move(stakeValidatorStake), "Missing param: validator")
+    );
+    registerHandler("stake_auditStatus",
+        [fn = std::move(stakeAuditStatus)](const JsonRpcRequest& req) -> JsonRpcResponse {
+            const std::string result = fn();
+            return JsonRpcResponse::success(req.id, result.empty() ? "null" : result);
+        }
+    );
+}
+
 std::vector<std::string> JsonRpcDispatcher::registeredMethods() const {
     std::vector<std::string> methods;
     methods.reserve(m_handlers.size());

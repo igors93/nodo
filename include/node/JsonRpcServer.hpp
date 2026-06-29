@@ -61,6 +61,13 @@ struct JsonRpcError {
  *   nodo_estimateFee           params: {"urgency": "LOW"|"MEDIUM"|"HIGH"}
  *   nodo_getChainInfo          params: {}
  *   nodo_getValidators         params: {}
+ *   stake_status               params: {"validator": "..."}
+ *   stake_positions            params: {"address": "..."} (address optional)
+ *   stake_getPosition          params: {"positionId": "..."}
+ *   stake_deposit/topUp/unlock/withdraw params: {"transaction": "<serialized signed tx>"}
+ *   stake_pendingUnbonding     params: {"validator": "..."}
+ *   stake_validatorStake       params: {"validator": "..."}
+ *   stake_auditStatus          params: {}
  */
 class JsonRpcDispatcher {
 public:
@@ -95,6 +102,16 @@ public:
         std::function<std::string(const std::string&)> governanceSubmitProposal,
         std::function<std::string(const std::string&)> governanceSubmitVote,
         std::function<std::string()> governanceStatus
+    );
+
+    void registerStakingMethods(
+        std::function<std::string(const std::string&)> stakeStatus,
+        std::function<std::string(const std::string&)> stakePositions,
+        std::function<std::string(const std::string&)> stakeGetPosition,
+        std::function<std::string(const std::string&)> stakeSubmitSignedTransaction,
+        std::function<std::string(const std::string&)> stakePendingUnbonding,
+        std::function<std::string(const std::string&)> stakeValidatorStake,
+        std::function<std::string()> stakeAuditStatus
     );
 
     std::vector<std::string> registeredMethods() const;

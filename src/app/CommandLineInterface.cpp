@@ -764,12 +764,24 @@ CommandLineResult CommandLineInterface::execute(
             return executeValidatorUnjail(options);
         }
 
-        if (options.command == "stake lock") {
+        if (options.command == "stake lock" ||
+            options.command == "stake deposit" ||
+            options.command == "stake top-up" ||
+            options.command == "stake unlock" ||
+            options.command == "stake withdraw") {
             return executeStakeLock(options);
         }
 
         if (options.command == "stake status") {
             return executeStakeStatus(options);
+        }
+
+        if (options.command == "stake positions") {
+            return executeStakePositions(options);
+        }
+
+        if (options.command == "stake audit") {
+            return executeStakeAudit(options);
         }
 
         if (options.command == "rewards status") {
@@ -895,6 +907,16 @@ CommandLineOptions CommandLineInterface::parse(
         if (option == "--to") {
             if (index + 1 >= args.size()) {
                 throw std::invalid_argument("--to requires a value.");
+            }
+
+            options.toAddress = args[index + 1];
+            index += 2;
+            continue;
+        }
+
+        if (option == "--address") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--address requires a value.");
             }
 
             options.toAddress = args[index + 1];
@@ -1144,6 +1166,8 @@ std::string CommandLineInterface::helpText() {
         "  nodo governance propose [--data-dir PATH] [--from KEY_ID] [--proposal-type parameter-change|treasury-spend|text] [--title TEXT] [--body TEXT] [--target PARAM] [--value VALUE] [--effective-height HEIGHT] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--voting-period BLOCKS]\n"
         "  nodo governance vote [--data-dir PATH] [--owner KEY_ID] --proposal-id ID --validator ADDRESS [--vote YES|NO|ABSTAIN] [--fee RAW_UNITS]\n"
         "  nodo governance status|list|show|audit [--data-dir PATH] [--proposal-id ID]\n"
+        "  nodo stake deposit|top-up|unlock|withdraw [--data-dir PATH] --validator ADDRESS --amount RAW_UNITS [--from KEY_ID] [--fee RAW_UNITS]\n"
+        "  nodo stake status|positions|audit [--data-dir PATH] [--validator ADDRESS] [--address ADDRESS]\n"
         "  nodo block produce [--data-dir PATH]\n"
         "  nodo chain audit [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo validator list [--data-dir PATH]\n"
@@ -1159,6 +1183,7 @@ std::string CommandLineInterface::helpText() {
         "  --peer NAME@HOST:PORT Static peer for node run daemon (repeatable).\n"
         "  --validator-key ID   Key id for the local validator in node run.\n"
         "  --validator ADDRESS Validator address for lifecycle, stake, and governance vote commands.\n"
+        "  --address ADDRESS   Owner/delegator address for stake positions.\n"
         "  --owner KEY_ID       Alias for --key-id when signing validator-owned operations.\n"
         "  --key-id ID          Key id for keys create or signing. Defaults depend on command.\n"
         "  --type TYPE          Key type for keys create. Default: both\n"
@@ -3074,7 +3099,7 @@ CommandLineResult CommandLineInterface::executeValidatorStatus(
     const CommandLineOptions& options
 ) {
     const std::string addr = options.validatorAddress.empty()
-        ? options.toAddress
+        ? (options.toAddress == "nodo-localnet-recipient" ? "" : options.toAddress)
         : options.validatorAddress;
 
     if (addr.empty()) {
@@ -3457,14 +3482,14 @@ CommandLineResult CommandLineInterface::executeStakeLock(
     if (validatorAddr.empty()) {
         return CommandLineResult::failure(
             CommandLineStatus::INVALID_ARGUMENTS,
-            "Provide --validator <address> to stake into.\n"
+            "Provide --validator <address> for the stake operation.\n"
         );
     }
 
     if (options.amountRaw <= 0) {
         return CommandLineResult::failure(
             CommandLineStatus::INVALID_ARGUMENTS,
-            "Provide --stake <amount> (positive integer raw units).\n"
+            "Provide --amount or --stake (positive integer raw units).\n"
         );
     }
 
@@ -3553,18 +3578,24 @@ CommandLineResult CommandLineInterface::executeStakeLock(
         ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
         : options.nonce;
 
-    const core::Transaction tx =
-        core::TransactionBuilder::buildSignedStakeDeposit(
-            core::TransactionBuildRequest(
-                validatorAddr,
-                utils::Amount::fromRawUnits(options.amountRaw),
-                utils::Amount::fromRawUnits(options.feeRaw),
-                nextNonce,
-                options.timestamp + 10
-            ),
-            signer,
-            networkParameters.chainId()
-        );
+    const core::TransactionBuildRequest stakeRequest(
+        validatorAddr,
+        utils::Amount::fromRawUnits(options.amountRaw),
+        utils::Amount::fromRawUnits(options.feeRaw),
+        nextNonce,
+        options.timestamp + 10
+    );
+    core::Transaction tx = options.command == "stake top-up"
+        ? core::TransactionBuilder::buildSignedStakeTopUp(
+              stakeRequest, signer, networkParameters.chainId())
+        : options.command == "stake unlock"
+            ? core::TransactionBuilder::buildSignedStakeUnlock(
+                  stakeRequest, signer, networkParameters.chainId())
+            : options.command == "stake withdraw"
+                ? core::TransactionBuilder::buildSignedStakeWithdraw(
+                      stakeRequest, signer, networkParameters.chainId())
+                : core::TransactionBuilder::buildSignedStakeDeposit(
+                      stakeRequest, signer, networkParameters.chainId());
 
     const node::TransactionAdmissionContext admissionContext(
         accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
@@ -3604,9 +3635,17 @@ CommandLineResult CommandLineInterface::executeStakeLock(
     }
 
     std::ostringstream out;
-    out << "Stake deposit submitted.\n"
+    const std::string label = options.command == "stake top-up"
+        ? "Stake top-up"
+        : options.command == "stake unlock"
+            ? "Stake unlock"
+            : options.command == "stake withdraw"
+                ? "Stake withdraw"
+                : "Stake deposit";
+    out << label << " submitted.\n"
         << "Validator: " << validatorAddr << "\n"
         << "Amount: " << options.amountRaw << " raw units\n"
+        << "Type: " << core::transactionTypeToString(tx.type()) << "\n"
         << "Transaction id: " << persisted.transactionId() << "\n";
     return CommandLineResult::success(out.str());
 }
@@ -3659,12 +3698,124 @@ CommandLineResult CommandLineInterface::executeStakeStatus(
     if (!entry) {
         out << "No validator registration found for this address.\n";
     } else {
+        const auto stakeAccount =
+            load.runtime().stakingRegistry().accountOrDefault(addr);
         out << "Registry status: "
             << core::validatorRegistrationStatusToString(entry->status()) << "\n"
-            << "Bonded stake (raw units): " << entry->stakeAmount() << "\n"
-            << "Consensus weight: " << entry->consensusWeight() << "\n";
+            << "Registry active stake (raw units): " << entry->stakeAmount() << "\n"
+            << "Consensus weight: " << entry->consensusWeight() << "\n"
+            << "Bonded stake (raw units): " << stakeAccount.bondedAmount().rawUnits() << "\n"
+            << "Active stake (raw units): "
+            << load.runtime().stakingRegistry().activeStakeFor(addr).rawUnits() << "\n"
+            << "Slashed stake (raw units): " << stakeAccount.slashedAmount().rawUnits() << "\n"
+            << "Jailed: " << (stakeAccount.jailed() ? "yes" : "no") << "\n"
+            << "Tombstoned: " << (stakeAccount.tombstoned() ? "yes" : "no") << "\n";
+        const auto positions = load.runtime().stakingRegistry().positions();
+        for (const auto& position : positions) {
+            if (position.validatorAddress != addr) continue;
+            out << "Position: " << position.positionId << "\n"
+                << "  Owner: " << position.ownerAddress << "\n"
+                << "  Status: " << node::stakePositionStatusToString(position.status) << "\n"
+                << "  Pending activation: " << position.pendingActivationAmount.rawUnits() << "\n"
+                << "  Pending unbonding: " << position.pendingUnbondingAmount.rawUnits() << "\n"
+                << "  Withdrawable height: " << position.withdrawableHeight << "\n"
+                << "  Withdrawn: " << position.withdrawnAmount.rawUnits() << "\n";
+        }
     }
 
+    return CommandLineResult::success(out.str());
+}
+
+CommandLineResult CommandLineInterface::executeStakePositions(
+    const CommandLineOptions& options
+) {
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            genesisLookup.genesis(),
+            localPeerFromOptions(options)
+        );
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load runtime state: " + load.reason() + "\n"
+        );
+    }
+
+    const std::string owner = options.toAddress == "nodo-localnet-recipient"
+        ? ""
+        : options.toAddress;
+    const std::string validator = options.validatorAddress;
+    const auto positions = owner.empty()
+        ? load.runtime().stakingRegistry().positions()
+        : load.runtime().stakingRegistry().positionsForOwner(owner);
+
+    std::ostringstream out;
+    out << "Stake positions\n"
+        << "---------------\n";
+    std::size_t count = 0;
+    for (const auto& position : positions) {
+        if (!validator.empty() && position.validatorAddress != validator) continue;
+        ++count;
+        out << "Position: " << position.positionId << "\n"
+            << "Owner: " << position.ownerAddress << "\n"
+            << "Validator: " << position.validatorAddress << "\n"
+            << "Status: " << node::stakePositionStatusToString(position.status) << "\n"
+            << "Active: " << position.activeAmount.rawUnits() << "\n"
+            << "Pending activation: " << position.pendingActivationAmount.rawUnits() << "\n"
+            << "Pending unbonding: " << position.pendingUnbondingAmount.rawUnits() << "\n"
+            << "Withdrawn: " << position.withdrawnAmount.rawUnits() << "\n"
+            << "Slashed: " << position.slashedAmount.rawUnits() << "\n"
+            << "Activation height: " << position.activationHeight << "\n"
+            << "Withdrawable height: " << position.withdrawableHeight << "\n";
+    }
+    out << "Count: " << count << "\n";
+    return CommandLineResult::success(out.str());
+}
+
+CommandLineResult CommandLineInterface::executeStakeAudit(
+    const CommandLineOptions& options
+) {
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            genesisLookup.genesis(),
+            localPeerFromOptions(options)
+        );
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load runtime state: " + load.reason() + "\n"
+        );
+    }
+    if (!load.runtime().stakingRegistry().isValid()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Staking audit failed: staking registry invariants are invalid.\n"
+        );
+    }
+    std::ostringstream out;
+    out << "Staking audit passed.\n"
+        << "Stake accounts: " << load.runtime().stakingRegistry().accounts().size() << "\n"
+        << "Stake positions: " << load.runtime().stakingRegistry().positions().size() << "\n"
+        << "Lifecycle records: " << load.runtime().stakingRegistry().lifecycleRecords().size() << "\n";
     return CommandLineResult::success(out.str());
 }
 

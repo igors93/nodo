@@ -58,29 +58,41 @@ public:
         std::uint64_t height, std::int64_t now
     ) override { return stakeDeposit(tx, accounts, height, now, true); }
 
-    core::TransactionDomainExecutionResult applyStakeWithdraw(
+    core::TransactionDomainExecutionResult applyStakeUnlock(
         const core::Transaction& tx, const core::AccountStateView& accounts,
         std::uint64_t height, std::int64_t now
     ) override {
         return atomically(accounts, [&] {
             const auto* entry = m_state.validators.entryForAddress(tx.toAddress());
             if (entry != nullptr && entry->eligibleForConsensus()) {
-                const auto stake = m_state.staking.accountOrDefault(tx.toAddress());
-                const std::int64_t available =
-                    stake.bondedAmount().rawUnits() - stake.slashedAmount().rawUnits();
-                if (available < tx.amount().rawUnits()) {
-                    throw std::invalid_argument("Available aggregate stake is insufficient.");
+                const std::int64_t active =
+                    m_state.staking.activeStakeFor(tx.toAddress()).rawUnits();
+                if (active < tx.amount().rawUnits()) {
+                    throw std::invalid_argument("Active aggregate stake is insufficient.");
                 }
-                const std::int64_t remaining =
-                    available - tx.amount().rawUnits();
+                const std::int64_t remaining = active - tx.amount().rawUnits();
                 if (remaining < static_cast<std::int64_t>(
                         core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS)) {
                     throw std::invalid_argument(
-                        "Active validator stake cannot be withdrawn below the protocol minimum."
+                        "Active validator stake cannot be unlocked below the protocol minimum."
                     );
                 }
             }
-            m_state.staking.withdraw(tx.fromAddress(), tx.toAddress(), tx.amount(), height);
+            m_state.staking.requestUnlock(
+                tx.fromAddress(), tx.toAddress(), tx.amount(), height, tx.id()
+            );
+            updateValidatorStake(tx.toAddress(), now);
+        });
+    }
+
+    core::TransactionDomainExecutionResult applyStakeWithdraw(
+        const core::Transaction& tx, const core::AccountStateView& accounts,
+        std::uint64_t height, std::int64_t now
+    ) override {
+        return atomically(accounts, [&] {
+            m_state.staking.withdraw(
+                tx.fromAddress(), tx.toAddress(), tx.amount(), height, tx.id()
+            );
             updateValidatorStake(tx.toAddress(), now);
         });
     }
@@ -102,7 +114,7 @@ public:
                 throw std::invalid_argument("Validator target does not match payload public key.");
             }
             m_state.staking.deposit(
-                tx.fromAddress(), validatorAddress, tx.amount(), height, false
+                tx.fromAddress(), validatorAddress, tx.amount(), height, false, tx.id()
             );
             const core::ValidatorRegistrationRecord record(
                 validatorAddress,
@@ -129,6 +141,10 @@ public:
             }
             const auto result = m_state.validators.requestExit(tx.toAddress(), height, now);
             if (!result.success()) throw std::invalid_argument(result.reason());
+            m_state.staking.requestValidatorExit(
+                tx.fromAddress(), tx.toAddress(), height, tx.id()
+            );
+            updateValidatorStake(tx.toAddress(), now);
         });
     }
 
@@ -146,6 +162,7 @@ public:
             );
             if (!result.success()) throw std::invalid_argument(result.reason());
             m_state.staking.unjail(tx.toAddress());
+            updateValidatorStake(tx.toAddress(), now);
         });
     }
 
@@ -222,7 +239,9 @@ public:
                 cryptoContext.policy(), cryptoContext.signatureProvider(),
                 m_state.penaltyLedger, m_state.validators
             );
-            synchronizePenaltyState(blockTimestamp);
+            synchronizePenaltyState(blockHeight, blockTimestamp);
+            m_state.staking.activatePending(blockHeight + 1);
+            synchronizeAllValidatorStakes(blockTimestamp);
             ProtocolStateTransition::applyValidatorEpochTransition(
                 m_state.validators, blockHeight, blockTimestamp
             );
@@ -281,7 +300,9 @@ private:
             if (m_state.staking.accountOrDefault(tx.toAddress()).tombstoned()) {
                 throw std::invalid_argument("Cannot add stake to a tombstoned validator.");
             }
-            m_state.staking.deposit(tx.fromAddress(), tx.toAddress(), tx.amount(), height, topUp);
+            m_state.staking.deposit(
+                tx.fromAddress(), tx.toAddress(), tx.amount(), height, topUp, tx.id()
+            );
             updateValidatorStake(tx.toAddress(), now);
         });
     }
@@ -289,10 +310,8 @@ private:
     void updateValidatorStake(const std::string& validatorAddress, std::int64_t now) {
         const auto* entry = m_state.validators.entryForAddress(validatorAddress);
         if (entry == nullptr) return;
-        const auto stake =
-            m_state.staking.accountOrDefault(validatorAddress);
         const std::int64_t raw =
-            stake.bondedAmount().rawUnits() - stake.slashedAmount().rawUnits();
+            m_state.staking.activeStakeFor(validatorAddress).rawUnits();
         if (raw < 0) throw std::logic_error("Negative validator stake.");
         const auto result = m_state.validators.updateStake(
             validatorAddress, static_cast<std::uint64_t>(raw), now
@@ -301,8 +320,7 @@ private:
     }
 
     std::uint64_t votingWeight(const std::string& validatorAddress) const {
-        const auto stake = m_state.staking.accountOrDefault(validatorAddress);
-        const std::int64_t available = stake.bondedAmount().rawUnits() - stake.slashedAmount().rawUnits();
+        const std::int64_t available = m_state.staking.activeStakeFor(validatorAddress).rawUnits();
         if (available > 0) {
             return core::ValidatorRegistry::consensusWeightFromStake(
                 static_cast<std::uint64_t>(available)
@@ -325,7 +343,14 @@ private:
         return total;
     }
 
-    void synchronizePenaltyState(std::int64_t now) {
+    void synchronizeAllValidatorStakes(std::int64_t now) {
+        for (const auto& [address, account] : m_state.staking.accounts()) {
+            (void)account;
+            updateValidatorStake(address, now);
+        }
+    }
+
+    void synchronizePenaltyState(std::uint64_t blockHeight, std::int64_t now) {
         for (const auto& [address, current] : m_state.staking.accounts()) {
             const std::int64_t totalSlash =
                 m_state.penaltyLedger.totalSlashAmountForValidator(address);
@@ -337,10 +362,13 @@ private:
                 m_state.penaltyLedger.validatorIsTombstoned(address);
             const bool jailed = tombstoned || current.jailed() ||
                 m_state.penaltyLedger.validatorIsJailed(address);
-            m_state.staking.setAccount(address, economics::StakeAccount(
-                address, current.bondedAmount(),
-                utils::Amount::fromRawUnits(boundedSlash), jailed, tombstoned
-            ));
+            m_state.staking.applyPenaltyState(
+                address,
+                utils::Amount::fromRawUnits(boundedSlash),
+                jailed,
+                tombstoned,
+                blockHeight
+            );
             updateValidatorStake(address, now);
         }
     }

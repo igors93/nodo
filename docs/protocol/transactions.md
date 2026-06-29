@@ -11,6 +11,7 @@ finalization and replay.
 - `BURN`
 - `STAKE_DEPOSIT`
 - `STAKE_TOP_UP`
+- `STAKE_UNLOCK`
 - `STAKE_WITHDRAW`
 - `VALIDATOR_REGISTER`
 - `VALIDATOR_EXIT_REQUEST`
@@ -43,6 +44,11 @@ state and commits atomically only after success. Receipts contain the transactio
 type, sender, target, amount, fee, nonce transition, touched domains and the
 intermediate state commitment.
 
-The state root commits accounts, supply, burns, staking positions, validator
+`STAKE_UNLOCK` starts deterministic unbonding and removes stake from active
+validator weight. `STAKE_WITHDRAW` only finalizes a position that has reached
+its withdrawable height and credits liquid balance.
+
+The state root commits accounts, supply, burns, staking accounts, staking
+positions, pending activation, pending unbonding, lifecycle records, validator
 lifecycle and ownership, governance proposals/votes, and slashing state.
 Finalization and reload use the same handlers.

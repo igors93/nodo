@@ -40,6 +40,7 @@ using nodo::utils::Amount;
 constexpr std::int64_t kTimestamp  = 1900000000;
 constexpr std::int64_t kStake      = 1'000'000;
 constexpr std::int64_t kFee        = 100;
+constexpr std::int64_t kGenesisStake = 1'000'000;
 const std::string kChainId         = "nodo-localnet-1";
 
 void requireCondition(bool condition, const std::string& msg) {
@@ -112,8 +113,8 @@ void testStakeDepositUpdatesRegistryAfterBlock() {
     const std::string validatorAddr = validatorKeyPair().address().value();
 
     requireCondition(
-        runtime.stakingRegistry().accountOrDefault(validatorAddr).bondedAmount().rawUnits() == 0,
-        "Validator should have zero bonded stake before any deposit."
+        runtime.stakingRegistry().accountOrDefault(validatorAddr).bondedAmount().rawUnits() == kGenesisStake,
+        "Bootstrap validator stake should be materialized in staking genesis."
     );
 
     const Transaction tx = TransactionBuilder::buildSignedStakeDeposit(
@@ -158,8 +159,8 @@ void testStakeDepositUpdatesRegistryAfterBlock() {
             .rawUnits();
 
     requireCondition(
-        bonded == kStake,
-        "StakingRegistry must reflect bonded amount after block. Got: " + std::to_string(bonded)
+        bonded == kGenesisStake + kStake,
+        "StakingRegistry must reflect genesis plus deposit after block. Got: " + std::to_string(bonded)
     );
 }
 
@@ -203,8 +204,8 @@ void testStakeTopUpAccumulatesAcrossConsecutiveBlocks() {
         runtime.stakingRegistry()
             .accountOrDefault(validatorAddr)
             .bondedAmount()
-            .rawUnits() == kStake,
-        "After block 1: bonded should equal the initial deposit."
+            .rawUnits() == kGenesisStake + kStake,
+        "After block 1: bonded should equal genesis plus the initial deposit."
     );
 
     // Block 2: top-up (round resets to 1 at the new height)
@@ -244,8 +245,8 @@ void testStakeTopUpAccumulatesAcrossConsecutiveBlocks() {
             .rawUnits();
 
     requireCondition(
-        bonded == kStake * 2,
-        "After block 2: bonded must equal deposit + top-up. Got: " + std::to_string(bonded)
+        bonded == kGenesisStake + (kStake * 2),
+        "After block 2: bonded must equal genesis + deposit + top-up. Got: " + std::to_string(bonded)
     );
 }
 

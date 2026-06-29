@@ -193,9 +193,9 @@ stake, honest validators earn epoch rewards, and dishonest validators are
 slashed.
 
 ### 4.1 Stake Lifecycle
-- `STAKE_DEPOSIT`, `STAKE_TOP_UP`, and `STAKE_WITHDRAW` are routed through the
-  canonical transaction executor into `StakingRegistry`; the former standalone
-  staking applier and duplicate lock/unlock transaction concepts were removed.
+- `STAKE_DEPOSIT`, `STAKE_TOP_UP`, `STAKE_UNLOCK`, and `STAKE_WITHDRAW` are
+  routed through the canonical transaction executor into `StakingRegistry`;
+  withdraw finalization is separated from unbonding start.
 - State transitions are previewed on copies and the staking domain participates
   in the protocol state root, finalized commit, and replay.
 

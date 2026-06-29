@@ -159,6 +159,27 @@ bool asciiCaseEqual(const std::string& value, const std::string& expected) {
     return true;
 }
 
+std::string jsonStakePosition(const StakePositionView& position) {
+    std::ostringstream oss;
+    oss << "{"
+        << "\"positionId\":" << jsonString(position.positionId)
+        << ",\"ownerAddress\":" << jsonString(position.ownerAddress)
+        << ",\"validatorAddress\":" << jsonString(position.validatorAddress)
+        << ",\"status\":" << jsonString(stakePositionStatusToString(position.status))
+        << ",\"activeRawUnits\":" << position.activeAmount.rawUnits()
+        << ",\"pendingActivationRawUnits\":" << position.pendingActivationAmount.rawUnits()
+        << ",\"pendingUnbondingRawUnits\":" << position.pendingUnbondingAmount.rawUnits()
+        << ",\"withdrawnRawUnits\":" << position.withdrawnAmount.rawUnits()
+        << ",\"slashedRawUnits\":" << position.slashedAmount.rawUnits()
+        << ",\"rewardsPendingRawUnits\":" << position.rewardsPending.rawUnits()
+        << ",\"lockHeight\":" << position.lockHeight
+        << ",\"activationHeight\":" << position.activationHeight
+        << ",\"unbondingStartHeight\":" << position.unbondingStartHeight
+        << ",\"withdrawableHeight\":" << position.withdrawableHeight
+        << "}";
+    return oss.str();
+}
+
 std::string trimHttpWhitespace(const std::string& value) {
     std::size_t begin = 0;
     while (begin < value.size() &&
@@ -559,6 +580,39 @@ std::pair<int, std::string> NodeRpcServer::dispatch(
     if (route == "validators" && method == "GET") {
         return {200, handleValidators()};
     }
+    if (route == "stake" && method == "GET") {
+        if (param == "status") {
+            const std::string validator = pathSegment(cleanPath, 3);
+            if (validator.empty()) return {400, jsonError("Missing validator address")};
+            return {200, handleStakeStatus(validator)};
+        }
+        if (param == "positions") {
+            return {200, handleStakePositions(pathSegment(cleanPath, 3))};
+        }
+        if (param == "position") {
+            const std::string positionId = pathSegment(cleanPath, 3);
+            if (positionId.empty()) return {400, jsonError("Missing stake position id")};
+            return {200, handleStakePosition(positionId)};
+        }
+        if (param == "pending-unbonding") {
+            const std::string validator = pathSegment(cleanPath, 3);
+            if (validator.empty()) return {400, jsonError("Missing validator address")};
+            return {200, handleStakePendingUnbonding(validator)};
+        }
+        if (param == "validator") {
+            const std::string validator = pathSegment(cleanPath, 3);
+            if (validator.empty()) return {400, jsonError("Missing validator address")};
+            return {200, handleStakeValidator(validator)};
+        }
+        if (param == "audit" || param.empty()) {
+            return {200, handleStakeAudit()};
+        }
+        if (param == "deposit" || param == "topUp" || param == "top-up" ||
+            param == "unlock" || param == "withdraw") {
+            return {200, handleStakeMutationInfo(param)};
+        }
+        return {404, jsonError("Unknown stake route: " + param)};
+    }
     if (route == "peers" && method == "GET") {
         return {200, handlePeers()};
     }
@@ -745,6 +799,115 @@ std::string NodeRpcServer::handleValidators() const {
             << "}";
     }
     oss << "]}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleStakeStatus(const std::string& validatorAddress) const {
+    const auto account = m_runtime.stakingRegistry().accountOrDefault(validatorAddress);
+    const core::ValidatorRegistryEntry* entry =
+        m_runtime.validatorRegistry().entryForAddress(validatorAddress);
+    std::ostringstream oss;
+    oss << "{"
+        << "\"validatorAddress\":" << jsonString(validatorAddress)
+        << ",\"registered\":" << (entry == nullptr ? "false" : "true")
+        << ",\"validatorStatus\":"
+        << jsonString(entry == nullptr
+            ? "UNKNOWN"
+            : core::validatorRegistrationStatusToString(entry->status()))
+        << ",\"bondedRawUnits\":" << account.bondedAmount().rawUnits()
+        << ",\"activeRawUnits\":"
+        << m_runtime.stakingRegistry().activeStakeFor(validatorAddress).rawUnits()
+        << ",\"slashedRawUnits\":" << account.slashedAmount().rawUnits()
+        << ",\"jailed\":" << (account.jailed() ? "true" : "false")
+        << ",\"tombstoned\":" << (account.tombstoned() ? "true" : "false")
+        << ",\"consensusWeight\":"
+        << m_runtime.validatorRegistry().consensusWeightFor(validatorAddress)
+        << ",\"positions\":[";
+    bool first = true;
+    for (const auto& position : m_runtime.stakingRegistry().positions()) {
+        if (position.validatorAddress != validatorAddress) continue;
+        if (!first) oss << ",";
+        oss << jsonStakePosition(position);
+        first = false;
+    }
+    oss << "]}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleStakePositions(const std::string& ownerAddress) const {
+    const std::vector<StakePositionView> positions = ownerAddress.empty()
+        ? m_runtime.stakingRegistry().positions()
+        : m_runtime.stakingRegistry().positionsForOwner(ownerAddress);
+    std::ostringstream oss;
+    oss << "{\"ownerAddress\":" << jsonString(ownerAddress)
+        << ",\"positions\":[";
+    for (std::size_t i = 0; i < positions.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << jsonStakePosition(positions[i]);
+    }
+    oss << "],\"count\":" << positions.size() << "}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleStakePosition(const std::string& positionId) const {
+    for (const auto& position : m_runtime.stakingRegistry().positions()) {
+        if (position.positionId == positionId) {
+            return jsonStakePosition(position);
+        }
+    }
+    return jsonError("Stake position not found: " + positionId);
+}
+
+std::string NodeRpcServer::handleStakePendingUnbonding(
+    const std::string& validatorAddress
+) const {
+    std::ostringstream oss;
+    oss << "{\"validatorAddress\":" << jsonString(validatorAddress)
+        << ",\"pendingUnbonding\":[";
+    bool first = true;
+    std::int64_t total = 0;
+    for (const auto& position : m_runtime.stakingRegistry().positions()) {
+        if (position.validatorAddress != validatorAddress ||
+            !position.pendingUnbondingAmount.isPositive()) {
+            continue;
+        }
+        if (!first) oss << ",";
+        oss << jsonStakePosition(position);
+        total += position.pendingUnbondingAmount.rawUnits();
+        first = false;
+    }
+    oss << "],\"totalPendingUnbondingRawUnits\":" << total << "}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleStakeValidator(const std::string& validatorAddress) const {
+    return handleStakeStatus(validatorAddress);
+}
+
+std::string NodeRpcServer::handleStakeAudit() const {
+    std::ostringstream oss;
+    oss << "{"
+        << "\"valid\":" << (m_runtime.stakingRegistry().isValid() ? "true" : "false")
+        << ",\"accountCount\":" << m_runtime.stakingRegistry().accounts().size()
+        << ",\"positionCount\":" << m_runtime.stakingRegistry().positions().size()
+        << ",\"lifecycleRecordCount\":"
+        << m_runtime.stakingRegistry().lifecycleRecords().size()
+        << "}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleStakeMutationInfo(const std::string& operation) const {
+    std::string transactionType = "STAKE_DEPOSIT";
+    if (operation == "topUp" || operation == "top-up") transactionType = "STAKE_TOP_UP";
+    if (operation == "unlock") transactionType = "STAKE_UNLOCK";
+    if (operation == "withdraw") transactionType = "STAKE_WITHDRAW";
+    std::ostringstream oss;
+    oss << "{"
+        << "\"operation\":" << jsonString(operation)
+        << ",\"requiresSignedTransaction\":true"
+        << ",\"transactionType\":" << jsonString(transactionType)
+        << ",\"submitEndpoint\":\"/submit\""
+        << "}";
     return oss.str();
 }
 

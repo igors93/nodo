@@ -295,6 +295,9 @@ std::string transactionTypeToString(TransactionType type) {
         case TransactionType::STAKE_DEPOSIT:
             return "STAKE_DEPOSIT";
 
+        case TransactionType::STAKE_UNLOCK:
+            return "STAKE_UNLOCK";
+
         case TransactionType::STAKE_WITHDRAW:
             return "STAKE_WITHDRAW";
 
@@ -335,6 +338,10 @@ TransactionType transactionTypeFromString(const std::string& value) {
         return TransactionType::STAKE_DEPOSIT;
     }
 
+    if (value == "STAKE_UNLOCK") {
+        return TransactionType::STAKE_UNLOCK;
+    }
+
     if (value == "STAKE_WITHDRAW") {
         return TransactionType::STAKE_WITHDRAW;
     }
@@ -368,6 +375,7 @@ bool requiresUserSignature(TransactionType type) {
 
 bool isStakingTransaction(TransactionType type) {
     return type == TransactionType::STAKE_DEPOSIT ||
+           type == TransactionType::STAKE_UNLOCK ||
            type == TransactionType::STAKE_WITHDRAW ||
            type == TransactionType::STAKE_TOP_UP;
 }

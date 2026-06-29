@@ -49,6 +49,7 @@ void testSetOverwritesExistingAccount() {
     reg.setAccount("val-1", StakeAccount("val-1", Amount::fromRawUnits(3'000'000)));
     assert(reg.size() == 1);
     assert(reg.accountFor("val-1")->bondedAmount().rawUnits() == 3'000'000);
+    assert(reg.isValid());
 }
 
 void testMultipleValidators() {
@@ -75,6 +76,7 @@ void testSerializeNonEmpty() {
     const std::string s = reg.serialize();
     assert(!s.empty());
     assert(s.find("count=1") != std::string::npos);
+    assert(s.find("positionCount=1") != std::string::npos);
 }
 
 void testAccountsMapIsOrdered() {
@@ -83,6 +85,42 @@ void testAccountsMapIsOrdered() {
     reg.setAccount("val-a", StakeAccount("val-a", Amount::fromRawUnits(2)));
     const auto& map = reg.accounts();
     assert(map.begin()->first == "val-a");
+}
+
+void testDepositActivationUnlockWithdrawLifecycle() {
+    StakingRegistry reg;
+    reg.deposit("owner-a", "val-a", Amount::fromRawUnits(1'000), 10, false, "tx-deposit");
+    assert(reg.pendingActivationStake("owner-a", "val-a").rawUnits() == 1'000);
+    assert(reg.activeStake("owner-a", "val-a").isZero());
+    assert(reg.activatePending(11));
+    assert(reg.activeStake("owner-a", "val-a").rawUnits() == 1'000);
+
+    reg.requestUnlock("owner-a", "val-a", Amount::fromRawUnits(400), 12, "tx-unlock");
+    assert(reg.activeStake("owner-a", "val-a").rawUnits() == 600);
+    assert(reg.pendingUnbondingStake("owner-a", "val-a").rawUnits() == 400);
+    assert(reg.withdrawableStake("owner-a", "val-a", 12).isZero());
+    assert(reg.withdrawableStake("owner-a", "val-a", 33).rawUnits() == 400);
+
+    reg.withdraw("owner-a", "val-a", Amount::fromRawUnits(400), 33, "tx-withdraw");
+    assert(reg.ownedStake("owner-a", "val-a").rawUnits() == 600);
+    assert(reg.accountOrDefault("val-a").bondedAmount().rawUnits() == 600);
+    assert(reg.lifecycleRecords().size() == 4);
+    assert(reg.isValid());
+}
+
+void testPenaltyStateSlashesActiveStakeAndBlocksWithdrawableAmount() {
+    StakingRegistry reg;
+    reg.deposit("owner-a", "val-a", Amount::fromRawUnits(1'000), 10, false);
+    reg.activatePending(11);
+    reg.applyPenaltyState("val-a", Amount::fromRawUnits(250), true, false, 12);
+
+    const auto account = reg.accountOrDefault("val-a");
+    assert(account.bondedAmount().rawUnits() == 1'000);
+    assert(account.slashedAmount().rawUnits() == 250);
+    assert(account.jailed());
+    assert(reg.activeStakeFor("val-a").isZero());
+    assert(reg.activeStake("owner-a", "val-a").rawUnits() == 750);
+    assert(reg.isValid());
 }
 
 } // namespace
@@ -97,5 +135,7 @@ int main() {
     testIsValid();
     testSerializeNonEmpty();
     testAccountsMapIsOrdered();
+    testDepositActivationUnlockWithdrawLifecycle();
+    testPenaltyStateSlashesActiveStakeAndBlocksWithdrawableAmount();
     return 0;
 }

@@ -9,6 +9,7 @@
 #include "node/FinalizedBlockStore.hpp"
 #include "node/FinalizedTreasuryAudit.hpp"
 #include "node/ProtectionRewards.hpp"
+#include "node/ProtocolStateTransition.hpp"
 #include "storage/AtomicFile.hpp"
 
 #include <exception>
@@ -307,14 +308,44 @@ FinalizedArtifactImportResult importImpl(
         );
     }
 
-    // Apply supply delta to supply state.
     try {
+        const ProtocolExecutionState replayed =
+            ProtocolStateTransition::replayFinalizedBlockDomains(
+                runtime, artifact.block()
+            );
+        if (replayed.supply != artifact.supplyDelta().supplyAfter()) {
+            throw std::logic_error(
+                "Replayed transaction supply differs from persisted delta."
+            );
+        }
         runtime.mutableSupplyState().applyFinalizedDelta(artifact.supplyDelta());
+        runtime.mutableGovernanceExecutor() = replayed.governance;
+        runtime.mutableValidatorRegistry() = replayed.validators;
+        runtime.mutableValidatorPenaltyLedger() = replayed.penaltyLedger;
+        runtime.mutableStakingRegistry() = replayed.staking;
+        runtime.invalidateAccountStateCache();
     } catch (const std::exception& e) {
         return FinalizedArtifactImportResult::rejected(
             ArtifactImportRejectionReason::SUPPLY_CONTINUITY_BREAK,
             std::string("supply continuity break at height ") +
             std::to_string(artifact.block().index()) + ": " + e.what()
+        );
+    }
+
+    if (!runtime.mutableValidatorSetHistory().recordSet(
+            artifact.block().index() + 1, runtime.validatorRegistry()
+        )) {
+        return FinalizedArtifactImportResult::rejected(
+            ArtifactImportRejectionReason::FINALITY_VALIDATION_FAILED,
+            "Validator set history conflict while importing block " +
+            std::to_string(artifact.block().index())
+        );
+    }
+
+    if (!artifact.postStateRoot().empty()) {
+        runtime.mutableStatePruner().recordStateRoot(
+            artifact.block().index(),
+            artifact.postStateRoot()
         );
     }
 

@@ -48,6 +48,7 @@ using nodo::utils::Amount;
 constexpr std::int64_t kTimestamp = 1900000000;
 constexpr std::int64_t kStake     = 1'000'000;
 constexpr std::int64_t kFee       = 100;
+constexpr std::int64_t kGenesisStake = 1'000'000;
 const std::string kChainId        = "nodo-localnet-1";
 
 void requireCondition(bool condition, const std::string& msg) {
@@ -183,8 +184,8 @@ void testStakingRegistryRebuiltAfterReload() {
             .rawUnits();
 
     requireCondition(
-        bondedBefore == kStake,
-        "Original runtime bonded amount should equal stake. Got: "
+        bondedBefore == kGenesisStake + kStake,
+        "Original runtime bonded amount should equal genesis plus stake. Got: "
             + std::to_string(bondedBefore)
     );
 
@@ -212,7 +213,7 @@ void testStakingRegistryRebuiltAfterReload() {
             .rawUnits();
 
     requireCondition(
-        bondedAfter == kStake,
+        bondedAfter == kGenesisStake + kStake,
         "Reloaded runtime StakingRegistry must match original bonded amount. Got: "
             + std::to_string(bondedAfter)
     );
@@ -298,7 +299,7 @@ void testMultipleStakingBlocksReplayedCorrectly() {
         );
     }
 
-    const std::int64_t expectedBonded = kStake * 2;
+    const std::int64_t expectedBonded = kGenesisStake + (kStake * 2);
 
     const auto loaded = RuntimeStateLoader::loadFromDataDirectory(
         dirConfig, genesisConfig(), localPeer()

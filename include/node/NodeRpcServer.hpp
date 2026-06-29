@@ -25,6 +25,12 @@ namespace nodo::node {
  *   GET  /tx/{txId}            — ledger record with matching id or sourceId
  *   GET  /account/{address}    — balance and nonce for address
  *   GET  /validators            — list of active validator addresses
+ *   GET  /stake/status/{validator}
+ *   GET  /stake/positions/{owner}
+ *   GET  /stake/position/{positionId}
+ *   GET  /stake/pending-unbonding/{validator}
+ *   GET  /stake/validator/{validator}
+ *   GET  /stake/audit
  *   GET  /peers                — list of known peers
  *   GET  /mempool              — current mempool transaction count and top txs
  *   GET  /governance/status    — proposal counts and governed parameters
@@ -91,6 +97,13 @@ private:
     std::string handleTx(const std::string& txId) const;
     std::string handleAccount(const std::string& address) const;
     std::string handleValidators() const;
+    std::string handleStakeStatus(const std::string& validatorAddress) const;
+    std::string handleStakePositions(const std::string& ownerAddress) const;
+    std::string handleStakePosition(const std::string& positionId) const;
+    std::string handleStakePendingUnbonding(const std::string& validatorAddress) const;
+    std::string handleStakeValidator(const std::string& validatorAddress) const;
+    std::string handleStakeAudit() const;
+    std::string handleStakeMutationInfo(const std::string& operation) const;
     std::string handlePeers() const;
     std::string handleMempool() const;
     std::string handleGovernanceStatus() const;

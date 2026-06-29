@@ -31,6 +31,7 @@ enum class TransactionHandler {
     TRANSFER,
     BURN,
     STAKE_DEPOSIT,
+    STAKE_UNLOCK,
     STAKE_WITHDRAW,
     STAKE_TOP_UP,
     VALIDATOR_REGISTER,

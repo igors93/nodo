@@ -160,6 +160,14 @@ private:
         const CommandLineOptions& options
     );
 
+    static CommandLineResult executeStakePositions(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeStakeAudit(
+        const CommandLineOptions& options
+    );
+
     static CommandLineResult executeRewardsStatus(
         const CommandLineOptions& options
     );
