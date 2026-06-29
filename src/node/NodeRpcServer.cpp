@@ -564,6 +564,34 @@ std::pair<int, std::string> NodeRpcServer::dispatch(
     if (route == "mempool" && method == "GET") {
         return {200, handleMempool()};
     }
+    if (route == "governance" && method == "GET") {
+        if (param == "status" || param.empty()) {
+            return {200, handleGovernanceStatus()};
+        }
+        if (param == "proposals") {
+            return {200, handleGovernanceProposals()};
+        }
+        const std::string proposalId = pathSegment(cleanPath, 3);
+        if (proposalId.empty()) {
+            return {400, jsonError("Missing governance proposal id")};
+        }
+        if (param == "proposal") {
+            return {200, handleGovernanceProposal(proposalId)};
+        }
+        if (param == "votes") {
+            return {200, handleGovernanceVotes(proposalId)};
+        }
+        if (param == "tally") {
+            return {200, handleGovernanceTally(proposalId)};
+        }
+        if (param == "decision") {
+            return {200, handleGovernanceDecision(proposalId)};
+        }
+        if (param == "execution") {
+            return {200, handleGovernanceExecution(proposalId)};
+        }
+        return {404, jsonError("Unknown governance route: " + param)};
+    }
     if (route == "submit" && method == "POST") {
         return {200, handleSubmit(body)};
     }
@@ -731,6 +759,115 @@ std::string NodeRpcServer::handleMempool() const {
             << "}";
     }
     oss << "]}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleGovernanceStatus() const {
+    const GovernanceExecutor& governance = m_runtime.governanceExecutor();
+    const std::uint64_t nextHeight = m_runtime.blockchain().size();
+    std::ostringstream oss;
+    oss << "{"
+        << "\"activeProposalCount\":" << governance.activeProposalCount()
+        << ",\"approvedProposalCount\":" << governance.approvedProposalCount()
+        << ",\"executableProposalCount\":" << governance.executableProposalCount(nextHeight)
+        << ",\"executedProposalCount\":" << governance.executedProposalCount()
+        << ",\"effectiveMinimumFeeRawUnits\":" << m_runtime.effectiveMinimumFeeRawUnits()
+        << "}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleGovernanceProposals() const {
+    const std::vector<std::string> ids = m_runtime.governanceExecutor().proposalIds();
+    std::ostringstream oss;
+    oss << "{\"proposals\":[";
+    for (std::size_t i = 0; i < ids.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << jsonString(ids[i]);
+    }
+    oss << "],\"count\":" << ids.size() << "}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleGovernanceProposal(
+    const std::string& proposalId
+) const {
+    const GovernanceExecutor& governance = m_runtime.governanceExecutor();
+    if (!governance.hasProposal(proposalId)) {
+        return jsonError("Governance proposal not found: " + proposalId);
+    }
+    std::ostringstream oss;
+    oss << "{"
+        << "\"proposalId\":" << jsonString(proposalId)
+        << ",\"detail\":" << jsonString(governance.proposalDetail(proposalId))
+        << ",\"status\":" << jsonString(governanceProposalStatusToString(
+            governance.proposalStatus(proposalId)))
+        << ",\"votingStartHeight\":" << governance.proposalVotingStartHeight(proposalId)
+        << ",\"votingEndHeight\":" << governance.proposalVotingEndHeight(proposalId)
+        << ",\"approved\":" << (governance.proposalApproved(proposalId) ? "true" : "false")
+        << ",\"executed\":" << (governance.hasBeenExecuted(proposalId) ? "true" : "false")
+        << "}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleGovernanceVotes(
+    const std::string& proposalId
+) const {
+    const GovernanceExecutor& governance = m_runtime.governanceExecutor();
+    if (!governance.hasProposal(proposalId)) {
+        return jsonError("Governance proposal not found: " + proposalId);
+    }
+    std::ostringstream oss;
+    oss << "{"
+        << "\"proposalId\":" << jsonString(proposalId)
+        << ",\"votes\":" << jsonString(governance.proposalVotes(proposalId))
+        << "}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleGovernanceTally(
+    const std::string& proposalId
+) const {
+    const GovernanceExecutor& governance = m_runtime.governanceExecutor();
+    if (!governance.hasProposal(proposalId)) {
+        return jsonError("Governance proposal not found: " + proposalId);
+    }
+    const GovernanceTallySnapshot tally = governance.tallyForProposal(proposalId);
+    std::ostringstream oss;
+    oss << "{"
+        << "\"proposalId\":" << jsonString(proposalId)
+        << ",\"yesWeight\":" << tally.yesWeight()
+        << ",\"noWeight\":" << tally.noWeight()
+        << ",\"abstainWeight\":" << tally.abstainWeight()
+        << ",\"participatingWeight\":" << tally.participatingWeight()
+        << ",\"totalEligibleWeight\":" << tally.totalEligibleWeight()
+        << ",\"quorumMet\":" << (tally.quorumMet() ? "true" : "false")
+        << ",\"approvalThresholdMet\":" << (tally.approvalThresholdMet() ? "true" : "false")
+        << ",\"approved\":" << (tally.approved() ? "true" : "false")
+        << "}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleGovernanceDecision(
+    const std::string& proposalId
+) const {
+    return handleGovernanceProposal(proposalId);
+}
+
+std::string NodeRpcServer::handleGovernanceExecution(
+    const std::string& proposalId
+) const {
+    const GovernanceExecutor& governance = m_runtime.governanceExecutor();
+    if (!governance.hasProposal(proposalId)) {
+        return jsonError("Governance proposal not found: " + proposalId);
+    }
+    std::ostringstream oss;
+    oss << "{"
+        << "\"proposalId\":" << jsonString(proposalId)
+        << ",\"status\":" << jsonString(governanceProposalStatusToString(
+            governance.proposalStatus(proposalId)))
+        << ",\"executed\":" << (governance.hasBeenExecuted(proposalId) ? "true" : "false")
+        << ",\"detail\":" << jsonString(governance.proposalExecutionDetail(proposalId))
+        << "}";
     return oss.str();
 }
 

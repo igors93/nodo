@@ -357,12 +357,12 @@ bool governancePlanIsValid(
         const std::vector<GovernanceActionGuard> expectedGuards =
             Governance::buildActionGuards(expectedPolicy);
 
-        const GovernanceSummary expectedSummary =
-            Governance::buildSummary(blockHeight, expectedGuards);
-
         return Governance::samePolicy(expectedPolicy, policy) &&
                Governance::sameActionGuards(expectedGuards, guards) &&
-               Governance::sameSummary(expectedSummary, summary);
+               summary.active() &&
+               summary.blockHeight() == blockHeight &&
+               summary.guardCount() == guards.size() &&
+               !summary.sourceGuardDigest().empty();
     } catch (const std::exception&) {
         return false;
     }
@@ -2020,8 +2020,17 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
             Governance::buildPolicySnapshot(block.index());
         governanceActionGuards =
             Governance::buildActionGuards(governancePolicySnapshot);
+        if (!executionTracker) {
+            throw std::runtime_error("Missing governance execution tracker.");
+        }
         governanceSummary = Governance::buildSummary(
-            block.index(), governanceActionGuards
+            block.index(),
+            governanceActionGuards,
+            static_cast<std::uint64_t>(executionTracker->governance.activeProposalCount()),
+            static_cast<std::uint64_t>(executionTracker->governance.approvedProposalCount()),
+            static_cast<std::uint64_t>(executionTracker->governance.executableProposalCount(block.index() + 1)),
+            static_cast<std::uint64_t>(executionTracker->governance.executedProposalCount()),
+            executionTracker->governance.serialize()
         );
     } catch (const std::exception& error) {
         return RuntimeBlockPipelineResult::rejected(

@@ -145,6 +145,52 @@ void testErrorResponseHasCorrectCode() {
     );
 }
 
+void testGovernanceMethodsAreRegisteredAndDispatch() {
+    JsonRpcDispatcher dispatcher;
+
+    dispatcher.registerGovernanceMethods(
+        []() { return R"({"proposals":["p1"]})"; },
+        [](const std::string& id) { return "{\"proposalId\":\"" + id + "\"}"; },
+        [](const std::string& id) { return "{\"votes\":\"" + id + "\"}"; },
+        [](const std::string& id) { return "{\"tally\":\"" + id + "\"}"; },
+        [](const std::string& id) { return "{\"decision\":\"" + id + "\"}"; },
+        [](const std::string& id) { return "{\"execution\":\"" + id + "\"}"; },
+        [](const std::string& tx) { return "{\"proposalTx\":\"" + tx + "\"}"; },
+        [](const std::string& tx) { return "{\"voteTx\":\"" + tx + "\"}"; },
+        []() { return R"({"activeProposalCount":1})"; }
+    );
+
+    const auto proposal = dispatcher.dispatch(
+        R"({"jsonrpc":"2.0","method":"governance_getProposal","params":{"proposalId":"p1"},"id":"7"})"
+    );
+
+    requireCondition(
+        proposal.isSuccess() &&
+        proposal.result.find("\"proposalId\":\"p1\"") != std::string::npos,
+        "governance_getProposal should dispatch to the registered callback."
+    );
+
+    const auto missing = dispatcher.dispatch(
+        R"({"jsonrpc":"2.0","method":"governance_getTally","params":{},"id":"8"})"
+    );
+
+    requireCondition(
+        !missing.isSuccess() &&
+        missing.error.find("-32602") != std::string::npos,
+        "Governance proposal-id methods should reject missing proposalId."
+    );
+
+    const auto submitVote = dispatcher.dispatch(
+        R"({"jsonrpc":"2.0","method":"governance_submitVote","params":{"tx":"signed-vote"},"id":"9"})"
+    );
+
+    requireCondition(
+        submitVote.isSuccess() &&
+        submitVote.result.find("\"voteTx\":\"signed-vote\"") != std::string::npos,
+        "governance_submitVote should dispatch signed transaction payloads."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -154,6 +200,7 @@ int main() {
         testRegisteredHandlerIsCalled();
         testSuccessResponseHasCorrectFields();
         testErrorResponseHasCorrectCode();
+        testGovernanceMethodsAreRegisteredAndDispatch();
 
         std::cout << "Nodo JsonRpcServer tests passed.\n";
         return 0;

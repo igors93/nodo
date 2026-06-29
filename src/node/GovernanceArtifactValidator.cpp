@@ -1,6 +1,7 @@
 #include "node/GovernanceArtifactValidator.hpp"
 
 #include "node/Governance.hpp"
+#include "node/ProtocolStateTransition.hpp"
 
 #include <exception>
 #include <vector>
@@ -36,10 +37,20 @@ ArtifactValidationResult GovernanceArtifactValidator::validate(
             );
         }
 
+        const ProtocolExecutionState replayed =
+            ProtocolStateTransition::replayFinalizedBlockDomains(
+                context.runtime(),
+                block
+            );
         const GovernanceSummary expectedGovernanceSummary =
             Governance::buildSummary(
                 block.index(),
-                expectedGovernanceGuards
+                expectedGovernanceGuards,
+                static_cast<std::uint64_t>(replayed.governance.activeProposalCount()),
+                static_cast<std::uint64_t>(replayed.governance.approvedProposalCount()),
+                static_cast<std::uint64_t>(replayed.governance.executableProposalCount(block.index() + 1)),
+                static_cast<std::uint64_t>(replayed.governance.executedProposalCount()),
+                replayed.governance.serialize()
             );
 
         if (!Governance::sameSummary(expectedGovernanceSummary, artifact.governanceSummary())) {
@@ -57,4 +68,3 @@ ArtifactValidationResult GovernanceArtifactValidator::validate(
 }
 
 } // namespace nodo::node
-

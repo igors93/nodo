@@ -27,6 +27,13 @@ namespace nodo::node {
  *   GET  /validators            — list of active validator addresses
  *   GET  /peers                — list of known peers
  *   GET  /mempool              — current mempool transaction count and top txs
+ *   GET  /governance/status    — proposal counts and governed parameters
+ *   GET  /governance/proposals — proposal ids
+ *   GET  /governance/proposal/{id}
+ *   GET  /governance/votes/{id}
+ *   GET  /governance/tally/{id}
+ *   GET  /governance/decision/{id}
+ *   GET  /governance/execution/{id}
  *   POST /submit               — admit a signed transaction submission envelope
  *
  * Error responses use HTTP 4xx with a JSON body:
@@ -86,6 +93,13 @@ private:
     std::string handleValidators() const;
     std::string handlePeers() const;
     std::string handleMempool() const;
+    std::string handleGovernanceStatus() const;
+    std::string handleGovernanceProposals() const;
+    std::string handleGovernanceProposal(const std::string& proposalId) const;
+    std::string handleGovernanceVotes(const std::string& proposalId) const;
+    std::string handleGovernanceTally(const std::string& proposalId) const;
+    std::string handleGovernanceDecision(const std::string& proposalId) const;
+    std::string handleGovernanceExecution(const std::string& proposalId) const;
     std::string handleSubmit(const std::string& body);
 
     // --- HTTP helpers ---

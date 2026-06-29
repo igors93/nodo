@@ -51,6 +51,8 @@ void testHelpCommand() {
         result.success() &&
         result.message().find("nodo tx submit") != std::string::npos &&
         result.message().find("nodo chain audit") != std::string::npos &&
+        result.message().find("nodo governance propose") != std::string::npos &&
+        result.message().find("nodo governance vote") != std::string::npos &&
         result.message().find("--network") != std::string::npos &&
         result.message().find("nodo testnet readiness") != std::string::npos &&
         result.message().find("nodo diagnostics") != std::string::npos,

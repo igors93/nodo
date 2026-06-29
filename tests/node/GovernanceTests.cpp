@@ -70,7 +70,19 @@ void testBuildsGovernanceSummary() {
         summary.approvedProposalCount() == 0U &&
         summary.executedProposalCount() == 0U &&
         summary.reason() == Governance::SUMMARY_REASON,
-        "Governance summary should be active with no executable proposals by default."
+        "Governance summary should be active with canonical proposal counts."
+    );
+
+    const GovernanceSummary counted =
+        Governance::buildSummary(1, guards, 2, 1, 1, 0, "governance-digest");
+
+    requireCondition(
+        counted.active() &&
+        counted.activeProposalCount() == 2U &&
+        counted.approvedProposalCount() == 1U &&
+        counted.executableProposalCount() == 1U &&
+        counted.executedProposalCount() == 0U,
+        "Governance summary should carry dynamic proposal counts."
     );
 }
 

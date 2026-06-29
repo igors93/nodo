@@ -1,6 +1,9 @@
 #ifndef NODO_NODE_GOVERNANCE_EXECUTOR_HPP
 #define NODO_NODE_GOVERNANCE_EXECUTOR_HPP
 
+#include "core/AccountStateView.hpp"
+#include "core/TransactionPayload.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -88,10 +91,63 @@ enum class GovernanceExecutionStatus {
 
 std::string governanceExecutionStatusToString(GovernanceExecutionStatus status);
 
+enum class GovernanceProposalStatus {
+    PENDING,
+    ACTIVE,
+    APPROVED,
+    REJECTED,
+    EXPIRED,
+    QUEUED_FOR_EXECUTION,
+    EXECUTED,
+    FAILED_EXECUTION
+};
+
+std::string governanceProposalStatusToString(GovernanceProposalStatus status);
+
+class GovernanceTallySnapshot {
+public:
+    GovernanceTallySnapshot();
+
+    GovernanceTallySnapshot(
+        std::string proposalId,
+        std::uint64_t yesWeight,
+        std::uint64_t noWeight,
+        std::uint64_t abstainWeight,
+        std::uint64_t participatingWeight,
+        std::uint64_t totalEligibleWeight,
+        bool quorumMet,
+        bool approvalThresholdMet
+    );
+
+    const std::string& proposalId() const;
+    std::uint64_t yesWeight() const;
+    std::uint64_t noWeight() const;
+    std::uint64_t abstainWeight() const;
+    std::uint64_t participatingWeight() const;
+    std::uint64_t totalEligibleWeight() const;
+    bool quorumMet() const;
+    bool approvalThresholdMet() const;
+    bool approved() const;
+    std::string serialize() const;
+
+private:
+    std::string m_proposalId;
+    std::uint64_t m_yesWeight;
+    std::uint64_t m_noWeight;
+    std::uint64_t m_abstainWeight;
+    std::uint64_t m_participatingWeight;
+    std::uint64_t m_totalEligibleWeight;
+    bool m_quorumMet;
+    bool m_approvalThresholdMet;
+};
+
 class GovernanceExecutionResult {
 public:
     static GovernanceExecutionResult applied(
         GovernanceParameterChange change
+    );
+    static GovernanceExecutionResult applied(
+        std::string detail
     );
     static GovernanceExecutionResult pending(
         std::string proposalId,
@@ -127,8 +183,7 @@ private:
  * parameters. It is the single authority that transforms a DECIDED_APPROVED
  * governance lifecycle state into a concrete parameter change.
  *
- * Proposal payload format (key=value;key=value):
- *   target=EPOCH_DURATION_SECONDS;value=7200;effectiveHeight=1000
+ * Proposal payloads are canonical core::GovernanceProposalPayload values.
  *
  * Security principle:
  * Double-execution is prevented by tracking every executed proposalId.
@@ -145,29 +200,44 @@ public:
         const std::string& proposalPayload,
         std::uint64_t currentHeight,
         std::int64_t now,
+        std::uint64_t totalEligibleWeight,
         std::string& reason
     );
 
     bool castVote(
         const std::string& proposalId,
         const std::string& validatorAddress,
-        bool approve,
+        core::GovernanceVoteChoice choice,
         std::uint64_t votingWeight,
-        std::uint64_t totalEligibleWeight,
         std::uint64_t currentHeight,
         std::int64_t now,
+        const std::string& transactionId,
         std::string& reason
     );
 
     bool hasProposal(const std::string& proposalId) const;
     bool hasVote(const std::string& proposalId, const std::string& validatorAddress) const;
     bool proposalApproved(const std::string& proposalId) const;
+    bool proposalOpenForVoting(const std::string& proposalId, std::uint64_t height) const;
+    std::uint64_t proposalVotingStartHeight(const std::string& proposalId) const;
+    std::uint64_t proposalVotingEndHeight(const std::string& proposalId) const;
+    GovernanceProposalStatus proposalStatus(const std::string& proposalId) const;
+    GovernanceTallySnapshot tallyForProposal(const std::string& proposalId) const;
+    std::string proposalDetail(const std::string& proposalId) const;
+    std::string proposalVotes(const std::string& proposalId) const;
+    std::string proposalExecutionDetail(const std::string& proposalId) const;
+
+    static bool validateProposalPayload(
+        const std::string& proposalPayload,
+        std::string& reason
+    );
 
     // Activates every pending change whose effective height has been reached.
     // Returns the number of changes activated in deterministic insertion order.
     std::size_t advanceToHeight(
         std::uint64_t currentHeight,
-        std::int64_t now
+        std::int64_t now,
+        core::AccountStateView* accounts = nullptr
     );
 
     // Returns all applied changes in chronological order.
@@ -183,38 +253,73 @@ public:
     // Returns empty string if no governance change has been applied for this target.
     std::string currentValueForTarget(GovernanceParameterTarget target) const;
 
+    std::size_t activeProposalCount() const;
+    std::size_t approvedProposalCount() const;
+    std::size_t executableProposalCount(std::uint64_t currentHeight) const;
+    std::size_t executedProposalCount() const;
+
+    std::vector<std::string> proposalIds() const;
+
     std::string serialize() const;
 
 private:
     struct VoteState {
-        bool approve = false;
+        core::GovernanceVoteChoice choice = core::GovernanceVoteChoice::NO;
         std::uint64_t weight = 0;
+        std::uint64_t castHeight = 0;
+        std::int64_t castAt = 0;
+        std::string transactionId;
     };
     struct ProposalState {
         std::string proposerAddress;
-        std::string payload;
+        core::GovernanceProposalPayload payload;
         std::uint64_t createdHeight = 0;
         std::int64_t createdAt = 0;
-        bool approved = false;
-        bool rejected = false;
+        std::uint64_t votingStartHeight = 0;
+        std::uint64_t votingEndHeight = 0;
+        std::uint64_t totalEligibleWeight = 0;
+        GovernanceProposalStatus status = GovernanceProposalStatus::PENDING;
+        GovernanceTallySnapshot finalTally;
+        std::uint64_t decidedAtHeight = 0;
+        std::int64_t decidedAt = 0;
+        std::uint64_t executedAtHeight = 0;
+        std::int64_t executedAt = 0;
+        std::string executionDetail;
         std::map<std::string, VoteState> votes;
     };
     std::vector<GovernanceParameterChange> m_appliedChanges;
     std::vector<GovernanceParameterChange> m_pendingChanges;
     std::map<std::string, ProposalState> m_proposals;
 
-    GovernanceExecutionResult applyApprovedProposal(
+    GovernanceExecutionResult executeApprovedProposal(
         const std::string& proposalId,
-        const std::string& proposalPayload,
+        ProposalState& proposal,
         std::uint64_t currentHeight,
-        std::int64_t now
+        std::int64_t now,
+        core::AccountStateView* accounts
     );
 
-    static GovernanceParameterTarget parseTarget(const std::string& payload);
-    static std::string parseNewValue(const std::string& payload);
-    static std::uint64_t parseEffectiveHeight(const std::string& payload);
+    GovernanceTallySnapshot computeTally(
+        const std::string& proposalId,
+        const ProposalState& proposal
+    ) const;
 
-    bool validateValue(GovernanceParameterTarget target, const std::string& value) const;
+    void finalizeProposal(
+        const std::string& proposalId,
+        ProposalState& proposal,
+        std::uint64_t currentHeight,
+        std::int64_t now,
+        core::AccountStateView* accounts
+    );
+
+    static GovernanceParameterTarget parseTarget(
+        const core::GovernanceProposalPayload& payload
+    );
+    static bool validateValue(GovernanceParameterTarget target, const std::string& value);
+    static bool proposalCanExecuteAt(
+        const ProposalState& proposal,
+        std::uint64_t currentHeight
+    );
 };
 
 } // namespace nodo::node

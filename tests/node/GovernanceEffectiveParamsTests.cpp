@@ -1,5 +1,6 @@
 #include "config/NetworkParameters.hpp"
 #include "crypto/KeyPair.hpp"
+#include "core/TransactionPayload.hpp"
 #include "node/GovernanceExecutor.hpp"
 #include "node/NodeRuntime.hpp"
 #include "p2p/PeerMessage.hpp"
@@ -27,10 +28,12 @@ void approve(
 ) {
     std::string reason;
     require(executor.submitProposal(
-        proposalId, "governance-owner", payload, height, kTs, reason), reason);
+        proposalId, "governance-owner", payload, height, kTs, 1, reason), reason);
     require(executor.castVote(
-        proposalId, "governance-validator", true, 1, 1,
-        height, kTs + 1, reason), reason);
+        proposalId, "governance-validator", core::GovernanceVoteChoice::YES, 1,
+        height, kTs + 1, "tx-" + proposalId, reason), reason);
+    require(executor.advanceToHeight(height + 1, kTs + 2) == 1,
+        "Approved immediate governance change must execute after voting closes.");
 }
 
 config::GenesisConfig genesisWithFee(std::uint64_t minFeeRaw) {
@@ -77,7 +80,15 @@ void testGovernanceOverrideChangesEffectiveFee() {
     node::NodeRuntime runtime = startRuntime(genesis);
 
     const std::string proposalId = "gov-prop-fee-001";
-    const std::string payload = "target=MINIMUM_FEE_RAW;value=500;effectiveHeight=1";
+    const std::string payload = core::GovernanceProposalPayload::parameterChange(
+        "Minimum fee",
+        "Set minimum fee",
+        "MINIMUM_FEE_RAW",
+        "500",
+        1,
+        0,
+        1
+    ).serialize();
     approve(runtime.mutableGovernanceExecutor(), proposalId, payload, 1);
 
     const std::uint64_t effective = runtime.effectiveMinimumFeeRawUnits();
@@ -92,7 +103,15 @@ void testGovernanceOverrideDoesNotAffectUnrelatedParams() {
     // Apply a change to EPOCH_DURATION_SECONDS — should not affect fee.
     approve(runtime.mutableGovernanceExecutor(),
         "gov-prop-epoch-001",
-        "target=EPOCH_DURATION_SECONDS;value=7200;effectiveHeight=1",
+        core::GovernanceProposalPayload::parameterChange(
+            "Epoch duration",
+            "Set epoch duration",
+            "EPOCH_DURATION_SECONDS",
+            "7200",
+            1,
+            0,
+            1
+        ).serialize(),
         1
     );
 
@@ -107,12 +126,20 @@ void testDoubleGovernanceApplicationIsIdempotent() {
     node::NodeRuntime runtime = startRuntime(genesis);
 
     const std::string proposalId = "gov-prop-fee-002";
-    const std::string payload = "target=MINIMUM_FEE_RAW;value=1000;effectiveHeight=1";
+    const std::string payload = core::GovernanceProposalPayload::parameterChange(
+        "Minimum fee",
+        "Set minimum fee",
+        "MINIMUM_FEE_RAW",
+        "1000",
+        1,
+        0,
+        1
+    ).serialize();
 
     approve(runtime.mutableGovernanceExecutor(), proposalId, payload, 1);
     std::string reason;
     require(!runtime.mutableGovernanceExecutor().submitProposal(
-        proposalId, "governance-owner", payload, 2, kTs + 2, reason),
+        proposalId, "governance-owner", payload, 2, kTs + 2, 1, reason),
         "Duplicate proposal id must be rejected.");
 
     require(runtime.effectiveMinimumFeeRawUnits() == 1000,

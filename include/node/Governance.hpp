@@ -140,7 +140,7 @@ public:
         "GOVERNANCE_ACTION_GUARD";
 
     static constexpr const char* SUMMARY_REASON =
-        "GOVERNANCE_NO_ACTIVE_PROPOSALS";
+        "GOVERNANCE_STATE_SUMMARY";
 
     static constexpr const char* NOT_EVALUATED_REASON =
         "GOVERNANCE_NOT_EVALUATED";
@@ -168,6 +168,16 @@ public:
     static GovernanceSummary buildSummary(
         std::uint64_t blockHeight,
         const std::vector<GovernanceActionGuard>& guards
+    );
+
+    static GovernanceSummary buildSummary(
+        std::uint64_t blockHeight,
+        const std::vector<GovernanceActionGuard>& guards,
+        std::uint64_t activeProposalCount,
+        std::uint64_t approvedProposalCount,
+        std::uint64_t executableProposalCount,
+        std::uint64_t executedProposalCount,
+        const std::string& governanceStateDigest
     );
 
     static bool samePolicy(

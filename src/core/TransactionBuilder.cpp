@@ -242,6 +242,7 @@ Transaction TransactionBuilder::buildSignedGovernanceProposal(
         timestamp <= 0 || chainId.empty()) {
         throw std::invalid_argument("Governance proposal request is invalid.");
     }
+    (void)GovernanceProposalPayload::deserialize(proposalPayload);
 
     Transaction transaction(
         TransactionType::GOVERNANCE_PROPOSE,
@@ -267,7 +268,7 @@ Transaction TransactionBuilder::buildSignedGovernanceVote(
     const std::string& chainId
 ) {
     if (proposalId.empty() || !vote.isValid() || fee.isNegative() || nonce == 0 ||
-        timestamp <= 0 || chainId.empty()) {
+        timestamp <= 0 || chainId.empty() || vote.proposalId() != proposalId) {
         throw std::invalid_argument("Governance vote request is invalid.");
     }
     Transaction tx(

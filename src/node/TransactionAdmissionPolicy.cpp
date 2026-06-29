@@ -7,6 +7,36 @@
 
 namespace nodo::node {
 
+namespace {
+
+bool governanceVoterAuthorized(
+    const core::ValidatorRegistryEntry& entry,
+    const std::string& validatorAddress,
+    const std::string& senderAddress
+) {
+    return entry.ownerAddress() == senderAddress ||
+           (entry.ownerAddress().empty() && validatorAddress == senderAddress);
+}
+
+std::uint64_t governanceVotingWeight(
+    const StakingRegistry& staking,
+    const core::ValidatorRegistryEntry& entry,
+    const std::string& validatorAddress
+) {
+    const auto stake = staking.accountOrDefault(validatorAddress);
+    const std::int64_t availableStake =
+        stake.bondedAmount().rawUnits() - stake.slashedAmount().rawUnits();
+    if (availableStake > 0) {
+        return static_cast<std::uint64_t>(availableStake);
+    }
+    if (entry.stakeAmount() > 0) {
+        return entry.stakeAmount();
+    }
+    return entry.eligibleForConsensus() ? 1 : 0;
+}
+
+} // namespace
+
 TransactionAdmissionContext::TransactionAdmissionContext(
     const core::AccountStateView& accounts,
     const mempool::Mempool& mempool,
@@ -40,11 +70,8 @@ bool TransactionAdmissionPolicy::validateTypeAndPayload(
         } else if (transaction.type() == core::TransactionType::GOVERNANCE_VOTE) {
             (void)core::GovernanceVotePayload::deserialize(transaction.data());
         } else if (transaction.type() == core::TransactionType::GOVERNANCE_PROPOSE) {
-            GovernanceExecutor probe;
             std::string detail;
-            if (!probe.submitProposal(
-                    transaction.id(), transaction.fromAddress(), transaction.data(),
-                    1, transaction.timestamp(), detail)) {
+            if (!GovernanceExecutor::validateProposalPayload(transaction.data(), detail)) {
                 reason = detail;
                 return false;
             }
@@ -166,16 +193,27 @@ bool TransactionAdmissionPolicy::validateDomain(
                 break;
             case core::TransactionType::GOVERNANCE_VOTE: {
                 const auto vote = core::GovernanceVotePayload::deserialize(transaction.data());
+                if (vote.proposalId() != transaction.toAddress()) {
+                    reason = "Governance vote target does not match payload proposal id.";
+                    return false;
+                }
                 const auto* entry = context.validators().entryForAddress(vote.validatorAddress());
-                const auto stake = context.staking().accountOrDefault(vote.validatorAddress());
-                const std::int64_t availableStake =
-                    stake.bondedAmount().rawUnits() - stake.slashedAmount().rawUnits();
+                const std::uint64_t votingWeight = entry == nullptr
+                    ? 0
+                    : governanceVotingWeight(
+                          context.staking(), *entry, vote.validatorAddress());
                 if (!context.governance().hasProposal(transaction.toAddress()) || entry == nullptr ||
                     !entry->eligibleForConsensus() ||
-                    entry->ownerAddress() != transaction.fromAddress() ||
-                    (availableStake <= 0 && entry->stakeAmount() == 0) ||
+                    !governanceVoterAuthorized(
+                        *entry, vote.validatorAddress(), transaction.fromAddress()) ||
+                    votingWeight == 0 ||
                     context.governance().hasVote(transaction.toAddress(), vote.validatorAddress())) {
                     reason = "Governance vote proposal, validator authorization, or uniqueness is invalid.";
+                    return false;
+                }
+                if (!context.governance().proposalOpenForVoting(
+                        transaction.toAddress(), context.nextBlockHeight())) {
+                    reason = "Governance proposal is not open for voting at the next block height.";
                     return false;
                 }
                 for (const auto& queued : pending) {

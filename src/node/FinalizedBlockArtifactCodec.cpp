@@ -1587,10 +1587,9 @@ bool FinalizedBlockArtifact::isValid() const {
                        Governance::buildActionGuards(m_governancePolicySnapshot),
                        m_governanceActionGuards
                    ) &&
-                   Governance::sameSummary(
-                       Governance::buildSummary(m_block->index(), m_governanceActionGuards),
-                       m_governanceSummary
-                   ) &&
+                   m_governanceSummary.active() &&
+                   m_governanceSummary.blockHeight() == m_block->index() &&
+                   m_governanceSummary.guardCount() == m_governanceActionGuards.size() &&
                    ValidatorLifecycle::sameLifecycleRecords(
                        ValidatorLifecycle::buildLifecycleRecords(
                            m_block->index(),
@@ -1764,10 +1763,9 @@ bool FinalizedBlockArtifact::isValid() const {
                    Governance::buildActionGuards(m_governancePolicySnapshot),
                    m_governanceActionGuards
                ) &&
-               Governance::sameSummary(
-                   Governance::buildSummary(m_block->index(), m_governanceActionGuards),
-                   m_governanceSummary
-               ) &&
+               m_governanceSummary.active() &&
+               m_governanceSummary.blockHeight() == m_block->index() &&
+               m_governanceSummary.guardCount() == m_governanceActionGuards.size() &&
                ValidatorLifecycle::sameLifecycleRecords(
                    ValidatorLifecycle::buildLifecycleRecords(
                        m_block->index(),

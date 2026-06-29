@@ -407,6 +407,82 @@ void JsonRpcDispatcher::registerStandardMethods(
     );
 }
 
+void JsonRpcDispatcher::registerGovernanceMethods(
+    std::function<std::string()> governanceProposals,
+    std::function<std::string(const std::string&)> governanceGetProposal,
+    std::function<std::string(const std::string&)> governanceGetVotes,
+    std::function<std::string(const std::string&)> governanceGetTally,
+    std::function<std::string(const std::string&)> governanceGetDecision,
+    std::function<std::string(const std::string&)> governanceGetExecution,
+    std::function<std::string(const std::string&)> governanceSubmitProposal,
+    std::function<std::string(const std::string&)> governanceSubmitVote,
+    std::function<std::string()> governanceStatus
+) {
+    registerHandler("governance_proposals",
+        [fn = std::move(governanceProposals)](const JsonRpcRequest& req) -> JsonRpcResponse {
+            const std::string result = fn();
+            return JsonRpcResponse::success(req.id, result.empty() ? "null" : result);
+        }
+    );
+
+    auto proposalIdHandler = [](auto fn, const char* missing) {
+        return [fn = std::move(fn), missing](const JsonRpcRequest& req) -> JsonRpcResponse {
+            const std::string proposalId = extractParam(req.params, "proposalId");
+            if (proposalId.empty()) {
+                return JsonRpcResponse::makeError(
+                    req.id, JsonRpcError::INVALID_PARAMS, missing
+                );
+            }
+            const std::string result = fn(proposalId);
+            return JsonRpcResponse::success(req.id, result.empty() ? "null" : result);
+        };
+    };
+
+    registerHandler("governance_getProposal",
+        proposalIdHandler(std::move(governanceGetProposal), "Missing param: proposalId"));
+    registerHandler("governance_getVotes",
+        proposalIdHandler(std::move(governanceGetVotes), "Missing param: proposalId"));
+    registerHandler("governance_getTally",
+        proposalIdHandler(std::move(governanceGetTally), "Missing param: proposalId"));
+    registerHandler("governance_getDecision",
+        proposalIdHandler(std::move(governanceGetDecision), "Missing param: proposalId"));
+    registerHandler("governance_getExecution",
+        proposalIdHandler(std::move(governanceGetExecution), "Missing param: proposalId"));
+
+    registerHandler("governance_submitProposal",
+        [fn = std::move(governanceSubmitProposal)](const JsonRpcRequest& req) -> JsonRpcResponse {
+            const std::string tx = extractParam(req.params, "tx");
+            if (tx.empty()) {
+                return JsonRpcResponse::makeError(
+                    req.id, JsonRpcError::INVALID_PARAMS, "Missing param: tx"
+                );
+            }
+            const std::string result = fn(tx);
+            return JsonRpcResponse::success(req.id, result.empty() ? "null" : result);
+        }
+    );
+
+    registerHandler("governance_submitVote",
+        [fn = std::move(governanceSubmitVote)](const JsonRpcRequest& req) -> JsonRpcResponse {
+            const std::string tx = extractParam(req.params, "tx");
+            if (tx.empty()) {
+                return JsonRpcResponse::makeError(
+                    req.id, JsonRpcError::INVALID_PARAMS, "Missing param: tx"
+                );
+            }
+            const std::string result = fn(tx);
+            return JsonRpcResponse::success(req.id, result.empty() ? "null" : result);
+        }
+    );
+
+    registerHandler("governance_status",
+        [fn = std::move(governanceStatus)](const JsonRpcRequest& req) -> JsonRpcResponse {
+            const std::string result = fn();
+            return JsonRpcResponse::success(req.id, result.empty() ? "null" : result);
+        }
+    );
+}
+
 std::vector<std::string> JsonRpcDispatcher::registeredMethods() const {
     std::vector<std::string> methods;
     methods.reserve(m_handlers.size());

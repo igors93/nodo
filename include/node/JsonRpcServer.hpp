@@ -85,6 +85,18 @@ public:
         std::function<std::string()>                     getValidators
     );
 
+    void registerGovernanceMethods(
+        std::function<std::string()> governanceProposals,
+        std::function<std::string(const std::string&)> governanceGetProposal,
+        std::function<std::string(const std::string&)> governanceGetVotes,
+        std::function<std::string(const std::string&)> governanceGetTally,
+        std::function<std::string(const std::string&)> governanceGetDecision,
+        std::function<std::string(const std::string&)> governanceGetExecution,
+        std::function<std::string(const std::string&)> governanceSubmitProposal,
+        std::function<std::string(const std::string&)> governanceSubmitVote,
+        std::function<std::string()> governanceStatus
+    );
+
     std::vector<std::string> registeredMethods() const;
 
 private:

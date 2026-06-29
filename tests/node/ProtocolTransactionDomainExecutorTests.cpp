@@ -2,6 +2,7 @@
 #include "core/TransactionPayload.hpp"
 #include "crypto/AddressDerivation.hpp"
 #include "crypto/KeyPair.hpp"
+#include "node/FeeEconomics.hpp"
 #include "node/ProtocolTransactionDomainExecutor.hpp"
 
 #include <iostream>
@@ -111,7 +112,15 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
             tx(core::TransactionType::STAKE_TOP_UP, base.validatorAddress, 1000, 3),
             tx(core::TransactionType::STAKE_WITHDRAW, base.validatorAddress, 500, 4),
             tx(core::TransactionType::GOVERNANCE_PROPOSE, "nodo_governance", 0, 5,
-               "target=MINIMUM_FEE_RAW,value=250,effectiveHeight=100")
+               core::GovernanceProposalPayload::parameterChange(
+                   "Minimum fee",
+                   "Set minimum fee through on-chain governance",
+                   "MINIMUM_FEE_RAW",
+                   "250",
+                   201,
+                   0,
+                   1
+               ).serialize())
         };
 
         std::string proposalId;
@@ -130,7 +139,7 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
         }
 
         const core::GovernanceVotePayload vote(
-            base.validatorAddress, core::GovernanceVoteChoice::APPROVE);
+            proposalId, base.validatorAddress, core::GovernanceVoteChoice::YES);
         const auto voteResult = execute(
             tx(core::TransactionType::GOVERNANCE_VOTE, proposalId, 0, 6, vote.serialize()),
             view, *executor, 200);
@@ -138,8 +147,23 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
         view = voteResult.accounts();
         receiptHashes.push_back(voteResult.receipt().receiptHash());
 
-        require(tracker->supply.rawUnits() == 99'999'900,
-            "voluntary burn must reduce canonical supply");
+        const auto finalized = executor->finalizeBlock(
+            view,
+            utils::Amount::fromRawUnits(60),
+            {},
+            200,
+            kTimestamp + 200
+        );
+        require(finalized.applied(), "governance decision must finalize at voting boundary: " + finalized.reason());
+        view = finalized.accounts();
+
+        const utils::Amount expectedSupply =
+            base.state.supply -
+            utils::Amount::fromRawUnits(100) -
+            node::FeeEconomics::buildFeeEconomicBalance(
+                200, utils::Amount::fromRawUnits(60)).burnAmount();
+        require(tracker->supply == expectedSupply,
+            "voluntary and fee burns must reduce canonical supply");
         require(tracker->staking.ownedStake(kOwner, base.validatorAddress).rawUnits() ==
             core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + 1500,
             "deposit, top-up and withdrawal must update the owned stake position");

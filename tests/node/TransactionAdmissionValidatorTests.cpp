@@ -163,11 +163,21 @@ core::Transaction supportedTransaction(
     if (type == core::TransactionType::BURN) target = "nodo_burn";
     if (type == core::TransactionType::GOVERNANCE_PROPOSE) {
         target = "nodo_governance";
-        data = "target=MINIMUM_FEE_RAW,value=10,effectiveHeight=10";
+        data = core::GovernanceProposalPayload::parameterChange(
+            "Minimum fee",
+            "Set minimum fee through governance",
+            "MINIMUM_FEE_RAW",
+            "10",
+            10
+        ).serialize();
     }
     if (type == core::TransactionType::GOVERNANCE_VOTE) {
         target = "proposal-id";
-        data = core::GovernanceVotePayload("validator-address", core::GovernanceVoteChoice::APPROVE).serialize();
+        data = core::GovernanceVotePayload(
+            "proposal-id",
+            "validator-address",
+            core::GovernanceVoteChoice::YES
+        ).serialize();
     }
     if (type == core::TransactionType::VALIDATOR_REGISTER) {
         const crypto::KeyPair validator =

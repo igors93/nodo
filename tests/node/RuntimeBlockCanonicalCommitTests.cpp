@@ -249,7 +249,13 @@ void testGovernanceProposalIsCommittedWithoutPrematureExecution() {
     const crypto::Ed25519SignatureProvider provider;
     const core::Transaction proposal =
         core::TransactionBuilder::buildSignedGovernanceProposal(
-            "target=MINIMUM_FEE_RAW,value=250,effectiveHeight=1",
+            core::GovernanceProposalPayload::parameterChange(
+                "Minimum fee",
+                "Set minimum fee after governance approval",
+                "MINIMUM_FEE_RAW",
+                "250",
+                1
+            ).serialize(),
             utils::Amount::fromRawUnits(100),
             1,
             kTimestamp + 1,
@@ -272,7 +278,7 @@ void testGovernanceProposalIsCommittedWithoutPrematureExecution() {
             validatorSigner()
         );
 
-    require(result.finalized(), "Governance block must finalize.");
+    require(result.finalized(), "Governance block must finalize: " + result.reason());
     require(
         runtime.governanceExecutor().hasProposal(proposal.id()) &&
         runtime.effectiveMinimumFeeRawUnits() ==
@@ -300,7 +306,8 @@ void testGovernanceProposalIsCommittedWithoutPrematureExecution() {
         );
     require(
         nextBlock.finalized(),
-        "Unapproved governance proposals must not change the effective minimum fee."
+        "Unapproved governance proposals must not change the effective minimum fee: " +
+            nextBlock.reason()
     );
 }
 

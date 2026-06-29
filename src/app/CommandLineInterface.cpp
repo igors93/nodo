@@ -42,9 +42,11 @@
 #include "utils/Amount.hpp"
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <csignal>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -222,6 +224,7 @@ bool isCommandGroup(
            value == "stake" ||
            value == "rewards" ||
            value == "slashing" ||
+           value == "governance" ||
            value == "testnet";
 }
 
@@ -290,6 +293,257 @@ std::optional<std::string> manifestNetworkMismatch(
     return std::nullopt;
 }
 
+std::string normalizeGovernanceToken(std::string value) {
+    for (char& c : value) {
+        if (c == '-') {
+            c = '_';
+        } else {
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        }
+    }
+    return value;
+}
+
+core::GovernanceProposalType parseGovernanceProposalTypeOption(
+    const std::string& value
+) {
+    return core::governanceProposalTypeFromString(
+        normalizeGovernanceToken(value)
+    );
+}
+
+core::GovernanceVoteChoice parseGovernanceVoteChoiceOption(
+    const std::string& value
+) {
+    return core::governanceVoteChoiceFromString(
+        normalizeGovernanceToken(value)
+    );
+}
+
+CommandLineResult submitSignedTransactionToPersistentMempool(
+    const CommandLineOptions& options,
+    const std::string& actionLabel,
+    const std::string& defaultKeyId,
+    const std::function<core::Transaction(
+        const crypto::Signer&,
+        const std::string&,
+        std::uint64_t
+    )>& buildTransaction
+) {
+    const node::NodeDataDirectoryConfig directoryConfig(
+        options.dataDirectory
+    );
+
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+    const config::NetworkParameters networkParameters =
+        genesisConfig.networkParameters();
+
+    const node::NodeDataDirectoryReadResult manifest =
+        node::NodeDataDirectory::loadManifest(directoryConfig);
+
+    if (!manifest.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit " + actionLabel + " before init: "
+            + manifest.reason()
+            + "\n"
+        );
+    }
+
+    const std::optional<std::string> mismatch =
+        manifestNetworkMismatch(manifest.manifest(), options);
+    if (mismatch.has_value()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            *mismatch + "\n"
+        );
+    }
+
+    const crypto::ProtocolCryptoContext cryptoContext =
+        crypto::ProtocolCryptoContext::fromNetworkName(
+            networkParameters.networkName()
+        );
+
+    if (!cryptoContext.isValid()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit " + actionLabel + ": invalid crypto context for network "
+            + networkParameters.networkName()
+            + ": "
+            + cryptoContext.rejectionReason()
+            + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisConfig,
+            CommandLineInterface::localPeerFromOptions(options)
+        );
+
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit " + actionLabel + ": runtime reload failed before mempool admission: "
+            + load.reason()
+            + "\n"
+        );
+    }
+
+    const std::string signingKeyId =
+        options.keyIdProvided ? options.keyId : defaultKeyId;
+
+    const crypto::KeyStoreLoadResult key =
+        loadKeyWithPrompt(
+            directoryConfig.keysDirectoryPath(),
+            signingKeyId
+        );
+
+    if (!key.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit " + actionLabel + " without local key '"
+            + signingKeyId
+            + "': "
+            + key.reason()
+            + "\n"
+        );
+    }
+
+    const node::KeySafetyCheckResult keySafety =
+        node::ProductionKeySafetyGate::check(
+            key.metadata(),
+            manifest.manifest().networkName()
+        );
+
+    if (!keySafety.isApproved()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit " + actionLabel + ": " + keySafety.reason() + "\n"
+        );
+    }
+
+    const crypto::Ed25519SignatureProvider provider;
+    const crypto::Signer signer(
+        key.keyPair(),
+        provider
+    );
+
+    const core::AccountStateView accountState =
+        node::RuntimeAccountStateBuilder::accountStateViewAtTip(
+            genesisConfig,
+            load.runtime().blockchain(),
+            static_cast<std::int64_t>(
+                networkParameters.minimumFeeRawUnits()
+            )
+        );
+
+    if (!accountState.hasAccount(key.metadata().address())) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot submit " + actionLabel + ": signing account does not exist in current state.\n"
+        );
+    }
+
+    const std::uint64_t nonce =
+        options.nonce == 0
+            ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
+            : options.nonce;
+
+    std::optional<core::Transaction> transaction;
+    try {
+        transaction = buildTransaction(
+            signer,
+            networkParameters.chainId(),
+            nonce
+        );
+    } catch (const std::exception& error) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Cannot build " + actionLabel + ": " + error.what() + "\n"
+        );
+    }
+
+    const core::Transaction& signedTransaction = *transaction;
+
+    const node::TransactionAdmissionContext admissionContext(
+        accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
+        load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
+        load.runtime().blockchain().size()
+    );
+
+    const node::TransactionAdmissionResult admission =
+        node::TransactionAdmissionValidator::validateRuntimeSubmission(
+            signedTransaction,
+            key.metadata(),
+            networkParameters,
+            accountState,
+            load.runtime().mempool(),
+            cryptoContext.policy(),
+            crypto::SecurityContext::USER_TRANSACTION,
+            provider,
+            load.runtime().effectiveMinimumFeeRawUnits(),
+            &admissionContext
+        );
+
+    if (!admission.accepted()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            actionLabel + " rejected before mempool persistence: "
+            + admission.reason()
+            + "\n"
+        );
+    }
+
+    const node::PersistentMempoolWriteResult persisted =
+        node::PersistentMempoolStore::persistTransaction(
+            directoryConfig,
+            signedTransaction,
+            key.metadata().publicKey(),
+            signedTransaction.timestamp() + 1
+        );
+
+    if (!persisted.success()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Failed to persist " + actionLabel + ": "
+            + persisted.reason()
+            + "\n"
+        );
+    }
+
+    std::ostringstream output;
+
+    output << actionLabel << " submitted.\n"
+           << "Key id: " << key.keyId() << "\n"
+           << "From: " << signedTransaction.fromAddress() << "\n"
+           << "To: " << signedTransaction.toAddress() << "\n"
+           << "Type: " << core::transactionTypeToString(signedTransaction.type()) << "\n"
+           << "Nonce: " << signedTransaction.nonce() << "\n"
+           << "Transaction id: " << persisted.transactionId() << "\n";
+
+    if (signedTransaction.type() == core::TransactionType::GOVERNANCE_PROPOSE) {
+        output << "Proposal id: " << signedTransaction.id() << "\n";
+    } else if (signedTransaction.type() == core::TransactionType::GOVERNANCE_VOTE) {
+        output << "Proposal id: " << signedTransaction.toAddress() << "\n";
+    }
+
+    output << "Mempool file: " << persisted.path().string() << "\n";
+
+    return CommandLineResult::success(output.str());
+}
+
 } // namespace
 
 CommandLineOptions::CommandLineOptions()
@@ -303,10 +557,19 @@ CommandLineOptions::CommandLineOptions()
       keyType("both"),
       toAddress("nodo-localnet-recipient"),
       validatorAddress(""),
+      governanceProposalId(""),
+      governanceProposalType("parameter-change"),
+      governanceProposalTitle("Governance proposal"),
+      governanceProposalBody("Submitted from Nodo CLI."),
+      governanceTarget(""),
+      governanceValue(""),
+      governanceVoteChoice("YES"),
       amountRaw(1000),
       feeRaw(100),
       nonce(0),
       timestamp(nowUnixSeconds()),
+      governanceEffectiveHeight(0),
+      governanceVotingPeriodBlocks(3),
       showHelp(false),
       keyIdProvided(false) {}
 
@@ -451,6 +714,30 @@ CommandLineResult CommandLineInterface::execute(
 
         if (options.command == "tx submit") {
             return executeSubmitTransaction(options);
+        }
+
+        if (options.command == "governance propose") {
+            return executeGovernancePropose(options);
+        }
+
+        if (options.command == "governance vote") {
+            return executeGovernanceVote(options);
+        }
+
+        if (options.command == "governance status") {
+            return executeGovernanceStatus(options);
+        }
+
+        if (options.command == "governance list") {
+            return executeGovernanceList(options);
+        }
+
+        if (options.command == "governance show") {
+            return executeGovernanceShow(options);
+        }
+
+        if (options.command == "governance audit") {
+            return executeGovernanceAudit(options);
         }
 
         if (options.command == "keys create") {
@@ -669,6 +956,103 @@ CommandLineOptions CommandLineInterface::parse(
             continue;
         }
 
+        if (option == "--proposal-id") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--proposal-id requires a value.");
+            }
+
+            options.governanceProposalId = args[index + 1];
+            index += 2;
+            continue;
+        }
+
+        if (option == "--proposal-type") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--proposal-type requires a value.");
+            }
+
+            options.governanceProposalType = args[index + 1];
+            (void)parseGovernanceProposalTypeOption(options.governanceProposalType);
+            index += 2;
+            continue;
+        }
+
+        if (option == "--title") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--title requires a value.");
+            }
+
+            options.governanceProposalTitle = args[index + 1];
+            index += 2;
+            continue;
+        }
+
+        if (option == "--body") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--body requires a value.");
+            }
+
+            options.governanceProposalBody = args[index + 1];
+            index += 2;
+            continue;
+        }
+
+        if (option == "--target") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--target requires a value.");
+            }
+
+            options.governanceTarget = normalizeGovernanceToken(args[index + 1]);
+            index += 2;
+            continue;
+        }
+
+        if (option == "--value") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--value requires a value.");
+            }
+
+            options.governanceValue = args[index + 1];
+            index += 2;
+            continue;
+        }
+
+        if (option == "--effective-height") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--effective-height requires a value.");
+            }
+
+            options.governanceEffectiveHeight =
+                parseUnsignedInt64("--effective-height", args[index + 1]);
+            index += 2;
+            continue;
+        }
+
+        if (option == "--voting-period") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--voting-period requires a value.");
+            }
+
+            options.governanceVotingPeriodBlocks =
+                parseUnsignedInt64("--voting-period", args[index + 1]);
+            if (options.governanceVotingPeriodBlocks == 0) {
+                throw std::invalid_argument("--voting-period must be positive.");
+            }
+            index += 2;
+            continue;
+        }
+
+        if (option == "--vote") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--vote requires a value.");
+            }
+
+            options.governanceVoteChoice = args[index + 1];
+            (void)parseGovernanceVoteChoiceOption(options.governanceVoteChoice);
+            index += 2;
+            continue;
+        }
+
         if (option == "--listen") {
             if (index + 1 >= args.size()) {
                 throw std::invalid_argument("--listen requires a value (HOST:PORT).");
@@ -757,6 +1141,9 @@ std::string CommandLineInterface::helpText() {
         "  nodo keys create [--network localnet|testnet-candidate] [--data-dir PATH] [--type user|validator|both] [--key-id ID]\n"
         "  nodo keys list [--data-dir PATH]\n"
         "  nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]\n"
+        "  nodo governance propose [--data-dir PATH] [--from KEY_ID] [--proposal-type parameter-change|treasury-spend|text] [--title TEXT] [--body TEXT] [--target PARAM] [--value VALUE] [--effective-height HEIGHT] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--voting-period BLOCKS]\n"
+        "  nodo governance vote [--data-dir PATH] [--owner KEY_ID] --proposal-id ID --validator ADDRESS [--vote YES|NO|ABSTAIN] [--fee RAW_UNITS]\n"
+        "  nodo governance status|list|show|audit [--data-dir PATH] [--proposal-id ID]\n"
         "  nodo block produce [--data-dir PATH]\n"
         "  nodo chain audit [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo validator list [--data-dir PATH]\n"
@@ -771,6 +1158,8 @@ std::string CommandLineInterface::helpText() {
         "  --listen HOST:PORT   Bind address for node run daemon. Overrides --endpoint.\n"
         "  --peer NAME@HOST:PORT Static peer for node run daemon (repeatable).\n"
         "  --validator-key ID   Key id for the local validator in node run.\n"
+        "  --validator ADDRESS Validator address for lifecycle, stake, and governance vote commands.\n"
+        "  --owner KEY_ID       Alias for --key-id when signing validator-owned operations.\n"
         "  --key-id ID          Key id for keys create or signing. Defaults depend on command.\n"
         "  --type TYPE          Key type for keys create. Default: both\n"
         "  --from KEY_ID        Alias for --key-id in tx submit.\n"
@@ -778,7 +1167,14 @@ std::string CommandLineInterface::helpText() {
         "  --amount RAW_UNITS   Transfer amount for tx submit. Default: 1000\n"
         "  --fee RAW_UNITS      Transfer fee for tx submit. Default: 100\n"
         "  --nonce VALUE        Transaction nonce for tx submit. Default: next account nonce\n"
-        "  --timestamp SECONDS  Deterministic timestamp override for tests.\n";
+        "  --timestamp SECONDS  Deterministic timestamp override for tests.\n"
+        "  --proposal-id ID     Governance proposal id for vote/show/tally/decision/execution.\n"
+        "  --proposal-type TYPE Governance proposal type: parameter-change, treasury-spend, or text.\n"
+        "  --target PARAM       Governance parameter target, for example MINIMUM_FEE_RAW.\n"
+        "  --value VALUE        Governance parameter value.\n"
+        "  --effective-height H Block height where a parameter proposal may execute.\n"
+        "  --voting-period N    Governance voting period in blocks. Default: 3\n"
+        "  --vote CHOICE        Governance vote choice: YES, NO, or ABSTAIN. Default: YES\n";
 }
 
 std::string CommandLineInterface::defaultLocalnetKeyId() {
@@ -1836,6 +2232,381 @@ CommandLineResult CommandLineInterface::executeSubmitTransaction(
            << "Nonce: " << transaction.nonce() << "\n"
            << "Transaction id: " << persisted.transactionId() << "\n"
            << "Mempool file: " << persisted.path().string() << "\n";
+
+    return CommandLineResult::success(output.str());
+}
+
+CommandLineResult CommandLineInterface::executeGovernancePropose(
+    const CommandLineOptions& options
+) {
+    core::GovernanceProposalPayload payload;
+
+    try {
+        const core::GovernanceProposalType type =
+            parseGovernanceProposalTypeOption(options.governanceProposalType);
+
+        switch (type) {
+            case core::GovernanceProposalType::PARAMETER_CHANGE:
+                if (options.governanceTarget.empty() ||
+                    options.governanceValue.empty() ||
+                    options.governanceEffectiveHeight == 0) {
+                    return CommandLineResult::failure(
+                        CommandLineStatus::INVALID_ARGUMENTS,
+                        "Parameter governance proposal requires --target, --value, and --effective-height.\n"
+                    );
+                }
+                payload = core::GovernanceProposalPayload::parameterChange(
+                    options.governanceProposalTitle,
+                    options.governanceProposalBody,
+                    options.governanceTarget,
+                    options.governanceValue,
+                    options.governanceEffectiveHeight,
+                    1,
+                    options.governanceVotingPeriodBlocks
+                );
+                break;
+            case core::GovernanceProposalType::TREASURY_SPEND:
+                if (options.toAddress.empty() || options.amountRaw <= 0) {
+                    return CommandLineResult::failure(
+                        CommandLineStatus::INVALID_ARGUMENTS,
+                        "Treasury spend proposal requires --to and positive --amount.\n"
+                    );
+                }
+                payload = core::GovernanceProposalPayload::treasurySpend(
+                    options.governanceProposalTitle,
+                    options.governanceProposalBody,
+                    options.toAddress,
+                    options.amountRaw,
+                    1,
+                    options.governanceVotingPeriodBlocks
+                );
+                break;
+            case core::GovernanceProposalType::TEXT:
+                payload = core::GovernanceProposalPayload::text(
+                    options.governanceProposalTitle,
+                    options.governanceProposalBody,
+                    1,
+                    options.governanceVotingPeriodBlocks
+                );
+                break;
+        }
+    } catch (const std::exception& error) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            std::string("Invalid governance proposal options: ") + error.what() + "\n"
+        );
+    }
+
+    std::string serializedPayload;
+    try {
+        serializedPayload = payload.serialize();
+    } catch (const std::exception& error) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            std::string("Invalid governance proposal payload: ") + error.what() + "\n"
+        );
+    }
+
+    std::string reason;
+    if (!node::GovernanceExecutor::validateProposalPayload(
+            serializedPayload, reason)) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Invalid governance proposal payload: " + reason + "\n"
+        );
+    }
+
+    return submitSignedTransactionToPersistentMempool(
+        options,
+        "Governance proposal",
+        defaultLocalnetUserKeyId(),
+        [serializedPayload, feeRaw = options.feeRaw, timestamp = options.timestamp](
+            const crypto::Signer& signer,
+            const std::string& chainId,
+            std::uint64_t nonce
+        ) {
+            return core::TransactionBuilder::buildSignedGovernanceProposal(
+                serializedPayload,
+                utils::Amount::fromRawUnits(feeRaw),
+                nonce,
+                timestamp + 10,
+                signer,
+                chainId
+            );
+        }
+    );
+}
+
+CommandLineResult CommandLineInterface::executeGovernanceVote(
+    const CommandLineOptions& options
+) {
+    if (options.governanceProposalId.empty()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Governance vote requires --proposal-id.\n"
+        );
+    }
+
+    if (options.validatorAddress.empty()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Governance vote requires --validator <address>.\n"
+        );
+    }
+
+    core::GovernanceVoteChoice choice;
+    try {
+        choice = parseGovernanceVoteChoiceOption(options.governanceVoteChoice);
+    } catch (const std::exception& error) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            std::string("Invalid governance vote choice: ") + error.what() + "\n"
+        );
+    }
+
+    const core::GovernanceVotePayload vote(
+        options.governanceProposalId,
+        options.validatorAddress,
+        choice
+    );
+
+    if (!vote.isValid()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Governance vote payload is invalid.\n"
+        );
+    }
+
+    return submitSignedTransactionToPersistentMempool(
+        options,
+        "Governance vote",
+        defaultLocalnetKeyId(),
+        [proposalId = options.governanceProposalId,
+         vote,
+         feeRaw = options.feeRaw,
+         timestamp = options.timestamp](
+            const crypto::Signer& signer,
+            const std::string& chainId,
+            std::uint64_t nonce
+        ) {
+            return core::TransactionBuilder::buildSignedGovernanceVote(
+                proposalId,
+                vote,
+                utils::Amount::fromRawUnits(feeRaw),
+                nonce,
+                timestamp + 10,
+                signer,
+                chainId
+            );
+        }
+    );
+}
+
+CommandLineResult CommandLineInterface::executeGovernanceStatus(
+    const CommandLineOptions& options
+) {
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            genesisLookup.genesis(),
+            localPeerFromOptions(options)
+        );
+
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load governance state: " + load.reason() + "\n"
+        );
+    }
+
+    const node::GovernanceExecutor& governance =
+        load.runtime().governanceExecutor();
+    const std::uint64_t nextHeight = load.runtime().blockchain().size();
+
+    std::ostringstream output;
+    output << "Nodo governance status\n"
+           << "----------------------\n"
+           << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
+           << "Active proposals: " << governance.activeProposalCount() << "\n"
+           << "Approved proposals: " << governance.approvedProposalCount() << "\n"
+           << "Executable proposals: " << governance.executableProposalCount(nextHeight) << "\n"
+           << "Executed proposals: " << governance.executedProposalCount() << "\n"
+           << "Effective minimum fee: "
+           << load.runtime().effectiveMinimumFeeRawUnits() << "\n";
+
+    return CommandLineResult::success(output.str());
+}
+
+CommandLineResult CommandLineInterface::executeGovernanceList(
+    const CommandLineOptions& options
+) {
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            genesisLookup.genesis(),
+            localPeerFromOptions(options)
+        );
+
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load governance state: " + load.reason() + "\n"
+        );
+    }
+
+    const node::GovernanceExecutor& governance =
+        load.runtime().governanceExecutor();
+    const std::vector<std::string> ids = governance.proposalIds();
+
+    std::ostringstream output;
+    output << "Nodo governance proposals\n"
+           << "-------------------------\n"
+           << "Count: " << ids.size() << "\n";
+
+    for (const std::string& id : ids) {
+        output << "Proposal: " << id
+               << " | Status: "
+               << node::governanceProposalStatusToString(
+                    governance.proposalStatus(id))
+               << " | Voting: "
+               << governance.proposalVotingStartHeight(id)
+               << "-"
+               << governance.proposalVotingEndHeight(id)
+               << "\n";
+    }
+
+    return CommandLineResult::success(output.str());
+}
+
+CommandLineResult CommandLineInterface::executeGovernanceShow(
+    const CommandLineOptions& options
+) {
+    if (options.governanceProposalId.empty()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::INVALID_ARGUMENTS,
+            "Governance show requires --proposal-id.\n"
+        );
+    }
+
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            node::NodeDataDirectoryConfig(options.dataDirectory),
+            genesisLookup.genesis(),
+            localPeerFromOptions(options)
+        );
+
+    if (!load.loaded()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Cannot load governance state: " + load.reason() + "\n"
+        );
+    }
+
+    const node::GovernanceExecutor& governance =
+        load.runtime().governanceExecutor();
+
+    if (!governance.hasProposal(options.governanceProposalId)) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            "Governance proposal not found: " + options.governanceProposalId + "\n"
+        );
+    }
+
+    std::ostringstream output;
+    output << "Nodo governance proposal\n"
+           << "------------------------\n"
+           << governance.proposalDetail(options.governanceProposalId) << "\n"
+           << governance.proposalVotes(options.governanceProposalId) << "\n"
+           << governance.proposalExecutionDetail(options.governanceProposalId) << "\n";
+
+    return CommandLineResult::success(output.str());
+}
+
+CommandLineResult CommandLineInterface::executeGovernanceAudit(
+    const CommandLineOptions& options
+) {
+    const node::NodeDataDirectoryConfig directoryConfig(
+        options.dataDirectory
+    );
+
+    const config::GenesisLookupResult genesisLookup =
+        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    if (!genesisLookup.found()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            genesisLookup.reason() + "\n"
+        );
+    }
+
+    const node::RuntimeStateLoadResult load =
+        node::RuntimeStateLoader::loadFromDataDirectory(
+            directoryConfig,
+            genesisLookup.genesis(),
+            localPeerFromOptions(options)
+        );
+
+    const node::ChainAuditResult audit =
+        node::ChainAuditor::auditLoadedRuntime(
+            load,
+            directoryConfig.epochMonetaryReportPath(),
+            directoryConfig.epochTreasuryReportPath()
+        );
+
+    if (!audit.passed()) {
+        return CommandLineResult::failure(
+            CommandLineStatus::COMMAND_FAILED,
+            audit.toHumanReadableString()
+        );
+    }
+
+    const node::GovernanceExecutor& governance =
+        load.runtime().governanceExecutor();
+    const std::vector<std::string> ids = governance.proposalIds();
+
+    for (const std::string& id : ids) {
+        if (governance.proposalDetail(id).empty() ||
+            governance.tallyForProposal(id).proposalId() != id) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "Governance audit failed for proposal: " + id + "\n"
+            );
+        }
+    }
+
+    std::ostringstream output;
+    output << "Nodo governance audit passed.\n"
+           << "Data directory: " << directoryConfig.rootPath().string() << "\n"
+           << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
+           << "Proposal count: " << ids.size() << "\n"
+           << "Governance state bytes: "
+           << governance.serialize().size() << "\n";
 
     return CommandLineResult::success(output.str());
 }

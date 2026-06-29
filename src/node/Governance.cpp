@@ -211,10 +211,8 @@ bool GovernanceSummary::isValid() const {
     return m_status == "ACTIVE" &&
            m_blockHeight > 0 &&
            m_guardCount >= 2 &&
-           m_activeProposalCount == 0 &&
-           m_approvedProposalCount == 0 &&
-           m_executableProposalCount == 0 &&
-           m_executedProposalCount == 0 &&
+           m_executableProposalCount <= m_approvedProposalCount &&
+           m_executedProposalCount <= m_approvedProposalCount &&
            m_reason == Governance::SUMMARY_REASON &&
            !m_sourceGuardDigest.empty();
 }
@@ -288,6 +286,18 @@ GovernanceSummary Governance::buildSummary(
     std::uint64_t blockHeight,
     const std::vector<GovernanceActionGuard>& guards
 ) {
+    return buildSummary(blockHeight, guards, 0, 0, 0, 0, "");
+}
+
+GovernanceSummary Governance::buildSummary(
+    std::uint64_t blockHeight,
+    const std::vector<GovernanceActionGuard>& guards,
+    std::uint64_t activeProposalCount,
+    std::uint64_t approvedProposalCount,
+    std::uint64_t executableProposalCount,
+    std::uint64_t executedProposalCount,
+    const std::string& governanceStateDigest
+) {
     if (blockHeight == 0 || guards.empty()) {
         throw std::invalid_argument("Cannot build governance summary without active guards.");
     }
@@ -299,15 +309,18 @@ GovernanceSummary Governance::buildSummary(
         }
         digest << guard.serialize() << '|';
     }
+    if (!governanceStateDigest.empty()) {
+        digest << "governanceState=" << governanceStateDigest << '|';
+    }
 
     return GovernanceSummary(
         "ACTIVE",
         blockHeight,
         static_cast<std::uint64_t>(guards.size()),
-        0,
-        0,
-        0,
-        0,
+        activeProposalCount,
+        approvedProposalCount,
+        executableProposalCount,
+        executedProposalCount,
         SUMMARY_REASON,
         digest.str()
     );

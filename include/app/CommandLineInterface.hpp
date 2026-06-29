@@ -27,10 +27,19 @@ public:
     std::string keyType;
     std::string toAddress;
     std::string validatorAddress;
+    std::string governanceProposalId;
+    std::string governanceProposalType;
+    std::string governanceProposalTitle;
+    std::string governanceProposalBody;
+    std::string governanceTarget;
+    std::string governanceValue;
+    std::string governanceVoteChoice;
     std::int64_t amountRaw;
     std::int64_t feeRaw;
     std::uint64_t nonce;
     std::int64_t timestamp;
+    std::uint64_t governanceEffectiveHeight;
+    std::uint64_t governanceVotingPeriodBlocks;
     bool showHelp;
     bool keyIdProvided;
 };
@@ -164,6 +173,30 @@ private:
     );
 
     static CommandLineResult executeSubmitTransaction(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeGovernancePropose(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeGovernanceVote(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeGovernanceStatus(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeGovernanceList(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeGovernanceShow(
+        const CommandLineOptions& options
+    );
+
+    static CommandLineResult executeGovernanceAudit(
         const CommandLineOptions& options
     );
 

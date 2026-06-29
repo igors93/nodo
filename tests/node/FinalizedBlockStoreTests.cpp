@@ -693,7 +693,7 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
         blockContents.find("governanceGuard.0.actionType=TREASURY_SPEND") != std::string::npos &&
         blockContents.find("governanceGuard.1.actionType=MINT_AUTHORIZATION") != std::string::npos &&
         blockContents.find("governanceSummaryStatus=ACTIVE") != std::string::npos &&
-        blockContents.find("governanceSummary.reason=GOVERNANCE_NO_ACTIVE_PROPOSALS") != std::string::npos,
+        blockContents.find("governanceSummary.reason=GOVERNANCE_STATE_SUMMARY") != std::string::npos,
         "Finalized block file should persist governance guards for treasury and controlled issuance."
     );
 

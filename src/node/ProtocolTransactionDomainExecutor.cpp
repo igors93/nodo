@@ -139,7 +139,8 @@ public:
         return atomically(accounts, [&] {
             std::string reason;
             if (!m_state.governance.submitProposal(
-                    tx.id(), tx.fromAddress(), tx.data(), height, now, reason)) {
+                    tx.id(), tx.fromAddress(), tx.data(), height, now,
+                    totalEligibleVotingWeight(), reason)) {
                 throw std::invalid_argument(reason);
             }
         });
@@ -152,25 +153,23 @@ public:
         return atomically(accounts, [&] {
             const core::GovernanceVotePayload vote =
                 core::GovernanceVotePayload::deserialize(tx.data());
+            if (vote.proposalId() != tx.toAddress()) {
+                throw std::invalid_argument("Governance vote target does not match payload proposal id.");
+            }
             const auto* voter = m_state.validators.entryForAddress(vote.validatorAddress());
+            const bool authorizedOwner = voter != nullptr &&
+                (voter->ownerAddress() == tx.fromAddress() ||
+                 (voter->ownerAddress().empty() &&
+                  vote.validatorAddress() == tx.fromAddress()));
             if (voter == nullptr || !voter->eligibleForConsensus() ||
-                voter->ownerAddress() != tx.fromAddress()) {
+                !authorizedOwner) {
                 throw std::invalid_argument("Governance voter is not an authorized active validator.");
             }
             const std::uint64_t weight = votingWeight(vote.validatorAddress());
-            std::uint64_t total = 0;
-            for (const auto& address : m_state.validators.eligibleValidatorAddresses()) {
-                const std::uint64_t candidate = votingWeight(address);
-                if (std::numeric_limits<std::uint64_t>::max() - total < candidate) {
-                    throw std::overflow_error("Governance voting weight overflow.");
-                }
-                total += candidate;
-            }
             std::string reason;
             if (!m_state.governance.castVote(
                     tx.toAddress(), vote.validatorAddress(),
-                    vote.choice() == core::GovernanceVoteChoice::APPROVE,
-                    weight, total, height, now, reason)) {
+                    vote.choice(), weight, height, now, tx.id(), reason)) {
                 throw std::invalid_argument(reason);
             }
         });
@@ -183,6 +182,8 @@ public:
         std::uint64_t blockHeight,
         std::int64_t blockTimestamp
     ) override {
+        core::AccountStateView settledAccounts =
+            ProtocolStateTransition::settleFees(accounts, blockHeight, totalFee);
         return atomically(accounts, [&] {
             const FeeEconomicBalance fees = FeeEconomics::buildFeeEconomicBalance(blockHeight, totalFee);
             if (fees.burnAmount() > m_state.supply) throw std::invalid_argument("Fee burn exceeds current supply.");
@@ -194,7 +195,8 @@ public:
                     economics::BurnType::FEE_BURN
                 );
             }
-            m_state.governance.advanceToHeight(blockHeight + 1, blockTimestamp);
+            m_state.governance.advanceToHeight(
+                blockHeight + 1, blockTimestamp, &settledAccounts);
             const crypto::ProtocolCryptoContext cryptoContext =
                 crypto::ProtocolCryptoContext::fromNetworkName(m_networkName);
             if (!cryptoContext.isValid()) throw std::invalid_argument("Invalid protocol crypto context.");
@@ -207,7 +209,7 @@ public:
             ProtocolStateTransition::applyValidatorEpochTransition(
                 m_state.validators, blockHeight, blockTimestamp
             );
-        }, ProtocolStateTransition::settleFees(accounts, blockHeight, totalFee));
+        }, settledAccounts);
     }
 
     const std::map<std::string, std::string>& domains() const override { return m_domains; }
@@ -283,7 +285,21 @@ private:
         const std::int64_t available = stake.bondedAmount().rawUnits() - stake.slashedAmount().rawUnits();
         if (available > 0) return static_cast<std::uint64_t>(available);
         const auto* entry = m_state.validators.entryForAddress(validatorAddress);
-        return entry == nullptr ? 0 : entry->stakeAmount();
+        if (entry == nullptr || !entry->eligibleForConsensus()) return 0;
+        if (entry->stakeAmount() > 0) return entry->stakeAmount();
+        return 1;
+    }
+
+    std::uint64_t totalEligibleVotingWeight() const {
+        std::uint64_t total = 0;
+        for (const auto& address : m_state.validators.eligibleValidatorAddresses()) {
+            const std::uint64_t candidate = votingWeight(address);
+            if (std::numeric_limits<std::uint64_t>::max() - total < candidate) {
+                throw std::overflow_error("Governance voting weight overflow.");
+            }
+            total += candidate;
+        }
+        return total;
     }
 
     void synchronizePenaltyState() {

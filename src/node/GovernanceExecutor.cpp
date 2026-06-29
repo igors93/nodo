@@ -1,6 +1,8 @@
 #include "node/GovernanceExecutor.hpp"
 
 #include "core/ProtocolLimits.hpp"
+#include "crypto/hash.h"
+#include "node/ProtectionTreasury.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -50,6 +52,72 @@ std::string governanceExecutionStatusToString(GovernanceExecutionStatus status) 
         case GovernanceExecutionStatus::REJECTED_NOT_YET_EFFECTIVE: return "REJECTED_NOT_YET_EFFECTIVE";
     }
     return "UNKNOWN";
+}
+
+std::string governanceProposalStatusToString(GovernanceProposalStatus status) {
+    switch (status) {
+        case GovernanceProposalStatus::PENDING: return "PENDING";
+        case GovernanceProposalStatus::ACTIVE: return "ACTIVE";
+        case GovernanceProposalStatus::APPROVED: return "APPROVED";
+        case GovernanceProposalStatus::REJECTED: return "REJECTED";
+        case GovernanceProposalStatus::EXPIRED: return "EXPIRED";
+        case GovernanceProposalStatus::QUEUED_FOR_EXECUTION: return "QUEUED_FOR_EXECUTION";
+        case GovernanceProposalStatus::EXECUTED: return "EXECUTED";
+        case GovernanceProposalStatus::FAILED_EXECUTION: return "FAILED_EXECUTION";
+    }
+    return "FAILED_EXECUTION";
+}
+
+GovernanceTallySnapshot::GovernanceTallySnapshot()
+    : m_yesWeight(0),
+      m_noWeight(0),
+      m_abstainWeight(0),
+      m_participatingWeight(0),
+      m_totalEligibleWeight(0),
+      m_quorumMet(false),
+      m_approvalThresholdMet(false) {}
+
+GovernanceTallySnapshot::GovernanceTallySnapshot(
+    std::string proposalId,
+    std::uint64_t yesWeight,
+    std::uint64_t noWeight,
+    std::uint64_t abstainWeight,
+    std::uint64_t participatingWeight,
+    std::uint64_t totalEligibleWeight,
+    bool quorumMet,
+    bool approvalThresholdMet
+) : m_proposalId(std::move(proposalId)),
+    m_yesWeight(yesWeight),
+    m_noWeight(noWeight),
+    m_abstainWeight(abstainWeight),
+    m_participatingWeight(participatingWeight),
+    m_totalEligibleWeight(totalEligibleWeight),
+    m_quorumMet(quorumMet),
+    m_approvalThresholdMet(approvalThresholdMet) {}
+
+const std::string& GovernanceTallySnapshot::proposalId() const { return m_proposalId; }
+std::uint64_t GovernanceTallySnapshot::yesWeight() const { return m_yesWeight; }
+std::uint64_t GovernanceTallySnapshot::noWeight() const { return m_noWeight; }
+std::uint64_t GovernanceTallySnapshot::abstainWeight() const { return m_abstainWeight; }
+std::uint64_t GovernanceTallySnapshot::participatingWeight() const { return m_participatingWeight; }
+std::uint64_t GovernanceTallySnapshot::totalEligibleWeight() const { return m_totalEligibleWeight; }
+bool GovernanceTallySnapshot::quorumMet() const { return m_quorumMet; }
+bool GovernanceTallySnapshot::approvalThresholdMet() const { return m_approvalThresholdMet; }
+bool GovernanceTallySnapshot::approved() const { return m_quorumMet && m_approvalThresholdMet; }
+
+std::string GovernanceTallySnapshot::serialize() const {
+    std::ostringstream oss;
+    oss << "GovernanceTallySnapshot{"
+        << "proposalId=" << m_proposalId
+        << ";yesWeight=" << m_yesWeight
+        << ";noWeight=" << m_noWeight
+        << ";abstainWeight=" << m_abstainWeight
+        << ";participatingWeight=" << m_participatingWeight
+        << ";totalEligibleWeight=" << m_totalEligibleWeight
+        << ";quorumMet=" << (m_quorumMet ? 1 : 0)
+        << ";approvalThresholdMet=" << (m_approvalThresholdMet ? 1 : 0)
+        << "}";
+    return oss.str();
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +267,16 @@ GovernanceExecutionResult GovernanceExecutionResult::applied(
     );
 }
 
+GovernanceExecutionResult GovernanceExecutionResult::applied(
+    std::string detail
+) {
+    return GovernanceExecutionResult(
+        GovernanceExecutionStatus::APPLIED,
+        std::move(detail),
+        GovernanceParameterChange{}
+    );
+}
+
 GovernanceExecutionResult GovernanceExecutionResult::pending(
     std::string proposalId,
     std::uint64_t effectiveAtHeight,
@@ -273,53 +351,49 @@ bool parseUint64Strict(
     }
 }
 
-// Extract value from the canonical transaction-safe "key=value,key=value" form.
-// Semicolons remain accepted for durable data created by earlier revisions.
-std::string extractPayloadField(const std::string& payload, const std::string& key) {
-    const std::string search = key + "=";
-    const std::size_t pos = payload.find(search);
-    if (pos == std::string::npos) {
-        return "";
+bool checkedAddU64(std::uint64_t left, std::uint64_t right, std::uint64_t& out) {
+    if (std::numeric_limits<std::uint64_t>::max() - left < right) {
+        return false;
     }
-    const std::size_t valueStart = pos + search.size();
-    const std::size_t semicolonEnd = payload.find(';', valueStart);
-    const std::size_t commaEnd = payload.find(',', valueStart);
-    const std::size_t valueEnd =
-        semicolonEnd == std::string::npos ? commaEnd :
-        commaEnd == std::string::npos ? semicolonEnd :
-        std::min(semicolonEnd, commaEnd);
-    if (valueEnd == std::string::npos) {
-        return payload.substr(valueStart);
-    }
-    return payload.substr(valueStart, valueEnd - valueStart);
+    out = left + right;
+    return true;
+}
+
+bool ratioMet(
+    std::uint64_t value,
+    std::uint64_t denominator,
+    std::uint64_t total,
+    std::uint64_t numerator
+) {
+    return static_cast<unsigned __int128>(value) *
+           static_cast<unsigned __int128>(denominator) >=
+           static_cast<unsigned __int128>(total) *
+           static_cast<unsigned __int128>(numerator);
+}
+
+std::string hashString(const std::string& value) {
+    char output[NODO_HASH_BUFFER_SIZE] = {0};
+    nodo_hash_bytes(
+        reinterpret_cast<const unsigned char*>(value.data()),
+        static_cast<unsigned long long>(value.size()),
+        output,
+        sizeof(output)
+    );
+    return std::string(output);
 }
 
 } // namespace
 
-GovernanceParameterTarget GovernanceExecutor::parseTarget(const std::string& payload) {
-    const std::string targetStr = extractPayloadField(payload, "target");
-    return governanceParameterTargetFromString(targetStr);
-}
-
-std::string GovernanceExecutor::parseNewValue(const std::string& payload) {
-    return extractPayloadField(payload, "value");
-}
-
-std::uint64_t GovernanceExecutor::parseEffectiveHeight(const std::string& payload) {
-    const std::string heightStr = extractPayloadField(payload, "effectiveHeight");
-    if (heightStr.empty()) {
-        return 0;
-    }
-    std::uint64_t effectiveHeight = 0;
-    return parseUint64Strict(heightStr, effectiveHeight)
-        ? effectiveHeight
-        : 0;
+GovernanceParameterTarget GovernanceExecutor::parseTarget(
+    const core::GovernanceProposalPayload& payload
+) {
+    return governanceParameterTargetFromString(payload.parameterTarget());
 }
 
 bool GovernanceExecutor::validateValue(
     GovernanceParameterTarget target,
     const std::string& value
-) const {
+) {
     if (value.empty()) {
         return false;
     }
@@ -364,28 +438,142 @@ bool GovernanceExecutor::validateValue(
     return false;
 }
 
-// ---------------------------------------------------------------------------
-// GovernanceExecutor — public interface
-// ---------------------------------------------------------------------------
-
-GovernanceExecutor::GovernanceExecutor() = default;
-
-GovernanceExecutionResult GovernanceExecutor::applyApprovedProposal(
-    const std::string& proposalId,
-    const std::string& proposalPayload,
-    std::uint64_t currentHeight,
-    std::int64_t  now
+bool GovernanceExecutor::proposalCanExecuteAt(
+    const ProposalState& proposal,
+    std::uint64_t currentHeight
 ) {
-    // Prevent double-execution
-    if (hasBeenExecuted(proposalId)) {
+    if (proposal.status != GovernanceProposalStatus::APPROVED &&
+        proposal.status != GovernanceProposalStatus::QUEUED_FOR_EXECUTION) {
+        return false;
+    }
+    if (proposal.payload.type() != core::GovernanceProposalType::PARAMETER_CHANGE) {
+        return true;
+    }
+    return currentHeight >= proposal.payload.parameterEffectiveHeight();
+}
+
+GovernanceTallySnapshot GovernanceExecutor::computeTally(
+    const std::string& proposalId,
+    const ProposalState& proposal
+) const {
+    std::uint64_t yes = 0;
+    std::uint64_t no = 0;
+    std::uint64_t abstain = 0;
+    for (const auto& [_, vote] : proposal.votes) {
+        std::uint64_t* target = &no;
+        if (vote.choice == core::GovernanceVoteChoice::YES) {
+            target = &yes;
+        } else if (vote.choice == core::GovernanceVoteChoice::ABSTAIN) {
+            target = &abstain;
+        }
+        if (!checkedAddU64(*target, vote.weight, *target)) {
+            throw std::overflow_error("Governance tally overflow.");
+        }
+    }
+
+    std::uint64_t participating = 0;
+    if (!checkedAddU64(yes, no, participating) ||
+        !checkedAddU64(participating, abstain, participating)) {
+        throw std::overflow_error("Governance participant tally overflow.");
+    }
+
+    const bool quorumMet = proposal.totalEligibleWeight > 0 &&
+        ratioMet(
+            participating,
+            proposal.payload.quorumDenominator(),
+            proposal.totalEligibleWeight,
+            proposal.payload.quorumNumerator()
+        );
+
+    std::uint64_t directional = 0;
+    if (!checkedAddU64(yes, no, directional)) {
+        throw std::overflow_error("Governance directional tally overflow.");
+    }
+
+    const bool approvalMet = directional > 0 &&
+        ratioMet(
+            yes,
+            proposal.payload.approvalDenominator(),
+            directional,
+            proposal.payload.approvalNumerator()
+        );
+
+    return GovernanceTallySnapshot(
+        proposalId,
+        yes,
+        no,
+        abstain,
+        participating,
+        proposal.totalEligibleWeight,
+        quorumMet,
+        approvalMet
+    );
+}
+
+GovernanceExecutionResult GovernanceExecutor::executeApprovedProposal(
+    const std::string& proposalId,
+    ProposalState& proposal,
+    std::uint64_t currentHeight,
+    std::int64_t now,
+    core::AccountStateView* accounts
+) {
+    if (proposal.status == GovernanceProposalStatus::EXECUTED) {
         return GovernanceExecutionResult::rejected(
             GovernanceExecutionStatus::REJECTED_INVALID_VALUE,
             "Proposal " + proposalId + " has already been executed."
         );
     }
 
-    const GovernanceParameterTarget target = parseTarget(proposalPayload);
+    if (proposal.payload.type() == core::GovernanceProposalType::TEXT) {
+        proposal.status = GovernanceProposalStatus::EXECUTED;
+        proposal.executedAtHeight = currentHeight;
+        proposal.executedAt = now;
+        proposal.executionDetail = "Text proposal recorded on-chain.";
+        return GovernanceExecutionResult::applied(proposal.executionDetail);
+    }
 
+    if (proposal.payload.type() == core::GovernanceProposalType::TREASURY_SPEND) {
+        if (accounts == nullptr) {
+            return GovernanceExecutionResult::rejected(
+                GovernanceExecutionStatus::REJECTED_INVALID_VALUE,
+                "Treasury spend execution requires account state."
+            );
+        }
+        const utils::Amount amount =
+            utils::Amount::fromRawUnits(proposal.payload.treasuryAmountRaw());
+        const core::AccountState treasury =
+            accounts->accountOrDefault(ProtectionTreasury::TREASURY_ADDRESS);
+        if (treasury.balance() < amount) {
+            return GovernanceExecutionResult::rejected(
+                GovernanceExecutionStatus::REJECTED_INVALID_VALUE,
+                "Treasury balance is insufficient for approved governance spend."
+            );
+        }
+        const core::AccountState recipient =
+            accounts->accountOrDefault(proposal.payload.treasuryRecipient());
+        if (!accounts->putAccount(core::AccountState(
+                ProtectionTreasury::TREASURY_ADDRESS,
+                treasury.balance() - amount,
+                treasury.nonce())) ||
+            !accounts->putAccount(core::AccountState(
+                proposal.payload.treasuryRecipient(),
+                recipient.balance() + amount,
+                recipient.nonce()))) {
+            return GovernanceExecutionResult::rejected(
+                GovernanceExecutionStatus::REJECTED_INVALID_VALUE,
+                "Treasury spend account write failed."
+            );
+        }
+        proposal.status = GovernanceProposalStatus::EXECUTED;
+        proposal.executedAtHeight = currentHeight;
+        proposal.executedAt = now;
+        proposal.executionDetail =
+            "Treasury spend executed to " + proposal.payload.treasuryRecipient() +
+            " amountRaw=" + std::to_string(proposal.payload.treasuryAmountRaw());
+        return GovernanceExecutionResult::applied(proposal.executionDetail);
+    }
+
+    const GovernanceParameterTarget target = parseTarget(proposal.payload);
     if (target == GovernanceParameterTarget::UNKNOWN) {
         return GovernanceExecutionResult::rejected(
             GovernanceExecutionStatus::REJECTED_UNKNOWN_TARGET,
@@ -393,27 +581,15 @@ GovernanceExecutionResult GovernanceExecutor::applyApprovedProposal(
         );
     }
 
-    const std::string newValue = parseNewValue(proposalPayload);
-    const std::uint64_t effectiveAtHeight = parseEffectiveHeight(proposalPayload);
-
-    if (effectiveAtHeight == 0 || !validateValue(target, newValue)) {
+    if (!validateValue(target, proposal.payload.parameterValue())) {
         return GovernanceExecutionResult::rejected(
             GovernanceExecutionStatus::REJECTED_INVALID_VALUE,
-            "Invalid value '" + newValue + "' for target " +
+            "Invalid value '" + proposal.payload.parameterValue() + "' for target " +
             governanceParameterTargetToString(target)
         );
     }
 
-    if (currentHeight < effectiveAtHeight) {
-        // Not yet effective — record as pending
-        GovernanceParameterChange pendingChange = GovernanceParameterChange::pending(
-            proposalId,
-            target,
-            newValue,
-            effectiveAtHeight
-        );
-
-        // Avoid duplicate pending entries
+    if (currentHeight < proposal.payload.parameterEffectiveHeight()) {
         bool alreadyPending = false;
         for (const auto& pc : m_pendingChanges) {
             if (pc.proposalId() == proposalId) {
@@ -422,27 +598,34 @@ GovernanceExecutionResult GovernanceExecutor::applyApprovedProposal(
             }
         }
         if (!alreadyPending) {
-            m_pendingChanges.push_back(pendingChange);
+            m_pendingChanges.push_back(GovernanceParameterChange::pending(
+                proposalId,
+                target,
+                proposal.payload.parameterValue(),
+                proposal.payload.parameterEffectiveHeight()
+            ));
         }
-
-        return GovernanceExecutionResult::pending(proposalId, effectiveAtHeight, currentHeight);
+        proposal.status = GovernanceProposalStatus::QUEUED_FOR_EXECUTION;
+        proposal.executionDetail =
+            "Parameter change queued for height " +
+            std::to_string(proposal.payload.parameterEffectiveHeight());
+        return GovernanceExecutionResult::pending(
+            proposalId,
+            proposal.payload.parameterEffectiveHeight(),
+            currentHeight
+        );
     }
 
-    // Height is sufficient — apply the change
     const std::string previousValue = currentValueForTarget(target);
-
     GovernanceParameterChange appliedChange(
         proposalId,
         target,
         previousValue,
-        newValue,
-        effectiveAtHeight,
+        proposal.payload.parameterValue(),
+        proposal.payload.parameterEffectiveHeight(),
         now
     );
-
     m_appliedChanges.push_back(appliedChange);
-
-    // Remove from pending if it was there
     m_pendingChanges.erase(
         std::remove_if(
             m_pendingChanges.begin(),
@@ -453,8 +636,76 @@ GovernanceExecutionResult GovernanceExecutor::applyApprovedProposal(
         ),
         m_pendingChanges.end()
     );
-
+    proposal.status = GovernanceProposalStatus::EXECUTED;
+    proposal.executedAtHeight = currentHeight;
+    proposal.executedAt = now;
+    proposal.executionDetail = appliedChange.serialize();
     return GovernanceExecutionResult::applied(appliedChange);
+}
+
+void GovernanceExecutor::finalizeProposal(
+    const std::string& proposalId,
+    ProposalState& proposal,
+    std::uint64_t currentHeight,
+    std::int64_t now,
+    core::AccountStateView* accounts
+) {
+    proposal.finalTally = computeTally(proposalId, proposal);
+    proposal.decidedAtHeight = currentHeight;
+    proposal.decidedAt = now;
+
+    if (!proposal.finalTally.quorumMet()) {
+        proposal.status = GovernanceProposalStatus::EXPIRED;
+        proposal.executionDetail = "Voting period ended without quorum.";
+        return;
+    }
+
+    if (!proposal.finalTally.approvalThresholdMet()) {
+        proposal.status = GovernanceProposalStatus::REJECTED;
+        proposal.executionDetail = "Voting period ended without approval threshold.";
+        return;
+    }
+
+    proposal.status = GovernanceProposalStatus::APPROVED;
+    const GovernanceExecutionResult execution =
+        executeApprovedProposal(proposalId, proposal, currentHeight, now, accounts);
+    if (execution.isPending()) {
+        proposal.status = GovernanceProposalStatus::QUEUED_FOR_EXECUTION;
+        return;
+    }
+    if (!execution.isApplied()) {
+        proposal.status = GovernanceProposalStatus::FAILED_EXECUTION;
+        proposal.executionDetail = execution.detail();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GovernanceExecutor — public interface
+// ---------------------------------------------------------------------------
+
+GovernanceExecutor::GovernanceExecutor() = default;
+
+bool GovernanceExecutor::validateProposalPayload(
+    const std::string& proposalPayload,
+    std::string& reason
+) {
+    try {
+        const core::GovernanceProposalPayload payload =
+            core::GovernanceProposalPayload::deserialize(proposalPayload);
+        if (payload.type() == core::GovernanceProposalType::PARAMETER_CHANGE) {
+            const GovernanceParameterTarget target = parseTarget(payload);
+            if (target == GovernanceParameterTarget::UNKNOWN ||
+                !validateValue(target, payload.parameterValue())) {
+                reason = "Governance parameter change payload is invalid.";
+                return false;
+            }
+        }
+    } catch (const std::exception& error) {
+        reason = error.what();
+        return false;
+    }
+    reason.clear();
+    return true;
 }
 
 bool GovernanceExecutor::submitProposal(
@@ -463,29 +714,46 @@ bool GovernanceExecutor::submitProposal(
     const std::string& proposalPayload,
     std::uint64_t currentHeight,
     std::int64_t now,
+    std::uint64_t totalEligibleWeight,
     std::string& reason
 ) {
-    if (proposalId.empty() || proposerAddress.empty() || currentHeight == 0 || now <= 0) {
-        reason = "Governance proposal identity or block context is invalid.";
+    if (proposalId.empty() || proposerAddress.empty() || currentHeight == 0 ||
+        now <= 0 || totalEligibleWeight == 0) {
+        reason = "Governance proposal identity, block context, or voting snapshot is invalid.";
         return false;
     }
     if (hasProposal(proposalId)) {
         reason = "Governance proposal already exists.";
         return false;
     }
-    const GovernanceParameterTarget target = parseTarget(proposalPayload);
-    const std::string value = parseNewValue(proposalPayload);
-    const std::uint64_t effectiveHeight = parseEffectiveHeight(proposalPayload);
-    if (target == GovernanceParameterTarget::UNKNOWN || effectiveHeight == 0 ||
-        !validateValue(target, value)) {
-        reason = "Governance proposal payload is invalid.";
+    if (!validateProposalPayload(proposalPayload, reason)) {
         return false;
     }
+
+    const core::GovernanceProposalPayload payload =
+        core::GovernanceProposalPayload::deserialize(proposalPayload);
+    std::uint64_t votingStart = 0;
+    if (!checkedAddU64(currentHeight, payload.votingStartDelayBlocks(), votingStart)) {
+        reason = "Governance voting start height overflow.";
+        return false;
+    }
+    std::uint64_t votingEnd = 0;
+    if (!checkedAddU64(votingStart, payload.votingPeriodBlocks() - 1, votingEnd)) {
+        reason = "Governance voting end height overflow.";
+        return false;
+    }
+
     ProposalState state;
     state.proposerAddress = proposerAddress;
-    state.payload = proposalPayload;
+    state.payload = payload;
     state.createdHeight = currentHeight;
     state.createdAt = now;
+    state.votingStartHeight = votingStart;
+    state.votingEndHeight = votingEnd;
+    state.totalEligibleWeight = totalEligibleWeight;
+    state.status = currentHeight >= votingStart
+        ? GovernanceProposalStatus::ACTIVE
+        : GovernanceProposalStatus::PENDING;
     m_proposals.emplace(proposalId, std::move(state));
     reason.clear();
     return true;
@@ -494,11 +762,11 @@ bool GovernanceExecutor::submitProposal(
 bool GovernanceExecutor::castVote(
     const std::string& proposalId,
     const std::string& validatorAddress,
-    bool approve,
+    core::GovernanceVoteChoice choice,
     std::uint64_t votingWeight,
-    std::uint64_t totalEligibleWeight,
     std::uint64_t currentHeight,
     std::int64_t now,
+    const std::string& transactionId,
     std::string& reason
 ) {
     auto found = m_proposals.find(proposalId);
@@ -507,48 +775,39 @@ bool GovernanceExecutor::castVote(
         return false;
     }
     ProposalState& proposal = found->second;
-    if (proposal.approved || proposal.rejected) {
+    if (proposal.status == GovernanceProposalStatus::APPROVED ||
+        proposal.status == GovernanceProposalStatus::REJECTED ||
+        proposal.status == GovernanceProposalStatus::EXPIRED ||
+        proposal.status == GovernanceProposalStatus::QUEUED_FOR_EXECUTION ||
+        proposal.status == GovernanceProposalStatus::EXECUTED ||
+        proposal.status == GovernanceProposalStatus::FAILED_EXECUTION) {
         reason = "Governance proposal is already decided.";
         return false;
     }
-    if (validatorAddress.empty() || votingWeight == 0 || totalEligibleWeight == 0 ||
-        votingWeight > totalEligibleWeight || currentHeight < proposal.createdHeight || now <= 0) {
+    if (validatorAddress.empty() || transactionId.empty() || votingWeight == 0 ||
+        votingWeight > proposal.totalEligibleWeight || currentHeight < proposal.createdHeight ||
+        now <= 0) {
         reason = "Governance vote context or weight is invalid.";
+        return false;
+    }
+    if (currentHeight < proposal.votingStartHeight) {
+        reason = "Governance voting period has not started.";
+        return false;
+    }
+    if (currentHeight > proposal.votingEndHeight) {
+        reason = "Governance voting period has ended.";
         return false;
     }
     if (proposal.votes.find(validatorAddress) != proposal.votes.end()) {
         reason = "Validator has already voted on this proposal.";
         return false;
     }
-    proposal.votes.emplace(validatorAddress, VoteState{approve, votingWeight});
 
-    std::uint64_t approveWeight = 0;
-    std::uint64_t rejectWeight = 0;
-    for (const auto& [_, vote] : proposal.votes) {
-        std::uint64_t& total = vote.approve ? approveWeight : rejectWeight;
-        if (std::numeric_limits<std::uint64_t>::max() - total < vote.weight) {
-            proposal.votes.erase(validatorAddress);
-            reason = "Governance vote tally overflow.";
-            return false;
-        }
-        total += vote.weight;
-    }
-    if (static_cast<unsigned __int128>(approveWeight) * 3U >=
-        static_cast<unsigned __int128>(totalEligibleWeight) * 2U) {
-        proposal.approved = true;
-        const GovernanceExecutionResult execution = applyApprovedProposal(
-            proposalId, proposal.payload, currentHeight, now
-        );
-        if (!execution.isApplied() && !execution.isPending()) {
-            proposal.approved = false;
-            proposal.votes.erase(validatorAddress);
-            reason = execution.detail();
-            return false;
-        }
-    } else if (static_cast<unsigned __int128>(rejectWeight) * 3U >
-               static_cast<unsigned __int128>(totalEligibleWeight)) {
-        proposal.rejected = true;
-    }
+    proposal.status = GovernanceProposalStatus::ACTIVE;
+    proposal.votes.emplace(
+        validatorAddress,
+        VoteState{choice, votingWeight, currentHeight, now, transactionId}
+    );
     reason.clear();
     return true;
 }
@@ -568,40 +827,182 @@ bool GovernanceExecutor::hasVote(
 
 bool GovernanceExecutor::proposalApproved(const std::string& proposalId) const {
     const auto proposal = m_proposals.find(proposalId);
-    return proposal != m_proposals.end() && proposal->second.approved;
+    return proposal != m_proposals.end() &&
+           (proposal->second.status == GovernanceProposalStatus::APPROVED ||
+            proposal->second.status == GovernanceProposalStatus::QUEUED_FOR_EXECUTION ||
+            proposal->second.status == GovernanceProposalStatus::EXECUTED);
+}
+
+bool GovernanceExecutor::proposalOpenForVoting(
+    const std::string& proposalId,
+    std::uint64_t height
+) const {
+    const auto proposal = m_proposals.find(proposalId);
+    return proposal != m_proposals.end() &&
+           height >= proposal->second.votingStartHeight &&
+           height <= proposal->second.votingEndHeight &&
+           (proposal->second.status == GovernanceProposalStatus::PENDING ||
+            proposal->second.status == GovernanceProposalStatus::ACTIVE);
+}
+
+std::uint64_t GovernanceExecutor::proposalVotingStartHeight(
+    const std::string& proposalId
+) const {
+    const auto proposal = m_proposals.find(proposalId);
+    return proposal == m_proposals.end() ? 0 : proposal->second.votingStartHeight;
+}
+
+std::uint64_t GovernanceExecutor::proposalVotingEndHeight(
+    const std::string& proposalId
+) const {
+    const auto proposal = m_proposals.find(proposalId);
+    return proposal == m_proposals.end() ? 0 : proposal->second.votingEndHeight;
+}
+
+GovernanceProposalStatus GovernanceExecutor::proposalStatus(
+    const std::string& proposalId
+) const {
+    const auto proposal = m_proposals.find(proposalId);
+    return proposal == m_proposals.end()
+        ? GovernanceProposalStatus::FAILED_EXECUTION
+        : proposal->second.status;
+}
+
+GovernanceTallySnapshot GovernanceExecutor::tallyForProposal(
+    const std::string& proposalId
+) const {
+    const auto proposal = m_proposals.find(proposalId);
+    if (proposal == m_proposals.end()) {
+        return GovernanceTallySnapshot();
+    }
+    if (proposal->second.decidedAtHeight > 0) {
+        return proposal->second.finalTally;
+    }
+    return computeTally(proposalId, proposal->second);
+}
+
+std::string GovernanceExecutor::proposalDetail(
+    const std::string& proposalId
+) const {
+    const auto proposalIt = m_proposals.find(proposalId);
+    if (proposalIt == m_proposals.end()) {
+        return "";
+    }
+
+    const ProposalState& proposal = proposalIt->second;
+    const core::GovernanceProposalPayload& payload = proposal.payload;
+    const GovernanceTallySnapshot tally = computeTally(proposalId, proposal);
+
+    std::ostringstream oss;
+    oss << "GovernanceProposal{"
+        << "id=" << proposalId
+        << ";proposer=" << proposal.proposerAddress
+        << ";type=" << core::governanceProposalTypeToString(payload.type())
+        << ";title=" << payload.title()
+        << ";description=" << payload.description()
+        << ";votingStartDelayBlocks=" << payload.votingStartDelayBlocks()
+        << ";votingPeriodBlocks=" << payload.votingPeriodBlocks()
+        << ";quorum=" << payload.quorumNumerator() << "/" << payload.quorumDenominator()
+        << ";approval=" << payload.approvalNumerator() << "/" << payload.approvalDenominator()
+        << ";parameterTarget=" << payload.parameterTarget()
+        << ";parameterValue=" << payload.parameterValue()
+        << ";parameterEffectiveHeight=" << payload.parameterEffectiveHeight()
+        << ";treasuryRecipient=" << payload.treasuryRecipient()
+        << ";treasuryAmountRaw=" << payload.treasuryAmountRaw()
+        << ";createdHeight=" << proposal.createdHeight
+        << ";createdAt=" << proposal.createdAt
+        << ";votingStartHeight=" << proposal.votingStartHeight
+        << ";votingEndHeight=" << proposal.votingEndHeight
+        << ";totalEligibleWeight=" << proposal.totalEligibleWeight
+        << ";status=" << governanceProposalStatusToString(proposal.status)
+        << ";decidedAtHeight=" << proposal.decidedAtHeight
+        << ";executedAtHeight=" << proposal.executedAtHeight
+        << ";tally=" << tally.serialize()
+        << ";executionDetail=" << proposal.executionDetail
+        << "}";
+    return oss.str();
+}
+
+std::string GovernanceExecutor::proposalVotes(
+    const std::string& proposalId
+) const {
+    const auto proposalIt = m_proposals.find(proposalId);
+    if (proposalIt == m_proposals.end()) {
+        return "";
+    }
+
+    std::ostringstream oss;
+    oss << "GovernanceVotes{proposalId=" << proposalId
+        << ";count=" << proposalIt->second.votes.size();
+    for (const auto& [validator, vote] : proposalIt->second.votes) {
+        oss << ";vote={validator=" << validator
+            << ";choice=" << core::governanceVoteChoiceToString(vote.choice)
+            << ";weight=" << vote.weight
+            << ";castHeight=" << vote.castHeight
+            << ";castAt=" << vote.castAt
+            << ";transactionId=" << vote.transactionId
+            << "}";
+    }
+    oss << "}";
+    return oss.str();
+}
+
+std::string GovernanceExecutor::proposalExecutionDetail(
+    const std::string& proposalId
+) const {
+    const auto proposalIt = m_proposals.find(proposalId);
+    if (proposalIt == m_proposals.end()) {
+        return "";
+    }
+
+    std::ostringstream oss;
+    oss << "GovernanceExecution{"
+        << "proposalId=" << proposalId
+        << ";status=" << governanceProposalStatusToString(proposalIt->second.status)
+        << ";executed="
+        << (proposalIt->second.status == GovernanceProposalStatus::EXECUTED ? 1 : 0)
+        << ";executedAtHeight=" << proposalIt->second.executedAtHeight
+        << ";executedAt=" << proposalIt->second.executedAt
+        << ";detail=" << proposalIt->second.executionDetail
+        << "}";
+    return oss.str();
 }
 
 std::size_t GovernanceExecutor::advanceToHeight(
     std::uint64_t currentHeight,
-    std::int64_t now
+    std::int64_t now,
+    core::AccountStateView* accounts
 ) {
     if (currentHeight == 0 || now <= 0) {
         throw std::invalid_argument("Governance activation boundary is invalid.");
     }
 
-    std::size_t activated = 0;
-    std::vector<GovernanceParameterChange> remaining;
-    remaining.reserve(m_pendingChanges.size());
-
-    for (const GovernanceParameterChange& pending : m_pendingChanges) {
-        if (pending.effectiveAtHeight() > currentHeight) {
-            remaining.push_back(pending);
-            continue;
+    std::size_t executed = 0;
+    for (auto& [proposalId, proposal] : m_proposals) {
+        const GovernanceProposalStatus before = proposal.status;
+        if (proposal.status == GovernanceProposalStatus::PENDING &&
+            currentHeight >= proposal.votingStartHeight) {
+            proposal.status = GovernanceProposalStatus::ACTIVE;
         }
-
-        m_appliedChanges.emplace_back(
-            pending.proposalId(),
-            pending.target(),
-            currentValueForTarget(pending.target()),
-            pending.newValue(),
-            pending.effectiveAtHeight(),
-            now
-        );
-        ++activated;
+        if (proposal.status == GovernanceProposalStatus::ACTIVE &&
+            currentHeight > proposal.votingEndHeight) {
+            finalizeProposal(proposalId, proposal, currentHeight, now, accounts);
+        } else if (proposal.status == GovernanceProposalStatus::QUEUED_FOR_EXECUTION &&
+                   proposalCanExecuteAt(proposal, currentHeight)) {
+            const GovernanceExecutionResult execution =
+                executeApprovedProposal(proposalId, proposal, currentHeight, now, accounts);
+            if (!execution.isApplied() && !execution.isPending()) {
+                proposal.status = GovernanceProposalStatus::FAILED_EXECUTION;
+                proposal.executionDetail = execution.detail();
+            }
+        }
+        if (before != GovernanceProposalStatus::EXECUTED &&
+            proposal.status == GovernanceProposalStatus::EXECUTED) {
+            ++executed;
+        }
     }
 
-    m_pendingChanges = std::move(remaining);
-    return activated;
+    return executed;
 }
 
 const std::vector<GovernanceParameterChange>& GovernanceExecutor::appliedChanges() const {
@@ -613,12 +1014,9 @@ std::vector<GovernanceParameterChange> GovernanceExecutor::pendingChanges() cons
 }
 
 bool GovernanceExecutor::hasBeenExecuted(const std::string& proposalId) const {
-    for (const auto& change : m_appliedChanges) {
-        if (change.proposalId() == proposalId) {
-            return true;
-        }
-    }
-    return false;
+    const auto proposal = m_proposals.find(proposalId);
+    return proposal != m_proposals.end() &&
+           proposal->second.status == GovernanceProposalStatus::EXECUTED;
 }
 
 std::string GovernanceExecutor::currentValueForTarget(
@@ -633,6 +1031,60 @@ std::string GovernanceExecutor::currentValueForTarget(
     return "";
 }
 
+std::size_t GovernanceExecutor::activeProposalCount() const {
+    std::size_t count = 0;
+    for (const auto& [_, proposal] : m_proposals) {
+        if (proposal.status == GovernanceProposalStatus::PENDING ||
+            proposal.status == GovernanceProposalStatus::ACTIVE) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::size_t GovernanceExecutor::approvedProposalCount() const {
+    std::size_t count = 0;
+    for (const auto& [_, proposal] : m_proposals) {
+        if (proposal.status == GovernanceProposalStatus::APPROVED ||
+            proposal.status == GovernanceProposalStatus::QUEUED_FOR_EXECUTION ||
+            proposal.status == GovernanceProposalStatus::EXECUTED) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::size_t GovernanceExecutor::executableProposalCount(
+    std::uint64_t currentHeight
+) const {
+    std::size_t count = 0;
+    for (const auto& [_, proposal] : m_proposals) {
+        if (proposalCanExecuteAt(proposal, currentHeight)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::size_t GovernanceExecutor::executedProposalCount() const {
+    std::size_t count = 0;
+    for (const auto& [_, proposal] : m_proposals) {
+        if (proposal.status == GovernanceProposalStatus::EXECUTED) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::vector<std::string> GovernanceExecutor::proposalIds() const {
+    std::vector<std::string> ids;
+    ids.reserve(m_proposals.size());
+    for (const auto& [id, _] : m_proposals) {
+        ids.push_back(id);
+    }
+    return ids;
+}
+
 std::string GovernanceExecutor::serialize() const {
     std::ostringstream oss;
     oss << "GovernanceExecutor{"
@@ -642,17 +1094,41 @@ std::string GovernanceExecutor::serialize() const {
     for (const auto& change : m_pendingChanges) oss << ";pending=" << change.serialize();
     oss << ";proposalCount=" << m_proposals.size();
     for (const auto& [id, proposal] : m_proposals) {
+        const std::string payloadDigest = hashString(proposal.payload.serialize());
         oss << ";proposal={id=" << id
             << ",proposer=" << proposal.proposerAddress
-            << ",payload=" << proposal.payload
+            << ",type=" << core::governanceProposalTypeToString(proposal.payload.type())
+            << ",title=" << proposal.payload.title()
+            << ",description=" << proposal.payload.description()
+            << ",payloadDigest=" << payloadDigest
+            << ",votingStartDelayBlocks=" << proposal.payload.votingStartDelayBlocks()
+            << ",votingPeriodBlocks=" << proposal.payload.votingPeriodBlocks()
+            << ",quorum=" << proposal.payload.quorumNumerator() << '/'
+            << proposal.payload.quorumDenominator()
+            << ",approval=" << proposal.payload.approvalNumerator() << '/'
+            << proposal.payload.approvalDenominator()
+            << ",parameterTarget=" << proposal.payload.parameterTarget()
+            << ",parameterValue=" << proposal.payload.parameterValue()
+            << ",parameterEffectiveHeight=" << proposal.payload.parameterEffectiveHeight()
+            << ",treasuryRecipient=" << proposal.payload.treasuryRecipient()
+            << ",treasuryAmountRaw=" << proposal.payload.treasuryAmountRaw()
             << ",createdHeight=" << proposal.createdHeight
             << ",createdAt=" << proposal.createdAt
-            << ",approved=" << (proposal.approved ? 1 : 0)
-            << ",rejected=" << (proposal.rejected ? 1 : 0)
+            << ",votingStartHeight=" << proposal.votingStartHeight
+            << ",votingEndHeight=" << proposal.votingEndHeight
+            << ",totalEligibleWeight=" << proposal.totalEligibleWeight
+            << ",status=" << governanceProposalStatusToString(proposal.status)
+            << ",decidedAtHeight=" << proposal.decidedAtHeight
+            << ",executedAtHeight=" << proposal.executedAtHeight
+            << ",finalTally=" << proposal.finalTally.serialize()
+            << ",executionDetail=" << proposal.executionDetail
             << ",voteCount=" << proposal.votes.size();
         for (const auto& [validator, vote] : proposal.votes) {
-            oss << ",vote=" << validator << ':' << (vote.approve ? "APPROVE" : "REJECT")
-                << ':' << vote.weight;
+            oss << ",vote=" << validator
+                << ':' << core::governanceVoteChoiceToString(vote.choice)
+                << ':' << vote.weight
+                << ':' << vote.castHeight
+                << ':' << vote.transactionId;
         }
         oss << '}';
     }
