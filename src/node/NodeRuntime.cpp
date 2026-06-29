@@ -537,7 +537,9 @@ std::uint64_t NodeRuntime::effectiveMinimumFeeRawUnits() const {
     if (!governed.empty()) {
         try {
             return std::stoull(governed);
-        } catch (...) {}
+        } catch (...) {
+            throw std::runtime_error("Malformed MINIMUM_FEE_RAW from governance: " + governed);
+        }
     }
     return m_config.genesisConfig().networkParameters().minimumFeeRawUnits();
 }

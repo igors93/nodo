@@ -46,8 +46,8 @@ std::string PeerSubnetInfo::extractSubnetPrefix(const std::string& ip) {
 
     std::array<int, 4> octets{};
     for (int i = 0; i < 4; ++i) {
-        if (parts[i].size() > 3) {
-            return ""; // An octet can have at most 3 digits
+        if (parts[i].empty() || parts[i].size() > 3) {
+            return ""; // An octet must not be empty and can have at most 3 digits
         }
         octets[static_cast<std::size_t>(i)] = std::stoi(parts[i]);
         if (octets[static_cast<std::size_t>(i)] < 0 ||

@@ -65,7 +65,11 @@ LightClientProofRequest LightClientProofRequest::deserialize(const std::string& 
     req.address            = extractField(s, "address");
 
     const std::string heightStr = extractField(s, "blockHeight");
-    req.blockHeight = heightStr.empty() ? 0 : std::stoull(heightStr);
+    try {
+        req.blockHeight = heightStr.empty() ? 0 : std::stoull(heightStr);
+    } catch (...) {
+        throw std::invalid_argument("Malformed blockHeight in LightClientProofRequest");
+    }
 
     const std::string isTxStr = extractField(s, "isTransactionRequest");
     req.isTransactionRequest = (isTxStr == "true");

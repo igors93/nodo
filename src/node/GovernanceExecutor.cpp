@@ -155,8 +155,14 @@ GovernanceParameterChange GovernanceParameterChange::deserialize(const std::stri
     const std::string effectiveAtStr   = extractField("effectiveAtHeight");
     const std::string appliedAtStr     = extractField("appliedAt");
 
-    const std::uint64_t effectiveAt = effectiveAtStr.empty() ? 0 : std::stoull(effectiveAtStr);
-    const std::int64_t  appliedAt   = appliedAtStr.empty()   ? 0 : std::stoll(appliedAtStr);
+    std::uint64_t effectiveAt = 0;
+    std::int64_t appliedAt = 0;
+    try {
+        effectiveAt = effectiveAtStr.empty() ? 0 : std::stoull(effectiveAtStr);
+        appliedAt   = appliedAtStr.empty()   ? 0 : std::stoll(appliedAtStr);
+    } catch (...) {
+        throw std::invalid_argument("Malformed numeric fields in GovernanceParameterChange");
+    }
 
     return GovernanceParameterChange(
         proposalId,

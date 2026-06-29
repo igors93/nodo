@@ -1110,8 +1110,12 @@ TcpTestnetNodeRuntimeConfig NodeOrchestrator::buildTransportConfig() const {
             unsigned long parsedPort = std::stoul(endpoint.substr(colon + 1));
             if (parsedPort > 0 && parsedPort <= 65535) {
                 port = static_cast<std::uint16_t>(parsedPort);
+            } else {
+                throw std::invalid_argument("Port out of range in endpoint: " + endpoint);
             }
-        } catch (...) {}
+        } catch (...) {
+            throw std::invalid_argument("Invalid port for peer endpoint: " + endpoint);
+        }
     }
 
     return TcpTestnetNodeRuntimeConfig(
