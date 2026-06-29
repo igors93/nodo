@@ -53,8 +53,13 @@ std::size_t parseSizeStrict(
             fieldName
         );
 
-    if (parsed > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
-        throw std::invalid_argument("Numeric field exceeds size_t range: " + fieldName);
+    if (parsed > static_cast<std::uint64_t>(
+            std::numeric_limits<std::size_t>::max()) ||
+        parsed > document.fields().size()) {
+        throw std::invalid_argument(
+            "Declared monetary record count exceeds document bounds: " +
+            fieldName
+        );
     }
 
     return static_cast<std::size_t>(parsed);

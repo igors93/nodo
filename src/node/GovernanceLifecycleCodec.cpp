@@ -41,6 +41,23 @@ std::uint64_t parseU64(
     }
 }
 
+std::size_t parseCollectionCount(
+    const serialization::KeyValueFileDocument& document,
+    const std::string& field
+) {
+    const std::uint64_t parsed =
+        parseU64(document.requireField(field), field);
+    if (parsed > static_cast<std::uint64_t>(
+            std::numeric_limits<std::size_t>::max()) ||
+        parsed > document.fields().size()) {
+        throw std::runtime_error(
+            "GovernanceLifecycleCodec: declared count exceeds document bounds: " +
+            field
+        );
+    }
+    return static_cast<std::size_t>(parsed);
+}
+
 std::uint32_t parseU32(
     const std::string& value,
     const std::string& field
@@ -198,12 +215,8 @@ void addLifecycleAllowed(
 
     // Transition history.
     allowed.insert(prefix + "transitionCount");
-    const std::size_t transitionCount = static_cast<std::size_t>(
-        parseU64(
-            doc.requireField(prefix + "transitionCount"),
-            prefix + "transitionCount"
-        )
-    );
+    const std::size_t transitionCount =
+        parseCollectionCount(doc, prefix + "transitionCount");
     for (std::size_t i = 0; i < transitionCount; ++i) {
         const std::string tp = prefix + "transition." + std::to_string(i) + ".";
         allowed.insert(tp + "transitionId");
@@ -218,9 +231,8 @@ void addLifecycleAllowed(
     }
 
     allowed.insert(prefix + "voteCount");
-    const std::size_t voteCount = static_cast<std::size_t>(
-        parseU64(doc.requireField(prefix + "voteCount"), prefix + "voteCount")
-    );
+    const std::size_t voteCount =
+        parseCollectionCount(doc, prefix + "voteCount");
     for (std::size_t i = 0; i < voteCount; ++i) {
         const std::string votePrefix =
             prefix + "vote." + std::to_string(i) + ".";
@@ -601,12 +613,8 @@ economics::GovernanceLifecycleRecord GovernanceLifecycleCodec::decodeFromDocumen
     }
 
     // Decode transition history.
-    const std::size_t transitionCount = static_cast<std::size_t>(
-        parseU64(
-            doc.requireField(prefix + "transitionCount"),
-            prefix + "transitionCount"
-        )
-    );
+    const std::size_t transitionCount =
+        parseCollectionCount(doc, prefix + "transitionCount");
     std::vector<economics::GovernanceLifecycleTransition> transitions;
     transitions.reserve(transitionCount);
     for (std::size_t i = 0; i < transitionCount; ++i) {
@@ -649,9 +657,8 @@ economics::GovernanceLifecycleRecord GovernanceLifecycleCodec::decodeFromDocumen
         );
     }
 
-    const std::size_t voteCount = static_cast<std::size_t>(
-        parseU64(doc.requireField(prefix + "voteCount"), prefix + "voteCount")
-    );
+    const std::size_t voteCount =
+        parseCollectionCount(doc, prefix + "voteCount");
     std::vector<economics::GovernanceVoteEvidence> votes;
     votes.reserve(voteCount);
     for (std::size_t i = 0; i < voteCount; ++i) {

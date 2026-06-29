@@ -4,6 +4,7 @@
 #include "node/GovernanceLifecycleCodec.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -41,6 +42,23 @@ std::uint64_t parseU64(const std::string& value, const std::string& field) {
             "' is not a valid uint64: " + value
         );
     }
+}
+
+std::size_t parseCount(
+    const serialization::KeyValueFileDocument& document,
+    const std::string& field
+) {
+    const std::uint64_t parsed =
+        parseU64(document.requireField(field), field);
+    if (parsed > static_cast<std::uint64_t>(
+            std::numeric_limits<std::size_t>::max()) ||
+        parsed > document.fields().size()) {
+        throw std::runtime_error(
+            "FinalizedTreasurySectionCodec: declared count exceeds document bounds: " +
+            field
+        );
+    }
+    return static_cast<std::size_t>(parsed);
 }
 
 std::int64_t parseI64(const std::string& value, const std::string& field) {
@@ -474,9 +492,7 @@ FinalizedTreasurySection FinalizedTreasurySectionCodec::decode(
     const bool hasEvidence = doc.hasField("evidenceCount");
 
     if (hasEvidence) {
-        const std::size_t count = static_cast<std::size_t>(
-            parseU64(doc.requireField("evidenceCount"), "evidenceCount")
-        );
+        const std::size_t count = parseCount(doc, "evidenceCount");
 
         std::set<std::string> allowed;
         allowed.insert("evidenceCount");
@@ -494,9 +510,7 @@ FinalizedTreasurySection FinalizedTreasurySectionCodec::decode(
     }
 
     // Legacy path: decode spend records only.
-    const std::size_t count = static_cast<std::size_t>(
-        parseU64(doc.requireField("spendRecordCount"), "spendRecordCount")
-    );
+    const std::size_t count = parseCount(doc, "spendRecordCount");
 
     std::set<std::string> allowed;
     allowed.insert("spendRecordCount");
@@ -519,8 +533,7 @@ std::size_t FinalizedTreasurySectionCodec::spendCountFromDocument(
     const serialization::KeyValueFileDocument& doc
 ) {
     const std::string fieldName = kEmbedPrefix + "spendCount";
-    const std::string& raw = doc.requireField(fieldName);
-    return static_cast<std::size_t>(parseU64(raw, fieldName));
+    return parseCount(doc, fieldName);
 }
 
 void FinalizedTreasurySectionCodec::addAllowedFields(

@@ -12,6 +12,7 @@
 #include "node/NodeRpcServer.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
+#include "node/SyncHealth.hpp"
 #include "node/TcpTestnetNodeRuntime.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/NetworkEnvelope.hpp"
@@ -184,6 +185,7 @@ public:
     const consensus::EvidencePool&  evidencePool()   const;
     const crypto::CryptoPolicy&     cryptoPolicy()   const;
     const crypto::SignatureProvider& signatureProvider() const;
+    const SyncHealth&               syncHealth()     const;
     bool rpcRunning() const;
     const std::string& rpcStartError() const;
 
@@ -232,6 +234,7 @@ private:
     std::atomic<bool> m_running;
     std::optional<crypto::Signer> m_localSigner;
     std::optional<crypto::KeyPair> m_localNodeIdentity;
+    SyncHealth m_syncHealth;
 
     // ---- Internal startup helpers ----------------------------------------
 

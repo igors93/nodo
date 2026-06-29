@@ -9,6 +9,7 @@
 #include "crypto/Signer.hpp"
 #include "node/BlockAnnounceHandler.hpp"
 #include "node/ChainStatusGossipCodec.hpp"
+#include "node/SyncHealth.hpp"
 #include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/NodeDataDirectory.hpp"
@@ -205,15 +206,29 @@ NodeOrchestratorStartResult NodeOrchestrator::start() {
     if (!initResult.running()) return initResult;
 
     // Start TCP transport + gossip mesh.
-    if (!startTransport()) {
+    try {
+        if (!startTransport()) {
+            stop();
+            return {NodeOrchestratorStartStatus::TRANSPORT_FAILED,
+                    "Failed to bind TCP transport."};
+        }
+    } catch (const std::exception& error) {
+        stop();
         return {NodeOrchestratorStartStatus::TRANSPORT_FAILED,
-                "Failed to bind TCP transport."};
+                std::string("TCP transport startup failed: ") + error.what()};
     }
 
     // Start consensus event loop (background thread).
-    if (!startConsensus()) {
+    try {
+        if (!startConsensus()) {
+            stop();
+            return {NodeOrchestratorStartStatus::CONSENSUS_FAILED,
+                    "Failed to start consensus event loop."};
+        }
+    } catch (const std::exception& error) {
+        stop();
         return {NodeOrchestratorStartStatus::CONSENSUS_FAILED,
-                "Failed to start consensus event loop."};
+                std::string("Consensus startup failed: ") + error.what()};
     }
 
     // Start RPC server (background thread).
@@ -224,7 +239,7 @@ NodeOrchestratorStartResult NodeOrchestrator::start() {
 }
 
 void NodeOrchestrator::stop() {
-    if (!m_running.exchange(false)) return;
+    m_running.store(false);
 
     if (m_rpcServer)       m_rpcServer->stop();
     if (m_consensusLoop)   m_consensusLoop->stop();
@@ -314,7 +329,13 @@ void NodeOrchestrator::tick(std::int64_t now) {
                 if (status.peerIsAheadOf(localHeight)) {
                     triggerSyncIfBehind(status, envelope.senderNodeId(), now);
                 }
-            } catch (...) {}
+            } catch (const std::exception& e) {
+                m_syncHealth.recordRequestFailure(
+                    std::string("CHAIN_STATUS processing error: ") + e.what(), now
+                );
+            } catch (...) {
+                m_syncHealth.recordRequestFailure("CHAIN_STATUS unknown error.", now);
+            }
         }
     }
 
@@ -385,7 +406,13 @@ void NodeOrchestrator::tick(std::int64_t now) {
                     kOrchestratorCanonicalPrefix + crypto::hexEncode(encoded),
                     now
                 );
-            } catch (...) {}
+            } catch (const std::exception& e) {
+                m_syncHealth.recordServeFailure(
+                    std::string("BLOCK_SYNC_REQUEST serve error: ") + e.what(), now
+                );
+            } catch (...) {
+                m_syncHealth.recordServeFailure("BLOCK_SYNC_REQUEST unknown serve error.", now);
+            }
         }
     }
 
@@ -438,20 +465,31 @@ void NodeOrchestrator::tick(std::int64_t now) {
                     continue;
                 }
 
+                // Checkpoint is saved atomically inside importFinalizedBatch,
+                // before the in-memory runtime is mutated. No separate save needed.
                 const PersistentSyncApplyResult applyResult =
                     PersistentBlockStateSyncApplier::importFinalizedBatch(
                         currentCheckpoint,
                         batch,
                         *m_runtime,
                         m_config.dataDirectory(),
+                        &cpStore,
                         now
                     );
 
                 if (applyResult.applied()) {
                     currentCheckpoint = applyResult.checkpoint().value();
-                    cpStore.save(currentCheckpoint);
+                    m_syncHealth.recordSuccess();
+                } else {
+                    m_syncHealth.recordBatchFailure(applyResult.reason(), now);
                 }
-            } catch (...) {}
+            } catch (const std::exception& e) {
+                m_syncHealth.recordBatchFailure(
+                    std::string("BLOCK_SYNC_RESPONSE import error: ") + e.what(), now
+                );
+            } catch (...) {
+                m_syncHealth.recordBatchFailure("BLOCK_SYNC_RESPONSE unknown import error.", now);
+            }
         }
     }
 
@@ -478,6 +516,7 @@ const NodeOrchestratorConfig&        NodeOrchestrator::config()              con
 const consensus::EvidencePool&       NodeOrchestrator::evidencePool()        const { return m_evidencePool; }
 const crypto::CryptoPolicy&          NodeOrchestrator::cryptoPolicy()        const { return m_policy; }
 const crypto::SignatureProvider&     NodeOrchestrator::signatureProvider()   const { return m_provider; }
+const SyncHealth&                    NodeOrchestrator::syncHealth()          const { return m_syncHealth; }
 
 bool NodeOrchestrator::rpcRunning() const {
     return m_rpcServer != nullptr && m_rpcServer->isRunning();
@@ -567,6 +606,17 @@ void NodeOrchestrator::triggerSyncIfBehind(
         NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH,
         now
     );
+
+    if (plan.requestSnapshot()) {
+        // When the height gap is large, signal the peer that we need a snapshot.
+        // The peer will respond with a SNAPSHOT_SYNC_RESPONSE (future message type).
+        // For now we record the need and fall through — the peer may still serve
+        // blocks if snapshot responses are not yet supported on its side.
+        m_syncHealth.recordRequestFailure(
+            "Snapshot requested but not yet supported; will retry with block sync.", now
+        );
+        return;
+    }
 
     if (!plan.requestBlocks()) return;
 
@@ -774,11 +824,47 @@ bool NodeOrchestrator::startConsensus() {
     m_consensusLoop->setDataDirectoryConfig(&m_config.dataDirectory());
 
     // Restore lock/vote state from disk so we don't double-vote after restart.
-    const auto recoveryState =
+    const auto storedRecoveryState =
         consensus::ConsensusRecoveryStore::load(recoveryPath);
-    if (recoveryState.has_value()) {
-        m_consensusLoop->loadFromRecoveryState(*recoveryState);
+    if (!storedRecoveryState.has_value()) {
+        return false;
     }
+
+    consensus::ConsensusRoundState recoveryState =
+        storedRecoveryState.value();
+    const consensus::ConsensusRoundState& currentState =
+        m_runtime->consensusRoundManager().currentState();
+
+    if (recoveryState.height() < currentState.height()) {
+        if (!m_runtime->finalizationRegistry().hasFinalizedHeight(
+                recoveryState.height()) ||
+            !consensus::ConsensusRecoveryStore::save(
+                recoveryPath, currentState)) {
+            return false;
+        }
+        recoveryState = currentState;
+    }
+
+    if (recoveryState.height() != currentState.height() ||
+        recoveryState.round() != currentState.round() ||
+        recoveryState.proposerAddress() != currentState.proposerAddress() ||
+        recoveryState.roundStartedAt() != currentState.roundStartedAt() ||
+        !m_runtime->validatorSetHistory().hasSet(recoveryState.height())) {
+        return false;
+    }
+
+    const std::string expectedProposer =
+        consensus::ProposerSchedule::selectProposer(
+            m_runtime->validatorSetHistory().setAt(recoveryState.height()),
+            m_config.genesisConfig().networkParameters().chainId(),
+            recoveryState.height(),
+            recoveryState.round()
+        );
+    if (expectedProposer.empty() ||
+        recoveryState.proposerAddress() != expectedProposer) {
+        return false;
+    }
+    m_consensusLoop->loadFromRecoveryState(recoveryState);
 
     // Wire the block producer callback.
     // Returns a validated candidate block (no QC, no finalization).
@@ -807,17 +893,27 @@ bool NodeOrchestrator::startConsensus() {
             if (rec.blockIndex() >= blocks.size()) return;
 
             const core::Block& block = blocks[static_cast<std::size_t>(rec.blockIndex())];
+            const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
             try {
                 for (const consensus::DoubleVoteEvidence& evidence :
                      CanonicalSlashingTransition::evidenceFromBlock(block)) {
                     m_evidencePool.removeEvidence(evidence.evidenceId());
                 }
+            } catch (const std::exception& e) {
+                m_syncHealth.recordBatchFailure(
+                    std::string("Evidence pool cleanup error after finalization: ") + e.what(),
+                    static_cast<std::int64_t>(now)
+                );
+                return;
             } catch (...) {
+                m_syncHealth.recordBatchFailure(
+                    "Evidence pool cleanup unknown error after finalization.",
+                    static_cast<std::int64_t>(now)
+                );
                 return;
             }
-            const auto now = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::system_clock::now().time_since_epoch()
-            ).count();
 
             BlockAnnounceHandler::broadcastBlock(
                 block,

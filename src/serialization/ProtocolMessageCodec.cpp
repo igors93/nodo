@@ -171,6 +171,10 @@ std::string ProtocolMessageCodec::hashChainStatusMessage(
 std::vector<unsigned char> ProtocolMessageCodec::encodeBlockLocator(
     const node::BlockLocator& locator
 ) {
+    if (!locator.isValid()) {
+        throw std::invalid_argument("Invalid block locator rejected by canonical codec.");
+    }
+
     CanonicalWriter writer;
     writeHeader(writer, "BlockLocator");
     writer.writeUInt64(locator.fromHeight());
@@ -194,6 +198,11 @@ node::BlockLocator ProtocolMessageCodec::decodeBlockLocator(
     const std::uint64_t maxBlocks = reader.readUInt64();
     const std::uint32_t hashCount = reader.readUInt32();
 
+    if (hashCount == 0 ||
+        hashCount > node::BlockLocator::MAX_KNOWN_ANCESTOR_HASHES) {
+        throw std::length_error("Canonical block locator hash count is invalid.");
+    }
+
     std::vector<std::string> hashes;
     hashes.reserve(hashCount);
 
@@ -202,7 +211,11 @@ node::BlockLocator ProtocolMessageCodec::decodeBlockLocator(
     }
 
     reader.requireFullyConsumed();
-    return node::BlockLocator(fromHeight, maxBlocks, hashes);
+    node::BlockLocator locator(fromHeight, maxBlocks, std::move(hashes));
+    if (!locator.isValid()) {
+        throw std::runtime_error("Decoded canonical block locator is invalid.");
+    }
+    return locator;
 }
 
 std::string ProtocolMessageCodec::hashBlockLocator(

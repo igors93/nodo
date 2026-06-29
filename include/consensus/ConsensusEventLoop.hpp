@@ -250,8 +250,8 @@ private:
     // candidate from the expired round is discarded before the next proposer.
     bool advanceRoundIfTimedOut(std::int64_t now, ConsensusTickResult& result);
 
-    // Persist BFT recovery state after a vote is cast.
-    void saveRecoveryState(bool votedPrevote, bool votedPrecommit);
+    // Persist BFT recovery state before a vote is exposed to the network.
+    bool saveRecoveryState(bool votedPrevote, bool votedPrecommit);
 
     // Broadcast a CHAIN_STATUS message after a round advance.
     void broadcastRoundAdvancement(std::int64_t now);

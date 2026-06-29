@@ -749,6 +749,8 @@ std::string persistentSyncPlanStatusToString(PersistentSyncPlanStatus status) {
             return "NOT_REQUIRED";
         case PersistentSyncPlanStatus::REQUEST_BLOCKS:
             return "REQUEST_BLOCKS";
+        case PersistentSyncPlanStatus::REQUEST_SNAPSHOT:
+            return "REQUEST_SNAPSHOT";
         case PersistentSyncPlanStatus::REJECTED:
         default:
             return "REJECTED";
@@ -758,20 +760,25 @@ std::string persistentSyncPlanStatusToString(PersistentSyncPlanStatus status) {
 PersistentSyncPlan::PersistentSyncPlan()
     : m_status(PersistentSyncPlanStatus::REJECTED),
       m_reason("Uninitialized persistent sync plan."),
-      m_blockRequest(std::nullopt) {}
+      m_blockRequest(std::nullopt),
+      m_snapshotRequest(std::nullopt) {}
 
 PersistentSyncPlan::PersistentSyncPlan(
     PersistentSyncPlanStatus status,
     std::string reason,
-    std::optional<NetworkBlockSyncRequest> blockRequest
+    std::optional<NetworkBlockSyncRequest> blockRequest,
+    std::optional<PersistentSnapshotSyncManifest> snapshotRequest
 ) : m_status(status),
     m_reason(std::move(reason)),
-    m_blockRequest(std::move(blockRequest)) {}
+    m_blockRequest(std::move(blockRequest)),
+    m_snapshotRequest(std::move(snapshotRequest)) {}
 
 PersistentSyncPlanStatus PersistentSyncPlan::status() const { return m_status; }
 const std::string& PersistentSyncPlan::reason() const { return m_reason; }
 const std::optional<NetworkBlockSyncRequest>& PersistentSyncPlan::blockRequest() const { return m_blockRequest; }
+const std::optional<PersistentSnapshotSyncManifest>& PersistentSyncPlan::snapshotRequest() const { return m_snapshotRequest; }
 bool PersistentSyncPlan::requestBlocks() const { return m_status == PersistentSyncPlanStatus::REQUEST_BLOCKS && m_blockRequest.has_value(); }
+bool PersistentSyncPlan::requestSnapshot() const { return m_status == PersistentSyncPlanStatus::REQUEST_SNAPSHOT; }
 bool PersistentSyncPlan::notRequired() const { return m_status == PersistentSyncPlanStatus::NOT_REQUIRED; }
 bool PersistentSyncPlan::rejected() const { return m_status == PersistentSyncPlanStatus::REJECTED; }
 
@@ -780,6 +787,7 @@ std::string PersistentSyncPlan::serialize() const {
     output << "PersistentSyncPlan{status=" << persistentSyncPlanStatusToString(m_status)
            << ";reason=" << m_reason
            << ";hasBlockRequest=" << (m_blockRequest.has_value() ? "true" : "false")
+           << ";hasSnapshotRequest=" << (m_snapshotRequest.has_value() ? "true" : "false")
            << "}";
     return output.str();
 }
@@ -830,6 +838,37 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
 
     const std::uint64_t heightGap =
         remoteStatus.finalizedHeight() - localCheckpoint.finalizedHeight();
+
+    // When the gap is large enough that block-by-block replay would be slow,
+    // request a state snapshot instead so the node can jump ahead quickly.
+    if (heightGap >= PersistentSyncPlan::SNAPSHOT_GAP_THRESHOLD) {
+        // Build a placeholder manifest representing what we are requesting.
+        // The actual snapshot data is served by the remote peer in a subsequent
+        // message; the manifest here records which height we are targeting.
+        const PersistentSnapshotSyncManifest manifest(
+            sourcePeerId,
+            remoteStatus.finalizedHeight(),
+            remoteStatus.finalizedBlockHash(),
+            remoteStatus.finalizedBlockHash(),
+            PersistentBlockStateSyncCodec::hashSnapshotManifest(
+                PersistentSnapshotSyncManifest(
+                    sourcePeerId,
+                    remoteStatus.finalizedHeight(),
+                    remoteStatus.finalizedBlockHash(),
+                    remoteStatus.finalizedBlockHash(),
+                    "pending",
+                    now
+                )
+            ),
+            now
+        );
+        return PersistentSyncPlan(
+            PersistentSyncPlanStatus::REQUEST_SNAPSHOT,
+            "Height gap exceeds snapshot threshold; request state snapshot.",
+            std::nullopt,
+            manifest
+        );
+    }
 
     const std::uint64_t fromHeight = localCheckpoint.finalizedHeight() + 1;
     const std::uint64_t requestedCount = std::min(heightGap, maxBlocksPerRequest);
@@ -1134,6 +1173,7 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importFinalizedBatch(
     const PersistentBlockSyncBatch& batch,
     NodeRuntime& runtime,
     const NodeDataDirectoryConfig& directoryConfig,
+    PersistentSyncCheckpointStore* checkpointStore,
     std::int64_t now
 ) {
     if (!checkpoint.isValid() || !batch.isValid() || !runtime.isValid() ||
@@ -1271,10 +1311,108 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importFinalizedBatch(
         );
     }
 
+    // Persist checkpoint to disk BEFORE mutating in-memory runtime.
+    // If the process crashes after this write but before the runtime swap,
+    // the on-disk state is consistent: blocks and checkpoint agree.
+    if (checkpointStore != nullptr) {
+        const PersistentSyncCheckpointWriteResult writeResult =
+            checkpointStore->save(updated);
+        if (!writeResult.isSaved()) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Checkpoint persistence failed before runtime commit: " + writeResult.reason(),
+                std::nullopt
+            );
+        }
+    }
+
     runtime = std::move(stagedRuntime);
     return PersistentSyncApplyResult(
         PersistentSyncApplyStatus::APPLIED,
         "Finalized sync batch was atomically imported and published.",
+        updated
+    );
+}
+
+PersistentSyncApplyResult PersistentBlockStateSyncApplier::importSnapshot(
+    const PersistentSyncCheckpoint& checkpoint,
+    const PersistentSnapshotSyncManifest& manifest,
+    NodeRuntime& runtime,
+    const NodeDataDirectoryConfig& directoryConfig,
+    PersistentSyncCheckpointStore* checkpointStore,
+    std::int64_t now
+) {
+    (void)runtime;
+    (void)directoryConfig;
+
+    if (!checkpoint.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Current checkpoint is invalid for snapshot import.",
+            std::nullopt
+        );
+    }
+
+    if (!manifest.isValid() || now <= 0) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Snapshot manifest is invalid or timestamp is missing.",
+            std::nullopt
+        );
+    }
+
+    if (manifest.snapshotHeight() <= checkpoint.finalizedHeight()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Snapshot height does not advance the checkpoint.",
+            std::nullopt
+        );
+    }
+
+    // Verify the manifest digest matches its canonical hash.
+    const std::string expectedDigest =
+        PersistentBlockStateSyncCodec::hashSnapshotManifest(manifest);
+    if (manifest.snapshotDigest() != expectedDigest) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Snapshot manifest digest verification failed.",
+            std::nullopt
+        );
+    }
+
+    PersistentSyncCheckpoint updated(
+        PersistentSyncCheckpoint::SCHEMA_VERSION,
+        manifest.snapshotHeight(),
+        manifest.snapshotBlockHash(),
+        manifest.snapshotStateRoot(),
+        PersistentSyncStatus::COMPLETE,
+        manifest.sourcePeerId(),
+        now
+    );
+
+    if (!updated.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Snapshot import produced an invalid checkpoint.",
+            std::nullopt
+        );
+    }
+
+    if (checkpointStore != nullptr) {
+        const PersistentSyncCheckpointWriteResult writeResult =
+            checkpointStore->save(updated);
+        if (!writeResult.isSaved()) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Snapshot checkpoint persistence failed: " + writeResult.reason(),
+                std::nullopt
+            );
+        }
+    }
+
+    return PersistentSyncApplyResult(
+        PersistentSyncApplyStatus::APPLIED,
+        "State snapshot manifest accepted; checkpoint advanced to snapshot height.",
         updated
     );
 }

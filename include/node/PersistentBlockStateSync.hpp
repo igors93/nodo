@@ -277,6 +277,7 @@ private:
 enum class PersistentSyncPlanStatus {
     NOT_REQUIRED,
     REQUEST_BLOCKS,
+    REQUEST_SNAPSHOT,
     REJECTED
 };
 
@@ -286,19 +287,25 @@ std::string persistentSyncPlanStatusToString(
 
 class PersistentSyncPlan {
 public:
+    // Minimum height gap that triggers a snapshot request instead of block-by-block sync.
+    static constexpr std::uint64_t SNAPSHOT_GAP_THRESHOLD = 500;
+
     PersistentSyncPlan();
 
     PersistentSyncPlan(
         PersistentSyncPlanStatus status,
         std::string reason,
-        std::optional<NetworkBlockSyncRequest> blockRequest
+        std::optional<NetworkBlockSyncRequest> blockRequest,
+        std::optional<PersistentSnapshotSyncManifest> snapshotRequest = std::nullopt
     );
 
     PersistentSyncPlanStatus status() const;
     const std::string& reason() const;
     const std::optional<NetworkBlockSyncRequest>& blockRequest() const;
+    const std::optional<PersistentSnapshotSyncManifest>& snapshotRequest() const;
 
     bool requestBlocks() const;
+    bool requestSnapshot() const;
     bool notRequired() const;
     bool rejected() const;
     std::string serialize() const;
@@ -307,6 +314,7 @@ private:
     PersistentSyncPlanStatus m_status;
     std::string m_reason;
     std::optional<NetworkBlockSyncRequest> m_blockRequest;
+    std::optional<PersistentSnapshotSyncManifest> m_snapshotRequest;
 };
 
 class PersistentBlockStateSyncPlanner {
@@ -355,11 +363,46 @@ private:
 
 class PersistentBlockStateSyncApplier {
 public:
+    /*
+     * Import a validated finalized batch into the runtime.
+     *
+     * If `checkpointStore` is non-null, the updated checkpoint is persisted
+     * to disk BEFORE the in-memory runtime is mutated. This ensures that a
+     * crash between FinalizedBlockStore::persistBatch and the runtime update
+     * does not leave the checkpoint behind the on-disk block state.
+     */
     static PersistentSyncApplyResult importFinalizedBatch(
         const PersistentSyncCheckpoint& checkpoint,
         const PersistentBlockSyncBatch& batch,
         NodeRuntime& runtime,
         const NodeDataDirectoryConfig& directoryConfig,
+        PersistentSyncCheckpointStore* checkpointStore,
+        std::int64_t now
+    );
+
+    /*
+     * Import a state snapshot manifest as a fast-sync starting point.
+     *
+     * Validates that the manifest's snapshotDigest matches the canonical hash
+     * of the provided manifest, sets the checkpoint to the snapshot height and
+     * state root, and records the new height in the runtime blockchain via a
+     * synthetic genesis-equivalent origin. This allows the node to resume block
+     * sync from a trusted snapshot rather than replaying from height 0.
+     *
+     * Returns REJECTED if the manifest is invalid, the digest does not match,
+     * or the snapshot height is not ahead of the current checkpoint.
+     *
+     * Note: This is a skeleton implementation. Full account-state hydration
+     * from snapshot data chunks is handled by a separate import pipeline (not
+     * yet wired). The checkpoint is advanced here so that block sync resumes
+     * from snapshotHeight+1.
+     */
+    static PersistentSyncApplyResult importSnapshot(
+        const PersistentSyncCheckpoint& checkpoint,
+        const PersistentSnapshotSyncManifest& manifest,
+        NodeRuntime& runtime,
+        const NodeDataDirectoryConfig& directoryConfig,
+        PersistentSyncCheckpointStore* checkpointStore,
         std::int64_t now
     );
 

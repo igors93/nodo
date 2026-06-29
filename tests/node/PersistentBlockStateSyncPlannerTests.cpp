@@ -79,6 +79,30 @@ int main() {
     assert(blockPlan.blockRequest()->locator().maxBlocks() == 1);
     assert(blockPlan.blockRequest()->locator().knownAncestorHashes().front() == "genesis-hash");
 
+    // A gap just below the snapshot threshold still uses block sync.
+    ChainStatusMessage nearThreshold(
+        "localnet",
+        "chain-a",
+        "proto-v1",
+        PersistentSyncPlan::SNAPSHOT_GAP_THRESHOLD - 1,
+        "block-499",
+        PersistentSyncPlan::SNAPSHOT_GAP_THRESHOLD - 1,
+        "block-499"
+    );
+
+    auto nearThresholdPlan = PersistentBlockStateSyncPlanner::planFromRemoteStatus(
+        checkpoint,
+        nearThreshold,
+        "node-a",
+        "node-b",
+        512,
+        now + 3
+    );
+
+    assert(nearThresholdPlan.requestBlocks());
+    assert(!nearThresholdPlan.requestSnapshot());
+
+    // A gap at or above the threshold triggers a snapshot request.
     ChainStatusMessage farAhead(
         "localnet",
         "chain-a",
@@ -95,12 +119,13 @@ int main() {
         "node-a",
         "node-b",
         512,
-        now + 3
+        now + 4
     );
 
-    assert(farAheadPlan.requestBlocks());
-    assert(farAheadPlan.blockRequest().has_value());
-    assert(farAheadPlan.blockRequest()->locator().maxBlocks() == 1);
+    assert(farAheadPlan.requestSnapshot());
+    assert(!farAheadPlan.requestBlocks());
+    assert(farAheadPlan.snapshotRequest().has_value());
+    assert(farAheadPlan.snapshotRequest()->snapshotHeight() == 10000);
 
     // Manifest deserialize round-trip.
     const PersistentSnapshotSyncManifest original(

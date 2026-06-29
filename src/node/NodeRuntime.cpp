@@ -480,6 +480,14 @@ NodeRuntime::mutableValidatorPenaltyLedger() {
     return m_validatorPenaltyLedger;
 }
 
+const StakingRegistry& NodeRuntime::stakingRegistry() const {
+    return m_stakingRegistry;
+}
+
+StakingRegistry& NodeRuntime::mutableStakingRegistry() {
+    return m_stakingRegistry;
+}
+
 const core::AccountStateView& NodeRuntime::cachedAccountStateAtTip(
     std::int64_t minimumFeeRawUnits
 ) const {

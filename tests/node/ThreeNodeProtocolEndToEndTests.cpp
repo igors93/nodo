@@ -564,19 +564,21 @@ void synchronizeLaggingNode(
         "Sync batch source does not match the authenticated sender."
     );
 
+    node::PersistentSyncCheckpointStore cpStore(lagging.directory.rootPath());
     const node::PersistentSyncApplyResult applied =
         node::PersistentBlockStateSyncApplier::importFinalizedBatch(
             checkpoint,
             decodedResponse,
             lagging.runtime,
             lagging.directory,
+            &cpStore,
             now + 4
         );
     require(applied.applied(), "Lagging node rejected sync: " + applied.reason());
     require(
+        applied.checkpoint().has_value() &&
         node::PersistentSyncCheckpointStore(lagging.directory.rootPath())
-            .save(applied.checkpoint().value())
-            .isSaved(),
+            .read().loaded(),
         "Lagging node could not persist its sync checkpoint."
     );
 }

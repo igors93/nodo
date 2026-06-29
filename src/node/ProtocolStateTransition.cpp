@@ -8,6 +8,8 @@
 #include "node/NodeRuntime.hpp"
 #include "node/ProtectionTreasury.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
+#include "node/StakingRegistry.hpp"
+#include "node/StakingTransactionApplier.hpp"
 #include "node/ValidatorLifecycle.hpp"
 
 #include <limits>
@@ -52,7 +54,8 @@ std::map<std::string, std::string> protocolDomains(
     const GovernanceExecutor& governance,
     utils::Amount supply,
     const core::ValidatorRegistry& validators,
-    const consensus::ValidatorPenaltyLedger& penaltyLedger
+    const consensus::ValidatorPenaltyLedger& penaltyLedger,
+    const StakingRegistry& stakingRegistry
 ) {
     std::map<std::string, std::string> domains = {
         {"governance", governance.serialize()},
@@ -62,6 +65,9 @@ std::map<std::string, std::string> protocolDomains(
     };
     if (penaltyLedger.size() > 0) {
         domains.emplace("slashing", penaltyLedger.serialize());
+    }
+    if (stakingRegistry.size() > 0) {
+        domains.emplace("staking", stakingRegistry.serialize());
     }
     return domains;
 }
@@ -125,6 +131,7 @@ core::DeterministicStateTransitionResult transitionFullState(
     core::ValidatorRegistry validators,
     core::ValidatorSetHistory validatorSetHistory,
     consensus::ValidatorPenaltyLedger penaltyLedger,
+    StakingRegistry stakingRegistry,
     std::string networkName
 ) {
     try {
@@ -135,22 +142,94 @@ core::DeterministicStateTransitionResult transitionFullState(
         );
 
         for (const core::Transaction& transaction : transactions) {
-            if (transaction.type() != core::TransactionType::GOVERNANCE_PROPOSE) {
+            if (transaction.type() == core::TransactionType::GOVERNANCE_PROPOSE) {
+                const GovernanceExecutionResult result = governance.executeProposal(
+                    transaction.id(),
+                    transaction.toAddress(),
+                    blockHeight,
+                    blockTimestamp
+                );
+                if (!result.isApplied() && !result.isPending()) {
+                    return core::DeterministicStateTransitionResult::rejected(
+                        "Governance proposal failed deterministic execution: "
+                            + result.detail()
+                    );
+                }
                 continue;
             }
-            const GovernanceExecutionResult result = governance.executeProposal(
-                transaction.id(),
-                transaction.toAddress(),
-                blockHeight,
-                blockTimestamp
-            );
-            if (!result.isApplied() && !result.isPending()) {
-                return core::DeterministicStateTransitionResult::rejected(
-                    "Governance proposal failed deterministic execution: "
-                        + result.detail()
-                );
+
+            if (core::isStakingTransaction(transaction.type()) ||
+                transaction.type() == core::TransactionType::VALIDATOR_EXIT_REQUEST ||
+                transaction.type() == core::TransactionType::VALIDATOR_UNJAIL_REQUEST) {
+
+                const std::string& validatorAddress = transaction.toAddress();
+                const economics::StakeAccount stake =
+                    stakingRegistry.accountOrDefault(validatorAddress);
+                const core::AccountState senderState =
+                    accounts.accountOrDefault(transaction.fromAddress());
+
+                if (transaction.type() == core::TransactionType::STAKE_DEPOSIT ||
+                    transaction.type() == core::TransactionType::STAKE_TOP_UP) {
+                    // previewBlock already deducted (amount + fee) from sender.
+                    // Only update the StakeAccount bonded amount here.
+                    if (transaction.amount().rawUnits() <= 0) {
+                        return core::DeterministicStateTransitionResult::rejected(
+                            "Staking deposit amount must be positive at height "
+                                + std::to_string(blockHeight) + "."
+                        );
+                    }
+                    economics::StakeAccount next(
+                        stake.validatorAddress(),
+                        utils::Amount::fromRawUnits(
+                            stake.bondedAmount().rawUnits() +
+                            transaction.amount().rawUnits()
+                        )
+                    );
+                    if (stake.jailed())     next.jail();
+                    if (stake.tombstoned()) next.tombstone();
+                    stakingRegistry.setAccount(validatorAddress, std::move(next));
+
+                } else if (transaction.type() == core::TransactionType::VALIDATOR_UNJAIL_REQUEST) {
+                    economics::StakeAccount next = stake;
+                    next.unjail();
+                    stakingRegistry.setAccount(validatorAddress, std::move(next));
+
+                } else {
+                    // STAKE_WITHDRAW and VALIDATOR_EXIT_REQUEST: use applier for
+                    // stake-domain validation (cooldown, stake sufficiency, jailed check).
+                    const StakingApplyResult result = StakingTransactionApplier::apply(
+                        transaction,
+                        stake,
+                        senderState.balance(),
+                        blockHeight
+                    );
+                    if (!result.applied()) {
+                        return core::DeterministicStateTransitionResult::rejected(
+                            "Staking operation failed at height "
+                                + std::to_string(blockHeight) + ": " + result.reason()
+                        );
+                    }
+                    stakingRegistry.setAccount(validatorAddress, result.updatedStake());
+
+                    if (transaction.type() == core::TransactionType::STAKE_WITHDRAW) {
+                        // Credit sender with the withdrawn amount (fee already
+                        // deducted by previewBlock; delta from applier excludes fee).
+                        const core::AccountState updated(
+                            senderState.address(),
+                            senderState.balance() + transaction.amount(),
+                            senderState.nonce()
+                        );
+                        if (!accounts.putAccount(updated)) {
+                            return core::DeterministicStateTransitionResult::rejected(
+                                "Stake withdrawal credit failed at height "
+                                    + std::to_string(blockHeight) + "."
+                            );
+                        }
+                    }
+                }
             }
         }
+
         governance.advanceToHeight(blockHeight + 1, blockTimestamp);
 
         const crypto::ProtocolCryptoContext cryptoContext =
@@ -173,6 +252,12 @@ core::DeterministicStateTransitionResult transitionFullState(
 
         const core::ValidatorRegistry projectedValidators =
             projectValidatorSet(validators, blockHeight, blockTimestamp);
+
+        if (feeBalance.burnAmount() > supplyBefore) {
+            return core::DeterministicStateTransitionResult::rejected(
+                "Supply underflow: fee burn amount exceeds circulating supply."
+            );
+        }
         const utils::Amount supplyAfter =
             supplyBefore - feeBalance.burnAmount();
 
@@ -182,7 +267,8 @@ core::DeterministicStateTransitionResult transitionFullState(
                 governance,
                 supplyAfter,
                 projectedValidators,
-                penaltyLedger
+                penaltyLedger,
+                stakingRegistry
             )
         );
     } catch (const std::exception& error) {
@@ -253,6 +339,7 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
         runtime.validatorSetHistory();
     const consensus::ValidatorPenaltyLedger penaltyLedger =
         runtime.validatorPenaltyLedger();
+    const StakingRegistry stakingRegistry = runtime.stakingRegistry();
     const config::GenesisConfig& genesis = runtime.config().genesisConfig();
     const std::uint64_t genesisMinimumFeeRaw =
         genesis.networkParameters().minimumFeeRawUnits();
@@ -270,6 +357,7 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
          validators,
          validatorSetHistory,
          penaltyLedger,
+         stakingRegistry,
          networkName = genesis.networkParameters().networkName()](
             const core::AccountStateView& accounts,
             utils::Amount totalFee,
@@ -289,6 +377,7 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
                 validators,
                 validatorSetHistory,
                 penaltyLedger,
+                stakingRegistry,
                 networkName
             );
         };
@@ -310,7 +399,8 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
             governance,
             supplyBefore,
             validators,
-            penaltyLedger
+            penaltyLedger,
+            stakingRegistry
         ),
         std::move(transition)
     );

@@ -1,6 +1,7 @@
 #ifndef NODO_NODE_CHAIN_SYNC_MESSAGES_HPP
 #define NODO_NODE_CHAIN_SYNC_MESSAGES_HPP
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -45,6 +46,8 @@ private:
 
 class BlockLocator {
 public:
+    static constexpr std::size_t MAX_KNOWN_ANCESTOR_HASHES = 64;
+
     BlockLocator();
 
     BlockLocator(

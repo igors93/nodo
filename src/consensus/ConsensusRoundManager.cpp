@@ -45,7 +45,21 @@ bool ConsensusRoundState::votedPrevote() const { return m_votedPrevote; }
 bool ConsensusRoundState::votedPrecommit() const { return m_votedPrecommit; }
 
 bool ConsensusRoundState::isValid() const {
-    return m_roundStartedAt > 0;
+    if (m_height == 0 || m_round == 0 || m_proposerAddress.empty() ||
+        m_roundStartedAt <= 0) {
+        return false;
+    }
+
+    const bool hasLock = !m_lockedBlockHash.empty();
+    if (hasLock != (m_lockedRound > 0) || m_lockedRound > m_round) {
+        return false;
+    }
+
+    if (m_votedPrecommit && (!m_votedPrevote || !hasLock)) {
+        return false;
+    }
+
+    return true;
 }
 
 std::string ConsensusRoundState::serialize() const {

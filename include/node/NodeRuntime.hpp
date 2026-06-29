@@ -13,6 +13,7 @@
 #include "mempool/Mempool.hpp"
 #include "node/GovernanceExecutor.hpp"
 #include "node/RuntimeSupplyState.hpp"
+#include "node/StakingRegistry.hpp"
 #include "p2p/LocalNodeSync.hpp"
 #include "p2p/PeerMessage.hpp"
 
@@ -174,6 +175,8 @@ public:
     core::StatePruner& mutableStatePruner();
     const consensus::ValidatorPenaltyLedger& validatorPenaltyLedger() const;
     consensus::ValidatorPenaltyLedger& mutableValidatorPenaltyLedger();
+    const StakingRegistry& stakingRegistry() const;
+    StakingRegistry& mutableStakingRegistry();
 
     // Return a lazily-built account state view for the current chain tip.
     // The view is cached by tip height; adding a block via mutableBlockchain()
@@ -243,6 +246,7 @@ private:
     core::StatePruner m_statePruner;
     GovernanceExecutor m_governanceExecutor;
     consensus::ValidatorPenaltyLedger m_validatorPenaltyLedger;
+    StakingRegistry m_stakingRegistry;
 
     // Account-state cache: rebuilt lazily when the chain tip advances.
     mutable std::optional<core::AccountStateView> m_accountStateCache;

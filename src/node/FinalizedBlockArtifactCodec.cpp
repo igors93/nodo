@@ -11,6 +11,7 @@
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
+#include <array>
 #include <cstdint>
 #include <limits>
 #include <set>
@@ -56,6 +57,39 @@ std::uint64_t parseU64Strict(
     }
 
     return parsed;
+}
+
+std::size_t parseCollectionCount(
+    const serialization::KeyValueFileDocument& document,
+    const std::string& fieldName
+) {
+    const std::uint64_t parsed =
+        parseU64Strict(document.requireField(fieldName), fieldName);
+    if (parsed > static_cast<std::uint64_t>(
+            std::numeric_limits<std::size_t>::max()) ||
+        parsed > document.fields().size()) {
+        throw std::invalid_argument(
+            "Declared collection count exceeds artifact field bounds: " +
+            fieldName
+        );
+    }
+    return static_cast<std::size_t>(parsed);
+}
+
+template <std::size_t Count>
+void validateTotalCollectionCount(
+    const serialization::KeyValueFileDocument& document,
+    const std::array<std::size_t, Count>& counts
+) {
+    std::size_t total = 0;
+    for (const std::size_t count : counts) {
+        if (count > document.fields().size() - total) {
+            throw std::invalid_argument(
+                "Declared artifact collection counts exceed available fields."
+            );
+        }
+        total += count;
+    }
 }
 
 std::uint16_t parseU16Strict(
@@ -1844,29 +1878,58 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
             FinalizedArtifactSchema::currentSchemaId()
         );
 
-    const std::size_t recordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("recordCount"), "recordCount"));
-    const std::size_t rewardDistributionCount = static_cast<std::size_t>(parseU64Strict(document.requireField("rewardDistributionCount"), "rewardDistributionCount"));
-    const std::size_t lockedStakePositionCount = static_cast<std::size_t>(parseU64Strict(document.requireField("lockedStakePositionCount"), "lockedStakePositionCount"));
-    const std::size_t securityScoreRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("securityScoreRecordCount"), "securityScoreRecordCount"));
-    const std::size_t securityCheckpointCount = static_cast<std::size_t>(parseU64Strict(document.requireField("securityCheckpointCount"), "securityCheckpointCount"));
-    const std::size_t validatorRiskAssessmentCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorRiskAssessmentCount"), "validatorRiskAssessmentCount"));
-    const std::size_t validatorContainmentDecisionCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorContainmentDecisionCount"), "validatorContainmentDecisionCount"));
-    const std::size_t validatorNetworkPolicyCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorNetworkPolicyCount"), "validatorNetworkPolicyCount"));
-    const std::size_t protectionRewardGrantCount = static_cast<std::size_t>(parseU64Strict(document.requireField("protectionRewardGrantCount"), "protectionRewardGrantCount"));
-    const std::size_t protectionWorkRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("protectionWorkRecordCount"), "protectionWorkRecordCount"));
-    const std::size_t protectionRewardSettlementCount = static_cast<std::size_t>(parseU64Strict(document.requireField("protectionRewardSettlementCount"), "protectionRewardSettlementCount"));
-    const std::size_t slashingEvidenceRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("slashingEvidenceRecordCount"), "slashingEvidenceRecordCount"));
-    const std::size_t slashingPreparationRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("slashingPreparationRecordCount"), "slashingPreparationRecordCount"));
-    const std::size_t cryptographicSlashingEvidenceCount = static_cast<std::size_t>(parseU64Strict(document.requireField("cryptographicSlashingEvidenceCount"), "cryptographicSlashingEvidenceCount"));
-    const std::size_t stakePenaltyRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("stakePenaltyRecordCount"), "stakePenaltyRecordCount"));
-    const std::size_t governanceActionGuardCount = static_cast<std::size_t>(parseU64Strict(document.requireField("governanceActionGuardCount"), "governanceActionGuardCount"));
-    const std::size_t validatorLifecycleRecordCount = static_cast<std::size_t>(parseU64Strict(document.requireField("validatorLifecycleRecordCount"), "validatorLifecycleRecordCount"));
+    const std::size_t recordCount = parseCollectionCount(document, "recordCount");
+    const std::size_t rewardDistributionCount = parseCollectionCount(document, "rewardDistributionCount");
+    const std::size_t lockedStakePositionCount = parseCollectionCount(document, "lockedStakePositionCount");
+    const std::size_t securityScoreRecordCount = parseCollectionCount(document, "securityScoreRecordCount");
+    const std::size_t securityCheckpointCount = parseCollectionCount(document, "securityCheckpointCount");
+    const std::size_t validatorRiskAssessmentCount = parseCollectionCount(document, "validatorRiskAssessmentCount");
+    const std::size_t validatorContainmentDecisionCount = parseCollectionCount(document, "validatorContainmentDecisionCount");
+    const std::size_t validatorNetworkPolicyCount = parseCollectionCount(document, "validatorNetworkPolicyCount");
+    const std::size_t protectionRewardGrantCount = parseCollectionCount(document, "protectionRewardGrantCount");
+    const std::size_t protectionWorkRecordCount = parseCollectionCount(document, "protectionWorkRecordCount");
+    const std::size_t protectionRewardSettlementCount = parseCollectionCount(document, "protectionRewardSettlementCount");
+    const std::size_t slashingEvidenceRecordCount = parseCollectionCount(document, "slashingEvidenceRecordCount");
+    const std::size_t slashingPreparationRecordCount = parseCollectionCount(document, "slashingPreparationRecordCount");
+    const std::size_t cryptographicSlashingEvidenceCount = parseCollectionCount(document, "cryptographicSlashingEvidenceCount");
+    const std::size_t stakePenaltyRecordCount = parseCollectionCount(document, "stakePenaltyRecordCount");
+    const std::size_t governanceActionGuardCount = parseCollectionCount(document, "governanceActionGuardCount");
+    const std::size_t validatorLifecycleRecordCount = parseCollectionCount(document, "validatorLifecycleRecordCount");
     const std::size_t supplyDeltaMintRecordCount =
         FinalizedMonetarySectionCodec::mintRecordCount(document);
     const std::size_t supplyDeltaBurnRecordCount =
         FinalizedMonetarySectionCodec::burnRecordCount(document);
     const std::size_t treasurySpendCount =
         FinalizedTreasurySectionCodec::spendCountFromDocument(document);
+
+    if (recordCount > core::Block::MAX_RECORDS) {
+        throw std::invalid_argument("Artifact record count exceeds block protocol limit.");
+    }
+    validateTotalCollectionCount(
+        document,
+        std::array<std::size_t, 20>{
+            recordCount,
+            rewardDistributionCount,
+            lockedStakePositionCount,
+            securityScoreRecordCount,
+            securityCheckpointCount,
+            validatorRiskAssessmentCount,
+            validatorContainmentDecisionCount,
+            validatorNetworkPolicyCount,
+            protectionRewardGrantCount,
+            protectionWorkRecordCount,
+            protectionRewardSettlementCount,
+            slashingEvidenceRecordCount,
+            slashingPreparationRecordCount,
+            cryptographicSlashingEvidenceCount,
+            stakePenaltyRecordCount,
+            governanceActionGuardCount,
+            validatorLifecycleRecordCount,
+            supplyDeltaMintRecordCount,
+            supplyDeltaBurnRecordCount,
+            treasurySpendCount
+        }
+    );
 
     std::set<std::string> allowedFields = {
         "blockIndex",

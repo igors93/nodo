@@ -272,7 +272,17 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                 transaction.type() == TransactionType::TRANSFER;
             const bool isGovernanceProposal =
                 transaction.type() == TransactionType::GOVERNANCE_PROPOSE;
-            if (!isTransfer && !isGovernanceProposal) {
+            const bool isStakingDeposit =
+                transaction.type() == TransactionType::STAKE_DEPOSIT ||
+                transaction.type() == TransactionType::STAKE_TOP_UP;
+            const bool isStakingWithdraw =
+                transaction.type() == TransactionType::STAKE_WITHDRAW;
+            const bool isValidatorLifecycle =
+                transaction.type() == TransactionType::VALIDATOR_EXIT_REQUEST ||
+                transaction.type() == TransactionType::VALIDATOR_UNJAIL_REQUEST;
+            const bool isStaking = isStakingDeposit || isStakingWithdraw || isValidatorLifecycle;
+
+            if (!isTransfer && !isGovernanceProposal && !isStaking) {
                 return StateTransitionPreviewResult::rejected(
                     StateTransitionPreviewStatus::UNSUPPORTED_TRANSITION,
                     "Transaction type has no authoritative deterministic state transition.",
@@ -300,6 +310,8 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
             if (transaction.nonce() == 0 ||
                 (isTransfer && !transaction.amount().isPositive()) ||
                 (isGovernanceProposal && !transaction.amount().isZero()) ||
+                (isStakingDeposit && !transaction.amount().isPositive()) ||
+                (isStakingWithdraw && !transaction.amount().isPositive()) ||
                 transaction.fee().isNegative() ||
                 transaction.fromAddress().empty() ||
                 transaction.toAddress().empty() ||
@@ -345,7 +357,8 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                     : AccountState();
 
                 if (!sender.isValid() ||
-                    (isTransfer && !recipient.isValid())) {
+                    (isTransfer && !recipient.isValid()) ||
+                    (isStaking && !sender.isValid())) {
                     return StateTransitionPreviewResult::rejected(
                         StateTransitionPreviewStatus::INVALID_TRANSACTION,
                         "Preview account state is invalid.",
@@ -372,9 +385,13 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                     );
                 }
 
-                const utils::Amount required = isTransfer
-                    ? transaction.amount() + transaction.fee()
-                    : transaction.fee();
+                // For deposits the full bond amount comes from liquid balance.
+                // For withdrawals only the fee is deducted here; the domain
+                // callback credits the unbonded amount back to the sender.
+                const utils::Amount required =
+                    (isTransfer || isStakingDeposit)
+                        ? transaction.amount() + transaction.fee()
+                        : transaction.fee();
 
                 if (sender.balance() < required) {
                     return StateTransitionPreviewResult::rejected(
@@ -457,7 +474,7 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
 
             totalFee = totalFee + transaction.fee();
             touchedAccountSet.insert(transaction.fromAddress());
-            if (isTransfer) {
+            if (isTransfer || isStaking) {
                 touchedAccountSet.insert(transaction.toAddress());
             }
             orderedTransactionIds.push_back(transaction.id());

@@ -108,7 +108,9 @@ std::uint64_t BlockLocator::maxBlocks() const { return m_maxBlocks; }
 const std::vector<std::string>& BlockLocator::knownAncestorHashes() const { return m_knownAncestorHashes; }
 
 bool BlockLocator::isValid() const {
-    if (m_maxBlocks == 0 || m_maxBlocks > 1024 || m_knownAncestorHashes.empty()) {
+    if (m_maxBlocks == 0 || m_maxBlocks > 1024 ||
+        m_knownAncestorHashes.empty() ||
+        m_knownAncestorHashes.size() > MAX_KNOWN_ANCESTOR_HASHES) {
         return false;
     }
 

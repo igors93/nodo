@@ -17,6 +17,7 @@
 #include <array>
 #include <chrono>
 #include <limits>
+#include <stdexcept>
 #include <thread>
 
 namespace nodo::consensus {
@@ -94,9 +95,22 @@ void ConsensusEventLoop::loadFromRecoveryState(const ConsensusRoundState& state)
 
 void ConsensusEventLoop::start(std::int64_t tickIntervalMs) {
     if (m_running.load()) return;
+    if (tickIntervalMs <= 0) {
+        throw std::invalid_argument(
+            "Consensus tick interval must be positive."
+        );
+    }
+    if (m_thread.joinable()) {
+        m_thread.join();
+    }
     m_tickIntervalMs = tickIntervalMs;
     m_running.store(true);
-    m_thread = std::thread([this]{ runLoop(); });
+    try {
+        m_thread = std::thread([this]{ runLoop(); });
+    } catch (...) {
+        m_running.store(false);
+        throw;
+    }
 }
 
 void ConsensusEventLoop::stop() {
@@ -116,7 +130,12 @@ void ConsensusEventLoop::runLoop() {
             std::chrono::system_clock::now().time_since_epoch()
         ).count();
 
-        tick(static_cast<std::int64_t>(now));
+        try {
+            tick(static_cast<std::int64_t>(now));
+        } catch (...) {
+            m_running.store(false);
+            break;
+        }
 
         std::this_thread::sleep_for(
             std::chrono::milliseconds(m_tickIntervalMs)
@@ -271,14 +290,20 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         validators.isActiveValidator(m_localSigner->address())) {
 
         if (m_lockedBlock.empty() || blockHash == m_lockedBlock || round > m_lockedRound) {
-            const VoteCastResult prevoteResult = BlockVotingPhase::castPrevote(
-                m_runtime, candidate, round, now, *m_localSigner, m_gossip
-            );
-
-            if (prevoteResult.cast()) {
+            if (!saveRecoveryState(true, m_votedPrecommit)) {
+                result.errorMessage =
+                    "Unable to persist PREVOTE safety state; vote was not cast.";
+            } else {
                 m_votedPrevote = true;
-                prevoteCount++;  // Count own vote immediately for same-tick precommit check.
-                saveRecoveryState(m_votedPrevote, m_votedPrecommit);
+                const VoteCastResult prevoteResult = BlockVotingPhase::castPrevote(
+                    m_runtime, candidate, round, now, *m_localSigner, m_gossip
+                );
+                if (prevoteResult.cast()) {
+                    // Count own vote immediately for same-tick precommit check.
+                    prevoteCount++;
+                } else {
+                    result.errorMessage = prevoteResult.reason();
+                }
             }
         }
     }
@@ -295,16 +320,24 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         validators.isActiveValidator(m_localSigner->address())) {
 
         if (prevoteCount >= requiredVotes) {
+            const std::string previousLockedBlock = m_lockedBlock;
+            const std::uint64_t previousLockedRound = m_lockedRound;
             m_lockedBlock = blockHash;
             m_lockedRound = round;
 
-            const VoteCastResult precommitResult = BlockVotingPhase::castPrecommit(
-                m_runtime, candidate, round, now, *m_localSigner, m_gossip
-            );
-
-            if (precommitResult.cast()) {
+            if (!saveRecoveryState(m_votedPrevote, true)) {
+                m_lockedBlock = previousLockedBlock;
+                m_lockedRound = previousLockedRound;
+                result.errorMessage =
+                    "Unable to persist PRECOMMIT safety state; vote was not cast.";
+            } else {
                 m_votedPrecommit = true;
-                saveRecoveryState(m_votedPrevote, m_votedPrecommit);
+                const VoteCastResult precommitResult = BlockVotingPhase::castPrecommit(
+                    m_runtime, candidate, round, now, *m_localSigner, m_gossip
+                );
+                if (!precommitResult.cast()) {
+                    result.errorMessage = precommitResult.reason();
+                }
             }
         }
     }
@@ -615,8 +648,8 @@ bool ConsensusEventLoop::advanceRoundIfTimedOut(
     return true;
 }
 
-void ConsensusEventLoop::saveRecoveryState(bool votedPrevote, bool votedPrecommit) {
-    if (!m_recoveryPath.has_value()) return;
+bool ConsensusEventLoop::saveRecoveryState(bool votedPrevote, bool votedPrecommit) {
+    if (!m_recoveryPath.has_value()) return true;
 
     const auto& state = m_runtime.consensusRoundManager().currentState();
     ConsensusRoundState updatedState(
@@ -629,7 +662,7 @@ void ConsensusEventLoop::saveRecoveryState(bool votedPrevote, bool votedPrecommi
         votedPrevote,
         votedPrecommit
     );
-    ConsensusRecoveryStore::save(*m_recoveryPath, updatedState);
+    return ConsensusRecoveryStore::save(*m_recoveryPath, updatedState);
 }
 
 void ConsensusEventLoop::broadcastRoundAdvancement(std::int64_t now) {
