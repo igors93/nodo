@@ -4,6 +4,7 @@
 #include "node/FinalizedBlockStore.hpp"
 #include "node/ProtocolStateTransition.hpp"
 #include "node/RuntimeMonetaryValidation.hpp"
+#include "node/StakingRegistry.hpp"
 #include "node/StateSnapshot.hpp"
 #include "node/ValidatorLifecycle.hpp"
 
@@ -21,6 +22,7 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -1829,16 +1831,20 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         );
     }
 
+    std::shared_ptr<StakingRegistry> registryTracker;
     try {
+        auto [protocolContext, tracker] =
+            ProtocolStateTransition::contextForNextBlockWithRegistry(
+                runtime,
+                minimumFeeRawUnitsForRuntime(runtime),
+                finalizedAt
+            );
+        registryTracker = tracker;
         transitionValidation =
             core::BlockStateTransitionValidator::validateCandidateBlock(
                 runtime.blockchain(),
                 block,
-                RuntimeAccountStateBuilder::previewContextAtTip(
-                    runtime,
-                    minimumFeeRawUnitsForRuntime(runtime),
-                    finalizedAt
-                ),
+                std::move(protocolContext),
                 core::BlockValidationMode::ProtocolCommitment
             );
     } catch (const std::exception& error) {
@@ -1853,6 +1859,12 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
             RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
             transitionValidation.reason()
         );
+    }
+
+    // Write the post-block staking state back to the runtime.
+    // transitionFullState mutated *registryTracker in-place during executeBlock.
+    if (registryTracker) {
+        runtime.mutableStakingRegistry() = *registryTracker;
     }
 
     std::vector<RewardDistribution> rewardDistributions;

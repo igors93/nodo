@@ -14,6 +14,7 @@
 
 #include <limits>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <utility>
 
@@ -119,6 +120,8 @@ void ProtocolStateTransition::applyValidatorEpochTransition(
 
 namespace {
 
+// Takes stakingRegistry by reference so the caller can read the post-block
+// staking state after execution completes (via a shared_ptr in the closure).
 core::DeterministicStateTransitionResult transitionFullState(
     const core::AccountStateView& transactionAccounts,
     utils::Amount totalFee,
@@ -131,7 +134,7 @@ core::DeterministicStateTransitionResult transitionFullState(
     core::ValidatorRegistry validators,
     core::ValidatorSetHistory validatorSetHistory,
     consensus::ValidatorPenaltyLedger penaltyLedger,
-    StakingRegistry stakingRegistry,
+    StakingRegistry& stakingRegistry,
     std::string networkName
 ) {
     try {
@@ -323,7 +326,8 @@ ProtocolStateTransition::accountSettlementForReplay(
     };
 }
 
-core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock(
+std::pair<core::StateTransitionPreviewContext, std::shared_ptr<StakingRegistry>>
+ProtocolStateTransition::contextForNextBlockWithRegistry(
     const NodeRuntime& runtime,
     std::int64_t minimumFeeRawUnits,
     std::int64_t wallClockNow
@@ -339,7 +343,6 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
         runtime.validatorSetHistory();
     const consensus::ValidatorPenaltyLedger penaltyLedger =
         runtime.validatorPenaltyLedger();
-    const StakingRegistry stakingRegistry = runtime.stakingRegistry();
     const config::GenesisConfig& genesis = runtime.config().genesisConfig();
     const std::uint64_t genesisMinimumFeeRaw =
         genesis.networkParameters().minimumFeeRawUnits();
@@ -350,6 +353,22 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
         );
     }
 
+    // Snapshot of the staking state BEFORE this block.
+    //
+    // initialRegistry is used for two purposes:
+    //   1. The initial protocolDomains passed to the context constructor so that
+    //      previewContextAtTip / latestStateRootForRuntime always produce the
+    //      correct tip state root for the CURRENT runtime (post last-committed block).
+    //   2. The starting point for each closure invocation — making the transition
+    //      idempotent: multiple calls with the same context (e.g. the production
+    //      pass and the certification pass in produceAndFinalizeNextBlock) always
+    //      start from the same baseline and produce the same state root.
+    //
+    // sharedRegistry is overwritten by each invocation so applyCertifiedBlock can
+    // read the post-block staking state without having to re-execute the block.
+    StakingRegistry initialRegistry = runtime.stakingRegistry();
+    auto sharedRegistry = std::make_shared<StakingRegistry>();
+
     core::DeterministicStateDomainTransition transition =
         [blockHeight,
          supplyBefore,
@@ -357,7 +376,8 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
          validators,
          validatorSetHistory,
          penaltyLedger,
-         stakingRegistry,
+         sharedRegistry,
+         initialRegistry,
          networkName = genesis.networkParameters().networkName()](
             const core::AccountStateView& accounts,
             utils::Amount totalFee,
@@ -365,7 +385,8 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
             const std::vector<core::LedgerRecord>& protocolRecords,
             std::int64_t blockTimestamp
         ) {
-            return transitionFullState(
+            StakingRegistry localRegistry = initialRegistry;
+            auto result = transitionFullState(
                 accounts,
                 totalFee,
                 transactions,
@@ -377,12 +398,20 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
                 validators,
                 validatorSetHistory,
                 penaltyLedger,
-                stakingRegistry,
+                localRegistry,
                 networkName
             );
+            *sharedRegistry = localRegistry;
+            return result;
         };
 
-    return core::StateTransitionPreviewContext(
+    // Separate registry for the pre-validator: tracks intermediate staking state
+    // across consecutive transactions within the same block during previewBlock,
+    // so deposit-then-withdraw in the same block is correctly handled.
+    auto prevalidatorRegistry =
+        std::make_shared<StakingRegistry>(runtime.stakingRegistry());
+
+    core::StateTransitionPreviewContext context(
         minimumFeeRawUnits,
         RuntimeAccountStateBuilder::accountStateViewAtTip(
             genesis,
@@ -400,10 +429,83 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock
             supplyBefore,
             validators,
             penaltyLedger,
-            stakingRegistry
+            initialRegistry
         ),
         std::move(transition)
     );
+
+    context.setDomainTransactionPreValidator(
+        [prevalidatorRegistry, blockHeight](const core::Transaction& tx) -> bool {
+            const std::string& validatorAddr = tx.toAddress();
+            economics::StakeAccount stake =
+                prevalidatorRegistry->accountOrDefault(validatorAddr);
+
+            if (tx.type() == core::TransactionType::STAKE_DEPOSIT ||
+                tx.type() == core::TransactionType::STAKE_TOP_UP) {
+                // Always valid at domain level; track for subsequent transactions.
+                economics::StakeAccount next(
+                    stake.validatorAddress(),
+                    utils::Amount::fromRawUnits(
+                        stake.bondedAmount().rawUnits() + tx.amount().rawUnits()
+                    )
+                );
+                if (stake.jailed())     next.jail();
+                if (stake.tombstoned()) next.tombstone();
+                prevalidatorRegistry->setAccount(validatorAddr, std::move(next));
+                return true;
+            }
+
+            if (tx.type() == core::TransactionType::STAKE_WITHDRAW) {
+                if (stake.jailed() || stake.tombstoned()) return false;
+                const std::int64_t bondedRaw  = stake.bondedAmount().rawUnits();
+                const std::int64_t slashedRaw = stake.slashedAmount().rawUnits();
+                const std::int64_t availableRaw =
+                    (bondedRaw > slashedRaw) ? (bondedRaw - slashedRaw) : 0;
+                if (tx.amount().rawUnits() > availableRaw) return false;
+                if (blockHeight < tx.nonce() +
+                        StakingTransactionApplier::UNBONDING_DELAY_BLOCKS) {
+                    return false;
+                }
+                economics::StakeAccount next(
+                    stake.validatorAddress(),
+                    utils::Amount::fromRawUnits(bondedRaw - tx.amount().rawUnits())
+                );
+                if (stake.jailed())     next.jail();
+                if (stake.tombstoned()) next.tombstone();
+                prevalidatorRegistry->setAccount(validatorAddr, std::move(next));
+                return true;
+            }
+
+            if (tx.type() == core::TransactionType::VALIDATOR_EXIT_REQUEST) {
+                if (stake.jailed() || stake.tombstoned()) return false;
+                const std::int64_t bondedRaw  = stake.bondedAmount().rawUnits();
+                const std::int64_t slashedRaw = stake.slashedAmount().rawUnits();
+                if (bondedRaw == 0 || bondedRaw <= slashedRaw) return false;
+                // Exit request does not mutate the stake account.
+                return true;
+            }
+
+            if (tx.type() == core::TransactionType::VALIDATOR_UNJAIL_REQUEST) {
+                if (!stake.jailed() || stake.tombstoned()) return false;
+                economics::StakeAccount next = stake;
+                next.unjail();
+                prevalidatorRegistry->setAccount(validatorAddr, std::move(next));
+                return true;
+            }
+
+            return true;
+        }
+    );
+
+    return {std::move(context), sharedRegistry};
+}
+
+core::StateTransitionPreviewContext ProtocolStateTransition::contextForNextBlock(
+    const NodeRuntime& runtime,
+    std::int64_t minimumFeeRawUnits,
+    std::int64_t wallClockNow
+) {
+    return contextForNextBlockWithRegistry(runtime, minimumFeeRawUnits, wallClockNow).first;
 }
 
 } // namespace nodo::node

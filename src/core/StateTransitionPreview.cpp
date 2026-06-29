@@ -401,6 +401,22 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                     );
                 }
 
+                // Staking domain pre-validation: checks constraints that the domain
+                // callback will enforce (bonded stake, cooldown, jailed/tombstoned).
+                // Rejects blocks before they reach consensus so proposers never emit
+                // transactions that pass the account layer but fail the domain transition.
+                if (isStaking && context.hasDomainTransactionPreValidator()) {
+                    if (!context.validateDomainTransaction(transaction)) {
+                        return StateTransitionPreviewResult::rejected(
+                            StateTransitionPreviewStatus::INSUFFICIENT_BALANCE,
+                            "Staking domain constraint not satisfied: "
+                            "insufficient bonded stake, cooldown not elapsed, "
+                            "or invalid validator state for this operation.",
+                            processedTransactionCount
+                        );
+                    }
+                }
+
                 const utils::Amount senderBalance =
                     sender.balance() - required;
 

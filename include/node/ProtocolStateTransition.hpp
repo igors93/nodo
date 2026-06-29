@@ -4,9 +4,12 @@
 #include "core/AccountStateView.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
 #include "core/ValidatorRegistry.hpp"
+#include "node/StakingRegistry.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
+#include <memory>
+#include <utility>
 
 namespace nodo::node {
 
@@ -18,6 +21,17 @@ class NodeRuntime;
  */
 class ProtocolStateTransition {
 public:
+    // Returns the preview context together with a shared StakingRegistry that
+    // reflects the post-block staking state after the domain transition runs.
+    // Callers that need to write the updated registry back to the runtime
+    // (e.g. applyCertifiedBlock) should use this form.
+    static std::pair<core::StateTransitionPreviewContext, std::shared_ptr<StakingRegistry>>
+    contextForNextBlockWithRegistry(
+        const NodeRuntime& runtime,
+        std::int64_t minimumFeeRawUnits,
+        std::int64_t wallClockNow = 0
+    );
+
     static core::StateTransitionPreviewContext contextForNextBlock(
         const NodeRuntime& runtime,
         std::int64_t minimumFeeRawUnits,

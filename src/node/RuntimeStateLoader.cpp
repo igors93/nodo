@@ -2,6 +2,8 @@
 
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "core/StateRootCalculator.hpp"
+#include "core/TransactionType.hpp"
+#include "economics/StakeAccount.hpp"
 #include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedArtifactValidationContext.hpp"
 #include "node/FinalizedArtifactValidator.hpp"
@@ -12,6 +14,7 @@
 #include "node/ProtocolStateTransition.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeStateVerifier.hpp"
+#include "node/StakingTransactionApplier.hpp"
 #include "consensus/QuorumCertificate.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
@@ -360,6 +363,77 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
                     error.what()
             );
         }
+
+        // Rebuild the StakingRegistry from the block's transactions.
+        // This mirrors the deterministic staking logic in transitionFullState so
+        // that mutableStakingRegistry() matches the state root stored on disk.
+        // No re-validation is needed: blocks were fully validated at commit time.
+        for (const core::LedgerRecord& record : artifact.block().records()) {
+            if (record.type() != core::LedgerRecordType::TRANSACTION) continue;
+            if (record.payload().empty()) continue;
+            try {
+                const core::Transaction tx =
+                    core::Transaction::deserialize(record.payload());
+                const bool isStaking =
+                    core::isStakingTransaction(tx.type()) ||
+                    tx.type() == core::TransactionType::VALIDATOR_EXIT_REQUEST ||
+                    tx.type() == core::TransactionType::VALIDATOR_UNJAIL_REQUEST;
+                if (!isStaking) continue;
+
+                const std::string& validatorAddr = tx.toAddress();
+                economics::StakeAccount stake =
+                    runtime.stakingRegistry().accountOrDefault(validatorAddr);
+
+                if (tx.type() == core::TransactionType::STAKE_DEPOSIT ||
+                    tx.type() == core::TransactionType::STAKE_TOP_UP) {
+                    economics::StakeAccount next(
+                        stake.validatorAddress(),
+                        utils::Amount::fromRawUnits(
+                            stake.bondedAmount().rawUnits() + tx.amount().rawUnits()
+                        )
+                    );
+                    if (stake.jailed())     next.jail();
+                    if (stake.tombstoned()) next.tombstone();
+                    runtime.mutableStakingRegistry().setAccount(
+                        validatorAddr, std::move(next)
+                    );
+                }
+                else if (tx.type() == core::TransactionType::STAKE_WITHDRAW) {
+                    const std::int64_t afterRaw =
+                        stake.bondedAmount().rawUnits() - tx.amount().rawUnits();
+                    economics::StakeAccount next(
+                        stake.validatorAddress(),
+                        utils::Amount::fromRawUnits(
+                            afterRaw >= 0 ? afterRaw : 0
+                        )
+                    );
+                    if (stake.jailed())     next.jail();
+                    if (stake.tombstoned()) next.tombstone();
+                    runtime.mutableStakingRegistry().setAccount(
+                        validatorAddr, std::move(next)
+                    );
+                }
+                else if (tx.type() == core::TransactionType::VALIDATOR_EXIT_REQUEST) {
+                    // Exit request records intent; the stake account is not mutated
+                    // here — epoch transitions handle the actual removal.
+                }
+                else if (tx.type() == core::TransactionType::VALIDATOR_UNJAIL_REQUEST) {
+                    economics::StakeAccount next = stake;
+                    next.unjail();
+                    runtime.mutableStakingRegistry().setAccount(
+                        validatorAddr, std::move(next)
+                    );
+                }
+            } catch (const std::exception& error) {
+                return RuntimeStateLoadResult::rejected(
+                    RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
+                    "Staking replay failed at block " +
+                        std::to_string(artifact.block().index()) + ": " +
+                        error.what()
+                );
+            }
+        }
+
         if (!runtime.mutableValidatorSetHistory().recordSet(
                 artifact.block().index() + 1, runtime.validatorRegistry()
             )) {

@@ -46,6 +46,13 @@ using DeterministicStateDomainTransition = std::function<
     )
 >;
 
+// Called once per staking/lifecycle transaction inside previewBlock.
+// Returns false if the transaction violates domain constraints (e.g. insufficient
+// bonded stake, cooldown not elapsed, jailed/tombstoned validator).
+// Implementations may maintain internal state so that consecutive transactions
+// within the same block see the intermediate staking changes.
+using DomainTransactionPreValidator = std::function<bool(const Transaction&)>;
+
 class StateTransitionPreviewContext {
 public:
     StateTransitionPreviewContext();
@@ -88,6 +95,10 @@ public:
     bool coinLotPreviewEnabled() const;
     bool supplyAuditPreviewEnabled() const;
 
+    void setDomainTransactionPreValidator(DomainTransactionPreValidator validator);
+    bool hasDomainTransactionPreValidator() const;
+    bool validateDomainTransaction(const Transaction& tx) const;
+
     bool isValid() const;
     std::string serialize() const;
 
@@ -102,6 +113,7 @@ private:
     std::optional<crypto::ProtocolCryptoContext> m_cryptoContext;
     std::map<std::string, std::string> m_deterministicStateDomains;
     DeterministicStateDomainTransition m_stateDomainTransition;
+    DomainTransactionPreValidator m_domainTransactionPreValidator;
     bool m_coinLotPreviewEnabled;
     bool m_supplyAuditPreviewEnabled;
 };

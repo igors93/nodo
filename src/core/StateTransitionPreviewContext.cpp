@@ -51,6 +51,7 @@ StateTransitionPreviewContext::StateTransitionPreviewContext()
       m_cryptoContext(std::nullopt),
       m_deterministicStateDomains(),
       m_stateDomainTransition(),
+      m_domainTransactionPreValidator(),
       m_coinLotPreviewEnabled(false),
       m_supplyAuditPreviewEnabled(false) {}
 
@@ -80,6 +81,7 @@ StateTransitionPreviewContext::StateTransitionPreviewContext(
             )),
       m_deterministicStateDomains(std::move(deterministicStateDomains)),
       m_stateDomainTransition(std::move(stateDomainTransition)),
+      m_domainTransactionPreValidator(),
       m_coinLotPreviewEnabled(false),
       m_supplyAuditPreviewEnabled(false) {}
 
@@ -160,6 +162,23 @@ StateTransitionPreviewContext::transitionProtocolState(
         protocolRecords,
         blockTimestamp
     );
+}
+
+void StateTransitionPreviewContext::setDomainTransactionPreValidator(
+    DomainTransactionPreValidator validator
+) {
+    m_domainTransactionPreValidator = std::move(validator);
+}
+
+bool StateTransitionPreviewContext::hasDomainTransactionPreValidator() const {
+    return static_cast<bool>(m_domainTransactionPreValidator);
+}
+
+bool StateTransitionPreviewContext::validateDomainTransaction(const Transaction& tx) const {
+    if (!m_domainTransactionPreValidator) {
+        return true;
+    }
+    return m_domainTransactionPreValidator(tx);
 }
 
 bool StateTransitionPreviewContext::coinLotPreviewEnabled() const {
