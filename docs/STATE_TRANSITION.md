@@ -32,12 +32,34 @@ nonce advancement on a temporary `AccountStateView`. Successful previews produce
 a deterministic account state root through `StateRootCalculator`; insertion order
 does not affect the root, while balance, nonce or account-set changes do.
 
-`BlockStateTransitionValidator` is the single pre-vote protocol gate and should
-grow to include signature, coin-lot ownership, double-spend and complete supply
-checks as those state models become canonical. The current preview records total
-fees, touched accounts, resulting account states and state root as preparation
-for full supply audit. Coin lot preview and full supply reconciliation are
-explicit next steps.
+`BlockStateTransitionValidator` is the single pre-vote protocol gate. It drives
+`StateTransitionEngine::executeBlock`, which runs `StateTransitionPreview` under
+the provided `StateTransitionPreviewContext`. When coin lot preview is enabled on
+the context (`enableCoinLotPreview`), every TRANSFER transaction in the block is
+also validated by `CoinLotTransactionValidator::applyTransfer` against a working
+copy of the `CoinLotRegistry`. A transfer that would exceed available lots, spend
+already-spent lots, or violate ownership rules is rejected before the block
+reaches the vote stage. Double-spend within the same block is caught because the
+working registry is mutated in order and a lot marked SPENT by an earlier
+transaction is unavailable to later ones.
+
+The final state root (`stateRoot`) is computed by
+`StateRootCalculator::calculateProtocolStateRoot` over a domain map that, when
+coin lot preview is enabled, includes a `coin_lots` domain whose value is a hash
+of the serialized registry state after all transactions are applied. This makes
+the coin lot registry part of the auditable state commitment: any divergence in
+lot ownership, lot amounts, or lot status produces a different state root and
+causes `BlockValidationMode::ProtocolCommitment` verification to fail.
+
+`ConsensusEventLoop` enforces an additional guard: a vote is cast only when the
+validation context has `protocolAuthorizationEnabled()` — meaning a valid chain
+identifier and crypto context are in place and signatures were actually verified.
+Proposals that arrive before the context is initialized are skipped rather than
+silently accepted.
+
+Remaining next steps: full supply reconciliation wired to epoch boundaries,
+explicit transaction-declared input lot IDs, and complete slashing-lot lifecycle
+integration.
 
 The correct failure behavior is rejection with a clear reason. A quorum
 certificate must never be built for a block that failed this gate.

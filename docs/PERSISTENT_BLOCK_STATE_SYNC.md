@@ -25,11 +25,11 @@ A testnet node can:
 1. persist its latest verified sync checkpoint;
 2. reload that checkpoint after restart;
 3. compare local checkpoint with remote `ChainStatusMessage`;
-4. request the next bounded block window when the remote peer is ahead;
-5. request a snapshot manifest when the remote peer is far ahead;
-6. validate that a block batch is consecutive and connects to the local checkpoint;
-7. advance the durable checkpoint only after the batch shape is accepted;
-8. encode/decode checkpoints, block sync batches and snapshot manifests using canonical bytes.
+4. request the next bounded block window when the remote peer is ahead — all height
+   gaps, regardless of size, are handled with incremental `REQUEST_BLOCKS`;
+5. validate that a block batch is consecutive and connects to the local checkpoint;
+6. advance the durable checkpoint only after the batch shape is accepted;
+7. encode/decode checkpoints, block sync batches and snapshot manifests using canonical bytes.
 
 ## Security rules
 
@@ -41,6 +41,15 @@ A testnet node can:
 - Snapshot manifests are represented separately from block batches.
 - Canonical codecs require full payload consumption.
 
+## Snapshot sync
+
+`importSnapshot` explicitly returns `REJECTED` with a clear diagnostic. Snapshot
+sync requires full runtime hydration — account state, validators, coin lot
+registry, staking positions, governance store — and is not yet implemented. The
+planner (`planFromRemoteStatus`) no longer routes any gap to `REQUEST_SNAPSHOT`;
+all gaps use incremental block sync. Snapshot sync will be introduced in Phase 6
+once state snapshot creation and hash verification are complete.
+
 ## Not included yet
 
 - Direct mutation of `Blockchain` from sync batches.
@@ -48,6 +57,7 @@ A testnet node can:
 - Quorum certificate validation inside the applier.
 - Historical replay from disk.
 - Merkle proof based snapshot verification.
+- Snapshot sync (runtime hydration from a snapshot manifest).
 - Automatic runtime integration into `TcpTestnetNodeRuntime::tick()`.
 
 Those should be implemented after this boundary is stable and after the real

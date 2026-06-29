@@ -42,6 +42,20 @@ reading the source.
 - `NodeOrchestrator`: transport + peer discovery + block sync + consensus event
   loop + RPC.
 
+### Block Validation and Sync Hardening ✅
+- `CoinLotTransactionValidator` wired into `StateTransitionPreview`: TRANSFER
+  transactions are validated against a working `CoinLotRegistry` copy; ownership,
+  balance, and double-spend within a block are enforced before voting.
+- CoinLot registry digest included in `stateRoot` via `coin_lots` domain in
+  `StateRootCalculator::calculateProtocolStateRoot`: divergent registry state
+  produces a different root and causes `ProtocolCommitment` rejection.
+- `importSnapshot` replaced from a silent no-op to an explicit `REJECTED` return;
+  snapshot sync requires full runtime hydration and is deferred to Phase 6.
+- `planFromRemoteStatus` snapshot-gap routing removed: all height gaps use
+  `REQUEST_BLOCKS` unconditionally; the broken snapshot path is never invoked.
+- `ConsensusEventLoop` authorization guard: votes are cast only when
+  `protocolAuthorizationEnabled()` — chain id configured, crypto context valid.
+
 ### Phase 1 — Distributed Node Daemon ✅
 - 7 new `NetworkMessageType` values: `TRANSACTION_GOSSIP`, `BLOCK_PROPOSAL`,
   `VALIDATOR_VOTE`, `QUORUM_CERTIFICATE`, `FINALIZED_BLOCK_ARTIFACT`,
@@ -286,9 +300,11 @@ quickly without replaying the entire chain.
 - `ParallelBlockSync` exists; wire it to `NodeDaemon` so that a newly started
   node sends `BLOCK_SYNC_REQUEST` to multiple peers and assembles the chain in
   parallel rather than sequentially.
-- Fast sync: if a trusted snapshot is available (from a bootstrap peer), a new
-  node can load the snapshot directly and verify its hash against a quorum
-  certificate instead of replaying all blocks.
+- Snapshot sync: `importSnapshot` currently returns `REJECTED` (explicitly
+  unimplemented). Full runtime hydration from a snapshot — account state,
+  validators, coin lot registry, staking positions, governance store — must be
+  implemented before fast sync is re-enabled. Once implemented, re-introduce the
+  snapshot gap routing in `planFromRemoteStatus` and wire to `importSnapshot`.
 - `FinalizedArtifactSyncService` must handle the peer-side response path.
 
 ### 6.4 Canonical Storage Audit Expansion

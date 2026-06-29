@@ -69,7 +69,7 @@ Implemented foundations include:
 - CMake-based C++20 build with one test executable per `tests/**/*.cpp`;
 - strict storage schema validation and atomic persistence helpers (`AtomicFile` crash-safe writes);
 - canonical finalized artifacts with monetary, treasury, governance, validator, and slashing sections;
-- account-state preview before block votes and deterministic state roots;
+- account-state preview before block votes and deterministic state roots, with coin lot ownership validation and CoinLot registry digest included in the state root commitment;
 - OpenSSL Ed25519 user signatures and blst BLS12-381 validator signatures;
 - BFT consensus with Quorum Certificate (QC) requiring 2/3+ validator weight;
 - durable QC persistence: `FinalizedBlockRecordStore` writes each QC proof atomically to `{dataDir}/sync/qc/{height}.qc`, reloads all records at startup, and restores the in-memory `BlockFinalizationRegistry` — making the fast-path `QC_REQUIRED` sync mode functional across restarts;
@@ -93,7 +93,7 @@ Implemented foundations include:
 | Keys and custody | Local development keys exist; production custody is not ready. |
 | Governance | Vote evidence and lifecycle audit foundations exist; public governance workflow is still in development. |
 | Treasury | Evidence-backed execution validation exists; production operator process is still in development. |
-| Economics | Monetary, reward, protection, penalty, and supply-audit foundations exist; final economic activation is not complete. |
+| Economics | Monetary, reward, protection, penalty, and supply-audit foundations exist; CoinLot validation wired into block preview and state root; final economic activation is not complete. |
 
 ## Quick Start
 

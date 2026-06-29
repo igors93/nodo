@@ -91,6 +91,19 @@ The old public method remains, so existing code continues to call the same funct
 
 Internally, State now builds a registry view from its coin lots, applies the transfer through the registry, then replaces its coin lot view from the registry.
 
+## State Transition Preview Integration
+
+`CoinLotTransactionValidator` is now wired into `StateTransitionPreview`.
+When `StateTransitionPreviewContext::enableCoinLotPreview` is called with a
+registry, every TRANSFER transaction in a candidate block is validated through
+`applyTransfer` before the block is accepted. The validator operates on a
+working copy of the registry so canonical state is never mutated during preview.
+
+The final registry state after all transactions contributes to the block's
+`stateRoot` via the `coin_lots` domain in `StateRootCalculator`. Any divergence
+between the proposer's registry state and a validator's expected state produces
+a mismatched root and causes the block to be rejected.
+
 ## What This Does Not Do Yet
 
 This phase does not yet add transaction-declared input lot IDs.

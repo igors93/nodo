@@ -93,21 +93,35 @@ total outputs = 50 NODO
 
 The input becomes spent and cannot be spent again.
 
-## What This Does Not Do Yet
+## Block Preview Integration
 
-This phase does not yet fully replace the old transaction engine.
-
-It prepares the safe registry needed for that migration.
-
-Future phases should connect:
+The `CoinLotRegistry` is now connected to block validation through
+`StateTransitionPreview`. When a `StateTransitionPreviewContext` is configured
+with `enableCoinLotPreview`, a working copy of the registry is applied per
+transaction during preview:
 
 ```text
-Transaction
-State
-CoinLotRegistry
-LedgerRecord
-Block validation
+Block preview
+    ↓
+CoinLotTransactionValidator::applyTransfer (per TRANSFER transaction)
+    ↓
+working CoinLotRegistry (mutable copy, not canonical state)
+    ↓
+INVALID_TRANSACTION if lot ownership, balance, or status check fails
 ```
+
+After all transactions are processed, the final registry state is serialized,
+hashed, and inserted into the `stateRoot` computation under the `coin_lots`
+domain. This means divergent registry state produces a different state root and
+causes block rejection in `BlockValidationMode::ProtocolCommitment`.
+
+## What Is Still Pending
+
+- Transaction-declared explicit input lot IDs (currently selection is automatic
+  and deterministic).
+- Coin lot registry persistence to disk and full rebuild-from-history path for
+  multi-block sync scenarios.
+- Slashing-lot lifecycle integration (slash deduction from locked lots).
 
 ## Security Rule
 

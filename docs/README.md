@@ -31,6 +31,7 @@ Nodo is currently in development and pre-mainnet. Documentation should be read w
 - [Consensus](protocol/consensus.md)
 - [Protocol Reference](PROTOCOL.md)
 - [Consensus Rules Reference](CONSENSUS_RULES.md)
+- [State Transition Reference](STATE_TRANSITION.md)
 
 ## Economics
 
@@ -38,6 +39,8 @@ Nodo is currently in development and pre-mainnet. Documentation should be read w
 - [Supply and Reports](economics/supply-and-reports.md)
 - [Rewards](economics/rewards.md)
 - [Proof of Protection Economics Reference](economics/PROOF_OF_PROTECTION.md)
+- [Coin Lot Registry](economics/COIN_LOT_REGISTRY.md)
+- [Coin Lot Transaction Integration](economics/COIN_LOT_TRANSACTION_INTEGRATION.md)
 
 ## Treasury
 
