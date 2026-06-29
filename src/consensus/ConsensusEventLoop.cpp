@@ -17,6 +17,7 @@
 #include <array>
 #include <chrono>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #include <thread>
 
@@ -259,18 +260,29 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     std::vector<ValidatorVoteRecord> currentVotes =
         pool.votesForBlock(height, blockHash, round);
 
-    std::uint64_t prevoteCount = 0;
+    std::uint64_t prevoteWeight = 0;
+    std::set<std::string> prevoteVoters;
     for (const auto& v : currentVotes) {
-        if (v.decision() == ValidatorVoteDecision::PREVOTE) {
-            prevoteCount++;
+        if (v.decision() == ValidatorVoteDecision::PREVOTE &&
+            prevoteVoters.insert(v.validatorAddress()).second) {
+            const std::uint64_t voterWeight =
+                validators.consensusWeightFor(v.validatorAddress());
+            if (std::numeric_limits<std::uint64_t>::max() - prevoteWeight < voterWeight) {
+                throw std::overflow_error("Prevote weight overflow.");
+            }
+            prevoteWeight += voterWeight;
         }
     }
 
-    const std::uint64_t activeValidators =
-        validators.activeCount();
-    const std::uint64_t requiredVotes =
-        QuorumCertificateBuilder::requiredVoteCount(
-            activeValidators,
+    const std::uint64_t totalVotingWeight =
+        validators.totalConsensusWeight();
+    if (totalVotingWeight == 0) {
+        result.errorMessage = "No weighted validators are available for consensus.";
+        return result;
+    }
+    const std::uint64_t requiredWeight =
+        QuorumCertificateBuilder::requiredVotingWeight(
+            totalVotingWeight,
             m_runtime.config().genesisConfig().networkParameters()
                 .quorumThresholdNumerator(),
             m_runtime.config().genesisConfig().networkParameters()
@@ -287,7 +299,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     // -------------------------------------------------------------------------
     if (!m_votedPrevote &&
         m_localSigner &&
-        validators.isActiveValidator(m_localSigner->address())) {
+        validators.isEligibleForConsensus(m_localSigner->address())) {
 
         if (m_lockedBlock.empty() || blockHash == m_lockedBlock || round > m_lockedRound) {
             if (!saveRecoveryState(true, m_votedPrecommit)) {
@@ -299,8 +311,12 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
                     m_runtime, candidate, round, now, *m_localSigner, m_gossip
                 );
                 if (prevoteResult.cast()) {
-                    // Count own vote immediately for same-tick precommit check.
-                    prevoteCount++;
+                    const std::uint64_t ownWeight =
+                        validators.consensusWeightFor(m_localSigner->address());
+                    if (std::numeric_limits<std::uint64_t>::max() - prevoteWeight < ownWeight) {
+                        throw std::overflow_error("Prevote weight overflow.");
+                    }
+                    prevoteWeight += ownWeight;
                 } else {
                     result.errorMessage = prevoteResult.reason();
                 }
@@ -317,9 +333,9 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     if (m_votedPrevote &&
         !m_votedPrecommit &&
         m_localSigner &&
-        validators.isActiveValidator(m_localSigner->address())) {
+        validators.isEligibleForConsensus(m_localSigner->address())) {
 
-        if (prevoteCount >= requiredVotes) {
+        if (prevoteWeight >= requiredWeight) {
             const std::string previousLockedBlock = m_lockedBlock;
             const std::uint64_t previousLockedRound = m_lockedRound;
             m_lockedBlock = blockHash;
@@ -556,7 +572,7 @@ void ConsensusEventLoop::processBlockProposals() {
     const core::ValidatorRegistry& validators =
         m_runtime.validatorSetHistory().setAt(state.height());
 
-    if (validators.activeCount() == 0) return;
+    if (validators.totalConsensusWeight() == 0) return;
 
     const std::string chainId =
         m_runtime.config().genesisConfig().networkParameters().chainId();

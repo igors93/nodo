@@ -54,15 +54,19 @@ ArtifactValidationResult FinalityArtifactValidator::validate(
         }
 
         const auto& parameters = context.genesisConfig().networkParameters();
-        const std::uint64_t historicalRequiredVoteCount =
-            consensus::QuorumCertificateBuilder::requiredVoteCount(
-                historicalValidatorSet.activeCount(),
+        const std::uint64_t historicalTotalVotingWeight =
+            historicalValidatorSet.totalConsensusWeight();
+        const std::uint64_t historicalRequiredVotingWeight =
+            consensus::QuorumCertificateBuilder::requiredVotingWeight(
+                historicalTotalVotingWeight,
                 parameters.quorumThresholdNumerator(),
                 parameters.quorumThresholdDenominator()
             );
-        if (artifact.quorumCertificate().requiredVoteCount() != historicalRequiredVoteCount) {
+        if (artifact.quorumCertificate().requiredVotingWeight() != historicalRequiredVotingWeight ||
+            artifact.quorumCertificate().totalVotingWeight() != historicalTotalVotingWeight ||
+            artifact.quorumCertificate().validatorSetRoot() != historicalValidatorSet.validatorSetRoot()) {
             return ArtifactValidationResult::rejected(
-                prefix + "quorum certificate threshold does not match network parameters."
+                prefix + "quorum certificate validator-set weight does not match historical network parameters."
             );
         }
 

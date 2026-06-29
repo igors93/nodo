@@ -1007,7 +1007,7 @@ std::optional<core::Block> NodeOrchestrator::produceBlock(
     std::uint64_t round,
     std::int64_t  now
 ) {
-    if (m_runtime->validatorRegistry().activeCount() == 0) return std::nullopt;
+    if (m_runtime->validatorRegistry().totalConsensusWeight() == 0) return std::nullopt;
 
     // Confirm this node is the designated proposer for (height, round).
     const std::string chainId =

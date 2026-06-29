@@ -40,8 +40,10 @@ public:
         std::string blockHash,
         std::string previousHash,
         std::uint64_t round,
-        std::uint64_t requiredVoteCount,
-        std::uint64_t activeValidatorCount,
+        std::uint64_t requiredVotingWeight,
+        std::uint64_t totalVotingWeight,
+        std::uint64_t signedVotingWeight,
+        std::string validatorSetRoot,
         std::vector<ValidatorVoteRecord> votes
     );
 
@@ -49,6 +51,11 @@ public:
     const std::string& blockHash() const;
     const std::string& previousHash() const;
     std::uint64_t round() const;
+    std::uint64_t requiredVotingWeight() const;
+    std::uint64_t totalVotingWeight() const;
+    std::uint64_t signedVotingWeight() const;
+    const std::string& validatorSetRoot() const;
+
     std::uint64_t requiredVoteCount() const;
     std::uint64_t activeValidatorCount() const;
     const std::vector<ValidatorVoteRecord>& votes() const;
@@ -74,8 +81,10 @@ private:
     std::string m_blockHash;
     std::string m_previousHash;
     std::uint64_t m_round;
-    std::uint64_t m_requiredVoteCount;
-    std::uint64_t m_activeValidatorCount;
+    std::uint64_t m_requiredVotingWeight;
+    std::uint64_t m_totalVotingWeight;
+    std::uint64_t m_signedVotingWeight;
+    std::string m_validatorSetRoot;
     std::vector<ValidatorVoteRecord> m_votes;
 };
 
@@ -110,6 +119,12 @@ class QuorumCertificateBuilder {
 public:
     static std::uint64_t requiredVoteCount(
         std::uint64_t activeValidatorCount,
+        std::uint64_t thresholdNumerator,
+        std::uint64_t thresholdDenominator
+    );
+
+    static std::uint64_t requiredVotingWeight(
+        std::uint64_t totalVotingWeight,
         std::uint64_t thresholdNumerator,
         std::uint64_t thresholdDenominator
     );

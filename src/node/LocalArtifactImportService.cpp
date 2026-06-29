@@ -95,12 +95,12 @@ std::int64_t minimumFeeRawUnits(const config::GenesisConfig& genesis) {
     return static_cast<std::int64_t>(f);
 }
 
-std::uint64_t requiredVoteCount(
+std::uint64_t requiredVotingWeight(
     const config::GenesisConfig& genesis,
     const core::ValidatorRegistry& registry
 ) {
-    return consensus::QuorumCertificateBuilder::requiredVoteCount(
-        registry.activeCount(),
+    return consensus::QuorumCertificateBuilder::requiredVotingWeight(
+        registry.totalConsensusWeight(),
         genesis.networkParameters().quorumThresholdNumerator(),
         genesis.networkParameters().quorumThresholdDenominator()
     );
@@ -271,7 +271,7 @@ FinalizedArtifactImportResult importImpl(
         runtime,
         cryptoContext,
         targetPath,
-        requiredVoteCount(genesisConfig, runtime.validatorRegistry()),
+        requiredVotingWeight(genesisConfig, runtime.validatorRegistry()),
         minimumFeeRawUnits(genesisConfig)
     );
 

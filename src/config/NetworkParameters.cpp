@@ -6,6 +6,7 @@
 #include "core/Block.hpp"
 #include "core/LedgerRecord.hpp"
 
+#include <algorithm>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -655,8 +656,18 @@ GenesisBuildResult GenesisBuilder::build(
             genesisConfig.genesisTimestamp()
         );
 
+        const std::uint64_t bootstrapStake =
+            std::max(
+                static_cast<std::uint64_t>(validator.bootstrapWeight()),
+                core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS
+            );
+
         const auto result =
-            validatorRegistry.registerValidator(registration);
+            validatorRegistry.registerValidator(
+                registration,
+                bootstrapStake,
+                validator.validatorAddress()
+            );
 
         if (!result.accepted()) {
             return GenesisBuildResult::rejected(

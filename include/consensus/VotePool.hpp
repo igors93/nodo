@@ -68,14 +68,17 @@ public:
         std::uint64_t blockIndex,
         std::string blockHash,
         std::uint64_t round,
-        std::uint64_t acceptedVoteCount,
-        std::uint64_t requiredVoteCount,
-        std::uint64_t activeValidatorCount
+        std::uint64_t acceptedVotingWeight,
+        std::uint64_t requiredVotingWeight,
+        std::uint64_t totalVotingWeight
     );
 
     std::uint64_t blockIndex() const;
     const std::string& blockHash() const;
     std::uint64_t round() const;
+    std::uint64_t acceptedVotingWeight() const;
+    std::uint64_t requiredVotingWeight() const;
+    std::uint64_t totalVotingWeight() const;
     std::uint64_t acceptedVoteCount() const;
     std::uint64_t requiredVoteCount() const;
     std::uint64_t activeValidatorCount() const;
@@ -88,9 +91,9 @@ private:
     std::uint64_t m_blockIndex;
     std::string m_blockHash;
     std::uint64_t m_round;
-    std::uint64_t m_acceptedVoteCount;
-    std::uint64_t m_requiredVoteCount;
-    std::uint64_t m_activeValidatorCount;
+    std::uint64_t m_acceptedVotingWeight;
+    std::uint64_t m_requiredVotingWeight;
+    std::uint64_t m_totalVotingWeight;
 };
 
 class VotePool {
@@ -119,7 +122,7 @@ public:
         std::uint64_t blockIndex,
         const std::string& blockHash,
         std::uint64_t round,
-        std::uint64_t activeValidatorCount,
+        const core::ValidatorRegistry& validatorRegistry,
         std::uint64_t thresholdNumerator,
         std::uint64_t thresholdDenominator
     ) const;

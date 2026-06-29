@@ -44,12 +44,12 @@ std::int64_t minimumFeeRawUnits(
     return static_cast<std::int64_t>(minimumFee);
 }
 
-std::uint64_t expectedQuorumVoteCount(
+std::uint64_t expectedQuorumVotingWeight(
     const config::GenesisConfig& genesisConfig,
     const core::ValidatorRegistry& validatorRegistry
 ) {
-    return consensus::QuorumCertificateBuilder::requiredVoteCount(
-        validatorRegistry.activeCount(),
+    return consensus::QuorumCertificateBuilder::requiredVotingWeight(
+        validatorRegistry.totalConsensusWeight(),
         genesisConfig.networkParameters().quorumThresholdNumerator(),
         genesisConfig.networkParameters().quorumThresholdDenominator()
     );
@@ -276,7 +276,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             runtime,
             cryptoContext,
             blockPath,
-            expectedQuorumVoteCount(genesisConfig, runtime.validatorRegistry()),
+            expectedQuorumVotingWeight(genesisConfig, runtime.validatorRegistry()),
             minimumFeeRawUnits(genesisConfig)
         );
 

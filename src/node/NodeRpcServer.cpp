@@ -2,6 +2,7 @@
 
 #include "core/LedgerRecord.hpp"
 #include "core/Transaction.hpp"
+#include "core/ValidatorRegistry.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/Address.hpp"
@@ -719,7 +720,31 @@ std::string NodeRpcServer::handleValidators() const {
         if (i > 0) oss << ",";
         oss << jsonString(addresses[i]);
     }
-    oss << "],\"count\":" << addresses.size() << "}";
+    oss << "],\"count\":" << addresses.size()
+        << ",\"totalConsensusWeight\":"
+        << m_runtime.validatorRegistry().totalConsensusWeight()
+        << ",\"validatorSetRoot\":"
+        << jsonString(m_runtime.validatorRegistry().validatorSetRoot())
+        << ",\"validatorDetails\":[";
+    for (std::size_t i = 0; i < addresses.size(); ++i) {
+        if (i > 0) oss << ",";
+        const core::ValidatorRegistryEntry* entry =
+            m_runtime.validatorRegistry().entryForAddress(addresses[i]);
+        oss << "{"
+            << "\"address\":" << jsonString(addresses[i])
+            << ",\"status\":"
+            << jsonString(entry == nullptr
+                ? "UNKNOWN"
+                : core::validatorRegistrationStatusToString(entry->status()))
+            << ",\"eligible\":"
+            << (entry != nullptr && entry->eligibleForConsensus() ? "true" : "false")
+            << ",\"stakeRawUnits\":"
+            << (entry == nullptr ? 0 : entry->stakeAmount())
+            << ",\"consensusWeight\":"
+            << m_runtime.validatorRegistry().consensusWeightFor(addresses[i])
+            << "}";
+    }
+    oss << "]}";
     return oss.str();
 }
 

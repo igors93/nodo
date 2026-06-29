@@ -204,8 +204,11 @@ void testQuorumCertificateBuildsWithTwoOfThree() {
     );
 
     requireCondition(
-        result.certificate().requiredVoteCount() == 2U,
-        "Required vote count for 2 of 3 threshold should be two."
+        result.certificate().requiredVotingWeight() == 2000U &&
+        result.certificate().signedVotingWeight() == 2000U &&
+        result.certificate().totalVotingWeight() == 3000U &&
+        result.certificate().validatorSetRoot() == registry.validatorSetRoot(),
+        "Two minimum-stake validators should certify with 2000/3000 voting weight."
     );
 }
 

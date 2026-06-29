@@ -800,8 +800,8 @@ void testRejectsFinalizedBlockWithInvalidQuorumCertificate() {
 
     contents = replaceAll(
         contents,
-        "requiredVoteCount=1",
-        "requiredVoteCount=2"
+        "requiredVotingWeight=667",
+        "requiredVotingWeight=2000"
     );
 
     writeFile(

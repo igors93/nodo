@@ -95,6 +95,7 @@ public:
     ValidatorRegistrationStatus status() const;
     std::int64_t lastUpdatedAt() const;
     std::uint64_t stakeAmount() const;
+    std::uint64_t consensusWeight() const;
     std::uint64_t jailUntilEpoch() const;
     std::uint64_t exitRequestHeight() const;
     const std::string& ownerAddress() const;
@@ -211,6 +212,12 @@ public:
         const ValidatorRegistrationRecord& registrationRecord
     );
 
+    ValidatorRegistryUpdateResult registerValidator(
+        const ValidatorRegistrationRecord& registrationRecord,
+        std::uint64_t stakeAmount,
+        const std::string& ownerAddress
+    );
+
     ValidatorRegistryUpdateResult registerPendingValidator(
         const ValidatorRegistrationRecord& registrationRecord,
         std::uint64_t stakeAmount,
@@ -277,6 +284,17 @@ public:
     const ValidatorRegistryEntry* entryForAddress(
         const std::string& validatorAddress
     ) const;
+
+    static std::uint64_t consensusWeightFromStake(
+        std::uint64_t stakeAmount
+    );
+
+    std::uint64_t consensusWeightFor(
+        const std::string& validatorAddress
+    ) const;
+
+    std::uint64_t totalConsensusWeight() const;
+    std::string validatorSetRoot() const;
 
     std::vector<std::string> activeValidatorAddresses() const;
     std::vector<std::string> eligibleValidatorAddresses() const;

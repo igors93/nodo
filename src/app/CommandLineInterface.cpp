@@ -2020,10 +2020,23 @@ CommandLineResult CommandLineInterface::executeValidatorList(
 
     output << "Nodo validators\n"
            << "---------------\n"
-           << "Active validators: " << validators.size() << "\n";
+           << "Active validators: " << validators.size() << "\n"
+           << "Total consensus weight: "
+           << load.runtime().validatorRegistry().totalConsensusWeight() << "\n"
+           << "Validator set root: "
+           << load.runtime().validatorRegistry().validatorSetRoot() << "\n";
 
     for (const std::string& validator : validators) {
-        output << "Validator: " << validator << "\n";
+        const core::ValidatorRegistryEntry* entry =
+            load.runtime().validatorRegistry().entryForAddress(validator);
+        output << "Validator: " << validator;
+        if (entry != nullptr) {
+            output << " | status="
+                   << core::validatorRegistrationStatusToString(entry->status())
+                   << " | stakeRaw=" << entry->stakeAmount()
+                   << " | weight=" << entry->consensusWeight();
+        }
+        output << "\n";
     }
 
     return CommandLineResult::success(output.str());
@@ -3110,6 +3123,7 @@ CommandLineResult CommandLineInterface::executeValidatorStatus(
             << "Eligible for consensus: "
             << (entry->eligibleForConsensus() ? "yes" : "no") << "\n"
             << "Stake (raw units): " << entry->stakeAmount() << "\n"
+            << "Consensus weight: " << entry->consensusWeight() << "\n"
             << "Activation epoch: "
             << entry->registrationRecord().activationEpoch() << "\n"
             << "Owner: " << entry->ownerAddress() << "\n";
@@ -3647,7 +3661,8 @@ CommandLineResult CommandLineInterface::executeStakeStatus(
     } else {
         out << "Registry status: "
             << core::validatorRegistrationStatusToString(entry->status()) << "\n"
-            << "Bonded stake (raw units): " << entry->stakeAmount() << "\n";
+            << "Bonded stake (raw units): " << entry->stakeAmount() << "\n"
+            << "Consensus weight: " << entry->consensusWeight() << "\n";
     }
 
     return CommandLineResult::success(out.str());

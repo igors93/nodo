@@ -17,8 +17,8 @@ ValidatorVoteRecord ValidatorVoteBuilder::buildApprovalVote(
         throw std::invalid_argument("Validator vote build input is invalid.");
     }
 
-    if (!validatorRegistry.isActiveValidator(signer.address())) {
-        throw std::invalid_argument("Signer is not an active validator.");
+    if (!validatorRegistry.isEligibleForConsensus(signer.address())) {
+        throw std::invalid_argument("Signer is not an eligible weighted validator.");
     }
 
     if (!validatorRegistry.verifyValidatorIdentity(
@@ -52,8 +52,8 @@ ValidatorVoteRecord ValidatorVoteBuilder::buildPrevote(
         throw std::invalid_argument("Validator vote build input is invalid.");
     }
 
-    if (!validatorRegistry.isActiveValidator(signer.address())) {
-        throw std::invalid_argument("Signer is not an active validator.");
+    if (!validatorRegistry.isEligibleForConsensus(signer.address())) {
+        throw std::invalid_argument("Signer is not an eligible weighted validator.");
     }
 
     if (!validatorRegistry.verifyValidatorIdentity(
@@ -87,8 +87,8 @@ ValidatorVoteRecord ValidatorVoteBuilder::buildPrecommit(
         throw std::invalid_argument("Validator vote build input is invalid.");
     }
 
-    if (!validatorRegistry.isActiveValidator(signer.address())) {
-        throw std::invalid_argument("Signer is not an active validator.");
+    if (!validatorRegistry.isEligibleForConsensus(signer.address())) {
+        throw std::invalid_argument("Signer is not an eligible weighted validator.");
     }
 
     if (!validatorRegistry.verifyValidatorIdentity(

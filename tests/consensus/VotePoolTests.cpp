@@ -1,7 +1,10 @@
 #include "consensus/VotePool.hpp"
 
+#include "core/ValidatorRegistry.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoSuiteId.hpp"
+#include "crypto/AddressDerivation.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
@@ -18,6 +21,34 @@ nodo::crypto::PublicKey fakeValidatorPublicKey(char fill) {
         nodo::crypto::CryptoAlgorithm::BLS12_381,
         std::string(96, fill)
     );
+}
+
+nodo::crypto::KeyPair validatorKey(const std::string& seed) {
+    return nodo::crypto::KeyPair::createDeterministicBls12381KeyPair(
+        "vote-pool-validator-" + seed
+    );
+}
+
+std::string validatorAddress(const std::string& seed) {
+    return nodo::crypto::AddressDerivation::deriveFromPublicKey(
+        validatorKey(seed).publicKey()
+    ).value();
+}
+
+nodo::core::ValidatorRegistry validatorRegistry() {
+    nodo::core::ValidatorRegistry registry;
+    for (const std::string& seed : {"A", "B", "C"}) {
+        const auto key = validatorKey(seed);
+        const nodo::core::ValidatorRegistrationRecord record(
+            validatorAddress(seed),
+            key.publicKey(),
+            1,
+            "vote-pool-meta-" + seed,
+            1000
+        );
+        assert(registry.registerValidator(record).accepted());
+    }
+    return registry;
 }
 
 nodo::crypto::SignatureBundle fakeSignatureBundle(
@@ -39,14 +70,14 @@ nodo::crypto::SignatureBundle fakeSignatureBundle(
 }
 
 nodo::consensus::ValidatorVoteRecord makeVote(
-    const std::string& validator,
+    const std::string& validatorSeed,
     const std::string& blockHash,
     nodo::consensus::ValidatorVoteDecision decision,
     std::int64_t createdAt = 1000
 ) {
-    const auto publicKey = fakeValidatorPublicKey('a');
+    const auto publicKey = validatorKey(validatorSeed).publicKey();
     return nodo::consensus::ValidatorVoteRecord(
-        validator,
+        validatorAddress(validatorSeed),
         publicKey,
         1,
         blockHash,
@@ -64,9 +95,10 @@ nodo::consensus::ValidatorVoteRecord makeVote(
 int main() {
     const nodo::crypto::ProtocolCryptoContext ctx = nodo::crypto::ProtocolCryptoContext::localnet();
     nodo::consensus::VotePool pool;
+    const nodo::core::ValidatorRegistry registry = validatorRegistry();
 
     const auto vote = makeVote(
-        "validator-A",
+        "A",
         "block-hash-A",
         nodo::consensus::ValidatorVoteDecision::APPROVE
     );
@@ -77,16 +109,17 @@ int main() {
     assert(pool.voteCountForBlock(1, "block-hash-A", 1) == 1);
 
     const auto partialProgress =
-        pool.quorumProgressForBlock(1, "block-hash-A", 1, 3, 2, 3);
+        pool.quorumProgressForBlock(1, "block-hash-A", 1, registry, 2, 3);
 
     assert(partialProgress.isValid());
-    assert(partialProgress.acceptedVoteCount() == 1);
-    assert(partialProgress.requiredVoteCount() == 2);
+    assert(partialProgress.acceptedVotingWeight() == 1000);
+    assert(partialProgress.requiredVotingWeight() == 2000);
+    assert(partialProgress.totalVotingWeight() == 3000);
     assert(!partialProgress.canCertify());
 
     const auto secondAccepted = pool.submitVote(
         makeVote(
-            "validator-B",
+            "B",
             "block-hash-A",
             nodo::consensus::ValidatorVoteDecision::APPROVE
         ),
@@ -97,11 +130,11 @@ int main() {
     assert(pool.totalVoteCount() == 2);
 
     const auto quorumProgress =
-        pool.quorumProgressForBlock(1, "block-hash-A", 1, 3, 2, 3);
+        pool.quorumProgressForBlock(1, "block-hash-A", 1, registry, 2, 3);
 
     assert(quorumProgress.isValid());
-    assert(quorumProgress.acceptedVoteCount() == 2);
-    assert(quorumProgress.requiredVoteCount() == 2);
+    assert(quorumProgress.acceptedVotingWeight() == 2000);
+    assert(quorumProgress.requiredVotingWeight() == 2000);
     assert(quorumProgress.canCertify());
 
     const auto duplicate = pool.submitVote(vote, ctx.policy(), ctx.validatorSignatureProvider());
@@ -109,7 +142,7 @@ int main() {
 
     const auto replaySameSlot = pool.submitVote(
         makeVote(
-            "validator-A",
+            "A",
             "block-hash-A",
             nodo::consensus::ValidatorVoteDecision::APPROVE,
             1001
@@ -122,7 +155,7 @@ int main() {
 
     const auto conflicting = pool.submitVote(
         makeVote(
-            "validator-A",
+            "A",
             "block-hash-B",
             nodo::consensus::ValidatorVoteDecision::APPROVE
         ),
@@ -130,7 +163,7 @@ int main() {
     );
 
     assert(conflicting.conflicting());
-    assert(pool.hasConflictingVote("validator-A", 1, 1));
+    assert(pool.hasConflictingVote(validatorAddress("A"), 1, 1));
 
     return 0;
 }

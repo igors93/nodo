@@ -49,6 +49,37 @@ std::string hashString(
     return std::string(output);
 }
 
+std::uint64_t integerSquareRoot(
+    std::uint64_t value
+) {
+    if (value == 0) {
+        return 0;
+    }
+
+    std::uint64_t low = 1;
+    std::uint64_t high = value < 4'294'967'295ULL
+        ? value
+        : 4'294'967'295ULL;
+    std::uint64_t answer = 0;
+
+    while (low <= high) {
+        const std::uint64_t mid =
+            low + ((high - low) / 2);
+        const unsigned __int128 square =
+            static_cast<unsigned __int128>(mid) *
+            static_cast<unsigned __int128>(mid);
+
+        if (square <= value) {
+            answer = mid;
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    return answer;
+}
+
 } // namespace
 
 std::string validatorRegistrationStatusToString(
@@ -247,6 +278,10 @@ std::uint64_t ValidatorRegistryEntry::stakeAmount() const {
     return m_stakeAmount;
 }
 
+std::uint64_t ValidatorRegistryEntry::consensusWeight() const {
+    return integerSquareRoot(m_stakeAmount);
+}
+
 std::uint64_t ValidatorRegistryEntry::jailUntilEpoch() const {
     return m_jailUntilEpoch;
 }
@@ -260,7 +295,9 @@ const std::string& ValidatorRegistryEntry::ownerAddress() const {
 }
 
 bool ValidatorRegistryEntry::eligibleForConsensus() const {
-    return m_status == ValidatorRegistrationStatus::ACTIVE;
+    return m_status == ValidatorRegistrationStatus::ACTIVE &&
+           m_stakeAmount >= ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS &&
+           consensusWeight() > 0;
 }
 
 bool ValidatorRegistryEntry::jailed() const {
@@ -293,6 +330,11 @@ bool ValidatorRegistryEntry::isValid() const {
         return false;
     }
 
+    if (m_status == ValidatorRegistrationStatus::ACTIVE &&
+        m_stakeAmount < ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS) {
+        return false;
+    }
+
     return true;
 }
 
@@ -303,6 +345,7 @@ std::string ValidatorRegistryEntry::serialize() const {
         << "status=" << validatorRegistrationStatusToString(m_status)
         << ";lastUpdatedAt=" << m_lastUpdatedAt
         << ";stakeAmount=" << m_stakeAmount
+        << ";consensusWeight=" << consensusWeight()
         << ";jailUntilEpoch=" << m_jailUntilEpoch
         << ";exitRequestHeight=" << m_exitRequestHeight
         << ";ownerAddress=" << m_ownerAddress
@@ -471,10 +514,37 @@ ValidatorRegistry::ValidatorRegistry()
 ValidatorRegistryUpdateResult ValidatorRegistry::registerValidator(
     const ValidatorRegistrationRecord& registrationRecord
 ) {
+    return registerValidator(
+        registrationRecord,
+        MIN_VALIDATOR_STAKE_RAW_UNITS,
+        registrationRecord.validatorAddress()
+    );
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistry::registerValidator(
+    const ValidatorRegistrationRecord& registrationRecord,
+    std::uint64_t stakeAmount,
+    const std::string& ownerAddress
+) {
     if (!registrationRecord.isValid()) {
         return ValidatorRegistryUpdateResult::rejected(
             ValidatorRegistryUpdateStatus::INVALID_RECORD,
             "Invalid validator registration record."
+        );
+    }
+
+    if (stakeAmount < MIN_VALIDATOR_STAKE_RAW_UNITS ||
+        consensusWeightFromStake(stakeAmount) == 0) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INSUFFICIENT_STAKE,
+            "Validator registration is below the minimum stake."
+        );
+    }
+
+    if (!isSafeScalar(ownerAddress)) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_RECORD,
+            "Validator owner address is invalid."
         );
     }
 
@@ -508,7 +578,11 @@ ValidatorRegistryUpdateResult ValidatorRegistry::registerValidator(
     ValidatorRegistryEntry entry(
         registrationRecord,
         ValidatorRegistrationStatus::ACTIVE,
-        registrationRecord.registeredAt()
+        registrationRecord.registeredAt(),
+        stakeAmount,
+        0,
+        0,
+        ownerAddress
     );
 
     if (!entry.isValid()) {
@@ -609,7 +683,11 @@ ValidatorRegistryUpdateResult ValidatorRegistry::deactivateValidator(
     ValidatorRegistryEntry updatedEntry(
         existing->second.registrationRecord(),
         ValidatorRegistrationStatus::DEACTIVATED,
-        timestamp
+        timestamp,
+        existing->second.stakeAmount(),
+        existing->second.jailUntilEpoch(),
+        existing->second.exitRequestHeight(),
+        existing->second.ownerAddress()
     );
 
     if (!updatedEntry.isValid()) {
@@ -802,6 +880,14 @@ ValidatorRegistryUpdateResult ValidatorRegistry::activateValidator(
         );
     }
 
+    if (existing.stakeAmount() < MIN_VALIDATOR_STAKE_RAW_UNITS ||
+        existing.consensusWeight() == 0) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INSUFFICIENT_STAKE,
+            "Validator stake is below the minimum required for activation."
+        );
+    }
+
     ValidatorRegistryEntry updated(
         existing.registrationRecord(),
         ValidatorRegistrationStatus::ACTIVE,
@@ -886,6 +972,14 @@ ValidatorRegistryUpdateResult ValidatorRegistry::unjailValidator(
             ValidatorRegistryUpdateStatus::INVALID_STATUS_TRANSITION,
             "Jail period has not elapsed (until epoch "
                 + std::to_string(existing.jailUntilEpoch()) + ")."
+        );
+    }
+
+    if (existing.stakeAmount() < MIN_VALIDATOR_STAKE_RAW_UNITS ||
+        existing.consensusWeight() == 0) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INSUFFICIENT_STAKE,
+            "Validator stake is below the minimum required for unjail."
         );
     }
 
@@ -1007,6 +1101,43 @@ ValidatorRegistryUpdateResult ValidatorRegistry::updateStake(
     return ValidatorRegistryUpdateResult::accepted(updated);
 }
 
+std::uint64_t ValidatorRegistry::consensusWeightFromStake(
+    std::uint64_t stakeAmount
+) {
+    return integerSquareRoot(stakeAmount);
+}
+
+std::uint64_t ValidatorRegistry::consensusWeightFor(
+    const std::string& validatorAddress
+) const {
+    const auto it = m_entries.find(validatorAddress);
+    if (it == m_entries.end() ||
+        !it->second.eligibleForConsensus()) {
+        return 0;
+    }
+    return it->second.consensusWeight();
+}
+
+std::uint64_t ValidatorRegistry::totalConsensusWeight() const {
+    std::uint64_t total = 0;
+    for (const auto& [address, entry] : m_entries) {
+        (void)address;
+        if (!entry.eligibleForConsensus()) {
+            continue;
+        }
+        const std::uint64_t weight = entry.consensusWeight();
+        if (std::numeric_limits<std::uint64_t>::max() - total < weight) {
+            throw std::overflow_error("Validator consensus weight overflow.");
+        }
+        total += weight;
+    }
+    return total;
+}
+
+std::string ValidatorRegistry::validatorSetRoot() const {
+    return hashString(serialize());
+}
+
 std::size_t ValidatorRegistry::size() const {
     return m_entries.size();
 }
@@ -1049,6 +1180,7 @@ std::string ValidatorRegistry::serialize() const {
     oss << "ValidatorRegistry{"
         << "size=" << m_entries.size()
         << ";activeCount=" << activeCount()
+        << ";totalConsensusWeight=" << totalConsensusWeight()
         << ";entries=[";
 
     bool first = true;
@@ -1128,6 +1260,8 @@ std::string ValidatorSetHistory::serialize() const {
     for (const auto& [height, registry] : m_setsByHeight) {
         if (!first) output << ",";
         output << "ValidatorSet{height=" << height
+               << ";validatorSetRoot=" << registry.validatorSetRoot()
+               << ";totalConsensusWeight=" << registry.totalConsensusWeight()
                << ";registry=" << registry.serialize() << "}";
         first = false;
     }

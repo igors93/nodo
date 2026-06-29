@@ -76,43 +76,46 @@ VotePoolQuorumProgress::VotePoolQuorumProgress()
     : m_blockIndex(0),
       m_blockHash(""),
       m_round(0),
-      m_acceptedVoteCount(0),
-      m_requiredVoteCount(0),
-      m_activeValidatorCount(0) {}
+      m_acceptedVotingWeight(0),
+      m_requiredVotingWeight(0),
+      m_totalVotingWeight(0) {}
 
 VotePoolQuorumProgress::VotePoolQuorumProgress(
     std::uint64_t blockIndex,
     std::string blockHash,
     std::uint64_t round,
-    std::uint64_t acceptedVoteCount,
-    std::uint64_t requiredVoteCount,
-    std::uint64_t activeValidatorCount
+    std::uint64_t acceptedVotingWeight,
+    std::uint64_t requiredVotingWeight,
+    std::uint64_t totalVotingWeight
 ) : m_blockIndex(blockIndex),
     m_blockHash(std::move(blockHash)),
     m_round(round),
-    m_acceptedVoteCount(acceptedVoteCount),
-    m_requiredVoteCount(requiredVoteCount),
-    m_activeValidatorCount(activeValidatorCount) {}
+    m_acceptedVotingWeight(acceptedVotingWeight),
+    m_requiredVotingWeight(requiredVotingWeight),
+    m_totalVotingWeight(totalVotingWeight) {}
 
 std::uint64_t VotePoolQuorumProgress::blockIndex() const { return m_blockIndex; }
 const std::string& VotePoolQuorumProgress::blockHash() const { return m_blockHash; }
 std::uint64_t VotePoolQuorumProgress::round() const { return m_round; }
-std::uint64_t VotePoolQuorumProgress::acceptedVoteCount() const { return m_acceptedVoteCount; }
-std::uint64_t VotePoolQuorumProgress::requiredVoteCount() const { return m_requiredVoteCount; }
-std::uint64_t VotePoolQuorumProgress::activeValidatorCount() const { return m_activeValidatorCount; }
+std::uint64_t VotePoolQuorumProgress::acceptedVotingWeight() const { return m_acceptedVotingWeight; }
+std::uint64_t VotePoolQuorumProgress::requiredVotingWeight() const { return m_requiredVotingWeight; }
+std::uint64_t VotePoolQuorumProgress::totalVotingWeight() const { return m_totalVotingWeight; }
+std::uint64_t VotePoolQuorumProgress::acceptedVoteCount() const { return m_acceptedVotingWeight; }
+std::uint64_t VotePoolQuorumProgress::requiredVoteCount() const { return m_requiredVotingWeight; }
+std::uint64_t VotePoolQuorumProgress::activeValidatorCount() const { return m_totalVotingWeight; }
 
 bool VotePoolQuorumProgress::isValid() const {
     return m_blockIndex > 0 &&
            !m_blockHash.empty() &&
            m_round > 0 &&
-           m_requiredVoteCount > 0 &&
-           m_activeValidatorCount > 0 &&
-           m_requiredVoteCount <= m_activeValidatorCount &&
-           m_acceptedVoteCount <= m_activeValidatorCount;
+           m_requiredVotingWeight > 0 &&
+           m_totalVotingWeight > 0 &&
+           m_requiredVotingWeight <= m_totalVotingWeight &&
+           m_acceptedVotingWeight <= m_totalVotingWeight;
 }
 
 bool VotePoolQuorumProgress::canCertify() const {
-    return isValid() && m_acceptedVoteCount >= m_requiredVoteCount;
+    return isValid() && m_acceptedVotingWeight >= m_requiredVotingWeight;
 }
 
 std::string VotePoolQuorumProgress::serialize() const {
@@ -121,9 +124,9 @@ std::string VotePoolQuorumProgress::serialize() const {
            << "blockIndex=" << m_blockIndex
            << ";blockHash=" << m_blockHash
            << ";round=" << m_round
-           << ";acceptedVoteCount=" << m_acceptedVoteCount
-           << ";requiredVoteCount=" << m_requiredVoteCount
-           << ";activeValidatorCount=" << m_activeValidatorCount
+           << ";acceptedVotingWeight=" << m_acceptedVotingWeight
+           << ";requiredVotingWeight=" << m_requiredVotingWeight
+           << ";totalVotingWeight=" << m_totalVotingWeight
            << ";canCertify=" << (canCertify() ? "1" : "0")
            << "}";
     return output.str();
@@ -203,20 +206,29 @@ VotePoolQuorumProgress VotePool::quorumProgressForBlock(
     std::uint64_t blockIndex,
     const std::string& blockHash,
     std::uint64_t round,
-    std::uint64_t activeValidatorCount,
+    const core::ValidatorRegistry& validatorRegistry,
     std::uint64_t thresholdNumerator,
     std::uint64_t thresholdDenominator
 ) const {
-    const std::size_t observedVotes =
-        voteCountForBlock(blockIndex, blockHash, round);
-
-    if (observedVotes > std::numeric_limits<std::uint64_t>::max()) {
-        throw std::overflow_error("Vote count cannot fit in uint64.");
+    std::uint64_t acceptedWeight = 0;
+    std::set<std::string> seenVoters;
+    for (const auto& vote : votesForBlock(blockIndex, blockHash, round)) {
+        if (!seenVoters.insert(vote.validatorAddress()).second) {
+            continue;
+        }
+        const std::uint64_t weight =
+            validatorRegistry.consensusWeightFor(vote.validatorAddress());
+        if (std::numeric_limits<std::uint64_t>::max() - acceptedWeight < weight) {
+            throw std::overflow_error("Vote pool weight cannot fit in uint64.");
+        }
+        acceptedWeight += weight;
     }
 
-    const std::uint64_t requiredVotes =
-        QuorumCertificateBuilder::requiredVoteCount(
-            activeValidatorCount,
+    const std::uint64_t totalWeight =
+        validatorRegistry.totalConsensusWeight();
+    const std::uint64_t requiredWeight =
+        QuorumCertificateBuilder::requiredVotingWeight(
+            totalWeight,
             thresholdNumerator,
             thresholdDenominator
         );
@@ -225,9 +237,9 @@ VotePoolQuorumProgress VotePool::quorumProgressForBlock(
         blockIndex,
         blockHash,
         round,
-        static_cast<std::uint64_t>(observedVotes),
-        requiredVotes,
-        activeValidatorCount
+        acceptedWeight,
+        requiredWeight,
+        totalWeight
     );
 }
 

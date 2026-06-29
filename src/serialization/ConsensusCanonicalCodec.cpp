@@ -56,8 +56,10 @@ std::vector<unsigned char> ConsensusCanonicalCodec::encodeQuorumCertificate(
     writer.writeString(certificate.blockHash());
     writer.writeString(certificate.previousHash());
     writer.writeUInt64(certificate.round());
-    writer.writeUInt64(certificate.requiredVoteCount());
-    writer.writeUInt64(certificate.activeValidatorCount());
+    writer.writeUInt64(certificate.requiredVotingWeight());
+    writer.writeUInt64(certificate.totalVotingWeight());
+    writer.writeUInt64(certificate.signedVotingWeight());
+    writer.writeString(certificate.validatorSetRoot());
     writer.writeUInt32(static_cast<std::uint32_t>(certificate.votes().size()));
 
     for (const auto& vote : certificate.votes()) {

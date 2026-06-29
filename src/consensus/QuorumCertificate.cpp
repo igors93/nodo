@@ -1,5 +1,6 @@
 #include "consensus/QuorumCertificate.hpp"
 
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -274,8 +275,10 @@ QuorumCertificate::QuorumCertificate()
       m_blockHash(""),
       m_previousHash(""),
       m_round(0),
-      m_requiredVoteCount(0),
-      m_activeValidatorCount(0),
+      m_requiredVotingWeight(0),
+      m_totalVotingWeight(0),
+      m_signedVotingWeight(0),
+      m_validatorSetRoot(""),
       m_votes() {}
 
 QuorumCertificate::QuorumCertificate(
@@ -283,16 +286,20 @@ QuorumCertificate::QuorumCertificate(
     std::string blockHash,
     std::string previousHash,
     std::uint64_t round,
-    std::uint64_t requiredVoteCount,
-    std::uint64_t activeValidatorCount,
+    std::uint64_t requiredVotingWeight,
+    std::uint64_t totalVotingWeight,
+    std::uint64_t signedVotingWeight,
+    std::string validatorSetRoot,
     std::vector<ValidatorVoteRecord> votes
 )
     : m_blockIndex(blockIndex),
       m_blockHash(std::move(blockHash)),
       m_previousHash(std::move(previousHash)),
       m_round(round),
-      m_requiredVoteCount(requiredVoteCount),
-      m_activeValidatorCount(activeValidatorCount),
+      m_requiredVotingWeight(requiredVotingWeight),
+      m_totalVotingWeight(totalVotingWeight),
+      m_signedVotingWeight(signedVotingWeight),
+      m_validatorSetRoot(std::move(validatorSetRoot)),
       m_votes(std::move(votes)) {}
 
 std::uint64_t QuorumCertificate::blockIndex() const {
@@ -311,12 +318,28 @@ std::uint64_t QuorumCertificate::round() const {
     return m_round;
 }
 
+std::uint64_t QuorumCertificate::requiredVotingWeight() const {
+    return m_requiredVotingWeight;
+}
+
+std::uint64_t QuorumCertificate::totalVotingWeight() const {
+    return m_totalVotingWeight;
+}
+
+std::uint64_t QuorumCertificate::signedVotingWeight() const {
+    return m_signedVotingWeight;
+}
+
+const std::string& QuorumCertificate::validatorSetRoot() const {
+    return m_validatorSetRoot;
+}
+
 std::uint64_t QuorumCertificate::requiredVoteCount() const {
-    return m_requiredVoteCount;
+    return m_requiredVotingWeight;
 }
 
 std::uint64_t QuorumCertificate::activeValidatorCount() const {
-    return m_activeValidatorCount;
+    return m_totalVotingWeight;
 }
 
 const std::vector<ValidatorVoteRecord>& QuorumCertificate::votes() const {
@@ -335,21 +358,25 @@ std::size_t QuorumCertificate::voteCount() const {
 bool QuorumCertificate::isStructurallyValid() const {
     if (m_blockIndex == 0 ||
         m_round == 0 ||
-        m_requiredVoteCount == 0 ||
-        m_activeValidatorCount == 0) {
+        m_requiredVotingWeight == 0 ||
+        m_totalVotingWeight == 0 ||
+        m_signedVotingWeight == 0) {
         return false;
     }
 
     if (!isSafeScalar(m_blockHash) ||
-        !isSafeScalar(m_previousHash)) {
+        !isSafeScalar(m_previousHash) ||
+        !isSafeScalar(m_validatorSetRoot)) {
         return false;
     }
 
-    if (m_requiredVoteCount > m_activeValidatorCount) {
+    if (m_requiredVotingWeight > m_totalVotingWeight ||
+        m_signedVotingWeight > m_totalVotingWeight ||
+        m_signedVotingWeight < m_requiredVotingWeight) {
         return false;
     }
 
-    if (m_votes.size() < m_requiredVoteCount) {
+    if (m_votes.empty()) {
         return false;
     }
 
@@ -392,9 +419,15 @@ bool QuorumCertificate::verify(
         return false;
     }
 
-    if (validatorRegistry.activeCount() != m_activeValidatorCount) {
+    if (validatorRegistry.totalConsensusWeight() != m_totalVotingWeight) {
         return false;
     }
+
+    if (validatorRegistry.validatorSetRoot() != m_validatorSetRoot) {
+        return false;
+    }
+
+    std::uint64_t signedWeight = 0;
 
     for (const auto& vote : m_votes) {
         if (!validatorRegistry.verifyValidatorIdentity(
@@ -407,9 +440,18 @@ bool QuorumCertificate::verify(
         if (!vote.verify(policy, provider)) {
             return false;
         }
+
+        const std::uint64_t voterWeight =
+            validatorRegistry.consensusWeightFor(vote.validatorAddress());
+        if (voterWeight == 0 ||
+            std::numeric_limits<std::uint64_t>::max() - signedWeight < voterWeight) {
+            return false;
+        }
+        signedWeight += voterWeight;
     }
 
-    return true;
+    return signedWeight == m_signedVotingWeight &&
+           signedWeight >= m_requiredVotingWeight;
 }
 
 std::string QuorumCertificate::serialize() const {
@@ -420,8 +462,10 @@ std::string QuorumCertificate::serialize() const {
         << ";blockHash=" << m_blockHash
         << ";previousHash=" << m_previousHash
         << ";round=" << m_round
-        << ";requiredVoteCount=" << m_requiredVoteCount
-        << ";activeValidatorCount=" << m_activeValidatorCount
+        << ";requiredVotingWeight=" << m_requiredVotingWeight
+        << ";totalVotingWeight=" << m_totalVotingWeight
+        << ";signedVotingWeight=" << m_signedVotingWeight
+        << ";validatorSetRoot=" << m_validatorSetRoot
         << ";votes=[";
 
     for (std::size_t index = 0; index < m_votes.size(); ++index) {
@@ -453,8 +497,10 @@ QuorumCertificate QuorumCertificate::deserialize(
             "blockHash",
             "previousHash",
             "round",
-            "requiredVoteCount",
-            "activeValidatorCount",
+            "requiredVotingWeight",
+            "totalVotingWeight",
+            "signedVotingWeight",
+            "validatorSetRoot",
             "votes"
         },
         "QuorumCertificate"
@@ -472,13 +518,18 @@ QuorumCertificate QuorumCertificate::deserialize(
             "QuorumCertificate.round"
         ),
         parseU64Strict(
-            requireField(fields, "requiredVoteCount", "QuorumCertificate"),
-            "QuorumCertificate.requiredVoteCount"
+            requireField(fields, "requiredVotingWeight", "QuorumCertificate"),
+            "QuorumCertificate.requiredVotingWeight"
         ),
         parseU64Strict(
-            requireField(fields, "activeValidatorCount", "QuorumCertificate"),
-            "QuorumCertificate.activeValidatorCount"
+            requireField(fields, "totalVotingWeight", "QuorumCertificate"),
+            "QuorumCertificate.totalVotingWeight"
         ),
+        parseU64Strict(
+            requireField(fields, "signedVotingWeight", "QuorumCertificate"),
+            "QuorumCertificate.signedVotingWeight"
+        ),
+        requireField(fields, "validatorSetRoot", "QuorumCertificate"),
         parseVotes(
             requireField(fields, "votes", "QuorumCertificate")
         )
@@ -554,7 +605,19 @@ std::uint64_t QuorumCertificateBuilder::requiredVoteCount(
     std::uint64_t thresholdNumerator,
     std::uint64_t thresholdDenominator
 ) {
-    if (activeValidatorCount == 0 ||
+    return requiredVotingWeight(
+        activeValidatorCount,
+        thresholdNumerator,
+        thresholdDenominator
+    );
+}
+
+std::uint64_t QuorumCertificateBuilder::requiredVotingWeight(
+    std::uint64_t totalVotingWeight,
+    std::uint64_t thresholdNumerator,
+    std::uint64_t thresholdDenominator
+) {
+    if (totalVotingWeight == 0 ||
         thresholdNumerator == 0 ||
         thresholdDenominator == 0 ||
         thresholdNumerator > thresholdDenominator) {
@@ -562,7 +625,7 @@ std::uint64_t QuorumCertificateBuilder::requiredVoteCount(
     }
 
     const unsigned __int128 scaledVotes =
-        static_cast<unsigned __int128>(activeValidatorCount) *
+        static_cast<unsigned __int128>(totalVotingWeight) *
         static_cast<unsigned __int128>(thresholdNumerator);
 
     const unsigned __int128 roundedVotes =
@@ -601,18 +664,20 @@ QuorumCertificateBuildResult QuorumCertificateBuilder::buildFromVotes(
     }
 
     if (!validatorRegistry.isValid() ||
-        validatorRegistry.activeCount() == 0) {
+        validatorRegistry.totalConsensusWeight() == 0) {
         return QuorumCertificateBuildResult::rejected(
             QuorumCertificateBuildStatus::INVALID_VALIDATOR_REGISTRY,
-            "Validator registry is invalid or has no active validators."
+            "Validator registry is invalid or has no weighted consensus validators."
         );
     }
 
-    std::uint64_t requiredVotes = 0;
+    const std::uint64_t totalVotingWeight =
+        validatorRegistry.totalConsensusWeight();
+    std::uint64_t requiredWeight = 0;
 
     try {
-        requiredVotes = requiredVoteCount(
-            validatorRegistry.activeCount(),
+        requiredWeight = requiredVotingWeight(
+            totalVotingWeight,
             thresholdNumerator,
             thresholdDenominator
         );
@@ -625,6 +690,7 @@ QuorumCertificateBuildResult QuorumCertificateBuilder::buildFromVotes(
 
     std::vector<ValidatorVoteRecord> acceptedVotes;
     std::set<std::string> seenVoters;
+    std::uint64_t signedWeight = 0;
 
     for (const auto& vote : candidateVotes) {
         if (!vote.verify(policy, provider)) {
@@ -671,13 +737,30 @@ QuorumCertificateBuildResult QuorumCertificateBuilder::buildFromVotes(
             );
         }
 
+        const std::uint64_t voterWeight =
+            validatorRegistry.consensusWeightFor(vote.validatorAddress());
+        if (voterWeight == 0) {
+            return QuorumCertificateBuildResult::rejected(
+                QuorumCertificateBuildStatus::UNREGISTERED_OR_INACTIVE_VOTER,
+                "Vote signer has no consensus voting weight."
+            );
+        }
+
+        if (std::numeric_limits<std::uint64_t>::max() - signedWeight < voterWeight) {
+            return QuorumCertificateBuildResult::rejected(
+                QuorumCertificateBuildStatus::INVALID_INPUT,
+                "Signed voting weight overflow."
+            );
+        }
+
+        signedWeight += voterWeight;
         acceptedVotes.push_back(vote);
     }
 
-    if (acceptedVotes.size() < requiredVotes) {
+    if (signedWeight < requiredWeight) {
         return QuorumCertificateBuildResult::rejected(
             QuorumCertificateBuildStatus::NOT_ENOUGH_VALID_VOTES,
-            "Not enough valid votes to certify block."
+            "Not enough signed validator weight to certify block."
         );
     }
 
@@ -686,8 +769,10 @@ QuorumCertificateBuildResult QuorumCertificateBuilder::buildFromVotes(
         blockHash,
         previousHash,
         round,
-        requiredVotes,
-        validatorRegistry.activeCount(),
+        requiredWeight,
+        totalVotingWeight,
+        signedWeight,
+        validatorRegistry.validatorSetRoot(),
         acceptedVotes
     );
 

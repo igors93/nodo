@@ -27,12 +27,14 @@ std::uint64_t governanceVotingWeight(
     const std::int64_t availableStake =
         stake.bondedAmount().rawUnits() - stake.slashedAmount().rawUnits();
     if (availableStake > 0) {
-        return static_cast<std::uint64_t>(availableStake);
+        return core::ValidatorRegistry::consensusWeightFromStake(
+            static_cast<std::uint64_t>(availableStake)
+        );
     }
     if (entry.stakeAmount() > 0) {
-        return entry.stakeAmount();
+        return entry.consensusWeight();
     }
-    return entry.eligibleForConsensus() ? 1 : 0;
+    return 0;
 }
 
 } // namespace
@@ -124,6 +126,22 @@ bool TransactionAdmissionPolicy::validateDomain(
                         transaction.fromAddress(), transaction.toAddress())) {
                     reason = "Stake withdrawal exceeds ownership or is still cooling down.";
                     return false;
+                }
+                const auto* entry =
+                    context.validators().entryForAddress(transaction.toAddress());
+                if (entry != nullptr && entry->eligibleForConsensus()) {
+                    const auto stake =
+                        context.staking().accountOrDefault(transaction.toAddress());
+                    const std::int64_t available =
+                        stake.bondedAmount().rawUnits() - stake.slashedAmount().rawUnits();
+                    const std::int64_t requested =
+                        (reserved + transaction.amount()).rawUnits();
+                    if (available < requested ||
+                        available - requested < static_cast<std::int64_t>(
+                            core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS)) {
+                        reason = "Active validator stake cannot be withdrawn below the protocol minimum.";
+                        return false;
+                    }
                 }
                 break;
             }
