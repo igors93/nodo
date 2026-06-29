@@ -166,6 +166,13 @@ void validateTransactionForReload(
     if (!runtime.accepted()) {
         throw std::invalid_argument("Persistent transaction runtime admission failed: " + runtime.reason());
     }
+    const core::AccountState sender = accountStateView.accountOrDefault(transaction.fromAddress());
+    const std::uint64_t expectedNonce = sender.nonce() + 1;
+    if (transaction.nonce() != expectedNonce) {
+        throw std::invalid_argument(
+            "Persistent transaction nonce is in the future and no per-account queue is available."
+        );
+    }
     if (admissionContext != nullptr &&
         !TransactionAdmissionPolicy::validateDomain(
             transaction, *admissionContext, reason)) {

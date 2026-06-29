@@ -135,7 +135,7 @@ Blockchain buildRewardBlockchain() {
         Amount::fromNodo(1),
         1,
         kTimestamp + 5,
-        {rewardA.createRewardCoinLot(0).id()}
+        std::vector<std::string>{rewardA.createRewardCoinLot(0).id()}
     );
 
     const nodo::crypto::KeyPair keyPair =

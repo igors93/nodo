@@ -59,12 +59,15 @@ ValidatorRegistrationPayload ValidatorRegistrationPayload::deserialize(
     if (reader.readString() != REGISTRATION_SCHEMA) {
         throw std::invalid_argument("Unknown validator registration payload schema.");
     }
+    const std::string algorithmStr = reader.readString();
+    const std::string keyMaterial = reader.readString();
+    const std::string metadataHash = reader.readString();
     ValidatorRegistrationPayload payload(
         crypto::PublicKey(
-            crypto::cryptoAlgorithmFromString(reader.readString()),
-            reader.readString()
+            crypto::cryptoAlgorithmFromString(algorithmStr),
+            keyMaterial
         ),
-        reader.readString()
+        metadataHash
     );
     reader.requireFullyConsumed();
     if (!payload.isValid() || payload.serialize() != serialized) {
@@ -107,9 +110,11 @@ GovernanceVotePayload GovernanceVotePayload::deserialize(const std::string& seri
     if (reader.readString() != VOTE_SCHEMA) {
         throw std::invalid_argument("Unknown governance vote payload schema.");
     }
+    const std::string validatorAddress = reader.readString();
+    const std::string choiceStr = reader.readString();
     GovernanceVotePayload payload(
-        reader.readString(),
-        governanceVoteChoiceFromString(reader.readString())
+        validatorAddress,
+        governanceVoteChoiceFromString(choiceStr)
     );
     reader.requireFullyConsumed();
     if (!payload.isValid() || payload.serialize() != serialized) {

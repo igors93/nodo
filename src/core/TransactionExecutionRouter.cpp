@@ -87,7 +87,7 @@ TransactionExecutionResult TransactionExecutionRouter::execute(
         const utils::Amount debit = TransactionTypePolicyRegistry::maximumDebit(transaction);
         if (sender.balance() < debit) {
             return TransactionExecutionResult::rejected(
-                TransactionExecutionStatus::INSUFFICIENT_BALANCE, "INSUFFICIENT_BALANCE", "Sender balance is below maximum debit.");
+                TransactionExecutionStatus::INSUFFICIENT_BALANCE, "INSUFFICIENT_BALANCE", "Sender balance is insufficient for this transaction.");
         }
 
         utils::Amount senderBalance = sender.balance() - debit;

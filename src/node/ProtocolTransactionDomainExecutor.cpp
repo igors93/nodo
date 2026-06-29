@@ -236,7 +236,7 @@ private:
 
     template <typename Mutation>
     core::TransactionDomainExecutionResult atomically(
-        const core::AccountStateView& accounts,
+        const core::AccountStateView&,
         Mutation mutation,
         const core::AccountStateView& resultingAccounts
     ) {

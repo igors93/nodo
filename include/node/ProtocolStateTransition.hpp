@@ -2,6 +2,7 @@
 #define NODO_NODE_PROTOCOL_STATE_TRANSITION_HPP
 
 #include "core/AccountStateView.hpp"
+#include "core/Block.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "node/StakingRegistry.hpp"

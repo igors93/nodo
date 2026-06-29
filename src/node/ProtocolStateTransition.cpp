@@ -106,7 +106,6 @@ ProtocolStateTransition::contextForNextBlockWithState(
     if (!runtime.isValid()) {
         throw std::invalid_argument("Cannot build protocol transition from invalid runtime.");
     }
-    const std::uint64_t blockHeight = runtime.blockchain().size();
     const config::GenesisConfig& genesis = runtime.config().genesisConfig();
     const std::uint64_t genesisMinimumFeeRaw =
         genesis.networkParameters().minimumFeeRawUnits();
