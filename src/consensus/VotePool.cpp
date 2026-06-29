@@ -408,7 +408,10 @@ void VotePool::prune(std::uint64_t currentHeight) {
                         it = m_conflictingVoteCounts.erase(it);
                         continue;
                     }
-                } catch (...) {}
+                } catch (...) {
+                    it = m_conflictingVoteCounts.erase(it);
+                    continue;
+                }
             }
         }
         ++it;

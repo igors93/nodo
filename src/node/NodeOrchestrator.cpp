@@ -1107,9 +1107,10 @@ TcpTestnetNodeRuntimeConfig NodeOrchestrator::buildTransportConfig() const {
     if (colon != std::string::npos) {
         host = endpoint.substr(0, colon);
         try {
-            port = static_cast<std::uint16_t>(
-                std::stoul(endpoint.substr(colon + 1))
-            );
+            unsigned long parsedPort = std::stoul(endpoint.substr(colon + 1));
+            if (parsedPort > 0 && parsedPort <= 65535) {
+                port = static_cast<std::uint16_t>(parsedPort);
+            }
         } catch (...) {}
     }
 

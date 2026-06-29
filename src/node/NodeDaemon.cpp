@@ -6,6 +6,7 @@
 #include "p2p/Peer.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <thread>
 
 namespace nodo::node {
@@ -191,7 +192,9 @@ void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
                         m_config.orchestratorConfig.dataDirectory().rootPath()
                     );
                     qcStore.save(record);
-                } catch (...) {}
+                } catch (...) {
+                    std::abort();
+                }
             }
         } catch (...) {
             // Malformed artifact from peer — silently discard.
