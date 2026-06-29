@@ -1,4 +1,6 @@
 #include "core/Block.hpp"
+#include "core/CoinLot.hpp"
+#include "core/CoinLotRegistry.hpp"
 #include "core/LedgerRecord.hpp"
 #include "core/MerkleTree.hpp"
 #include "core/StateTransitionPreview.hpp"
@@ -578,6 +580,133 @@ void testFailureDoesNotMutateInitialState() {
     );
 }
 
+core::CoinLotRegistry registryWithSenderFunds(
+    utils::Amount totalAmount = utils::Amount::fromRawUnits(1000)
+) {
+    core::CoinLot lot(
+        "lot-preview-sender-genesis",
+        "mint-genesis",
+        "preview-sender",
+        totalAmount,
+        core::CoinLotStatus::AVAILABLE,
+        0,
+        0,
+        kTimestamp
+    );
+    core::CoinLotRegistry registry;
+    registry.addLot(lot);
+    return registry;
+}
+
+void testCoinLotPreviewRejectsTransferWhenNoLotsAvailable() {
+    // Even when the account has enough balance, a TRANSFER must fail when
+    // coin lot preview is enabled and the registry has no spendable lots.
+    const core::Block block(
+        1,
+        "previous-hash",
+        {record(transaction(1, 10))},
+        kTimestamp + 10
+    );
+
+    core::StateTransitionPreviewContext context = economicContext(1000);
+    context.enableCoinLotPreview(core::CoinLotRegistry()); // empty registry
+
+    const core::StateTransitionPreviewResult result =
+        core::StateTransitionPreview::previewBlock(block, context);
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::StateTransitionPreviewStatus::INVALID_TRANSACTION &&
+        result.reason().find("CoinLot") != std::string::npos,
+        "CoinLot preview must reject TRANSFER when sender has no spendable lots."
+    );
+}
+
+void testCoinLotPreviewAcceptsTransferWithSufficientLots() {
+    // A TRANSFER should pass when the sender has adequate lots in the registry.
+    // amount=100, fee=10, total debit=110; registry has 1000 raw units.
+    const core::Block block(
+        1,
+        "previous-hash",
+        {record(transaction(1, 10))},
+        kTimestamp + 10
+    );
+
+    core::StateTransitionPreviewContext context = economicContext(1000);
+    context.enableCoinLotPreview(registryWithSenderFunds());
+
+    const core::StateTransitionPreviewResult result =
+        core::StateTransitionPreview::previewBlock(block, context);
+
+    requireCondition(
+        result.accepted() &&
+        result.processedTransactionCount() == 1,
+        "CoinLot preview must accept TRANSFER when sender has sufficient spendable lots."
+    );
+}
+
+void testCoinLotPreviewChangesCombinedStateRoot() {
+    // The same block should produce a different stateRoot when coin lot preview
+    // is enabled, because the coin_lots domain digest is folded into the root.
+    const core::Block block(
+        1,
+        "previous-hash",
+        {record(transaction(1, 10))},
+        kTimestamp + 10
+    );
+
+    core::StateTransitionPreviewContext contextWithLots = economicContext(1000);
+    contextWithLots.enableCoinLotPreview(registryWithSenderFunds());
+
+    const core::StateTransitionPreviewContext contextWithoutLots = economicContext(1000);
+
+    const core::StateTransitionPreviewResult withLots =
+        core::StateTransitionPreview::previewBlock(block, contextWithLots);
+
+    const core::StateTransitionPreviewResult withoutLots =
+        core::StateTransitionPreview::previewBlock(block, contextWithoutLots);
+
+    requireCondition(
+        withLots.accepted() && withoutLots.accepted() &&
+        !withLots.stateRoot().empty() &&
+        withLots.stateRoot() != withoutLots.stateRoot(),
+        "CoinLot preview must contribute the registry digest to the stateRoot, "
+        "producing a different root than the same block without lot tracking."
+    );
+}
+
+void testCoinLotPreviewPreventsDoubleSpendWithinBlock() {
+    // Two sequential transactions from the same account, where the first
+    // exhausts available lots. The second must be rejected for lack of lots.
+    // Total available: 120 raw units; each tx needs 110 (100 amount + 10 fee).
+    // After the first tx, the 120-unit lot is split into 100 (recipient) +
+    // 10 (fee pool) + 10 (change back to sender). The second tx tries to spend
+    // another 110 but only 10 in a change lot remains.
+    const core::Block block(
+        1,
+        "previous-hash",
+        {
+            record(transaction(1, 10, "preview-sender", "preview-recipient")),
+            record(transaction(2, 10, "preview-sender", "second-recipient"))
+        },
+        kTimestamp + 10
+    );
+
+    core::StateTransitionPreviewContext context = economicContext(1000);
+    context.enableCoinLotPreview(registryWithSenderFunds(utils::Amount::fromRawUnits(120)));
+
+    const core::StateTransitionPreviewResult result =
+        core::StateTransitionPreview::previewBlock(block, context);
+
+    requireCondition(
+        !result.accepted() &&
+        result.status() == core::StateTransitionPreviewStatus::INVALID_TRANSACTION &&
+        result.processedTransactionCount() == 1 &&
+        result.reason().find("CoinLot") != std::string::npos,
+        "CoinLot preview must reject a second transfer that exceeds remaining lot balance."
+    );
+}
+
 void testRejectsEmptyProtocolStateCommitment() {
     core::AccountStateView view;
     view.putAccount(core::AccountState(
@@ -643,6 +772,10 @@ int main() {
         testRejectsInvalidPayload();
         testFailureDoesNotMutateInitialState();
         testRejectsEmptyProtocolStateCommitment();
+        testCoinLotPreviewRejectsTransferWhenNoLotsAvailable();
+        testCoinLotPreviewAcceptsTransferWithSufficientLots();
+        testCoinLotPreviewChangesCombinedStateRoot();
+        testCoinLotPreviewPreventsDoubleSpendWithinBlock();
 
         std::cout << "Nodo state transition preview tests passed.\n";
         return 0;

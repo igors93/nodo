@@ -1,4 +1,5 @@
 #include "node/PersistentBlockStateSync.hpp"
+#include "core/ProtocolLimits.hpp"
 
 #include <cassert>
 #include <iostream>
@@ -79,7 +80,9 @@ int main() {
     assert(blockPlan.blockRequest()->locator().maxBlocks() == 1);
     assert(blockPlan.blockRequest()->locator().knownAncestorHashes().front() == "genesis-hash");
 
-    // A gap just below the snapshot threshold still uses block sync.
+    // All gaps, regardless of size, use incremental block sync.
+    // Snapshot sync is rejected at the applier level until runtime hydration
+    // from snapshots is fully implemented.
     ChainStatusMessage nearThreshold(
         "localnet",
         "chain-a",
@@ -102,7 +105,7 @@ int main() {
     assert(nearThresholdPlan.requestBlocks());
     assert(!nearThresholdPlan.requestSnapshot());
 
-    // A gap at or above the threshold triggers a snapshot request.
+    // Large gaps also use REQUEST_BLOCKS; batch size is capped by maxBlocksPerRequest.
     ChainStatusMessage farAhead(
         "localnet",
         "chain-a",
@@ -122,10 +125,13 @@ int main() {
         now + 4
     );
 
-    assert(farAheadPlan.requestSnapshot());
-    assert(!farAheadPlan.requestBlocks());
-    assert(farAheadPlan.snapshotRequest().has_value());
-    assert(farAheadPlan.snapshotRequest()->snapshotHeight() == 10000);
+    assert(farAheadPlan.requestBlocks());
+    assert(!farAheadPlan.requestSnapshot());
+    assert(farAheadPlan.blockRequest().has_value());
+    assert(farAheadPlan.blockRequest()->locator().fromHeight() == 1);
+    // maxBlocksPerRequest is capped by NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH
+    assert(farAheadPlan.blockRequest()->locator().maxBlocks() ==
+           nodo::core::ProtocolLimits::MAX_PERSISTENT_SYNC_BLOCK_BATCH);
 
     // Manifest deserialize round-trip.
     const PersistentSnapshotSyncManifest original(

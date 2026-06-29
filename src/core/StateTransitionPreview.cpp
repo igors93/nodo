@@ -1,12 +1,16 @@
 #include "core/StateTransitionPreview.hpp"
 
+#include "core/CoinLotRegistry.hpp"
+#include "core/CoinLotTransactionValidator.hpp"
 #include "core/LedgerRecordDomainValidator.hpp"
 #include "core/MerkleTree.hpp"
 #include "core/StateRootCalculator.hpp"
 #include "core/Transaction.hpp"
+#include "crypto/hash.h"
 
 #include <exception>
 #include <limits>
+#include <map>
 #include <set>
 #include <sstream>
 #include <utility>
@@ -192,6 +196,10 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
     std::vector<TransactionReceipt> receipts;
     AccountStateView workingAccountState =
         context.accountStateView();
+    std::optional<CoinLotRegistry> workingCoinLotRegistry =
+        context.coinLotPreviewEnabled()
+            ? std::optional<CoinLotRegistry>(context.coinLotRegistry())
+            : std::nullopt;
     utils::Amount totalFee;
     std::size_t processedTransactionCount = 0;
     bool evidenceSectionStarted = false;
@@ -472,6 +480,22 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                     touchedAccountSet.insert(context.feeRecipientAddress());
                 }
 
+                if (isTransfer && workingCoinLotRegistry.has_value()) {
+                    try {
+                        CoinLotTransactionValidator::applyTransfer(
+                            *workingCoinLotRegistry,
+                            transaction,
+                            block.index()
+                        );
+                    } catch (const std::exception& e) {
+                        return StateTransitionPreviewResult::rejected(
+                            StateTransitionPreviewStatus::INVALID_TRANSACTION,
+                            std::string("CoinLot validation failed: ") + e.what(),
+                            processedTransactionCount
+                        );
+                    }
+                }
+
                 receipts.push_back(
                     TransactionReceipt::applied(
                         transaction.id(),
@@ -544,10 +568,19 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
     }
 
     workingAccountState = protocolTransition.accounts();
+
+    std::map<std::string, std::string> stateRootDomains = protocolTransition.domains();
+    if (workingCoinLotRegistry.has_value()) {
+        const std::string registrySerial = workingCoinLotRegistry->serialize();
+        char lotDigest[NODO_HASH_BUFFER_SIZE] = {0};
+        nodo_hash_string(registrySerial.c_str(), lotDigest, sizeof(lotDigest));
+        stateRootDomains["coin_lots"] = std::string(lotDigest);
+    }
+
     const std::string combinedStateRoot =
         StateRootCalculator::calculateProtocolStateRoot(
             workingAccountState,
-            protocolTransition.domains()
+            stateRootDomains
         );
     if (combinedStateRoot.empty()) {
         return StateTransitionPreviewResult::rejected(

@@ -824,18 +824,23 @@ void testStructuralOnlyModeAcceptsBlockWithoutRoots() {
     );
 }
 
-void testProtocolCommitmentRootComparisonRequiresEnforceAccountState() {
-    // When ProtocolCommitment mode is used with a context that has
-    // enforceAccountState=false, the computed roots come from an empty state.
-    // The block's declared roots won't match those → INVALID_BLOCK.
+void testProtocolCommitmentWithUnauthorizedContextStillChecksRoots() {
+    // When ProtocolCommitment mode is used with an economic context that has no
+    // chain-id / crypto context (protocolAuthorizationEnabled() == false), the
+    // validator still compares the computed stateRoot against the block header.
+    // A structural-only context cannot produce a state root that matches a real
+    // block's roots — so the block is rejected (stateRoot mismatch), even though
+    // signatures were not individually verified.
+    //
+    // Note: the consensus path guards against this by asserting that
+    // protocolAuthorizationEnabled() is true before calling validateCandidateBlock.
     const core::Blockchain blockchain = chain();
     const core::Transaction tx = transaction("2", 1);
 
     const core::Block block =
         blockWithRealRoots(blockchain, tx, economicContext(1000, 1, 1));
 
-    // Validate with a structural-only context but ProtocolCommitment mode.
-    // Computed roots from empty state won't match block's real roots.
+    // Structural-only context: no account state → computes empty/mismatched roots.
     const core::StateTransitionPreviewContext structuralCtx =
         core::StateTransitionPreviewContext::structuralOnly(0);
 
@@ -850,7 +855,8 @@ void testProtocolCommitmentRootComparisonRequiresEnforceAccountState() {
     requireCondition(
         !result.accepted() &&
         result.status() == core::BlockValidationStatus::INVALID_BLOCK,
-        "ProtocolCommitment with structural-only context must reject: computed roots won't match."
+        "ProtocolCommitment with a structural-only context must still reject: "
+        "computed roots from empty state won't match block's real roots."
     );
 }
 
@@ -880,7 +886,7 @@ int main() {
         testProtocolCommitmentRejectsBlockWithPlaceholderStateRoot();
         testProtocolCommitmentRejectsBlockWithPlaceholderReceiptsRoot();
         testStructuralOnlyModeAcceptsBlockWithoutRoots();
-        testProtocolCommitmentRootComparisonRequiresEnforceAccountState();
+        testProtocolCommitmentWithUnauthorizedContextStillChecksRoots();
 
         std::cout << "Nodo block state transition validator tests passed.\n";
         return 0;

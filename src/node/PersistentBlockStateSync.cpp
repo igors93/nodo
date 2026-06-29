@@ -839,37 +839,6 @@ PersistentSyncPlan PersistentBlockStateSyncPlanner::planFromRemoteStatus(
     const std::uint64_t heightGap =
         remoteStatus.finalizedHeight() - localCheckpoint.finalizedHeight();
 
-    // When the gap is large enough that block-by-block replay would be slow,
-    // request a state snapshot instead so the node can jump ahead quickly.
-    if (heightGap >= PersistentSyncPlan::SNAPSHOT_GAP_THRESHOLD) {
-        // Build a placeholder manifest representing what we are requesting.
-        // The actual snapshot data is served by the remote peer in a subsequent
-        // message; the manifest here records which height we are targeting.
-        const PersistentSnapshotSyncManifest manifest(
-            sourcePeerId,
-            remoteStatus.finalizedHeight(),
-            remoteStatus.finalizedBlockHash(),
-            remoteStatus.finalizedBlockHash(),
-            PersistentBlockStateSyncCodec::hashSnapshotManifest(
-                PersistentSnapshotSyncManifest(
-                    sourcePeerId,
-                    remoteStatus.finalizedHeight(),
-                    remoteStatus.finalizedBlockHash(),
-                    remoteStatus.finalizedBlockHash(),
-                    "pending",
-                    now
-                )
-            ),
-            now
-        );
-        return PersistentSyncPlan(
-            PersistentSyncPlanStatus::REQUEST_SNAPSHOT,
-            "Height gap exceeds snapshot threshold; request state snapshot.",
-            std::nullopt,
-            manifest
-        );
-    }
-
     const std::uint64_t fromHeight = localCheckpoint.finalizedHeight() + 1;
     const std::uint64_t requestedCount = std::min(heightGap, maxBlocksPerRequest);
 
@@ -1342,78 +1311,24 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importSnapshot(
     PersistentSyncCheckpointStore* checkpointStore,
     std::int64_t now
 ) {
+    // Snapshot sync is not yet implemented: accepting a snapshot manifest without
+    // hydrating the runtime (blockchain, validator set, coin lots, staking state)
+    // would leave the node with a checkpoint that claims a high finalized height
+    // while the runtime still holds only genesis state. Subsequent block-by-block
+    // sync would request from the wrong height, corrupting the node permanently.
+    // All large gaps must fall back to incremental block batches until snapshot
+    // hydration is implemented end-to-end.
+    (void)checkpoint;
+    (void)manifest;
     (void)runtime;
     (void)directoryConfig;
-
-    if (!checkpoint.isValid()) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Current checkpoint is invalid for snapshot import.",
-            std::nullopt
-        );
-    }
-
-    if (!manifest.isValid() || now <= 0) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Snapshot manifest is invalid or timestamp is missing.",
-            std::nullopt
-        );
-    }
-
-    if (manifest.snapshotHeight() <= checkpoint.finalizedHeight()) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Snapshot height does not advance the checkpoint.",
-            std::nullopt
-        );
-    }
-
-    // Verify the manifest digest matches its canonical hash.
-    const std::string expectedDigest =
-        PersistentBlockStateSyncCodec::hashSnapshotManifest(manifest);
-    if (manifest.snapshotDigest() != expectedDigest) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Snapshot manifest digest verification failed.",
-            std::nullopt
-        );
-    }
-
-    PersistentSyncCheckpoint updated(
-        PersistentSyncCheckpoint::SCHEMA_VERSION,
-        manifest.snapshotHeight(),
-        manifest.snapshotBlockHash(),
-        manifest.snapshotStateRoot(),
-        PersistentSyncStatus::COMPLETE,
-        manifest.sourcePeerId(),
-        now
-    );
-
-    if (!updated.isValid()) {
-        return PersistentSyncApplyResult(
-            PersistentSyncApplyStatus::REJECTED,
-            "Snapshot import produced an invalid checkpoint.",
-            std::nullopt
-        );
-    }
-
-    if (checkpointStore != nullptr) {
-        const PersistentSyncCheckpointWriteResult writeResult =
-            checkpointStore->save(updated);
-        if (!writeResult.isSaved()) {
-            return PersistentSyncApplyResult(
-                PersistentSyncApplyStatus::REJECTED,
-                "Snapshot checkpoint persistence failed: " + writeResult.reason(),
-                std::nullopt
-            );
-        }
-    }
+    (void)checkpointStore;
+    (void)now;
 
     return PersistentSyncApplyResult(
-        PersistentSyncApplyStatus::APPLIED,
-        "State snapshot manifest accepted; checkpoint advanced to snapshot height.",
-        updated
+        PersistentSyncApplyStatus::REJECTED,
+        "Snapshot sync is not supported: runtime hydration from snapshot is not implemented.",
+        std::nullopt
     );
 }
 

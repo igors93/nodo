@@ -2,6 +2,7 @@
 #define NODO_CORE_STATE_TRANSITION_PREVIEW_CONTEXT_HPP
 
 #include "core/AccountStateView.hpp"
+#include "core/CoinLotRegistry.hpp"
 #include "core/LedgerRecord.hpp"
 #include "core/Transaction.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
@@ -93,7 +94,8 @@ public:
     ) const;
 
     bool coinLotPreviewEnabled() const;
-    bool supplyAuditPreviewEnabled() const;
+    const CoinLotRegistry& coinLotRegistry() const;
+    void enableCoinLotPreview(CoinLotRegistry registry);
 
     void setDomainTransactionPreValidator(DomainTransactionPreValidator validator);
     bool hasDomainTransactionPreValidator() const;
@@ -114,8 +116,7 @@ private:
     std::map<std::string, std::string> m_deterministicStateDomains;
     DeterministicStateDomainTransition m_stateDomainTransition;
     DomainTransactionPreValidator m_domainTransactionPreValidator;
-    bool m_coinLotPreviewEnabled;
-    bool m_supplyAuditPreviewEnabled;
+    std::optional<CoinLotRegistry> m_coinLotRegistry;
 };
 
 } // namespace nodo::core

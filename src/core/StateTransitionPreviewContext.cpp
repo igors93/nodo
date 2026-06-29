@@ -52,8 +52,7 @@ StateTransitionPreviewContext::StateTransitionPreviewContext()
       m_deterministicStateDomains(),
       m_stateDomainTransition(),
       m_domainTransactionPreValidator(),
-      m_coinLotPreviewEnabled(false),
-      m_supplyAuditPreviewEnabled(false) {}
+      m_coinLotRegistry(std::nullopt) {}
 
 StateTransitionPreviewContext::StateTransitionPreviewContext(
     std::int64_t minimumFeeRawUnits,
@@ -82,8 +81,7 @@ StateTransitionPreviewContext::StateTransitionPreviewContext(
       m_deterministicStateDomains(std::move(deterministicStateDomains)),
       m_stateDomainTransition(std::move(stateDomainTransition)),
       m_domainTransactionPreValidator(),
-      m_coinLotPreviewEnabled(false),
-      m_supplyAuditPreviewEnabled(false) {}
+      m_coinLotRegistry(std::nullopt) {}
 
 StateTransitionPreviewContext StateTransitionPreviewContext::structuralOnly(
     std::int64_t minimumFeeRawUnits
@@ -182,11 +180,18 @@ bool StateTransitionPreviewContext::validateDomainTransaction(const Transaction&
 }
 
 bool StateTransitionPreviewContext::coinLotPreviewEnabled() const {
-    return m_coinLotPreviewEnabled;
+    return m_coinLotRegistry.has_value();
 }
 
-bool StateTransitionPreviewContext::supplyAuditPreviewEnabled() const {
-    return m_supplyAuditPreviewEnabled;
+const CoinLotRegistry& StateTransitionPreviewContext::coinLotRegistry() const {
+    if (!m_coinLotRegistry.has_value()) {
+        throw std::logic_error("CoinLot preview is not enabled in this context.");
+    }
+    return m_coinLotRegistry.value();
+}
+
+void StateTransitionPreviewContext::enableCoinLotPreview(CoinLotRegistry registry) {
+    m_coinLotRegistry = std::move(registry);
 }
 
 bool StateTransitionPreviewContext::isValid() const {
@@ -230,8 +235,7 @@ std::string StateTransitionPreviewContext::serialize() const {
         << ";protocolAuthorizationEnabled="
         << (protocolAuthorizationEnabled() ? "true" : "false")
         << ";deterministicStateDomainCount=" << m_deterministicStateDomains.size()
-        << ";coinLotPreviewEnabled=" << (m_coinLotPreviewEnabled ? "true" : "false")
-        << ";supplyAuditPreviewEnabled=" << (m_supplyAuditPreviewEnabled ? "true" : "false")
+        << ";coinLotPreviewEnabled=" << (m_coinLotRegistry.has_value() ? "true" : "false")
         << ";accountStateView=" << m_accountStateView.serialize()
         << "}";
 
