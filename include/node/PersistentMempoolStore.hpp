@@ -12,8 +12,11 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <optional>
 
 namespace nodo::node {
+
+class TransactionAdmissionContext;
 
 enum class PersistentMempoolWriteStatus {
     STORED,
@@ -101,6 +104,10 @@ private:
 
 class PersistentMempoolStore {
 public:
+    struct DecodedGossipTransaction {
+        core::Transaction transaction;
+        std::int64_t acceptedAt;
+    };
     static PersistentMempoolWriteResult persistTransaction(
         const NodeDataDirectoryConfig& directoryConfig,
         const core::Transaction& transaction,
@@ -122,7 +129,8 @@ public:
         crypto::SecurityContext context,
         const core::AccountStateView& accountStateView,
         std::int64_t minimumFeeRawUnits,
-        const crypto::SignatureProvider& provider
+        const crypto::SignatureProvider& provider,
+        const TransactionAdmissionContext* admissionContext = nullptr
     );
 
     static std::size_t removeTransactions(
@@ -149,15 +157,12 @@ public:
     );
 
     /*
-     * Decode a gossip payload produced by serializeForGossip() and admit the
-     * transaction to the provided mempool.
-     *
-     * Returns true if the transaction was admitted (ACCEPTED or REPLACED).
-     * Signature verification uses Ed25519 (user transaction standard).
+     * Decode and authenticate a gossip payload. Admission remains the caller's
+     * responsibility so network gossip uses TransactionAdmissionValidator with
+     * the current account and protocol-domain state before touching the mempool.
      */
-    static bool deserializeGossipAndAdmit(
+    static std::optional<DecodedGossipTransaction> deserializeGossip(
         const std::string& payload,
-        mempool::Mempool& mempool,
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context,
         const std::string& expectedChainId

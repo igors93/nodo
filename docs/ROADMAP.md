@@ -61,8 +61,9 @@ reading the source.
   `VALIDATOR_VOTE`, `QUORUM_CERTIFICATE`, `FINALIZED_BLOCK_ARTIFACT`,
   `BLOCK_SYNC_REQUEST`, `BLOCK_SYNC_RESPONSE`.
 - `SeenTransactionCache` (LRU + TTL) for gossip deduplication.
-- `PersistentMempoolStore::serializeForGossip` and `deserializeGossipAndAdmit`
-  with local Ed25519 verification.
+- `PersistentMempoolStore::serializeForGossip` and `deserializeGossip` with
+  local Ed25519 verification, followed by the shared account/domain admission
+  policy before insertion in the mempool.
 - `NodeDaemon` tick loop: transaction gossip relay, block proposal relay,
   finalized artifact QC verification and recording.
 - `NodeOrchestrator` gossip-access methods: `drainGossipInbox`,
@@ -191,13 +192,12 @@ rejects every message that fails authentication or format validation.
 stake, honest validators earn epoch rewards, and dishonest validators are
 slashed.
 
-### 4.1 Stake Lock Lifecycle
-- `StakingTransactionApplier` exists; complete the full lifecycle:
-  `STAKE_LOCK` transaction → `LockedStakePosition` → validator weight update
-  → `STAKE_UNLOCK` after lock period with optional slash deduction.
-- State transitions must be previewed (non-mutating) before finalization.
-- `StakeLockRecord` must be included in the finalized artifact and reloaded
-  on restart.
+### 4.1 Stake Lifecycle
+- `STAKE_DEPOSIT`, `STAKE_TOP_UP`, and `STAKE_WITHDRAW` are routed through the
+  canonical transaction executor into `StakingRegistry`; the former standalone
+  staking applier and duplicate lock/unlock transaction concepts were removed.
+- State transitions are previewed on copies and the staking domain participates
+  in the protocol state root, finalized commit, and replay.
 
 ### 4.2 Validator Weight from Stake
 - `ValidatorRegistry` must derive each validator's consensus weight from its

@@ -244,7 +244,7 @@ void testLocalAndDistributedPipelinesProduceEquivalentState() {
     );
 }
 
-void testGovernanceProposalUsesCanonicalTransition() {
+void testGovernanceProposalIsCommittedWithoutPrematureExecution() {
     node::NodeRuntime runtime = startRuntime();
     const crypto::Ed25519SignatureProvider provider;
     const core::Transaction proposal =
@@ -274,8 +274,10 @@ void testGovernanceProposalUsesCanonicalTransition() {
 
     require(result.finalized(), "Governance block must finalize.");
     require(
-        runtime.effectiveMinimumFeeRawUnits() == 250,
-        "Finalization must apply the governed minimum fee atomically."
+        runtime.governanceExecutor().hasProposal(proposal.id()) &&
+        runtime.effectiveMinimumFeeRawUnits() ==
+            genesisConfig().networkParameters().minimumFeeRawUnits(),
+        "Finalization must record the proposal without applying it before a vote."
     );
     require(
         runtime.blockchain().latestBlock().stateRoot()
@@ -290,15 +292,15 @@ void testGovernanceProposalUsesCanonicalTransition() {
     test::admitConsensusTestTransfer(
         runtime, userKey(), 2, kTimestamp + 3
     );
-    const node::RuntimeBlockPipelineResult belowGovernedMinimum =
+    const node::RuntimeBlockPipelineResult nextBlock =
         node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
             runtime,
             node::RuntimeBlockPipelineConfig(10, 1, 1, kTimestamp + 4),
             validatorSigner()
         );
     require(
-        !belowGovernedMinimum.finalized(),
-        "Block production must reject transactions below the governed fee."
+        nextBlock.finalized(),
+        "Unapproved governance proposals must not change the effective minimum fee."
     );
 }
 
@@ -352,7 +354,7 @@ void testPersistenceFailureDoesNotPartiallyCommitRuntime() {
 int main() {
     try {
         testLocalAndDistributedPipelinesProduceEquivalentState();
-        testGovernanceProposalUsesCanonicalTransition();
+        testGovernanceProposalIsCommittedWithoutPrematureExecution();
         testPersistenceFailureDoesNotPartiallyCommitRuntime();
         std::cout << "Runtime canonical block commit tests passed.\n";
         return 0;

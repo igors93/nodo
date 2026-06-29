@@ -90,6 +90,20 @@ void admitTransfer(NodeRuntime& runtime, std::uint64_t nonce) {
     ).accepted());
 }
 
+void admitBurn(NodeRuntime& runtime, std::uint64_t nonce, std::int64_t amount) {
+    const auto tx = nodo::core::TransactionBuilder::buildSignedBurn(
+        nodo::core::TransactionBuildRequest(
+            "nodo_burn", Amount::fromRawUnits(amount), Amount::fromRawUnits(100),
+            nonce, kTimestamp + 10
+        ),
+        userSigner(), "nodo-localnet-1"
+    );
+    assert(runtime.mutableMempool().admitTransaction(
+        tx, CryptoPolicy::developmentPolicy(),
+        SecurityContext::USER_TRANSACTION, kTimestamp + 11
+    ).accepted());
+}
+
 // 1. Pipeline finalized result exposes a valid SupplyDelta.
 void testPipelineFinalizedResultHasValidSupplyDelta() {
     NodeRuntime runtime = startRuntime();
@@ -182,6 +196,25 @@ void testSupplyDeltaBlockHashMatchesFinalizedBlock() {
     assert(result.supplyDelta().blockHeight() == result.block().index());
 }
 
+void testVoluntaryBurnChangesAccountsAndCanonicalSupply() {
+    NodeRuntime runtime = startRuntime();
+    const Amount beforeSupply = runtime.supplyState().latestSupply();
+    const Amount beforeBalance = runtime.cachedAccountStateAtTip(0)
+        .accountOrDefault(userKeyPair().address().value()).balance();
+    admitBurn(runtime, 1, 5000);
+    const auto result = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        runtime, RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
+        validatorSigner());
+    assert(result.finalized());
+    // Voluntary burn 5000 plus the 20% fee burn (20).
+    assert(result.supplyDelta().burnedAmount().rawUnits() == 5020);
+    assert(runtime.supplyState().latestSupply().rawUnits() ==
+        beforeSupply.rawUnits() - 5020);
+    const Amount afterBalance = runtime.cachedAccountStateAtTip(0)
+        .accountOrDefault(userKeyPair().address().value()).balance();
+    assert(afterBalance.rawUnits() == beforeBalance.rawUnits() - 5100);
+}
+
 } // namespace
 
 int main() {
@@ -190,5 +223,6 @@ int main() {
     testTwoBlocksSupplyChainsCorrectly();
     testNodeRuntimeSupplyStateIsUpdatedAfterFinalization();
     testSupplyDeltaBlockHashMatchesFinalizedBlock();
+    testVoluntaryBurnChangesAccountsAndCanonicalSupply();
     return 0;
 }

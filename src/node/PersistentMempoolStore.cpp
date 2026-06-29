@@ -1,4 +1,6 @@
 #include "node/PersistentMempoolStore.hpp"
+#include "node/TransactionAdmissionPolicy.hpp"
+#include "node/TransactionAdmissionValidator.hpp"
 
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/Ed25519SignatureProvider.hpp"
@@ -10,10 +12,8 @@
 #include "utils/Amount.hpp"
 
 #include <algorithm>
-#include <limits>
 #include <map>
 #include <optional>
-#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -140,24 +140,12 @@ std::vector<std::filesystem::path> canonicalMempoolFiles(
     return files;
 }
 
-utils::Amount requiredTransactionBalance(
-    const core::Transaction& transaction
-) {
-    try {
-        return transaction.amount() + transaction.fee();
-    } catch (const std::exception& error) {
-        throw std::invalid_argument(
-            std::string("Persistent transaction amount plus fee is invalid: ")
-            + error.what()
-        );
-    }
-}
-
-void validateTransactionAgainstAccountState(
+void validateTransactionForReload(
     const core::Transaction& transaction,
     const core::AccountStateView& accountStateView,
+    const mempool::Mempool& mempool,
     std::int64_t minimumFeeRawUnits,
-    std::set<std::string>& pendingSenders
+    const TransactionAdmissionContext* admissionContext
 ) {
     if (minimumFeeRawUnits < 0) {
         throw std::invalid_argument("Persistent mempool minimum fee is negative.");
@@ -167,34 +155,21 @@ void validateTransactionAgainstAccountState(
         throw std::invalid_argument("Persistent transaction fee is below the network minimum.");
     }
 
-    if (!accountStateView.hasAccount(transaction.fromAddress())) {
-        throw std::invalid_argument("Persistent transaction sender account is unknown.");
+    std::string reason;
+    if (!TransactionAdmissionPolicy::validateTypeAndPayload(transaction, reason)) {
+        throw std::invalid_argument("Persistent transaction policy rejected reload: " + reason);
     }
-
-    const core::AccountState sender =
-        accountStateView.accountOrDefault(transaction.fromAddress());
-
-    if (sender.nonce() == std::numeric_limits<std::uint64_t>::max()) {
-        throw std::invalid_argument("Persistent transaction sender nonce cannot advance without overflow.");
+    const TransactionAdmissionResult runtime =
+        TransactionAdmissionValidator::validateRuntimeState(
+            transaction, accountStateView, mempool
+        );
+    if (!runtime.accepted()) {
+        throw std::invalid_argument("Persistent transaction runtime admission failed: " + runtime.reason());
     }
-
-    const std::uint64_t expectedNonce =
-        sender.nonce() + 1;
-
-    if (transaction.nonce() <= sender.nonce()) {
-        throw std::invalid_argument("Persistent transaction nonce is older than account state.");
-    }
-
-    if (transaction.nonce() != expectedNonce) {
-        throw std::invalid_argument("Persistent transaction nonce is in the future and no per-account queue is available.");
-    }
-
-    if (sender.balance() < requiredTransactionBalance(transaction)) {
-        throw std::invalid_argument("Persistent transaction sender balance is insufficient for amount plus fee.");
-    }
-
-    if (!pendingSenders.insert(transaction.fromAddress()).second) {
-        throw std::invalid_argument("Persistent mempool already has a pending transaction from this sender.");
+    if (admissionContext != nullptr &&
+        !TransactionAdmissionPolicy::validateDomain(
+            transaction, *admissionContext, reason)) {
+        throw std::invalid_argument("Persistent transaction domain admission failed: " + reason);
     }
 }
 
@@ -600,7 +575,8 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
     crypto::SecurityContext context,
     const core::AccountStateView& accountStateView,
     std::int64_t minimumFeeRawUnits,
-    const crypto::SignatureProvider& provider
+    const crypto::SignatureProvider& provider,
+    const TransactionAdmissionContext* admissionContext
 ) {
     if (!directoryConfig.isValid() ||
         !accountStateView.isValid() ||
@@ -617,7 +593,6 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
 
     std::size_t loadedCount = 0;
     std::size_t skippedCount = 0;
-    std::set<std::string> pendingSenders;
 
     try {
         const NodeDataDirectoryReadResult manifest =
@@ -649,11 +624,12 @@ PersistentMempoolLoadResult PersistentMempoolStore::loadIntoMempool(
                     manifest.manifest().chainId()
                 );
 
-                validateTransactionAgainstAccountState(
+                validateTransactionForReload(
                     transaction,
                     accountStateView,
+                    mempool,
                     minimumFeeRawUnits,
-                    pendingSenders
+                    admissionContext
                 );
 
                 const auto admission =
@@ -829,9 +805,9 @@ std::string PersistentMempoolStore::serializeForGossip(
     }
 }
 
-bool PersistentMempoolStore::deserializeGossipAndAdmit(
+std::optional<PersistentMempoolStore::DecodedGossipTransaction>
+PersistentMempoolStore::deserializeGossip(
     const std::string& payload,
-    mempool::Mempool& mempool,
     const crypto::CryptoPolicy& policy,
     crypto::SecurityContext context,
     const std::string& expectedChainId
@@ -842,7 +818,7 @@ bool PersistentMempoolStore::deserializeGossipAndAdmit(
 
         if (!transaction.hasSignatureBundle() ||
             transaction.signatureBundle().signatures().empty()) {
-            return false;
+            return std::nullopt;
         }
 
         const crypto::PublicKey& publicKey =
@@ -855,13 +831,9 @@ bool PersistentMempoolStore::deserializeGossipAndAdmit(
             expectedChainId
         );
 
-        const auto result = mempool.admitTransaction(
-            transaction, policy, context, acceptedAt
-        );
-
-        return result.success();
+        return DecodedGossipTransaction{transaction, acceptedAt};
     } catch (...) {
-        return false;
+        return std::nullopt;
     }
 }
 

@@ -38,6 +38,7 @@ public:
         std::size_t processedTransactionCount,
         utils::Amount totalFee,
         std::vector<std::string> touchedAccounts,
+        std::vector<std::string> touchedDomains,
         std::vector<std::string> transactionIds,
         std::vector<AccountState> resultingAccounts,
         std::string stateRoot,
@@ -57,6 +58,7 @@ public:
     std::size_t processedTransactionCount() const;
     utils::Amount totalFee() const;
     const std::vector<std::string>& touchedAccounts() const;
+    const std::vector<std::string>& touchedDomains() const;
     const std::vector<std::string>& transactionIds() const;
     const std::vector<AccountState>& resultingAccounts() const;
     const std::string& stateRoot() const;
@@ -71,6 +73,7 @@ private:
     std::size_t m_processedTransactionCount;
     utils::Amount m_totalFee;
     std::vector<std::string> m_touchedAccounts;
+    std::vector<std::string> m_touchedDomains;
     std::vector<std::string> m_transactionIds;
     std::vector<AccountState> m_resultingAccounts;
     std::string m_stateRoot;

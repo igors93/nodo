@@ -1,4 +1,5 @@
 #include "core/TransactionBuilder.hpp"
+#include "crypto/AddressDerivation.hpp"
 
 #include <stdexcept>
 #include <utility>
@@ -79,13 +80,13 @@ Transaction TransactionBuilder::buildSignedTransfer(
     );
 }
 
-Transaction TransactionBuilder::buildSignedStakeLock(
+Transaction TransactionBuilder::buildSignedStakeDeposit(
     const TransactionBuildRequest& request,
     const crypto::Signer& signer,
     const std::string& chainId
 ) {
     if (!request.isValid() || chainId.empty()) {
-        throw std::invalid_argument("Stake lock build request is invalid.");
+        throw std::invalid_argument("Stake deposit build request is invalid.");
     }
 
     Transaction tx(
@@ -145,12 +146,51 @@ Transaction TransactionBuilder::buildSignedStakeWithdraw(
     return signer.signTransaction(tx, request.timestamp());
 }
 
+Transaction TransactionBuilder::buildSignedBurn(
+    const TransactionBuildRequest& request,
+    const crypto::Signer& signer,
+    const std::string& chainId
+) {
+    if (!request.isValid() || chainId.empty()) {
+        throw std::invalid_argument("Burn build request is invalid.");
+    }
+    Transaction tx(
+        TransactionType::BURN, signer.address(), "nodo_burn",
+        request.amount(), request.fee(), request.nonce(), request.timestamp()
+    );
+    tx.withChainId(chainId);
+    return signer.signTransaction(tx, request.timestamp());
+}
+
+Transaction TransactionBuilder::buildSignedValidatorRegistration(
+    const TransactionBuildRequest& request,
+    const crypto::PublicKey& validatorPublicKey,
+    const std::string& metadataHash,
+    const crypto::Signer& signer,
+    const std::string& chainId
+) {
+    const ValidatorRegistrationPayload payload(validatorPublicKey, metadataHash);
+    if (!request.isValid() || !payload.isValid() || chainId.empty() ||
+        request.toAddress() != crypto::AddressDerivation::deriveFromPublicKey(
+            validatorPublicKey).value()) {
+        throw std::invalid_argument("Validator registration build request is invalid.");
+    }
+    Transaction tx(
+        TransactionType::VALIDATOR_REGISTER,
+        signer.address(), request.toAddress(), request.amount(), request.fee(),
+        request.nonce(), request.timestamp(), payload.serialize()
+    );
+    tx.withChainId(chainId);
+    return signer.signTransaction(tx, request.timestamp());
+}
+
 Transaction TransactionBuilder::buildSignedValidatorExitRequest(
     const TransactionBuildRequest& request,
     const crypto::Signer& signer,
     const std::string& chainId
 ) {
-    if (request.toAddress().empty() || request.fee().isNegative() || chainId.empty()) {
+    if (request.toAddress().empty() || request.fee().isNegative() ||
+        request.nonce() == 0 || request.timestamp() <= 0 || chainId.empty()) {
         throw std::invalid_argument("Validator exit request requires a non-empty validator address and non-negative fee.");
     }
 
@@ -172,7 +212,8 @@ Transaction TransactionBuilder::buildSignedValidatorUnjailRequest(
     const crypto::Signer& signer,
     const std::string& chainId
 ) {
-    if (request.toAddress().empty() || request.fee().isNegative() || chainId.empty()) {
+    if (request.toAddress().empty() || request.fee().isNegative() ||
+        request.nonce() == 0 || request.timestamp() <= 0 || chainId.empty()) {
         throw std::invalid_argument("Validator unjail request requires a non-empty validator address and non-negative fee.");
     }
 
@@ -205,14 +246,36 @@ Transaction TransactionBuilder::buildSignedGovernanceProposal(
     Transaction transaction(
         TransactionType::GOVERNANCE_PROPOSE,
         signer.address(),
-        proposalPayload,
+        "nodo_governance",
         utils::Amount(),
         fee,
         nonce,
-        timestamp
+        timestamp,
+        proposalPayload
     );
     transaction.withChainId(chainId);
     return signer.signTransaction(transaction, timestamp);
+}
+
+Transaction TransactionBuilder::buildSignedGovernanceVote(
+    const std::string& proposalId,
+    const GovernanceVotePayload& vote,
+    utils::Amount fee,
+    std::uint64_t nonce,
+    std::int64_t timestamp,
+    const crypto::Signer& signer,
+    const std::string& chainId
+) {
+    if (proposalId.empty() || !vote.isValid() || fee.isNegative() || nonce == 0 ||
+        timestamp <= 0 || chainId.empty()) {
+        throw std::invalid_argument("Governance vote request is invalid.");
+    }
+    Transaction tx(
+        TransactionType::GOVERNANCE_VOTE, signer.address(), proposalId,
+        utils::Amount(), fee, nonce, timestamp, vote.serialize()
+    );
+    tx.withChainId(chainId);
+    return signer.signTransaction(tx, timestamp);
 }
 
 } // namespace nodo::core

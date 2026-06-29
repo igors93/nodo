@@ -6,7 +6,7 @@
 namespace nodo::core {
 
 /*
- * TransactionType defines every state-changing action planned for Nodo.
+ * TransactionType defines every user-submittable state-changing action in Nodo.
  *
  * Important:
  * A transaction type is not only a label. It determines validation rules,
@@ -14,27 +14,21 @@ namespace nodo::core {
  */
 enum class TransactionType {
     TRANSFER,
-    MINT_REWARD,
-    LOCK_SECURITY,
-    UNLOCK_SECURITY,
-    VALIDATOR_REGISTER,
-    VALIDATOR_VOTE,
-    PENALTY,
     BURN,
     STAKE_DEPOSIT,
     STAKE_WITHDRAW,
     STAKE_TOP_UP,
+    VALIDATOR_REGISTER,
     VALIDATOR_EXIT_REQUEST,
     VALIDATOR_UNJAIL_REQUEST,
     GOVERNANCE_PROPOSE,
-    GOVERNANCE_VOTE
+    GOVERNANCE_VOTE,
+    COUNT
 };
 
 std::string transactionTypeToString(TransactionType type);
 TransactionType transactionTypeFromString(const std::string& value);
 
-bool isMintTransaction(TransactionType type);
-bool isSecurityLockTransaction(TransactionType type);
 bool requiresUserSignature(TransactionType type);
 bool isStakingTransaction(TransactionType type);
 bool isValidatorLifecycleTransaction(TransactionType type);

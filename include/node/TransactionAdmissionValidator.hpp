@@ -8,6 +8,7 @@
 #include "crypto/KeyStore.hpp"
 #include "crypto/SignatureProvider.hpp"
 #include "mempool/Mempool.hpp"
+#include "node/TransactionAdmissionPolicy.hpp"
 
 #include <string>
 #include <optional>
@@ -25,7 +26,8 @@ enum class TransactionAdmissionStatus {
     CONFLICTING_NONCE,
     OLD_NONCE,
     FUTURE_NONCE,
-    INVALID_SIGNATURE
+    INVALID_SIGNATURE,
+    DOMAIN_REJECTED
 };
 
 std::string transactionAdmissionStatusToString(
@@ -65,6 +67,12 @@ private:
  */
 class TransactionAdmissionValidator {
 public:
+    static TransactionAdmissionResult validateRuntimeState(
+        const core::Transaction& transaction,
+        const core::AccountStateView& accountStateView,
+        const mempool::Mempool& mempool
+    );
+
     static TransactionAdmissionResult validateLocalSubmission(
         const core::Transaction& transaction,
         const crypto::StoredKeyMetadata& signingKey,
@@ -72,7 +80,8 @@ public:
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context,
         const crypto::SignatureProvider& provider,
-        std::optional<std::uint64_t> effectiveMinimumFeeRawUnits = std::nullopt
+        std::optional<std::uint64_t> effectiveMinimumFeeRawUnits = std::nullopt,
+        const TransactionAdmissionContext* admissionContext = nullptr
     );
 
     static TransactionAdmissionResult validateRuntimeSubmission(
@@ -84,7 +93,8 @@ public:
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context,
         const crypto::SignatureProvider& provider,
-        std::optional<std::uint64_t> effectiveMinimumFeeRawUnits = std::nullopt
+        std::optional<std::uint64_t> effectiveMinimumFeeRawUnits = std::nullopt,
+        const TransactionAdmissionContext* admissionContext = nullptr
     );
 
     static TransactionAdmissionResult validateNetworkSubmission(
@@ -95,7 +105,8 @@ public:
         const crypto::CryptoPolicy& policy,
         crypto::SecurityContext context,
         const crypto::SignatureProvider& provider,
-        std::optional<std::uint64_t> effectiveMinimumFeeRawUnits = std::nullopt
+        std::optional<std::uint64_t> effectiveMinimumFeeRawUnits = std::nullopt,
+        const TransactionAdmissionContext* admissionContext = nullptr
     );
 };
 

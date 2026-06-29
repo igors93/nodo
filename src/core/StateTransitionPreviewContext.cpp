@@ -51,7 +51,8 @@ StateTransitionPreviewContext::StateTransitionPreviewContext()
       m_cryptoContext(std::nullopt),
       m_deterministicStateDomains(),
       m_stateDomainTransition(),
-      m_domainTransactionPreValidator(),
+      m_domainExecutorFactory(),
+      m_requireDomainExecutor(false),
       m_coinLotRegistry(std::nullopt) {}
 
 StateTransitionPreviewContext::StateTransitionPreviewContext(
@@ -64,7 +65,9 @@ StateTransitionPreviewContext::StateTransitionPreviewContext(
     std::string expectedChainId,
     std::string networkName,
     std::map<std::string, std::string> deterministicStateDomains,
-    DeterministicStateDomainTransition stateDomainTransition
+    DeterministicStateDomainTransition stateDomainTransition,
+    TransactionDomainExecutorFactory domainExecutorFactory,
+    bool requireDomainExecutor
 )
     : m_minimumFeeRawUnits(minimumFeeRawUnits),
       m_accountStateView(std::move(accountStateView)),
@@ -80,7 +83,8 @@ StateTransitionPreviewContext::StateTransitionPreviewContext(
             )),
       m_deterministicStateDomains(std::move(deterministicStateDomains)),
       m_stateDomainTransition(std::move(stateDomainTransition)),
-      m_domainTransactionPreValidator(),
+      m_domainExecutorFactory(std::move(domainExecutorFactory)),
+      m_requireDomainExecutor(requireDomainExecutor),
       m_coinLotRegistry(std::nullopt) {}
 
 StateTransitionPreviewContext StateTransitionPreviewContext::structuralOnly(
@@ -162,21 +166,13 @@ StateTransitionPreviewContext::transitionProtocolState(
     );
 }
 
-void StateTransitionPreviewContext::setDomainTransactionPreValidator(
-    DomainTransactionPreValidator validator
-) {
-    m_domainTransactionPreValidator = std::move(validator);
+std::unique_ptr<TransactionDomainExecutor>
+StateTransitionPreviewContext::createDomainExecutor() const {
+    return m_domainExecutorFactory ? m_domainExecutorFactory() : nullptr;
 }
 
-bool StateTransitionPreviewContext::hasDomainTransactionPreValidator() const {
-    return static_cast<bool>(m_domainTransactionPreValidator);
-}
-
-bool StateTransitionPreviewContext::validateDomainTransaction(const Transaction& tx) const {
-    if (!m_domainTransactionPreValidator) {
-        return true;
-    }
-    return m_domainTransactionPreValidator(tx);
+bool StateTransitionPreviewContext::requireDomainExecutor() const {
+    return m_requireDomainExecutor;
 }
 
 bool StateTransitionPreviewContext::coinLotPreviewEnabled() const {
@@ -219,6 +215,8 @@ bool StateTransitionPreviewContext::isValid() const {
         }
     }
 
+    if (m_requireDomainExecutor && !m_domainExecutorFactory) return false;
+
     return true;
 }
 
@@ -236,6 +234,7 @@ std::string StateTransitionPreviewContext::serialize() const {
         << (protocolAuthorizationEnabled() ? "true" : "false")
         << ";deterministicStateDomainCount=" << m_deterministicStateDomains.size()
         << ";coinLotPreviewEnabled=" << (m_coinLotRegistry.has_value() ? "true" : "false")
+        << ";requireDomainExecutor=" << (m_requireDomainExecutor ? "true" : "false")
         << ";accountStateView=" << m_accountStateView.serialize()
         << "}";
 

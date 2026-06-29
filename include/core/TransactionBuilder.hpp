@@ -2,6 +2,7 @@
 #define NODO_CORE_TRANSACTION_BUILDER_HPP
 
 #include "core/Transaction.hpp"
+#include "core/TransactionPayload.hpp"
 #include "crypto/Signer.hpp"
 
 #include <cstdint>
@@ -44,7 +45,7 @@ public:
         const std::string& chainId
     );
 
-    static Transaction buildSignedStakeLock(
+    static Transaction buildSignedStakeDeposit(
         const TransactionBuildRequest& request,
         const crypto::Signer& signer,
         const std::string& chainId
@@ -58,6 +59,20 @@ public:
 
     static Transaction buildSignedStakeWithdraw(
         const TransactionBuildRequest& request,
+        const crypto::Signer& signer,
+        const std::string& chainId
+    );
+
+    static Transaction buildSignedBurn(
+        const TransactionBuildRequest& request,
+        const crypto::Signer& signer,
+        const std::string& chainId
+    );
+
+    static Transaction buildSignedValidatorRegistration(
+        const TransactionBuildRequest& request,
+        const crypto::PublicKey& validatorPublicKey,
+        const std::string& metadataHash,
         const crypto::Signer& signer,
         const std::string& chainId
     );
@@ -76,6 +91,16 @@ public:
 
     static Transaction buildSignedGovernanceProposal(
         const std::string& proposalPayload,
+        utils::Amount fee,
+        std::uint64_t nonce,
+        std::int64_t timestamp,
+        const crypto::Signer& signer,
+        const std::string& chainId
+    );
+
+    static Transaction buildSignedGovernanceVote(
+        const std::string& proposalId,
+        const GovernanceVotePayload& vote,
         utils::Amount fee,
         std::uint64_t nonce,
         std::int64_t timestamp,

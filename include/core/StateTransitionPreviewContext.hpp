@@ -5,6 +5,7 @@
 #include "core/CoinLotRegistry.hpp"
 #include "core/LedgerRecord.hpp"
 #include "core/Transaction.hpp"
+#include "core/TransactionExecutionContext.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "utils/Amount.hpp"
 
@@ -47,13 +48,6 @@ using DeterministicStateDomainTransition = std::function<
     )
 >;
 
-// Called once per staking/lifecycle transaction inside previewBlock.
-// Returns false if the transaction violates domain constraints (e.g. insufficient
-// bonded stake, cooldown not elapsed, jailed/tombstoned validator).
-// Implementations may maintain internal state so that consecutive transactions
-// within the same block see the intermediate staking changes.
-using DomainTransactionPreValidator = std::function<bool(const Transaction&)>;
-
 class StateTransitionPreviewContext {
 public:
     StateTransitionPreviewContext();
@@ -68,7 +62,9 @@ public:
         std::string expectedChainId = "",
         std::string networkName = "",
         std::map<std::string, std::string> deterministicStateDomains = {},
-        DeterministicStateDomainTransition stateDomainTransition = {}
+        DeterministicStateDomainTransition stateDomainTransition = {},
+        TransactionDomainExecutorFactory domainExecutorFactory = {},
+        bool requireDomainExecutor = false
     );
 
     static StateTransitionPreviewContext structuralOnly(
@@ -97,9 +93,8 @@ public:
     const CoinLotRegistry& coinLotRegistry() const;
     void enableCoinLotPreview(CoinLotRegistry registry);
 
-    void setDomainTransactionPreValidator(DomainTransactionPreValidator validator);
-    bool hasDomainTransactionPreValidator() const;
-    bool validateDomainTransaction(const Transaction& tx) const;
+    std::unique_ptr<TransactionDomainExecutor> createDomainExecutor() const;
+    bool requireDomainExecutor() const;
 
     bool isValid() const;
     std::string serialize() const;
@@ -115,7 +110,8 @@ private:
     std::optional<crypto::ProtocolCryptoContext> m_cryptoContext;
     std::map<std::string, std::string> m_deterministicStateDomains;
     DeterministicStateDomainTransition m_stateDomainTransition;
-    DomainTransactionPreValidator m_domainTransactionPreValidator;
+    TransactionDomainExecutorFactory m_domainExecutorFactory;
+    bool m_requireDomainExecutor;
     std::optional<CoinLotRegistry> m_coinLotRegistry;
 };
 

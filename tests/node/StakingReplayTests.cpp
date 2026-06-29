@@ -140,7 +140,7 @@ void testStakingRegistryRebuiltAfterReload() {
     NodeRuntime runtime = startRuntime();
     const std::string validatorAddr = validatorKeyPair().address().value();
 
-    const Transaction tx = TransactionBuilder::buildSignedStakeLock(
+    const Transaction tx = TransactionBuilder::buildSignedStakeDeposit(
         TransactionBuildRequest(
             validatorAddr,
             Amount::fromRawUnits(kStake),
@@ -240,7 +240,7 @@ void testMultipleStakingBlocksReplayedCorrectly() {
 
     // Block 1: deposit
     {
-        const Transaction tx = TransactionBuilder::buildSignedStakeLock(
+        const Transaction tx = TransactionBuilder::buildSignedStakeDeposit(
             TransactionBuildRequest(
                 validatorAddr,
                 Amount::fromRawUnits(kStake),

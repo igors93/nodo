@@ -2,7 +2,9 @@
 
 #include "crypto/Address.hpp"
 #include "crypto/AddressDerivation.hpp"
+#include "crypto/Hex.hpp"
 #include "crypto/hash.h"
+#include "core/TransactionTypePolicy.hpp"
 
 #include <set>
 #include <sstream>
@@ -15,6 +17,7 @@ namespace {
 
 constexpr std::size_t MAX_EXPLICIT_INPUT_COIN_LOTS = 128;
 constexpr std::size_t MAX_COIN_LOT_ID_LENGTH = 256;
+constexpr std::size_t MAX_TRANSACTION_DATA_BYTES = 4096;
 constexpr std::size_t MIN_ADDRESS_LENGTH = 1;
 constexpr std::size_t MAX_ADDRESS_LENGTH = 256;
 
@@ -32,23 +35,6 @@ bool isSafeTransactionAddress(const std::string& address) {
         }
     }
 
-    return true;
-}
-
-bool isSafeGovernancePayload(const std::string& payload) {
-    if (payload.empty() || payload.size() > 240) {
-        return false;
-    }
-    for (const char c : payload) {
-        const bool allowed =
-            (c >= 'a' && c <= 'z') ||
-            (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') ||
-            c == '_' || c == '-' || c == ',' || c == '=';
-        if (!allowed) {
-            return false;
-        }
-    }
     return true;
 }
 
@@ -275,6 +261,24 @@ std::vector<std::string> extractInputCoinLotIdsFromPayload(
     );
 }
 
+std::string encodeTransactionData(const std::string& data) {
+    if (data.empty()) return "";
+    return crypto::hexEncode(
+        reinterpret_cast<const unsigned char*>(data.data()), data.size()
+    );
+}
+
+std::string decodeTransactionData(const std::string& hex) {
+    if (hex.empty() || !crypto::isHexString(hex)) {
+        throw std::invalid_argument("Serialized transaction data is not canonical hex.");
+    }
+    const std::vector<unsigned char> bytes = crypto::hexDecode(hex);
+    if (bytes.size() > MAX_TRANSACTION_DATA_BYTES) {
+        throw std::invalid_argument("Serialized transaction data exceeds protocol limit.");
+    }
+    return std::string(bytes.begin(), bytes.end());
+}
+
 } // namespace
 
 std::string transactionTypeToString(TransactionType type) {
@@ -282,23 +286,8 @@ std::string transactionTypeToString(TransactionType type) {
         case TransactionType::TRANSFER:
             return "TRANSFER";
 
-        case TransactionType::MINT_REWARD:
-            return "MINT_REWARD";
-
-        case TransactionType::LOCK_SECURITY:
-            return "LOCK_SECURITY";
-
-        case TransactionType::UNLOCK_SECURITY:
-            return "UNLOCK_SECURITY";
-
         case TransactionType::VALIDATOR_REGISTER:
             return "VALIDATOR_REGISTER";
-
-        case TransactionType::VALIDATOR_VOTE:
-            return "VALIDATOR_VOTE";
-
-        case TransactionType::PENALTY:
-            return "PENALTY";
 
         case TransactionType::BURN:
             return "BURN";
@@ -334,28 +323,8 @@ TransactionType transactionTypeFromString(const std::string& value) {
         return TransactionType::TRANSFER;
     }
 
-    if (value == "MINT_REWARD") {
-        return TransactionType::MINT_REWARD;
-    }
-
-    if (value == "LOCK_SECURITY") {
-        return TransactionType::LOCK_SECURITY;
-    }
-
-    if (value == "UNLOCK_SECURITY") {
-        return TransactionType::UNLOCK_SECURITY;
-    }
-
     if (value == "VALIDATOR_REGISTER") {
         return TransactionType::VALIDATOR_REGISTER;
-    }
-
-    if (value == "VALIDATOR_VOTE") {
-        return TransactionType::VALIDATOR_VOTE;
-    }
-
-    if (value == "PENALTY") {
-        return TransactionType::PENALTY;
     }
 
     if (value == "BURN") {
@@ -393,29 +362,8 @@ TransactionType transactionTypeFromString(const std::string& value) {
     throw std::invalid_argument("Unknown TransactionType: " + value);
 }
 
-bool isMintTransaction(TransactionType type) {
-    return type == TransactionType::MINT_REWARD;
-}
-
-bool isSecurityLockTransaction(TransactionType type) {
-    return type == TransactionType::LOCK_SECURITY ||
-           type == TransactionType::UNLOCK_SECURITY;
-}
-
 bool requiresUserSignature(TransactionType type) {
-    return type == TransactionType::TRANSFER ||
-           type == TransactionType::LOCK_SECURITY ||
-           type == TransactionType::UNLOCK_SECURITY ||
-           type == TransactionType::VALIDATOR_REGISTER ||
-           type == TransactionType::VALIDATOR_VOTE ||
-           type == TransactionType::BURN ||
-           type == TransactionType::STAKE_DEPOSIT ||
-           type == TransactionType::STAKE_WITHDRAW ||
-           type == TransactionType::STAKE_TOP_UP ||
-           type == TransactionType::VALIDATOR_EXIT_REQUEST ||
-           type == TransactionType::VALIDATOR_UNJAIL_REQUEST ||
-           type == TransactionType::GOVERNANCE_PROPOSE ||
-           type == TransactionType::GOVERNANCE_VOTE;
+    return TransactionTypePolicyRegistry::isMempoolType(type);
 }
 
 bool isStakingTransaction(TransactionType type) {
@@ -452,7 +400,7 @@ Transaction::Transaction(
           fee,
           nonce,
           timestamp,
-          {}
+          std::vector<std::string>{}
       ) {}
 
 Transaction::Transaction(
@@ -474,6 +422,7 @@ Transaction::Transaction(
       m_nonce(nonce),
       m_timestamp(timestamp),
       m_inputCoinLotIds(std::move(inputCoinLotIds)),
+      m_data(),
       m_signatureBundle(),
       m_hasSignatureBundle(false) {
     if (!areInputCoinLotIdsStructurallyValid(m_inputCoinLotIds)) {
@@ -484,6 +433,34 @@ Transaction::Transaction(
         throw std::invalid_argument("Only TRANSFER transactions can declare input CoinLot ids.");
     }
 
+    m_id = computeTransactionIdFromPayload(signingPayload());
+}
+
+Transaction::Transaction(
+    TransactionType type,
+    std::string fromAddress,
+    std::string toAddress,
+    utils::Amount amount,
+    utils::Amount fee,
+    std::uint64_t nonce,
+    std::int64_t timestamp,
+    std::string data
+)
+    : m_id(""),
+      m_type(type),
+      m_fromAddress(std::move(fromAddress)),
+      m_toAddress(std::move(toAddress)),
+      m_amount(amount),
+      m_fee(fee),
+      m_nonce(nonce),
+      m_timestamp(timestamp),
+      m_inputCoinLotIds(),
+      m_data(std::move(data)),
+      m_signatureBundle(),
+      m_hasSignatureBundle(false) {
+    if (m_data.size() > MAX_TRANSACTION_DATA_BYTES) {
+        throw std::invalid_argument("Transaction data exceeds protocol limit.");
+    }
     m_id = computeTransactionIdFromPayload(signingPayload());
 }
 
@@ -518,6 +495,8 @@ std::uint64_t Transaction::nonce() const {
 std::int64_t Transaction::timestamp() const {
     return m_timestamp;
 }
+
+const std::string& Transaction::data() const { return m_data; }
 
 const std::vector<std::string>& Transaction::inputCoinLotIds() const {
     return m_inputCoinLotIds;
@@ -573,6 +552,10 @@ std::string Transaction::signingPayload() const {
 
     if (!m_inputCoinLotIds.empty()) {
         oss << ";inputLots=" << serializeInputCoinLotIds(m_inputCoinLotIds);
+    }
+
+    if (!m_data.empty()) {
+        oss << ";dataHex=" << encodeTransactionData(m_data);
     }
 
     oss << ";nonce=" << m_nonce
@@ -641,12 +624,8 @@ bool Transaction::isStructurallyValid(
         return false;
     }
 
-    const bool amountMustBeZero =
-        m_type == TransactionType::VALIDATOR_EXIT_REQUEST ||
-        m_type == TransactionType::VALIDATOR_UNJAIL_REQUEST ||
-        m_type == TransactionType::GOVERNANCE_PROPOSE;
-    if ((amountMustBeZero && !m_amount.isZero()) ||
-        (!amountMustBeZero && !m_amount.isPositive())) {
+    std::string shapeReason;
+    if (!TransactionTypePolicyRegistry::validateShape(*this, shapeReason)) {
         return false;
     }
 
@@ -671,26 +650,10 @@ bool Transaction::isStructurallyValid(
         return false;
     }
 
-    if (m_type == TransactionType::GOVERNANCE_PROPOSE) {
-        if (!isSafeGovernancePayload(m_toAddress)) {
-            return false;
-        }
-    } else if (m_type == TransactionType::TRANSFER ||
-               isStakingTransaction(m_type) ||
-               isValidatorLifecycleTransaction(m_type)) {
-        if (m_fromAddress.empty() || m_toAddress.empty()) {
-            return false;
-        }
-
-        if (!isSafeTransactionAddress(m_fromAddress) ||
-            !isSafeTransactionAddress(m_toAddress)) {
-            return false;
-        }
-
-        if (m_type == TransactionType::TRANSFER &&
-            m_fromAddress == m_toAddress) {
-            return false;
-        }
+    if (!isSafeTransactionAddress(m_fromAddress) ||
+        !isSafeTransactionAddress(m_toAddress) ||
+        m_data.size() > MAX_TRANSACTION_DATA_BYTES) {
+        return false;
     }
 
     if (requiresUserSignature(m_type)) {
@@ -740,16 +703,19 @@ Transaction Transaction::deserialize(
         throw std::invalid_argument("Serialized Transaction payload is invalid.");
     }
 
-    Transaction transaction(
-        transactionTypeFromString(extractField(payload, "type")),
-        extractField(payload, "from"),
-        extractField(payload, "to"),
-        utils::Amount::fromRawUnits(std::stoll(extractField(payload, "amountRaw"))),
-        utils::Amount::fromRawUnits(std::stoll(extractField(payload, "feeRaw"))),
-        static_cast<std::uint64_t>(std::stoull(extractField(payload, "nonce"))),
-        std::stoll(extractField(payload, "timestamp")),
-        extractInputCoinLotIdsFromPayload(payload)
-    );
+    const TransactionType type = transactionTypeFromString(extractField(payload, "type"));
+    const std::string from = extractField(payload, "from");
+    const std::string to = extractField(payload, "to");
+    const utils::Amount amount = utils::Amount::fromRawUnits(std::stoll(extractField(payload, "amountRaw")));
+    const utils::Amount fee = utils::Amount::fromRawUnits(std::stoll(extractField(payload, "feeRaw")));
+    const std::uint64_t nonce = static_cast<std::uint64_t>(std::stoull(extractField(payload, "nonce")));
+    const std::int64_t timestamp = std::stoll(extractField(payload, "timestamp"));
+    const std::vector<std::string> inputLots = extractInputCoinLotIdsFromPayload(payload);
+
+    Transaction transaction = hasField(payload, "dataHex")
+        ? Transaction(type, from, to, amount, fee, nonce, timestamp,
+              decodeTransactionData(extractField(payload, "dataHex")))
+        : Transaction(type, from, to, amount, fee, nonce, timestamp, inputLots);
 
     if (hasField(payload, "chainId")) {
         transaction.withChainId(extractField(payload, "chainId"));

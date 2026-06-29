@@ -285,7 +285,8 @@ NodeDaemon.tick()
   ├── NodeOrchestrator.tick()          — transport I/O, peer heartbeats, block sync
   ├── processTransactionGossip()       — drain TRANSACTION_GOSSIP inbox
   │     ├── SeenTransactionCache       — LRU+TTL dedup by payloadHash
-  │     ├── PersistentMempoolStore::deserializeGossipAndAdmit()  — Ed25519 verify + admit
+  │     ├── PersistentMempoolStore::deserializeGossip()          — decode + Ed25519 verify
+  │     ├── TransactionAdmissionValidator                       — account + domain admission
   │     └── gossipBroadcast()          — relay if newly admitted
   └── processFinalizedArtifacts()      — drain FINALIZED_BLOCK_ARTIFACT inbox
         ├── FinalizedBlockRecord::deserialize()

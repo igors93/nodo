@@ -116,7 +116,7 @@ void testStakeDepositUpdatesRegistryAfterBlock() {
         "Validator should have zero bonded stake before any deposit."
     );
 
-    const Transaction tx = TransactionBuilder::buildSignedStakeLock(
+    const Transaction tx = TransactionBuilder::buildSignedStakeDeposit(
         TransactionBuildRequest(
             validatorAddr,
             Amount::fromRawUnits(kStake),
@@ -171,7 +171,7 @@ void testStakeTopUpAccumulatesAcrossConsecutiveBlocks() {
 
     // Block 1: initial deposit
     {
-        const Transaction tx = TransactionBuilder::buildSignedStakeLock(
+        const Transaction tx = TransactionBuilder::buildSignedStakeDeposit(
             TransactionBuildRequest(
                 validatorAddr,
                 Amount::fromRawUnits(kStake),

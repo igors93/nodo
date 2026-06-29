@@ -5,6 +5,7 @@
 
 #include <map>
 #include <string>
+#include <cstdint>
 
 namespace nodo::node {
 
@@ -19,6 +20,7 @@ namespace nodo::node {
  */
 class StakingRegistry {
 public:
+    static constexpr std::uint64_t UNBONDING_DELAY_BLOCKS = 21;
     StakingRegistry() = default;
 
     bool hasAccount(const std::string& validatorAddress) const;
@@ -32,6 +34,31 @@ public:
     // Insert or replace the stake account for a validator.
     void setAccount(const std::string& validatorAddress, economics::StakeAccount account);
 
+    void deposit(
+        const std::string& ownerAddress,
+        const std::string& validatorAddress,
+        utils::Amount amount,
+        std::uint64_t blockHeight,
+        bool requireExistingPosition
+    );
+
+    void withdraw(
+        const std::string& ownerAddress,
+        const std::string& validatorAddress,
+        utils::Amount amount,
+        std::uint64_t blockHeight
+    );
+
+    utils::Amount ownedStake(
+        const std::string& ownerAddress,
+        const std::string& validatorAddress
+    ) const;
+    std::uint64_t unlockHeight(
+        const std::string& ownerAddress,
+        const std::string& validatorAddress
+    ) const;
+    void unjail(const std::string& validatorAddress);
+
     const std::map<std::string, economics::StakeAccount>& accounts() const;
 
     std::size_t size() const;
@@ -41,7 +68,12 @@ public:
     std::string serialize() const;
 
 private:
+    struct Position {
+        utils::Amount amount;
+        std::uint64_t unlockHeight = 0;
+    };
     std::map<std::string, economics::StakeAccount> m_accounts;
+    std::map<std::string, std::map<std::string, Position>> m_positionsByValidatorAndOwner;
 };
 
 } // namespace nodo::node

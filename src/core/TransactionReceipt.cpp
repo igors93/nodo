@@ -1,7 +1,10 @@
 #include "core/TransactionReceipt.hpp"
 
 #include "crypto/hash.h"
+#include "core/Transaction.hpp"
+#include "core/TransactionTypePolicy.hpp"
 
+#include <algorithm>
 #include <limits>
 #include <sstream>
 #include <utility>
@@ -62,6 +65,7 @@ std::string transactionReceiptStatusToString(
 
 TransactionReceipt::TransactionReceipt()
     : m_transactionId(""),
+      m_transactionType(TransactionType::TRANSFER),
       m_status(TransactionReceiptStatus::REJECTED),
       m_fromAddress(""),
       m_toAddress(""),
@@ -70,10 +74,12 @@ TransactionReceipt::TransactionReceipt()
       m_senderNonceBefore(0),
       m_senderNonceAfter(0),
       m_stateRootAfter(""),
+      m_touchedDomains(),
       m_reason("Uninitialized transaction receipt.") {}
 
 TransactionReceipt::TransactionReceipt(
     std::string transactionId,
+    TransactionType transactionType,
     TransactionReceiptStatus status,
     std::string fromAddress,
     std::string toAddress,
@@ -82,8 +88,10 @@ TransactionReceipt::TransactionReceipt(
     std::uint64_t senderNonceBefore,
     std::uint64_t senderNonceAfter,
     std::string stateRootAfter,
+    std::vector<std::string> touchedDomains,
     std::string reason
 ) : m_transactionId(std::move(transactionId)),
+    m_transactionType(transactionType),
     m_status(status),
     m_fromAddress(std::move(fromAddress)),
     m_toAddress(std::move(toAddress)),
@@ -92,20 +100,24 @@ TransactionReceipt::TransactionReceipt(
     m_senderNonceBefore(senderNonceBefore),
     m_senderNonceAfter(senderNonceAfter),
     m_stateRootAfter(std::move(stateRootAfter)),
+    m_touchedDomains(std::move(touchedDomains)),
     m_reason(std::move(reason)) {}
 
 TransactionReceipt TransactionReceipt::applied(
     std::string transactionId,
+    TransactionType transactionType,
     std::string fromAddress,
     std::string toAddress,
     utils::Amount amount,
     utils::Amount fee,
     std::uint64_t senderNonceBefore,
     std::uint64_t senderNonceAfter,
-    std::string stateRootAfter
+    std::string stateRootAfter,
+    std::vector<std::string> touchedDomains
 ) {
     return TransactionReceipt(
         std::move(transactionId),
+        transactionType,
         TransactionReceiptStatus::APPLIED,
         std::move(fromAddress),
         std::move(toAddress),
@@ -114,22 +126,26 @@ TransactionReceipt TransactionReceipt::applied(
         senderNonceBefore,
         senderNonceAfter,
         std::move(stateRootAfter),
+        std::move(touchedDomains),
         ""
     );
 }
 
 TransactionReceipt TransactionReceipt::rejected(
     std::string transactionId,
+    TransactionType transactionType,
     std::string fromAddress,
     std::string toAddress,
     utils::Amount amount,
     utils::Amount fee,
     std::uint64_t senderNonceBefore,
     std::string stateRootAfter,
+    std::vector<std::string> touchedDomains,
     std::string reason
 ) {
     return TransactionReceipt(
         std::move(transactionId),
+        transactionType,
         TransactionReceiptStatus::REJECTED,
         std::move(fromAddress),
         std::move(toAddress),
@@ -138,6 +154,7 @@ TransactionReceipt TransactionReceipt::rejected(
         senderNonceBefore,
         senderNonceBefore,
         std::move(stateRootAfter),
+        std::move(touchedDomains),
         std::move(reason)
     );
 }
@@ -145,6 +162,8 @@ TransactionReceipt TransactionReceipt::rejected(
 const std::string& TransactionReceipt::transactionId() const {
     return m_transactionId;
 }
+
+TransactionType TransactionReceipt::transactionType() const { return m_transactionType; }
 
 TransactionReceiptStatus TransactionReceipt::status() const {
     return m_status;
@@ -178,6 +197,10 @@ const std::string& TransactionReceipt::stateRootAfter() const {
     return m_stateRootAfter;
 }
 
+const std::vector<std::string>& TransactionReceipt::touchedDomains() const {
+    return m_touchedDomains;
+}
+
 const std::string& TransactionReceipt::reason() const {
     return m_reason;
 }
@@ -191,10 +214,18 @@ bool TransactionReceipt::isValid() const {
         !isSafeScalar(m_fromAddress, 200) ||
         !isSafeScalar(m_toAddress, 200) ||
         !isSafeScalar(m_stateRootAfter, 128) ||
+        !TransactionTypePolicyRegistry::hasPolicy(m_transactionType) ||
         m_amount.isNegative() ||
         m_fee.isNegative()) {
         return false;
     }
+
+    if (m_touchedDomains.empty() ||
+        !std::is_sorted(m_touchedDomains.begin(), m_touchedDomains.end()) ||
+        std::adjacent_find(m_touchedDomains.begin(), m_touchedDomains.end()) != m_touchedDomains.end()) {
+        return false;
+    }
+    for (const auto& domain : m_touchedDomains) if (!isSafeScalar(domain, 64)) return false;
 
     if (applied()) {
         return m_senderNonceBefore != std::numeric_limits<std::uint64_t>::max() &&
@@ -212,6 +243,7 @@ std::string TransactionReceipt::serialize() const {
 
     output << "TransactionReceipt{"
            << "transactionId=" << m_transactionId
+           << ";transactionType=" << transactionTypeToString(m_transactionType)
            << ";status=" << transactionReceiptStatusToString(m_status)
            << ";fromAddress=" << m_fromAddress
            << ";toAddress=" << m_toAddress
@@ -220,6 +252,12 @@ std::string TransactionReceipt::serialize() const {
            << ";senderNonceBefore=" << m_senderNonceBefore
            << ";senderNonceAfter=" << m_senderNonceAfter
            << ";stateRootAfter=" << m_stateRootAfter
+           << ";touchedDomains=";
+    for (std::size_t i = 0; i < m_touchedDomains.size(); ++i) {
+        if (i != 0) output << ',';
+        output << m_touchedDomains[i];
+    }
+    output
            << ";reason=" << m_reason
            << "}";
 
@@ -227,7 +265,7 @@ std::string TransactionReceipt::serialize() const {
 }
 
 std::string TransactionReceipt::receiptHash() const {
-    return hashString("NODO_TRANSACTION_RECEIPT_V1|" + serialize());
+    return hashString("NODO_TRANSACTION_RECEIPT_V2|" + serialize());
 }
 
 } // namespace nodo::core

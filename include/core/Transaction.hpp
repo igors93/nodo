@@ -51,6 +51,17 @@ public:
         std::vector<std::string> inputCoinLotIds
     );
 
+    Transaction(
+        TransactionType type,
+        std::string fromAddress,
+        std::string toAddress,
+        utils::Amount amount,
+        utils::Amount fee,
+        std::uint64_t nonce,
+        std::int64_t timestamp,
+        std::string data
+    );
+
     const std::string& id() const;
     TransactionType type() const;
     const std::string& fromAddress() const;
@@ -59,6 +70,7 @@ public:
     utils::Amount fee() const;
     std::uint64_t nonce() const;
     std::int64_t timestamp() const;
+    const std::string& data() const;
 
     const std::vector<std::string>& inputCoinLotIds() const;
     bool hasExplicitInputCoinLotIds() const;
@@ -136,6 +148,7 @@ private:
     std::uint64_t m_nonce;
     std::int64_t m_timestamp;
     std::vector<std::string> m_inputCoinLotIds;
+    std::string m_data;
     std::string m_chainId;
     crypto::SignatureBundle m_signatureBundle;
     bool m_hasSignatureBundle;

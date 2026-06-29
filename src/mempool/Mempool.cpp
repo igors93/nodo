@@ -1,4 +1,5 @@
 #include "mempool/Mempool.hpp"
+#include "core/TransactionTypePolicy.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -288,6 +289,19 @@ Mempool::Mempool(
       m_transactionIdBySenderNonce(),
       m_currentMempoolSizeBytes(0) {}
 
+std::int64_t Mempool::minimumReplacementFee(std::int64_t existingFeeRaw) {
+    if (existingFeeRaw < 0) return std::numeric_limits<std::int64_t>::max();
+    const __int128 numerator =
+        static_cast<__int128>(existingFeeRaw) * REPLACEMENT_NUMERATOR;
+    const __int128 roundedUp =
+        (numerator + REPLACEMENT_DENOMINATOR - 1) / REPLACEMENT_DENOMINATOR;
+    const __int128 strictlyHigher = static_cast<__int128>(existingFeeRaw) + 1;
+    const __int128 required = std::max(roundedUp, strictlyHigher);
+    return required > static_cast<__int128>(std::numeric_limits<std::int64_t>::max())
+        ? std::numeric_limits<std::int64_t>::max()
+        : static_cast<std::int64_t>(required);
+}
+
 std::size_t Mempool::currentMempoolSizeBytes() const {
     return m_currentMempoolSizeBytes;
 }
@@ -319,6 +333,13 @@ MempoolAdmissionResult Mempool::admitTransaction(
         return MempoolAdmissionResult::rejected(
             MempoolAdmissionStatus::INVALID_TRANSACTION,
             "Transaction failed structural or policy validation."
+        );
+    }
+
+    if (!core::TransactionTypePolicyRegistry::isMempoolType(transaction.type())) {
+        return MempoolAdmissionResult::rejected(
+            MempoolAdmissionStatus::INVALID_TRANSACTION,
+            "Transaction type is not user-submittable."
         );
     }
 
@@ -373,13 +394,8 @@ MempoolAdmissionResult Mempool::admitTransaction(
         // Enforce 10% minimum bump: incoming fee must be >= existing * 110 / 100.
         // Use __int128 to prevent signed overflow when existingFee is large.
         const std::int64_t existingFee = existingEntry->second.priorityFeeRaw();
-        const __int128 wideMinimum =
-            (static_cast<__int128>(existingFee) * REPLACEMENT_NUMERATOR)
-            / REPLACEMENT_DENOMINATOR;
         const std::int64_t minimumReplacementFee =
-            wideMinimum > static_cast<__int128>(std::numeric_limits<std::int64_t>::max())
-                ? std::numeric_limits<std::int64_t>::max()
-                : static_cast<std::int64_t>(wideMinimum);
+            Mempool::minimumReplacementFee(existingFee);
 
         if (transaction.fee().rawUnits() < minimumReplacementFee) {
             return MempoolAdmissionResult::rejected(

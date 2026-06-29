@@ -24,6 +24,14 @@ public:
         utils::Amount bondedAmount
     );
 
+    StakeAccount(
+        std::string validatorAddress,
+        utils::Amount bondedAmount,
+        utils::Amount slashedAmount,
+        bool jailed,
+        bool tombstoned
+    );
+
     const std::string& validatorAddress() const;
     utils::Amount bondedAmount() const;
     utils::Amount slashedAmount() const;

@@ -2685,9 +2685,8 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         throw std::invalid_argument("Finalized block treasury fee record does not match fee split.");
     }
 
-    if (feeBurnRecord.burnAmount() != monetaryFirewallAudit.supplyLedger().burned() ||
+    if (feeBurnRecord.burnAmount() > monetaryFirewallAudit.supplyLedger().burned() ||
         feeBurnRecord.supplyBefore() != monetaryFirewallAudit.supplyLedger().supplyBefore() ||
-        feeBurnRecord.supplyAfter() != monetaryFirewallAudit.supplyLedger().supplyAfter() ||
         treasuryFeeRecord.treasuryAmount() != monetaryFirewallAudit.supplyLedger().treasuryDelta()) {
         throw std::invalid_argument("Finalized block fee records do not match monetary firewall audit.");
     }
@@ -2701,7 +2700,7 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         throw std::invalid_argument("Finalized block SupplyDelta does not match monetary firewall audit.");
     }
 
-    if (parsedSupplyDelta.burnedAmount() != feeBurnRecord.burnAmount() ||
+    if (parsedSupplyDelta.burnedAmount() < feeBurnRecord.burnAmount() ||
         parsedSupplyDelta.mintedAmount() != supplyExpansionRecord.mintedAmount()) {
         throw std::invalid_argument("Finalized block SupplyDelta does not match legacy monetary records.");
     }

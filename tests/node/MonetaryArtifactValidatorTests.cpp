@@ -210,7 +210,8 @@ void testValidateSupplyDeltaRejectsFeeBurnMismatch() {
         );
 
     assert(!result.accepted());
-    assert(result.reason().find("does not equal") != std::string::npos);
+    assert(result.reason().find("fee burn") != std::string::npos ||
+           result.reason().find("below") != std::string::npos);
 }
 
 void testValidateSupplyDeltaAcceptsFeeBurnMatch() {

@@ -78,6 +78,7 @@ private:
  * It derives a real SupplyDelta for a candidate block using:
  *   - the latest finalized supply as supplyBefore;
  *   - fee burn amounts derived from the transaction fee total;
+ *   - voluntary BURN transactions decoded from the candidate block;
  *   - no mint records for regular (non-genesis) blocks.
  *
  * If feeBurnAmount is zero, a no-op SupplyDelta is built.

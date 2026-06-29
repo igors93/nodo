@@ -544,50 +544,6 @@ std::uint64_t NodeRuntime::effectiveMinimumFeeRawUnits() const {
     return m_config.genesisConfig().networkParameters().minimumFeeRawUnits();
 }
 
-void NodeRuntime::applyGovernanceFromBlock(
-    const core::Block& block,
-    std::int64_t now
-) {
-    const std::uint64_t height = block.index();
-    for (const auto& record : block.records()) {
-        if (record.type() != core::LedgerRecordType::TRANSACTION) continue;
-        const core::Transaction tx =
-            core::Transaction::deserialize(record.payload());
-        if (tx.type() != core::TransactionType::GOVERNANCE_PROPOSE) continue;
-        if (m_governanceExecutor.hasBeenExecuted(tx.id())) continue;
-        const GovernanceExecutionResult result =
-            m_governanceExecutor.executeProposal(
-                tx.id(), tx.toAddress(), height, now
-            );
-        if (!result.isApplied() && !result.isPending()) {
-            throw std::logic_error(
-                "Finalized governance proposal failed: " + result.detail()
-            );
-        }
-    }
-    m_governanceExecutor.advanceToHeight(height + 1, now);
-}
-
-void NodeRuntime::applySlashingEvidenceFromBlock(const core::Block& block) {
-    const crypto::ProtocolCryptoContext cryptoContext =
-        crypto::ProtocolCryptoContext::fromNetworkName(
-            m_config.genesisConfig().networkParameters().networkName()
-        );
-    if (!cryptoContext.isValid()) {
-        throw std::logic_error(
-            "Cannot apply slashing evidence without a valid crypto context."
-        );
-    }
-    CanonicalSlashingTransition::applyBlockEvidence(
-        block,
-        m_validatorSetHistory,
-        cryptoContext.policy(),
-        cryptoContext.signatureProvider(),
-        m_validatorPenaltyLedger,
-        m_validatorRegistry
-    );
-}
-
 LocalPeerManager& NodeRuntime::mutablePeerManager() {
     return m_peerManager;
 }

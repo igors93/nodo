@@ -2,6 +2,9 @@
 #include "core/AccountState.hpp"
 #include "core/AccountStateView.hpp"
 #include "core/TransactionBuilder.hpp"
+#include "core/TransactionPayload.hpp"
+#include "core/TransactionTypePolicy.hpp"
+#include "crypto/AddressDerivation.hpp"
 #include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/KeyStore.hpp"
 #include "crypto/SignatureProvider.hpp"
@@ -142,6 +145,71 @@ core::AccountStateView accountStateFor(
     );
 
     return view;
+}
+
+core::Transaction supportedTransaction(
+    core::TransactionType type,
+    const crypto::KeyPair& keyPair,
+    const crypto::SignatureProvider& provider
+) {
+    const auto& typePolicy = core::TransactionTypePolicyRegistry::policyFor(type);
+    const utils::Amount amount = typePolicy.amountRule == core::TransactionAmountRule::ZERO
+        ? utils::Amount()
+        : utils::Amount::fromRawUnits(
+              type == core::TransactionType::VALIDATOR_REGISTER ? 1'000'000 : 1000);
+    std::string target = "nodo-target";
+    std::string data;
+    if (type == core::TransactionType::TRANSFER) target = "nodo-recipient";
+    if (type == core::TransactionType::BURN) target = "nodo_burn";
+    if (type == core::TransactionType::GOVERNANCE_PROPOSE) {
+        target = "nodo_governance";
+        data = "target=MINIMUM_FEE_RAW,value=10,effectiveHeight=10";
+    }
+    if (type == core::TransactionType::GOVERNANCE_VOTE) {
+        target = "proposal-id";
+        data = core::GovernanceVotePayload("validator-address", core::GovernanceVoteChoice::APPROVE).serialize();
+    }
+    if (type == core::TransactionType::VALIDATOR_REGISTER) {
+        const crypto::KeyPair validator =
+            crypto::KeyPair::createDeterministicBls12381KeyPair("admission-validator");
+        target = crypto::AddressDerivation::deriveFromPublicKey(validator.publicKey()).value();
+        data = core::ValidatorRegistrationPayload(
+            validator.publicKey(), "validator-metadata-hash").serialize();
+    }
+    core::Transaction tx = data.empty()
+        ? core::Transaction(type, keyPair.address().value(), target, amount,
+              utils::Amount::fromRawUnits(100), 1, kTimestamp + 10)
+        : core::Transaction(type, keyPair.address().value(), target, amount,
+              utils::Amount::fromRawUnits(100), 1, kTimestamp + 10, data);
+    tx.withChainId("nodo-localnet-admission-test");
+    return crypto::Signer(keyPair, provider).signTransaction(tx, tx.timestamp());
+}
+
+void testLocalAndNetworkAdmissionShareCompleteTypeMatrix() {
+    const std::filesystem::path path = tempPath();
+    clean(path);
+    const crypto::KeyStoreLoadResult key = createAndLoadKey(
+        path, "matrix-user", "admission-matrix-seed");
+    const crypto::Ed25519SignatureProvider provider;
+    const auto network = localnetWithMinimumFee(100);
+    for (const auto type : core::TransactionTypePolicyRegistry::allTypes()) {
+        const core::Transaction tx = supportedTransaction(type, key.keyPair(), provider);
+        const auto local = node::TransactionAdmissionValidator::validateLocalSubmission(
+            tx, key.metadata(), network, crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION, provider);
+        requireCondition(local.accepted(),
+            "Local admission matrix rejected " + core::transactionTypeToString(type) +
+            ": " + local.reason());
+
+        const auto networkResult = node::TransactionAdmissionValidator::validateNetworkSubmission(
+            tx, network, accountStateFor(key.metadata().address(), 2'000'000, 0),
+            mempool::Mempool(), crypto::CryptoPolicy::developmentPolicy(),
+            crypto::SecurityContext::USER_TRANSACTION, provider);
+        requireCondition(networkResult.accepted(),
+            "Network admission matrix rejected " + core::transactionTypeToString(type) +
+            ": " + networkResult.reason());
+    }
+    clean(path);
 }
 
 void testAcceptsValidLocalSubmission() {
@@ -579,6 +647,7 @@ int main() {
         testAcceptsRuntimeQueuedNonceWhenReservedBalanceIsSufficient();
         testAcceptsRuntimeReplacementWhenHigherFeeIsAllowed();
         testRejectsRuntimeReplacementWhenPolicyDisallowsIt();
+        testLocalAndNetworkAdmissionShareCompleteTypeMatrix();
 
         std::cout << "Nodo transaction admission validator tests passed.\n";
         return 0;

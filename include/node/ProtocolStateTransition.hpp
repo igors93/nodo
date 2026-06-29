@@ -5,6 +5,7 @@
 #include "core/StateTransitionPreviewContext.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "node/StakingRegistry.hpp"
+#include "node/ProtocolTransactionDomainExecutor.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
@@ -21,12 +22,10 @@ class NodeRuntime;
  */
 class ProtocolStateTransition {
 public:
-    // Returns the preview context together with a shared StakingRegistry that
-    // reflects the post-block staking state after the domain transition runs.
-    // Callers that need to write the updated registry back to the runtime
-    // (e.g. applyCertifiedBlock) should use this form.
-    static std::pair<core::StateTransitionPreviewContext, std::shared_ptr<StakingRegistry>>
-    contextForNextBlockWithRegistry(
+    // Returns the preview context together with a tracker for every protocol
+    // domain changed by canonical transaction execution.
+    static std::pair<core::StateTransitionPreviewContext, std::shared_ptr<ProtocolExecutionState>>
+    contextForNextBlockWithState(
         const NodeRuntime& runtime,
         std::int64_t minimumFeeRawUnits,
         std::int64_t wallClockNow = 0
@@ -52,6 +51,11 @@ public:
         core::ValidatorRegistry& validators,
         std::uint64_t blockHeight,
         std::int64_t blockTimestamp
+    );
+
+    static ProtocolExecutionState replayFinalizedBlockDomains(
+        const NodeRuntime& runtime,
+        const core::Block& block
     );
 };
 

@@ -154,6 +154,8 @@ public:
     static constexpr std::int64_t REPLACEMENT_NUMERATOR   = 110;
     static constexpr std::int64_t REPLACEMENT_DENOMINATOR = 100;
 
+    static std::int64_t minimumReplacementFee(std::int64_t existingFeeRaw);
+
     explicit Mempool(
         MempoolConfig config = MempoolConfig()
     );

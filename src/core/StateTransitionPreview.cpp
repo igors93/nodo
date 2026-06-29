@@ -1,15 +1,15 @@
 #include "core/StateTransitionPreview.hpp"
 
 #include "core/CoinLotRegistry.hpp"
-#include "core/CoinLotTransactionValidator.hpp"
 #include "core/LedgerRecordDomainValidator.hpp"
 #include "core/MerkleTree.hpp"
 #include "core/StateRootCalculator.hpp"
 #include "core/Transaction.hpp"
+#include "core/TransactionExecutionRouter.hpp"
+#include "core/TransactionTypePolicy.hpp"
 #include "crypto/hash.h"
 
 #include <exception>
-#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -50,6 +50,7 @@ StateTransitionPreviewResult::StateTransitionPreviewResult()
       m_processedTransactionCount(0),
       m_totalFee(),
       m_touchedAccounts(),
+      m_touchedDomains(),
       m_transactionIds(),
       m_resultingAccounts(),
       m_stateRoot(""),
@@ -60,6 +61,7 @@ StateTransitionPreviewResult StateTransitionPreviewResult::valid(
     std::size_t processedTransactionCount,
     utils::Amount totalFee,
     std::vector<std::string> touchedAccounts,
+    std::vector<std::string> touchedDomains,
     std::vector<std::string> transactionIds,
     std::vector<AccountState> resultingAccounts,
     std::string stateRoot,
@@ -72,6 +74,7 @@ StateTransitionPreviewResult StateTransitionPreviewResult::valid(
     result.m_processedTransactionCount = processedTransactionCount;
     result.m_totalFee = totalFee;
     result.m_touchedAccounts = std::move(touchedAccounts);
+    result.m_touchedDomains = std::move(touchedDomains);
     result.m_transactionIds = std::move(transactionIds);
     result.m_resultingAccounts = std::move(resultingAccounts);
     result.m_stateRoot = std::move(stateRoot);
@@ -116,6 +119,10 @@ const std::vector<std::string>& StateTransitionPreviewResult::touchedAccounts() 
     return m_touchedAccounts;
 }
 
+const std::vector<std::string>& StateTransitionPreviewResult::touchedDomains() const {
+    return m_touchedDomains;
+}
+
 const std::vector<std::string>& StateTransitionPreviewResult::transactionIds() const {
     return m_transactionIds;
 }
@@ -145,6 +152,7 @@ std::string StateTransitionPreviewResult::serialize() const {
         << ";processedTransactionCount=" << m_processedTransactionCount
         << ";totalFeeRaw=" << m_totalFee.rawUnits()
         << ";touchedAccountCount=" << m_touchedAccounts.size()
+        << ";touchedDomainCount=" << m_touchedDomains.size()
         << ";transactionCount=" << m_transactionIds.size()
         << ";resultingAccountCount=" << m_resultingAccounts.size()
         << ";stateRoot=" << m_stateRoot
@@ -190,6 +198,7 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
     std::set<std::string> sourceIds;
     std::set<std::string> transactionIds;
     std::set<std::string> touchedAccountSet;
+    std::set<std::string> touchedDomainSet;
     std::vector<std::string> orderedTransactionIds;
     std::vector<Transaction> orderedTransactions;
     std::vector<LedgerRecord> orderedProtocolRecords;
@@ -200,6 +209,8 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
         context.coinLotPreviewEnabled()
             ? std::optional<CoinLotRegistry>(context.coinLotRegistry())
             : std::nullopt;
+    std::unique_ptr<TransactionDomainExecutor> domainExecutor =
+        context.createDomainExecutor();
     utils::Amount totalFee;
     std::size_t processedTransactionCount = 0;
     bool evidenceSectionStarted = false;
@@ -251,6 +262,9 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
             evidenceSectionStarted = true;
             previousEvidenceId = record.sourceId();
             orderedProtocolRecords.push_back(record);
+            touchedDomainSet.insert("slashing");
+            touchedDomainSet.insert("validators");
+            touchedDomainSet.insert("staking");
             continue;
         }
 
@@ -276,28 +290,6 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                 );
             }
 
-            const bool isTransfer =
-                transaction.type() == TransactionType::TRANSFER;
-            const bool isGovernanceProposal =
-                transaction.type() == TransactionType::GOVERNANCE_PROPOSE;
-            const bool isStakingDeposit =
-                transaction.type() == TransactionType::STAKE_DEPOSIT ||
-                transaction.type() == TransactionType::STAKE_TOP_UP;
-            const bool isStakingWithdraw =
-                transaction.type() == TransactionType::STAKE_WITHDRAW;
-            const bool isValidatorLifecycle =
-                transaction.type() == TransactionType::VALIDATOR_EXIT_REQUEST ||
-                transaction.type() == TransactionType::VALIDATOR_UNJAIL_REQUEST;
-            const bool isStaking = isStakingDeposit || isStakingWithdraw || isValidatorLifecycle;
-
-            if (!isTransfer && !isGovernanceProposal && !isStaking) {
-                return StateTransitionPreviewResult::rejected(
-                    StateTransitionPreviewStatus::UNSUPPORTED_TRANSITION,
-                    "Transaction type has no authoritative deterministic state transition.",
-                    processedTransactionCount
-                );
-            }
-
             if (context.protocolAuthorizationEnabled()) {
                 const crypto::ProtocolCryptoContext& cryptoContext =
                     context.cryptoContext();
@@ -315,18 +307,12 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                 }
             }
 
-            if (transaction.nonce() == 0 ||
-                (isTransfer && !transaction.amount().isPositive()) ||
-                (isGovernanceProposal && !transaction.amount().isZero()) ||
-                (isStakingDeposit && !transaction.amount().isPositive()) ||
-                (isStakingWithdraw && !transaction.amount().isPositive()) ||
-                transaction.fee().isNegative() ||
-                transaction.fromAddress().empty() ||
-                transaction.toAddress().empty() ||
-                (isTransfer && transaction.fromAddress() == transaction.toAddress())) {
+            std::string shapeReason;
+            if (transaction.nonce() == 0 || transaction.fee().isNegative() ||
+                !TransactionTypePolicyRegistry::validateShape(transaction, shapeReason)) {
                 return StateTransitionPreviewResult::rejected(
                     StateTransitionPreviewStatus::INVALID_TRANSACTION,
-                    "Block contains an invalid transaction ledger payload.",
+                    "Block contains an invalid transaction ledger payload: " + shapeReason,
                     processedTransactionCount
                 );
             }
@@ -347,176 +333,39 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
                 );
             }
 
-            if (context.enforceAccountState()) {
-                if (!workingAccountState.hasAccount(transaction.fromAddress()) &&
-                    !context.allowMissingAccounts()) {
-                    return StateTransitionPreviewResult::rejected(
-                        StateTransitionPreviewStatus::INVALID_TRANSACTION,
-                        "Sender account does not exist in preview state.",
-                        processedTransactionCount
-                    );
+            const TransactionExecutionContext executionContext(
+                workingAccountState, block.index(), block.timestamp(),
+                context.enforceAccountState(), context.allowMissingAccounts(),
+                context.requireDomainExecutor(), context.feeRecipientAddress(),
+                workingCoinLotRegistry.has_value() ? &*workingCoinLotRegistry : nullptr,
+                domainExecutor.get()
+            );
+            const TransactionExecutionResult execution =
+                TransactionExecutionRouter::execute(transaction, executionContext);
+            if (!execution.success()) {
+                StateTransitionPreviewStatus status = StateTransitionPreviewStatus::INVALID_TRANSACTION;
+                if (execution.status() == TransactionExecutionStatus::INVALID_NONCE) {
+                    status = StateTransitionPreviewStatus::INVALID_NONCE;
+                } else if (execution.status() == TransactionExecutionStatus::INSUFFICIENT_BALANCE) {
+                    status = StateTransitionPreviewStatus::INSUFFICIENT_BALANCE;
                 }
-
-                const AccountState sender =
-                    workingAccountState.accountOrDefault(transaction.fromAddress());
-
-                const AccountState recipient = isTransfer
-                    ? workingAccountState.accountOrDefault(transaction.toAddress())
-                    : AccountState();
-
-                if (!sender.isValid() ||
-                    (isTransfer && !recipient.isValid()) ||
-                    (isStaking && !sender.isValid())) {
-                    return StateTransitionPreviewResult::rejected(
-                        StateTransitionPreviewStatus::INVALID_TRANSACTION,
-                        "Preview account state is invalid.",
-                        processedTransactionCount
-                    );
-                }
-
-                if (sender.nonce() == std::numeric_limits<std::uint64_t>::max()) {
-                    return StateTransitionPreviewResult::rejected(
-                        StateTransitionPreviewStatus::INVALID_NONCE,
-                        "Sender nonce cannot advance without overflow.",
-                        processedTransactionCount
-                    );
-                }
-
-                const std::uint64_t expectedNonce =
-                    sender.nonce() + 1;
-
-                if (transaction.nonce() != expectedNonce) {
-                    return StateTransitionPreviewResult::rejected(
-                        StateTransitionPreviewStatus::INVALID_NONCE,
-                        "Transaction nonce does not match expected sender nonce.",
-                        processedTransactionCount
-                    );
-                }
-
-                // For deposits the full bond amount comes from liquid balance.
-                // For withdrawals only the fee is deducted here; the domain
-                // callback credits the unbonded amount back to the sender.
-                const utils::Amount required =
-                    (isTransfer || isStakingDeposit)
-                        ? transaction.amount() + transaction.fee()
-                        : transaction.fee();
-
-                if (sender.balance() < required) {
-                    return StateTransitionPreviewResult::rejected(
-                        StateTransitionPreviewStatus::INSUFFICIENT_BALANCE,
-                        "Sender balance is insufficient for amount plus fee.",
-                        processedTransactionCount
-                    );
-                }
-
-                // Staking domain pre-validation: checks constraints that the domain
-                // callback will enforce (bonded stake, cooldown, jailed/tombstoned).
-                // Rejects blocks before they reach consensus so proposers never emit
-                // transactions that pass the account layer but fail the domain transition.
-                if (isStaking && context.hasDomainTransactionPreValidator()) {
-                    if (!context.validateDomainTransaction(transaction)) {
-                        return StateTransitionPreviewResult::rejected(
-                            StateTransitionPreviewStatus::INSUFFICIENT_BALANCE,
-                            "Staking domain constraint not satisfied: "
-                            "insufficient bonded stake, cooldown not elapsed, "
-                            "or invalid validator state for this operation.",
-                            processedTransactionCount
-                        );
-                    }
-                }
-
-                const utils::Amount senderBalance =
-                    sender.balance() - required;
-
-                if (!workingAccountState.putAccount(
-                        AccountState(
-                            sender.address(),
-                            senderBalance,
-                            transaction.nonce()
-                        )
-                    )) {
-                    return StateTransitionPreviewResult::rejected(
-                        StateTransitionPreviewStatus::INVALID_TRANSACTION,
-                        "Preview account state update failed.",
-                        processedTransactionCount
-                    );
-                }
-
-                if (isTransfer &&
-                    !workingAccountState.putAccount(
-                        AccountState(
-                            recipient.address(),
-                            recipient.balance() + transaction.amount(),
-                            recipient.nonce()
-                        )
-                    )) {
-                    return StateTransitionPreviewResult::rejected(
-                        StateTransitionPreviewStatus::INVALID_TRANSACTION,
-                        "Preview recipient account update failed.",
-                        processedTransactionCount
-                    );
-                }
-
-                if (!context.feeRecipientAddress().empty()) {
-                    const AccountState feeRecipient =
-                        workingAccountState.accountOrDefault(
-                            context.feeRecipientAddress()
-                        );
-
-                    if (!workingAccountState.putAccount(
-                            AccountState(
-                                feeRecipient.address(),
-                                feeRecipient.balance() + transaction.fee(),
-                                feeRecipient.nonce()
-                            )
-                        )) {
-                        return StateTransitionPreviewResult::rejected(
-                            StateTransitionPreviewStatus::INVALID_TRANSACTION,
-                            "Preview fee recipient update failed.",
-                            processedTransactionCount
-                        );
-                    }
-
-                    touchedAccountSet.insert(context.feeRecipientAddress());
-                }
-
-                if (isTransfer && workingCoinLotRegistry.has_value()) {
-                    try {
-                        CoinLotTransactionValidator::applyTransfer(
-                            *workingCoinLotRegistry,
-                            transaction,
-                            block.index()
-                        );
-                    } catch (const std::exception& e) {
-                        return StateTransitionPreviewResult::rejected(
-                            StateTransitionPreviewStatus::INVALID_TRANSACTION,
-                            std::string("CoinLot validation failed: ") + e.what(),
-                            processedTransactionCount
-                        );
-                    }
-                }
-
-                receipts.push_back(
-                    TransactionReceipt::applied(
-                        transaction.id(),
-                        transaction.fromAddress(),
-                        isTransfer ? transaction.toAddress() : "nodo_governance",
-                        transaction.amount(),
-                        transaction.fee(),
-                        sender.nonce(),
-                        transaction.nonce(),
-                        StateRootCalculator::calculateAccountStateRoot(
-                            workingAccountState
-                        )
-                    )
+                return StateTransitionPreviewResult::rejected(
+                    status, execution.code() + ": " + execution.reason(), processedTransactionCount
                 );
             }
 
-            totalFee = totalFee + transaction.fee();
-            touchedAccountSet.insert(transaction.fromAddress());
-            if (isTransfer || isStaking) {
-                touchedAccountSet.insert(transaction.toAddress());
+            workingAccountState = execution.accounts();
+            for (const auto& address : execution.touchedAccounts()) {
+                touchedAccountSet.insert(address);
             }
+            for (const auto& domain : execution.touchedDomains()) {
+                touchedDomainSet.insert(domain);
+            }
+            if (context.enforceAccountState()) {
+                receipts.push_back(execution.receipt());
+            }
+
+            totalFee = totalFee + transaction.fee();
             orderedTransactionIds.push_back(transaction.id());
             orderedTransactions.push_back(transaction);
             ++processedTransactionCount;
@@ -544,13 +393,20 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
 
     DeterministicStateTransitionResult protocolTransition;
     try {
-        protocolTransition = context.transitionProtocolState(
-            workingAccountState,
-            totalFee,
-            orderedTransactions,
-            orderedProtocolRecords,
-            block.timestamp()
-        );
+        if (domainExecutor) {
+            const TransactionDomainExecutionResult finalized = domainExecutor->finalizeBlock(
+                workingAccountState, totalFee, orderedProtocolRecords,
+                block.index(), block.timestamp()
+            );
+            protocolTransition = finalized.applied()
+                ? DeterministicStateTransitionResult::accepted(finalized.accounts(), finalized.domains())
+                : DeterministicStateTransitionResult::rejected(finalized.code() + ": " + finalized.reason());
+        } else {
+            protocolTransition = context.transitionProtocolState(
+                workingAccountState, totalFee, orderedTransactions,
+                orderedProtocolRecords, block.timestamp()
+            );
+        }
     } catch (const std::exception& error) {
         return StateTransitionPreviewResult::rejected(
             StateTransitionPreviewStatus::INVALID_CONTEXT,
@@ -568,6 +424,12 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
     }
 
     workingAccountState = protocolTransition.accounts();
+
+    if (totalFee.isPositive()) {
+        touchedDomainSet.insert("accounts");
+        touchedDomainSet.insert("burns");
+        touchedDomainSet.insert("supply");
+    }
 
     std::map<std::string, std::string> stateRootDomains = protocolTransition.domains();
     if (workingCoinLotRegistry.has_value()) {
@@ -596,6 +458,10 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
         std::vector<std::string>(
             touchedAccountSet.begin(),
             touchedAccountSet.end()
+        ),
+        std::vector<std::string>(
+            touchedDomainSet.begin(),
+            touchedDomainSet.end()
         ),
         orderedTransactionIds,
         workingAccountState.accounts(),

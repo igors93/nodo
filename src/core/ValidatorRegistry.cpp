@@ -302,6 +302,10 @@ std::string ValidatorRegistryEntry::serialize() const {
     oss << "ValidatorRegistryEntry{"
         << "status=" << validatorRegistrationStatusToString(m_status)
         << ";lastUpdatedAt=" << m_lastUpdatedAt
+        << ";stakeAmount=" << m_stakeAmount
+        << ";jailUntilEpoch=" << m_jailUntilEpoch
+        << ";exitRequestHeight=" << m_exitRequestHeight
+        << ";ownerAddress=" << m_ownerAddress
         << ";registration=" << m_registrationRecord.serialize()
         << "}";
 
@@ -525,6 +529,52 @@ ValidatorRegistryUpdateResult ValidatorRegistry::registerValidator(
         );
     }
 
+    return ValidatorRegistryUpdateResult::accepted(entry);
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistry::registerPendingValidator(
+    const ValidatorRegistrationRecord& registrationRecord,
+    std::uint64_t stakeAmount,
+    const std::string& ownerAddress
+) {
+    if (!registrationRecord.isValid() ||
+        stakeAmount < MIN_VALIDATOR_STAKE_RAW_UNITS ||
+        !isSafeScalar(ownerAddress)) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_RECORD,
+            "Pending validator registration is invalid or below minimum stake."
+        );
+    }
+    const std::string& address = registrationRecord.validatorAddress();
+    if (m_entries.find(address) != m_entries.end()) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::DUPLICATE,
+            "Validator is already registered."
+        );
+    }
+    ValidatorRegistryEntry entry(
+        registrationRecord,
+        ValidatorRegistrationStatus::PENDING_ACTIVATION,
+        registrationRecord.registeredAt(),
+        stakeAmount,
+        0,
+        0,
+        ownerAddress
+    );
+    if (!entry.isValid()) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_RECORD,
+            "Pending validator entry is invalid."
+        );
+    }
+    m_entries.emplace(address, entry);
+    if (!isValid()) {
+        m_entries.erase(address);
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_REGISTRY,
+            "Validator registry failed pending-registration audit."
+        );
+    }
     return ValidatorRegistryUpdateResult::accepted(entry);
 }
 

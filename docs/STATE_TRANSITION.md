@@ -17,20 +17,22 @@ Minimum validation rules:
   and sender-equals-recipient payloads are rejected;
 - transaction fee must be at least the configured network minimum;
 - when an account-state preview context is provided, sender balance must cover
-  `amount + fee`;
+  the maximum debit registered for the transaction type;
 - transaction nonce must equal the sender account nonce plus one;
 - duplicate transaction ids inside the same block are rejected;
 - selected transactions were already admitted by mempool policy;
 - no partial state mutation happens before validation succeeds.
 
 The implementation entry point is `BlockStateTransitionValidator`. It calls
-`StateTransitionPreview` before accepting a candidate block. The preview returns
+`StateTransitionPreview`, which delegates every transaction to
+`TransactionExecutionRouter`, before accepting a candidate block. The preview returns
 an auditable summary of processed transactions, total fee, touched accounts and
 transaction ids without mutating runtime state. With `StateTransitionPreviewContext`
 it also simulates sender debit, recipient credit, fee collection and sender
 nonce advancement on a temporary `AccountStateView`. Successful previews produce
-a deterministic account state root through `StateRootCalculator`; insertion order
-does not affect the root, while balance, nonce or account-set changes do.
+a deterministic protocol state root through `StateRootCalculator`. Accounts,
+supply, burns, staking, validators, governance and slashing are committed as
+canonical domains; insertion order does not affect the root.
 
 `BlockStateTransitionValidator` is the single pre-vote protocol gate. It drives
 `StateTransitionEngine::executeBlock`, which runs `StateTransitionPreview` under
@@ -56,10 +58,6 @@ validation context has `protocolAuthorizationEnabled()` — meaning a valid chai
 identifier and crypto context are in place and signatures were actually verified.
 Proposals that arrive before the context is initialized are skipped rather than
 silently accepted.
-
-Remaining next steps: full supply reconciliation wired to epoch boundaries,
-explicit transaction-declared input lot IDs, and complete slashing-lot lifecycle
-integration.
 
 The correct failure behavior is rejection with a clear reason. A quorum
 certificate must never be built for a block that failed this gate.

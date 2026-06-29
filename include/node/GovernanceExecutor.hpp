@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <map>
 #include <vector>
 
 namespace nodo::node {
@@ -138,14 +139,29 @@ class GovernanceExecutor {
 public:
     GovernanceExecutor();
 
-    // Evaluate and potentially apply a governance parameter change.
-    // proposalPayload format: "target=X;value=Y;effectiveHeight=N"
-    GovernanceExecutionResult executeProposal(
+    bool submitProposal(
         const std::string& proposalId,
+        const std::string& proposerAddress,
         const std::string& proposalPayload,
         std::uint64_t currentHeight,
-        std::int64_t  now
+        std::int64_t now,
+        std::string& reason
     );
+
+    bool castVote(
+        const std::string& proposalId,
+        const std::string& validatorAddress,
+        bool approve,
+        std::uint64_t votingWeight,
+        std::uint64_t totalEligibleWeight,
+        std::uint64_t currentHeight,
+        std::int64_t now,
+        std::string& reason
+    );
+
+    bool hasProposal(const std::string& proposalId) const;
+    bool hasVote(const std::string& proposalId, const std::string& validatorAddress) const;
+    bool proposalApproved(const std::string& proposalId) const;
 
     // Activates every pending change whose effective height has been reached.
     // Returns the number of changes activated in deterministic insertion order.
@@ -170,8 +186,29 @@ public:
     std::string serialize() const;
 
 private:
+    struct VoteState {
+        bool approve = false;
+        std::uint64_t weight = 0;
+    };
+    struct ProposalState {
+        std::string proposerAddress;
+        std::string payload;
+        std::uint64_t createdHeight = 0;
+        std::int64_t createdAt = 0;
+        bool approved = false;
+        bool rejected = false;
+        std::map<std::string, VoteState> votes;
+    };
     std::vector<GovernanceParameterChange> m_appliedChanges;
     std::vector<GovernanceParameterChange> m_pendingChanges;
+    std::map<std::string, ProposalState> m_proposals;
+
+    GovernanceExecutionResult applyApprovedProposal(
+        const std::string& proposalId,
+        const std::string& proposalPayload,
+        std::uint64_t currentHeight,
+        std::int64_t now
+    );
 
     static GovernanceParameterTarget parseTarget(const std::string& payload);
     static std::string parseNewValue(const std::string& payload);

@@ -19,6 +19,20 @@ void require(bool condition, const std::string& msg) {
     if (!condition) throw std::runtime_error(msg);
 }
 
+void approve(
+    node::GovernanceExecutor& executor,
+    const std::string& proposalId,
+    const std::string& payload,
+    std::uint64_t height
+) {
+    std::string reason;
+    require(executor.submitProposal(
+        proposalId, "governance-owner", payload, height, kTs, reason), reason);
+    require(executor.castVote(
+        proposalId, "governance-validator", true, 1, 1,
+        height, kTs + 1, reason), reason);
+}
+
 config::GenesisConfig genesisWithFee(std::uint64_t minFeeRaw) {
     config::NetworkParameters params = config::NetworkParameters::developmentLocal();
     // Build a params with the desired minFee by re-constructing.
@@ -62,15 +76,9 @@ void testGovernanceOverrideChangesEffectiveFee() {
     const config::GenesisConfig genesis = genesisWithFee(0);
     node::NodeRuntime runtime = startRuntime(genesis);
 
-    // Apply a governance parameter change directly through the executor.
     const std::string proposalId = "gov-prop-fee-001";
     const std::string payload = "target=MINIMUM_FEE_RAW;value=500;effectiveHeight=1";
-    const auto result = runtime.mutableGovernanceExecutor().executeProposal(
-        proposalId, payload, 1, kTs
-    );
-
-    require(result.isApplied(),
-            "Governance proposal must be applied when effectiveHeight <= currentHeight.");
+    approve(runtime.mutableGovernanceExecutor(), proposalId, payload, 1);
 
     const std::uint64_t effective = runtime.effectiveMinimumFeeRawUnits();
     require(effective == 500,
@@ -82,10 +90,10 @@ void testGovernanceOverrideDoesNotAffectUnrelatedParams() {
     node::NodeRuntime runtime = startRuntime(genesis);
 
     // Apply a change to EPOCH_DURATION_SECONDS — should not affect fee.
-    runtime.mutableGovernanceExecutor().executeProposal(
+    approve(runtime.mutableGovernanceExecutor(),
         "gov-prop-epoch-001",
         "target=EPOCH_DURATION_SECONDS;value=7200;effectiveHeight=1",
-        1, kTs
+        1
     );
 
     const std::uint64_t effective = runtime.effectiveMinimumFeeRawUnits();
@@ -101,8 +109,11 @@ void testDoubleGovernanceApplicationIsIdempotent() {
     const std::string proposalId = "gov-prop-fee-002";
     const std::string payload = "target=MINIMUM_FEE_RAW;value=1000;effectiveHeight=1";
 
-    runtime.mutableGovernanceExecutor().executeProposal(proposalId, payload, 1, kTs);
-    runtime.mutableGovernanceExecutor().executeProposal(proposalId, payload, 2, kTs + 1);
+    approve(runtime.mutableGovernanceExecutor(), proposalId, payload, 1);
+    std::string reason;
+    require(!runtime.mutableGovernanceExecutor().submitProposal(
+        proposalId, "governance-owner", payload, 2, kTs + 2, reason),
+        "Duplicate proposal id must be rejected.");
 
     require(runtime.effectiveMinimumFeeRawUnits() == 1000,
             "Fee must be 1000 even after duplicate proposal execution attempt.");

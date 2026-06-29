@@ -1781,6 +1781,12 @@ CommandLineResult CommandLineInterface::executeSubmitTransaction(
             networkParameters.chainId()
         );
 
+    const node::TransactionAdmissionContext admissionContext(
+        accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
+        load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
+        load.runtime().blockchain().size()
+    );
+
     const node::TransactionAdmissionResult admission =
         node::TransactionAdmissionValidator::validateRuntimeSubmission(
             transaction,
@@ -1791,7 +1797,8 @@ CommandLineResult CommandLineInterface::executeSubmitTransaction(
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             provider,
-            load.runtime().effectiveMinimumFeeRawUnits()
+            load.runtime().effectiveMinimumFeeRawUnits(),
+            &admissionContext
         );
 
     if (!admission.accepted()) {
@@ -2457,6 +2464,12 @@ CommandLineResult CommandLineInterface::executeValidatorExit(
             networkParameters.chainId()
         );
 
+    const node::TransactionAdmissionContext admissionContext(
+        accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
+        load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
+        load.runtime().blockchain().size()
+    );
+
     const node::TransactionAdmissionResult admission =
         node::TransactionAdmissionValidator::validateRuntimeSubmission(
             tx,
@@ -2467,7 +2480,8 @@ CommandLineResult CommandLineInterface::executeValidatorExit(
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             provider,
-            load.runtime().effectiveMinimumFeeRawUnits()
+            load.runtime().effectiveMinimumFeeRawUnits(),
+            &admissionContext
         );
     if (!admission.accepted()) {
         return CommandLineResult::failure(
@@ -2604,6 +2618,12 @@ CommandLineResult CommandLineInterface::executeValidatorUnjail(
             networkParameters.chainId()
         );
 
+    const node::TransactionAdmissionContext admissionContext(
+        accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
+        load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
+        load.runtime().blockchain().size()
+    );
+
     const node::TransactionAdmissionResult admission =
         node::TransactionAdmissionValidator::validateRuntimeSubmission(
             tx,
@@ -2614,7 +2634,8 @@ CommandLineResult CommandLineInterface::executeValidatorUnjail(
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             provider,
-            load.runtime().effectiveMinimumFeeRawUnits()
+            load.runtime().effectiveMinimumFeeRawUnits(),
+            &admissionContext
         );
     if (!admission.accepted()) {
         return CommandLineResult::failure(
@@ -2748,7 +2769,7 @@ CommandLineResult CommandLineInterface::executeStakeLock(
         : options.nonce;
 
     const core::Transaction tx =
-        core::TransactionBuilder::buildSignedStakeLock(
+        core::TransactionBuilder::buildSignedStakeDeposit(
             core::TransactionBuildRequest(
                 validatorAddr,
                 utils::Amount::fromRawUnits(options.amountRaw),
@@ -2760,6 +2781,12 @@ CommandLineResult CommandLineInterface::executeStakeLock(
             networkParameters.chainId()
         );
 
+    const node::TransactionAdmissionContext admissionContext(
+        accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
+        load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
+        load.runtime().blockchain().size()
+    );
+
     const node::TransactionAdmissionResult admission =
         node::TransactionAdmissionValidator::validateRuntimeSubmission(
             tx,
@@ -2770,7 +2797,8 @@ CommandLineResult CommandLineInterface::executeStakeLock(
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             provider,
-            load.runtime().effectiveMinimumFeeRawUnits()
+            load.runtime().effectiveMinimumFeeRawUnits(),
+            &admissionContext
         );
     if (!admission.accepted()) {
         return CommandLineResult::failure(
@@ -2791,7 +2819,7 @@ CommandLineResult CommandLineInterface::executeStakeLock(
     }
 
     std::ostringstream out;
-    out << "Stake lock submitted.\n"
+    out << "Stake deposit submitted.\n"
         << "Validator: " << validatorAddr << "\n"
         << "Amount: " << options.amountRaw << " raw units\n"
         << "Transaction id: " << persisted.transactionId() << "\n";

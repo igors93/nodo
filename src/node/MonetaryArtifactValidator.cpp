@@ -5,6 +5,7 @@
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtectionRewards.hpp"
 #include "node/ProtectionTreasury.hpp"
+#include "economics/BurnRecord.hpp"
 
 #include <exception>
 #include <vector>
@@ -244,9 +245,8 @@ ArtifactValidationResult MonetaryArtifactValidator::validate(
             );
         }
 
-        if (artifact.feeBurnRecord().burnAmount() != artifact.monetaryFirewallAudit().supplyLedger().burned() ||
+        if (artifact.feeBurnRecord().burnAmount() > artifact.monetaryFirewallAudit().supplyLedger().burned() ||
             artifact.feeBurnRecord().supplyBefore() != artifact.monetaryFirewallAudit().supplyLedger().supplyBefore() ||
-            artifact.feeBurnRecord().supplyAfter() != artifact.monetaryFirewallAudit().supplyLedger().supplyAfter() ||
             artifact.treasuryFeeRecord().treasuryAmount() != artifact.monetaryFirewallAudit().supplyLedger().treasuryDelta()) {
             return ArtifactValidationResult::rejected(
                 prefix + "Persisted fee economics records do not match monetary firewall audit."
@@ -280,12 +280,24 @@ ArtifactValidationResult MonetaryArtifactValidator::validateSupplyDeltaConsisten
     if (!feeBurnRecord.active()) {
         return ArtifactValidationResult::acceptedResult();
     }
-    if (delta.burnedAmount() != feeBurnRecord.burnAmount()) {
+    if (delta.burnedAmount() < feeBurnRecord.burnAmount()) {
         return ArtifactValidationResult::rejected(
             "MonetaryArtifactValidator: SupplyDelta.burnedAmount (" +
             std::to_string(delta.burnedAmount().rawUnits()) +
-            ") does not equal FeeBurnRecord.burnAmount (" +
+            ") is below FeeBurnRecord.burnAmount (" +
             std::to_string(feeBurnRecord.burnAmount().rawUnits()) + ")."
+        );
+    }
+    bool matchingFeeBurn = feeBurnRecord.burnAmount().isZero();
+    for (const economics::BurnRecord& burn : delta.burnRecords()) {
+        if (burn.burnType() == economics::BurnType::FEE_BURN &&
+            burn.amount() == feeBurnRecord.burnAmount()) {
+            matchingFeeBurn = true;
+        }
+    }
+    if (!matchingFeeBurn) {
+        return ArtifactValidationResult::rejected(
+            "MonetaryArtifactValidator: SupplyDelta lacks the canonical fee burn record."
         );
     }
     return ArtifactValidationResult::acceptedResult();

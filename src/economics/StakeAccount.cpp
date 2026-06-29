@@ -22,6 +22,18 @@ StakeAccount::StakeAccount(
       m_jailed(false),
       m_tombstoned(false) {}
 
+StakeAccount::StakeAccount(
+    std::string validatorAddress,
+    utils::Amount bondedAmount,
+    utils::Amount slashedAmount,
+    bool jailed,
+    bool tombstoned
+) : m_validatorAddress(std::move(validatorAddress)),
+    m_bondedAmount(bondedAmount), m_slashedAmount(slashedAmount),
+    m_jailed(jailed), m_tombstoned(tombstoned) {
+    if (!isValid()) throw std::invalid_argument("Invalid complete StakeAccount state.");
+}
+
 const std::string& StakeAccount::validatorAddress() const { return m_validatorAddress; }
 utils::Amount StakeAccount::bondedAmount() const { return m_bondedAmount; }
 utils::Amount StakeAccount::slashedAmount() const { return m_slashedAmount; }

@@ -198,12 +198,6 @@ public:
     // governance overrides on top of the genesis network parameters.
     std::uint64_t effectiveMinimumFeeRawUnits() const;
 
-    // Process any GOVERNANCE_PROPOSE transactions in the given block and call
-    // executeProposal() for each, so governance changes take effect.
-    void applyGovernanceFromBlock(const core::Block& block, std::int64_t now);
-
-    void applySlashingEvidenceFromBlock(const core::Block& block);
-
     bool isRunning() const;
     bool isHalted() const;
     bool isValid() const;

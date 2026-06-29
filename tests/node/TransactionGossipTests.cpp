@@ -90,15 +90,18 @@ void testSerializeForGossipRoundTrip() {
     const CryptoPolicy policy = CryptoPolicy::developmentPolicy();
     Mempool mempool;
 
-    const bool admitted = PersistentMempoolStore::deserializeGossipAndAdmit(
+    const auto decoded = PersistentMempoolStore::deserializeGossip(
         payload,
-        mempool,
         policy,
         SecurityContext::USER_TRANSACTION,
         "nodo-localnet-1"
     );
 
-    requireCondition(admitted, "deserializeGossipAndAdmit should admit a valid signed tx.");
+    const bool admitted = decoded.has_value() && mempool.admitTransaction(
+        decoded->transaction, policy, SecurityContext::USER_TRANSACTION,
+        decoded->acceptedAt
+    ).success();
+    requireCondition(admitted, "deserializeGossip should decode a valid signed tx for admission.");
     requireCondition(!mempool.empty(), "Mempool should have one transaction after admission.");
 }
 
@@ -126,15 +129,14 @@ void testInvalidGossipPayloadRejected() {
     const CryptoPolicy policy = CryptoPolicy::developmentPolicy();
     Mempool mempool;
 
-    const bool admitted = PersistentMempoolStore::deserializeGossipAndAdmit(
+    const auto decoded = PersistentMempoolStore::deserializeGossip(
         "invalid-gossip-payload",
-        mempool,
         policy,
         SecurityContext::USER_TRANSACTION,
         "nodo-localnet-1"
     );
 
-    requireCondition(!admitted, "Invalid gossip payload should be rejected.");
+    requireCondition(!decoded.has_value(), "Invalid gossip payload should be rejected.");
     requireCondition(mempool.empty(), "Mempool should remain empty after rejection.");
 }
 

@@ -1,65 +1,13 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 
 #include "core/StateTransitionPreview.hpp"
-#include "node/GovernanceExecutor.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/ProtocolStateTransition.hpp"
 
-#include <limits>
 #include <stdexcept>
 #include <utility>
 
 namespace nodo::node {
-
-namespace {
-
-std::int64_t replayMinimumFee(
-    const GovernanceExecutor& governance,
-    std::int64_t genesisMinimumFee
-) {
-    const std::string governed = governance.currentValueForTarget(
-        GovernanceParameterTarget::MINIMUM_FEE_RAW
-    );
-    if (governed.empty()) {
-        return genesisMinimumFee;
-    }
-    const std::uint64_t raw = std::stoull(governed);
-    if (raw > static_cast<std::uint64_t>(
-            std::numeric_limits<std::int64_t>::max())) {
-        throw std::overflow_error(
-            "Governed minimum fee exceeds supported Amount range."
-        );
-    }
-    return static_cast<std::int64_t>(raw);
-}
-
-void replayGovernanceBlock(
-    GovernanceExecutor& governance,
-    const core::Block& block
-) {
-    for (const core::LedgerRecord& record : block.records()) {
-        if (record.type() != core::LedgerRecordType::TRANSACTION) continue;
-        const core::Transaction transaction =
-            core::Transaction::deserialize(record.payload());
-        if (transaction.type() != core::TransactionType::GOVERNANCE_PROPOSE) {
-            continue;
-        }
-        const GovernanceExecutionResult result = governance.executeProposal(
-            transaction.id(),
-            transaction.toAddress(),
-            block.index(),
-            block.timestamp()
-        );
-        if (!result.isApplied() && !result.isPending()) {
-            throw std::logic_error(
-                "Governance replay failed: " + result.detail()
-            );
-        }
-    }
-    governance.advanceToHeight(block.index() + 1, block.timestamp());
-}
-
-} // namespace
 
 core::AccountStateView RuntimeAccountStateBuilder::initialAccountStateView(
     const config::GenesisConfig& genesisConfig
@@ -101,17 +49,13 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewAtTip(
 
     core::AccountStateView view =
         initialAccountStateView(genesisConfig);
-    GovernanceExecutor governance;
-
     for (const core::Block& block : blockchain.blocks()) {
         if (block.isGenesisBlock()) {
             continue;
         }
 
-        const std::int64_t blockMinimumFee =
-            replayMinimumFee(governance, minimumFeeRawUnits);
         const core::StateTransitionPreviewContext context(
-            blockMinimumFee,
+            minimumFeeRawUnits,
             view,
             false,
             true,
@@ -145,7 +89,6 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewAtTip(
         }
 
         view = nextView;
-        replayGovernanceBlock(governance, block);
     }
 
     return view;
@@ -167,22 +110,17 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
     }
 
     core::AccountStateView view = snapshotView;
-    GovernanceExecutor governance;
-
     for (const core::Block& block : blockchain.blocks()) {
         if (block.isGenesisBlock()) {
             continue;
         }
 
-        const std::int64_t blockMinimumFee =
-            replayMinimumFee(governance, minimumFeeRawUnits);
         if (block.index() <= snapshotHeight) {
-            replayGovernanceBlock(governance, block);
             continue;
         }
 
         const core::StateTransitionPreviewContext context(
-            blockMinimumFee,
+            minimumFeeRawUnits,
             view,
             false,
             true,
@@ -210,7 +148,6 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
             }
         }
         view = nextView;
-        replayGovernanceBlock(governance, block);
     }
 
     return view;

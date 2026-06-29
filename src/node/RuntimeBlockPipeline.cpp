@@ -1831,15 +1831,15 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         );
     }
 
-    std::shared_ptr<StakingRegistry> registryTracker;
+    std::shared_ptr<ProtocolExecutionState> executionTracker;
     try {
         auto [protocolContext, tracker] =
-            ProtocolStateTransition::contextForNextBlockWithRegistry(
+            ProtocolStateTransition::contextForNextBlockWithState(
                 runtime,
                 minimumFeeRawUnitsForRuntime(runtime),
                 finalizedAt
             );
-        registryTracker = tracker;
+        executionTracker = tracker;
         transitionValidation =
             core::BlockStateTransitionValidator::validateCandidateBlock(
                 runtime.blockchain(),
@@ -1859,12 +1859,6 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
             RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
             transitionValidation.reason()
         );
-    }
-
-    // Write the post-block staking state back to the runtime.
-    // transitionFullState mutated *registryTracker in-place during executeBlock.
-    if (registryTracker) {
-        runtime.mutableStakingRegistry() = *registryTracker;
     }
 
     std::vector<RewardDistribution> rewardDistributions;
@@ -1943,7 +1937,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
                 block.index(),
                 monetaryValidationResult.supplyDelta().supplyBefore(),
                 utils::Amount(),
-                feeBurnRecord.burnAmount(),
+                monetaryValidationResult.supplyDelta().burnedAmount(),
                 treasuryFeeRecord.treasuryAmount(),
                 utils::Amount()
             );
@@ -2130,11 +2124,17 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         runtime.mutableSupplyState().applyFinalizedDelta(
             monetaryValidationResult.supplyDelta()
         );
+        if (!executionTracker ||
+            executionTracker->supply != runtime.supplyState().latestSupply()) {
+            throw std::logic_error("Canonical transaction execution and monetary supply diverged.");
+        }
+        runtime.mutableGovernanceExecutor() = executionTracker->governance;
+        runtime.mutableValidatorRegistry() = executionTracker->validators;
+        runtime.mutableValidatorPenaltyLedger() = executionTracker->penaltyLedger;
+        runtime.mutableStakingRegistry() = executionTracker->staking;
         removeFinalizedTransactionsFromMempool(
             runtime, finalizedTransactionIds
         );
-        runtime.applyGovernanceFromBlock(block, block.timestamp());
-        runtime.applySlashingEvidenceFromBlock(block);
         runtime.invalidateAccountStateCache();
 
         finalResult.m_receiptsRoot = transitionValidation.receiptsRoot();
@@ -2149,12 +2149,6 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         if (block.index() > 0 &&
             block.index() % NODO_VALIDATOR_EPOCH_BLOCKS == 0) {
             const std::int64_t boundaryTimestamp = block.timestamp();
-            ProtocolStateTransition::applyValidatorEpochTransition(
-                runtime.mutableValidatorRegistry(),
-                block.index(),
-                boundaryTimestamp
-            );
-
             try {
                 const core::StateTransitionPreviewContext snapshotContext =
                     previewContextForRuntime(runtime);

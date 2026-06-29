@@ -370,7 +370,7 @@ bool GovernanceExecutor::validateValue(
 
 GovernanceExecutor::GovernanceExecutor() = default;
 
-GovernanceExecutionResult GovernanceExecutor::executeProposal(
+GovernanceExecutionResult GovernanceExecutor::applyApprovedProposal(
     const std::string& proposalId,
     const std::string& proposalPayload,
     std::uint64_t currentHeight,
@@ -457,6 +457,120 @@ GovernanceExecutionResult GovernanceExecutor::executeProposal(
     return GovernanceExecutionResult::applied(appliedChange);
 }
 
+bool GovernanceExecutor::submitProposal(
+    const std::string& proposalId,
+    const std::string& proposerAddress,
+    const std::string& proposalPayload,
+    std::uint64_t currentHeight,
+    std::int64_t now,
+    std::string& reason
+) {
+    if (proposalId.empty() || proposerAddress.empty() || currentHeight == 0 || now <= 0) {
+        reason = "Governance proposal identity or block context is invalid.";
+        return false;
+    }
+    if (hasProposal(proposalId)) {
+        reason = "Governance proposal already exists.";
+        return false;
+    }
+    const GovernanceParameterTarget target = parseTarget(proposalPayload);
+    const std::string value = parseNewValue(proposalPayload);
+    const std::uint64_t effectiveHeight = parseEffectiveHeight(proposalPayload);
+    if (target == GovernanceParameterTarget::UNKNOWN || effectiveHeight == 0 ||
+        !validateValue(target, value)) {
+        reason = "Governance proposal payload is invalid.";
+        return false;
+    }
+    ProposalState state;
+    state.proposerAddress = proposerAddress;
+    state.payload = proposalPayload;
+    state.createdHeight = currentHeight;
+    state.createdAt = now;
+    m_proposals.emplace(proposalId, std::move(state));
+    reason.clear();
+    return true;
+}
+
+bool GovernanceExecutor::castVote(
+    const std::string& proposalId,
+    const std::string& validatorAddress,
+    bool approve,
+    std::uint64_t votingWeight,
+    std::uint64_t totalEligibleWeight,
+    std::uint64_t currentHeight,
+    std::int64_t now,
+    std::string& reason
+) {
+    auto found = m_proposals.find(proposalId);
+    if (found == m_proposals.end()) {
+        reason = "Governance proposal does not exist.";
+        return false;
+    }
+    ProposalState& proposal = found->second;
+    if (proposal.approved || proposal.rejected) {
+        reason = "Governance proposal is already decided.";
+        return false;
+    }
+    if (validatorAddress.empty() || votingWeight == 0 || totalEligibleWeight == 0 ||
+        votingWeight > totalEligibleWeight || currentHeight < proposal.createdHeight || now <= 0) {
+        reason = "Governance vote context or weight is invalid.";
+        return false;
+    }
+    if (proposal.votes.find(validatorAddress) != proposal.votes.end()) {
+        reason = "Validator has already voted on this proposal.";
+        return false;
+    }
+    proposal.votes.emplace(validatorAddress, VoteState{approve, votingWeight});
+
+    std::uint64_t approveWeight = 0;
+    std::uint64_t rejectWeight = 0;
+    for (const auto& [_, vote] : proposal.votes) {
+        std::uint64_t& total = vote.approve ? approveWeight : rejectWeight;
+        if (std::numeric_limits<std::uint64_t>::max() - total < vote.weight) {
+            proposal.votes.erase(validatorAddress);
+            reason = "Governance vote tally overflow.";
+            return false;
+        }
+        total += vote.weight;
+    }
+    if (static_cast<unsigned __int128>(approveWeight) * 3U >=
+        static_cast<unsigned __int128>(totalEligibleWeight) * 2U) {
+        proposal.approved = true;
+        const GovernanceExecutionResult execution = applyApprovedProposal(
+            proposalId, proposal.payload, currentHeight, now
+        );
+        if (!execution.isApplied() && !execution.isPending()) {
+            proposal.approved = false;
+            proposal.votes.erase(validatorAddress);
+            reason = execution.detail();
+            return false;
+        }
+    } else if (static_cast<unsigned __int128>(rejectWeight) * 3U >
+               static_cast<unsigned __int128>(totalEligibleWeight)) {
+        proposal.rejected = true;
+    }
+    reason.clear();
+    return true;
+}
+
+bool GovernanceExecutor::hasProposal(const std::string& proposalId) const {
+    return m_proposals.find(proposalId) != m_proposals.end();
+}
+
+bool GovernanceExecutor::hasVote(
+    const std::string& proposalId,
+    const std::string& validatorAddress
+) const {
+    const auto proposal = m_proposals.find(proposalId);
+    return proposal != m_proposals.end() &&
+           proposal->second.votes.find(validatorAddress) != proposal->second.votes.end();
+}
+
+bool GovernanceExecutor::proposalApproved(const std::string& proposalId) const {
+    const auto proposal = m_proposals.find(proposalId);
+    return proposal != m_proposals.end() && proposal->second.approved;
+}
+
 std::size_t GovernanceExecutor::advanceToHeight(
     std::uint64_t currentHeight,
     std::int64_t now
@@ -522,9 +636,27 @@ std::string GovernanceExecutor::currentValueForTarget(
 std::string GovernanceExecutor::serialize() const {
     std::ostringstream oss;
     oss << "GovernanceExecutor{"
-        << "appliedCount=" << m_appliedChanges.size()
-        << ";pendingCount=" << m_pendingChanges.size()
-        << "}";
+        << "appliedCount=" << m_appliedChanges.size();
+    for (const auto& change : m_appliedChanges) oss << ";applied=" << change.serialize();
+    oss << ";pendingCount=" << m_pendingChanges.size();
+    for (const auto& change : m_pendingChanges) oss << ";pending=" << change.serialize();
+    oss << ";proposalCount=" << m_proposals.size();
+    for (const auto& [id, proposal] : m_proposals) {
+        oss << ";proposal={id=" << id
+            << ",proposer=" << proposal.proposerAddress
+            << ",payload=" << proposal.payload
+            << ",createdHeight=" << proposal.createdHeight
+            << ",createdAt=" << proposal.createdAt
+            << ",approved=" << (proposal.approved ? 1 : 0)
+            << ",rejected=" << (proposal.rejected ? 1 : 0)
+            << ",voteCount=" << proposal.votes.size();
+        for (const auto& [validator, vote] : proposal.votes) {
+            oss << ",vote=" << validator << ':' << (vote.approve ? "APPROVE" : "REJECT")
+                << ':' << vote.weight;
+        }
+        oss << '}';
+    }
+    oss << "}";
     return oss.str();
 }
 

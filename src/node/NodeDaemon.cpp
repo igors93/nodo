@@ -3,6 +3,8 @@
 #include "consensus/BlockFinalizer.hpp"
 #include "node/FinalizedBlockRecordStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
+#include "node/TransactionAdmissionValidator.hpp"
+#include "crypto/ProtocolCryptoContext.hpp"
 #include "p2p/Peer.hpp"
 
 #include <chrono>
@@ -120,14 +122,45 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
             continue; // already processed this tx this window
         }
 
-        const bool admitted = PersistentMempoolStore::deserializeGossipAndAdmit(
+        const auto decoded = PersistentMempoolStore::deserializeGossip(
             payload,
-            m_orchestrator.mutableRuntime().mutableMempool(),
             m_policy,
             crypto::SecurityContext::USER_TRANSACTION,
             m_orchestrator.runtime().config().genesisConfig()
                 .networkParameters().chainId()
         );
+
+        bool admitted = false;
+        if (decoded.has_value()) {
+            NodeRuntime& runtime = m_orchestrator.mutableRuntime();
+            const auto& network = runtime.config().genesisConfig().networkParameters();
+            const crypto::ProtocolCryptoContext cryptoContext =
+                crypto::ProtocolCryptoContext::fromNetworkName(network.networkName());
+            if (cryptoContext.isValid()) {
+                const core::AccountStateView accounts = runtime.cachedAccountStateAtTip(
+                    static_cast<std::int64_t>(runtime.effectiveMinimumFeeRawUnits())
+                );
+                const TransactionAdmissionContext admissionContext(
+                    accounts, runtime.mempool(), runtime.stakingRegistry(),
+                    runtime.validatorRegistry(), runtime.governanceExecutor(),
+                    runtime.blockchain().size()
+                );
+                const TransactionAdmissionResult validation =
+                    TransactionAdmissionValidator::validateNetworkSubmission(
+                        decoded->transaction, network, accounts, runtime.mempool(),
+                        cryptoContext.policy(), crypto::SecurityContext::USER_TRANSACTION,
+                        cryptoContext.userSignatureProvider(),
+                        runtime.effectiveMinimumFeeRawUnits(), &admissionContext
+                    );
+                if (validation.accepted()) {
+                    admitted = runtime.mutableMempool().admitTransaction(
+                        decoded->transaction, m_policy,
+                        crypto::SecurityContext::USER_TRANSACTION,
+                        decoded->acceptedAt
+                    ).success();
+                }
+            }
+        }
 
         if (admitted) {
             m_orchestrator.gossipBroadcast(

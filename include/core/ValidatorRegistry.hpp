@@ -211,6 +211,12 @@ public:
         const ValidatorRegistrationRecord& registrationRecord
     );
 
+    ValidatorRegistryUpdateResult registerPendingValidator(
+        const ValidatorRegistrationRecord& registrationRecord,
+        std::uint64_t stakeAmount,
+        const std::string& ownerAddress
+    );
+
     ValidatorRegistryUpdateResult deactivateValidator(
         const std::string& validatorAddress,
         std::int64_t timestamp

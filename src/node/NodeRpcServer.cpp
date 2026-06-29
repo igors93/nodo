@@ -800,6 +800,12 @@ std::string NodeRpcServer::handleSubmit(const std::string& body) {
             )
         );
 
+    const TransactionAdmissionContext admissionContext(
+        accountState, m_runtime.mempool(), m_runtime.stakingRegistry(),
+        m_runtime.validatorRegistry(), m_runtime.governanceExecutor(),
+        m_runtime.blockchain().size()
+    );
+
     const TransactionAdmissionResult validation =
         TransactionAdmissionValidator::validateNetworkSubmission(
             tx,
@@ -809,7 +815,8 @@ std::string NodeRpcServer::handleSubmit(const std::string& body) {
             cryptoContext.policy(),
             crypto::SecurityContext::USER_TRANSACTION,
             cryptoContext.userSignatureProvider(),
-            m_runtime.effectiveMinimumFeeRawUnits()
+            m_runtime.effectiveMinimumFeeRawUnits(),
+            &admissionContext
         );
 
     if (!validation.accepted()) {

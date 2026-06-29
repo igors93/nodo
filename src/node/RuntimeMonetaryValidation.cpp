@@ -3,6 +3,7 @@
 #include "economics/BurnRecord.hpp"
 #include "economics/MonetaryPolicy.hpp"
 #include "economics/SupplyDeltaBuilder.hpp"
+#include "core/Transaction.hpp"
 #include "node/MonetaryFirewall.hpp"
 
 #include <sstream>
@@ -118,26 +119,39 @@ RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
     const std::string& blockHash = candidateBlock.hash();
     constexpr std::uint64_t kCurrentEpoch = 0;
 
+    std::vector<economics::BurnRecord> burnRecords;
+    if (feeBurnAmount.isPositive()) {
+        burnRecords.emplace_back(
+            "fee-burn-block-" + std::to_string(blockHeight), blockHeight,
+            kCurrentEpoch, "nodo_fee_pool", feeBurnAmount, "fee burn",
+            economics::BurnType::FEE_BURN
+        );
+    }
+    try {
+        for (const core::LedgerRecord& record : candidateBlock.records()) {
+            if (record.type() != core::LedgerRecordType::TRANSACTION) continue;
+            const core::Transaction tx = core::Transaction::deserialize(record.payload());
+            if (tx.type() != core::TransactionType::BURN) continue;
+            burnRecords.emplace_back(
+                tx.id(), blockHeight, kCurrentEpoch, tx.fromAddress(), tx.amount(),
+                "voluntary burn", economics::BurnType::VOLUNTARY_BURN
+            );
+        }
+    } catch (const std::exception& error) {
+        return RuntimeMonetaryValidationResult::contextUnavailable(
+            std::string("RuntimeMonetaryValidation: invalid burn transaction: ") + error.what()
+        );
+    }
+
     // Build the SupplyDelta for this candidate block.
     economics::SupplyDelta delta;
 
-    if (feeBurnAmount.isZero()) {
+    if (burnRecords.empty()) {
         // No monetary effects — no-op delta is valid.
         delta = economics::SupplyDelta::noOp(
             blockHeight, blockHash, kCurrentEpoch, supplyBefore
         );
     } else {
-        // Build a burn record for the fee burn.
-        const economics::BurnRecord feeBurn(
-            "fee-burn-block-" + std::to_string(blockHeight),
-            blockHeight,
-            kCurrentEpoch,
-            "nodo_fee_pool",
-            feeBurnAmount,
-            "fee burn",
-            economics::BurnType::FEE_BURN
-        );
-
         try {
             delta = economics::SupplyDeltaBuilder::build(
                 blockHeight,
@@ -145,7 +159,7 @@ RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
                 kCurrentEpoch,
                 supplyBefore,
                 {},           // no mint records in regular blocks
-                {feeBurn}
+                burnRecords
             );
         } catch (const std::exception& e) {
             return RuntimeMonetaryValidationResult::contextUnavailable(

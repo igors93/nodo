@@ -296,14 +296,17 @@ void submitAndPropagateTransaction(
     const std::vector<p2p::NetworkEnvelope> messages =
         receiver.mesh.drainInbox(p2p::NetworkMessageType::TRANSACTION_GOSSIP);
     require(messages.size() == 1, "Online peer did not receive transaction gossip.");
-    require(
-        node::PersistentMempoolStore::deserializeGossipAndAdmit(
+    const auto decoded = node::PersistentMempoolStore::deserializeGossip(
             messages.front().payload(),
-            receiver.runtime.mutableMempool(),
             policy,
             crypto::SecurityContext::USER_TRANSACTION,
             genesis.networkParameters().chainId()
-        ),
+        );
+    require(
+        decoded.has_value() && receiver.runtime.mutableMempool().admitTransaction(
+            decoded->transaction, policy, crypto::SecurityContext::USER_TRANSACTION,
+            decoded->acceptedAt
+        ).success(),
         "Online peer rejected the propagated transaction."
     );
     require(

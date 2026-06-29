@@ -1,6 +1,8 @@
 #include "node/TransactionAdmissionValidator.hpp"
 
 #include "utils/Amount.hpp"
+#include "core/TransactionTypePolicy.hpp"
+#include "node/TransactionAdmissionPolicy.hpp"
 
 #include <limits>
 #include <sstream>
@@ -45,18 +47,18 @@ TransactionAdmissionResult rejectIfSenderCannotPay(
 ) {
     try {
         const utils::Amount required =
-            transaction.amount() + transaction.fee();
+            core::TransactionTypePolicyRegistry::maximumDebit(transaction);
 
         if (sender.balance() < required) {
             return TransactionAdmissionResult::rejected(
                 TransactionAdmissionStatus::INSUFFICIENT_BALANCE,
-                "Transaction sender balance is insufficient for amount plus fee."
+                "Transaction sender balance is insufficient for its maximum debit."
             );
         }
     } catch (const std::exception& error) {
         return TransactionAdmissionResult::rejected(
             TransactionAdmissionStatus::INVALID_TRANSACTION,
-            std::string("Transaction amount plus fee is invalid: ") + error.what()
+            std::string("Transaction maximum debit is invalid: ") + error.what()
         );
     }
 
@@ -66,7 +68,7 @@ TransactionAdmissionResult rejectIfSenderCannotPay(
 utils::Amount transactionDebit(
     const core::Transaction& transaction
 ) {
-    return transaction.amount() + transaction.fee();
+    return core::TransactionTypePolicyRegistry::maximumDebit(transaction);
 }
 
 TransactionAdmissionResult validateTransactionAgainstRuntimeState(
@@ -133,10 +135,11 @@ TransactionAdmissionResult validateTransactionAgainstRuntimeState(
                 );
             }
 
-            if (transaction.fee().rawUnits() <= pending.fee().rawUnits()) {
+            if (transaction.fee().rawUnits() <
+                mempool::Mempool::minimumReplacementFee(pending.fee().rawUnits())) {
                 return TransactionAdmissionResult::rejected(
                     TransactionAdmissionStatus::CONFLICTING_NONCE,
-                    "Replacement transaction must pay a strictly higher fee."
+                    "Replacement transaction does not satisfy the mempool fee bump."
                 );
             }
 
@@ -221,6 +224,8 @@ std::string transactionAdmissionStatusToString(
             return "FUTURE_NONCE";
         case TransactionAdmissionStatus::INVALID_SIGNATURE:
             return "INVALID_SIGNATURE";
+        case TransactionAdmissionStatus::DOMAIN_REJECTED:
+            return "DOMAIN_REJECTED";
         default:
             return "INVALID_TRANSACTION";
     }
@@ -270,6 +275,16 @@ std::string TransactionAdmissionResult::serialize() const {
     return oss.str();
 }
 
+TransactionAdmissionResult TransactionAdmissionValidator::validateRuntimeState(
+    const core::Transaction& transaction,
+    const core::AccountStateView& accountStateView,
+    const mempool::Mempool& mempool
+) {
+    return validateTransactionAgainstRuntimeState(
+        transaction, accountStateView, mempool
+    );
+}
+
 TransactionAdmissionResult TransactionAdmissionValidator::validateLocalSubmission(
     const core::Transaction& transaction,
     const crypto::StoredKeyMetadata& signingKey,
@@ -277,7 +292,8 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateLocalSubmissio
     const crypto::CryptoPolicy& policy,
     crypto::SecurityContext context,
     const crypto::SignatureProvider& provider,
-    std::optional<std::uint64_t> effectiveMinimumFeeRawUnits
+    std::optional<std::uint64_t> effectiveMinimumFeeRawUnits,
+    const TransactionAdmissionContext* admissionContext
 ) {
     if (!networkParameters.isValid()) {
         return TransactionAdmissionResult::rejected(
@@ -319,11 +335,11 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateLocalSubmissio
         );
     }
 
-    if (transaction.type() != core::TransactionType::TRANSFER &&
-        transaction.type() != core::TransactionType::GOVERNANCE_PROPOSE) {
+    std::string policyReason;
+    if (!TransactionAdmissionPolicy::validateTypeAndPayload(transaction, policyReason)) {
         return TransactionAdmissionResult::rejected(
             TransactionAdmissionStatus::INVALID_TRANSACTION,
-            "Transaction type has no implemented authoritative state transition."
+            policyReason
         );
     }
 
@@ -364,6 +380,14 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateLocalSubmissio
         );
     }
 
+    if (admissionContext != nullptr &&
+        !TransactionAdmissionPolicy::validateDomain(
+            transaction, *admissionContext, policyReason)) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::DOMAIN_REJECTED, policyReason
+        );
+    }
+
     return TransactionAdmissionResult::acceptedResult();
 }
 
@@ -376,7 +400,8 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateRuntimeSubmiss
     const crypto::CryptoPolicy& policy,
     crypto::SecurityContext context,
     const crypto::SignatureProvider& provider,
-    std::optional<std::uint64_t> effectiveMinimumFeeRawUnits
+    std::optional<std::uint64_t> effectiveMinimumFeeRawUnits,
+    const TransactionAdmissionContext* admissionContext
 ) {
     const TransactionAdmissionResult local =
         validateLocalSubmission(
@@ -386,14 +411,15 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateRuntimeSubmiss
             policy,
             context,
             provider,
-            effectiveMinimumFeeRawUnits
+            effectiveMinimumFeeRawUnits,
+            admissionContext
         );
 
     if (!local.accepted()) {
         return local;
     }
 
-    return validateTransactionAgainstRuntimeState(
+    return validateRuntimeState(
         transaction,
         accountStateView,
         mempool
@@ -408,7 +434,8 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateNetworkSubmiss
     const crypto::CryptoPolicy& policy,
     crypto::SecurityContext context,
     const crypto::SignatureProvider& provider,
-    std::optional<std::uint64_t> effectiveMinimumFeeRawUnits
+    std::optional<std::uint64_t> effectiveMinimumFeeRawUnits,
+    const TransactionAdmissionContext* admissionContext
 ) {
     if (!networkParameters.isValid()) {
         return TransactionAdmissionResult::rejected(
@@ -427,11 +454,11 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateNetworkSubmiss
         );
     }
 
-    if (transaction.type() != core::TransactionType::TRANSFER &&
-        transaction.type() != core::TransactionType::GOVERNANCE_PROPOSE) {
+    std::string policyReason;
+    if (!TransactionAdmissionPolicy::validateTypeAndPayload(transaction, policyReason)) {
         return TransactionAdmissionResult::rejected(
             TransactionAdmissionStatus::INVALID_TRANSACTION,
-            "Transaction type has no implemented authoritative state transition."
+            policyReason
         );
     }
 
@@ -462,7 +489,15 @@ TransactionAdmissionResult TransactionAdmissionValidator::validateNetworkSubmiss
         );
     }
 
-    return validateTransactionAgainstRuntimeState(
+    if (admissionContext != nullptr &&
+        !TransactionAdmissionPolicy::validateDomain(
+            transaction, *admissionContext, policyReason)) {
+        return TransactionAdmissionResult::rejected(
+            TransactionAdmissionStatus::DOMAIN_REJECTED, policyReason
+        );
+    }
+
+    return validateRuntimeState(
         transaction,
         accountStateView,
         mempool
