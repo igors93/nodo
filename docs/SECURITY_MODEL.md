@@ -29,13 +29,17 @@ tip height/hash, `latestStateRoot`, finality bounds, finalized-block linkage,
 crypto context, mempool validity and validator count consistency. It reports
 failures instead of silently repairing suspicious state.
 
-Before a block can receive votes, `StateTransitionPreview` applies transactions
-against a temporary account-state view. A failing balance, nonce, fee or payload
-check rejects the block and leaves the original runtime state unchanged. Localnet
-uses explicit bootstrap-validator account allocations in `GenesisConfig` only for
-development; they are documented as a limitation, not a production supply model.
-Successful previews produce a deterministic state root so later persistence,
-reload and audit checks can commit to the resulting account state.
+Before a block can receive votes, `StateTransitionEngine` applies transactions
+against a temporary account-state view through an authoritative protocol context.
+The engine refuses structural-only contexts, contexts that allow missing
+accounts, contexts without chain-bound crypto authorization and contexts without
+the canonical protocol-domain executor. A failing balance, nonce, fee,
+authorization or payload check rejects the block and leaves the original runtime
+state unchanged. Localnet uses explicit bootstrap-validator account allocations
+in `GenesisConfig` only for development; they are documented as a limitation,
+not a production supply model. Successful engine execution produces deterministic
+state and receipts roots so later persistence, reload and audit checks can commit
+to the resulting account state and protocol domains.
 
 Finalized block reload verifies the quorum certificate and finalized record
 before accepting the artifact: quorum threshold, duplicate validator votes,

@@ -61,7 +61,8 @@ public:
      * apply received blocks to local blockchain in order.
      * Returns number of blocks applied.
      *
-     * contextBuilder is called once per block with the current blockchain state.
+     * contextBuilder is called once per block with the current blockchain state
+     * and must return an authoritative protocol context for the next block.
      * When qcMode is QC_REQUIRED, each block must be recorded as finalized in
      * finalizationRegistry before it is accepted. This protects against accepting
      * blocks that were never ratified by a supermajority of validators.

@@ -9,9 +9,15 @@ namespace nodo::core {
 
 /*
  * StateTransitionEngine is the consensus-facing deterministic execution
- * boundary. It intentionally reuses the battle-tested preview implementation,
- * but exposes a protocol name that means "this result is authoritative for
- * block validation".
+ * boundary.
+ *
+ * Unlike StateTransitionPreview, the engine is authoritative: it refuses
+ * contexts that cannot fully execute protocol state. A valid engine context
+ * must enforce account state, forbid missing accounts, verify chain-bound
+ * transaction signatures and carry the canonical protocol-domain executor.
+ * Structural previews and account-only rebuild helpers must call
+ * StateTransitionPreview directly. Commitment verification and consensus paths
+ * must enter this boundary with an authoritative context.
  */
 class StateTransitionEngine {
 public:

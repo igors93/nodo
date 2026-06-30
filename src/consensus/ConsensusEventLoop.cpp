@@ -621,11 +621,11 @@ void ConsensusEventLoop::processBlockProposals() {
                     m_runtime, effectiveMinimumFee(m_runtime)
                 );
 
-            // Signature verification is mandatory before a vote is cast. A
-            // context without protocol authorization (chain id + crypto context)
-            // silently skips signatures, which would allow transactions with
-            // forged sender bindings to pass the state transition gate.
-            if (!validationContext.protocolAuthorizationEnabled()) {
+            // Votes are cast only through the authoritative protocol
+            // execution context. Signature verification alone is not enough:
+            // account-state enforcement and the canonical protocol-domain
+            // executor must also be present before the transition gate runs.
+            if (!validationContext.isAuthoritativeProtocolContext()) {
                 continue;
             }
 

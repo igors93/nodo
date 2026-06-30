@@ -175,6 +175,14 @@ bool StateTransitionPreviewContext::requireDomainExecutor() const {
     return m_requireDomainExecutor;
 }
 
+bool StateTransitionPreviewContext::hasDomainExecutorFactory() const {
+    return static_cast<bool>(m_domainExecutorFactory);
+}
+
+bool StateTransitionPreviewContext::hasStateDomainTransition() const {
+    return static_cast<bool>(m_stateDomainTransition);
+}
+
 bool StateTransitionPreviewContext::coinLotPreviewEnabled() const {
     return m_coinLotRegistry.has_value();
 }
@@ -220,6 +228,42 @@ bool StateTransitionPreviewContext::isValid() const {
     return true;
 }
 
+std::string StateTransitionPreviewContext::protocolAuthorityRejectionReason() const {
+    if (!isValid()) {
+        return "State transition context is invalid.";
+    }
+
+    if (!m_enforceAccountState) {
+        return "Authoritative protocol execution requires account-state enforcement.";
+    }
+
+    if (m_allowMissingAccounts) {
+        return "Authoritative protocol execution cannot allow missing accounts.";
+    }
+
+    if (!protocolAuthorizationEnabled()) {
+        return "Authoritative protocol execution requires chain id and a valid protocol crypto context.";
+    }
+
+    if (!m_requireDomainExecutor) {
+        return "Authoritative protocol execution requires the canonical protocol-domain executor.";
+    }
+
+    if (!m_domainExecutorFactory) {
+        return "Authoritative protocol execution has no protocol-domain executor factory.";
+    }
+
+    if (m_stateDomainTransition) {
+        return "Authoritative protocol execution cannot use legacy state-domain transition fallback.";
+    }
+
+    return "";
+}
+
+bool StateTransitionPreviewContext::isAuthoritativeProtocolContext() const {
+    return protocolAuthorityRejectionReason().empty();
+}
+
 std::string StateTransitionPreviewContext::serialize() const {
     std::ostringstream oss;
 
@@ -235,6 +279,10 @@ std::string StateTransitionPreviewContext::serialize() const {
         << ";deterministicStateDomainCount=" << m_deterministicStateDomains.size()
         << ";coinLotPreviewEnabled=" << (m_coinLotRegistry.has_value() ? "true" : "false")
         << ";requireDomainExecutor=" << (m_requireDomainExecutor ? "true" : "false")
+        << ";hasDomainExecutorFactory=" << (m_domainExecutorFactory ? "true" : "false")
+        << ";hasStateDomainTransition=" << (m_stateDomainTransition ? "true" : "false")
+        << ";authoritativeProtocolContext="
+        << (isAuthoritativeProtocolContext() ? "true" : "false")
         << ";accountStateView=" << m_accountStateView.serialize()
         << "}";
 

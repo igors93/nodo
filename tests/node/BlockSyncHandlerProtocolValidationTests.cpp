@@ -17,6 +17,8 @@
 #include "p2p/LoopbackTransport.hpp"
 #include "p2p/Peer.hpp"
 #include "utils/Amount.hpp"
+#include "crypto/AddressDerivation.hpp"
+#include "core/TransactionExecutionContext.hpp"
 
 #include <iostream>
 #include <memory>
@@ -29,6 +31,82 @@ namespace {
 using namespace nodo;
 
 constexpr std::int64_t kTimestamp = 1900000000;
+
+class TestProtocolDomainExecutor final : public core::TransactionDomainExecutor {
+public:
+    core::TransactionDomainExecutionResult applyBurn(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeDeposit(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeUnlock(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeWithdraw(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeTopUp(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyValidatorRegister(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyValidatorExitRequest(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyValidatorUnjailRequest(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyGovernanceProposal(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyGovernanceVote(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult finalizeBlock(
+        const core::AccountStateView& accounts,
+        utils::Amount,
+        const std::vector<core::LedgerRecord>&,
+        std::uint64_t,
+        std::int64_t
+    ) override {
+        return accepted(accounts);
+    }
+
+    const std::map<std::string, std::string>& domains() const override {
+        return m_domains;
+    }
+
+private:
+    std::map<std::string, std::string> m_domains{{"test_domain", "stable"}};
+
+    core::TransactionDomainExecutionResult accepted(
+        const core::AccountStateView& accounts
+    ) {
+        return core::TransactionDomainExecutionResult::accepted(accounts, m_domains);
+    }
+};
 
 static const consensus::BlockFinalizationRegistry kEmptyRegistry;
 
@@ -44,16 +122,23 @@ void requireCondition(bool condition, const std::string& message) {
     }
 }
 
+static std::string getSyncSenderAddress() {
+    const crypto::KeyPair kp = crypto::KeyPair::createDeterministicEd25519KeyPair("sync-key");
+    return crypto::AddressDerivation::deriveFromPublicKey(kp.publicKey()).value();
+}
+
 core::Transaction testTx(std::uint64_t nonce) {
+    const std::string senderAddress = getSyncSenderAddress();
     core::Transaction tx(
         core::TransactionType::TRANSFER,
-        "sync-sender",
+        senderAddress,
         "sync-recipient",
         utils::Amount::fromRawUnits(100),
         utils::Amount::fromRawUnits(10),
         nonce,
         kTimestamp
     );
+    tx.withChainId("test-chain");
     const crypto::KeyPair kp = crypto::KeyPair::createDeterministicEd25519KeyPair("sync-key");
     const crypto::Ed25519SignatureProvider provider;
     tx.attachSignatureBundle(
@@ -89,11 +174,26 @@ core::Blockchain chainWithGenesis() {
 core::StateTransitionPreviewContext senderContext() {
     core::AccountStateView view;
     view.putAccount(core::AccountState(
-        "sync-sender",
+        getSyncSenderAddress(),
         utils::Amount::fromRawUnits(1000),
         0
     ));
-    return core::StateTransitionPreviewContext(10, view, false, true);
+    return core::StateTransitionPreviewContext(
+        10,
+        view,
+        false,
+        true,
+        "",
+        0,
+        "test-chain",
+        "localnet",
+        {},
+        {},
+        []() {
+            return std::make_unique<TestProtocolDomainExecutor>();
+        },
+        true
+    );
 }
 
 core::Block blockWithRealRoots(const core::Blockchain& blockchain, std::uint64_t nonce) {

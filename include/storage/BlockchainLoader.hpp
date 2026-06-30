@@ -107,8 +107,9 @@ public:
     // Re-executes every non-genesis block via StateTransitionEngine and
     // compares stateRoot and receiptsRoot to the block's declared values.
     // The contextBuilder is called with the partial chain (all blocks
-    // preceding the candidate) and must return the account state needed
-    // for state transition preview.
+    // preceding the candidate) and must return the authoritative protocol
+    // context needed by the engine: enforced account state, chain-bound crypto
+    // context and canonical protocol-domain executor.
     static BlockchainCommitmentVerificationReport verifyChainCommitmentsViaEngine(
         const core::Blockchain& blockchain,
         std::function<core::StateTransitionPreviewContext(const core::Blockchain&)> contextBuilder

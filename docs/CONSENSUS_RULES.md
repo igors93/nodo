@@ -5,16 +5,19 @@ A validator may vote for a candidate block only when:
 - the validator is active in the validator registry;
 - the vote is structurally valid;
 - the vote signature verifies under the configured crypto policy;
-- the validation context has `protocolAuthorizationEnabled()` — chain identifier
-  configured, crypto context valid, signatures verifiable — before any vote is
-  cast; proposals received before this condition is met are skipped, not accepted;
+- the validation context is authoritative before any vote is cast: chain
+  identifier configured, crypto context valid, transaction signatures
+  verifiable, account state enforced, missing-account fallback disabled and
+  canonical protocol-domain executor available; proposals received before this
+  condition is met are skipped, not accepted;
 - the block passed state-transition validation;
-- the state-transition preview accepted the block without partial mutation;
-- sender balances and nonces are valid in the preview context;
+- the authoritative state-transition engine accepted the block without partial
+  mutation;
+- sender balances and nonces are valid in the execution context;
 - when coin lot preview is enabled, every TRANSFER transaction is backed by
   spendable lots and no double-spend occurs within the block;
-- the preview produced a deterministic post-state root for the candidate block,
-  including the coin lot registry digest when coin lot preview is active;
+- execution produced deterministic post-state and receipts roots for the candidate
+  block, including the coin lot registry digest when coin lot preview is active;
 - the vote references the expected block height, block hash, previous hash and
   consensus round.
 

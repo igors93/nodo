@@ -76,7 +76,9 @@ public:
     // declared values. Returns a StateRebuildReport with commitmentVerificationPassed()
     // set; the report also records the first failing block height on mismatch.
     // The contextBuilder receives the partial blockchain (all prior blocks) so it
-    // can build the correct account state for each candidate block.
+    // can build the correct authoritative protocol context for each candidate
+    // block: enforced account state, chain-bound crypto context and canonical
+    // protocol-domain executor.
     static StateRebuildReport rebuildAndVerifyViaEngine(
         const Blockchain& blockchain,
         std::function<StateTransitionPreviewContext(const Blockchain&)> contextBuilder

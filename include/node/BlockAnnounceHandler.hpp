@@ -45,10 +45,11 @@ struct BlockAnnounceResult {
  *  4. Append to blockchain ONLY after validation passes.
  *
  * Security: blocks received from the network are NEVER accepted on structural
- * checks alone.  The caller must supply a real StateTransitionPreviewContext
- * built from the local chain state.  If the context yields a different
- * stateRoot or receiptsRoot than what the block declares, the block is
- * rejected.
+ * checks alone.  The caller must supply an authoritative
+ * StateTransitionPreviewContext built from the local chain state, with
+ * account-state enforcement, chain-bound crypto context and the canonical
+ * protocol-domain executor.  If execution yields a different stateRoot or
+ * receiptsRoot than what the block declares, the block is rejected.
  */
 class BlockAnnounceHandler {
 public:
@@ -56,9 +57,9 @@ public:
      * Process all BLOCK_ANNOUNCE messages currently in the gossip inbox.
      * Drains the inbox for that type.  Returns results for each message.
      *
-     * validationContext must be built from the current local chain state so
-     * that computed stateRoot/receiptsRoot can be compared against each
-     * announced block's declared commitments.
+     * validationContext must be an authoritative protocol context built from
+     * the current local chain state so computed stateRoot/receiptsRoot can be
+     * compared against each announced block's declared commitments.
      */
     static std::vector<BlockAnnounceResult> processInbox(
         p2p::GossipMesh&                           gossip,

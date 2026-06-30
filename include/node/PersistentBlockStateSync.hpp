@@ -413,7 +413,8 @@ public:
      * values), then adds accepted blocks to `blockchain`.
      *
      * `contextBuilder` is called before each block with the current blockchain
-     * state so the computed roots reflect all previously applied blocks.
+     * state and must return an authoritative protocol context so the computed
+     * roots reflect all previously applied blocks.
      *
      * Validation runs against a staged Blockchain copy. No block is added and
      * no checkpoint is advanced if any item, QC, or protocol commitment fails.

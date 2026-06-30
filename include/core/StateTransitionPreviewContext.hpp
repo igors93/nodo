@@ -95,8 +95,12 @@ public:
 
     std::unique_ptr<TransactionDomainExecutor> createDomainExecutor() const;
     bool requireDomainExecutor() const;
+    bool hasDomainExecutorFactory() const;
+    bool hasStateDomainTransition() const;
 
     bool isValid() const;
+    bool isAuthoritativeProtocolContext() const;
+    std::string protocolAuthorityRejectionReason() const;
     std::string serialize() const;
 
 private:

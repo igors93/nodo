@@ -4,10 +4,11 @@
 #include "core/Blockchain.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
 #include "core/LedgerRecord.hpp"
-#include "core/StateTransitionPreview.hpp"
+#include "core/StateTransitionEngine.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
+#include "crypto/AddressDerivation.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/Ed25519SignatureProvider.hpp"
 #include "crypto/KeyPair.hpp"
@@ -16,7 +17,10 @@
 #include "storage/BlockchainLoader.hpp"
 #include "utils/Amount.hpp"
 
+#include <cstdint>
 #include <iostream>
+#include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -28,6 +32,8 @@ using nodo::storage::BlockchainCommitmentVerificationReport;
 using nodo::storage::BlockchainLoader;
 
 constexpr std::int64_t kTimestamp = 1900000100;
+constexpr const char* kChainId = "loader-commitment-test-chain";
+constexpr const char* kNetworkName = "localnet";
 
 void requireCondition(bool condition, const std::string& message) {
     if (!condition) {
@@ -35,25 +41,111 @@ void requireCondition(bool condition, const std::string& message) {
     }
 }
 
+class NoopProtocolDomainExecutor final : public core::TransactionDomainExecutor {
+public:
+    core::TransactionDomainExecutionResult applyBurn(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeDeposit(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeUnlock(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeWithdraw(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeTopUp(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyValidatorRegister(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyValidatorExitRequest(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyValidatorUnjailRequest(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyGovernanceProposal(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyGovernanceVote(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult finalizeBlock(
+        const core::AccountStateView& accounts,
+        utils::Amount,
+        const std::vector<core::LedgerRecord>&,
+        std::uint64_t,
+        std::int64_t
+    ) override { return accepted(accounts); }
+
+    const std::map<std::string, std::string>& domains() const override {
+        return m_domains;
+    }
+
+private:
+    std::map<std::string, std::string> m_domains{{"loader_commitment_domain", "stable"}};
+
+    core::TransactionDomainExecutionResult accepted(
+        const core::AccountStateView& accounts
+    ) {
+        return core::TransactionDomainExecutionResult::accepted(accounts, m_domains);
+    }
+};
+
+crypto::KeyPair keyPairFor(const std::string& accountName) {
+    return crypto::KeyPair::createDeterministicEd25519KeyPair(
+        "commitment-test-key-" + accountName
+    );
+}
+
+std::string addressFor(const std::string& accountName) {
+    return crypto::AddressDerivation::deriveFromPublicKey(
+        keyPairFor(accountName).publicKey()
+    ).value();
+}
+
 core::Transaction makeTransfer(
-    const std::string& from,
+    const std::string& fromAccountName,
     const std::string& to,
     std::uint64_t nonce,
     std::int64_t feeRaw = 1000
 ) {
-    const crypto::KeyPair keyPair =
-        crypto::KeyPair::createDeterministicEd25519KeyPair("commitment-test-key-" + from);
+    const crypto::KeyPair keyPair = keyPairFor(fromAccountName);
     const crypto::Ed25519SignatureProvider provider;
 
     core::Transaction tx(
         core::TransactionType::TRANSFER,
-        from,
+        addressFor(fromAccountName),
         to,
         utils::Amount::fromRawUnits(50000),
         utils::Amount::fromRawUnits(feeRaw),
         nonce,
         kTimestamp
     );
+    tx.withChainId(kChainId);
 
     tx.attachSignatureBundle(
         crypto::SignatureBundle::createSignature(
@@ -78,22 +170,37 @@ core::LedgerRecord makeRecord(const core::Transaction& tx) {
     );
 }
 
-// Build a StateTransitionPreviewContext that gives `sender` a large balance.
-core::StateTransitionPreviewContext contextFor(
-    const std::string& sender,
+// Build an authoritative StateTransitionPreviewContext that gives sender a large balance.
+core::StateTransitionPreviewContext authoritativeContextFor(
+    const std::string& senderAccountName,
     std::uint64_t nonce = 0,
     std::int64_t minFee = 1000
 ) {
     core::AccountStateView view;
     view.putAccount(core::AccountState(
-        sender,
+        addressFor(senderAccountName),
         utils::Amount::fromRawUnits(100000000),
         nonce
     ));
-    return core::StateTransitionPreviewContext(minFee, view, false, true);
+    return core::StateTransitionPreviewContext(
+        minFee,
+        view,
+        false,
+        true,
+        "",
+        0,
+        kChainId,
+        kNetworkName,
+        {},
+        {},
+        []() {
+            return std::make_unique<NoopProtocolDomainExecutor>();
+        },
+        true
+    );
 }
 
-// Build a block with correct stateRoot/receiptsRoot using StateTransitionPreview.
+// Build a block with correct stateRoot/receiptsRoot using StateTransitionEngine.
 core::Block blockWithRealRoots(
     const core::Blockchain& chain,
     const core::Transaction& tx,
@@ -101,28 +208,29 @@ core::Block blockWithRealRoots(
     std::uint64_t height,
     std::int64_t ts
 ) {
+    const core::LedgerRecord ledgerRecord = makeRecord(tx);
     const core::Block draft(
         height,
         chain.latestBlock().hash(),
-        {makeRecord(tx)},
+        {ledgerRecord},
         ts,
         "",
         ""
     );
 
     const core::StateTransitionPreviewResult preview =
-        core::StateTransitionPreview::previewBlock(draft, ctx);
+        core::StateTransitionEngine::executeBlock(draft, ctx);
 
     if (!preview.accepted()) {
         throw std::runtime_error(
-            "blockWithRealRoots: preview failed: " + preview.reason()
+            "blockWithRealRoots: engine failed: " + preview.reason()
         );
     }
 
     return core::Block(
         height,
         chain.latestBlock().hash(),
-        {makeRecord(tx)},
+        {ledgerRecord},
         ts,
         preview.stateRoot(),
         preview.receiptsRoot()
@@ -150,7 +258,7 @@ TwoBlockFixture buildTwoBlockChain() {
     );
 
     const core::Transaction tx = makeTransfer("alice", "bob", 1);
-    const auto ctx = contextFor("alice", 0, 1000);
+    const auto ctx = authoritativeContextFor("alice", 0, 1000);
 
     const core::Block block1 = blockWithRealRoots(
         blockchain, tx, ctx, 1, kTimestamp + 1
@@ -177,7 +285,7 @@ void testPassesForGenesisOnlyChain() {
     const auto report = BlockchainLoader::verifyChainCommitmentsViaEngine(
         blockchain,
         [](const core::Blockchain&) {
-            return contextFor("nobody");
+            return authoritativeContextFor("nobody");
         }
     );
 
@@ -197,7 +305,7 @@ void testPassesForValidTwoBlockChain() {
     const auto report = BlockchainLoader::verifyChainCommitmentsViaEngine(
         f.blockchain,
         [](const core::Blockchain&) {
-            return contextFor("alice", 0, 1000);
+            return authoritativeContextFor("alice", 0, 1000);
         }
     );
 
@@ -232,7 +340,7 @@ void testFailsForBlockWithTamperedStateRoot() {
     const auto report = BlockchainLoader::verifyChainCommitmentsViaEngine(
         tamperedChain,
         [](const core::Blockchain&) {
-            return contextFor("alice", 0, 1000);
+            return authoritativeContextFor("alice", 0, 1000);
         }
     );
 
@@ -270,7 +378,7 @@ void testFailsForBlockWithTamperedReceiptsRoot() {
     const auto report = BlockchainLoader::verifyChainCommitmentsViaEngine(
         tamperedChain,
         [](const core::Blockchain&) {
-            return contextFor("alice", 0, 1000);
+            return authoritativeContextFor("alice", 0, 1000);
         }
     );
 

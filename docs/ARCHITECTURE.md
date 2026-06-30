@@ -43,9 +43,9 @@ reload verifies all three before the runtime is considered auditable.
 Reload responsibilities are intentionally split. `RuntimeStateLoader`
 coordinates durable reads and runtime replay. `FinalizedBlockArtifactCodec`
 owns finalized artifact parsing/serialization shape. `FinalizedArtifactValidator`
-coordinates domain validators for finality, state transition preview, economic
-records, monetary and treasury records, slashing evidence, governance records
-and validator lifecycle accounting. `RuntimeStateVerifier` centralizes
+coordinates domain validators for finality, authoritative state-transition
+execution, economic records, monetary and treasury records, slashing evidence,
+governance records and validator lifecycle accounting. `RuntimeStateVerifier` centralizes
 manifest-to-runtime checks and deterministic `latestStateRoot` recalculation.
 `ProtocolInvariantChecker` performs heavy runtime invariants after genesis and
 reload. `ChainAuditor` adds the final operational checks for crypto context,

@@ -72,10 +72,12 @@ private:
 /*
  * BlockStateTransitionValidator is the protocol gate before validator votes.
  *
- * The validator checks deterministic chain-transition rules that can be audited
- * from the current block and ledger model. It does not mutate state; richer
- * balance, nonce, supply and coin-lot checks can be added here without changing
- * the consensus pipeline shape.
+ * StructuralOnly mode performs non-authoritative structural/economic preview
+ * checks through StateTransitionPreview and never validates header commitments.
+ * ProtocolCommitment mode is the consensus path: it enters
+ * StateTransitionEngine, which requires a complete authoritative protocol
+ * context and compares computed stateRoot/receiptsRoot values against the
+ * candidate block header. The validator does not mutate runtime state.
  */
 class BlockStateTransitionValidator {
 public:
@@ -101,9 +103,10 @@ public:
     );
 
     /*
-     * Full protocol validation. Requires a real AccountStateView in context so
-     * the computed stateRoot and receiptsRoot can be compared against the block's
-     * declared commitments. Defaults to ProtocolCommitment mode.
+     * Full protocol validation. ProtocolCommitment requires an authoritative
+     * context: enforced account state, no missing-account fallback, chain id and
+     * crypto context for signature checks, and the canonical protocol-domain
+     * executor. Defaults to ProtocolCommitment mode.
      */
     static BlockValidationResult validateCandidateBlock(
         const Blockchain& blockchain,

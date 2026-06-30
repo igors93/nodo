@@ -33,8 +33,9 @@ Current limitations:
   auditable, idempotent protocol records; automatic production stake-slashing is
   still out of scope;
 - the mempool does not yet implement a full per-account future-nonce queue;
-- balance, nonce and minimum fee checks now run inside the state-transition
-  preview before votes;
+- balance, nonce, minimum fee, chain-bound transaction authorization and
+  protocol-domain execution now run through the authoritative state-transition
+  engine before protocol-commitment validation can vote on a block;
 - coin-lot ownership, double-spend and complete supply audit are still being
   consolidated behind the state-transition validator.
 

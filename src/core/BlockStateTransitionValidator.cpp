@@ -1,6 +1,7 @@
 #include "core/BlockStateTransitionValidator.hpp"
 
 #include "core/StateTransitionEngine.hpp"
+#include "core/StateTransitionPreview.hpp"
 
 #include <sstream>
 #include <utility>
@@ -204,10 +205,9 @@ BlockValidationResult BlockStateTransitionValidator::validateCandidateBlock(
     }
 
     const StateTransitionPreviewResult preview =
-        StateTransitionEngine::executeBlock(
-            candidateBlock,
-            context
-        );
+        mode == BlockValidationMode::ProtocolCommitment
+            ? StateTransitionEngine::executeBlock(candidateBlock, context)
+            : StateTransitionPreview::previewBlock(candidateBlock, context);
 
     if (!preview.accepted()) {
         if (preview.status() == StateTransitionPreviewStatus::INVALID_CONTEXT) {

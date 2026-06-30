@@ -211,6 +211,13 @@ StateTransitionPreviewResult StateTransitionPreview::previewBlock(
             : std::nullopt;
     std::unique_ptr<TransactionDomainExecutor> domainExecutor =
         context.createDomainExecutor();
+    if (context.requireDomainExecutor() && !domainExecutor) {
+        return StateTransitionPreviewResult::rejected(
+            StateTransitionPreviewStatus::INVALID_CONTEXT,
+            "State transition context requires a protocol-domain executor, but none was created.",
+            0
+        );
+    }
     utils::Amount totalFee;
     std::size_t processedTransactionCount = 0;
     bool evidenceSectionStarted = false;

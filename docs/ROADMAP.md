@@ -53,8 +53,9 @@ reading the source.
   snapshot sync requires full runtime hydration and is deferred to Phase 6.
 - `planFromRemoteStatus` snapshot-gap routing removed: all height gaps use
   `REQUEST_BLOCKS` unconditionally; the broken snapshot path is never invoked.
-- `ConsensusEventLoop` authorization guard: votes are cast only when
-  `protocolAuthorizationEnabled()` — chain id configured, crypto context valid.
+- `ConsensusEventLoop` authoritative-context guard: votes are cast only when
+  chain id, crypto context, account-state enforcement and the canonical
+  protocol-domain executor are all present.
 
 ### Phase 1 — Distributed Node Daemon ✅
 - 7 new `NetworkMessageType` values: `TRANSACTION_GOSSIP`, `BLOCK_PROPOSAL`,

@@ -4,8 +4,10 @@
 #include "core/LedgerRecord.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
 #include "core/StateTransitionPreview.hpp"
+#include "core/StateTransitionEngine.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionType.hpp"
+#include "crypto/AddressDerivation.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/Ed25519SignatureProvider.hpp"
@@ -19,6 +21,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <map>
+#include <memory>
 #include <vector>
 
 namespace {
@@ -26,6 +30,85 @@ namespace {
 using namespace nodo;
 
 constexpr std::int64_t kTimestamp = 1900000000;
+
+constexpr const char* kProtocolChainId = "validator-test-chain";
+constexpr const char* kProtocolNetworkName = "localnet";
+
+class TestProtocolDomainExecutor final : public core::TransactionDomainExecutor {
+public:
+    core::TransactionDomainExecutionResult applyBurn(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeDeposit(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeUnlock(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeWithdraw(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyStakeTopUp(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyValidatorRegister(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyValidatorExitRequest(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyValidatorUnjailRequest(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyGovernanceProposal(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult applyGovernanceVote(
+        const core::Transaction&, const core::AccountStateView& accounts,
+        std::uint64_t, std::int64_t
+    ) override { return accepted(accounts); }
+
+    core::TransactionDomainExecutionResult finalizeBlock(
+        const core::AccountStateView& accounts,
+        utils::Amount,
+        const std::vector<core::LedgerRecord>&,
+        std::uint64_t,
+        std::int64_t
+    ) override {
+        return accepted(accounts);
+    }
+
+    const std::map<std::string, std::string>& domains() const override {
+        return m_domains;
+    }
+
+private:
+    std::map<std::string, std::string> m_domains{{"test_domain", "stable"}};
+
+    core::TransactionDomainExecutionResult accepted(
+        const core::AccountStateView& accounts
+    ) {
+        return core::TransactionDomainExecutionResult::accepted(accounts, m_domains);
+    }
+};
 
 void requireCondition(
     bool condition,
@@ -81,6 +164,59 @@ core::LedgerRecord record(
     );
 }
 
+crypto::KeyPair protocolKeyPair() {
+    return crypto::KeyPair::createDeterministicEd25519KeyPair(
+        "state-transition-authoritative-key"
+    );
+}
+
+std::string protocolSenderAddress() {
+    return crypto::AddressDerivation::deriveFromPublicKey(
+        protocolKeyPair().publicKey()
+    ).value();
+}
+
+core::Transaction protocolTransaction(
+    std::uint64_t nonce = 1,
+    std::int64_t feeRawUnits = 1
+) {
+    const crypto::KeyPair keyPair = protocolKeyPair();
+    const crypto::Ed25519SignatureProvider provider;
+
+    core::Transaction tx(
+        core::TransactionType::TRANSFER,
+        protocolSenderAddress(),
+        "validator-protocol-recipient",
+        utils::Amount::fromRawUnits(100),
+        utils::Amount::fromRawUnits(feeRawUnits),
+        nonce,
+        kTimestamp
+    );
+    tx.withChainId(kProtocolChainId);
+    tx.attachSignatureBundle(
+        crypto::SignatureBundle::createSignature(
+            tx.signingPayload(),
+            keyPair.publicKey(),
+            keyPair.privateKeyForSigningOnly(),
+            kTimestamp,
+            provider,
+            crypto::SigningDomain::USER_TRANSACTION
+        )
+    );
+    return tx;
+}
+
+core::LedgerRecord protocolRecord(
+    const core::Transaction& tx
+) {
+    return core::LedgerRecord::fromTransaction(
+        tx,
+        crypto::CryptoPolicy::developmentPolicy(),
+        crypto::SecurityContext::USER_TRANSACTION,
+        kTimestamp
+    );
+}
+
 core::Blockchain chain() {
     const core::Transaction tx =
         transaction("1");
@@ -118,6 +254,75 @@ core::StateTransitionPreviewContext economicContext(
         view,
         false,
         true
+    );
+}
+
+core::StateTransitionPreviewContext authoritativeContext(
+    std::int64_t senderBalanceRawUnits = 1000,
+    std::uint64_t senderNonce = 0,
+    std::int64_t minimumFeeRawUnits = 1
+) {
+    core::AccountStateView view;
+
+    if (!view.putAccount(
+            core::AccountState(
+                protocolSenderAddress(),
+                utils::Amount::fromRawUnits(senderBalanceRawUnits),
+                senderNonce
+            )
+        )) {
+        throw std::runtime_error("Failed to create authoritative validator account state.");
+    }
+
+    return core::StateTransitionPreviewContext(
+        minimumFeeRawUnits,
+        view,
+        false,
+        true,
+        "",
+        0,
+        kProtocolChainId,
+        kProtocolNetworkName,
+        {},
+        {},
+        []() {
+            return std::make_unique<TestProtocolDomainExecutor>();
+        },
+        true
+    );
+}
+
+core::Block authoritativeBlockWithRealRoots(
+    const core::Blockchain& blockchain,
+    const core::StateTransitionPreviewContext& ctx
+) {
+    const core::Transaction tx = protocolTransaction(1, 1);
+    const core::LedgerRecord ledgerRecord = protocolRecord(tx);
+    const core::Block draft(
+        1,
+        blockchain.latestBlock().hash(),
+        {ledgerRecord},
+        kTimestamp + 1,
+        "",
+        ""
+    );
+
+    const core::StateTransitionPreviewResult previewResult =
+        core::StateTransitionEngine::executeBlock(draft, ctx);
+
+    if (!previewResult.accepted()) {
+        throw std::runtime_error(
+            "authoritativeBlockWithRealRoots: engine failed: " + previewResult.reason()
+        );
+    }
+
+    return core::Block(
+        1,
+        blockchain.latestBlock().hash(),
+        {ledgerRecord},
+        kTimestamp + 1,
+        previewResult.stateRoot(),
+        previewResult.receiptsRoot()
     );
 }
 
@@ -202,7 +407,8 @@ void testAcceptsCandidateWithValidEconomicState() {
         core::BlockStateTransitionValidator::validateCandidateBlock(
             blockchain,
             block,
-            economicContext(1000, 1, 5)
+            economicContext(1000, 1, 5),
+            core::BlockValidationMode::StructuralOnly
         );
 
     requireCondition(
@@ -525,92 +731,66 @@ void testAcceptsBlockWithinFutureWindow() {
 // Protocol commitment tests (ProtocolCommitment mode, real roots required)
 // ---------------------------------------------------------------------------
 
-void testRejectsBlockWithWrongStateRoot() {
-    const core::Blockchain blockchain =
-        chain();
+void testProtocolCommitmentRejectsBlockWithWrongStateRoot() {
+    const core::Blockchain blockchain = chain();
+    const core::StateTransitionPreviewContext context = authoritativeContext();
 
-    const core::Transaction tx =
-        transaction("2");
-
-    // Both roots have canonical 64-char lowercase hex format so isValid(true) passes.
-    // The stateRoot value is deliberately wrong so the validator detects the mismatch.
+    const core::Block validBlock = authoritativeBlockWithRealRoots(blockchain, context);
     const core::Block block(
         1,
         blockchain.latestBlock().hash(),
-        {record(tx)},
+        validBlock.records(),
         kTimestamp + 1,
         "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-        "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe"
+        validBlock.receiptsRoot()
     );
 
     const core::BlockValidationResult result =
         core::BlockStateTransitionValidator::validateCandidateBlock(
             blockchain,
             block,
-            economicContext(1000, 1, 1)
+            context
         );
 
     requireCondition(
         !result.accepted() &&
         result.status() == core::BlockValidationStatus::INVALID_BLOCK &&
         result.reason().find("State root mismatch") != std::string::npos,
-        "Block with wrong declared state root should be rejected."
+        "Authoritative protocol validation must reject a wrong declared state root."
     );
 }
 
-void testAcceptsBlockWithCorrectStateRoot() {
-    const core::Blockchain blockchain =
-        chain();
-
-    const core::Transaction tx =
-        transaction("2", 1);
+void testProtocolCommitmentAcceptsBlockWithCorrectStateRoot() {
+    const core::Blockchain blockchain = chain();
+    const core::StateTransitionPreviewContext context = authoritativeContext();
 
     const core::Block blockWithRoot =
-        blockWithRealRoots(blockchain, tx, economicContext(1000, 1, 1));
+        authoritativeBlockWithRealRoots(blockchain, context);
 
     const core::BlockValidationResult result =
         core::BlockStateTransitionValidator::validateCandidateBlock(
             blockchain,
             blockWithRoot,
-            economicContext(1000, 1, 1)
+            context
         );
 
     requireCondition(
         result.accepted(),
-        "Block with correct declared state root should be accepted."
+        "Authoritative protocol validation must accept a correct declared state root."
     );
 }
 
-void testRejectsBlockWithWrongReceiptsRoot() {
+void testProtocolCommitmentRejectsBlockWithWrongReceiptsRoot() {
     const core::Blockchain blockchain = chain();
-    const core::Transaction tx = transaction("2", 1);
-
-    const core::Block draft(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(tx)},
-        kTimestamp + 1,
-        "",
-        ""
-    );
-
-    const core::StateTransitionPreviewResult previewResult =
-        core::StateTransitionPreview::previewBlock(
-            draft,
-            economicContext(1000, 1, 1)
-        );
-
-    requireCondition(
-        previewResult.accepted() && !previewResult.receiptsRoot().empty(),
-        "Pre-check: state transition preview should succeed."
-    );
+    const core::StateTransitionPreviewContext context = authoritativeContext();
+    const core::Block validBlock = authoritativeBlockWithRealRoots(blockchain, context);
 
     const core::Block blockWithWrongRoot(
         1,
         blockchain.latestBlock().hash(),
-        {record(tx)},
+        validBlock.records(),
         kTimestamp + 1,
-        previewResult.stateRoot(),
+        validBlock.stateRoot(),
         "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe"
     );
 
@@ -618,34 +798,34 @@ void testRejectsBlockWithWrongReceiptsRoot() {
         core::BlockStateTransitionValidator::validateCandidateBlock(
             blockchain,
             blockWithWrongRoot,
-            economicContext(1000, 1, 1)
+            context
         );
 
     requireCondition(
         !result.accepted() &&
         result.status() == core::BlockValidationStatus::INVALID_BLOCK &&
         result.reason().find("Receipts root mismatch") != std::string::npos,
-        "Block with wrong declared receipts root should be rejected."
+        "Authoritative protocol validation must reject a wrong declared receipts root."
     );
 }
 
-void testAcceptsBlockWithCorrectReceiptsRoot() {
+void testProtocolCommitmentAcceptsBlockWithCorrectReceiptsRoot() {
     const core::Blockchain blockchain = chain();
-    const core::Transaction tx = transaction("2", 1);
+    const core::StateTransitionPreviewContext context = authoritativeContext();
 
     const core::Block blockWithCorrectRoot =
-        blockWithRealRoots(blockchain, tx, economicContext(1000, 1, 1));
+        authoritativeBlockWithRealRoots(blockchain, context);
 
     const core::BlockValidationResult result =
         core::BlockStateTransitionValidator::validateCandidateBlock(
             blockchain,
             blockWithCorrectRoot,
-            economicContext(1000, 1, 1)
+            context
         );
 
     requireCondition(
         result.accepted(),
-        "Block with correct declared receipts root should be accepted."
+        "Authoritative protocol validation must accept a correct declared receipts root."
     );
 }
 
@@ -824,16 +1004,10 @@ void testStructuralOnlyModeAcceptsBlockWithoutRoots() {
     );
 }
 
-void testProtocolCommitmentWithUnauthorizedContextStillChecksRoots() {
-    // When ProtocolCommitment mode is used with an economic context that has no
-    // chain-id / crypto context (protocolAuthorizationEnabled() == false), the
-    // validator still compares the computed stateRoot against the block header.
-    // A structural-only context cannot produce a state root that matches a real
-    // block's roots — so the block is rejected (stateRoot mismatch), even though
-    // signatures were not individually verified.
-    //
-    // Note: the consensus path guards against this by asserting that
-    // protocolAuthorizationEnabled() is true before calling validateCandidateBlock.
+void testProtocolCommitmentRejectsUnauthorizedContextBeforeRootComparison() {
+    // ProtocolCommitment mode is the authoritative protocol gate. It must not
+    // execute with a structural-only or otherwise unauthorized context because
+    // that would skip chain-bound signature checks and canonical domain execution.
     const core::Blockchain blockchain = chain();
     const core::Transaction tx = transaction("2", 1);
 
@@ -854,9 +1028,9 @@ void testProtocolCommitmentWithUnauthorizedContextStillChecksRoots() {
 
     requireCondition(
         !result.accepted() &&
-        result.status() == core::BlockValidationStatus::INVALID_BLOCK,
-        "ProtocolCommitment with a structural-only context must still reject: "
-        "computed roots from empty state won't match block's real roots."
+        result.status() == core::BlockValidationStatus::STATE_PREVIEW_FAILED &&
+        result.reason().find("Authoritative protocol execution") != std::string::npos,
+        "ProtocolCommitment with a structural-only context must be rejected before root comparison."
     );
 }
 
@@ -876,17 +1050,17 @@ int main() {
         testRejectsBlockWithTimestampBeforePrevious();
         testRejectsBlockTooFarInFuture();
         testAcceptsBlockWithinFutureWindow();
-        testRejectsBlockWithWrongStateRoot();
-        testAcceptsBlockWithCorrectStateRoot();
-        testRejectsBlockWithWrongReceiptsRoot();
-        testAcceptsBlockWithCorrectReceiptsRoot();
+        testProtocolCommitmentRejectsBlockWithWrongStateRoot();
+        testProtocolCommitmentAcceptsBlockWithCorrectStateRoot();
+        testProtocolCommitmentRejectsBlockWithWrongReceiptsRoot();
+        testProtocolCommitmentAcceptsBlockWithCorrectReceiptsRoot();
         testBlockReceiptsRootInHeaderPayload();
         testProtocolCommitmentRejectsBlockWithEmptyStateRoot();
         testProtocolCommitmentRejectsBlockWithEmptyReceiptsRoot();
         testProtocolCommitmentRejectsBlockWithPlaceholderStateRoot();
         testProtocolCommitmentRejectsBlockWithPlaceholderReceiptsRoot();
         testStructuralOnlyModeAcceptsBlockWithoutRoots();
-        testProtocolCommitmentWithUnauthorizedContextStillChecksRoots();
+        testProtocolCommitmentRejectsUnauthorizedContextBeforeRootComparison();
 
         std::cout << "Nodo block state transition validator tests passed.\n";
         return 0;
