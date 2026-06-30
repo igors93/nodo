@@ -29,7 +29,7 @@ std::string quorumCertificateBuildStatusToString(
 
 /*
  * QuorumCertificate is a deterministic proof that enough registered validators
- * approved the same block in the same consensus round.
+ * precommitted to the same block in the same consensus round.
  */
 class QuorumCertificate {
 public:

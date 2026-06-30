@@ -116,7 +116,7 @@ nodo::consensus::ValidatorVoteRecord vote(
         blockHash,
         "node-runtime-previous-hash",
         round,
-        nodo::consensus::ValidatorVoteDecision::APPROVE,
+        nodo::consensus::ValidatorVoteDecision::PRECOMMIT,
         "node-runtime-reason-hash",
         kTimestamp + 1,
         bundle

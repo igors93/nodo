@@ -153,7 +153,7 @@ node::RuntimeBlockPipelineResult produceBlock(
         ts - 9
     );
     require(admission.accepted(), "Transaction must be admitted for block production.");
-    return node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    return node::RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         node::RuntimeBlockPipelineConfig(100, 1, 1, ts),
         validatorSigner()

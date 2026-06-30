@@ -40,7 +40,7 @@ nodo::consensus::ValidatorVoteRecord makeVote(
         blockHash,
         "prev-hash",
         round,
-        nodo::consensus::ValidatorVoteDecision::APPROVE,
+        nodo::consensus::ValidatorVoteDecision::PRECOMMIT,
         "reason-hash",
         1000,
         bundle

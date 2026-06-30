@@ -71,7 +71,7 @@ public:
      * Attempt to form a QC and finalize the block.
      *
      * Returns ok() with the FinalizedBlockRecord when 2/3+ of active
-     * validator weight has precommitted (PRECOMMIT or APPROVE votes).
+     * validator weight has precommitted with PRECOMMIT votes.
      * Returns notEnoughVotes() when quorum is not yet reached — callers
      * should retry on the next tick. Returns failed() for structural errors
      * (duplicate finalization, certificate mismatch, etc.).

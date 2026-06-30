@@ -100,7 +100,7 @@ int main() {
     const auto vote = makeVote(
         "A",
         "block-hash-A",
-        nodo::consensus::ValidatorVoteDecision::APPROVE
+        nodo::consensus::ValidatorVoteDecision::PRECOMMIT
     );
 
     const auto accepted = pool.submitVote(vote, ctx.policy(), ctx.validatorSignatureProvider());
@@ -121,7 +121,7 @@ int main() {
         makeVote(
             "B",
             "block-hash-A",
-            nodo::consensus::ValidatorVoteDecision::APPROVE
+            nodo::consensus::ValidatorVoteDecision::PRECOMMIT
         ),
         ctx.policy(), ctx.validatorSignatureProvider()
     );
@@ -144,7 +144,7 @@ int main() {
         makeVote(
             "A",
             "block-hash-A",
-            nodo::consensus::ValidatorVoteDecision::APPROVE,
+            nodo::consensus::ValidatorVoteDecision::PRECOMMIT,
             1001
         ),
         ctx.policy(), ctx.validatorSignatureProvider()
@@ -157,7 +157,7 @@ int main() {
         makeVote(
             "A",
             "block-hash-B",
-            nodo::consensus::ValidatorVoteDecision::APPROVE
+            nodo::consensus::ValidatorVoteDecision::PRECOMMIT
         ),
         ctx.policy(), ctx.validatorSignatureProvider()
     );

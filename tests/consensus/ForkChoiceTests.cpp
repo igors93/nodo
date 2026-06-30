@@ -165,7 +165,7 @@ ValidatorVoteRecord voteFor(
         block.hash(),
         block.previousHash(),
         1,
-        ValidatorVoteDecision::APPROVE,
+        ValidatorVoteDecision::PRECOMMIT,
         "NONE",
         timestamp,
         provider

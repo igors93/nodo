@@ -65,16 +65,16 @@ See [Proof of Protection](docs/overview/proof-of-protection.md) for the deeper m
 
 Implemented foundations include:
 
-- localnet runtime pipeline with initialization, transaction submission, block production, finalization, reload, and audit;
+- localnet development pipeline with initialization, transaction submission, local PRECOMMIT-backed block production, finalization, reload, and audit;
 - CMake-based C++20 build with one test executable per `tests/**/*.cpp`;
 - strict storage schema validation and atomic persistence helpers (`AtomicFile` crash-safe writes);
 - canonical finalized artifacts with monetary, treasury, governance, validator, and slashing sections;
 - authoritative state-transition execution before block votes and unified canonical replay of accounts plus protocol domains into deterministic state/receipts roots, with coin lot ownership validation and CoinLot registry digest included in the state root commitment;
 - OpenSSL Ed25519 user signatures and blst BLS12-381 validator signatures;
-- BFT consensus with Quorum Certificate (QC) requiring 2/3+ validator weight;
+- BFT consensus with Quorum Certificate (QC) requiring 2/3+ validator weight from PRECOMMIT votes only;
 - durable QC persistence: `FinalizedBlockRecordStore` writes each QC proof atomically to `{dataDir}/sync/qc/{height}.qc`, reloads all records at startup, and restores the in-memory `BlockFinalizationRegistry` — making the fast-path `QC_REQUIRED` sync mode functional across restarts;
 - P2P message, gossip, loopback, TCP, encrypted peer-channel, sync, and peer-rate-limiter foundations;
-- distributed node daemon with transaction gossip relay, block proposal relay with proposer authentication, and finalized artifact QC verification;
+- distributed node daemon with transaction gossip relay, block proposal relay with proposer authentication, PREVOTE/PRECOMMIT voting, and finalized artifact QC verification;
 - treasury policy, spend validation, execution evidence, and finalized treasury audit;
 - governance vote proof, vote evidence, vote-set audit, tally, decision audit, lifecycle persistence, and lifecycle-backed treasury approval;
 - slashing evidence, validator penalty decisions, validator lifecycle, and containment-policy foundations;
@@ -295,7 +295,7 @@ NodeDaemon.tick()
         └── FinalizedBlockRecordStore::save()   — persist QC to disk
 ```
 
-`ConsensusEventLoop` runs in a background thread inside `NodeOrchestrator`. It validates `BLOCK_PROPOSAL` messages, retains the active candidate outside the canonical chain, accumulates `VALIDATOR_VOTE` messages, assembles the `QuorumCertificate`, and delegates the only authorized append to `BlockFinalizer` after quorum. The finalized callback then persists the block and QC record.
+`ConsensusEventLoop` runs in a background thread inside `NodeOrchestrator`. It validates `BLOCK_PROPOSAL` messages, retains the active candidate outside the canonical chain, accumulates `PREVOTE` and `PRECOMMIT` `VALIDATOR_VOTE` messages, assembles a `QuorumCertificate` only from PRECOMMIT votes, and delegates the only distributed-network append to `BlockFinalizer` after quorum. The local `block produce` command uses a DEVELOPMENT_LOCAL-only helper and is rejected on testnet-candidate and production network classes.
 
 ## Documentation
 

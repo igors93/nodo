@@ -274,7 +274,7 @@ void testLoadsRuntimeWithPersistedFinalizedBlock() {
     );
 
     const auto pipeline =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,
@@ -492,7 +492,7 @@ void testRejectsFinalizedBlockWithTamperedPostStateRoot() {
     );
 
     const auto pipeline =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,
@@ -602,7 +602,7 @@ void testRejectsFinalizedBlockWithTamperedFeeBalance() {
     );
 
     const auto pipeline =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,
@@ -766,7 +766,7 @@ void testRejectsFinalizedBlockWithInvalidQuorumCertificate() {
     );
 
     const auto pipeline =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,
@@ -864,7 +864,7 @@ void testRejectsFinalizedBlockWithDuplicateVote() {
     );
 
     const auto pipeline =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,
@@ -1010,7 +1010,7 @@ void testStatePrunerPopulatedAfterReload() {
     );
 
     const auto pipeline =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
             localValidatorSigner()

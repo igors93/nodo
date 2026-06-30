@@ -10,9 +10,9 @@ The protocol path is:
 2. validate block structure;
 3. validate signatures through the configured provider;
 4. validate the state transition without partial mutation;
-5. collect validator votes;
-6. build a quorum certificate;
-7. finalize the block;
+5. collect validator PREVOTE messages and then PRECOMMIT messages;
+6. build a quorum certificate from PRECOMMIT votes only;
+7. finalize the certified block through the post-quorum commit pipeline;
 8. persist the finalized artifact and manifest;
 9. audit the chain during reload.
 
@@ -32,7 +32,8 @@ Current limitations:
 - slashing evidence and validator penalty decisions are implemented as
   auditable, idempotent protocol records; automatic production stake-slashing is
   still out of scope;
-- the mempool does not yet implement a full per-account future-nonce queue;
+- the mempool exposes only each account's executable nonce frontier to block
+  production while future nonces remain queued behind gaps;
 - balance, nonce, minimum fee, chain-bound transaction authorization and
   protocol-domain execution now run through the authoritative state-transition
   engine before protocol-commitment validation can vote on a block;
@@ -70,4 +71,8 @@ carry `storage_schema.nodo` for `NODO_NODE_DATA_DIRECTORY` version `1`.
 Unknown versions are not loaded and no downgrade or migration is inferred.
 
 `block produce` never creates transactions. Transactions enter the protocol via
-`tx submit`, then block production consumes the current mempool contents.
+`tx submit`, then block production consumes the current mempool contents. This
+command is a DEVELOPMENT_LOCAL-only helper that may build one local PRECOMMIT QC
+for end-to-end persistence testing. Testnet-candidate and production networks
+must use the distributed proposer/PREVOTE/PRECOMMIT/QC path and then enter
+`RuntimeBlockPipeline::commitCertifiedBlock`.

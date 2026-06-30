@@ -69,7 +69,7 @@ static consensus::FinalizedBlockRecord buildRecord(
             blockHash,
             previousHash,
             kRound,
-            consensus::ValidatorVoteDecision::APPROVE,
+            consensus::ValidatorVoteDecision::PRECOMMIT,
             "reason-" + blockHash,
             kTimestamp,
             blsProvider

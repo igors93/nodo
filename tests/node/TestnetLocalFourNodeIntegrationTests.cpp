@@ -186,7 +186,7 @@ node::RuntimeBlockPipelineResult produceBlock(
         "Transaction must be admitted for node " + node.id
     );
 
-    return node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    return node::RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         node::RuntimeBlockPipelineConfig(100, 1, 1, ts),
         signerFor(node)

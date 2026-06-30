@@ -109,7 +109,7 @@ void testPipelineFinalizedResultHasValidSupplyDelta() {
     NodeRuntime runtime = startRuntime();
     admitTransfer(runtime, 1);
 
-    const auto result = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto result = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
         validatorSigner()
@@ -123,7 +123,7 @@ void testPipelineDeltaHasNonZeroBurnForFeeBlock() {
     NodeRuntime runtime = startRuntime();
     admitTransfer(runtime, 1);
 
-    const auto result = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto result = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
         validatorSigner()
@@ -139,7 +139,7 @@ void testTwoBlocksSupplyChainsCorrectly() {
 
     // Block 1.
     admitTransfer(runtime, 1);
-    const auto result1 = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto result1 = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
         validatorSigner()
@@ -149,7 +149,7 @@ void testTwoBlocksSupplyChainsCorrectly() {
 
     // Block 2 — after finalization, the consensus round resets to 1 for the next height.
     admitTransfer(runtime, 2);
-    const auto result2 = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto result2 = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 30),
         validatorSigner()
@@ -170,7 +170,7 @@ void testNodeRuntimeSupplyStateIsUpdatedAfterFinalization() {
     assert(!genesisSupply.isZero());
 
     admitTransfer(runtime, 1);
-    const auto result = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto result = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
         validatorSigner()
@@ -186,7 +186,7 @@ void testNodeRuntimeSupplyStateIsUpdatedAfterFinalization() {
 void testSupplyDeltaBlockHashMatchesFinalizedBlock() {
     NodeRuntime runtime = startRuntime();
     admitTransfer(runtime, 1);
-    const auto result = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto result = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
         validatorSigner()
@@ -202,7 +202,7 @@ void testVoluntaryBurnChangesAccountsAndCanonicalSupply() {
     const Amount beforeBalance = runtime.cachedAccountStateAtTip(0)
         .accountOrDefault(userKeyPair().address().value()).balance();
     admitBurn(runtime, 1, 5000);
-    const auto result = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto result = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime, RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
         validatorSigner());
     assert(result.finalized());

@@ -2210,7 +2210,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
     return finalResult;
 }
 
-RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
     NodeRuntime& runtime,
     const RuntimeBlockPipelineConfig& config,
     const crypto::Signer& localValidatorSigner,
@@ -2227,6 +2227,15 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
         return RuntimeBlockPipelineResult::rejected(
             RuntimeBlockPipelineStatus::INVALID_RUNTIME,
             "Node runtime is invalid."
+        );
+    }
+
+    if (runtime.config().genesisConfig().networkParameters().networkClass() !=
+        config::NetworkClass::DEVELOPMENT_LOCAL) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::INVALID_CONFIG,
+            "Local block production/finalization helper is restricted to DEVELOPMENT_LOCAL networks. "
+            "Staging and production networks must finalize through distributed PREVOTE/PRECOMMIT consensus."
         );
     }
 
@@ -2398,7 +2407,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     std::vector<consensus::ValidatorVoteRecord> votes;
 
     try {
-        votes = buildValidatorVotes(
+        votes = buildLocalnetPrecommitVotes(
             runtime,
             candidateBlock,
             activeRound.round(),
@@ -2464,7 +2473,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeNextBlock(
     );
 }
 
-std::vector<consensus::ValidatorVoteRecord> RuntimeBlockPipeline::buildValidatorVotes(
+std::vector<consensus::ValidatorVoteRecord> RuntimeBlockPipeline::buildLocalnetPrecommitVotes(
     const NodeRuntime& runtime,
     const core::Block& block,
     std::uint64_t consensusRound,
@@ -2480,7 +2489,7 @@ std::vector<consensus::ValidatorVoteRecord> RuntimeBlockPipeline::buildValidator
     }
 
     votes.push_back(
-        consensus::ValidatorVoteBuilder::buildApprovalVote(
+        consensus::ValidatorVoteBuilder::buildPrecommit(
             runtime.validatorSetHistory().setAt(block.index()),
             block,
             consensusRound,

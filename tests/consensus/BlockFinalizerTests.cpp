@@ -168,7 +168,7 @@ Block candidateBlock(
     );
 }
 
-ValidatorVoteRecord approveVoteFor(
+ValidatorVoteRecord precommitVoteFor(
     const std::string& suffix,
     const Block& block,
     std::uint64_t round,
@@ -187,7 +187,7 @@ ValidatorVoteRecord approveVoteFor(
         block.hash(),
         block.previousHash(),
         round,
-        ValidatorVoteDecision::APPROVE,
+        ValidatorVoteDecision::PRECOMMIT,
         "NONE",
         timestamp,
         provider
@@ -200,8 +200,8 @@ QuorumCertificate certificateFor(
     std::uint64_t round = 1
 ) {
     const std::vector<ValidatorVoteRecord> votes = {
-        approveVoteFor("a", block, round, kTimestamp + 20),
-        approveVoteFor("b", block, round, kTimestamp + 21)
+        precommitVoteFor("a", block, round, kTimestamp + 20),
+        precommitVoteFor("b", block, round, kTimestamp + 21)
     };
 
     const Bls12381SignatureProvider provider;

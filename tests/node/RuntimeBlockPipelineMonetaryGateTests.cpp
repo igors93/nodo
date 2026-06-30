@@ -120,7 +120,7 @@ void testPipelineFinalizesSucessfullyWithMonetaryGate() {
     NodeRuntime runtime = startRuntime();
     admitTransaction(runtime);
 
-    const auto result = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto result = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
         localValidatorSigner()
@@ -245,7 +245,7 @@ void testHaltedNodeRejectsBlockProduction() {
 
     runtime.halt();
 
-    const auto result = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto result = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
         localValidatorSigner()

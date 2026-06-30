@@ -2736,7 +2736,7 @@ CommandLineResult CommandLineInterface::executeProduceBlock(
     );
 
     const node::RuntimeBlockPipelineResult pipeline =
-        node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        node::RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             node::RuntimeBlockPipelineConfig(
                 static_cast<std::size_t>(

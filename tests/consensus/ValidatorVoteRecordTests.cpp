@@ -103,7 +103,7 @@ ValidatorVoteRecord approveVote(
         blockHash,
         previousHash,
         round,
-        ValidatorVoteDecision::APPROVE,
+        ValidatorVoteDecision::PRECOMMIT,
         "NONE",
         timestamp,
         provider

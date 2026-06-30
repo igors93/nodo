@@ -177,7 +177,7 @@ void testLocalAndDistributedPipelinesProduceEquivalentState() {
 
     const node::RuntimeBlockPipelineConfig config(10, 1, 1, kTimestamp + 2);
     const node::RuntimeBlockPipelineResult localResult =
-        node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        node::RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             localRuntime, config, validatorSigner()
         );
     require(localResult.finalized(), "Local pipeline must finalize.");
@@ -272,7 +272,7 @@ void testGovernanceProposalIsCommittedWithoutPrematureExecution() {
     require(admission.accepted(), "Governance proposal must enter the mempool.");
 
     const node::RuntimeBlockPipelineResult result =
-        node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        node::RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             node::RuntimeBlockPipelineConfig(10, 1, 1, kTimestamp + 2),
             validatorSigner()
@@ -299,7 +299,7 @@ void testGovernanceProposalIsCommittedWithoutPrematureExecution() {
         runtime, userKey(), 2, kTimestamp + 3
     );
     const node::RuntimeBlockPipelineResult nextBlock =
-        node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        node::RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             node::RuntimeBlockPipelineConfig(10, 1, 1, kTimestamp + 4),
             validatorSigner()

@@ -293,7 +293,7 @@ void testPersistsFinalizedBlockAndUpdatesManifest() {
     admitTransaction(runtime);
 
     const auto pipeline =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,
@@ -747,7 +747,7 @@ void testPersistIsIdempotentForSameFinalizedBlock() {
     admitTransaction(runtime);
 
     const auto pipeline =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,
@@ -798,7 +798,7 @@ void testRejectsPersistBeforeInit() {
     admitTransaction(runtime);
 
     const auto pipeline =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,

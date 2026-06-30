@@ -14,7 +14,7 @@ In simple terms:
 
 ```text
 a block is not final just because it exists
-a block becomes final only when enough validators approve it
+a block becomes final only when enough validators precommit to it
 ```
 
 ## New Components

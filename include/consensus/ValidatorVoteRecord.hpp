@@ -20,7 +20,6 @@ namespace nodo::consensus {
  */
 enum class ValidatorVoteDecision {
     UNKNOWN,
-    APPROVE,
     REJECT,
     PREVOTE,
     PRECOMMIT

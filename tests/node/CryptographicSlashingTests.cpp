@@ -48,7 +48,7 @@ ValidatorVoteRecord createVote(
         blockHash,
         "previous_block_hash",
         1,
-        ValidatorVoteDecision::APPROVE,
+        ValidatorVoteDecision::PRECOMMIT,
         "reason_hash",
         1900000000,
         provider

@@ -122,7 +122,7 @@ node::RuntimeBlockPipelineResult produceBlock(
     );
     const auto adm = rt.mutableMempool().admitTransaction(tx, crypto::CryptoPolicy::developmentPolicy(), crypto::SecurityContext::USER_TRANSACTION, ts - 9);
     require(adm.accepted(), "Transaction must be admitted.");
-    return node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    return node::RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         rt, node::RuntimeBlockPipelineConfig(100, 1, 1, ts),
         crypto::Signer(vKey, valProv)
     );

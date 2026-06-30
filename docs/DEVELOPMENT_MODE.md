@@ -18,11 +18,16 @@ init -> keys create -> tx submit -> block produce -> node reload -> chain audit
 - CLI commands with `demo` in the name are deprecated compatibility aliases.
 - Runtime block votes are produced through `Signer`; no private key is derived
   from a public key inside runtime.
+- The local block-production helper signs a PRECOMMIT vote only and is guarded by
+  `NetworkClass::DEVELOPMENT_LOCAL`; it cannot be used by testnet-candidate or
+  production networks.
 - The code has post-quantum provider interfaces, but no audited post-quantum
   provider is bundled yet.
 
 ## Not Production Consensus
 
-Current localnet block production is not P2P consensus. It is a deterministic local
-pipeline used to harden runtime persistence, finalization records, mempool
-cleanup and state reload.
+Current localnet block production is not P2P consensus. It is a deterministic
+local helper used to harden runtime persistence, finalized artifacts, mempool
+cleanup and state reload. Distributed networks must follow the proposer →
+PREVOTE → PRECOMMIT → QC → `commitCertifiedBlock` path; the local helper rejects
+non-DEVELOPMENT_LOCAL network classes.

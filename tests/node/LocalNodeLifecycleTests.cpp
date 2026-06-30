@@ -156,7 +156,7 @@ node::RuntimeBlockPipelineResult produceBlock(
     std::uint64_t nonce
 ) {
     admitTransaction(runtime, nonce, ts - 10);
-    return node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    return node::RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         node::RuntimeBlockPipelineConfig(100, 1, 1, ts),
         validatorSigner()

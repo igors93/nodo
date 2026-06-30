@@ -21,12 +21,13 @@ A validator may vote for a candidate block only when:
 - the vote references the expected block height, block hash, previous hash and
   consensus round.
 
-A quorum certificate is valid only when enough active validator weight approves
-the same block under the configured quorum threshold. Duplicate votes,
-unregistered validators, invalid validator signatures and votes for a different
-block or round invalidate the certificate. Finality means the block has a valid
-quorum certificate, has been accepted by the finalizer and has been persisted
-with an auditable finalized record.
+A quorum certificate is valid only when enough active validator weight
+PRECOMMITs to the same block under the configured quorum threshold. PREVOTE,
+REJECT, UNKNOWN and legacy approval-style decisions cannot build a QC. Duplicate
+votes, unregistered validators, invalid validator signatures and votes for a
+different block or round invalidate the certificate. Finality means the block
+has a valid PRECOMMIT quorum certificate, has been accepted by the finalizer and
+has been persisted with an auditable finalized record.
 
 Current localnet signs user transactions with Ed25519 through OpenSSL and
 validator votes/proposals with BLS12-381 through blst. Future testnet and
@@ -42,7 +43,7 @@ The gossip layer carries the following consensus-specific message types:
   and precommit rounds after validation.
 - `VALIDATOR_VOTE`: a BLS12-381-signed vote (prevote or precommit) from an
   active validator. `ConsensusEventLoop` accumulates votes and builds a
-  `QuorumCertificate` when the 2/3 weight threshold is crossed. Duplicate votes
+  `QuorumCertificate` from PRECOMMIT votes when the 2/3 weight threshold is crossed. Duplicate votes
   and votes from unregistered validators are discarded.
 - `QUORUM_CERTIFICATE`: an assembled QC broadcast after quorum is reached.
   Peers that missed votes may use this to advance their consensus state.

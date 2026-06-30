@@ -169,7 +169,7 @@ consensus::DoubleVoteEvidence doubleVoteEvidence() {
             blockHash,
             "genesis-parent-hash",
             1,
-            consensus::ValidatorVoteDecision::APPROVE,
+            consensus::ValidatorVoteDecision::PRECOMMIT,
             "canonical-slashing-reason",
             kTimestamp + 10,
             provider

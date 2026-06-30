@@ -156,7 +156,7 @@ void testReplayAdvancesAccountsAndDomainsTogether() {
         "STAKE_DEPOSIT should enter the mempool."
     );
 
-    const auto pipeline = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto pipeline = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
         validatorSigner()

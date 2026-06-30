@@ -63,9 +63,25 @@ KeyPair localValidatorKeyPair() {
     );
 }
 
+KeyPair validatorKeyPairForSeed(const std::string& seed) {
+    return KeyPair::createDeterministicBls12381KeyPair(seed);
+}
+
 KeyPair localUserKeyPair() {
     return KeyPair::createDeterministicEd25519KeyPair(
         "runtime-block-pipeline-user"
+    );
+}
+
+BootstrapValidatorConfig validatorForSeed(
+    const std::string& seed,
+    const std::string& metadata
+) {
+    return BootstrapValidatorConfig(
+        validatorKeyPairForSeed(seed).publicKey(),
+        1,
+        1,
+        metadata
     );
 }
 
@@ -98,6 +114,27 @@ GenesisConfig genesisConfig() {
             )
         },
         "runtime-block-pipeline-genesis"
+    );
+}
+
+GenesisConfig testnetCandidateGenesisConfig() {
+    return GenesisConfig(
+        NetworkParameters::testnetCandidate(),
+        kTimestamp,
+        {
+            validatorForSeed("runtime-block-pipeline-testnet-validator-0", "testnet-validator-0"),
+            validatorForSeed("runtime-block-pipeline-testnet-validator-1", "testnet-validator-1"),
+            validatorForSeed("runtime-block-pipeline-testnet-validator-2", "testnet-validator-2"),
+            validatorForSeed("runtime-block-pipeline-testnet-validator-3", "testnet-validator-3")
+        },
+        {
+            GenesisAccountConfig(
+                localUserKeyPair().address().value(),
+                Amount::fromRawUnits(1000000000000),
+                0
+            )
+        },
+        "runtime-block-pipeline-testnet-genesis"
     );
 }
 
@@ -142,6 +179,30 @@ NodeRuntime startRuntime() {
     requireCondition(
         result.started(),
         "Runtime should start from genesis."
+    );
+
+    return result.runtime();
+}
+
+NodeRuntime startTestnetCandidateRuntime() {
+    const auto result =
+        NodeRuntimeFactory::startFromGenesis(
+            NodeRuntimeConfig(
+                testnetCandidateGenesisConfig(),
+                PeerInfo(
+                    "runtime-pipeline-testnet-peer",
+                    "127.0.0.1:9301",
+                    "nodo/0.1",
+                    0,
+                    kTimestamp
+                ),
+                16
+            )
+        );
+
+    requireCondition(
+        result.started(),
+        result.reason()
     );
 
     return result.runtime();
@@ -203,7 +264,7 @@ void testRejectsEconomicallyInvalidTransactionBeforeFinalization() {
     );
 
     const auto result =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,
@@ -233,7 +294,7 @@ void testProducesFinalizesAndCleansMempool() {
     admitTransaction(runtime);
 
     const auto result =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,
@@ -280,7 +341,7 @@ void testRejectsEmptyMempool() {
         startRuntime();
 
     const auto result =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,
@@ -304,7 +365,7 @@ void testRejectsInvalidConfig() {
     admitTransaction(runtime);
 
     const auto result =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 0,
@@ -321,6 +382,33 @@ void testRejectsInvalidConfig() {
     );
 }
 
+void testRejectsNonLocalnetProductionShortcut() {
+    NodeRuntime runtime =
+        startTestnetCandidateRuntime();
+
+    const auto result =
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
+            runtime,
+            RuntimeBlockPipelineConfig(
+                100,
+                1,
+                1,
+                kTimestamp + 45
+            ),
+            localValidatorSigner()
+        );
+
+    requireCondition(
+        result.status() == RuntimeBlockPipelineStatus::INVALID_CONFIG,
+        "Localnet block production helper must reject non-localnet networks."
+    );
+
+    requireCondition(
+        runtime.blockchain().size() == 1U,
+        "Rejected non-localnet helper call must not append a block."
+    );
+}
+
 void testRejectsConsensusRoundMismatch() {
     NodeRuntime runtime =
         startRuntime();
@@ -328,7 +416,7 @@ void testRejectsConsensusRoundMismatch() {
     admitTransaction(runtime);
 
     const auto result =
-        RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime,
             RuntimeBlockPipelineConfig(
                 100,
@@ -359,6 +447,7 @@ int main() {
         testRejectsEconomicallyInvalidTransactionBeforeFinalization();
         testRejectsEmptyMempool();
         testRejectsInvalidConfig();
+        testRejectsNonLocalnetProductionShortcut();
         testRejectsConsensusRoundMismatch();
 
         std::cout << "Nodo runtime block pipeline tests passed.\n";

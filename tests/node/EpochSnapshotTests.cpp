@@ -78,7 +78,7 @@ node::RuntimeBlockPipelineResult produceBlock(
         ts - 9
     );
 
-    return node::RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    return node::RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         rt,
         node::RuntimeBlockPipelineConfig(100, 1, 1, ts),
         crypto::Signer(vk, valProv)

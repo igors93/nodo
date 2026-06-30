@@ -36,12 +36,11 @@ BlockFinalizationPhaseResult BlockFinalizationPhase::tryFinalize(
     std::vector<ValidatorVoteRecord> allVotes =
         pool.votesForBlock(blockIndex, blockHash, round);
 
-    // Collect PRECOMMIT and APPROVE votes for QC assembly.
+    // Collect only PRECOMMIT votes for QC assembly.
     std::vector<ValidatorVoteRecord> certificateVotes;
     certificateVotes.reserve(allVotes.size());
     for (const auto& v : allVotes) {
-        if (v.decision() == ValidatorVoteDecision::PRECOMMIT ||
-            v.decision() == ValidatorVoteDecision::APPROVE) {
+        if (v.decision() == ValidatorVoteDecision::PRECOMMIT) {
             certificateVotes.push_back(v);
         }
     }

@@ -318,10 +318,6 @@ crypto::PublicKey parsePublicKey(
 ValidatorVoteDecision parseVoteDecision(
     const std::string& value
 ) {
-    if (value == "APPROVE") {
-        return ValidatorVoteDecision::APPROVE;
-    }
-
     if (value == "REJECT") {
         return ValidatorVoteDecision::REJECT;
     }
@@ -464,8 +460,6 @@ std::string validatorVoteDecisionToString(
     ValidatorVoteDecision decision
 ) {
     switch (decision) {
-        case ValidatorVoteDecision::APPROVE:
-            return "APPROVE";
         case ValidatorVoteDecision::REJECT:
             return "REJECT";
         case ValidatorVoteDecision::PREVOTE:

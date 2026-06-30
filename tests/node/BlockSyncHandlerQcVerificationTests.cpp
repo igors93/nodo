@@ -261,7 +261,7 @@ consensus::FinalizedBlockRecord buildFinalizedRecord(
         block.hash(),
         block.previousHash(),
         kRound,
-        consensus::ValidatorVoteDecision::APPROVE,
+        consensus::ValidatorVoteDecision::PRECOMMIT,
         "reason-" + block.hash(),
         kTimestamp,
         blsProvider

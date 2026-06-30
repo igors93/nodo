@@ -88,13 +88,13 @@ int main() {
     const auto first = makeVote(
         "block-hash-a",
         "previous-hash",
-        nodo::consensus::ValidatorVoteDecision::APPROVE
+        nodo::consensus::ValidatorVoteDecision::PRECOMMIT
     );
 
     const auto second = makeVote(
         "block-hash-b",
         "previous-hash",
-        nodo::consensus::ValidatorVoteDecision::APPROVE
+        nodo::consensus::ValidatorVoteDecision::PRECOMMIT
     );
 
     nodo::consensus::DoubleVoteEvidence evidence(first, second, 200);

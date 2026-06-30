@@ -553,7 +553,9 @@ private:
  * RuntimeBlockPipeline owns the canonical post-quorum state transition:
  *
  *   certified block -> state/economics/governance -> finality -> persistence.
- * Local production and distributed consensus both converge on this operation.
+ * Distributed consensus enters through commitCertifiedBlock after a real QC.
+ * The localnet production helper is explicitly development-only and cannot be
+ * used on staging or production network classes.
  */
 class RuntimeBlockPipeline {
 public:
@@ -570,7 +572,13 @@ public:
         const NodeDataDirectoryConfig* directoryConfig = nullptr
     );
 
-    static RuntimeBlockPipelineResult produceAndFinalizeNextBlock(
+    /*
+     * Development-only convenience path for localnet CLI/tests. It may produce
+     * a block and build one local PRECOMMIT-backed QC in-process, but it rejects
+     * every non-DEVELOPMENT_LOCAL network. Real networks must use distributed
+     * PREVOTE/PRECOMMIT consensus and then call commitCertifiedBlock.
+     */
+    static RuntimeBlockPipelineResult produceAndFinalizeLocalnetBlock(
         NodeRuntime& runtime,
         const RuntimeBlockPipelineConfig& config,
         const crypto::Signer& localValidatorSigner,
@@ -578,7 +586,7 @@ public:
     );
 
 private:
-    static std::vector<consensus::ValidatorVoteRecord> buildValidatorVotes(
+    static std::vector<consensus::ValidatorVoteRecord> buildLocalnetPrecommitVotes(
         const NodeRuntime& runtime,
         const core::Block& block,
         std::uint64_t consensusRound,

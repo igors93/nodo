@@ -76,8 +76,10 @@ NodeDaemon.tick()
 `ConsensusEventLoop` runs in a background thread inside `NodeOrchestrator` and
 owns proposal admission. A validated `BLOCK_PROPOSAL` is retained as a
 round-scoped candidate, never appended as canonical state. The loop handles
-`VALIDATOR_VOTE` / `VOTE_ANNOUNCE` accumulation and `QuorumCertificate`
-assembly; only `BlockFinalizer` appends the candidate after quorum.
+`VALIDATOR_VOTE` / `VOTE_ANNOUNCE` accumulation, casts PREVOTE before PRECOMMIT
+and assembles a `QuorumCertificate` only from PRECOMMIT votes; only
+`BlockFinalizer` appends the candidate after quorum. The in-process localnet
+production helper is not available to staging or production network classes.
 
 ## Build
 

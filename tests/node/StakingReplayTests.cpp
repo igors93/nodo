@@ -161,7 +161,7 @@ void testStakingRegistryRebuiltAfterReload() {
         "STAKE_DEPOSIT should be admitted to mempool."
     );
 
-    const auto pipeline = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto pipeline = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
         validatorSigner()
@@ -258,7 +258,7 @@ void testMultipleStakingBlocksReplayedCorrectly() {
             ).accepted(),
             "Block 1: STAKE_DEPOSIT should be admitted."
         );
-        const auto p1 = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        const auto p1 = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime, RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
             validatorSigner()
         );
@@ -288,7 +288,7 @@ void testMultipleStakingBlocksReplayedCorrectly() {
             ).accepted(),
             "Block 2: STAKE_TOP_UP should be admitted."
         );
-        const auto p2 = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+        const auto p2 = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
             runtime, RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 40),
             validatorSigner()
         );

@@ -61,7 +61,7 @@ ValidatorVoteRecord makeVote(
         "block-hash-abc",
         "prev-hash-abc",
         round,
-        ValidatorVoteDecision::APPROVE,
+        ValidatorVoteDecision::PRECOMMIT,
         "reason-hash",
         1000,
         fakeSig(pk, 'b')

@@ -64,7 +64,7 @@ private:
  *   MonetaryFirewall        — economics logic (arithmetic + authorization rules).
  *   MonetaryValidationGate  — runtime interface the pipeline calls before votes.
  *
- * RuntimeBlockPipeline calls this before buildValidatorVotes.
+ * RuntimeBlockPipeline calls this before buildLocalnetPrecommitVotes.
  */
 class MonetaryValidationGate {
 public:

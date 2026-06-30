@@ -44,11 +44,14 @@ nodo validator list [--data-dir PATH]
   account state derived from canonical protocol replay. Duplicate transactions,
   duplicate sender/nonce, old nonces, unsupported future nonces, low fees and
   invalid signatures are rejected before persistence.
-- `block produce`: reloads runtime, produces and finalizes one local block,
-  persists it and removes finalized transactions from persistent mempool. It
-  does not create transactions automatically. Produced blocks must pass
-  authoritative protocol state-transition checks for balance, nonce, fee,
-  authorization and domain commitments before votes or finalization.
+- `block produce`: DEVELOPMENT_LOCAL-only helper. It reloads runtime, produces
+  and finalizes one local block with a single local PRECOMMIT-backed QC, persists
+  it and removes finalized transactions from persistent mempool. It does not
+  create transactions automatically and is rejected on testnet-candidate and
+  production network classes; real networks must finalize through distributed
+  PREVOTE/PRECOMMIT consensus. Produced blocks must pass authoritative protocol
+  state-transition checks for balance, nonce, fee, authorization and domain
+  commitments before finalization.
 - `chain audit`: reloads runtime and runs `ChainAuditor` over manifest,
   finalized block continuity, latest hash, `latestStateRoot`, crypto context,
   mempool and validator count consistency.
@@ -74,7 +77,8 @@ build/nodo chain audit --data-dir .nodo
 build/nodo status --data-dir .nodo
 ```
 
-Current localnet limits remain intentional: no production P2P, no mainnet
-startup path, no automatic production stake-slashing, unencrypted deterministic
-local keys and no per-account future-nonce queue. These limits are audited
-explicitly instead of being hidden behind demo-only code paths.
+Current localnet limits remain intentional: the `block produce` shortcut is not
+production P2P consensus, mainnet startup remains blocked, automatic production
+stake-slashing is not active, and local keys are deterministic and unencrypted.
+These limits are audited explicitly instead of being hidden behind demo-only code
+paths.

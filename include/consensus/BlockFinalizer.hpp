@@ -208,7 +208,7 @@ private:
 
 /*
  * BlockFinalizer appends a block only after a valid quorum certificate proves
- * that registered validators approved that exact block.
+ * that registered validators precommitted to that exact block.
  */
 class BlockFinalizer {
 public:

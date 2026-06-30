@@ -49,7 +49,7 @@ validator registry is valid
 all voters are active registered validators
 all votes verify cryptographically
 all votes target the same block and round
-all votes are APPROVE
+archived note: older drafts used APPROVE; current protocol QCs require PRECOMMIT votes
 no voter appears twice
 valid votes reach the configured threshold
 ```

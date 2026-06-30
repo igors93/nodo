@@ -139,7 +139,7 @@ void testStakeDepositUpdatesRegistryAfterBlock() {
         "STAKE_DEPOSIT should be admitted to mempool."
     );
 
-    const auto pipeline = RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+    const auto pipeline = RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
         runtime,
         RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
         validatorSigner()
@@ -191,7 +191,7 @@ void testStakeTopUpAccumulatesAcrossConsecutiveBlocks() {
             "Block 1: STAKE_DEPOSIT should be admitted."
         );
         requireCondition(
-            RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
                 runtime,
                 RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 20),
                 validatorSigner()
@@ -229,7 +229,7 @@ void testStakeTopUpAccumulatesAcrossConsecutiveBlocks() {
             "Block 2: STAKE_TOP_UP should be admitted."
         );
         requireCondition(
-            RuntimeBlockPipeline::produceAndFinalizeNextBlock(
+            RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
                 runtime,
                 RuntimeBlockPipelineConfig(100, 1, 1, kTimestamp + 40),
                 validatorSigner()
