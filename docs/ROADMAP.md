@@ -133,6 +133,9 @@ reach quorum, and finalize a block without any local shortcut.
 - Proposer equivocation slashing: two different proposer-signed block proposals
   from the same scheduled proposer at the same height/round produce persisted and
   gossiped proposer-equivocation evidence.
+- Canonical penalty effects: finalized double-vote or proposer-equivocation
+  evidence now creates a deterministic penalty decision, updates validator
+  eligibility and applies bounded stake slashing in the staking registry.
 - Quorum formation: 2/3 weight threshold produces a valid `QuorumCertificate`.
 - Finalized artifact validation: peer-received `FINALIZED_BLOCK_ARTIFACT`
   verified before recording; malformed artifact silently discarded.

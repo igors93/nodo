@@ -6,8 +6,10 @@
 #include "node/NodeRuntime.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 
+#include <initializer_list>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace nodo::consensus {
 
@@ -15,6 +17,31 @@ namespace nodo::consensus {
  * BlockCandidateResult carries the output of the production phase: either a
  * validated candidate block ready for proposal, or a rejection reason.
  */
+
+struct PendingSlashingEvidenceBatch {
+    std::vector<DoubleVoteEvidence> doubleVotes;
+    std::vector<ProposerEquivocationEvidence> proposerEquivocations;
+
+    PendingSlashingEvidenceBatch() = default;
+
+    PendingSlashingEvidenceBatch(std::initializer_list<DoubleVoteEvidence> values)
+        : doubleVotes(values), proposerEquivocations() {}
+
+    PendingSlashingEvidenceBatch(
+        std::vector<DoubleVoteEvidence> doubleVoteEvidence,
+        std::vector<ProposerEquivocationEvidence> proposerEquivocationEvidence = {}
+    ) : doubleVotes(std::move(doubleVoteEvidence)),
+        proposerEquivocations(std::move(proposerEquivocationEvidence)) {}
+
+    bool empty() const {
+        return doubleVotes.empty() && proposerEquivocations.empty();
+    }
+
+    std::size_t size() const {
+        return doubleVotes.size() + proposerEquivocations.size();
+    }
+};
+
 struct BlockCandidateResult {
     bool produced() const { return m_block.has_value(); }
     const core::Block& block() const { return *m_block; }
@@ -57,7 +84,7 @@ public:
     static BlockCandidateResult produce(
         node::NodeRuntime&                     runtime,
         const node::RuntimeBlockPipelineConfig& config,
-        std::vector<DoubleVoteEvidence> slashingEvidence = {}
+        PendingSlashingEvidenceBatch slashingEvidence = {}
     );
 };
 

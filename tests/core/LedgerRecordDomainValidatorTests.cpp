@@ -1,5 +1,6 @@
 #include "core/LedgerRecord.hpp"
 #include "core/LedgerRecordDomainValidator.hpp"
+#include "consensus/SlashingEvidence.hpp"
 #include "economics/GenesisRewardRecord.hpp"
 #include "economics/MintRecord.hpp"
 #include "economics/ProtectionEpoch.hpp"
@@ -215,6 +216,34 @@ void test_garbage_validator_penalty_payload_fails() {
     require(!result.valid, "Garbage VALIDATOR_PENALTY payload should fail domain validation.");
 }
 
+void test_valid_proposer_equivocation_slashing_evidence_passes() {
+    const consensus::ProposerEquivocationEvidence evidence(
+        "SignedBlockProposalMessage{schema=NODO_BLOCK_PROPOSAL_V1;blockHash=block-a}\nBlockA",
+        "SignedBlockProposalMessage{schema=NODO_BLOCK_PROPOSAL_V1;blockHash=block-b}\nBlockB",
+        "validator-proposer-alpha",
+        7,
+        2,
+        "block-a",
+        "block-b",
+        kTs
+    );
+    const LedgerRecord record = LedgerRecord::fromSlashingEvidencePayload(
+        evidence.evidenceId(), evidence.serialize(), kTs
+    );
+    const auto result = LedgerRecordDomainValidator::validate(record);
+    require(result.valid, "Valid proposer-equivocation SLASHING_EVIDENCE should pass domain validation.");
+}
+
+void test_unknown_slashing_payload_fails() {
+    const LedgerRecord record = buildRawRecord(
+        LedgerRecordType::SLASHING_EVIDENCE,
+        "slash-src",
+        "UnknownEvidence{}"
+    );
+    const auto result = LedgerRecordDomainValidator::validate(record);
+    require(!result.valid, "Unknown SLASHING_EVIDENCE payload should fail domain validation.");
+}
+
 } // namespace
 
 int main() {
@@ -231,6 +260,8 @@ int main() {
         test_garbage_genesis_reward_payload_fails();
         test_valid_validator_penalty_passes();
         test_garbage_validator_penalty_payload_fails();
+        test_valid_proposer_equivocation_slashing_evidence_passes();
+        test_unknown_slashing_payload_fails();
 
         std::cout << "ledger record domain validator tests passed\n";
         return 0;

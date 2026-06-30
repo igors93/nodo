@@ -31,8 +31,9 @@ Current limitations:
   for testnet development, but are not production networking yet;
 - slashing evidence and validator penalty decisions are implemented as
   auditable, idempotent protocol records; conflicting votes and conflicting
-  proposer-signed block proposals now become durable, gossipable evidence;
-  automatic production stake-slashing is still out of scope;
+  proposer-signed block proposals become durable, gossipable evidence, and
+  finalized evidence now applies deterministic penalties to the validator
+  penalty ledger, validator registry and staking registry;
 - the mempool exposes only each account's executable nonce frontier to block
   production while future nonces remain queued behind gaps;
 - balance, nonce, minimum fee, chain-bound transaction authorization and

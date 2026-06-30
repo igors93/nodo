@@ -13,7 +13,7 @@ Nodo's consensus foundation separates vote and round logic from transport and ec
 - block finalizer;
 - fork choice foundations;
 - slashing evidence for conflicting votes and proposer equivocation;
-- validator penalty decision foundations.
+- finalized slashing evidence applies deterministic validator penalties, registry jail/tombstone effects and bounded staking slash effects.
 
 ## Design Boundaries
 

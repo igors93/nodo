@@ -103,7 +103,7 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
     const Fixture base = fixture();
     auto run = [&](std::shared_ptr<node::ProtocolExecutionState> tracker) {
         auto factory = node::makeProtocolDomainExecutorFactory(
-            base.state, core::ValidatorSetHistory(), "localnet", tracker);
+            base.state, core::ValidatorSetHistory(), "localnet", "localnet", tracker);
         auto executor = factory();
         core::AccountStateView view = accounts();
 
@@ -191,7 +191,7 @@ void testValidatorRegistrationExitAndUnjail() {
     Fixture base = fixture();
     auto tracker = std::make_shared<node::ProtocolExecutionState>(base.state);
     auto factory = node::makeProtocolDomainExecutorFactory(
-        base.state, core::ValidatorSetHistory(), "localnet", tracker);
+        base.state, core::ValidatorSetHistory(), "localnet", "localnet", tracker);
     auto executor = factory();
     core::AccountStateView view = accounts();
 
@@ -228,7 +228,7 @@ void testValidatorRegistrationExitAndUnjail() {
     jailed.state.staking.setAccount(jailed.validatorAddress, stake);
     auto jailedTracker = std::make_shared<node::ProtocolExecutionState>(jailed.state);
     auto jailedFactory = node::makeProtocolDomainExecutorFactory(
-        jailed.state, core::ValidatorSetHistory(), "localnet", jailedTracker);
+        jailed.state, core::ValidatorSetHistory(), "localnet", "localnet", jailedTracker);
     auto jailedExecutor = jailedFactory();
     const auto unjailed = execute(
         tx(core::TransactionType::VALIDATOR_UNJAIL_REQUEST, jailed.validatorAddress, 0, 1),

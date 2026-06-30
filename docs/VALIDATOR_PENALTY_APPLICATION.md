@@ -35,13 +35,18 @@ It intentionally does not mutate balances directly inside consensus helpers. Ins
 - duplicate penalty application is idempotent;
 - stored decisions must deserialize back into valid decisions.
 
-## Not included yet
+## Canonical protocol effects
 
-- direct account balance mutation;
-- stake locking or stake accounting integration;
-- automatic validator registry deactivation;
-- governance appeals;
-- penalty inclusion into finalized block execution;
-- production-grade validator economics.
+Verified slashing evidence included in a finalized block now produces one deterministic
+`ValidatorPenaltyDecision` and applies the same consequence to all protocol domains
+in the canonical state transition:
 
-Those should be added after this decision boundary is stable and after staking state is explicit.
+- `ValidatorPenaltyLedger` records the decision once per evidence id;
+- `ValidatorRegistry` updates consensus stake and jail/tombstone status;
+- `StakingRegistry` applies the slashed total to stake positions and mirrors jail or tombstone state;
+- the resulting slashing, validator and staking domains are included in the protocol state root and replayed during reload.
+
+The transition remains conservative: evidence must already verify against the
+historical validator set, duplicated evidence is rejected, and slash amounts are
+bounded by bonded stake. Governance appeals and production-grade economics policy
+remain future protocol work.

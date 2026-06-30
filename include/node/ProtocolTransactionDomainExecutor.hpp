@@ -28,6 +28,7 @@ struct ProtocolExecutionState {
 core::TransactionDomainExecutorFactory makeProtocolDomainExecutorFactory(
     ProtocolExecutionState initialState,
     core::ValidatorSetHistory validatorSetHistory,
+    std::string chainId,
     std::string networkName,
     std::shared_ptr<ProtocolExecutionState> resultTracker
 );

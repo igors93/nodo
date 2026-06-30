@@ -5,9 +5,11 @@
 #include "consensus/ValidatorPenaltyApplication.hpp"
 #include "core/Block.hpp"
 #include "core/ValidatorRegistry.hpp"
+#include "node/StakingRegistry.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureProvider.hpp"
 
+#include <string>
 #include <vector>
 
 namespace nodo::node {
@@ -19,7 +21,16 @@ public:
         std::int64_t blockTimestamp
     );
 
-    static std::vector<consensus::DoubleVoteEvidence> evidenceFromBlock(
+    static core::LedgerRecord buildEvidenceRecord(
+        const consensus::ProposerEquivocationEvidence& evidence,
+        std::int64_t blockTimestamp
+    );
+
+    static std::vector<consensus::DoubleVoteEvidence> doubleVoteEvidenceFromBlock(
+        const core::Block& block
+    );
+
+    static std::vector<consensus::ProposerEquivocationEvidence> proposerEquivocationEvidenceFromBlock(
         const core::Block& block
     );
 
@@ -29,7 +40,9 @@ public:
         const crypto::CryptoPolicy& policy,
         const crypto::SignatureProvider& provider,
         consensus::ValidatorPenaltyLedger& penaltyLedger,
-        core::ValidatorRegistry& validators
+        core::ValidatorRegistry& validators,
+        StakingRegistry& staking,
+        const std::string& chainId
     );
 
     static void applyEvidenceRecords(
@@ -40,7 +53,9 @@ public:
         const crypto::CryptoPolicy& policy,
         const crypto::SignatureProvider& provider,
         consensus::ValidatorPenaltyLedger& penaltyLedger,
-        core::ValidatorRegistry& validators
+        core::ValidatorRegistry& validators,
+        StakingRegistry& staking,
+        const std::string& chainId
     );
 };
 

@@ -1,4 +1,7 @@
 #include "node/CanonicalSlashingTransition.hpp"
+#include "node/StakingRegistry.hpp"
+#include "economics/StakeAccount.hpp"
+#include "node/SignedBlockProposalMessage.hpp"
 
 #include "crypto/CryptoSuiteId.hpp"
 #include "crypto/KeyPair.hpp"
@@ -120,6 +123,18 @@ void testAppliesVerifiedEvidenceOnce() {
     );
 
     consensus::ValidatorPenaltyLedger ledger;
+    node::StakingRegistry staking;
+    staking.setAccount(
+        key.address().value(),
+        economics::StakeAccount(
+            key.address().value(),
+            utils::Amount::fromRawUnits(
+                static_cast<std::int64_t>(
+                    core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS
+                )
+            )
+        )
+    );
     const core::LedgerRecord record =
         node::CanonicalSlashingTransition::buildEvidenceRecord(
             evidence, kTimestamp + 3
@@ -138,7 +153,9 @@ void testAppliesVerifiedEvidenceOnce() {
         crypto::CryptoPolicy::developmentPolicy(),
         provider,
         ledger,
-        validators
+        validators,
+        staking,
+        "chain-localnet"
     );
 
     require(
@@ -151,6 +168,13 @@ void testAppliesVerifiedEvidenceOnce() {
         entry != nullptr && entry->jailed(),
         "Double-voting validator must be jailed."
     );
+    const economics::StakeAccount* stakeAccount =
+        staking.accountFor(key.address().value());
+    require(
+        stakeAccount != nullptr && stakeAccount->jailed() &&
+        stakeAccount->slashedAmount().rawUnits() == static_cast<std::int64_t>(core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS),
+        "Double-voting validator must be slashed and jailed in staking."
+    );
 
     bool duplicateRejected = false;
     try {
@@ -162,7 +186,9 @@ void testAppliesVerifiedEvidenceOnce() {
             crypto::CryptoPolicy::developmentPolicy(),
             provider,
             ledger,
-            validators
+            validators,
+            staking,
+            "chain-localnet"
         );
     } catch (const std::invalid_argument&) {
         duplicateRejected = true;
@@ -173,11 +199,148 @@ void testAppliesVerifiedEvidenceOnce() {
     );
 }
 
+core::Block signedProposalBlock(
+    const consensus::DoubleVoteEvidence& seedEvidence,
+    std::int64_t timestamp,
+    char stateRootChar
+) {
+    const core::LedgerRecord record =
+        node::CanonicalSlashingTransition::buildEvidenceRecord(
+            seedEvidence, timestamp
+        );
+    return core::Block(
+        1,
+        "previous-proposal-block",
+        {record},
+        timestamp,
+        std::string(64, stateRootChar),
+        std::string(64, stateRootChar == 'a' ? 'b' : 'c')
+    );
+}
+
+consensus::ProposerEquivocationEvidence proposerEvidenceFor(
+    const crypto::KeyPair& key,
+    const TestBlsSignatureProvider& provider
+) {
+    const consensus::DoubleVoteEvidence seedEvidence = evidenceFor(key, provider);
+    const core::Block firstBlock = signedProposalBlock(seedEvidence, kTimestamp + 4, 'a');
+    const core::Block secondBlock = signedProposalBlock(seedEvidence, kTimestamp + 5, 'd');
+    const node::SignedBlockProposalMessage firstProposal =
+        node::SignedBlockProposalMessage::sign(
+            firstBlock,
+            key.address().value(),
+            key.publicKey(),
+            key.privateKeyForSigningOnly(),
+            1,
+            kTimestamp + 6,
+            provider
+        );
+    const node::SignedBlockProposalMessage secondProposal =
+        node::SignedBlockProposalMessage::sign(
+            secondBlock,
+            key.address().value(),
+            key.publicKey(),
+            key.privateKeyForSigningOnly(),
+            1,
+            kTimestamp + 7,
+            provider
+        );
+    return consensus::ProposerEquivocationEvidence(
+        firstProposal.serialize(),
+        secondProposal.serialize(),
+        key.address().value(),
+        1,
+        1,
+        firstBlock.hash(),
+        secondBlock.hash(),
+        kTimestamp + 8
+    );
+}
+
+void testAppliesProposerEquivocationAsTombstoneAndStakeSlash() {
+    const crypto::KeyPair key = validatorKey();
+    const TestBlsSignatureProvider provider;
+    const consensus::ProposerEquivocationEvidence evidence =
+        proposerEvidenceFor(key, provider);
+
+    core::ValidatorRegistry validators;
+    const core::ValidatorRegistrationRecord registration(
+        key.address().value(),
+        key.publicKey(),
+        1,
+        "canonical-proposer-equivocation-validator",
+        kTimestamp
+    );
+    require(
+        validators.registerValidator(registration).success(),
+        "Test proposer must register."
+    );
+
+    core::ValidatorSetHistory history;
+    require(
+        history.recordSet(1, validators),
+        "Historical proposer validator set must be recorded."
+    );
+
+    consensus::ValidatorPenaltyLedger ledger;
+    node::StakingRegistry staking;
+    staking.setAccount(
+        key.address().value(),
+        economics::StakeAccount(
+            key.address().value(),
+            utils::Amount::fromRawUnits(
+                static_cast<std::int64_t>(
+                    core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS
+                )
+            )
+        )
+    );
+
+    const core::LedgerRecord record =
+        node::CanonicalSlashingTransition::buildEvidenceRecord(
+            evidence, kTimestamp + 9
+        );
+    node::CanonicalSlashingTransition::applyEvidenceRecords(
+        {record},
+        2,
+        kTimestamp + 9,
+        history,
+        crypto::CryptoPolicy::developmentPolicy(),
+        provider,
+        ledger,
+        validators,
+        staking,
+        "chain-localnet"
+    );
+
+    require(
+        ledger.size() == 1 && ledger.validatorIsTombstoned(key.address().value()),
+        "Proposer equivocation must create one tombstone penalty."
+    );
+    const core::ValidatorRegistryEntry* entry =
+        validators.entryForAddress(key.address().value());
+    require(
+        entry != nullptr && entry->exited(),
+        "Equivocating proposer must be removed from consensus."
+    );
+    const economics::StakeAccount* stakeAccount =
+        staking.accountFor(key.address().value());
+    require(
+        stakeAccount != nullptr && stakeAccount->tombstoned() &&
+        stakeAccount->slashedAmount().rawUnits() ==
+            static_cast<std::int64_t>(
+                core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS
+            ),
+        "Equivocating proposer must be tombstoned and fully slash bounded stake."
+    );
+}
+
 } // namespace
 
 int main() {
     try {
         testAppliesVerifiedEvidenceOnce();
+        testAppliesProposerEquivocationAsTombstoneAndStakeSlash();
         std::cout << "Canonical slashing transition tests passed.\n";
         return 0;
     } catch (const std::exception& error) {

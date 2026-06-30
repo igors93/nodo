@@ -2,6 +2,7 @@
 #include "consensus/BlockProductionPhase.hpp"
 #include "consensus/BlockVotingPhase.hpp"
 #include "config/NetworkParameters.hpp"
+#include "economics/StakeAccount.hpp"
 #include "core/StateRootCalculator.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/KeyPair.hpp"
@@ -243,6 +244,20 @@ void testEvidenceIsFinalizedByTheNextBlock() {
     require(
         offenderEntry != nullptr && offenderEntry->jailed(),
         "The offending validator must be jailed for the next height."
+    );
+    const economics::StakeAccount* offenderStake =
+        runtime.stakingRegistry().accountFor(offender);
+    require(
+        offenderStake != nullptr && offenderStake->jailed() &&
+        offenderStake->slashedAmount().rawUnits() == static_cast<std::int64_t>(core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS),
+        "The offending validator stake must be slashed and jailed deterministically."
+    );
+    require(
+        runtime.stakingRegistry().activeStakeFor(offender).rawUnits() <
+            static_cast<std::int64_t>(
+                core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS
+            ),
+        "The offending validator active stake must drop below the consensus minimum."
     );
     require(
         runtime.validatorRegistry().activeCount() == 1,

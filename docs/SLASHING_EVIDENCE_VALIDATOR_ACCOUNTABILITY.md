@@ -3,9 +3,10 @@
 This phase adds the first slashing evidence and validator-accountability boundary
 for Nodo.
 
-It does not apply economic penalties yet. The goal is to make validator
-misbehavior provable, durable and shareable before penalty rules are connected to
-balances or staking state.
+It now connects verified, finalized evidence to deterministic protocol penalties.
+The goal is to make validator misbehavior provable, durable, shareable and then
+reflected consistently in the penalty ledger, validator registry and staking
+registry.
 
 ## Added modules
 

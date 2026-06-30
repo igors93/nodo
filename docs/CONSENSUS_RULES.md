@@ -66,3 +66,8 @@ the network; after restart, the event loop may resubmit/rebroadcast that same
 record for the matching height, round and block. A recovery state that claims a
 vote without the signed vote is invalid because it prevents double-voting but can
 leave the validator unable to make progress.
+
+
+## Finalized slashing penalties
+
+When verified double-vote or proposer-equivocation evidence is included in a finalized block, the canonical state transition must apply exactly one penalty decision for that evidence id. The effect is committed across three domains: `ValidatorPenaltyLedger` records the decision, `ValidatorRegistry` updates consensus eligibility through jail or tombstone, and `StakingRegistry` applies the bounded slash amount and mirrors jail/tombstone state. Duplicate evidence is rejected before it can produce a second penalty.

@@ -899,7 +899,11 @@ bool NodeOrchestrator::startConsensus() {
             ).count();
             try {
                 for (const consensus::DoubleVoteEvidence& evidence :
-                     CanonicalSlashingTransition::evidenceFromBlock(block)) {
+                     CanonicalSlashingTransition::doubleVoteEvidenceFromBlock(block)) {
+                    m_evidencePool.removeEvidence(evidence.evidenceId());
+                }
+                for (const consensus::ProposerEquivocationEvidence& evidence :
+                     CanonicalSlashingTransition::proposerEquivocationEvidenceFromBlock(block)) {
                     m_evidencePool.removeEvidence(evidence.evidenceId());
                 }
             } catch (const std::exception& e) {
@@ -1023,8 +1027,11 @@ std::optional<core::Block> NodeOrchestrator::produceBlock(
     // Production only — no voting, no QC, no finalization.
     // ConsensusEventLoop is responsible for adding the block to the chain,
     // broadcasting the proposal, voting, and finalizing.
-    const std::vector<consensus::DoubleVoteEvidence> pendingEvidence =
+    consensus::PendingSlashingEvidenceBatch pendingEvidence;
+    pendingEvidence.doubleVotes =
         m_evidencePool.doubleVoteEvidenceBeforeHeight(height);
+    pendingEvidence.proposerEquivocations =
+        m_evidencePool.proposerEquivocationEvidenceBeforeHeight(height);
     const std::size_t minimumTransactions =
         pendingEvidence.empty() ? 1U : 0U;
     const RuntimeBlockPipelineConfig pipelineConfig(

@@ -203,6 +203,19 @@ std::vector<DoubleVoteEvidence> EvidencePool::doubleVoteEvidenceBeforeHeight(
     return evidence;
 }
 
+std::vector<ProposerEquivocationEvidence> EvidencePool::proposerEquivocationEvidenceBeforeHeight(
+    std::uint64_t blockHeight
+) const {
+    std::vector<ProposerEquivocationEvidence> evidence;
+    for (const auto& [id, value] : m_proposerEquivocationEvidenceById) {
+        (void)id;
+        if (value.blockIndex() < blockHeight) {
+            evidence.push_back(value);
+        }
+    }
+    return evidence;
+}
+
 bool EvidencePool::removeEvidence(const std::string& evidenceId) {
     const bool removed = m_evidenceById.erase(evidenceId) > 0;
     m_doubleVoteEvidenceById.erase(evidenceId);

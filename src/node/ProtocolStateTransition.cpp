@@ -257,6 +257,7 @@ core::StateTransitionPreviewContext ProtocolStateTransition::contextFromReplaySt
         makeProtocolDomainExecutorFactory(
             state.execution,
             state.validatorSetHistory,
+            params.chainId(),
             params.networkName(),
             std::move(resultTracker)
         ),

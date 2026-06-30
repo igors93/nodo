@@ -25,10 +25,12 @@ public:
     ProtocolTransactionDomainExecutor(
         ProtocolExecutionState state,
         core::ValidatorSetHistory validatorSetHistory,
+        std::string chainId,
         std::string networkName,
         std::shared_ptr<ProtocolExecutionState> tracker
     ) : m_state(std::move(state)), m_validatorSetHistory(std::move(validatorSetHistory)),
-        m_networkName(std::move(networkName)), m_tracker(std::move(tracker)),
+        m_chainId(std::move(chainId)), m_networkName(std::move(networkName)),
+        m_tracker(std::move(tracker)),
         m_burnRecords(m_state.burns) {
         refreshDomains();
     }
@@ -237,7 +239,8 @@ public:
             CanonicalSlashingTransition::applyEvidenceRecords(
                 protocolRecords, blockHeight, blockTimestamp, m_validatorSetHistory,
                 cryptoContext.policy(), cryptoContext.signatureProvider(),
-                m_state.penaltyLedger, m_state.validators
+                m_state.penaltyLedger, m_state.validators, m_state.staking,
+                m_chainId
             );
             synchronizePenaltyState(blockHeight, blockTimestamp);
             m_state.staking.activatePending(blockHeight + 1);
@@ -253,6 +256,7 @@ public:
 private:
     ProtocolExecutionState m_state;
     core::ValidatorSetHistory m_validatorSetHistory;
+    std::string m_chainId;
     std::string m_networkName;
     std::shared_ptr<ProtocolExecutionState> m_tracker;
     std::vector<economics::BurnRecord> m_burnRecords;
@@ -403,13 +407,15 @@ std::map<std::string, std::string> protocolExecutionDomains(
 core::TransactionDomainExecutorFactory makeProtocolDomainExecutorFactory(
     ProtocolExecutionState initialState,
     core::ValidatorSetHistory validatorSetHistory,
+    std::string chainId,
     std::string networkName,
     std::shared_ptr<ProtocolExecutionState> resultTracker
 ) {
     return [state = std::move(initialState), history = std::move(validatorSetHistory),
-            network = std::move(networkName), tracker = std::move(resultTracker)]() mutable {
+            chain = std::move(chainId), network = std::move(networkName),
+            tracker = std::move(resultTracker)]() mutable {
         return std::make_unique<ProtocolTransactionDomainExecutor>(
-            state, history, network, tracker
+            state, history, chain, network, tracker
         );
     };
 }

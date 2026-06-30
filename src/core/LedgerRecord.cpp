@@ -349,7 +349,8 @@ LedgerRecord LedgerRecord::fromSlashingEvidencePayload(
     std::int64_t timestamp
 ) {
     if (evidenceId.empty() ||
-        payload.rfind("DoubleVoteEvidence{", 0) != 0 ||
+        (payload.rfind("DoubleVoteEvidence{", 0) != 0 &&
+         payload.rfind("ProposerEquivocationEvidence{", 0) != 0) ||
         timestamp <= 0) {
         throw std::invalid_argument(
             "Invalid slashing evidence payload rejected by LedgerRecord."

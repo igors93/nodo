@@ -208,7 +208,8 @@ void LedgerRecordCodec::assertSafePayloadPrefixForType(
             return;
 
         case core::LedgerRecordType::SLASHING_EVIDENCE:
-            if (payload.rfind("DoubleVoteEvidence{", 0) != 0) {
+            if (payload.rfind("DoubleVoteEvidence{", 0) != 0 &&
+                payload.rfind("ProposerEquivocationEvidence{", 0) != 0) {
                 throw std::invalid_argument(
                     "SLASHING_EVIDENCE LedgerRecord payload type mismatch."
                 );

@@ -125,25 +125,47 @@ LedgerRecordDomainValidator::Result LedgerRecordDomainValidator::validateSlashin
     const LedgerRecord& record
 ) {
     try {
-        const consensus::DoubleVoteEvidence evidence =
-            consensus::DoubleVoteEvidence::deserialize(record.payload());
-        const consensus::SlashingEvidenceValidationResult validation =
-            consensus::SlashingEvidenceVerifier::validateDoubleVoteStructure(
-                evidence
-            );
-        if (!validation.accepted() ||
-            record.sourceId() != evidence.evidenceId()) {
-            return Result::fail(
-                "SLASHING_EVIDENCE record does not contain canonical double-vote evidence."
-            );
+        if (hasPrefix(record.payload(), "DoubleVoteEvidence{")) {
+            const consensus::DoubleVoteEvidence evidence =
+                consensus::DoubleVoteEvidence::deserialize(record.payload());
+            const consensus::SlashingEvidenceValidationResult validation =
+                consensus::SlashingEvidenceVerifier::validateDoubleVoteStructure(
+                    evidence
+                );
+            if (!validation.accepted() ||
+                record.sourceId() != evidence.evidenceId()) {
+                return Result::fail(
+                    "SLASHING_EVIDENCE record does not contain canonical double-vote evidence."
+                );
+            }
+            return Result::ok();
         }
+
+        if (hasPrefix(record.payload(), "ProposerEquivocationEvidence{")) {
+            const consensus::ProposerEquivocationEvidence evidence =
+                consensus::ProposerEquivocationEvidence::deserialize(record.payload());
+            const consensus::SlashingEvidenceValidationResult validation =
+                consensus::SlashingEvidenceVerifier::validateProposerEquivocationStructure(
+                    evidence
+                );
+            if (!validation.accepted() ||
+                record.sourceId() != evidence.evidenceId()) {
+                return Result::fail(
+                    "SLASHING_EVIDENCE record does not contain canonical proposer-equivocation evidence."
+                );
+            }
+            return Result::ok();
+        }
+
+        return Result::fail(
+            "SLASHING_EVIDENCE record has an unknown evidence payload type."
+        );
     } catch (const std::exception& error) {
         return Result::fail(
             std::string("SLASHING_EVIDENCE payload failed validation: ") +
             error.what()
         );
     }
-    return Result::ok();
 }
 
 // static

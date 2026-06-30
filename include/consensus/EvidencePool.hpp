@@ -50,6 +50,10 @@ public:
         std::uint64_t blockHeight
     ) const;
 
+    std::vector<ProposerEquivocationEvidence> proposerEquivocationEvidenceBeforeHeight(
+        std::uint64_t blockHeight
+    ) const;
+
     bool removeEvidence(const std::string& evidenceId);
 
     std::vector<SlashingEvidenceRecord> evidenceForValidator(

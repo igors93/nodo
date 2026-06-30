@@ -33,7 +33,7 @@ std::int64_t effectiveMinFeeRaw(const node::NodeRuntime& runtime) {
 BlockCandidateResult BlockProductionPhase::produce(
     node::NodeRuntime&                      runtime,
     const node::RuntimeBlockPipelineConfig& config,
-    std::vector<DoubleVoteEvidence> slashingEvidence
+    PendingSlashingEvidenceBatch slashingEvidence
 ) {
     if (!config.isValid()) {
         return BlockCandidateResult::failed("Runtime block pipeline config is invalid.");
@@ -106,9 +106,17 @@ BlockCandidateResult BlockProductionPhase::produce(
         );
     }
     std::sort(
-        slashingEvidence.begin(),
-        slashingEvidence.end(),
+        slashingEvidence.doubleVotes.begin(),
+        slashingEvidence.doubleVotes.end(),
         [](const DoubleVoteEvidence& left, const DoubleVoteEvidence& right) {
+            return left.evidenceId() < right.evidenceId();
+        }
+    );
+    std::sort(
+        slashingEvidence.proposerEquivocations.begin(),
+        slashingEvidence.proposerEquivocations.end(),
+        [](const ProposerEquivocationEvidence& left,
+           const ProposerEquivocationEvidence& right) {
             return left.evidenceId() < right.evidenceId();
         }
     );
@@ -118,13 +126,31 @@ BlockCandidateResult BlockProductionPhase::produce(
         : std::vector<core::LedgerRecord>{};
     std::size_t transactionRecordCount = records.size();
     try {
-        for (const DoubleVoteEvidence& evidence : slashingEvidence) {
-            records.push_back(
+        std::vector<core::LedgerRecord> evidenceRecords;
+        evidenceRecords.reserve(slashingEvidence.size());
+        for (const DoubleVoteEvidence& evidence : slashingEvidence.doubleVotes) {
+            evidenceRecords.push_back(
                 node::CanonicalSlashingTransition::buildEvidenceRecord(
                     evidence, config.timestamp()
                 )
             );
         }
+        for (const ProposerEquivocationEvidence& evidence :
+             slashingEvidence.proposerEquivocations) {
+            evidenceRecords.push_back(
+                node::CanonicalSlashingTransition::buildEvidenceRecord(
+                    evidence, config.timestamp()
+                )
+            );
+        }
+        std::sort(
+            evidenceRecords.begin(),
+            evidenceRecords.end(),
+            [](const core::LedgerRecord& left, const core::LedgerRecord& right) {
+                return left.sourceId() < right.sourceId();
+            }
+        );
+        records.insert(records.end(), evidenceRecords.begin(), evidenceRecords.end());
     } catch (const std::exception& error) {
         return BlockCandidateResult::failed(error.what());
     }
