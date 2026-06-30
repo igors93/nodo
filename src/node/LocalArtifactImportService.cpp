@@ -4,6 +4,7 @@
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "node/FinalizedArtifactValidationContext.hpp"
 #include "node/FinalizedArtifactValidator.hpp"
+#include "node/FinalizedSlashingEvidenceAudit.hpp"
 #include "node/FinalityArtifactValidator.hpp"
 #include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedBlockStore.hpp"

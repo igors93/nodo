@@ -474,7 +474,9 @@ void NodeOrchestrator::tick(std::int64_t now) {
                         *m_runtime,
                         m_config.dataDirectory(),
                         &cpStore,
-                        now
+                        now,
+                        &m_evidencePool,
+                        m_slashingEvidenceStore.get()
                     );
 
                 if (applyResult.applied()) {

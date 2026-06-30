@@ -62,3 +62,7 @@ once state snapshot creation and hash verification are complete.
 
 Those should be implemented after this boundary is stable and after the real
 block storage format is made fully canonical.
+
+## Slashing evidence and penalty audit
+
+Persistent block sync treats finalized slashing evidence as block data, not as optional gossip state. During finalized-batch import, each block is committed through the canonical runtime pipeline and then audited: every finalized evidence id must have a matching penalty decision, validator jail/tombstone status and bounded staking slash effect. Pending local evidence with the same id is pruned from the evidence pool/store after the batch checkpoint is safely persisted.

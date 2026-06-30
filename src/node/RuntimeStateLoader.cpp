@@ -5,6 +5,7 @@
 #include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedArtifactValidationContext.hpp"
 #include "node/FinalizedArtifactValidator.hpp"
+#include "node/FinalizedSlashingEvidenceAudit.hpp"
 #include "node/FinalityArtifactValidator.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
@@ -352,6 +353,17 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             }
             runtime.mutableSupplyState().applyFinalizedDelta(artifact.supplyDelta());
             ProtocolStateTransition::applyReplayDomainsToRuntime(runtime, replayState);
+
+            const FinalizedSlashingEvidenceAuditResult slashingAudit =
+                FinalizedSlashingEvidenceAudit::auditBlockEffects(
+                    artifact.block(),
+                    runtime.validatorPenaltyLedger(),
+                    runtime.validatorRegistry(),
+                    runtime.stakingRegistry()
+                );
+            if (!slashingAudit.passed()) {
+                throw std::logic_error(slashingAudit.reason());
+            }
         } catch (const std::exception& error) {
             return RuntimeStateLoadResult::rejected(
                 RuntimeStateLoadStatus::BLOCK_FILE_INVALID,

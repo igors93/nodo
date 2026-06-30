@@ -84,3 +84,7 @@ Validator vote persistence is vote-material based. The node never treats a
 boolean `already voted` flag as sufficient recovery proof; the recovery file must
 contain the canonical signed PREVOTE/PRECOMMIT record so restart can replay the
 same vote without producing a different one.
+
+## Finalized slashing evidence sync
+
+`SLASHING_EVIDENCE` records are part of the finalized block payload. A node that did not receive the original `SLASHING_EVIDENCE_ANNOUNCE` can still verify the evidence during block sync because the canonical state transition replays those records and applies the deterministic penalty. Finalized import and reload audit the resulting `ValidatorPenaltyLedger`, `ValidatorRegistry` and `StakingRegistry` before accepting the synced state root.

@@ -50,3 +50,7 @@ The transition remains conservative: evidence must already verify against the
 historical validator set, duplicated evidence is rejected, and slash amounts are
 bounded by bonded stake. Governance appeals and production-grade economics policy
 remain future protocol work.
+
+## Finalized sync requirement
+
+Penalty application is now audited on all finalized-state entry points. Local finalization, block-sync import, local artifact import and reload all reject a finalized block if any included slashing evidence lacks its deterministic penalty decision or if the validator registry/staking registry do not reflect the finalized jail, tombstone or bounded slash effect.

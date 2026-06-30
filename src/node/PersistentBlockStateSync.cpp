@@ -5,6 +5,9 @@
 #include "core/ProtocolLimits.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "node/FinalizedBlockStore.hpp"
+#include "node/FinalizedSlashingEvidenceAudit.hpp"
+#include "node/CanonicalSlashingTransition.hpp"
+#include "storage/SlashingEvidenceStore.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "serialization/BlockCodec.hpp"
@@ -75,6 +78,56 @@ std::map<std::string, std::string> parseCheckpointFields(const std::string& seri
     }
 
     return fields;
+}
+
+
+std::vector<std::string> finalizedSlashingEvidenceIds(const core::Block& block) {
+    std::vector<std::string> ids;
+    for (const consensus::DoubleVoteEvidence& evidence :
+         CanonicalSlashingTransition::doubleVoteEvidenceFromBlock(block)) {
+        ids.push_back(evidence.evidenceId());
+    }
+    for (const consensus::ProposerEquivocationEvidence& evidence :
+         CanonicalSlashingTransition::proposerEquivocationEvidenceFromBlock(block)) {
+        ids.push_back(evidence.evidenceId());
+    }
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    return ids;
+}
+
+bool removeFinalizedSlashingEvidenceFromPendingStores(
+    const std::vector<core::Block>& finalizedBlocks,
+    consensus::EvidencePool* pendingEvidencePool,
+    storage::SlashingEvidenceStore* pendingEvidenceStore,
+    std::string& reason
+) {
+    try {
+        for (const core::Block& block : finalizedBlocks) {
+            for (const std::string& evidenceId : finalizedSlashingEvidenceIds(block)) {
+                bool removedFromPool = true;
+                if (pendingEvidencePool != nullptr &&
+                    pendingEvidencePool->contains(evidenceId)) {
+                    removedFromPool = pendingEvidencePool->removeEvidence(evidenceId);
+                }
+                if (!removedFromPool) {
+                    reason = "Finalized slashing evidence could not be removed from pending pool: " + evidenceId;
+                    return false;
+                }
+
+                if (pendingEvidenceStore != nullptr &&
+                    pendingEvidenceStore->contains(evidenceId) &&
+                    !pendingEvidenceStore->erase(evidenceId)) {
+                    reason = "Finalized slashing evidence could not be removed from pending store: " + evidenceId;
+                    return false;
+                }
+            }
+        }
+    } catch (const std::exception& error) {
+        reason = std::string("Finalized slashing evidence cleanup failed: ") + error.what();
+        return false;
+    }
+    return true;
 }
 
 std::string requireField(
@@ -1143,7 +1196,9 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importFinalizedBatch(
     NodeRuntime& runtime,
     const NodeDataDirectoryConfig& directoryConfig,
     PersistentSyncCheckpointStore* checkpointStore,
-    std::int64_t now
+    std::int64_t now,
+    consensus::EvidencePool* pendingEvidencePool,
+    storage::SlashingEvidenceStore* pendingEvidenceStore
 ) {
     if (!checkpoint.isValid() || !batch.isValid() || !runtime.isValid() ||
         !directoryConfig.isValid() || now <= 0 ||
@@ -1172,7 +1227,9 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importFinalizedBatch(
 
     NodeRuntime stagedRuntime = runtime;
     std::vector<RuntimeBlockPipelineResult> stagedResults;
+    std::vector<core::Block> stagedImportedBlocks;
     stagedResults.reserve(batch.items().size());
+    stagedImportedBlocks.reserve(batch.items().size());
 
     for (const PersistentBlockSyncItem& item : batch.items()) {
         try {
@@ -1244,6 +1301,25 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importFinalizedBatch(
                     std::nullopt
                 );
             }
+
+            const FinalizedSlashingEvidenceAuditResult slashingAudit =
+                FinalizedSlashingEvidenceAudit::auditBlockEffects(
+                    block,
+                    stagedRuntime.validatorPenaltyLedger(),
+                    stagedRuntime.validatorRegistry(),
+                    stagedRuntime.stakingRegistry()
+                );
+            if (!slashingAudit.passed()) {
+                return PersistentSyncApplyResult(
+                    PersistentSyncApplyStatus::REJECTED,
+                    "Finalized sync slashing audit failed at height " +
+                        std::to_string(item.height()) + ": " +
+                        slashingAudit.reason(),
+                    std::nullopt
+                );
+            }
+
+            stagedImportedBlocks.push_back(block);
             stagedResults.push_back(std::move(result));
         } catch (const std::exception& error) {
             return PersistentSyncApplyResult(
@@ -1276,6 +1352,19 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importFinalizedBatch(
         return PersistentSyncApplyResult(
             PersistentSyncApplyStatus::REJECTED,
             "Finalized sync batch produced an invalid checkpoint.",
+            std::nullopt
+        );
+    }
+
+    std::string evidenceCleanupReason;
+    if (!removeFinalizedSlashingEvidenceFromPendingStores(
+            stagedImportedBlocks,
+            pendingEvidencePool,
+            pendingEvidenceStore,
+            evidenceCleanupReason)) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            evidenceCleanupReason,
             std::nullopt
         );
     }

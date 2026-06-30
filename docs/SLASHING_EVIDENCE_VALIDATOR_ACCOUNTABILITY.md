@@ -51,3 +51,7 @@ first prove that evidence is:
 
 Penalty application should come in the next phase, after this evidence boundary is
 stable.
+
+## Sync/reload audit boundary
+
+Peers that missed the live evidence gossip are still accountable to finalized evidence. The finalized block contains the canonical evidence payload, and reload/import verifies that it generated the expected penalty decision and domain effects. Pending evidence is only a pre-finalization transport/cache layer; once the evidence appears in a finalized block, the validator penalty ledger plus registry/staking state become the source of truth.

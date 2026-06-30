@@ -375,3 +375,7 @@ Contribution expectations:
 ## License
 
 No repository license file is currently present. Until a license is added, do not assume open-source redistribution rights beyond what GitHub access permits.
+
+### Finalized slashing evidence sync audit
+
+Finalized block sync no longer depends on a peer having seen the original slashing-evidence gossip. When a synchronized finalized block carries `SLASHING_EVIDENCE` records, the import path replays the block, verifies that each evidence id produced exactly one `ValidatorPenaltyDecision`, and audits that `ValidatorRegistry` and `StakingRegistry` mirror the finalized jail/tombstone/slash effects before publishing the new runtime state. Evidence that was still pending locally is removed from the pending evidence store once its penalty is finalized by block sync.

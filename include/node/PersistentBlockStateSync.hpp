@@ -1,6 +1,7 @@
 #ifndef NODO_NODE_PERSISTENT_BLOCK_STATE_SYNC_HPP
 #define NODO_NODE_PERSISTENT_BLOCK_STATE_SYNC_HPP
 
+#include "consensus/EvidencePool.hpp"
 #include "core/Blockchain.hpp"
 #include "core/ProtocolLimits.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
@@ -15,6 +16,10 @@
 #include <optional>
 #include <string>
 #include <vector>
+
+namespace nodo::storage {
+class SlashingEvidenceStore;
+}
 
 namespace nodo::node {
 
@@ -377,7 +382,9 @@ public:
         NodeRuntime& runtime,
         const NodeDataDirectoryConfig& directoryConfig,
         PersistentSyncCheckpointStore* checkpointStore,
-        std::int64_t now
+        std::int64_t now,
+        consensus::EvidencePool* pendingEvidencePool = nullptr,
+        storage::SlashingEvidenceStore* pendingEvidenceStore = nullptr
     );
 
     /*

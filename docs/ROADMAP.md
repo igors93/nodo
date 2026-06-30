@@ -500,3 +500,5 @@ no critical security finding open.
 - No governance decision accepted without verifiable vote evidence.
 - No monetary expansion without a canonical authorized emission record.
 - No mainnet genesis before an external security audit is published.
+
+- Finalized slashing sync audit: peers that miss evidence gossip can import finalized blocks carrying `SLASHING_EVIDENCE`, replay the canonical penalty transition, prune pending evidence, and reject any artifact or sync batch whose penalty ledger, validator registry or staking registry diverges.

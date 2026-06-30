@@ -2,6 +2,7 @@
 
 #include "node/FeeEconomics.hpp"
 #include "node/FinalizedBlockStore.hpp"
+#include "node/FinalizedSlashingEvidenceAudit.hpp"
 #include "node/ProtocolStateTransition.hpp"
 #include "node/RuntimeMonetaryValidation.hpp"
 #include "node/StakingRegistry.hpp"
@@ -2141,6 +2142,21 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         runtime.mutableValidatorRegistry() = executionTracker->validators;
         runtime.mutableValidatorPenaltyLedger() = executionTracker->penaltyLedger;
         runtime.mutableStakingRegistry() = executionTracker->staking;
+
+        const FinalizedSlashingEvidenceAuditResult slashingAudit =
+            FinalizedSlashingEvidenceAudit::auditBlockEffects(
+                block,
+                runtime.validatorPenaltyLedger(),
+                runtime.validatorRegistry(),
+                runtime.stakingRegistry()
+            );
+        if (!slashingAudit.passed()) {
+            throw std::logic_error(
+                "Finalized slashing evidence audit failed: " +
+                slashingAudit.reason()
+            );
+        }
+
         removeFinalizedTransactionsFromMempool(
             runtime, finalizedTransactionIds
         );
