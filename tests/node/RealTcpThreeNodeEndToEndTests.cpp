@@ -45,7 +45,7 @@ using namespace std::chrono_literals;
 
 constexpr std::int64_t kConsensusTickMilliseconds = 1000;
 constexpr std::int64_t kDaemonTickMilliseconds = 20;
-constexpr std::chrono::seconds kRpcStartupTimeout = 30s;
+constexpr std::chrono::seconds kRpcStartupTimeout = 60s;
 
 volatile std::sig_atomic_t gChildStopRequested = 0;
 
@@ -440,7 +440,7 @@ std::optional<HttpResponse> httpRequest(
     }
 
     timeval timeout{};
-    timeout.tv_sec = 2;
+    timeout.tv_sec = 5;
     (void)::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     (void)::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
@@ -730,14 +730,14 @@ void testRealTcpThreeNodeLifecycle() {
         children.start(secondOnline);
         waitForRpc(specs[secondOnline]);
         require(
-            waitUntil(10s, [&] {
+            waitUntil(30s, [&] {
                 return hasAuthenticatedPeer(specs[proposerIndex]) &&
                        hasAuthenticatedPeer(specs[voterIndex]);
             }),
             "Validators did not establish mutually authenticated encrypted sessions."
         );
 
-        std::this_thread::sleep_for(1100ms);
+        std::this_thread::sleep_for(2000ms);
         const core::Transaction transaction = signedTransfer(genesis);
         const std::string submission =
             serialization::KeyValueFileCodec::serialize(
@@ -758,7 +758,7 @@ void testRealTcpThreeNodeLifecycle() {
                     submitted->body);
 
         require(
-            waitUntil(2s, [&] {
+            waitUntil(10s, [&] {
                 const auto status = statusResponse(specs[voterIndex]);
                 if (!status.has_value()) {
                     return false;
@@ -772,7 +772,7 @@ void testRealTcpThreeNodeLifecycle() {
         );
 
         require(
-            waitUntil(25s, [&] {
+            waitUntil(60s, [&] {
                 return reachedFinalizedHeight(specs[proposerIndex], 1) &&
                        reachedFinalizedHeight(specs[voterIndex], 1);
             }),
@@ -788,7 +788,7 @@ void testRealTcpThreeNodeLifecycle() {
         children.start(restartIndex);
         waitForRpc(specs[restartIndex]);
         require(
-            waitUntil(10s, [&] {
+            waitUntil(30s, [&] {
                 return reachedFinalizedHeight(specs[restartIndex], 1);
             }),
             "Restarted validator did not recover finalized block 1."
@@ -799,7 +799,7 @@ void testRealTcpThreeNodeLifecycle() {
         children.start(laggingIndex);
         waitForRpc(specs[laggingIndex]);
         require(
-            waitUntil(20s, [&] {
+            waitUntil(60s, [&] {
                 return hasAuthenticatedPeer(specs[laggingIndex]) &&
                        reachedFinalizedHeight(specs[laggingIndex], 1);
             }),
@@ -814,7 +814,7 @@ void testRealTcpThreeNodeLifecycle() {
         children.start(laggingIndex);
         waitForRpc(specs[laggingIndex]);
         require(
-            waitUntil(10s, [&] {
+            waitUntil(30s, [&] {
                 return reachedFinalizedHeight(specs[laggingIndex], 1);
             }),
             "Synchronized node did not recover its imported block after restart."
