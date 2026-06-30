@@ -3,10 +3,12 @@
 
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "consensus/VotePool.hpp"
+#include "consensus/SlashingEvidence.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureProvider.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,15 +29,21 @@ std::string voteCollectStatusToString(VoteCollectStatus status);
 class VoteCollectResult {
 public:
     VoteCollectResult();
-    VoteCollectResult(VoteCollectStatus status, std::string reason);
+    VoteCollectResult(
+        VoteCollectStatus status,
+        std::string reason,
+        std::optional<DoubleVoteEvidence> doubleVoteEvidence = std::nullopt
+    );
 
     VoteCollectStatus status() const;
     const std::string& reason() const;
     bool accepted() const;
+    const std::optional<DoubleVoteEvidence>& doubleVoteEvidence() const;
 
 private:
     VoteCollectStatus m_status;
     std::string m_reason;
+    std::optional<DoubleVoteEvidence> m_doubleVoteEvidence;
 };
 
 /*

@@ -19,15 +19,21 @@ std::string voteCollectStatusToString(VoteCollectStatus status) {
 
 VoteCollectResult::VoteCollectResult()
     : m_status(VoteCollectStatus::REJECTED_INVALID),
-      m_reason("") {}
+      m_reason(""),
+      m_doubleVoteEvidence(std::nullopt) {}
 
-VoteCollectResult::VoteCollectResult(VoteCollectStatus status, std::string reason)
-    : m_status(status),
-      m_reason(std::move(reason)) {}
+VoteCollectResult::VoteCollectResult(
+    VoteCollectStatus status,
+    std::string reason,
+    std::optional<DoubleVoteEvidence> doubleVoteEvidence
+) : m_status(status),
+    m_reason(std::move(reason)),
+    m_doubleVoteEvidence(std::move(doubleVoteEvidence)) {}
 
 VoteCollectStatus VoteCollectResult::status() const { return m_status; }
 const std::string& VoteCollectResult::reason() const { return m_reason; }
 bool VoteCollectResult::accepted() const { return m_status == VoteCollectStatus::ACCEPTED; }
+const std::optional<DoubleVoteEvidence>& VoteCollectResult::doubleVoteEvidence() const { return m_doubleVoteEvidence; }
 
 NetworkVoteCollector::NetworkVoteCollector()
     : m_pool(),
@@ -125,9 +131,20 @@ VoteCollectResult NetworkVoteCollector::submitNetworkVote(
         );
     }
     if (poolResult.conflicting()) {
+        std::optional<DoubleVoteEvidence> evidence = std::nullopt;
+        const ValidatorVoteRecord* existing =
+            m_pool.existingVoteConflictingWith(vote);
+        if (existing != nullptr) {
+            evidence = DoubleVoteEvidence(
+                *existing,
+                vote,
+                vote.createdAt()
+            );
+        }
         return VoteCollectResult(
             VoteCollectStatus::REJECTED_CONFLICTING,
-            "Conflicting vote detected: " + poolResult.reason()
+            "Conflicting vote detected: " + poolResult.reason(),
+            std::move(evidence)
         );
     }
     if (!poolResult.accepted()) {

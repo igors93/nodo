@@ -4,7 +4,9 @@
 #include "crypto/CryptoAlgorithm.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/CryptoSuiteId.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/Ed25519SignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
 #include "crypto/SignatureBundle.hpp"
@@ -74,6 +76,27 @@ nodo::crypto::CryptoPolicy fakePolicy() {
 
 nodo::crypto::Ed25519SignatureProvider fakeProvider() {
     return nodo::crypto::Ed25519SignatureProvider();
+}
+
+ValidatorVoteRecord signedVote(
+    const nodo::crypto::KeyPair& keyPair,
+    const std::string& blockHash,
+    std::int64_t createdAt
+) {
+    static const nodo::crypto::Bls12381SignatureProvider provider;
+    return ValidatorVoteRecord::createVote(
+        keyPair.address().value(),
+        keyPair.publicKey(),
+        keyPair.privateKeyForSigningOnly(),
+        1,
+        blockHash,
+        "previous-block-hash",
+        1,
+        ValidatorVoteDecision::PRECOMMIT,
+        "reason-hash",
+        createdAt,
+        provider
+    );
 }
 
 // ── 1. No eligible list set → all votes pass (backward-compatible) ────────────
@@ -200,6 +223,59 @@ void testClearEligibleListAllowsAll() {
     );
 }
 
+// ── 8. Conflicting vote result carries canonical evidence input ───────────────
+
+void testConflictingVoteReturnsDoubleVoteEvidence() {
+    const nodo::crypto::KeyPair keyPair =
+        nodo::crypto::KeyPair::createDeterministicBls12381KeyPair(
+            "network-vote-collector-conflict-evidence"
+        );
+    const nodo::crypto::Bls12381SignatureProvider provider;
+
+    NetworkVoteCollector collector(1, 1);
+    collector.setEligibleValidators({keyPair.address().value()});
+
+    const ValidatorVoteRecord first =
+        signedVote(keyPair, "block-hash-a", 2000);
+    const ValidatorVoteRecord second =
+        signedVote(keyPair, "block-hash-b", 2001);
+
+    const auto accepted = collector.submitNetworkVote(
+        first,
+        fakePolicy(),
+        provider
+    );
+    requireCondition(
+        accepted.accepted(),
+        "First vote must enter the collector before conflict evidence exists."
+    );
+
+    const auto conflicting = collector.submitNetworkVote(
+        second,
+        fakePolicy(),
+        provider
+    );
+    requireCondition(
+        conflicting.status() == VoteCollectStatus::REJECTED_CONFLICTING,
+        "Second vote for a different block must be rejected as conflicting."
+    );
+    requireCondition(
+        conflicting.doubleVoteEvidence().has_value(),
+        "Conflict rejection must carry double-vote evidence immediately."
+    );
+    requireCondition(
+        (conflicting.doubleVoteEvidence()->firstVote().blockHash() == "block-hash-a" &&
+         conflicting.doubleVoteEvidence()->secondVote().blockHash() == "block-hash-b") ||
+        (conflicting.doubleVoteEvidence()->firstVote().blockHash() == "block-hash-b" &&
+         conflicting.doubleVoteEvidence()->secondVote().blockHash() == "block-hash-a"),
+        "Conflict evidence must preserve the original accepted vote and the rejected vote."
+    );
+    requireCondition(
+        conflicting.doubleVoteEvidence()->isConflictPair(),
+        "Returned conflict evidence must already be a valid conflict pair."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -211,6 +287,7 @@ int main() {
         testHasDoubleVoteInitiallyFalse();
         testStaleRoundRejected();
         testClearEligibleListAllowsAll();
+        testConflictingVoteReturnsDoubleVoteEvidence();
 
         std::cout << "Nodo NetworkVoteCollector eligibility tests passed.\n";
         return 0;

@@ -283,6 +283,21 @@ const ValidatorVoteRecord* VotePool::firstVoteForValidator(
     return &it->second;
 }
 
+const ValidatorVoteRecord* VotePool::existingVoteConflictingWith(
+    const ValidatorVoteRecord& vote
+) const {
+    const auto existing = m_voteByValidatorHeightRound.find(
+        validatorHeightRoundKey(vote)
+    );
+    if (existing == m_voteByValidatorHeightRound.end()) {
+        return nullptr;
+    }
+    if (sameVoteDecision(existing->second, vote)) {
+        return nullptr;
+    }
+    return &existing->second;
+}
+
 std::size_t VotePool::totalVoteCount() const {
     return m_voteByValidatorHeightRound.size();
 }

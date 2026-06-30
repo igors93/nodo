@@ -78,8 +78,11 @@ owns proposal admission. A validated `BLOCK_PROPOSAL` is retained as a
 round-scoped candidate, never appended as canonical state. The loop handles
 `VALIDATOR_VOTE` / `VOTE_ANNOUNCE` accumulation, casts PREVOTE before PRECOMMIT
 and assembles a `QuorumCertificate` only from PRECOMMIT votes; only
-`BlockFinalizer` appends the candidate after quorum. The in-process localnet
-production helper is not available to staging or production network classes.
+`BlockFinalizer` appends the candidate after quorum. When vote admission rejects
+a same-validator conflict, the same tick converts the accepted vote plus rejected
+vote into verified slashing evidence, persists it and gossips it. The in-process
+localnet production helper is not available to staging or production network
+classes.
 
 ## Build
 

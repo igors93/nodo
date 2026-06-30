@@ -2,6 +2,7 @@
 #include "consensus/ConsensusEventLoop.hpp"
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposerSchedule.hpp"
+#include "consensus/ValidatorVoteRecord.hpp"
 #include "config/NetworkParameters.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoPolicy.hpp"
@@ -9,6 +10,7 @@
 #include "crypto/Signer.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
+#include "node/SlashingEvidenceMessages.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/LoopbackTransport.hpp"
 #include "../common/ConsensusPhaseTestFixtures.hpp"
@@ -100,6 +102,21 @@ node::NodeRuntime startRuntime(const config::GenesisConfig& genesis) {
     return result.runtime();
 }
 
+p2p::PeerMetadata peerMetadata(
+    const std::string& nodeId,
+    std::uint16_t port
+) {
+    return p2p::PeerMetadata(
+        nodeId,
+        p2p::PeerEndpoint("127.0.0.1", port),
+        nodeId + "-identity",
+        kTimestamp,
+        kTimestamp,
+        0,
+        false
+    );
+}
+
 class TestNetwork {
 private:
     std::shared_ptr<p2p::LoopbackTransportBus> m_bus;
@@ -124,6 +141,68 @@ public:
     {}
 
     p2p::GossipMesh mesh;
+};
+
+class TwoPeerConsensusNetwork {
+private:
+    std::shared_ptr<p2p::LoopbackTransportBus> m_bus;
+    p2p::LoopbackTransport m_consensusTransport;
+    p2p::LoopbackTransport m_peerTransport;
+
+public:
+    explicit TwoPeerConsensusNetwork(const config::GenesisConfig& genesis)
+        : m_bus(std::make_shared<p2p::LoopbackTransportBus>())
+        , m_consensusTransport(m_bus)
+        , m_peerTransport(m_bus)
+        , consensusMesh(
+              p2p::GossipMeshConfig(
+                  "candidate-test-node",
+                  genesis.networkParameters().networkName(),
+                  genesis.networkParameters().chainId(),
+                  "nodo/test",
+                  genesis.deterministicId(),
+                  60,
+                  3
+              ),
+              m_consensusTransport
+          )
+        , peerMesh(
+              p2p::GossipMeshConfig(
+                  "vote-conflict-peer",
+                  genesis.networkParameters().networkName(),
+                  genesis.networkParameters().chainId(),
+                  "nodo/test",
+                  genesis.deterministicId(),
+                  60,
+                  3
+              ),
+              m_peerTransport
+          )
+    {
+        require(
+            consensusMesh.registerPeer(
+                peerMetadata("vote-conflict-peer", 31902)
+            ).success(),
+            "Consensus mesh must register the remote peer."
+        );
+        require(
+            peerMesh.registerPeer(
+                peerMetadata("candidate-test-node", 31901)
+            ).success(),
+            "Remote peer must register the consensus mesh."
+        );
+        require(
+            consensusMesh.connectPeer("vote-conflict-peer").success(),
+            "Consensus mesh must connect to the remote peer."
+        );
+        require(
+            peerMesh.connectPeer("candidate-test-node").success(),
+            "Remote peer must connect to the consensus mesh."
+        );
+    }
+
+    p2p::GossipMesh consensusMesh;
+    p2p::GossipMesh peerMesh;
 };
 
 const ValidatorFixture& proposerFixture(
@@ -162,6 +241,129 @@ void configureProducer(
             if (!candidate.produced()) return std::nullopt;
             return candidate.block();
         }
+    );
+}
+
+void sendVoteToConsensusPeer(
+    TwoPeerConsensusNetwork& network,
+    const consensus::ValidatorVoteRecord& vote,
+    std::int64_t now
+) {
+    require(
+        network.peerMesh.broadcast(
+            p2p::NetworkMessageType::VALIDATOR_VOTE,
+            vote.serialize(),
+            now
+        ).acceptedCount() == 1,
+        "Remote peer must enqueue validator vote for the consensus mesh."
+    );
+    require(
+        network.peerMesh.flushOutbound(now).acceptedCount() == 1,
+        "Remote peer must flush outbound validator vote."
+    );
+    require(
+        network.consensusMesh.receiveAvailable(now).acceptedCount() == 1,
+        "Consensus mesh must receive validator vote."
+    );
+}
+
+consensus::ValidatorVoteRecord makeSignedConsensusVote(
+    const ValidatorFixture& validator,
+    const std::string& blockHash,
+    std::int64_t createdAt,
+    const crypto::Bls12381SignatureProvider& provider
+) {
+    return consensus::ValidatorVoteRecord::createVote(
+        validator.keyPair.address().value(),
+        validator.keyPair.publicKey(),
+        validator.keyPair.privateKeyForSigningOnly(),
+        1,
+        blockHash,
+        "candidate-previous-hash",
+        1,
+        consensus::ValidatorVoteDecision::PRECOMMIT,
+        "reason-hash",
+        createdAt,
+        provider
+    );
+}
+
+void testConflictingVoteCreatesEvidenceImmediately() {
+    const auto validators = makeValidators(1);
+    const config::GenesisConfig genesis =
+        makeGenesis(validators, "candidate-immediate-conflict-evidence");
+    node::NodeRuntime runtime = startRuntime(genesis);
+    TwoPeerConsensusNetwork network(genesis);
+    const crypto::Bls12381SignatureProvider provider;
+    consensus::EvidencePool evidencePool;
+
+    consensus::ConsensusEventLoop loop(
+        runtime,
+        network.consensusMesh,
+        developmentPolicy(),
+        provider
+    );
+    loop.setEvidencePool(&evidencePool);
+
+    const consensus::ValidatorVoteRecord first = makeSignedConsensusVote(
+        validators.front(),
+        "conflict-block-hash-a",
+        kTimestamp + 1,
+        provider
+    );
+    const consensus::ValidatorVoteRecord second = makeSignedConsensusVote(
+        validators.front(),
+        "conflict-block-hash-b",
+        kTimestamp + 2,
+        provider
+    );
+
+    sendVoteToConsensusPeer(network, first, kTimestamp + 3);
+    sendVoteToConsensusPeer(network, second, kTimestamp + 4);
+
+    const consensus::ConsensusTickResult result = loop.tick(kTimestamp + 5);
+
+    require(
+        result.votesCollected == 1,
+        "Only the first vote should be admitted to the vote pool."
+    );
+    require(
+        result.evidenceAccepted == 1,
+        "The conflicting vote must create slashing evidence during the same tick."
+    );
+    require(
+        evidencePool.size() == 1,
+        "Evidence pool must contain the immediate double-vote evidence."
+    );
+
+    const std::vector<consensus::DoubleVoteEvidence> stored =
+        evidencePool.allDoubleVoteEvidence();
+    require(
+        stored.size() == 1 &&
+        ((stored.front().firstVote().blockHash() == "conflict-block-hash-a" &&
+          stored.front().secondVote().blockHash() == "conflict-block-hash-b") ||
+         (stored.front().firstVote().blockHash() == "conflict-block-hash-b" &&
+          stored.front().secondVote().blockHash() == "conflict-block-hash-a")) &&
+        stored.front().detectedAt() == kTimestamp + 5,
+        "Stored evidence must bind the original vote, conflicting vote and detection time."
+    );
+
+    network.consensusMesh.flushOutbound(kTimestamp + 6);
+    network.peerMesh.receiveAvailable(kTimestamp + 6);
+    const auto evidenceMessages = network.peerMesh.drainInbox(
+        p2p::NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE
+    );
+    require(
+        evidenceMessages.size() == 1,
+        "Accepted conflict evidence must be gossiped immediately."
+    );
+    const node::SlashingEvidenceAnnouncement announcement =
+        node::SlashingEvidenceAnnouncement::deserialize(
+            evidenceMessages.front().payload()
+        );
+    require(
+        announcement.evidence().evidenceId() == stored.front().evidenceId(),
+        "Gossiped evidence must match the stored double-vote evidence."
     );
 }
 
@@ -359,6 +561,7 @@ int main() {
     try {
         testCandidateDoesNotEnterChainWithoutQuorum();
         testSingleValidatorCandidateAppendsOnlyDuringFinalization();
+        testConflictingVoteCreatesEvidenceImmediately();
         testMissingProposalStillAdvancesRound();
         testConsensusLoopPersistsSignedPrevoteBeforeBroadcast();
         testProposerRetriesAfterTransientProductionFailure();

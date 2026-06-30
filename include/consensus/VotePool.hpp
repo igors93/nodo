@@ -142,6 +142,10 @@ public:
         ValidatorVoteDecision decision
     ) const;
 
+    const ValidatorVoteRecord* existingVoteConflictingWith(
+        const ValidatorVoteRecord& vote
+    ) const;
+
     std::size_t totalVoteCount() const;
     std::string serialize() const;
     void prune(std::uint64_t currentHeight);

@@ -77,7 +77,7 @@ Implemented foundations include:
 - distributed node daemon with transaction gossip relay, block proposal relay with proposer authentication, PREVOTE/PRECOMMIT voting, and finalized artifact QC verification;
 - treasury policy, spend validation, execution evidence, and finalized treasury audit;
 - governance vote proof, vote evidence, vote-set audit, tally, decision audit, lifecycle persistence, and lifecycle-backed treasury approval;
-- slashing evidence, validator penalty decisions, validator lifecycle, and containment-policy foundations;
+- immediate slashing evidence capture for conflicting validator votes, validator penalty decisions, validator lifecycle, and containment-policy foundations;
 - testnet-candidate readiness and operator diagnostics foundations.
 
 ## Current Status
@@ -328,7 +328,8 @@ Completed foundations:
 - testnet-candidate readiness diagnostics;
 - distributed node daemon: transaction gossip, block proposal relay, proposer authentication, finalized artifact QC verification;
 - durable QC persistence (`FinalizedBlockRecordStore`): QC proofs survive restart, fast-path `QC_REQUIRED` sync is fully functional, sync responses carry QC proofs to peers;
-- signed consensus-vote recovery: `ConsensusRecoveryStore` persists exact signed PREVOTE/PRECOMMIT records so restart can safely resubmit/rebroadcast the same votes without double-voting.
+- signed consensus-vote recovery: `ConsensusRecoveryStore` persists exact signed PREVOTE/PRECOMMIT records so restart can safely resubmit/rebroadcast the same votes without double-voting;
+- immediate conflict-to-evidence admission: when live vote collection rejects a same-validator same-height same-round conflict, the event loop builds, verifies, persists and gossips the double-vote evidence in that same tick instead of relying on a later scanner.
 
 In progress:
 

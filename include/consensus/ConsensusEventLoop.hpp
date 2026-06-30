@@ -246,6 +246,12 @@ private:
         std::int64_t now
     );
 
+    void admitAndBroadcastDoubleVoteEvidence(
+        const DoubleVoteEvidence& evidence,
+        std::int64_t now,
+        ConsensusTickResult& result
+    );
+
     // Validate proposals on the consensus thread and retain at most one
     // candidate for the active height and round.
     void processBlockProposals();
