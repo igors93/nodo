@@ -41,14 +41,14 @@ nodo validator list [--data-dir PATH]
   `TransactionBuilder`, signs it through `Signer`, validates it with
   `TransactionAdmissionValidator` and only then writes it to the persistent
   mempool. If `--nonce` is omitted, localnet uses the next nonce from the
-  rebuilt account state. Duplicate transactions, duplicate sender/nonce,
-  old nonces, unsupported future nonces, low fees and invalid signatures are
-  rejected before persistence.
+  account state derived from canonical protocol replay. Duplicate transactions,
+  duplicate sender/nonce, old nonces, unsupported future nonces, low fees and
+  invalid signatures are rejected before persistence.
 - `block produce`: reloads runtime, produces and finalizes one local block,
   persists it and removes finalized transactions from persistent mempool. It
   does not create transactions automatically. Produced blocks must pass
-  account-state preview checks for balance, nonce and fee before votes or
-  finalization.
+  authoritative protocol state-transition checks for balance, nonce, fee,
+  authorization and domain commitments before votes or finalization.
 - `chain audit`: reloads runtime and runs `ChainAuditor` over manifest,
   finalized block continuity, latest hash, `latestStateRoot`, crypto context,
   mempool and validator count consistency.

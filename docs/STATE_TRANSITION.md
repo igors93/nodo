@@ -46,6 +46,15 @@ root through `StateRootCalculator`. Accounts, supply, burns, staking,
 validators, governance and slashing are committed as canonical domains;
 insertion order does not affect the root.
 
+`ProtocolStateTransition` owns canonical replay. It produces a `ProtocolReplayState`
+that carries account balances/nonces and all protocol domains — supply, burns,
+staking, validators, governance and slashing — after every finalized block.
+Reload, manifest verification, artifact import, block production and account-tip
+helpers now derive from this same replay state instead of rebuilding accounts and
+domains through separate paths. Account-only snapshots may still be used as cache
+material, but they are not trusted to prove `latestStateRoot` because they do not
+contain the non-account domains included in the protocol commitment.
+
 `BlockStateTransitionValidator` is the single pre-vote protocol gate. Structural
 mode uses `StateTransitionPreview` only for non-authoritative checks and never
 compares block commitments. Protocol-commitment mode drives

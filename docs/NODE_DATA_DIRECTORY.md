@@ -45,9 +45,11 @@ missing block files, malformed files, header/payload mismatch, non-canonical
 files, quorum/finalized-record mismatch and blocks that cannot append to the
 rebuilt chain.
 
-Reload rebuilds account state from genesis through each finalized block. Every
-stored `postStateRoot` must match the preview result for that height, and the
-rebuilt tip root must match `manifest.latestStateRoot`.
+Reload rebuilds the full protocol state from genesis through each finalized
+block. Accounts, supply, burns, staking, validators, governance and slashing
+advance through the same canonical replay step. Every stored `postStateRoot`
+must match the engine result for that height, and the rebuilt full protocol
+root must match `manifest.latestStateRoot`.
 
 ## Persistent Mempool
 
@@ -58,8 +60,9 @@ transactions are removed from the persistent mempool.
 
 Persistent mempool reload verifies the transaction signature, duplicate
 transaction id, duplicate sender/nonce, minimum fee and nonce against the
-rebuilt account state. Until a full per-account transaction queue exists, a
-future nonce is rejected instead of being parked silently.
+account state derived from canonical protocol replay. Until a full per-account
+transaction queue exists, a future nonce is rejected instead of being parked
+silently.
 
 ## File Writes
 

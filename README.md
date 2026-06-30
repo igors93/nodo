@@ -69,7 +69,7 @@ Implemented foundations include:
 - CMake-based C++20 build with one test executable per `tests/**/*.cpp`;
 - strict storage schema validation and atomic persistence helpers (`AtomicFile` crash-safe writes);
 - canonical finalized artifacts with monetary, treasury, governance, validator, and slashing sections;
-- authoritative state-transition execution before block votes and deterministic state/receipts roots, with coin lot ownership validation and CoinLot registry digest included in the state root commitment;
+- authoritative state-transition execution before block votes and unified canonical replay of accounts plus protocol domains into deterministic state/receipts roots, with coin lot ownership validation and CoinLot registry digest included in the state root commitment;
 - OpenSSL Ed25519 user signatures and blst BLS12-381 validator signatures;
 - BFT consensus with Quorum Certificate (QC) requiring 2/3+ validator weight;
 - durable QC persistence: `FinalizedBlockRecordStore` writes each QC proof atomically to `{dataDir}/sync/qc/{height}.qc`, reloads all records at startup, and restores the in-memory `BlockFinalizationRegistry` — making the fast-path `QC_REQUIRED` sync mode functional across restarts;

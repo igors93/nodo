@@ -1,7 +1,7 @@
 #include "node/StateArtifactValidator.hpp"
 
 #include "core/StateTransitionEngine.hpp"
-#include "node/RuntimeAccountStateBuilder.hpp"
+#include "node/ProtocolStateTransition.hpp"
 
 #include <exception>
 #include <utility>
@@ -17,7 +17,7 @@ ArtifactValidationResult StateArtifactValidator::validate(
 
     try {
         core::StateTransitionPreviewContext previewContext =
-            RuntimeAccountStateBuilder::previewContextAtTip(
+            ProtocolStateTransition::contextForNextBlock(
                 context.runtime(),
                 context.minimumFeeRawUnits()
             );
@@ -30,13 +30,13 @@ ArtifactValidationResult StateArtifactValidator::validate(
 
         if (!preview.accepted()) {
             return ArtifactValidationResult::rejected(
-                prefix + "Persisted block failed state preview during reload: " + preview.reason()
+                prefix + "Persisted block failed canonical protocol replay during reload: " + preview.reason()
             );
         }
 
         if (preview.stateRoot() != artifact.postStateRoot()) {
             return ArtifactValidationResult::rejected(
-                prefix + "Persisted block postStateRoot does not match rebuilt account state."
+                prefix + "Persisted block postStateRoot does not match canonical protocol replay."
             );
         }
 

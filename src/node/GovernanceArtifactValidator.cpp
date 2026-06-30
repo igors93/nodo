@@ -37,20 +37,22 @@ ArtifactValidationResult GovernanceArtifactValidator::validate(
             );
         }
 
-        const ProtocolExecutionState replayed =
-            ProtocolStateTransition::replayFinalizedBlockDomains(
+        const ProtocolReplayState replayed =
+            ProtocolStateTransition::replayNextBlock(
                 context.runtime(),
-                block
+                block,
+                context.minimumFeeRawUnits(),
+                block.timestamp()
             );
         const GovernanceSummary expectedGovernanceSummary =
             Governance::buildSummary(
                 block.index(),
                 expectedGovernanceGuards,
-                static_cast<std::uint64_t>(replayed.governance.activeProposalCount()),
-                static_cast<std::uint64_t>(replayed.governance.approvedProposalCount()),
-                static_cast<std::uint64_t>(replayed.governance.executableProposalCount(block.index() + 1)),
-                static_cast<std::uint64_t>(replayed.governance.executedProposalCount()),
-                replayed.governance.serialize()
+                static_cast<std::uint64_t>(replayed.execution.governance.activeProposalCount()),
+                static_cast<std::uint64_t>(replayed.execution.governance.approvedProposalCount()),
+                static_cast<std::uint64_t>(replayed.execution.governance.executableProposalCount(block.index() + 1)),
+                static_cast<std::uint64_t>(replayed.execution.governance.executedProposalCount()),
+                replayed.execution.governance.serialize()
             );
 
         if (!Governance::sameSummary(expectedGovernanceSummary, artifact.governanceSummary())) {

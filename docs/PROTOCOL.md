@@ -50,13 +50,14 @@ canonical account state serialization. The root commits to account addresses,
 balances, nonces and the account-state-root format version.
 
 The runtime manifest stores `latestStateRoot`. At genesis it commits to the
-initial account allocation. After every finalized block, it must match the
-block's `postStateRoot`. Reload rebuilds state from genesis through finalized
-blocks and rejects any manifest, block file or audit result whose root diverges.
-The reload path validates each finalized artifact through domain validators
-before applying finalization, then calculates this root through
-`RuntimeStateVerifier` so loader and chain audit share the same deterministic
-check.
+initial account allocation and the initial protocol domains. After every
+finalized block, it must match the block's `postStateRoot`. Reload rebuilds
+state from genesis through finalized blocks with `ProtocolStateTransition`,
+advancing account state and protocol domains in the same replay step. Any
+manifest, block file or audit result whose root diverges is rejected. The reload
+path validates each finalized artifact through domain validators before applying
+finalization, then calculates this root through `RuntimeStateVerifier` so loader
+and chain audit share the same deterministic full-state check.
 
 `ProtocolInvariantChecker` is the heavy audit boundary after genesis start and
 after reload. It checks chain-tip height/hash coherence, deterministic latest

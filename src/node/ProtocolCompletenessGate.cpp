@@ -1,8 +1,8 @@
 #include "node/ProtocolCompletenessGate.hpp"
 
-#include "core/StateRootCalculator.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
+#include "node/ProtocolStateTransition.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/InboundMessageValidator.hpp"
@@ -276,32 +276,27 @@ ProtocolCompletenessReport ProtocolCompletenessGate::evaluate(
     }
 
     try {
-        const core::AccountStateView accountState =
-            RuntimeAccountStateBuilder::accountStateViewAtTip(
+        const ProtocolReplayState replayState =
+            ProtocolStateTransition::replayToTip(
                 runtime.config().genesisConfig(),
                 runtime.blockchain(),
                 minimumFeeRawUnits(parameters)
             );
 
-        const std::string stateRoot =
-            core::StateRootCalculator::calculateAccountStateRoot(
-                accountState
-            );
-
         addRequirement(
             requirements,
             "verifiable_state_root",
-            "Latest account state rebuilds to a deterministic non-empty root.",
-            !stateRoot.empty(),
-            !stateRoot.empty()
-                ? "Latest state root rebuilt successfully."
-                : "Latest state root is empty."
+            "Latest full protocol state rebuilds to a deterministic non-empty root.",
+            !replayState.stateRoot.empty(),
+            !replayState.stateRoot.empty()
+                ? "Latest protocol state root rebuilt successfully from accounts and domains."
+                : "Latest protocol state root is empty."
         );
     } catch (const std::exception& error) {
         addRequirement(
             requirements,
             "verifiable_state_root",
-            "Latest account state rebuilds to a deterministic non-empty root.",
+            "Latest full protocol state rebuilds to a deterministic non-empty root.",
             false,
             error.what()
         );

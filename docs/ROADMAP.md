@@ -20,6 +20,9 @@ reading the source.
   `node reload`, `status`, `inspect`, `chain audit`.
 - Storage schema validation and `AtomicFile` crash-safe writes.
 - Runtime state reload and manifest / `latestStateRoot` verification.
+- Canonical replay through `ProtocolStateTransition`: accounts and protocol
+  domains now advance together into one `ProtocolReplayState` for reload, import,
+  production context building and manifest verification.
 - Finalized artifact codec, store, and multi-domain validator
   (`FinalizedArtifactValidator` covers finality, state, monetary, treasury,
   slashing, governance, and validator lifecycle sections).

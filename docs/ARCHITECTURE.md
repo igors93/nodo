@@ -40,16 +40,19 @@ rebuilt latest block height, hash and `latestStateRoot` match it. Finalized
 block files carry a `postStateRoot`, quorum certificate and finalized record;
 reload verifies all three before the runtime is considered auditable.
 
-Reload responsibilities are intentionally split. `RuntimeStateLoader`
-coordinates durable reads and runtime replay. `FinalizedBlockArtifactCodec`
-owns finalized artifact parsing/serialization shape. `FinalizedArtifactValidator`
-coordinates domain validators for finality, authoritative state-transition
-execution, economic records, monetary and treasury records, slashing evidence,
-governance records and validator lifecycle accounting. `RuntimeStateVerifier` centralizes
-manifest-to-runtime checks and deterministic `latestStateRoot` recalculation.
-`ProtocolInvariantChecker` performs heavy runtime invariants after genesis and
-reload. `ChainAuditor` adds the final operational checks for crypto context,
-mempool admission policy and validator registry consistency.
+Reload responsibilities are intentionally split, but replay itself is unified.
+`RuntimeStateLoader` coordinates durable reads while `ProtocolStateTransition`
+replays each finalized block into one `ProtocolReplayState` containing accounts
+and all protocol domains. `FinalizedBlockArtifactCodec` owns finalized artifact
+parsing/serialization shape. `FinalizedArtifactValidator` coordinates domain
+validators for finality, authoritative state-transition execution, economic
+records, monetary and treasury records, slashing evidence, governance records and
+validator lifecycle accounting. `RuntimeStateVerifier` centralizes
+manifest-to-runtime checks by recalculating `latestStateRoot` from the same
+canonical replay state; it no longer accepts an account-only root as a protocol
+commitment. `ProtocolInvariantChecker` performs heavy runtime invariants after
+genesis and reload. `ChainAuditor` adds the final operational checks for crypto
+context, mempool admission policy and validator registry consistency.
 
 ## Daemon and Gossip Flow
 

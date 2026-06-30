@@ -309,21 +309,20 @@ FinalizedArtifactImportResult importImpl(
     }
 
     try {
-        const ProtocolExecutionState replayed =
-            ProtocolStateTransition::replayFinalizedBlockDomains(
-                runtime, artifact.block()
+        const ProtocolReplayState replayed =
+            ProtocolStateTransition::replayNextBlock(
+                runtime,
+                artifact.block(),
+                minimumFeeRawUnits(genesisConfig),
+                artifact.block().timestamp()
             );
-        if (replayed.supply != artifact.supplyDelta().supplyAfter()) {
+        if (replayed.execution.supply != artifact.supplyDelta().supplyAfter()) {
             throw std::logic_error(
                 "Replayed transaction supply differs from persisted delta."
             );
         }
         runtime.mutableSupplyState().applyFinalizedDelta(artifact.supplyDelta());
-        runtime.mutableGovernanceExecutor() = replayed.governance;
-        runtime.mutableValidatorRegistry() = replayed.validators;
-        runtime.mutableValidatorPenaltyLedger() = replayed.penaltyLedger;
-        runtime.mutableStakingRegistry() = replayed.staking;
-        runtime.invalidateAccountStateCache();
+        ProtocolStateTransition::applyReplayDomainsToRuntime(runtime, replayed);
     } catch (const std::exception& e) {
         return FinalizedArtifactImportResult::rejected(
             ArtifactImportRejectionReason::SUPPLY_CONTINUITY_BREAK,

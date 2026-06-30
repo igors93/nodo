@@ -39,7 +39,9 @@ state unchanged. Localnet uses explicit bootstrap-validator account allocations
 in `GenesisConfig` only for development; they are documented as a limitation,
 not a production supply model. Successful engine execution produces deterministic
 state and receipts roots so later persistence, reload and audit checks can commit
-to the resulting account state and protocol domains.
+to the resulting account state and protocol domains. Reload and artifact import
+use a single canonical `ProtocolReplayState`; account-only replay is not accepted
+as proof of a manifest `latestStateRoot`.
 
 Finalized block reload verifies the quorum certificate and finalized record
 before accepting the artifact: quorum threshold, duplicate validator votes,

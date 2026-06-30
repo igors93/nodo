@@ -2,8 +2,7 @@
 
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "core/GenesisVerifier.hpp"
-#include "core/StateRootCalculator.hpp"
-#include "node/RuntimeAccountStateBuilder.hpp"
+#include "node/ProtocolStateTransition.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 #include "storage/StorageSchemaVersion.hpp"
@@ -214,14 +213,11 @@ std::int64_t minimumFeeRawUnits(
 std::string latestStateRootForRuntime(
     const NodeRuntime& runtime
 ) {
-    const core::StateTransitionPreviewContext context =
-        RuntimeAccountStateBuilder::previewContextAtTip(
-            runtime,
-            minimumFeeRawUnits(runtime.config().genesisConfig())
-        );
-    const std::string stateRoot = core::StateRootCalculator::calculateProtocolStateRoot(
-        context.accountStateView(), context.deterministicStateDomains()
-    );
+    const std::string stateRoot = ProtocolStateTransition::replayToTip(
+        runtime.config().genesisConfig(),
+        runtime.blockchain(),
+        minimumFeeRawUnits(runtime.config().genesisConfig())
+    ).stateRoot;
 
     if (stateRoot.empty()) {
         throw std::invalid_argument("Runtime protocol state root is empty.");

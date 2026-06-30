@@ -1,9 +1,7 @@
 #include "node/RuntimeStateLoader.hpp"
 
 #include "consensus/ConsensusRecoveryStore.hpp"
-#include "core/StateRootCalculator.hpp"
 #include "core/TransactionType.hpp"
-#include "economics/StakeAccount.hpp"
 #include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedArtifactValidationContext.hpp"
 #include "node/FinalizedArtifactValidator.hpp"
@@ -12,13 +10,11 @@
 #include "node/PersistentMempoolStore.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 #include "node/ProtocolStateTransition.hpp"
-#include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeStateVerifier.hpp"
 #include "node/TransactionAdmissionPolicy.hpp"
 #include "consensus/QuorumCertificate.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
-#include "storage/AccountStateSnapshotStore.hpp"
 
 #include <exception>
 #include <filesystem>
@@ -248,6 +244,17 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
     std::size_t loadedBlockCount = 0;
     std::vector<FinalizedBlockArtifact> loadedArtifacts;
+    const std::int64_t minFee = minimumFeeRawUnits(genesisConfig);
+    ProtocolReplayState replayState;
+
+    try {
+        replayState = ProtocolStateTransition::initialReplayState(genesisConfig);
+    } catch (const std::exception& error) {
+        return RuntimeStateLoadResult::rejected(
+            RuntimeStateLoadStatus::RUNTIME_START_FAILED,
+            std::string("Unable to initialize canonical protocol replay: ") + error.what()
+        );
+    }
 
     for (std::uint64_t height = 1; height <= manifest.latestBlockHeight(); ++height) {
         const std::filesystem::path blockPath =
@@ -333,18 +340,18 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         }
 
         try {
-            const ProtocolExecutionState replayed =
-                ProtocolStateTransition::replayFinalizedBlockDomains(
-                    runtime, artifact.block()
-                );
-            if (replayed.supply != artifact.supplyDelta().supplyAfter()) {
+            replayState = ProtocolStateTransition::replayBlock(
+                genesisConfig,
+                replayState,
+                artifact.block(),
+                minFee,
+                artifact.block().timestamp()
+            );
+            if (replayState.execution.supply != artifact.supplyDelta().supplyAfter()) {
                 throw std::logic_error("Replayed transaction supply differs from persisted delta.");
             }
             runtime.mutableSupplyState().applyFinalizedDelta(artifact.supplyDelta());
-            runtime.mutableGovernanceExecutor() = replayed.governance;
-            runtime.mutableValidatorRegistry() = replayed.validators;
-            runtime.mutableValidatorPenaltyLedger() = replayed.penaltyLedger;
-            runtime.mutableStakingRegistry() = replayed.staking;
+            ProtocolStateTransition::applyReplayDomainsToRuntime(runtime, replayState);
         } catch (const std::exception& error) {
             return RuntimeStateLoadResult::rejected(
                 RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
@@ -417,62 +424,12 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
         return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::MANIFEST_MISMATCH, "Rebuilt chain latest block does not match manifest.");
     }
 
-    // Build the account state at the chain tip. When a valid snapshot is
-    // available and its block hash matches the on-disk chain, we replay only
-    // the delta (blocks after the snapshot) instead of the full O(N) replay.
-    const std::int64_t minFee = minimumFeeRawUnits(genesisConfig);
-    core::AccountStateView tipAccountState;
-    bool usedAccountStateSnapshot = false;
-    {
-        const storage::AccountStateSnapshotStore snapshotStore(
-            directoryConfig.rootPath()
-        );
-        const auto snapshotOpt = snapshotStore.load();
-
-        if (snapshotOpt.has_value()) {
-            const auto& snap = snapshotOpt.value();
-            const auto& blocks = runtime.blockchain().blocks();
-            if (snap.genesisConfigId() == genesisConfig.deterministicId() &&
-                snap.height() < blocks.size() &&
-                blocks[static_cast<std::size_t>(snap.height())].hash() == snap.blockHash()) {
-                try {
-                    tipAccountState = RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
-                        genesisConfig,
-                        snap.view(),
-                        runtime.blockchain(),
-                        snap.height(),
-                        minFee
-                    );
-                    usedAccountStateSnapshot = true;
-                } catch (...) {}
-            }
-        }
-
-        if (!usedAccountStateSnapshot) {
-            tipAccountState = RuntimeAccountStateBuilder::accountStateViewAtTip(
-                genesisConfig, runtime.blockchain(), minFee
-            );
-        }
-    }
-
-    const core::StateTransitionPreviewContext tipContext =
-        RuntimeAccountStateBuilder::previewContextAtTip(runtime, minFee);
-    std::string computedStateRoot =
-        core::StateRootCalculator::calculateProtocolStateRoot(
-            tipAccountState, tipContext.deterministicStateDomains()
-        );
-
-    if ((computedStateRoot.empty() ||
-         computedStateRoot != manifest.latestStateRoot()) &&
-        usedAccountStateSnapshot) {
-        tipAccountState = RuntimeAccountStateBuilder::accountStateViewAtTip(
-            genesisConfig, runtime.blockchain(), minFee
-        );
-        computedStateRoot =
-            core::StateRootCalculator::calculateProtocolStateRoot(
-                tipAccountState, tipContext.deterministicStateDomains()
-            );
-    }
+    // The manifest state root is rebuilt from the same canonical replay state
+    // that advanced runtime domains during reload.  Account-only snapshots are
+    // intentionally not used for this protocol commitment because they do not
+    // contain governance, staking, validator, supply or slashing domains.
+    const core::AccountStateView tipAccountState = replayState.accounts;
+    const std::string computedStateRoot = replayState.stateRoot;
 
     if (computedStateRoot.empty() || computedStateRoot != manifest.latestStateRoot()) {
         return RuntimeStateLoadResult::rejected(

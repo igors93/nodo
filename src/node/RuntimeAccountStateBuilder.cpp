@@ -1,37 +1,17 @@
 #include "node/RuntimeAccountStateBuilder.hpp"
 
-#include "core/StateTransitionPreview.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/ProtocolStateTransition.hpp"
 
+#include <memory>
 #include <stdexcept>
-#include <utility>
 
 namespace nodo::node {
 
 core::AccountStateView RuntimeAccountStateBuilder::initialAccountStateView(
     const config::GenesisConfig& genesisConfig
 ) {
-    core::AccountStateView view;
-
-    if (!genesisConfig.isValid()) {
-        throw std::invalid_argument("Cannot build account state from invalid genesis config.");
-    }
-
-    for (const config::GenesisAccountConfig& account :
-         genesisConfig.genesisAccounts()) {
-        if (!view.putAccount(
-                core::AccountState(
-                    account.address(),
-                    account.balance(),
-                    account.nonce()
-                )
-            )) {
-            throw std::logic_error("Genesis account allocation produced invalid account state.");
-        }
-    }
-
-    return view;
+    return ProtocolStateTransition::initialAccountStateView(genesisConfig);
 }
 
 core::AccountStateView RuntimeAccountStateBuilder::accountStateViewAtTip(
@@ -39,59 +19,11 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewAtTip(
     const core::Blockchain& blockchain,
     std::int64_t minimumFeeRawUnits
 ) {
-    if (minimumFeeRawUnits < 0) {
-        throw std::invalid_argument("Minimum fee cannot be negative when rebuilding account state.");
-    }
-
-    if (!blockchain.isValid()) {
-        throw std::invalid_argument("Cannot rebuild account state from invalid blockchain.");
-    }
-
-    core::AccountStateView view =
-        initialAccountStateView(genesisConfig);
-    for (const core::Block& block : blockchain.blocks()) {
-        if (block.isGenesisBlock()) {
-            continue;
-        }
-
-        const core::StateTransitionPreviewContext context(
-            minimumFeeRawUnits,
-            view,
-            false,
-            true,
-            "",
-            0,
-            genesisConfig.networkParameters().chainId(),
-            genesisConfig.networkParameters().networkName(),
-            {},
-            ProtocolStateTransition::accountSettlementForReplay(block.index())
-        );
-
-        const core::StateTransitionPreviewResult preview =
-            core::StateTransitionPreview::previewBlock(
-                block,
-                context
-            );
-
-        if (!preview.accepted()) {
-            throw std::logic_error(
-                "Cannot rebuild account state from finalized chain: "
-                + preview.reason()
-            );
-        }
-
-        core::AccountStateView nextView;
-
-        for (const core::AccountState& account : preview.resultingAccounts()) {
-            if (!nextView.putAccount(account)) {
-                throw std::logic_error("Preview produced invalid account state during rebuild.");
-            }
-        }
-
-        view = nextView;
-    }
-
-    return view;
+    return ProtocolStateTransition::replayToTip(
+        genesisConfig,
+        blockchain,
+        minimumFeeRawUnits
+    ).accounts;
 }
 
 core::AccountStateView RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
@@ -101,56 +33,20 @@ core::AccountStateView RuntimeAccountStateBuilder::accountStateViewFromSnapshot(
     std::uint64_t snapshotHeight,
     std::int64_t minimumFeeRawUnits
 ) {
-    if (minimumFeeRawUnits < 0) {
-        throw std::invalid_argument("Minimum fee cannot be negative when rebuilding from snapshot.");
-    }
+    (void)snapshotView;
+    (void)snapshotHeight;
 
-    if (!blockchain.isValid()) {
-        throw std::invalid_argument("Cannot rebuild from snapshot with invalid blockchain.");
-    }
-
-    core::AccountStateView view = snapshotView;
-    for (const core::Block& block : blockchain.blocks()) {
-        if (block.isGenesisBlock()) {
-            continue;
-        }
-
-        if (block.index() <= snapshotHeight) {
-            continue;
-        }
-
-        const core::StateTransitionPreviewContext context(
-            minimumFeeRawUnits,
-            view,
-            false,
-            true,
-            "",
-            0,
-            genesisConfig.networkParameters().chainId(),
-            genesisConfig.networkParameters().networkName(),
-            {},
-            ProtocolStateTransition::accountSettlementForReplay(block.index())
-        );
-
-        const core::StateTransitionPreviewResult preview =
-            core::StateTransitionPreview::previewBlock(block, context);
-
-        if (!preview.accepted()) {
-            throw std::logic_error(
-                "Cannot rebuild account state from snapshot: " + preview.reason()
-            );
-        }
-
-        core::AccountStateView nextView;
-        for (const core::AccountState& account : preview.resultingAccounts()) {
-            if (!nextView.putAccount(account)) {
-                throw std::logic_error("Preview produced invalid account state during snapshot replay.");
-            }
-        }
-        view = nextView;
-    }
-
-    return view;
+    // Account-only snapshots do not contain governance, staking, validator,
+    // supply or slashing domains.  A trusted protocol state root can therefore
+    // only be rebuilt through the unified replay path that advances accounts and
+    // domains together from genesis.  The snapshot parameters are retained for
+    // callers that still use this helper as an account cache hint, but they are
+    // never allowed to bypass canonical replay.
+    return accountStateViewAtTip(
+        genesisConfig,
+        blockchain,
+        minimumFeeRawUnits
+    );
 }
 
 core::StateTransitionPreviewContext RuntimeAccountStateBuilder::previewContextAtTip(
@@ -159,22 +55,18 @@ core::StateTransitionPreviewContext RuntimeAccountStateBuilder::previewContextAt
     std::int64_t minimumFeeRawUnits,
     std::int64_t wallClockNow
 ) {
-    const std::uint64_t nextBlockHeight = blockchain.size();
-    return core::StateTransitionPreviewContext(
+    auto replayState = ProtocolStateTransition::replayToTip(
+        genesisConfig,
+        blockchain,
+        minimumFeeRawUnits
+    );
+    auto tracker = std::make_shared<ProtocolExecutionState>(replayState.execution);
+    return ProtocolStateTransition::contextFromReplayState(
+        genesisConfig,
+        replayState,
         minimumFeeRawUnits,
-        accountStateViewAtTip(
-            genesisConfig,
-            blockchain,
-            minimumFeeRawUnits
-        ),
-        false,
-        true,
-        "",
-        wallClockNow,
-        genesisConfig.networkParameters().chainId(),
-        genesisConfig.networkParameters().networkName(),
-        {},
-        ProtocolStateTransition::accountSettlementForReplay(nextBlockHeight)
+        tracker,
+        wallClockNow
     );
 }
 

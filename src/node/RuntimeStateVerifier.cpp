@@ -1,7 +1,6 @@
 #include "node/RuntimeStateVerifier.hpp"
 
-#include "core/StateRootCalculator.hpp"
-#include "node/RuntimeAccountStateBuilder.hpp"
+#include "node/ProtocolStateTransition.hpp"
 
 #include <cstdint>
 #include <exception>
@@ -111,17 +110,14 @@ RuntimeStateVerificationResult RuntimeStateVerifier::verifyManifestMatchesRuntim
     std::string latestStateRoot;
 
     try {
-        const core::StateTransitionPreviewContext context =
-            RuntimeAccountStateBuilder::previewContextAtTip(
-                runtime,
-                minimumFeeRawUnits(runtime.config().genesisConfig())
-            );
-        latestStateRoot = core::StateRootCalculator::calculateProtocolStateRoot(
-            context.accountStateView(), context.deterministicStateDomains()
-        );
+        latestStateRoot = ProtocolStateTransition::replayToTip(
+            runtime.config().genesisConfig(),
+            runtime.blockchain(),
+            minimumFeeRawUnits(runtime.config().genesisConfig())
+        ).stateRoot;
     } catch (const std::exception& error) {
         return RuntimeStateVerificationResult::failed(
-            std::string("rebuilt account state failed: ") + error.what()
+            std::string("canonical protocol replay failed: ") + error.what()
         );
     }
 
@@ -130,7 +126,7 @@ RuntimeStateVerificationResult RuntimeStateVerifier::verifyManifestMatchesRuntim
     }
 
     if (manifest.latestStateRoot() != latestStateRoot) {
-        return RuntimeStateVerificationResult::failed("manifest latestStateRoot does not match rebuilt account state");
+        return RuntimeStateVerificationResult::failed("manifest latestStateRoot does not match rebuilt protocol state");
     }
 
     return RuntimeStateVerificationResult::passed(latestStateRoot);
@@ -153,7 +149,7 @@ RuntimeStateVerificationResult RuntimeStateVerifier::verifyLatestStateRoot(
         }
 
         if (latestStateRoot != expectedLatestStateRoot) {
-            return RuntimeStateVerificationResult::failed("Manifest latestStateRoot does not match rebuilt account state.");
+            return RuntimeStateVerificationResult::failed("Manifest latestStateRoot does not match rebuilt protocol state.");
         }
 
         return RuntimeStateVerificationResult::passed(latestStateRoot);
@@ -166,16 +162,11 @@ std::string RuntimeStateVerifier::calculateLatestStateRoot(
     const config::GenesisConfig& genesisConfig,
     const core::Blockchain& blockchain
 ) {
-    const core::AccountStateView accountState =
-        RuntimeAccountStateBuilder::accountStateViewAtTip(
-            genesisConfig,
-            blockchain,
-            minimumFeeRawUnits(genesisConfig)
-        );
-
-    return core::StateRootCalculator::calculateAccountStateRoot(
-        accountState
-    );
+    return ProtocolStateTransition::replayToTip(
+        genesisConfig,
+        blockchain,
+        minimumFeeRawUnits(genesisConfig)
+    ).stateRoot;
 }
 
 } // namespace nodo::node
