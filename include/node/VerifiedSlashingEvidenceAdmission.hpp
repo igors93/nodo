@@ -7,6 +7,7 @@
 #include "crypto/SignatureProvider.hpp"
 
 #include <cstdint>
+#include <string>
 
 namespace nodo::node {
 
@@ -17,6 +18,17 @@ public:
         std::uint64_t currentConsensusHeight,
         std::int64_t now,
         const core::ValidatorSetHistory& validatorSetHistory,
+        const crypto::CryptoPolicy& policy,
+        const crypto::SignatureProvider& provider,
+        consensus::EvidencePool& evidencePool
+    );
+
+    static consensus::SlashingEvidenceValidationResult admit(
+        const consensus::ProposerEquivocationEvidence& evidence,
+        std::uint64_t currentConsensusHeight,
+        std::int64_t now,
+        const core::ValidatorSetHistory& validatorSetHistory,
+        const std::string& chainId,
         const crypto::CryptoPolicy& policy,
         const crypto::SignatureProvider& provider,
         consensus::EvidencePool& evidencePool

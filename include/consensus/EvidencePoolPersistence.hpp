@@ -15,6 +15,10 @@ public:
         const DoubleVoteEvidence& evidence
     ) = 0;
 
+    virtual void persist(
+        const ProposerEquivocationEvidence& evidence
+    ) = 0;
+
     virtual bool erase(
         const std::string& evidenceId
     ) = 0;

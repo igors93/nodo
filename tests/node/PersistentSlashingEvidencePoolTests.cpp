@@ -146,6 +146,7 @@ void testRestoresVerifiedEvidenceAfterRestart() {
         2,
         kNow,
         history,
+        "test-chain",
         crypto::CryptoPolicy::developmentPolicy(),
         provider,
         penalties
@@ -162,6 +163,7 @@ void testRestoresVerifiedEvidenceAfterRestart() {
         2,
         kNow,
         history,
+        "test-chain",
         crypto::CryptoPolicy::developmentPolicy(),
         provider,
         penalties
@@ -200,6 +202,7 @@ void testReconcilesEvidenceFinalizedBeforeCleanup() {
         2,
         kNow,
         history,
+        "test-chain",
         crypto::CryptoPolicy::developmentPolicy(),
         provider,
         penalties
@@ -234,6 +237,7 @@ void testRejectsCorruptedAndUnauthorizedEvidence() {
         2,
         kNow,
         history,
+        "test-chain",
         crypto::CryptoPolicy::developmentPolicy(),
         provider,
         penalties
@@ -257,6 +261,7 @@ void testRejectsCorruptedAndUnauthorizedEvidence() {
         2,
         kNow,
         history,
+        "test-chain",
         crypto::CryptoPolicy::developmentPolicy(),
         provider,
         penalties

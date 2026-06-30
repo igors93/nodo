@@ -96,21 +96,20 @@ SlashingEvidenceGossipResult SlashingEvidenceGossipAdmission::admit(
             };
         }
 
-        const consensus::DoubleVoteEvidence& evidence =
-            announcement.evidence();
-        const std::string evidenceId = evidence.evidenceId();
-        if (evidence.detectedAt() > announcement.announcedAt() ||
-            evidence.firstVote().blockIndex() == 0 ||
-            evidence.firstVote().blockIndex() > currentConsensusHeight) {
-            return {
-                SlashingEvidenceGossipStatus::REJECTED,
-                "Slashing evidence has an invalid height or timestamp.",
-                evidenceId
-            };
-        }
-
-        const consensus::SlashingEvidenceValidationResult stored =
-            VerifiedSlashingEvidenceAdmission::admit(
+        const std::string evidenceId = announcement.record().evidenceId();
+        consensus::SlashingEvidenceValidationResult stored;
+        if (announcement.evidenceType() == consensus::SlashingEvidenceType::DOUBLE_VOTE) {
+            const consensus::DoubleVoteEvidence& evidence = announcement.evidence();
+            if (evidence.detectedAt() > announcement.announcedAt() ||
+                evidence.firstVote().blockIndex() == 0 ||
+                evidence.firstVote().blockIndex() > currentConsensusHeight) {
+                return {
+                    SlashingEvidenceGossipStatus::REJECTED,
+                    "Slashing evidence has an invalid height or timestamp.",
+                    evidenceId
+                };
+            }
+            stored = VerifiedSlashingEvidenceAdmission::admit(
                 evidence,
                 currentConsensusHeight,
                 now,
@@ -119,6 +118,35 @@ SlashingEvidenceGossipResult SlashingEvidenceGossipAdmission::admit(
                 provider,
                 evidencePool
             );
+        } else if (announcement.evidenceType() == consensus::SlashingEvidenceType::EQUIVOCATION) {
+            const consensus::ProposerEquivocationEvidence& evidence =
+                announcement.proposerEquivocationEvidence();
+            if (evidence.detectedAt() > announcement.announcedAt() ||
+                evidence.blockIndex() == 0 ||
+                evidence.blockIndex() > currentConsensusHeight) {
+                return {
+                    SlashingEvidenceGossipStatus::REJECTED,
+                    "Slashing evidence has an invalid height or timestamp.",
+                    evidenceId
+                };
+            }
+            stored = VerifiedSlashingEvidenceAdmission::admit(
+                evidence,
+                currentConsensusHeight,
+                now,
+                validatorSetHistory,
+                expectedChainId,
+                policy,
+                provider,
+                evidencePool
+            );
+        } else {
+            return {
+                SlashingEvidenceGossipStatus::REJECTED,
+                "Unsupported slashing evidence announcement type.",
+                evidenceId
+            };
+        }
         if (stored.duplicate()) {
             return {
                 SlashingEvidenceGossipStatus::DUPLICATE,

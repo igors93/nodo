@@ -109,6 +109,27 @@ int main() {
     }
     assert(rejectedMismatchedFile);
 
+
+
+    const nodo::consensus::ProposerEquivocationEvidence proposerEvidence(
+        "SignedBlockProposalMessage{schema=NODO_BLOCK_PROPOSAL_V1;blockHash=proposal-hash-a}\nBlock{hash=proposal-hash-a}",
+        "SignedBlockProposalMessage{schema=NODO_BLOCK_PROPOSAL_V1;blockHash=proposal-hash-b}\nBlock{hash=proposal-hash-b}",
+        "validator-alpha",
+        7,
+        2,
+        "proposal-hash-a",
+        "proposal-hash-b",
+        300
+    );
+    store.persist(proposerEvidence);
+    assert(store.contains(proposerEvidence.evidenceId()));
+    assert(store.loadAllProposerEquivocation().size() == 1);
+    assert(
+        store.loadProposerEquivocation(proposerEvidence.evidenceId()).serialize() ==
+        proposerEvidence.serialize()
+    );
+    assert(store.erase(proposerEvidence.evidenceId()));
+
     assert(store.erase(record.evidenceId()));
     assert(!store.contains(record.evidenceId()));
     assert(store.erase(record.evidenceId()));

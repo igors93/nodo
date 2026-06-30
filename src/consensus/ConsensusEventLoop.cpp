@@ -7,9 +7,10 @@
 #include "core/BlockStateTransitionValidator.hpp"
 #include "crypto/Hex.hpp"
 #include "node/ChainSyncMessages.hpp"
-#include "node/VerifiedSlashingEvidenceAdmission.hpp"
+#include "node/DoubleVoteDetector.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/SignedBlockProposalMessage.hpp"
+#include "node/VerifiedSlashingEvidenceAdmission.hpp"
 #include "node/SlashingEvidenceMessages.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 #include "serialization/BlockCodec.hpp"
@@ -156,7 +157,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
 
     // BLOCK_PROPOSAL is consensus input. Keeping proposal admission on this
     // thread prevents the daemon from mutating the canonical chain concurrently.
-    processBlockProposals();
+    processBlockProposals(result);
 
     const core::Blockchain& chain  = m_runtime.blockchain();
     const auto& state              = m_runtime.consensusRoundManager().currentState();
@@ -236,7 +237,16 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
                         );
 
                         if (proposalResult.proposed()) {
-                            m_pendingCandidate = PendingBlockCandidate{*blockOpt, round};
+                            try {
+                                const node::SignedBlockProposalMessage signedProposal =
+                                    node::SignedBlockProposalMessage::deserialize(
+                                        proposalResult.serializedProposal()
+                                    );
+                                m_pendingCandidate = PendingBlockCandidate{*blockOpt, round, signedProposal};
+                            } catch (const std::exception& e) {
+                                result.errorMessage =
+                                    std::string("Signed local proposal could not be retained: ") + e.what();
+                            }
                         } else {
                             result.errorMessage = proposalResult.reason();
                         }
@@ -504,16 +514,27 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
 
                 if (collected.accepted()) {
                     result.votesCollected++;
-                } else if (collected.status() == VoteCollectStatus::REJECTED_CONFLICTING &&
-                           collected.doubleVoteEvidence().has_value()) {
-                    admitAndBroadcastDoubleVoteEvidence(
-                        *collected.doubleVoteEvidence(),
-                        now,
-                        result
-                    );
                 }
             } catch (const std::exception&) {
                 continue;
+            }
+        }
+    }
+
+    // Detect double-votes and forward them to the evidence pool for slashing.
+    if (m_evidencePool) {
+        const VotePool& pool =
+            m_runtime.consensusRoundManager().voteCollector().votePool();
+        const node::DoubleVoteDetectionResult detected =
+            node::DoubleVoteDetector::detect(
+                pool, *m_evidencePool, m_policy, now
+            );
+        result.evidenceAccepted += detected.evidenceSubmitted;
+        for (const std::string& evidenceId : detected.newEvidenceIds) {
+            const DoubleVoteEvidence* evidence =
+                m_evidencePool->doubleVoteEvidenceById(evidenceId);
+            if (evidence != nullptr) {
+                broadcastSlashingEvidence(*evidence, now);
             }
         }
     }
@@ -563,59 +584,14 @@ void ConsensusEventLoop::drainSlashingEvidence(
         }
 
         ++result.evidenceAccepted;
-        const DoubleVoteEvidence* evidence =
-            m_evidencePool->doubleVoteEvidenceById(admitted.evidenceId());
-        if (evidence != nullptr) {
+        if (const DoubleVoteEvidence* evidence =
+                m_evidencePool->doubleVoteEvidenceById(admitted.evidenceId())) {
+            broadcastSlashingEvidence(*evidence, now);
+        } else if (const ProposerEquivocationEvidence* evidence =
+                m_evidencePool->proposerEquivocationEvidenceById(admitted.evidenceId())) {
             broadcastSlashingEvidence(*evidence, now);
         }
     }
-}
-
-
-void ConsensusEventLoop::admitAndBroadcastDoubleVoteEvidence(
-    const DoubleVoteEvidence& evidence,
-    std::int64_t now,
-    ConsensusTickResult& result
-) {
-    if (m_evidencePool == nullptr || m_runtime.blockchain().empty()) {
-        ++result.evidenceRejected;
-        return;
-    }
-
-    const DoubleVoteEvidence canonicalEvidence(
-        evidence.firstVote(),
-        evidence.secondVote(),
-        now
-    );
-
-    const std::uint64_t currentHeight =
-        m_runtime.consensusRoundManager().currentState().height();
-    const SlashingEvidenceValidationResult admitted =
-        node::VerifiedSlashingEvidenceAdmission::admit(
-            canonicalEvidence,
-            currentHeight,
-            now,
-            m_runtime.validatorSetHistory(),
-            m_policy,
-            m_provider,
-            *m_evidencePool
-        );
-
-    if (admitted.accepted()) {
-        ++result.evidenceAccepted;
-        const DoubleVoteEvidence* storedEvidence =
-            m_evidencePool->doubleVoteEvidenceById(admitted.record().evidenceId());
-        if (storedEvidence != nullptr) {
-            broadcastSlashingEvidence(*storedEvidence, now);
-        }
-        return;
-    }
-
-    if (admitted.duplicate()) {
-        return;
-    }
-
-    ++result.evidenceRejected;
 }
 
 void ConsensusEventLoop::broadcastSlashingEvidence(
@@ -638,7 +614,66 @@ void ConsensusEventLoop::broadcastSlashingEvidence(
     );
 }
 
-void ConsensusEventLoop::processBlockProposals() {
+void ConsensusEventLoop::broadcastSlashingEvidence(
+    const ProposerEquivocationEvidence& evidence,
+    std::int64_t now
+) {
+    const node::SlashingEvidenceAnnouncement announcement(
+        m_gossip.config().networkId(),
+        m_gossip.config().chainId(),
+        m_gossip.config().localNodeId(),
+        evidence,
+        now
+    );
+    if (!announcement.isValid()) return;
+
+    m_gossip.broadcast(
+        p2p::NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE,
+        announcement.serialize(),
+        now
+    );
+}
+
+void ConsensusEventLoop::admitAndBroadcastProposerEquivocationEvidence(
+    const ProposerEquivocationEvidence& evidence,
+    std::int64_t now,
+    ConsensusTickResult& result
+) {
+    if (m_evidencePool == nullptr || m_runtime.blockchain().empty()) {
+        ++result.evidenceRejected;
+        return;
+    }
+
+    const SlashingEvidenceValidationResult admitted =
+        node::VerifiedSlashingEvidenceAdmission::admit(
+            evidence,
+            m_runtime.consensusRoundManager().currentState().height(),
+            now,
+            m_runtime.validatorSetHistory(),
+            m_gossip.config().chainId(),
+            m_policy,
+            m_provider,
+            *m_evidencePool
+        );
+
+    if (admitted.accepted()) {
+        ++result.evidenceAccepted;
+        const ProposerEquivocationEvidence* storedEvidence =
+            m_evidencePool->proposerEquivocationEvidenceById(
+                admitted.record().evidenceId()
+            );
+        if (storedEvidence != nullptr) {
+            broadcastSlashingEvidence(*storedEvidence, now);
+        }
+        return;
+    }
+
+    if (!admitted.duplicate()) {
+        ++result.evidenceRejected;
+    }
+}
+
+void ConsensusEventLoop::processBlockProposals(ConsensusTickResult& result) {
     const auto messages = m_gossip.drainInbox(
         p2p::NetworkMessageType::BLOCK_PROPOSAL
     );
@@ -697,6 +732,33 @@ void ConsensusEventLoop::processBlockProposals() {
                 continue;
             }
 
+            if (m_pendingCandidate.has_value() &&
+                m_pendingCandidate->round == state.round() &&
+                m_pendingCandidate->block.index() == state.height()) {
+                if (m_pendingCandidate->block.hash() != block.hash() &&
+                    m_pendingCandidate->proposal.proposerAddress() ==
+                        proposal.proposerAddress()) {
+                    const std::int64_t detectedAt =
+                        envelope.createdAt() > 0 ? envelope.createdAt() : proposal.proposedAt();
+                    const ProposerEquivocationEvidence evidence(
+                        m_pendingCandidate->proposal.serialize(),
+                        proposal.serialize(),
+                        proposal.proposerAddress(),
+                        proposal.blockIndex(),
+                        proposal.round(),
+                        m_pendingCandidate->proposal.blockHash(),
+                        proposal.blockHash(),
+                        detectedAt
+                    );
+                    admitAndBroadcastProposerEquivocationEvidence(
+                        evidence,
+                        detectedAt,
+                        result
+                    );
+                }
+                continue;
+            }
+
             const core::StateTransitionPreviewContext validationContext =
                 node::RuntimeAccountStateBuilder::previewContextAtTip(
                     m_runtime, effectiveMinimumFee(m_runtime)
@@ -719,17 +781,7 @@ void ConsensusEventLoop::processBlockProposals() {
 
             if (!validation.accepted()) continue;
 
-            if (m_pendingCandidate.has_value()) {
-                // Exact duplicates are harmless. A second hash for the same
-                // proposer/round is conflicting input and must not replace the
-                // candidate already selected for local voting.
-                if (m_pendingCandidate->round == state.round() &&
-                    m_pendingCandidate->block.index() == state.height()) {
-                    continue;
-                }
-            }
-
-            m_pendingCandidate = PendingBlockCandidate{block, state.round()};
+            m_pendingCandidate = PendingBlockCandidate{block, state.round(), proposal};
         } catch (const std::exception&) {
             // Malformed or unverifiable peer input is ignored without changing
             // the active candidate or canonical chain.

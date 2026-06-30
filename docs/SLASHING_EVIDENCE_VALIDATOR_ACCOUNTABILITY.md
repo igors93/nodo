@@ -10,6 +10,7 @@ balances or staking state.
 ## Added modules
 
 - `consensus::DoubleVoteEvidence`
+- `consensus::ProposerEquivocationEvidence`
 - `consensus::SlashingEvidenceRecord`
 - `consensus::SlashingEvidenceVerifier`
 - `consensus::EvidencePool`
@@ -23,18 +24,18 @@ balances or staking state.
 A node can:
 
 1. detect two conflicting votes from the same validator at the same height and
-   round during live vote admission;
-2. return the exact accepted vote + rejected conflicting vote with the
-   `REJECTED_CONFLICTING` result;
-3. convert that conflict into deterministic evidence immediately in the
-   consensus tick that observed it;
-4. verify the historical validator set and both signatures before admission;
-5. persist evidence records to disk before treating them as known;
-6. gossip accepted evidence to peers immediately;
-7. reload evidence records after restart;
-8. produce validator accountability reports;
-9. mark validators with slashable evidence as slashable;
-10. announce or request evidence through network message primitives.
+   round;
+2. detect two different `BLOCK_PROPOSAL` messages signed by the same scheduled
+   proposer for the same height and round;
+3. convert vote conflicts and proposer equivocation into deterministic evidence
+   records;
+4. reject duplicate evidence in an in-memory evidence pool;
+5. persist evidence records to disk;
+6. reload evidence records after restart;
+7. produce validator accountability reports;
+8. mark validators with slashable evidence as slashable;
+9. announce, request and respond with either evidence type through network
+   message primitives.
 
 ## Why penalties are not applied here
 
@@ -49,13 +50,3 @@ first prove that evidence is:
 
 Penalty application should come in the next phase, after this evidence boundary is
 stable.
-
-## Immediate admission rule
-
-Conflicting votes are no longer handled as a delayed sweep of `VotePool` state.
-`NetworkVoteCollector` returns a `DoubleVoteEvidence` candidate with the
-`REJECTED_CONFLICTING` result. `ConsensusEventLoop` then rebuilds the evidence
-with the local detection timestamp, verifies it through historical validator-set
-checks, submits it to `EvidencePool` and broadcasts the accepted evidence during
-the same tick. This keeps the safety path conservative while removing the old
-window where a conflict was merely rejected and only later converted to evidence.

@@ -104,9 +104,7 @@ reach quorum, and finalize a block without any local shortcut.
 - Duplicate vote detection must reject a second vote from the same validator in
   the same round (test required).
 - Conflicting vote slashing: if a validator votes for two different blocks in
-  the same round, `REJECTED_CONFLICTING` now carries the vote pair and
-  `ConsensusEventLoop` verifies, persists and broadcasts `SlashingEvidence` in
-  the same tick.
+  the same round, capture `SlashingEvidence` and broadcast it (test required).
 
 ### 2.3 View Change on Proposer Timeout
 - If no `BLOCK_PROPOSAL` arrives within the round timeout, advance the round
@@ -131,8 +129,10 @@ reach quorum, and finalize a block without any local shortcut.
 - Duplicate vote rejection: second vote from same validator in same round is
   dropped.
 - Conflicting vote slashing: two conflicting votes from same validator in same
-  round produce a verified, persisted and gossiped `SlashingEvidence` record in
-  the same consensus tick.
+  round produce a `SlashingEvidence` record.
+- Proposer equivocation slashing: two different proposer-signed block proposals
+  from the same scheduled proposer at the same height/round produce persisted and
+  gossiped proposer-equivocation evidence.
 - Quorum formation: 2/3 weight threshold produces a valid `QuorumCertificate`.
 - Finalized artifact validation: peer-received `FINALIZED_BLOCK_ARTIFACT`
   verified before recording; malformed artifact silently discarded.

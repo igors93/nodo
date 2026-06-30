@@ -21,10 +21,20 @@ public:
         std::int64_t announcedAt
     );
 
+    SlashingEvidenceAnnouncement(
+        std::string networkId,
+        std::string chainId,
+        std::string announcerNodeId,
+        consensus::ProposerEquivocationEvidence evidence,
+        std::int64_t announcedAt
+    );
+
     const std::string& networkId() const;
     const std::string& chainId() const;
     const std::string& announcerNodeId() const;
+    consensus::SlashingEvidenceType evidenceType() const;
     const consensus::DoubleVoteEvidence& evidence() const;
+    const consensus::ProposerEquivocationEvidence& proposerEquivocationEvidence() const;
     consensus::SlashingEvidenceRecord record() const;
     std::int64_t announcedAt() const;
 
@@ -39,7 +49,9 @@ private:
     std::string m_networkId;
     std::string m_chainId;
     std::string m_announcerNodeId;
+    consensus::SlashingEvidenceType m_evidenceType;
     consensus::DoubleVoteEvidence m_evidence;
+    consensus::ProposerEquivocationEvidence m_proposerEquivocationEvidence;
     std::int64_t m_announcedAt;
 };
 
@@ -121,10 +133,20 @@ public:
         std::int64_t respondedAt
     );
 
+    SlashingEvidenceResponse(
+        std::string networkId,
+        std::string chainId,
+        std::string responderNodeId,
+        consensus::ProposerEquivocationEvidence evidence,
+        std::int64_t respondedAt
+    );
+
     const std::string& networkId() const;
     const std::string& chainId() const;
     const std::string& responderNodeId() const;
+    consensus::SlashingEvidenceType evidenceType() const;
     const consensus::DoubleVoteEvidence& evidence() const;
+    const consensus::ProposerEquivocationEvidence& proposerEquivocationEvidence() const;
     std::int64_t respondedAt() const;
 
     bool isValid() const;
@@ -138,7 +160,9 @@ private:
     std::string m_networkId;
     std::string m_chainId;
     std::string m_responderNodeId;
+    consensus::SlashingEvidenceType m_evidenceType;
     consensus::DoubleVoteEvidence m_evidence;
+    consensus::ProposerEquivocationEvidence m_proposerEquivocationEvidence;
     std::int64_t m_respondedAt;
 };
 

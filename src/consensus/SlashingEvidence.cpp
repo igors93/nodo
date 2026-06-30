@@ -1,6 +1,7 @@
 #include "consensus/SlashingEvidence.hpp"
 
 #include "crypto/hash.h"
+#include "core/ProtocolLimits.hpp"
 
 #include <map>
 #include <set>
@@ -170,6 +171,24 @@ std::int64_t parseI64Strict(const std::string& value, const std::string& fieldNa
     return parsed;
 }
 
+
+std::uint64_t parseU64Strict(const std::string& value, const std::string& fieldName) {
+    if (value.empty()) {
+        throw std::invalid_argument("Empty numeric field: " + fieldName);
+    }
+    for (const char current : value) {
+        if (current < '0' || current > '9') {
+            throw std::invalid_argument("Malformed unsigned numeric field: " + fieldName);
+        }
+    }
+    std::size_t parsedSize = 0;
+    const unsigned long long parsed = std::stoull(value, &parsedSize);
+    if (parsedSize != value.size()) {
+        throw std::invalid_argument("Malformed unsigned numeric field: " + fieldName);
+    }
+    return static_cast<std::uint64_t>(parsed);
+}
+
 bool sameValidatorHeightRound(const ValidatorVoteRecord& left, const ValidatorVoteRecord& right) {
     return !left.validatorAddress().empty() &&
            left.validatorAddress() == right.validatorAddress() &&
@@ -182,6 +201,11 @@ bool sameVoteTarget(const ValidatorVoteRecord& left, const ValidatorVoteRecord& 
            left.previousHash() == right.previousHash() &&
            left.decision() == right.decision() &&
            left.reasonHash() == right.reasonHash();
+}
+
+bool isSafeProposalBlob(const std::string& value) {
+    return !value.empty() &&
+           value.size() <= core::ProtocolLimits::MAX_SLASHING_EVIDENCE_GOSSIP_BYTES;
 }
 
 } // namespace
@@ -476,6 +500,182 @@ DoubleVoteEvidence DoubleVoteEvidence::deserialize(
     return evidence;
 }
 
+
+ProposerEquivocationEvidence::ProposerEquivocationEvidence()
+    : m_firstProposal(),
+      m_secondProposal(),
+      m_proposerAddress(),
+      m_blockIndex(0),
+      m_round(0),
+      m_firstBlockHash(),
+      m_secondBlockHash(),
+      m_detectedAt(0) {}
+
+ProposerEquivocationEvidence::ProposerEquivocationEvidence(
+    std::string firstProposal,
+    std::string secondProposal,
+    std::string proposerAddress,
+    std::uint64_t blockIndex,
+    std::uint64_t round,
+    std::string firstBlockHash,
+    std::string secondBlockHash,
+    std::int64_t detectedAt
+) : m_firstProposal(std::move(firstProposal)),
+    m_secondProposal(std::move(secondProposal)),
+    m_proposerAddress(std::move(proposerAddress)),
+    m_blockIndex(blockIndex),
+    m_round(round),
+    m_firstBlockHash(std::move(firstBlockHash)),
+    m_secondBlockHash(std::move(secondBlockHash)),
+    m_detectedAt(detectedAt) {
+    if (m_secondBlockHash < m_firstBlockHash) {
+        std::swap(m_firstProposal, m_secondProposal);
+        std::swap(m_firstBlockHash, m_secondBlockHash);
+    }
+}
+
+const std::string& ProposerEquivocationEvidence::firstProposal() const {
+    return m_firstProposal;
+}
+
+const std::string& ProposerEquivocationEvidence::secondProposal() const {
+    return m_secondProposal;
+}
+
+const std::string& ProposerEquivocationEvidence::proposerAddress() const {
+    return m_proposerAddress;
+}
+
+std::uint64_t ProposerEquivocationEvidence::blockIndex() const {
+    return m_blockIndex;
+}
+
+std::uint64_t ProposerEquivocationEvidence::round() const {
+    return m_round;
+}
+
+const std::string& ProposerEquivocationEvidence::firstBlockHash() const {
+    return m_firstBlockHash;
+}
+
+const std::string& ProposerEquivocationEvidence::secondBlockHash() const {
+    return m_secondBlockHash;
+}
+
+std::int64_t ProposerEquivocationEvidence::detectedAt() const {
+    return m_detectedAt;
+}
+
+bool ProposerEquivocationEvidence::isConflictPair() const {
+    return m_detectedAt > 0 &&
+           m_blockIndex > 0 &&
+           m_round > 0 &&
+           isSafeScalar(m_proposerAddress, 200) &&
+           isSafeScalar(m_firstBlockHash, 160) &&
+           isSafeScalar(m_secondBlockHash, 160) &&
+           m_firstBlockHash != m_secondBlockHash &&
+           isSafeProposalBlob(m_firstProposal) &&
+           isSafeProposalBlob(m_secondProposal);
+}
+
+std::string ProposerEquivocationEvidence::payload() const {
+    std::ostringstream output;
+    output << "ProposerEquivocationEvidencePayload{"
+           << "firstProposal=" << m_firstProposal
+           << ";secondProposal=" << m_secondProposal
+           << "}";
+    return output.str();
+}
+
+std::string ProposerEquivocationEvidence::payloadHash() const {
+    return hashString("NODO_SLASHING_PROPOSER_EQUIVOCATION_PAYLOAD_V1|" + payload());
+}
+
+std::string ProposerEquivocationEvidence::evidenceId() const {
+    if (!isConflictPair()) {
+        return "";
+    }
+
+    return hashString(
+        "NODO_SLASHING_PROPOSER_EQUIVOCATION_EVIDENCE_ID_V1|" + payloadHash()
+    );
+}
+
+SlashingEvidenceRecord ProposerEquivocationEvidence::toRecord() const {
+    return SlashingEvidenceRecord(
+        evidenceId(),
+        SlashingEvidenceType::EQUIVOCATION,
+        m_proposerAddress,
+        payloadHash(),
+        SlashingEvidenceSeverity::SLASHABLE,
+        m_detectedAt
+    );
+}
+
+std::string ProposerEquivocationEvidence::serialize() const {
+    std::ostringstream output;
+    output << "ProposerEquivocationEvidence{"
+           << "evidenceId=" << evidenceId()
+           << ";proposerAddress=" << m_proposerAddress
+           << ";blockIndex=" << m_blockIndex
+           << ";round=" << m_round
+           << ";detectedAt=" << m_detectedAt
+           << ";payloadHash=" << payloadHash()
+           << ";firstBlockHash=" << m_firstBlockHash
+           << ";secondBlockHash=" << m_secondBlockHash
+           << ";firstProposal=" << m_firstProposal
+           << ";secondProposal=" << m_secondProposal
+           << "}";
+    return output.str();
+}
+
+ProposerEquivocationEvidence ProposerEquivocationEvidence::deserialize(
+    const std::string& serialized
+) {
+    const auto fields = parseObjectFields(serialized, "ProposerEquivocationEvidence");
+    requireExactFields(
+        fields,
+        {
+            "evidenceId",
+            "proposerAddress",
+            "blockIndex",
+            "round",
+            "detectedAt",
+            "payloadHash",
+            "firstBlockHash",
+            "secondBlockHash",
+            "firstProposal",
+            "secondProposal"
+        },
+        "ProposerEquivocationEvidence"
+    );
+
+    ProposerEquivocationEvidence evidence(
+        fields.at("firstProposal"),
+        fields.at("secondProposal"),
+        fields.at("proposerAddress"),
+        parseU64Strict(fields.at("blockIndex"), "blockIndex"),
+        parseU64Strict(fields.at("round"), "round"),
+        fields.at("firstBlockHash"),
+        fields.at("secondBlockHash"),
+        parseI64Strict(fields.at("detectedAt"), "detectedAt")
+    );
+
+    if (!evidence.isConflictPair() ||
+        evidence.evidenceId() != fields.at("evidenceId") ||
+        evidence.proposerAddress() != fields.at("proposerAddress") ||
+        evidence.payloadHash() != fields.at("payloadHash") ||
+        evidence.firstBlockHash() != fields.at("firstBlockHash") ||
+        evidence.secondBlockHash() != fields.at("secondBlockHash") ||
+        evidence.serialize() != serialized) {
+        throw std::invalid_argument(
+            "Serialized proposer-equivocation evidence is invalid or non-canonical."
+        );
+    }
+
+    return evidence;
+}
+
 SlashingEvidenceValidationResult::SlashingEvidenceValidationResult()
     : m_status(SlashingEvidenceValidationStatus::REJECTED),
       m_reason("Uninitialized slashing evidence validation result."),
@@ -546,6 +746,34 @@ SlashingEvidenceValidationResult SlashingEvidenceVerifier::validateDoubleVoteStr
     return SlashingEvidenceValidationResult(
         SlashingEvidenceValidationStatus::ACCEPTED,
         "Double-vote evidence structure is valid.",
+        record
+    );
+}
+
+SlashingEvidenceValidationResult
+SlashingEvidenceVerifier::validateProposerEquivocationStructure(
+    const ProposerEquivocationEvidence& evidence
+) {
+    if (!evidence.isConflictPair()) {
+        return SlashingEvidenceValidationResult(
+            SlashingEvidenceValidationStatus::REJECTED,
+            "Proposals do not form a same-proposer same-height same-round equivocation.",
+            SlashingEvidenceRecord()
+        );
+    }
+
+    const SlashingEvidenceRecord record = evidence.toRecord();
+    if (!record.isValid()) {
+        return SlashingEvidenceValidationResult(
+            SlashingEvidenceValidationStatus::REJECTED,
+            "Proposer-equivocation evidence record is invalid.",
+            record
+        );
+    }
+
+    return SlashingEvidenceValidationResult(
+        SlashingEvidenceValidationStatus::ACCEPTED,
+        "Proposer-equivocation evidence structure is valid.",
         record
     );
 }

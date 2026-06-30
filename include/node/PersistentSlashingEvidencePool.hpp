@@ -58,6 +58,7 @@ public:
         std::uint64_t currentConsensusHeight,
         std::int64_t now,
         const core::ValidatorSetHistory& validatorSetHistory,
+        const std::string& chainId,
         const crypto::CryptoPolicy& policy,
         const crypto::SignatureProvider& provider,
         const consensus::ValidatorPenaltyLedger& penaltyLedger

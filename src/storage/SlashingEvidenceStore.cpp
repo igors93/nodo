@@ -40,6 +40,14 @@ std::size_t evidenceFileCount(
     return count;
 }
 
+bool isDoubleVoteEncoding(const std::string& serialized) {
+    return serialized.rfind("DoubleVoteEvidence{", 0) == 0;
+}
+
+bool isProposerEquivocationEncoding(const std::string& serialized) {
+    return serialized.rfind("ProposerEquivocationEvidence{", 0) == 0;
+}
+
 } // namespace
 
 SlashingEvidenceStore::SlashingEvidenceStore(
@@ -75,6 +83,48 @@ void SlashingEvidenceStore::persist(
     if (contains(evidenceId)) {
         const consensus::DoubleVoteEvidence existing = load(evidenceId);
         if (existing.serialize() != serialized) {
+            throw std::runtime_error(
+                "Stored slashing evidence conflicts with the same evidence id."
+            );
+        }
+        return;
+    }
+
+    std::filesystem::create_directories(m_evidenceDirectory);
+
+    AtomicFile::writeTextFile(
+        pathForEvidenceId(evidenceId),
+        serialized
+    );
+}
+
+
+
+void SlashingEvidenceStore::persist(
+    const consensus::ProposerEquivocationEvidence& evidence
+) {
+    const consensus::SlashingEvidenceValidationResult validation =
+        consensus::SlashingEvidenceVerifier::validateProposerEquivocationStructure(
+            evidence
+        );
+    if (!validation.accepted()) {
+        throw std::invalid_argument(
+            "Cannot persist invalid proposer-equivocation evidence."
+        );
+    }
+
+    const std::string serialized = evidence.serialize();
+    if (serialized.size() >
+        core::ProtocolLimits::MAX_SLASHING_EVIDENCE_GOSSIP_BYTES) {
+        throw std::length_error(
+            "Proposer-equivocation evidence exceeds its persistence limit."
+        );
+    }
+
+    const std::string evidenceId = evidence.evidenceId();
+    if (contains(evidenceId)) {
+        const std::string existing = AtomicFile::readTextFile(pathForEvidenceId(evidenceId));
+        if (existing != serialized) {
             throw std::runtime_error(
                 "Stored slashing evidence conflicts with the same evidence id."
             );
@@ -138,6 +188,39 @@ consensus::DoubleVoteEvidence SlashingEvidenceStore::load(
     return evidence;
 }
 
+consensus::ProposerEquivocationEvidence SlashingEvidenceStore::loadProposerEquivocation(
+    const std::string& evidenceId
+) const {
+    if (!contains(evidenceId)) {
+        throw std::invalid_argument("Slashing evidence record was not found.");
+    }
+
+    const std::filesystem::path path = pathForEvidenceId(evidenceId);
+    std::error_code sizeError;
+    const std::uintmax_t fileSize = std::filesystem::file_size(
+        path, sizeError
+    );
+    if (sizeError || fileSize == 0 || fileSize >
+        core::ProtocolLimits::MAX_SLASHING_EVIDENCE_GOSSIP_BYTES) {
+        throw std::runtime_error(
+            "Stored slashing evidence has an invalid size."
+        );
+    }
+
+    const std::string serialized = AtomicFile::readTextFile(path);
+
+    consensus::ProposerEquivocationEvidence evidence =
+        consensus::ProposerEquivocationEvidence::deserialize(serialized);
+
+    if (evidence.evidenceId() != evidenceId) {
+        throw std::runtime_error(
+            "Slashing evidence file name does not match stored evidence id."
+        );
+    }
+
+    return evidence;
+}
+
 std::vector<consensus::DoubleVoteEvidence> SlashingEvidenceStore::loadAll() const {
     std::vector<consensus::DoubleVoteEvidence> evidence;
 
@@ -158,7 +241,51 @@ std::vector<consensus::DoubleVoteEvidence> SlashingEvidenceStore::loadAll() cons
             continue;
         }
 
-        evidence.push_back(load(entry.path().stem().string()));
+        const std::string serialized = AtomicFile::readTextFile(entry.path());
+        if (isDoubleVoteEncoding(serialized)) {
+            evidence.push_back(load(entry.path().stem().string()));
+        } else if (!isProposerEquivocationEncoding(serialized)) {
+            throw std::runtime_error("Stored slashing evidence has an unknown encoding.");
+        }
+    }
+
+    std::sort(
+        evidence.begin(),
+        evidence.end(),
+        [](const auto& left, const auto& right) {
+            return left.evidenceId() < right.evidenceId();
+        }
+    );
+
+    return evidence;
+}
+
+std::vector<consensus::ProposerEquivocationEvidence>
+SlashingEvidenceStore::loadAllProposerEquivocation() const {
+    std::vector<consensus::ProposerEquivocationEvidence> evidence;
+
+    if (!std::filesystem::exists(m_evidenceDirectory)) {
+        return evidence;
+    }
+
+    const std::size_t fileCount = evidenceFileCount(m_evidenceDirectory);
+    if (fileCount > core::ProtocolLimits::MAX_PENDING_SLASHING_EVIDENCE) {
+        throw std::length_error(
+            "Stored slashing evidence pool exceeds its protocol limit."
+        );
+    }
+    evidence.reserve(fileCount);
+
+    for (const auto& entry : std::filesystem::directory_iterator(m_evidenceDirectory)) {
+        if (!isEvidenceFile(entry)) {
+            continue;
+        }
+        const std::string serialized = AtomicFile::readTextFile(entry.path());
+        if (isProposerEquivocationEncoding(serialized)) {
+            evidence.push_back(loadProposerEquivocation(entry.path().stem().string()));
+        } else if (!isDoubleVoteEncoding(serialized)) {
+            throw std::runtime_error("Stored slashing evidence has an unknown encoding.");
+        }
     }
 
     std::sort(

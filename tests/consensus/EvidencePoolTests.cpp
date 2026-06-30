@@ -76,6 +76,15 @@ public:
         ++persisted;
     }
 
+    void persist(
+        const nodo::consensus::ProposerEquivocationEvidence&
+    ) override {
+        if (failWrites) {
+            throw std::runtime_error("test persistence failure");
+        }
+        ++persisted;
+    }
+
     bool erase(const std::string&) override {
         ++erased;
         return true;

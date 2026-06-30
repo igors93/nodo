@@ -2,6 +2,7 @@
 
 #include "core/ProtocolLimits.hpp"
 #include "storage/SlashingEvidenceStore.hpp"
+#include "node/VerifiedSlashingEvidenceAdmission.hpp"
 
 #include <exception>
 #include <filesystem>
@@ -66,6 +67,7 @@ PersistentSlashingEvidencePool::restore(
     std::uint64_t currentConsensusHeight,
     std::int64_t now,
     const core::ValidatorSetHistory& validatorSetHistory,
+    const std::string& chainId,
     const crypto::CryptoPolicy& policy,
     const crypto::SignatureProvider& provider,
     const consensus::ValidatorPenaltyLedger& penaltyLedger
@@ -79,6 +81,7 @@ PersistentSlashingEvidencePool::restore(
     }
 
     std::vector<consensus::DoubleVoteEvidence> storedEvidence;
+    std::vector<consensus::ProposerEquivocationEvidence> storedProposerEquivocation;
     std::error_code directoryError;
     std::filesystem::create_directories(
         store.evidenceDirectory(), directoryError
@@ -91,6 +94,7 @@ PersistentSlashingEvidencePool::restore(
     }
     try {
         storedEvidence = store.loadAll();
+        storedProposerEquivocation = store.loadAllProposerEquivocation();
     } catch (const std::exception&) {
         return PersistentSlashingEvidencePoolLoadResult::rejected(
             PersistentSlashingEvidencePoolLoadStatus::IO_ERROR,
@@ -153,6 +157,53 @@ PersistentSlashingEvidencePool::restore(
                 PersistentSlashingEvidencePoolLoadStatus::INVALID_EVIDENCE,
                 "Stored slashing evidence could not be restored: " +
                     inserted.reason()
+            );
+        }
+        ++loadedCount;
+    }
+
+
+    for (const consensus::ProposerEquivocationEvidence& evidence : storedProposerEquivocation) {
+        if (penaltyLedger.containsEvidence(evidence.evidenceId())) {
+            if (!store.erase(evidence.evidenceId())) {
+                return PersistentSlashingEvidencePoolLoadResult::rejected(
+                    PersistentSlashingEvidencePoolLoadStatus::IO_ERROR,
+                    "Finalized slashing evidence could not be removed from disk."
+                );
+            }
+            ++removedFinalizedCount;
+            continue;
+        }
+
+        const std::int64_t maximumProposalTimestamp =
+            now > std::numeric_limits<std::int64_t>::max() -
+                    core::ProtocolLimits::MAX_SLASHING_EVIDENCE_CLOCK_SKEW_SECONDS
+                ? std::numeric_limits<std::int64_t>::max()
+                : now +
+                    core::ProtocolLimits::MAX_SLASHING_EVIDENCE_CLOCK_SKEW_SECONDS;
+        if (evidence.detectedAt() > maximumProposalTimestamp) {
+            return PersistentSlashingEvidencePoolLoadResult::rejected(
+                PersistentSlashingEvidencePoolLoadStatus::INVALID_EVIDENCE,
+                "Stored proposer-equivocation evidence contains a future timestamp."
+            );
+        }
+
+        const consensus::SlashingEvidenceValidationResult verified =
+            VerifiedSlashingEvidenceAdmission::admit(
+                evidence,
+                currentConsensusHeight,
+                now,
+                validatorSetHistory,
+                chainId,
+                policy,
+                provider,
+                evidencePool
+            );
+        if (!verified.accepted()) {
+            return PersistentSlashingEvidencePoolLoadResult::rejected(
+                PersistentSlashingEvidencePoolLoadStatus::INVALID_EVIDENCE,
+                "Stored proposer-equivocation evidence could not be restored: " +
+                    verified.reason()
             );
         }
         ++loadedCount;

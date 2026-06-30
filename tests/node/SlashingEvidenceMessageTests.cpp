@@ -133,6 +133,51 @@ int main() {
         ).serialize() == response.serialize()
     );
 
+
+
+    const nodo::consensus::ProposerEquivocationEvidence proposerEvidence(
+        "SignedBlockProposalMessage{schema=NODO_BLOCK_PROPOSAL_V1;blockHash=proposal-hash-a}\nBlock{hash=proposal-hash-a}",
+        "SignedBlockProposalMessage{schema=NODO_BLOCK_PROPOSAL_V1;blockHash=proposal-hash-b}\nBlock{hash=proposal-hash-b}",
+        "validator-alpha",
+        7,
+        2,
+        "proposal-hash-a",
+        "proposal-hash-b",
+        205
+    );
+    const nodo::node::SlashingEvidenceAnnouncement proposerAnnouncement(
+        "localnet",
+        "chain-alpha",
+        "node-alpha",
+        proposerEvidence,
+        206
+    );
+    assert(proposerAnnouncement.isValid());
+    assert(
+        proposerAnnouncement.evidenceType() ==
+        nodo::consensus::SlashingEvidenceType::EQUIVOCATION
+    );
+    assert(proposerAnnouncement.record().evidenceId() == proposerEvidence.evidenceId());
+    const auto restoredProposerAnnouncement =
+        nodo::node::SlashingEvidenceAnnouncement::deserialize(
+            proposerAnnouncement.serialize()
+        );
+    assert(restoredProposerAnnouncement.serialize() == proposerAnnouncement.serialize());
+    assert(
+        restoredProposerAnnouncement.proposerEquivocationEvidence().serialize() ==
+        proposerEvidence.serialize()
+    );
+
+    const nodo::node::SlashingEvidenceResponse proposerResponse(
+        "localnet", "chain-alpha", "node-alpha", proposerEvidence, 207
+    );
+    assert(proposerResponse.isValid());
+    assert(
+        nodo::node::SlashingEvidenceResponse::deserialize(
+            proposerResponse.serialize()
+        ).serialize() == proposerResponse.serialize()
+    );
+
     std::cout << "slashing evidence messages tests passed\n";
     return 0;
 }

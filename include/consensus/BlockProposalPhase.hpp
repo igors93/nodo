@@ -8,16 +8,19 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 
 namespace nodo::consensus {
 
 struct BlockProposalResult {
     bool proposed() const { return m_proposed; }
     const std::string& reason() const { return m_reason; }
+    const std::string& serializedProposal() const { return m_serializedProposal; }
 
-    static BlockProposalResult ok() {
+    static BlockProposalResult ok(std::string serializedProposal = "") {
         BlockProposalResult r;
         r.m_proposed = true;
+        r.m_serializedProposal = std::move(serializedProposal);
         return r;
     }
 
@@ -31,6 +34,7 @@ struct BlockProposalResult {
 private:
     bool        m_proposed = false;
     std::string m_reason;
+    std::string m_serializedProposal;
 };
 
 /*

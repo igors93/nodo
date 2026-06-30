@@ -12,7 +12,7 @@ Nodo's consensus foundation separates vote and round logic from transport and ec
 - round timeout foundations;
 - block finalizer;
 - fork choice foundations;
-- immediate slashing evidence capture for conflicting votes;
+- slashing evidence for conflicting votes and proposer equivocation;
 - validator penalty decision foundations.
 
 ## Design Boundaries
@@ -20,17 +20,8 @@ Nodo's consensus foundation separates vote and round logic from transport and ec
 - Consensus should not depend directly on TCP transport.
 - Consensus should not implement treasury or governance economics.
 - Votes must be checked against height, round, validator identity, and block target.
-- Duplicate votes must be explicit and conflicting votes must carry enough evidence material to be verified, persisted and gossiped immediately.
+- Duplicate votes, conflicting votes and same-round proposer equivocation must be explicit and slashable.
 
 ## Status
 
 The repository has strong local foundations, but it is not a complete production BFT network.
-
-
-## Conflict-to-evidence boundary
-
-The vote collector does not merely reject a conflicting vote. When a validator
-signs two different targets for the same height, round and decision, the
-collector returns the original accepted vote plus the rejected vote as
-`DoubleVoteEvidence`. The consensus event loop admits that evidence immediately
-through the verified slashing-evidence boundary and broadcasts it to peers.

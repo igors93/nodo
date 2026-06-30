@@ -40,7 +40,9 @@ The gossip layer carries the following consensus-specific message types:
 
 - `BLOCK_PROPOSAL`: a proposer-signed candidate block broadcast before voting.
   Applied via `BlockAnnounceHandler`; the `ConsensusEventLoop` drives prevote
-  and precommit rounds after validation.
+  and precommit rounds after validation. A second different proposal signed by
+  the same scheduled proposer for the same height and round is converted into
+  proposer-equivocation slashing evidence, persisted and gossiped.
 - `VALIDATOR_VOTE`: a BLS12-381-signed vote (prevote or precommit) from an
   active validator. `ConsensusEventLoop` accumulates votes and builds a
   `QuorumCertificate` from PRECOMMIT votes when the 2/3 weight threshold is crossed. Duplicate votes
@@ -64,14 +66,3 @@ the network; after restart, the event loop may resubmit/rebroadcast that same
 record for the matching height, round and block. A recovery state that claims a
 vote without the signed vote is invalid because it prevents double-voting but can
 leave the validator unable to make progress.
-
-
-## Immediate conflicting-vote evidence
-
-A same-validator, same-height, same-round vote for a different block is not only
-rejected. The rejection must expose the original accepted vote and the rejected
-conflicting vote. The consensus loop must verify this pair against the historical
-validator set, persist it through `EvidencePool`, and gossip a
-`SLASHING_EVIDENCE_ANNOUNCE` before the tick completes. A conflict that cannot
-be turned into verified evidence is counted as rejected evidence, not silently
-ignored.

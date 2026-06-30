@@ -19,6 +19,10 @@ public:
         const DoubleVoteEvidence& evidence
     );
 
+    SlashingEvidenceValidationResult submitProposerEquivocationEvidence(
+        const ProposerEquivocationEvidence& evidence
+    );
+
     void setPersistence(EvidencePoolPersistence* persistence);
     bool hasPersistence() const;
 
@@ -32,9 +36,15 @@ public:
         const std::string& evidenceId
     ) const;
 
+    const ProposerEquivocationEvidence* proposerEquivocationEvidenceById(
+        const std::string& evidenceId
+    ) const;
+
     std::vector<SlashingEvidenceRecord> allEvidence() const;
 
     std::vector<DoubleVoteEvidence> allDoubleVoteEvidence() const;
+
+    std::vector<ProposerEquivocationEvidence> allProposerEquivocationEvidence() const;
 
     std::vector<DoubleVoteEvidence> doubleVoteEvidenceBeforeHeight(
         std::uint64_t blockHeight
@@ -62,6 +72,7 @@ public:
 private:
     std::map<std::string, SlashingEvidenceRecord> m_evidenceById;
     std::map<std::string, DoubleVoteEvidence> m_doubleVoteEvidenceById;
+    std::map<std::string, ProposerEquivocationEvidence> m_proposerEquivocationEvidenceById;
     EvidencePoolPersistence* m_persistence;
 };
 

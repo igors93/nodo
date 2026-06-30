@@ -159,7 +159,9 @@ SlashingEvidenceAnnouncement::SlashingEvidenceAnnouncement()
     : m_networkId(),
       m_chainId(),
       m_announcerNodeId(),
+      m_evidenceType(consensus::SlashingEvidenceType::UNKNOWN),
       m_evidence(),
+      m_proposerEquivocationEvidence(),
       m_announcedAt(0) {}
 
 SlashingEvidenceAnnouncement::SlashingEvidenceAnnouncement(
@@ -171,7 +173,23 @@ SlashingEvidenceAnnouncement::SlashingEvidenceAnnouncement(
 ) : m_networkId(std::move(networkId)),
     m_chainId(std::move(chainId)),
     m_announcerNodeId(std::move(announcerNodeId)),
+    m_evidenceType(consensus::SlashingEvidenceType::DOUBLE_VOTE),
     m_evidence(std::move(evidence)),
+    m_proposerEquivocationEvidence(),
+    m_announcedAt(announcedAt) {}
+
+SlashingEvidenceAnnouncement::SlashingEvidenceAnnouncement(
+    std::string networkId,
+    std::string chainId,
+    std::string announcerNodeId,
+    consensus::ProposerEquivocationEvidence evidence,
+    std::int64_t announcedAt
+) : m_networkId(std::move(networkId)),
+    m_chainId(std::move(chainId)),
+    m_announcerNodeId(std::move(announcerNodeId)),
+    m_evidenceType(consensus::SlashingEvidenceType::EQUIVOCATION),
+    m_evidence(),
+    m_proposerEquivocationEvidence(std::move(evidence)),
     m_announcedAt(announcedAt) {}
 
 const std::string& SlashingEvidenceAnnouncement::networkId() const {
@@ -186,12 +204,27 @@ const std::string& SlashingEvidenceAnnouncement::announcerNodeId() const {
     return m_announcerNodeId;
 }
 
+consensus::SlashingEvidenceType SlashingEvidenceAnnouncement::evidenceType() const {
+    return m_evidenceType;
+}
+
 const consensus::DoubleVoteEvidence& SlashingEvidenceAnnouncement::evidence() const {
     return m_evidence;
 }
 
+const consensus::ProposerEquivocationEvidence&
+SlashingEvidenceAnnouncement::proposerEquivocationEvidence() const {
+    return m_proposerEquivocationEvidence;
+}
+
 consensus::SlashingEvidenceRecord SlashingEvidenceAnnouncement::record() const {
-    return m_evidence.toRecord();
+    if (m_evidenceType == consensus::SlashingEvidenceType::DOUBLE_VOTE) {
+        return m_evidence.toRecord();
+    }
+    if (m_evidenceType == consensus::SlashingEvidenceType::EQUIVOCATION) {
+        return m_proposerEquivocationEvidence.toRecord();
+    }
+    return consensus::SlashingEvidenceRecord();
 }
 
 std::int64_t SlashingEvidenceAnnouncement::announcedAt() const {
@@ -202,9 +235,14 @@ bool SlashingEvidenceAnnouncement::isValid() const {
     return isSafeScalar(m_networkId) &&
            isSafeScalar(m_chainId) &&
            isSafeScalar(m_announcerNodeId) &&
-           consensus::SlashingEvidenceVerifier::validateDoubleVoteStructure(
-               m_evidence
-           ).accepted() &&
+           ((m_evidenceType == consensus::SlashingEvidenceType::DOUBLE_VOTE &&
+             consensus::SlashingEvidenceVerifier::validateDoubleVoteStructure(
+                 m_evidence
+             ).accepted()) ||
+            (m_evidenceType == consensus::SlashingEvidenceType::EQUIVOCATION &&
+             consensus::SlashingEvidenceVerifier::validateProposerEquivocationStructure(
+                 m_proposerEquivocationEvidence
+             ).accepted())) &&
            m_announcedAt > 0;
 }
 
@@ -215,7 +253,11 @@ std::string SlashingEvidenceAnnouncement::serialize() const {
            << ";chainId=" << m_chainId
            << ";announcerNodeId=" << m_announcerNodeId
            << ";announcedAt=" << m_announcedAt
-           << ";evidence=" << m_evidence.serialize()
+           << ";evidenceType=" << consensus::slashingEvidenceTypeToString(m_evidenceType)
+           << ";evidence="
+           << (m_evidenceType == consensus::SlashingEvidenceType::EQUIVOCATION
+                   ? m_proposerEquivocationEvidence.serialize()
+                   : m_evidence.serialize())
            << "}";
     return output.str();
 }
@@ -228,17 +270,32 @@ SlashingEvidenceAnnouncement SlashingEvidenceAnnouncement::deserialize(
     );
     requireExactFields(
         fields,
-        {"networkId", "chainId", "announcerNodeId", "announcedAt", "evidence"},
+        {"networkId", "chainId", "announcerNodeId", "announcedAt", "evidenceType", "evidence"},
         "SlashingEvidenceAnnouncement"
     );
 
-    SlashingEvidenceAnnouncement announcement(
-        fields.at("networkId"),
-        fields.at("chainId"),
-        fields.at("announcerNodeId"),
-        consensus::DoubleVoteEvidence::deserialize(fields.at("evidence")),
-        parseI64Strict(fields.at("announcedAt"), "announcedAt")
-    );
+    const consensus::SlashingEvidenceType evidenceType =
+        consensus::slashingEvidenceTypeFromString(fields.at("evidenceType"));
+    SlashingEvidenceAnnouncement announcement;
+    if (evidenceType == consensus::SlashingEvidenceType::DOUBLE_VOTE) {
+        announcement = SlashingEvidenceAnnouncement(
+            fields.at("networkId"),
+            fields.at("chainId"),
+            fields.at("announcerNodeId"),
+            consensus::DoubleVoteEvidence::deserialize(fields.at("evidence")),
+            parseI64Strict(fields.at("announcedAt"), "announcedAt")
+        );
+    } else if (evidenceType == consensus::SlashingEvidenceType::EQUIVOCATION) {
+        announcement = SlashingEvidenceAnnouncement(
+            fields.at("networkId"),
+            fields.at("chainId"),
+            fields.at("announcerNodeId"),
+            consensus::ProposerEquivocationEvidence::deserialize(fields.at("evidence")),
+            parseI64Strict(fields.at("announcedAt"), "announcedAt")
+        );
+    } else {
+        throw std::invalid_argument("Unsupported slashing evidence announcement type.");
+    }
     if (!announcement.isValid() || announcement.serialize() != serialized) {
         throw std::invalid_argument(
             "Serialized slashing evidence announcement is invalid or non-canonical."
@@ -438,7 +495,9 @@ SlashingEvidenceResponse::SlashingEvidenceResponse()
     : m_networkId(),
       m_chainId(),
       m_responderNodeId(),
+      m_evidenceType(consensus::SlashingEvidenceType::UNKNOWN),
       m_evidence(),
+      m_proposerEquivocationEvidence(),
       m_respondedAt(0) {}
 
 SlashingEvidenceResponse::SlashingEvidenceResponse(
@@ -450,7 +509,23 @@ SlashingEvidenceResponse::SlashingEvidenceResponse(
 ) : m_networkId(std::move(networkId)),
     m_chainId(std::move(chainId)),
     m_responderNodeId(std::move(responderNodeId)),
+    m_evidenceType(consensus::SlashingEvidenceType::DOUBLE_VOTE),
     m_evidence(std::move(evidence)),
+    m_proposerEquivocationEvidence(),
+    m_respondedAt(respondedAt) {}
+
+SlashingEvidenceResponse::SlashingEvidenceResponse(
+    std::string networkId,
+    std::string chainId,
+    std::string responderNodeId,
+    consensus::ProposerEquivocationEvidence evidence,
+    std::int64_t respondedAt
+) : m_networkId(std::move(networkId)),
+    m_chainId(std::move(chainId)),
+    m_responderNodeId(std::move(responderNodeId)),
+    m_evidenceType(consensus::SlashingEvidenceType::EQUIVOCATION),
+    m_evidence(),
+    m_proposerEquivocationEvidence(std::move(evidence)),
     m_respondedAt(respondedAt) {}
 
 const std::string& SlashingEvidenceResponse::networkId() const {
@@ -465,8 +540,17 @@ const std::string& SlashingEvidenceResponse::responderNodeId() const {
     return m_responderNodeId;
 }
 
+consensus::SlashingEvidenceType SlashingEvidenceResponse::evidenceType() const {
+    return m_evidenceType;
+}
+
 const consensus::DoubleVoteEvidence& SlashingEvidenceResponse::evidence() const {
     return m_evidence;
+}
+
+const consensus::ProposerEquivocationEvidence&
+SlashingEvidenceResponse::proposerEquivocationEvidence() const {
+    return m_proposerEquivocationEvidence;
 }
 
 std::int64_t SlashingEvidenceResponse::respondedAt() const {
@@ -477,9 +561,14 @@ bool SlashingEvidenceResponse::isValid() const {
     return isSafeScalar(m_networkId) &&
            isSafeScalar(m_chainId) &&
            isSafeScalar(m_responderNodeId) &&
-           consensus::SlashingEvidenceVerifier::validateDoubleVoteStructure(
-               m_evidence
-           ).accepted() &&
+           ((m_evidenceType == consensus::SlashingEvidenceType::DOUBLE_VOTE &&
+             consensus::SlashingEvidenceVerifier::validateDoubleVoteStructure(
+                 m_evidence
+             ).accepted()) ||
+            (m_evidenceType == consensus::SlashingEvidenceType::EQUIVOCATION &&
+             consensus::SlashingEvidenceVerifier::validateProposerEquivocationStructure(
+                 m_proposerEquivocationEvidence
+             ).accepted())) &&
            m_respondedAt > 0;
 }
 
@@ -490,7 +579,11 @@ std::string SlashingEvidenceResponse::serialize() const {
            << ";chainId=" << m_chainId
            << ";responderNodeId=" << m_responderNodeId
            << ";respondedAt=" << m_respondedAt
-           << ";evidence=" << m_evidence.serialize()
+           << ";evidenceType=" << consensus::slashingEvidenceTypeToString(m_evidenceType)
+           << ";evidence="
+           << (m_evidenceType == consensus::SlashingEvidenceType::EQUIVOCATION
+                   ? m_proposerEquivocationEvidence.serialize()
+                   : m_evidence.serialize())
            << "}";
     return output.str();
 }
@@ -503,16 +596,31 @@ SlashingEvidenceResponse SlashingEvidenceResponse::deserialize(
     );
     requireExactFields(
         fields,
-        {"networkId", "chainId", "responderNodeId", "respondedAt", "evidence"},
+        {"networkId", "chainId", "responderNodeId", "respondedAt", "evidenceType", "evidence"},
         "SlashingEvidenceResponse"
     );
-    SlashingEvidenceResponse response(
-        fields.at("networkId"),
-        fields.at("chainId"),
-        fields.at("responderNodeId"),
-        consensus::DoubleVoteEvidence::deserialize(fields.at("evidence")),
-        parseI64Strict(fields.at("respondedAt"), "respondedAt")
-    );
+    const consensus::SlashingEvidenceType evidenceType =
+        consensus::slashingEvidenceTypeFromString(fields.at("evidenceType"));
+    SlashingEvidenceResponse response;
+    if (evidenceType == consensus::SlashingEvidenceType::DOUBLE_VOTE) {
+        response = SlashingEvidenceResponse(
+            fields.at("networkId"),
+            fields.at("chainId"),
+            fields.at("responderNodeId"),
+            consensus::DoubleVoteEvidence::deserialize(fields.at("evidence")),
+            parseI64Strict(fields.at("respondedAt"), "respondedAt")
+        );
+    } else if (evidenceType == consensus::SlashingEvidenceType::EQUIVOCATION) {
+        response = SlashingEvidenceResponse(
+            fields.at("networkId"),
+            fields.at("chainId"),
+            fields.at("responderNodeId"),
+            consensus::ProposerEquivocationEvidence::deserialize(fields.at("evidence")),
+            parseI64Strict(fields.at("respondedAt"), "respondedAt")
+        );
+    } else {
+        throw std::invalid_argument("Unsupported slashing evidence response type.");
+    }
     if (!response.isValid() || response.serialize() != serialized) {
         throw std::invalid_argument(
             "Serialized slashing evidence response is invalid or non-canonical."

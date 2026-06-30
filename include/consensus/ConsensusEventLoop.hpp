@@ -17,6 +17,7 @@
 #include "node/NodeRuntime.hpp"
 #include "node/SlashingEvidenceGossipAdmission.hpp"
 #include "node/SlashingEvidenceSync.hpp"
+#include "node/SignedBlockProposalMessage.hpp"
 #include "p2p/GossipMesh.hpp"
 
 #include <atomic>
@@ -219,6 +220,7 @@ private:
     struct PendingBlockCandidate {
         core::Block block;
         std::uint64_t round;
+        node::SignedBlockProposalMessage proposal;
     };
 
     // A proposal is not canonical state. It remains here until a valid quorum
@@ -246,15 +248,20 @@ private:
         std::int64_t now
     );
 
-    void admitAndBroadcastDoubleVoteEvidence(
-        const DoubleVoteEvidence& evidence,
+    void broadcastSlashingEvidence(
+        const ProposerEquivocationEvidence& evidence,
+        std::int64_t now
+    );
+
+    void admitAndBroadcastProposerEquivocationEvidence(
+        const ProposerEquivocationEvidence& evidence,
         std::int64_t now,
         ConsensusTickResult& result
     );
 
     // Validate proposals on the consensus thread and retain at most one
     // candidate for the active height and round.
-    void processBlockProposals();
+    void processBlockProposals(ConsensusTickResult& result);
 
     // Advance a timed-out round even when no proposal was received. Any
     // candidate from the expired round is discarded before the next proposer.

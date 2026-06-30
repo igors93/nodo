@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <exception>
 #include <limits>
+#include <optional>
 #include <vector>
 
 namespace nodo::node {
@@ -283,22 +284,33 @@ void SlashingEvidenceSync::processRequests(
                 continue;
             }
 
-            const consensus::DoubleVoteEvidence* evidence =
-                evidencePool.doubleVoteEvidenceById(request.evidenceId());
-            if (evidence == nullptr) {
+            std::optional<SlashingEvidenceResponse> response;
+            if (const consensus::DoubleVoteEvidence* evidence =
+                    evidencePool.doubleVoteEvidenceById(request.evidenceId())) {
+                response = SlashingEvidenceResponse(
+                    gossip.config().networkId(),
+                    gossip.config().chainId(),
+                    gossip.config().localNodeId(),
+                    *evidence,
+                    now
+                );
+            } else if (const consensus::ProposerEquivocationEvidence* evidence =
+                    evidencePool.proposerEquivocationEvidenceById(request.evidenceId())) {
+                response = SlashingEvidenceResponse(
+                    gossip.config().networkId(),
+                    gossip.config().chainId(),
+                    gossip.config().localNodeId(),
+                    *evidence,
+                    now
+                );
+            }
+            if (!response.has_value()) {
                 continue;
             }
-            const SlashingEvidenceResponse response(
-                gossip.config().networkId(),
-                gossip.config().chainId(),
-                gossip.config().localNodeId(),
-                *evidence,
-                now
-            );
             const p2p::GossipDeliveryReport delivery = gossip.sendTo(
                 envelope.senderNodeId(),
                 p2p::NetworkMessageType::SLASHING_EVIDENCE_RESPONSE,
-                response.serialize(),
+                response->serialize(),
                 now
             );
             if (delivery.acceptedCount() > 0) {
@@ -378,7 +390,10 @@ void SlashingEvidenceSync::processResponses(
                 continue;
             }
 
-            const std::string evidenceId = response.evidence().evidenceId();
+            const std::string evidenceId =
+                response.evidenceType() == consensus::SlashingEvidenceType::EQUIVOCATION
+                    ? response.proposerEquivocationEvidence().evidenceId()
+                    : response.evidence().evidenceId();
             const auto pending = m_pendingRequests.find(evidenceId);
             if (pending == m_pendingRequests.end() ||
                 pending->second.peerId != envelope.senderNodeId()) {
@@ -395,15 +410,34 @@ void SlashingEvidenceSync::processResponses(
 
             consensus::SlashingEvidenceValidationResult admitted;
             try {
-                admitted = VerifiedSlashingEvidenceAdmission::admit(
-                    response.evidence(),
-                    currentConsensusHeight,
-                    now,
-                    validatorSetHistory,
-                    policy,
-                    provider,
-                    evidencePool
-                );
+                if (response.evidenceType() == consensus::SlashingEvidenceType::DOUBLE_VOTE) {
+                    admitted = VerifiedSlashingEvidenceAdmission::admit(
+                        response.evidence(),
+                        currentConsensusHeight,
+                        now,
+                        validatorSetHistory,
+                        policy,
+                        provider,
+                        evidencePool
+                    );
+                } else if (response.evidenceType() == consensus::SlashingEvidenceType::EQUIVOCATION) {
+                    admitted = VerifiedSlashingEvidenceAdmission::admit(
+                        response.proposerEquivocationEvidence(),
+                        currentConsensusHeight,
+                        now,
+                        validatorSetHistory,
+                        gossip.config().chainId(),
+                        policy,
+                        provider,
+                        evidencePool
+                    );
+                } else {
+                    admitted = consensus::SlashingEvidenceValidationResult(
+                        consensus::SlashingEvidenceValidationStatus::REJECTED,
+                        "Unsupported slashing evidence response type.",
+                        consensus::SlashingEvidenceRecord()
+                    );
+                }
             } catch (const std::exception&) {
                 // Local persistence or runtime failures are not evidence of
                 // remote misbehavior and must not damage the sender's score.
@@ -458,8 +492,8 @@ void SlashingEvidenceSync::broadcastInventory(
     }
     m_lastInventoryAt = now;
 
-    const std::vector<consensus::DoubleVoteEvidence> allEvidence =
-        evidencePool.allDoubleVoteEvidence();
+    const std::vector<consensus::SlashingEvidenceRecord> allEvidence =
+        evidencePool.allEvidence();
     if (allEvidence.empty()) {
         m_inventoryOffset = 0;
         return;

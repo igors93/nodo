@@ -20,13 +20,23 @@ public:
         const consensus::DoubleVoteEvidence& evidence
     ) override;
 
+    void persist(
+        const consensus::ProposerEquivocationEvidence& evidence
+    ) override;
+
     bool contains(const std::string& evidenceId) const;
 
     consensus::DoubleVoteEvidence load(
         const std::string& evidenceId
     ) const;
 
+    consensus::ProposerEquivocationEvidence loadProposerEquivocation(
+        const std::string& evidenceId
+    ) const;
+
     std::vector<consensus::DoubleVoteEvidence> loadAll() const;
+
+    std::vector<consensus::ProposerEquivocationEvidence> loadAllProposerEquivocation() const;
 
     bool erase(const std::string& evidenceId) override;
 

@@ -706,6 +706,7 @@ NodeOrchestratorStartResult NodeOrchestrator::initOrLoad() {
             m_runtime->consensusRoundManager().currentState().height(),
             static_cast<std::int64_t>(evidenceRestoreNow),
             m_runtime->validatorSetHistory(),
+            m_config.genesisConfig().networkParameters().chainId(),
             m_policy,
             m_provider,
             m_runtime->validatorPenaltyLedger()

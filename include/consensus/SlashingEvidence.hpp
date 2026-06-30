@@ -106,6 +106,51 @@ private:
     std::int64_t m_detectedAt;
 };
 
+class ProposerEquivocationEvidence {
+public:
+    ProposerEquivocationEvidence();
+
+    ProposerEquivocationEvidence(
+        std::string firstProposal,
+        std::string secondProposal,
+        std::string proposerAddress,
+        std::uint64_t blockIndex,
+        std::uint64_t round,
+        std::string firstBlockHash,
+        std::string secondBlockHash,
+        std::int64_t detectedAt
+    );
+
+    const std::string& firstProposal() const;
+    const std::string& secondProposal() const;
+    const std::string& proposerAddress() const;
+    std::uint64_t blockIndex() const;
+    std::uint64_t round() const;
+    const std::string& firstBlockHash() const;
+    const std::string& secondBlockHash() const;
+    std::int64_t detectedAt() const;
+
+    bool isConflictPair() const;
+    std::string payload() const;
+    std::string payloadHash() const;
+    std::string evidenceId() const;
+
+    SlashingEvidenceRecord toRecord() const;
+    std::string serialize() const;
+
+    static ProposerEquivocationEvidence deserialize(const std::string& serialized);
+
+private:
+    std::string m_firstProposal;
+    std::string m_secondProposal;
+    std::string m_proposerAddress;
+    std::uint64_t m_blockIndex;
+    std::uint64_t m_round;
+    std::string m_firstBlockHash;
+    std::string m_secondBlockHash;
+    std::int64_t m_detectedAt;
+};
+
 class SlashingEvidenceValidationResult {
 public:
     SlashingEvidenceValidationResult();
@@ -141,6 +186,10 @@ public:
 
     static SlashingEvidenceValidationResult validateDoubleVoteStructure(
         const DoubleVoteEvidence& evidence
+    );
+
+    static SlashingEvidenceValidationResult validateProposerEquivocationStructure(
+        const ProposerEquivocationEvidence& evidence
     );
 
     static SlashingEvidenceValidationResult verifyDoubleVoteEvidenceForHistory(

@@ -40,7 +40,7 @@ BlockProposalResult BlockProposalPhase::propose(
             now
         );
 
-        return BlockProposalResult::ok();
+        return BlockProposalResult::ok(proposal.serialize());
     } catch (...) {
         return BlockProposalResult::skipped("Exception during proposal signing or broadcast.");
     }
