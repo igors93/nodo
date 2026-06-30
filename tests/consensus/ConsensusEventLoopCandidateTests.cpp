@@ -1,5 +1,6 @@
 #include "consensus/BlockProductionPhase.hpp"
 #include "consensus/ConsensusEventLoop.hpp"
+#include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "config/NetworkParameters.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
@@ -13,6 +14,7 @@
 #include "../common/ConsensusPhaseTestFixtures.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -249,6 +251,52 @@ void testMissingProposalStillAdvancesRound() {
             "A timeout without a proposal must not modify the blockchain.");
 }
 
+
+void testConsensusLoopPersistsSignedPrevoteBeforeBroadcast() {
+    const auto validators = makeValidators(2);
+    const config::GenesisConfig genesis =
+        makeGenesis(validators, "candidate-signed-prevote-recovery");
+    node::NodeRuntime runtime = startRuntime(genesis);
+    test::admitConsensusTestTransfer(runtime, userKey(), 1, kTimestamp + 1);
+    TestNetwork network(genesis);
+    const crypto::Bls12381SignatureProvider provider;
+    const crypto::Signer signer(proposerFixture(validators, runtime).keyPair, provider);
+
+    const std::filesystem::path recoveryPath =
+        std::filesystem::temp_directory_path() /
+        "nodo-consensus-event-loop-signed-prevote.state";
+    std::error_code cleanupError;
+    std::filesystem::remove(recoveryPath, cleanupError);
+
+    consensus::ConsensusEventLoop loop(
+        runtime,
+        network.mesh,
+        developmentPolicy(),
+        provider
+    );
+    loop.setRecoveryPath(recoveryPath);
+    configureProducer(loop, runtime, signer);
+
+    const consensus::ConsensusTickResult result = loop.tick(kTimestamp + 3);
+
+    require(!result.blockFinalized,
+            "Two validators should not finalize with only the local prevote.");
+
+    const auto stored = consensus::ConsensusRecoveryStore::load(recoveryPath);
+    require(stored.has_value(),
+            "Consensus loop must persist recovery state after local PREVOTE.");
+    require(stored->votedPrevote(),
+            "Recovery state must record that the local validator prevoted.");
+    require(stored->persistedPrevote().has_value(),
+            "Recovery state must contain the exact signed PREVOTE for rebroadcast.");
+    require(stored->persistedPrevote()->decision() == consensus::ValidatorVoteDecision::PREVOTE,
+            "Persisted vote must be a PREVOTE.");
+    require(stored->persistedPrevote()->verify(developmentPolicy(), provider),
+            "Persisted PREVOTE must be a valid signed vote, not a boolean marker.");
+
+    std::filesystem::remove(recoveryPath, cleanupError);
+}
+
 void testProposerRetriesAfterTransientProductionFailure() {
     const auto validators = makeValidators(1);
     const config::GenesisConfig genesis =
@@ -312,6 +360,7 @@ int main() {
         testCandidateDoesNotEnterChainWithoutQuorum();
         testSingleValidatorCandidateAppendsOnlyDuringFinalization();
         testMissingProposalStillAdvancesRound();
+        testConsensusLoopPersistsSignedPrevoteBeforeBroadcast();
         testProposerRetriesAfterTransientProductionFailure();
         std::cout << "Consensus event loop candidate tests passed.\n";
         return 0;

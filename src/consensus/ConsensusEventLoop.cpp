@@ -2,6 +2,7 @@
 
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposerSchedule.hpp"
+#include "consensus/ValidatorVoteBuilder.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
 #include "crypto/Hex.hpp"
@@ -91,6 +92,10 @@ void ConsensusEventLoop::loadFromRecoveryState(const ConsensusRoundState& state)
     m_lockedRound         = state.lockedRound();
     m_votedPrevote        = state.votedPrevote();
     m_votedPrecommit      = state.votedPrecommit();
+    m_persistedPrevote    = state.persistedPrevote();
+    m_persistedPrecommit  = state.persistedPrecommit();
+    m_rebroadcastedPrevote = false;
+    m_rebroadcastedPrecommit = false;
     m_lastProcessedHeight = state.height();
 }
 
@@ -178,6 +183,10 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         m_lockedRound            = 0;
         m_votedPrevote           = false;
         m_votedPrecommit         = false;
+        m_persistedPrevote.reset();
+        m_persistedPrecommit.reset();
+        m_rebroadcastedPrevote   = false;
+        m_rebroadcastedPrecommit = false;
         m_producedThisRound      = false;
         m_pendingCandidate.reset();
     } else if (m_lastProcessedHeight == 0 && height > 0) {
@@ -255,6 +264,8 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     const std::string& blockHash = candidate.hash();
     const std::string& prevHash  = candidate.previousHash();
 
+    rebroadcastPersistedVotesForCandidate(candidate, round, now, result);
+
     // Count accumulated prevotes for the current block.
     const VotePool& pool = m_runtime.consensusRoundManager().voteCollector().votePool();
     std::vector<ValidatorVoteRecord> currentVotes =
@@ -302,15 +313,30 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         validators.isEligibleForConsensus(m_localSigner->address())) {
 
         if (m_lockedBlock.empty() || blockHash == m_lockedBlock || round > m_lockedRound) {
-            if (!saveRecoveryState(true, m_votedPrecommit)) {
+            try {
+                m_persistedPrevote = ValidatorVoteBuilder::buildPrevote(
+                    validators,
+                    candidate,
+                    round,
+                    now,
+                    *m_localSigner
+                );
+            } catch (const std::exception& e) {
+                result.errorMessage = std::string("Unable to build PREVOTE: ") + e.what();
+                return result;
+            }
+
+            if (!saveRecoveryState()) {
+                m_persistedPrevote.reset();
                 result.errorMessage =
-                    "Unable to persist PREVOTE safety state; vote was not cast.";
+                    "Unable to persist signed PREVOTE; vote was not exposed.";
             } else {
                 m_votedPrevote = true;
-                const VoteCastResult prevoteResult = BlockVotingPhase::castPrevote(
-                    m_runtime, candidate, round, now, *m_localSigner, m_gossip
+                const VoteCastResult prevoteResult = BlockVotingPhase::submitAndBroadcastSignedVote(
+                    m_runtime, *m_persistedPrevote, now, m_gossip
                 );
                 if (prevoteResult.cast()) {
+                    m_rebroadcastedPrevote = true;
                     const std::uint64_t ownWeight =
                         validators.consensusWeightFor(m_localSigner->address());
                     if (std::numeric_limits<std::uint64_t>::max() - prevoteWeight < ownWeight) {
@@ -341,17 +367,35 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
             m_lockedBlock = blockHash;
             m_lockedRound = round;
 
-            if (!saveRecoveryState(m_votedPrevote, true)) {
+            try {
+                m_persistedPrecommit = ValidatorVoteBuilder::buildPrecommit(
+                    validators,
+                    candidate,
+                    round,
+                    now,
+                    *m_localSigner
+                );
+            } catch (const std::exception& e) {
                 m_lockedBlock = previousLockedBlock;
                 m_lockedRound = previousLockedRound;
+                result.errorMessage = std::string("Unable to build PRECOMMIT: ") + e.what();
+                return result;
+            }
+
+            if (!saveRecoveryState()) {
+                m_lockedBlock = previousLockedBlock;
+                m_lockedRound = previousLockedRound;
+                m_persistedPrecommit.reset();
                 result.errorMessage =
-                    "Unable to persist PRECOMMIT safety state; vote was not cast.";
+                    "Unable to persist signed PRECOMMIT; vote was not exposed.";
             } else {
                 m_votedPrecommit = true;
-                const VoteCastResult precommitResult = BlockVotingPhase::castPrecommit(
-                    m_runtime, candidate, round, now, *m_localSigner, m_gossip
+                const VoteCastResult precommitResult = BlockVotingPhase::submitAndBroadcastSignedVote(
+                    m_runtime, *m_persistedPrecommit, now, m_gossip
                 );
-                if (!precommitResult.cast()) {
+                if (precommitResult.cast()) {
+                    m_rebroadcastedPrecommit = true;
+                } else {
                     result.errorMessage = precommitResult.reason();
                 }
             }
@@ -666,13 +710,17 @@ bool ConsensusEventLoop::advanceRoundIfTimedOut(
     result.roundAdvanced    = true;
     m_votedPrevote          = false;
     m_votedPrecommit        = false;
+    m_persistedPrevote.reset();
+    m_persistedPrecommit.reset();
+    m_rebroadcastedPrevote = false;
+    m_rebroadcastedPrecommit = false;
     m_producedThisRound     = false;
     m_pendingCandidate.reset();
     broadcastRoundAdvancement(now);
     return true;
 }
 
-bool ConsensusEventLoop::saveRecoveryState(bool votedPrevote, bool votedPrecommit) {
+bool ConsensusEventLoop::saveRecoveryState() {
     if (!m_recoveryPath.has_value()) return true;
 
     const auto& state = m_runtime.consensusRoundManager().currentState();
@@ -683,10 +731,65 @@ bool ConsensusEventLoop::saveRecoveryState(bool votedPrevote, bool votedPrecommi
         state.roundStartedAt(),
         m_lockedBlock,
         m_lockedRound,
-        votedPrevote,
-        votedPrecommit
+        m_persistedPrevote.has_value(),
+        m_persistedPrecommit.has_value(),
+        m_persistedPrevote,
+        m_persistedPrecommit
     );
     return ConsensusRecoveryStore::save(*m_recoveryPath, updatedState);
+}
+
+bool ConsensusEventLoop::persistedVoteMatchesCandidate(
+    const ValidatorVoteRecord& vote,
+    const core::Block& candidate,
+    std::uint64_t round,
+    ValidatorVoteDecision decision
+) const {
+    return vote.blockIndex() == candidate.index() &&
+           vote.blockHash() == candidate.hash() &&
+           vote.previousHash() == candidate.previousHash() &&
+           vote.round() == round &&
+           vote.decision() == decision &&
+           (!m_localSigner || vote.validatorAddress() == m_localSigner->address());
+}
+
+void ConsensusEventLoop::rebroadcastPersistedVotesForCandidate(
+    const core::Block& candidate,
+    std::uint64_t round,
+    std::int64_t now,
+    ConsensusTickResult& result
+) {
+    if (m_persistedPrevote.has_value() &&
+        !m_rebroadcastedPrevote &&
+        persistedVoteMatchesCandidate(*m_persistedPrevote, candidate, round, ValidatorVoteDecision::PREVOTE)) {
+        const VoteCastResult voteResult = BlockVotingPhase::submitAndBroadcastSignedVote(
+            m_runtime,
+            *m_persistedPrevote,
+            now,
+            m_gossip
+        );
+        if (voteResult.cast()) {
+            m_rebroadcastedPrevote = true;
+        } else {
+            result.errorMessage = voteResult.reason();
+        }
+    }
+
+    if (m_persistedPrecommit.has_value() &&
+        !m_rebroadcastedPrecommit &&
+        persistedVoteMatchesCandidate(*m_persistedPrecommit, candidate, round, ValidatorVoteDecision::PRECOMMIT)) {
+        const VoteCastResult voteResult = BlockVotingPhase::submitAndBroadcastSignedVote(
+            m_runtime,
+            *m_persistedPrecommit,
+            now,
+            m_gossip
+        );
+        if (voteResult.cast()) {
+            m_rebroadcastedPrecommit = true;
+        } else {
+            result.errorMessage = voteResult.reason();
+        }
+    }
 }
 
 void ConsensusEventLoop::broadcastRoundAdvancement(std::int64_t now) {

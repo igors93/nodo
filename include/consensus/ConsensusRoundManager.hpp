@@ -5,8 +5,10 @@
 #include "consensus/RoundTimeout.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureProvider.hpp"
+#include "consensus/ValidatorVoteRecord.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace nodo::consensus {
@@ -23,7 +25,9 @@ public:
         std::string lockedBlockHash = "",
         std::uint64_t lockedRound = 0,
         bool votedPrevote = false,
-        bool votedPrecommit = false
+        bool votedPrecommit = false,
+        std::optional<ValidatorVoteRecord> persistedPrevote = std::nullopt,
+        std::optional<ValidatorVoteRecord> persistedPrecommit = std::nullopt
     );
 
     std::uint64_t height() const;
@@ -34,6 +38,8 @@ public:
     std::uint64_t lockedRound() const;
     bool votedPrevote() const;
     bool votedPrecommit() const;
+    const std::optional<ValidatorVoteRecord>& persistedPrevote() const;
+    const std::optional<ValidatorVoteRecord>& persistedPrecommit() const;
 
     bool isValid() const;
     std::string serialize() const;
@@ -48,6 +54,8 @@ private:
     std::uint64_t m_lockedRound;
     bool m_votedPrevote;
     bool m_votedPrecommit;
+    std::optional<ValidatorVoteRecord> m_persistedPrevote;
+    std::optional<ValidatorVoteRecord> m_persistedPrecommit;
 };
 
 /*

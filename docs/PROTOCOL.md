@@ -76,3 +76,9 @@ command is a DEVELOPMENT_LOCAL-only helper that may build one local PRECOMMIT QC
 for end-to-end persistence testing. Testnet-candidate and production networks
 must use the distributed proposer/PREVOTE/PRECOMMIT/QC path and then enter
 `RuntimeBlockPipeline::commitCertifiedBlock`.
+
+
+Validator vote persistence is vote-material based. The node never treats a
+boolean `already voted` flag as sufficient recovery proof; the recovery file must
+contain the canonical signed PREVOTE/PRECOMMIT record so restart can replay the
+same vote without producing a different one.

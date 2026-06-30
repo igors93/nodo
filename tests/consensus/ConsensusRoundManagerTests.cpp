@@ -18,7 +18,8 @@ nodo::consensus::ValidatorVoteRecord makeVote(
     const std::string& validatorAddr,
     std::uint64_t blockIndex,
     std::uint64_t round,
-    const std::string& blockHash = "hash-A"
+    const std::string& blockHash = "hash-A",
+    nodo::consensus::ValidatorVoteDecision decision = nodo::consensus::ValidatorVoteDecision::PRECOMMIT
 ) {
     const nodo::crypto::PublicKey pk(
         nodo::crypto::CryptoAlgorithm::BLS12_381,
@@ -40,7 +41,7 @@ nodo::consensus::ValidatorVoteRecord makeVote(
         blockHash,
         "prev-hash",
         round,
-        nodo::consensus::ValidatorVoteDecision::PRECOMMIT,
+        decision,
         "reason-hash",
         1000,
         bundle
@@ -134,9 +135,24 @@ void testRoundStateSerializes() {
 }
 
 void testRoundStateSerializesLockFields() {
+    const auto prevote = makeVote(
+        "validator-x",
+        7,
+        3,
+        "hashofblock",
+        nodo::consensus::ValidatorVoteDecision::PREVOTE
+    );
+    const auto precommit = makeVote(
+        "validator-x",
+        7,
+        3,
+        "hashofblock",
+        nodo::consensus::ValidatorVoteDecision::PRECOMMIT
+    );
     const nodo::consensus::ConsensusRoundState state(
         7, 3, "validator-b", 2000000,
-        "hashofblock", 3, true, true
+        "hashofblock", 3, true, true,
+        prevote, precommit
     );
     const std::string s = state.serialize();
     assert(s.find("lockedBlockHash=hashofblock") != std::string::npos);
@@ -146,9 +162,17 @@ void testRoundStateSerializesLockFields() {
 }
 
 void testRoundStateDeserializeRoundTrip() {
+    const auto prevote = makeVote(
+        "validator-x",
+        12,
+        4,
+        "abcdef123456",
+        nodo::consensus::ValidatorVoteDecision::PREVOTE
+    );
     const nodo::consensus::ConsensusRoundState original(
         12, 4, "validator-c", 3000000,
-        "abcdef123456", 4, true, false
+        "abcdef123456", 4, true, false,
+        prevote, std::nullopt
     );
     const std::string serialized = original.serialize();
     const nodo::consensus::ConsensusRoundState recovered =
@@ -162,7 +186,10 @@ void testRoundStateDeserializeRoundTrip() {
     assert(recovered.lockedRound() == 4);
     assert(recovered.votedPrevote() == true);
     assert(recovered.votedPrecommit() == false);
+    assert(recovered.persistedPrevote().has_value());
+    assert(recovered.persistedPrevote()->serialize() == prevote.serialize());
 }
+
 
 void testRoundStateDefaultLockFields() {
     const nodo::consensus::ConsensusRoundState state(1, 1, "validator-a", 1000000);

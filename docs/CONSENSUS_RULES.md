@@ -57,3 +57,10 @@ The gossip layer carries the following consensus-specific message types:
 
 All consensus message signatures are verified locally; no message is acted on
 without signature verification against the validator registry.
+
+Consensus recovery persists the signed vote material, not only `voted` flags.
+A validator must write the exact PREVOTE/PRECOMMIT record before exposing it to
+the network; after restart, the event loop may resubmit/rebroadcast that same
+record for the matching height, round and block. A recovery state that claims a
+vote without the signed vote is invalid because it prevents double-voting but can
+leave the validator unable to make progress.

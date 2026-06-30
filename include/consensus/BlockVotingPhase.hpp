@@ -3,6 +3,7 @@
 
 #include "core/Block.hpp"
 #include "crypto/Signer.hpp"
+#include "consensus/ValidatorVoteRecord.hpp"
 #include "node/NodeRuntime.hpp"
 #include "p2p/GossipMesh.hpp"
 
@@ -47,6 +48,19 @@ private:
  */
 class BlockVotingPhase {
 public:
+    /*
+     * Submit an already signed vote to the local VotePool and broadcast that
+     * exact serialized record. This is the recovery-safe entry point: callers
+     * may persist the signed vote before exposing it to the network, then call
+     * this method now or after restart to rebroadcast the same vote.
+     */
+    static VoteCastResult submitAndBroadcastSignedVote(
+        node::NodeRuntime& runtime,
+        const ValidatorVoteRecord& vote,
+        std::int64_t now,
+        p2p::GossipMesh& gossip
+    );
+
     /*
      * Build a PREVOTE for the given block, submit it to the runtime VotePool,
      * and broadcast it to peers. Returns ok() when the vote was accepted.

@@ -209,6 +209,10 @@ private:
     std::uint64_t         m_lockedRound   = 0;
     bool                  m_votedPrevote  = false;
     bool                  m_votedPrecommit = false;
+    std::optional<ValidatorVoteRecord> m_persistedPrevote;
+    std::optional<ValidatorVoteRecord> m_persistedPrecommit;
+    bool                  m_rebroadcastedPrevote = false;
+    bool                  m_rebroadcastedPrecommit = false;
     bool                  m_producedThisRound = false;
     std::uint64_t         m_lastProcessedHeight = 0;
 
@@ -250,8 +254,23 @@ private:
     // candidate from the expired round is discarded before the next proposer.
     bool advanceRoundIfTimedOut(std::int64_t now, ConsensusTickResult& result);
 
-    // Persist BFT recovery state before a vote is exposed to the network.
-    bool saveRecoveryState(bool votedPrevote, bool votedPrecommit);
+    // Persist BFT recovery state containing the exact signed votes before any
+    // vote is exposed to the network. Booleans are derived from vote presence.
+    bool saveRecoveryState();
+
+    bool persistedVoteMatchesCandidate(
+        const ValidatorVoteRecord& vote,
+        const core::Block& candidate,
+        std::uint64_t round,
+        ValidatorVoteDecision decision
+    ) const;
+
+    void rebroadcastPersistedVotesForCandidate(
+        const core::Block& candidate,
+        std::uint64_t round,
+        std::int64_t now,
+        ConsensusTickResult& result
+    );
 
     // Broadcast a CHAIN_STATUS message after a round advance.
     void broadcastRoundAdvancement(std::int64_t now);

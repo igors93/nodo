@@ -1,6 +1,7 @@
 #include "consensus/BlockVotingPhase.hpp"
 
 #include "consensus/ValidatorVoteBuilder.hpp"
+#include "consensus/NetworkVoteCollector.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 
@@ -24,6 +25,34 @@ const core::ValidatorRegistry& validatorSetForBlock(
 
 } // namespace
 
+VoteCastResult BlockVotingPhase::submitAndBroadcastSignedVote(
+    node::NodeRuntime& runtime,
+    const ValidatorVoteRecord& vote,
+    std::int64_t now,
+    p2p::GossipMesh& gossip
+) {
+    try {
+        const VoteCollectResult collected = runtime.submitConsensusVote(vote);
+        if (!collected.accepted() &&
+            collected.status() != VoteCollectStatus::REJECTED_REPLAY) {
+            return VoteCastResult::failed(
+                validatorVoteDecisionToString(vote.decision()) +
+                " rejected by VotePool: " + collected.reason()
+            );
+        }
+
+        const std::string serialized = vote.serialize();
+        gossip.broadcast(p2p::NetworkMessageType::VOTE_ANNOUNCE,  serialized, now);
+        gossip.broadcast(p2p::NetworkMessageType::VALIDATOR_VOTE, serialized, now);
+
+        return VoteCastResult::ok();
+    } catch (const std::exception& e) {
+        return VoteCastResult::failed(
+            std::string("Exception during signed vote broadcast: ") + e.what()
+        );
+    }
+}
+
 VoteCastResult BlockVotingPhase::castPrevote(
     node::NodeRuntime&    runtime,
     const core::Block&    block,
@@ -41,18 +70,7 @@ VoteCastResult BlockVotingPhase::castPrevote(
             signer
         );
 
-        const VoteCollectResult collected = runtime.submitConsensusVote(prevote);
-        if (!collected.accepted()) {
-            return VoteCastResult::failed(
-                "PREVOTE rejected by VotePool: " + collected.reason()
-            );
-        }
-
-        const std::string serialized = prevote.serialize();
-        gossip.broadcast(p2p::NetworkMessageType::VOTE_ANNOUNCE,  serialized, now);
-        gossip.broadcast(p2p::NetworkMessageType::VALIDATOR_VOTE, serialized, now);
-
-        return VoteCastResult::ok();
+        return submitAndBroadcastSignedVote(runtime, prevote, now, gossip);
     } catch (const std::exception& e) {
         return VoteCastResult::failed(
             std::string("Exception during PREVOTE: ") + e.what()
@@ -77,18 +95,7 @@ VoteCastResult BlockVotingPhase::castPrecommit(
             signer
         );
 
-        const VoteCollectResult collected = runtime.submitConsensusVote(precommit);
-        if (!collected.accepted()) {
-            return VoteCastResult::failed(
-                "PRECOMMIT rejected by VotePool: " + collected.reason()
-            );
-        }
-
-        const std::string serialized = precommit.serialize();
-        gossip.broadcast(p2p::NetworkMessageType::VOTE_ANNOUNCE,  serialized, now);
-        gossip.broadcast(p2p::NetworkMessageType::VALIDATOR_VOTE, serialized, now);
-
-        return VoteCastResult::ok();
+        return submitAndBroadcastSignedVote(runtime, precommit, now, gossip);
     } catch (const std::exception& e) {
         return VoteCastResult::failed(
             std::string("Exception during PRECOMMIT: ") + e.what()

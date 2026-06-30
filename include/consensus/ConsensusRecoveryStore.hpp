@@ -15,8 +15,10 @@ namespace nodo::consensus {
  * Security principle:
  * On restart, a node must not start from round 0 if it was already in the
  * middle of a round. Doing so could cause it to vote for two different blocks
- * at the same height. The recovery store saves the last known round state so
- * the node can reload it and skip rounds it has already participated in.
+ * at the same height. The recovery store saves the last known round state plus
+ * the exact signed PREVOTE/PRECOMMIT records, allowing the node to reload,
+ * resubmit and rebroadcast the original votes instead of either double-voting
+ * or getting stuck behind boolean-only markers.
  */
 class ConsensusRecoveryStore {
 public:

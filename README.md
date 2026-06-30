@@ -327,11 +327,12 @@ Completed foundations:
 - P2P transport/gossip/encrypted channel foundations;
 - testnet-candidate readiness diagnostics;
 - distributed node daemon: transaction gossip, block proposal relay, proposer authentication, finalized artifact QC verification;
-- durable QC persistence (`FinalizedBlockRecordStore`): QC proofs survive restart, fast-path `QC_REQUIRED` sync is fully functional, sync responses carry QC proofs to peers.
+- durable QC persistence (`FinalizedBlockRecordStore`): QC proofs survive restart, fast-path `QC_REQUIRED` sync is fully functional, sync responses carry QC proofs to peers;
+- signed consensus-vote recovery: `ConsensusRecoveryStore` persists exact signed PREVOTE/PRECOMMIT records so restart can safely resubmit/rebroadcast the same votes without double-voting.
 
 In progress:
 
-- live distributed consensus (Phase 2): proposer selection wired to daemon, networked prevote/precommit, view change, consensus recovery store;
+- live distributed consensus (Phase 2): proposer selection wired to daemon, networked prevote/precommit, view change and recovery hardening around persisted signed votes;
 - official testnet runtime hardening;
 - production key safety and custody boundaries;
 - governance lifecycle transitions;

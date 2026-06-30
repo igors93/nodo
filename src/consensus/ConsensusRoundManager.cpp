@@ -1,5 +1,8 @@
 #include "consensus/ConsensusRoundManager.hpp"
 
+#include "crypto/Hex.hpp"
+
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -14,7 +17,9 @@ ConsensusRoundState::ConsensusRoundState()
       m_lockedBlockHash(""),
       m_lockedRound(0),
       m_votedPrevote(false),
-      m_votedPrecommit(false) {}
+      m_votedPrecommit(false),
+      m_persistedPrevote(std::nullopt),
+      m_persistedPrecommit(std::nullopt) {}
 
 ConsensusRoundState::ConsensusRoundState(
     std::uint64_t height,
@@ -24,7 +29,9 @@ ConsensusRoundState::ConsensusRoundState(
     std::string lockedBlockHash,
     std::uint64_t lockedRound,
     bool votedPrevote,
-    bool votedPrecommit
+    bool votedPrecommit,
+    std::optional<ValidatorVoteRecord> persistedPrevote,
+    std::optional<ValidatorVoteRecord> persistedPrecommit
 )
     : m_height(height),
       m_round(round),
@@ -33,7 +40,9 @@ ConsensusRoundState::ConsensusRoundState(
       m_lockedBlockHash(std::move(lockedBlockHash)),
       m_lockedRound(lockedRound),
       m_votedPrevote(votedPrevote),
-      m_votedPrecommit(votedPrecommit) {}
+      m_votedPrecommit(votedPrecommit),
+      m_persistedPrevote(std::move(persistedPrevote)),
+      m_persistedPrecommit(std::move(persistedPrecommit)) {}
 
 std::uint64_t ConsensusRoundState::height() const { return m_height; }
 std::uint64_t ConsensusRoundState::round() const { return m_round; }
@@ -43,6 +52,50 @@ const std::string& ConsensusRoundState::lockedBlockHash() const { return m_locke
 std::uint64_t ConsensusRoundState::lockedRound() const { return m_lockedRound; }
 bool ConsensusRoundState::votedPrevote() const { return m_votedPrevote; }
 bool ConsensusRoundState::votedPrecommit() const { return m_votedPrecommit; }
+const std::optional<ValidatorVoteRecord>& ConsensusRoundState::persistedPrevote() const { return m_persistedPrevote; }
+const std::optional<ValidatorVoteRecord>& ConsensusRoundState::persistedPrecommit() const { return m_persistedPrecommit; }
+
+namespace {
+
+bool isPersistedRoundVote(
+    const ValidatorVoteRecord& vote,
+    std::uint64_t height,
+    std::uint64_t round,
+    ValidatorVoteDecision decision
+) {
+    return vote.blockIndex() == height &&
+           vote.round() == round &&
+           vote.decision() == decision &&
+           !vote.blockHash().empty() &&
+           !vote.previousHash().empty() &&
+           !vote.validatorAddress().empty();
+}
+
+std::string encodeOptionalVoteForRoundState(
+    const std::optional<ValidatorVoteRecord>& vote
+) {
+    if (!vote.has_value()) return "-";
+    const std::string serialized = vote->serialize();
+    return crypto::hexEncode(
+        reinterpret_cast<const unsigned char*>(serialized.data()),
+        serialized.size()
+    );
+}
+
+std::optional<ValidatorVoteRecord> decodeOptionalVoteForRoundState(
+    const std::string& value
+) {
+    if (value == "-") return std::nullopt;
+    if (!crypto::isHexString(value)) {
+        throw std::invalid_argument("Persisted round vote is not canonical hex.");
+    }
+    const std::vector<unsigned char> decoded = crypto::hexDecode(value);
+    return ValidatorVoteRecord::deserialize(
+        std::string(decoded.begin(), decoded.end())
+    );
+}
+
+} // namespace
 
 bool ConsensusRoundState::isValid() const {
     if (m_height == 0 || m_round == 0 || m_proposerAddress.empty() ||
@@ -55,8 +108,38 @@ bool ConsensusRoundState::isValid() const {
         return false;
     }
 
+    if (m_votedPrevote != m_persistedPrevote.has_value()) {
+        return false;
+    }
+
+    if (m_votedPrecommit != m_persistedPrecommit.has_value()) {
+        return false;
+    }
+
     if (m_votedPrecommit && (!m_votedPrevote || !hasLock)) {
         return false;
+    }
+
+    if (m_persistedPrevote.has_value() &&
+        !isPersistedRoundVote(*m_persistedPrevote, m_height, m_round, ValidatorVoteDecision::PREVOTE)) {
+        return false;
+    }
+
+    if (m_persistedPrecommit.has_value()) {
+        if (!isPersistedRoundVote(*m_persistedPrecommit, m_height, m_round, ValidatorVoteDecision::PRECOMMIT)) {
+            return false;
+        }
+        if (m_persistedPrecommit->blockHash() != m_lockedBlockHash) {
+            return false;
+        }
+    }
+
+    if (m_persistedPrevote.has_value() && m_persistedPrecommit.has_value()) {
+        if (m_persistedPrevote->blockHash() != m_persistedPrecommit->blockHash() ||
+            m_persistedPrevote->previousHash() != m_persistedPrecommit->previousHash() ||
+            m_persistedPrevote->validatorAddress() != m_persistedPrecommit->validatorAddress()) {
+            return false;
+        }
     }
 
     return true;
@@ -73,6 +156,8 @@ std::string ConsensusRoundState::serialize() const {
         << ";lockedRound=" << m_lockedRound
         << ";votedPrevote=" << (m_votedPrevote ? 1 : 0)
         << ";votedPrecommit=" << (m_votedPrecommit ? 1 : 0)
+        << ";persistedPrevoteHex=" << encodeOptionalVoteForRoundState(m_persistedPrevote)
+        << ";persistedPrecommitHex=" << encodeOptionalVoteForRoundState(m_persistedPrecommit)
         << "}";
     return oss.str();
 }
@@ -112,10 +197,15 @@ ConsensusRoundState ConsensusRoundState::deserialize(const std::string& text) {
     const std::uint64_t lockedRound = std::stoull(extractField("lockedRound"));
     const bool votedPrevote = (std::stoi(extractField("votedPrevote")) != 0);
     const bool votedPrecommit = (std::stoi(extractField("votedPrecommit")) != 0);
+    const std::optional<ValidatorVoteRecord> persistedPrevote =
+        decodeOptionalVoteForRoundState(extractField("persistedPrevoteHex"));
+    const std::optional<ValidatorVoteRecord> persistedPrecommit =
+        decodeOptionalVoteForRoundState(extractField("persistedPrecommitHex"));
 
     const ConsensusRoundState state(
         height, round, proposer, startedAt,
-        lockedBlockHash, lockedRound, votedPrevote, votedPrecommit
+        lockedBlockHash, lockedRound, votedPrevote, votedPrecommit,
+        persistedPrevote, persistedPrecommit
     );
     if (!state.isValid() || state.serialize() != text) {
         throw std::invalid_argument(

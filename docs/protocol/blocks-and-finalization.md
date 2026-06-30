@@ -31,3 +31,9 @@ Finalized artifacts carry the block plus domain evidence sections, including mon
 - QCs must contain only PRECOMMIT votes; legacy approval shortcuts are not valid finality.
 - State roots must match reload and audit.
 - Finalized history must remain rebuildable.
+
+
+Recovery rule: the signed vote must be durable before it is visible to peers.
+Restarted validators resubmit/rebroadcast the persisted vote for the same
+height/round/block instead of signing a replacement vote or silently skipping the
+network broadcast.

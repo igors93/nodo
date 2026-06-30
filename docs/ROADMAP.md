@@ -113,11 +113,12 @@ reach quorum, and finalize a block without any local shortcut.
 - A node that missed a round must catch up via `BLOCK_SYNC_REQUEST` /
   `BLOCK_SYNC_RESPONSE` rather than stalling.
 
-### 2.4 Consensus Recovery Store Wired
-- `ConsensusRecoveryStore` exists but is not persisted or reloaded.
-- On daemon restart, reload the last committed round and block height so that
-  the node rejoins consensus at the correct position instead of starting from
-  round 0.
+### 2.4 Consensus Recovery Store Wired ✅
+- `ConsensusRecoveryStore` is persisted and reloaded with the active round,
+  lock and exact signed PREVOTE/PRECOMMIT records.
+- On restart, the event loop reloads the signed votes and resubmits/rebroadcasts
+  the same canonical records when the matching proposal is active. Boolean-only
+  vote markers are rejected because they protect safety at the cost of liveness.
 
 ### 2.5 Integration Tests
 - 2-node transaction propagation: node A submits tx, node B receives and admits

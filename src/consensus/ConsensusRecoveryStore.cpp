@@ -1,5 +1,6 @@
 #include "consensus/ConsensusRecoveryStore.hpp"
 
+#include "crypto/Hex.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
@@ -18,7 +19,7 @@ namespace nodo::consensus {
 
 namespace {
 
-const std::string kRecoverySchemaId = "NODO_CONSENSUS_RECOVERY_STATE_V1";
+const std::string kRecoverySchemaId = "NODO_CONSENSUS_RECOVERY_STATE_V2";
 
 bool parseUint64Strict(
     const std::string& value,
@@ -83,6 +84,34 @@ bool parseInt64Strict(
     }
 }
 
+
+std::string encodeOptionalVote(
+    const std::optional<ValidatorVoteRecord>& vote
+) {
+    if (!vote.has_value()) {
+        return "-";
+    }
+    const std::string serialized = vote->serialize();
+    return crypto::hexEncode(
+        reinterpret_cast<const unsigned char*>(serialized.data()),
+        serialized.size()
+    );
+}
+
+std::optional<ValidatorVoteRecord> decodeOptionalVote(
+    const std::string& value
+) {
+    if (value == "-") {
+        return std::nullopt;
+    }
+    if (!crypto::isHexString(value)) {
+        throw std::invalid_argument("Persisted consensus vote is not canonical hex.");
+    }
+    const std::vector<unsigned char> bytes = crypto::hexDecode(value);
+    const std::string serialized(bytes.begin(), bytes.end());
+    return ValidatorVoteRecord::deserialize(serialized);
+}
+
 bool isPersistableRoundState(
     const ConsensusRoundState& state
 ) {
@@ -109,7 +138,9 @@ std::string serializeState(
             {"lockedBlockHash", state.lockedBlockHash().empty() ? "-" : state.lockedBlockHash()},
             {"lockedRound", std::to_string(state.lockedRound())},
             {"votedPrevote", state.votedPrevote() ? "1" : "0"},
-            {"votedPrecommit", state.votedPrecommit() ? "1" : "0"}
+            {"votedPrecommit", state.votedPrecommit() ? "1" : "0"},
+            {"persistedPrevoteHex", encodeOptionalVote(state.persistedPrevote())},
+            {"persistedPrecommitHex", encodeOptionalVote(state.persistedPrecommit())}
         }
     );
 }
@@ -133,7 +164,9 @@ std::optional<ConsensusRoundState> parseState(
                 "lockedBlockHash",
                 "lockedRound",
                 "votedPrevote",
-                "votedPrecommit"
+                "votedPrecommit",
+                "persistedPrevoteHex",
+                "persistedPrecommitHex"
             }
         );
 
@@ -159,6 +192,11 @@ std::optional<ConsensusRoundState> parseState(
         const std::string rawLockedBlockHash = doc.requireField("lockedBlockHash");
         const std::string lockedBlockHash = (rawLockedBlockHash == "-") ? "" : rawLockedBlockHash;
 
+        const std::optional<ValidatorVoteRecord> persistedPrevote =
+            decodeOptionalVote(doc.requireField("persistedPrevoteHex"));
+        const std::optional<ValidatorVoteRecord> persistedPrecommit =
+            decodeOptionalVote(doc.requireField("persistedPrecommitHex"));
+
         const ConsensusRoundState state(
             height,
             round,
@@ -167,7 +205,9 @@ std::optional<ConsensusRoundState> parseState(
             lockedBlockHash,
             lockedRound,
             votedPrevoteStr == "1",
-            votedPrecommitStr == "1"
+            votedPrecommitStr == "1",
+            persistedPrevote,
+            persistedPrecommit
         );
 
         if (!isPersistableRoundState(state)) {

@@ -1,5 +1,9 @@
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ConsensusRoundManager.hpp"
+#include "consensus/ValidatorVoteRecord.hpp"
+#include "crypto/Bls12381SignatureProvider.hpp"
+#include "crypto/KeyPair.hpp"
+#include "crypto/Signer.hpp"
 #include "storage/AtomicFile.hpp"
 
 #include <cassert>
@@ -7,6 +11,37 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+
+namespace {
+
+nodo::consensus::ValidatorVoteRecord makeVote(
+    nodo::consensus::ValidatorVoteDecision decision,
+    std::uint64_t height,
+    std::uint64_t round,
+    const std::string& blockHash,
+    const std::string& previousHash,
+    std::int64_t createdAt
+) {
+    static const nodo::crypto::Bls12381SignatureProvider provider;
+    const nodo::crypto::KeyPair keyPair =
+        nodo::crypto::KeyPair::createDeterministicBls12381KeyPair(
+            "consensus-recovery-store-validator"
+        );
+    const nodo::crypto::Signer signer(keyPair, provider);
+    return signer.signValidatorVote(
+        height,
+        blockHash,
+        previousHash,
+        round,
+        decision,
+        decision == nodo::consensus::ValidatorVoteDecision::PREVOTE
+            ? "recovery-prevote"
+            : "recovery-precommit",
+        createdAt
+    );
+}
+
+} // namespace
 
 int main() {
     const std::filesystem::path path =
@@ -42,6 +77,14 @@ int main() {
 
     // Test 2: lock/vote fields serialize and deserialize correctly.
     {
+        const auto prevote = makeVote(
+            nodo::consensus::ValidatorVoteDecision::PREVOTE,
+            10,
+            2,
+            "abc123blockhashhex",
+            "prevhash10",
+            1900000001
+        );
         const nodo::consensus::ConsensusRoundState stateWithLock(
             10,
             2,
@@ -50,7 +93,9 @@ int main() {
             "abc123blockhashhex",
             2,
             true,
-            false
+            false,
+            prevote,
+            std::nullopt
         );
 
         assert(nodo::consensus::ConsensusRecoveryStore::save(path, stateWithLock));
@@ -65,10 +110,29 @@ int main() {
         assert(loaded->lockedRound() == 2);
         assert(loaded->votedPrevote() == true);
         assert(loaded->votedPrecommit() == false);
+        assert(loaded->persistedPrevote().has_value());
+        assert(!loaded->persistedPrecommit().has_value());
+        assert(loaded->persistedPrevote()->serialize() == prevote.serialize());
     }
 
     // Test 3: both voted flags true.
     {
+        const auto prevote = makeVote(
+            nodo::consensus::ValidatorVoteDecision::PREVOTE,
+            77,
+            1,
+            "deadbeef01020304",
+            "prevhash77",
+            1900000002
+        );
+        const auto precommit = makeVote(
+            nodo::consensus::ValidatorVoteDecision::PRECOMMIT,
+            77,
+            1,
+            "deadbeef01020304",
+            "prevhash77",
+            1900000003
+        );
         const nodo::consensus::ConsensusRoundState statePrecommitted(
             77,
             1,
@@ -77,7 +141,9 @@ int main() {
             "deadbeef01020304",
             1,
             true,
-            true
+            true,
+            prevote,
+            precommit
         );
 
         assert(nodo::consensus::ConsensusRecoveryStore::save(path, statePrecommitted));
@@ -89,6 +155,9 @@ int main() {
         assert(loaded->votedPrecommit() == true);
         assert(loaded->lockedBlockHash() == "deadbeef01020304");
         assert(loaded->lockedRound() == 1);
+        assert(loaded->persistedPrevote().has_value());
+        assert(loaded->persistedPrecommit().has_value());
+        assert(loaded->persistedPrecommit()->serialize() == precommit.serialize());
     }
 
     // Test 4: file with unexpected extra field is rejected.
@@ -135,8 +204,25 @@ int main() {
     // Test 7: serialisation round-trip produces identical content on repeated
     // saves (determinism requirement).
     {
+        const auto prevote = makeVote(
+            nodo::consensus::ValidatorVoteDecision::PREVOTE,
+            55,
+            2,
+            "deadbeef",
+            "prevhash55",
+            1900000020
+        );
+        const auto precommit = makeVote(
+            nodo::consensus::ValidatorVoteDecision::PRECOMMIT,
+            55,
+            2,
+            "deadbeef",
+            "prevhash55",
+            1900000021
+        );
         const nodo::consensus::ConsensusRoundState state(
-            55, 2, "validator-e", 1900000020, "deadbeef", 2, true, true
+            55, 2, "validator-e", 1900000020, "deadbeef", 2, true, true,
+            prevote, precommit
         );
         assert(nodo::consensus::ConsensusRecoveryStore::save(path, state));
         const auto first = nodo::consensus::ConsensusRecoveryStore::load(path);
@@ -152,6 +238,14 @@ int main() {
 
         std::error_code cleanupError3;
         std::filesystem::remove(path, cleanupError3);
+    }
+
+    // Test 8: flags cannot claim a vote without the signed vote material.
+    {
+        const nodo::consensus::ConsensusRoundState unsafeState(
+            60, 1, "validator-f", 1900000030, "", 0, true, false
+        );
+        assert(!nodo::consensus::ConsensusRecoveryStore::save(path, unsafeState));
     }
 
     return 0;

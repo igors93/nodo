@@ -85,3 +85,10 @@ production helper is not available to staging or production network classes.
 
 CMake builds one `nodo_core` static library, one `nodo` CLI executable and one
 test executable per `tests/<module>/*.cpp` file. CTest labels tests by module.
+
+
+Consensus recovery is part of the voting boundary. `ConsensusEventLoop` builds a
+signed PREVOTE/PRECOMMIT, persists that exact record through
+`ConsensusRecoveryStore`, then submits and broadcasts it. If the process restarts
+after persistence but before successful broadcast, the loaded vote is resubmitted
+to the local vote pool and rebroadcast once the matching proposal is active.
