@@ -3,13 +3,14 @@
 #include <algorithm>
 #include <limits>
 #include <optional>
+#include <set>
 #include <sstream>
 
 namespace nodo::p2p {
 
 namespace {
 
-constexpr std::size_t MAX_PEER_EXCHANGE_ENTRIES = 128;
+constexpr std::size_t MAX_PEER_EXCHANGE_ENTRIES = PeerExchangeService::MAX_PEERS_PER_MESSAGE;
 
 bool isSafePeerExchangeScalar(
     const std::string& value,
@@ -465,22 +466,64 @@ std::string PeerReconnectionPolicy::serialize() const {
     return oss.str();
 }
 
+// ---- PeerExchangeAdmissionResult ------------------------------------------
+
+PeerExchangeAdmissionResult::PeerExchangeAdmissionResult()
+    : m_acceptedEntries(),
+      m_rejectedCount(0) {}
+
+void PeerExchangeAdmissionResult::accept(PeerExchangeEntry entry) {
+    m_acceptedEntries.push_back(std::move(entry));
+}
+
+void PeerExchangeAdmissionResult::reject() {
+    ++m_rejectedCount;
+}
+
+const std::vector<PeerExchangeEntry>&
+PeerExchangeAdmissionResult::acceptedEntries() const {
+    return m_acceptedEntries;
+}
+
+std::size_t PeerExchangeAdmissionResult::acceptedCount() const {
+    return m_acceptedEntries.size();
+}
+
+std::size_t PeerExchangeAdmissionResult::rejectedCount() const {
+    return m_rejectedCount;
+}
+
+bool PeerExchangeAdmissionResult::hasAcceptedEntries() const {
+    return !m_acceptedEntries.empty();
+}
+
 // ---- PeerExchangeService --------------------------------------------------
 
 std::vector<PeerExchangeEntry> PeerExchangeService::buildPayload(
     const std::vector<PeerMetadata>& activePeers,
     std::size_t                      maxPeers
 ) {
+    const std::size_t cappedMax = std::min(maxPeers, MAX_PEERS_PER_MESSAGE);
     std::vector<PeerExchangeEntry> entries;
-    entries.reserve(std::min(activePeers.size(), maxPeers));
+    entries.reserve(activePeers.size());
 
     for (const auto& peer : activePeers) {
-        if (entries.size() >= maxPeers) break;
+        if (!peer.isValid() || peer.quarantined()) continue;
         entries.push_back({
             peer.nodeId(),
             peer.endpoint().serialize(),
             peer.publicKeyFingerprint()
         });
+    }
+    std::sort(
+        entries.begin(),
+        entries.end(),
+        [](const PeerExchangeEntry& left, const PeerExchangeEntry& right) {
+            return left.nodeId < right.nodeId;
+        }
+    );
+    if (entries.size() > cappedMax) {
+        entries.resize(cappedMax);
     }
     return entries;
 }
@@ -592,6 +635,74 @@ std::vector<PeerExchangeEntry> PeerExchangeService::deserializePayload(
     }
 
     return entries;
+}
+
+
+PeerExchangeAdmissionResult PeerExchangeService::admitAuthenticatedEntries(
+    const std::vector<PeerExchangeEntry>& entries,
+    const std::string& localNodeId,
+    const std::vector<PeerSubnetInfo>& activePeerSubnets,
+    const EclipseGuardConfig& eclipseConfig,
+    PeerReconnectionPolicy& policy,
+    std::int64_t now
+) {
+    PeerExchangeAdmissionResult result;
+    if (localNodeId.empty() || now <= 0 || !eclipseConfig.isValid() ||
+        entries.size() > MAX_PEERS_PER_MESSAGE) {
+        for (std::size_t i = 0; i < entries.size(); ++i) {
+            result.reject();
+        }
+        return result;
+    }
+
+    EclipseGuard guard(eclipseConfig);
+    std::vector<PeerSubnetInfo> projectedSubnets = activePeerSubnets;
+    std::set<std::string> seenNodeIds;
+
+    for (const PeerExchangeEntry& entry : entries) {
+        const std::optional<PeerEndpoint> endpoint =
+            parsePeerExchangeEndpoint(entry.endpoint);
+        if (entry.nodeId == localNodeId ||
+            !seenNodeIds.insert(entry.nodeId).second ||
+            !isSafePeerExchangeScalar(entry.nodeId, 160) ||
+            !endpoint.has_value() ||
+            !isSafePeerExchangeScalar(entry.fingerprint, 160) ||
+            policy.isQuarantined(entry.nodeId)) {
+            result.reject();
+            continue;
+        }
+
+        const std::string subnet =
+            PeerSubnetInfo::extractSubnetPrefix(endpoint->host());
+        PeerSubnetInfo candidate{
+            entry.nodeId,
+            endpoint->host(),
+            subnet,
+            endpoint->port()
+        };
+        if (!candidate.isValid()) {
+            result.reject();
+            continue;
+        }
+
+        const EclipseCheckResult eclipse =
+            guard.checkAdmission(candidate, projectedSubnets);
+        if (!eclipse.isAllowed()) {
+            result.reject();
+            continue;
+        }
+
+        policy.recordCandidate(
+            entry.nodeId,
+            endpoint->serialize(),
+            now,
+            false
+        );
+        projectedSubnets.push_back(candidate);
+        result.accept(entry);
+    }
+
+    return result;
 }
 
 } // namespace nodo::p2p

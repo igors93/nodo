@@ -93,3 +93,8 @@ same vote without producing a different one.
 ## Mandatory P2P admission boundary
 
 The real node networking path does not accept protocol messages directly from transport. `TcpTestnetNodeRuntime` constructs `GossipMesh` with authenticated sessions and eclipse protection enabled. Only `PEER_CHALLENGE` and `PEER_HELLO` are allowed before peer authentication. All other messages must pass encrypted-session authentication, envelope validation, per-peer/per-message-type rate limiting, quarantine checks and eclipse-guarded peer admission before they can reach consensus, sync, mempool or slashing handlers.
+
+
+## P2P peer exchange
+
+`PEER_EXCHANGE` messages carry canonical, bounded peer candidate lists. They are accepted only after peer authentication and envelope validation. Candidates are persisted separately from authenticated peers, checked with `EclipseGuard`, and retried through `PeerReconnectionPolicy` so peer exchange cannot bypass rate limits, quarantine or handshake validation.

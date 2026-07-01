@@ -161,11 +161,9 @@ ready for a semi-public testnet with untrusted peers.
 
 ### 3.2 Peer Discovery Activated
 - `DiscoveryService` currently exists as a stub.
-- Implement `PEER_STATUS` exchange carrying peer lists; limit list size to
-  prevent amplification.
-- Integrate with `EclipseGuard` to cap how many peers can share the same /16
-  subnet.
-- Bootstrap peer list (`BootstrapPeerList`) wired to `NodeDaemon` startup.
+- Implement authenticated `PEER_EXCHANGE` messages carrying canonical, capped peer lists. ✅
+- Integrate accepted exchange candidates with `EclipseGuard`, persistent candidate storage and `PeerReconnectionPolicy`. ✅
+- Bootstrap peer list (`BootstrapPeerList`) wired to `NodeDaemon` startup. ✅
 
 ### 3.3 Peer Banning and Quarantine
 - `PeerAbuseEvidence` and `PeerReputation` exist; wire them to actual banning:
@@ -511,3 +509,8 @@ The P2P foundations are now wired into the real TCP testnet path. Authenticated 
 ### Discovery/reconnection policy activation ✅
 
 `DiscoveryService`, bootstrap peers and `PeerReconnectionPolicy` are now wired into the live daemon path. Static peers and discovered peers are treated as reconnect candidates; TCP attempts are bounded per tick, retried with exponential backoff, and blocked for quarantined peers. Remaining networking work should focus on NAT traversal, richer peer exchange and external network auditing.
+
+
+### Authenticated peer exchange activation ✅
+
+`PEER_EXCHANGE` is now a real network message rather than an in-memory helper. The hardened gossip path requires an authenticated session before a peer-exchange envelope reaches the orchestrator. The payload is canonical, bounded, parsed strictly, screened against active peer subnets with `EclipseGuard`, persisted as untrusted reconnect candidates, and retried only through `PeerReconnectionPolicy`.

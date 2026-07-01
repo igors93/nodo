@@ -387,3 +387,7 @@ The live TCP testnet path now treats P2P security controls as mandatory protocol
 ### Discovery and reconnection policy
 
 Bootstrap peers, UDP discovery results and disconnected authenticated peers now enter one deterministic reconnection policy before any TCP attempt is made. The daemon no longer connects discovered/static peers through an immediate shortcut: candidates are tracked, seeded into discovery, retried with exponential backoff, capped per tick, and suppressed when peer quarantine state is active. This keeps peer discovery useful without allowing tight reconnect loops or bypassing the hardened P2P admission gate.
+
+### Authenticated peer exchange
+
+Peer exchange is now a canonical authenticated P2P message. Nodes broadcast capped `PEER_EXCHANGE` payloads only through authenticated encrypted sessions, parse them through the strict peer-exchange codec, screen each candidate with `EclipseGuard`, persist accepted reconnect candidates separately from trusted peer metadata, and route every learned peer through `PeerReconnectionPolicy` instead of opening direct sockets.

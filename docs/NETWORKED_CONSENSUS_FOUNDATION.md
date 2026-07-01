@@ -47,3 +47,8 @@ Consensus traffic reaches `ConsensusEventLoop` only after the P2P admission gate
 ## Peer connectivity policy
 
 Consensus traffic still enters only through the hardened P2P gate. The peer-connectivity side now has the same discipline: bootstrap peers, discovered peers and disconnected known peers are routed through one reconnection policy with exponential backoff and quarantine awareness before any new TCP attempt or handshake is made.
+
+
+## Canonical peer exchange
+
+Peer lists from the network are treated as hints, not trust. Authenticated peers may send a capped `PEER_EXCHANGE` payload. The orchestrator accepts only canonical entries that pass subnet-diversity checks, persists them as reconnect candidates, and lets the reconnection policy decide when a TCP attempt is due.

@@ -27,6 +27,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 #include <thread>
 
 namespace nodo::storage {
@@ -249,6 +250,7 @@ private:
     p2p::PeerReconnectionPolicy              m_reconnectionPolicy;
     std::map<std::string, p2p::PeerEndpoint> m_reconnectEndpoints;
     std::set<std::string> m_discoverySeededPeers;
+    std::int64_t m_lastPeerExchangeBroadcastAt = 0;
 
     std::atomic<bool> m_running;
     std::optional<crypto::Signer> m_localSigner;
@@ -296,6 +298,18 @@ private:
         std::uint16_t tcpPort,
         std::int64_t now
     );
+
+    void processPeerExchangeMessages(std::int64_t now);
+
+    void broadcastPeerExchange(std::int64_t now);
+
+    std::vector<p2p::PeerSubnetInfo> activePeerSubnets() const;
+
+    std::vector<p2p::PeerExchangeEntry> loadPersistedPeerExchangeCandidates() const;
+
+    void persistPeerExchangeCandidates(
+        const std::vector<p2p::PeerExchangeEntry>& acceptedEntries
+    ) const;
 
     void driveNetworkPeerPolicy(std::int64_t now);
 

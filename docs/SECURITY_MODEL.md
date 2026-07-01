@@ -64,3 +64,8 @@ The network layer follows a deny-by-default admission model on the real TCP path
 ## Discovery and reconnect hardening
 
 Discovery does not bypass peer admission. A discovered or bootstrap peer is only a reconnect candidate until the transport connects provisionally, the authenticated peer handshake succeeds, and the hardened gossip admission gate accepts subsequent envelopes. Failed attempts advance deterministic backoff, while quarantined peers are suppressed.
+
+
+## Peer exchange safety
+
+A peer-exchange payload cannot create a trusted peer record. It must arrive over an authenticated session, pass canonical decoding and `EclipseGuard` screening, and is persisted only as an untrusted reconnect candidate. The candidate becomes trusted only after the regular signed peer handshake and hardened envelope gate succeed.

@@ -58,3 +58,8 @@ The TCP testnet runtime now creates a hardened `GossipMesh`. Handshake messages 
 ## Discovery/reconnection policy
 
 Static peers, persisted peers and peers learned from UDP discovery now converge on `PeerReconnectionPolicy`. Discovery is a source of candidates, not a direct socket-opening shortcut. The orchestrator seeds discovery, records candidates, attempts only the due candidates per tick, initiates the authenticated handshake after a successful provisional TCP connection, and records success/failure so backoff grows deterministically. Quarantined peers are not retried.
+
+
+## Authenticated peer exchange
+
+Peer exchange is no longer an internal helper only. `PEER_EXCHANGE` is a canonical network message delivered through the same authenticated gossip boundary as consensus and sync traffic. Received entries are capped, strictly decoded, checked against `EclipseGuard`, persisted as untrusted reconnect candidates and fed into `PeerReconnectionPolicy`; they are not registered as trusted peers until the normal signed handshake succeeds.

@@ -1,8 +1,10 @@
 #ifndef NODO_P2P_PEER_RECONNECTION_POLICY_HPP
 #define NODO_P2P_PEER_RECONNECTION_POLICY_HPP
 
+#include "p2p/EclipseGuard.hpp"
 #include "p2p/Peer.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -114,15 +116,35 @@ struct PeerExchangeEntry {
     std::string fingerprint;
 };
 
+class PeerExchangeAdmissionResult {
+public:
+    PeerExchangeAdmissionResult();
+
+    void accept(PeerExchangeEntry entry);
+    void reject();
+
+    const std::vector<PeerExchangeEntry>& acceptedEntries() const;
+    std::size_t acceptedCount() const;
+    std::size_t rejectedCount() const;
+    bool hasAcceptedEntries() const;
+
+private:
+    std::vector<PeerExchangeEntry> m_acceptedEntries;
+    std::size_t m_rejectedCount;
+};
+
 class PeerExchangeService {
 public:
+    static constexpr std::size_t DEFAULT_MAX_PEERS = 16;
+    static constexpr std::size_t MAX_PEERS_PER_MESSAGE = 64;
+
     /*
      * Build a peer-exchange payload from the current active peer list.
      * Caps output at maxPeers to limit message size.
      */
     static std::vector<PeerExchangeEntry> buildPayload(
         const std::vector<PeerMetadata>& activePeers,
-        std::size_t                      maxPeers = 10
+        std::size_t                      maxPeers = DEFAULT_MAX_PEERS
     );
 
     /*
@@ -141,6 +163,21 @@ public:
 
     static std::vector<PeerExchangeEntry> deserializePayload(
         const std::string& serialized
+    );
+
+    /*
+     * Authenticated peer exchange admission. The caller must invoke this only
+     * for envelopes that already passed the authenticated GossipMesh boundary.
+     * Entries are canonicalized, capped, screened by EclipseGuard and then
+     * recorded as reconnection candidates without bypassing backoff.
+     */
+    static PeerExchangeAdmissionResult admitAuthenticatedEntries(
+        const std::vector<PeerExchangeEntry>& entries,
+        const std::string& localNodeId,
+        const std::vector<PeerSubnetInfo>& activePeerSubnets,
+        const EclipseGuardConfig& eclipseConfig,
+        PeerReconnectionPolicy& policy,
+        std::int64_t now
     );
 };
 

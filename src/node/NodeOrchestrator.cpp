@@ -22,12 +22,15 @@
 #include "node/RuntimeStateLoader.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
 #include "storage/AccountStateSnapshotStore.hpp"
+#include "storage/AtomicFile.hpp"
 #include "storage/SlashingEvidenceStore.hpp"
 
 #include <chrono>
 #include <algorithm>
 #include <filesystem>
 #include <limits>
+#include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -166,6 +169,44 @@ std::optional<p2p::PeerEndpoint> parseReconnectEndpoint(
         return std::nullopt;
     }
     return std::nullopt;
+}
+
+std::filesystem::path peerExchangeCandidatePath(
+    const NodeDataDirectoryConfig& config
+) {
+    return config.peersDirectoryPath() / "peer_exchange_candidates.conf";
+}
+
+std::vector<p2p::PeerExchangeEntry> sortAndCapPeerExchangeCandidates(
+    std::vector<p2p::PeerExchangeEntry> entries,
+    const std::string& localNodeId
+) {
+    std::map<std::string, p2p::PeerExchangeEntry> byNodeId;
+    for (const p2p::PeerExchangeEntry& entry : entries) {
+        if (entry.nodeId.empty() || entry.nodeId == localNodeId) {
+            continue;
+        }
+        const std::optional<p2p::PeerEndpoint> endpoint =
+            parseReconnectEndpoint(entry.endpoint);
+        if (!p2p::PeerReconnectionPolicy::isSafeNodeId(entry.nodeId) ||
+            !endpoint.has_value()) {
+            continue;
+        }
+        p2p::PeerExchangeEntry canonical = entry;
+        canonical.endpoint = endpoint->serialize();
+        byNodeId[entry.nodeId] = canonical;
+    }
+
+    std::vector<p2p::PeerExchangeEntry> sorted;
+    sorted.reserve(byNodeId.size());
+    for (const auto& [nodeId, entry] : byNodeId) {
+        (void)nodeId;
+        sorted.push_back(entry);
+        if (sorted.size() >= p2p::PeerExchangeService::MAX_PEERS_PER_MESSAGE) {
+            break;
+        }
+    }
+    return sorted;
 }
 
 // Build a PersistentBlockSyncBatch from [fromHeight, fromHeight+maxItems) of the
@@ -355,6 +396,12 @@ void NodeOrchestrator::tick(std::int64_t now) {
             );
         }
     }
+
+    // Process authenticated peer-exchange messages before other network hints.
+    // Learned peers become reconnect candidates only after canonical payload and
+    // EclipseGuard admission checks; this never registers them as authenticated.
+    processPeerExchangeMessages(now);
+    broadcastPeerExchange(now);
 
     // Drain incoming CHAIN_STATUS messages.
     // These are broadcast by peers after round advances or on handshake. We use
@@ -844,6 +891,16 @@ bool NodeOrchestrator::startTransport() {
 
     m_tcpRuntime->loadPeersFromDisk(now);
 
+    for (const p2p::PeerExchangeEntry& entry : loadPersistedPeerExchangeCandidates()) {
+        const std::optional<p2p::PeerEndpoint> endpoint =
+            parseReconnectEndpoint(entry.endpoint);
+        if (!endpoint.has_value()) {
+            continue;
+        }
+        trackPeerCandidate(entry.nodeId, *endpoint, now, false);
+        seedDiscoveryPeer(entry.nodeId, *endpoint);
+    }
+
     std::vector<std::pair<std::string, std::pair<std::string, std::uint16_t>>> discoverySeeds;
     const auto entries = TcpTestnetPeerStore::load(m_tcpRuntime->config().peersFilePath());
     for (const auto& entry : entries) {
@@ -1231,6 +1288,176 @@ void NodeOrchestrator::handleDiscoveredPeer(
 ) {
     const p2p::PeerEndpoint endpoint(host, tcpPort);
     trackPeerCandidate(peerId, endpoint, now, true);
+}
+
+
+std::vector<p2p::PeerSubnetInfo> NodeOrchestrator::activePeerSubnets() const {
+    std::vector<p2p::PeerSubnetInfo> subnets;
+    if (!m_tcpRuntime) {
+        return subnets;
+    }
+
+    for (const p2p::PeerMetadata& peer :
+         m_tcpRuntime->gossipMesh().peerRegistry().activePeers()) {
+        if (peer.nodeId() == m_config.localPeer().peerId()) {
+            continue;
+        }
+        const std::string subnet =
+            p2p::PeerSubnetInfo::extractSubnetPrefix(peer.endpoint().host());
+        p2p::PeerSubnetInfo info{
+            peer.nodeId(),
+            peer.endpoint().host(),
+            subnet,
+            peer.endpoint().port()
+        };
+        if (info.isValid()) {
+            subnets.push_back(info);
+        }
+    }
+    return subnets;
+}
+
+std::vector<p2p::PeerExchangeEntry>
+NodeOrchestrator::loadPersistedPeerExchangeCandidates() const {
+    const std::filesystem::path path = peerExchangeCandidatePath(m_config.dataDirectory());
+    if (!std::filesystem::exists(path)) {
+        return {};
+    }
+    try {
+        const std::string serialized = storage::AtomicFile::readTextFile(path);
+        return sortAndCapPeerExchangeCandidates(
+            p2p::PeerExchangeService::deserializePayload(serialized),
+            m_config.localPeer().peerId()
+        );
+    } catch (...) {
+        return {};
+    }
+}
+
+void NodeOrchestrator::persistPeerExchangeCandidates(
+    const std::vector<p2p::PeerExchangeEntry>& acceptedEntries
+) const {
+    if (acceptedEntries.empty()) {
+        return;
+    }
+
+    std::vector<p2p::PeerExchangeEntry> merged = loadPersistedPeerExchangeCandidates();
+    merged.insert(merged.end(), acceptedEntries.begin(), acceptedEntries.end());
+    merged = sortAndCapPeerExchangeCandidates(
+        std::move(merged),
+        m_config.localPeer().peerId()
+    );
+    if (merged.empty()) {
+        return;
+    }
+
+    storage::AtomicFile::writeTextFile(
+        peerExchangeCandidatePath(m_config.dataDirectory()),
+        p2p::PeerExchangeService::serializePayload(merged)
+    );
+}
+
+void NodeOrchestrator::processPeerExchangeMessages(std::int64_t now) {
+    if (!m_tcpRuntime || now <= 0) {
+        return;
+    }
+
+    auto& gossip = m_tcpRuntime->gossipMesh();
+    const auto envelopes = gossip.drainInbox(p2p::NetworkMessageType::PEER_EXCHANGE);
+    for (const p2p::NetworkEnvelope& envelope : envelopes) {
+        if (!m_tcpRuntime->hasAuthenticatedSession(envelope.senderNodeId())) {
+            gossip.reportPeerMisbehavior(
+                envelope,
+                p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                "Unauthenticated peer exchange message rejected.",
+                now
+            );
+            continue;
+        }
+
+        const std::vector<p2p::PeerExchangeEntry> entries =
+            p2p::PeerExchangeService::deserializePayload(envelope.payload());
+        const std::string emptyPeerExchangePayload =
+            p2p::PeerExchangeService::serializePayload(
+                std::vector<p2p::PeerExchangeEntry>{}
+            );
+        if (entries.empty() && envelope.payload() != emptyPeerExchangePayload) {
+            gossip.reportPeerMisbehavior(
+                envelope,
+                p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                "Malformed peer exchange payload rejected.",
+                now
+            );
+            continue;
+        }
+
+        p2p::PeerExchangeAdmissionResult admitted =
+            p2p::PeerExchangeService::admitAuthenticatedEntries(
+                entries,
+                m_config.localPeer().peerId(),
+                activePeerSubnets(),
+                gossip.config().eclipseGuardConfig(),
+                m_reconnectionPolicy,
+                now
+            );
+
+        if (admitted.rejectedCount() > 0 && !admitted.hasAcceptedEntries()) {
+            gossip.reportPeerMisbehavior(
+                envelope,
+                p2p::PeerMisbehaviorType::INVALID_MESSAGE,
+                "Peer exchange payload had no admissible candidates.",
+                now
+            );
+            continue;
+        }
+
+        if (!admitted.hasAcceptedEntries()) {
+            continue;
+        }
+
+        for (const p2p::PeerExchangeEntry& entry : admitted.acceptedEntries()) {
+            const std::optional<p2p::PeerEndpoint> endpoint =
+                parseReconnectEndpoint(entry.endpoint);
+            if (!endpoint.has_value()) {
+                continue;
+            }
+            m_reconnectEndpoints[entry.nodeId] = *endpoint;
+            seedDiscoveryPeer(entry.nodeId, *endpoint);
+        }
+        persistPeerExchangeCandidates(admitted.acceptedEntries());
+    }
+}
+
+void NodeOrchestrator::broadcastPeerExchange(std::int64_t now) {
+    if (!m_tcpRuntime || now <= 0) {
+        return;
+    }
+
+    constexpr std::int64_t PEER_EXCHANGE_INTERVAL_SECONDS = 60;
+    if (m_lastPeerExchangeBroadcastAt > 0 &&
+        now < m_lastPeerExchangeBroadcastAt + PEER_EXCHANGE_INTERVAL_SECONDS) {
+        return;
+    }
+
+    const std::vector<p2p::PeerExchangeEntry> entries =
+        p2p::PeerExchangeService::buildPayload(
+            m_tcpRuntime->gossipMesh().peerRegistry().activePeers(),
+            p2p::PeerExchangeService::DEFAULT_MAX_PEERS
+        );
+    if (entries.empty()) {
+        m_lastPeerExchangeBroadcastAt = now;
+        return;
+    }
+
+    const p2p::GossipDeliveryReport report =
+        m_tcpRuntime->gossipMesh().broadcast(
+            p2p::NetworkMessageType::PEER_EXCHANGE,
+            p2p::PeerExchangeService::serializePayload(entries),
+            now
+        );
+    if (report.acceptedCount() > 0 || report.rejectedCount() > 0) {
+        m_lastPeerExchangeBroadcastAt = now;
+    }
 }
 
 std::optional<p2p::PeerEndpoint> NodeOrchestrator::endpointForReconnectCandidate(
