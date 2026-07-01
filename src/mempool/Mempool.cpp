@@ -48,21 +48,23 @@ MempoolConfig::MempoolConfig()
     : m_maxTransactions(5000),
       m_minimumFeeRaw(0),
       m_replaceByHigherFee(true),
-      m_maxTransactionAgeSeconds(60 * 60),
-      m_maxMempoolSizeBytes(50 * 1024 * 1024) {}
+      m_maxTransactionAgeSeconds(3600),
+      m_maxMempoolSizeBytes(50 * 1024 * 1024),
+      m_maxTransactionSizeBytes(131072) {}
 
 MempoolConfig::MempoolConfig(
     std::size_t maxTransactions,
     std::int64_t minimumFeeRaw,
     bool replaceByHigherFee,
     std::int64_t maxTransactionAgeSeconds,
-    std::size_t maxMempoolSizeBytes
-)
-    : m_maxTransactions(maxTransactions),
-      m_minimumFeeRaw(minimumFeeRaw),
-      m_replaceByHigherFee(replaceByHigherFee),
-      m_maxTransactionAgeSeconds(maxTransactionAgeSeconds),
-      m_maxMempoolSizeBytes(maxMempoolSizeBytes) {}
+    std::size_t maxMempoolSizeBytes,
+    std::size_t maxTransactionSizeBytes
+) : m_maxTransactions(maxTransactions),
+    m_minimumFeeRaw(minimumFeeRaw),
+    m_replaceByHigherFee(replaceByHigherFee),
+    m_maxTransactionAgeSeconds(maxTransactionAgeSeconds),
+    m_maxMempoolSizeBytes(maxMempoolSizeBytes),
+    m_maxTransactionSizeBytes(maxTransactionSizeBytes) {}
 
 std::size_t MempoolConfig::maxTransactions() const {
     return m_maxTransactions;
@@ -84,11 +86,16 @@ std::size_t MempoolConfig::maxMempoolSizeBytes() const {
     return m_maxMempoolSizeBytes;
 }
 
+std::size_t MempoolConfig::maxTransactionSizeBytes() const {
+    return m_maxTransactionSizeBytes;
+}
+
 bool MempoolConfig::isValid() const {
     return m_maxTransactions > 0 &&
            m_minimumFeeRaw >= 0 &&
            m_maxTransactionAgeSeconds > 0 &&
-           m_maxMempoolSizeBytes > 0;
+           m_maxMempoolSizeBytes > 0 &&
+           m_maxTransactionSizeBytes > 0;
 }
 
 MempoolEntry::MempoolEntry(
@@ -162,6 +169,8 @@ std::string mempoolAdmissionStatusToString(
             return "CAPACITY_REACHED";
         case MempoolAdmissionStatus::CONFLICTING_NONCE:
             return "CONFLICTING_NONCE";
+        case MempoolAdmissionStatus::TRANSACTION_TOO_LARGE:
+            return "TRANSACTION_TOO_LARGE";
         default:
             return "INVALID_TRANSACTION";
     }
@@ -357,6 +366,13 @@ MempoolAdmissionResult Mempool::admitTransaction(
     }
 
     std::size_t incomingSize = transaction.serialize().size();
+    if (incomingSize > m_config.maxTransactionSizeBytes()) {
+        return MempoolAdmissionResult::rejected(
+            MempoolAdmissionStatus::TRANSACTION_TOO_LARGE,
+            "Transaction size exceeds maximum transaction size limit."
+        );
+    }
+    
     if (incomingSize > m_config.maxMempoolSizeBytes()) {
         return MempoolAdmissionResult::rejected(
             MempoolAdmissionStatus::CAPACITY_REACHED,

@@ -23,7 +23,8 @@ public:
         std::int64_t minimumFeeRaw,
         bool replaceByHigherFee,
         std::int64_t maxTransactionAgeSeconds,
-        std::size_t maxMempoolSizeBytes = 50 * 1024 * 1024
+        std::size_t maxMempoolSizeBytes = 50 * 1024 * 1024,
+        std::size_t maxTransactionSizeBytes = 131072
     );
 
     std::size_t maxTransactions() const;
@@ -31,6 +32,7 @@ public:
     bool replaceByHigherFee() const;
     std::int64_t maxTransactionAgeSeconds() const;
     std::size_t maxMempoolSizeBytes() const;
+    std::size_t maxTransactionSizeBytes() const;
 
     bool isValid() const;
 
@@ -40,6 +42,7 @@ private:
     bool m_replaceByHigherFee;
     std::int64_t m_maxTransactionAgeSeconds;
     std::size_t m_maxMempoolSizeBytes;
+    std::size_t m_maxTransactionSizeBytes;
 };
 
 class MempoolEntry {
@@ -75,7 +78,8 @@ enum class MempoolAdmissionStatus {
     INVALID_TRANSACTION,
     FEE_TOO_LOW,
     CAPACITY_REACHED,
-    CONFLICTING_NONCE
+    CONFLICTING_NONCE,
+    TRANSACTION_TOO_LARGE
 };
 
 std::string mempoolAdmissionStatusToString(

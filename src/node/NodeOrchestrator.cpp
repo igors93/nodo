@@ -375,6 +375,9 @@ void NodeOrchestrator::tick(std::int64_t now) {
     // and their handshake traffic flushed in the same tick.
     driveNetworkPeerPolicy(now);
 
+    // Prune expired transactions from the mempool (Time-to-Live functionality)
+    m_runtime->mutableMempool().pruneExpired(now);
+
     // Drive the gossip/TCP layer: receive inbound + flush outbound.
     m_tcpRuntime->tick(now);
 
