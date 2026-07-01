@@ -1237,6 +1237,11 @@ bool TcpTransport::authenticateConnection(
         return false;
     }
 
+    if (m_connectionsByPeer.size() >= (m_candidatePolicy.maxTotal() * 9) / 10) {
+        closeCandidateConnection(connectionId);
+        return false;
+    }
+
     if (!ensureConnectionSlotFor(
             remoteNodeId,
             candidate->second.remoteIp,

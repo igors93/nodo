@@ -19,11 +19,11 @@ void testDefaultIsDisabled() {
 
 void testRecordSuccess() {
     SyncHealth h;
-    h.recordSuccess();
+    h.recordSuccess(0);
     assert(h.status() == SyncHealthStatus::HEALTHY);
     assert(h.totalSynced() == 1);
     assert(h.isHealthy());
-    h.recordSuccess();
+    h.recordSuccess(0);
     assert(h.totalSynced() == 2);
 }
 
@@ -57,7 +57,7 @@ void testSuccessResetsToHealthy() {
     SyncHealth h;
     h.recordBatchFailure("err", 100);
     assert(!h.isHealthy());
-    h.recordSuccess();
+    h.recordSuccess(0);
     assert(h.status() == SyncHealthStatus::HEALTHY);
     assert(h.isHealthy());
     assert(h.totalFailures() == 1);
@@ -90,7 +90,7 @@ void testStatusToString() {
 
 void testSerializeIsNonEmpty() {
     SyncHealth h;
-    h.recordSuccess();
+    h.recordSuccess(0);
     const auto s = h.serialize();
     assert(!s.empty());
     assert(s.find("HEALTHY") != std::string::npos);

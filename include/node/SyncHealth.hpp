@@ -50,11 +50,12 @@ public:
 
     bool isHealthy() const;
     bool hasRecentFailure(std::int64_t now, std::int64_t windowSeconds) const;
+    bool isStagnant(std::int64_t now, std::int64_t maxIdleSeconds) const;
 
     std::string serialize() const;
 
     // Record a successfully imported BLOCK_SYNC_RESPONSE batch.
-    void recordSuccess();
+    void recordSuccess(std::int64_t now);
 
     // Record a rejected or malformed BLOCK_SYNC_RESPONSE batch.
     void recordBatchFailure(const std::string& reason, std::int64_t now);
@@ -72,6 +73,7 @@ private:
     std::uint64_t m_totalSynced;
     std::uint64_t m_totalFailures;
     std::int64_t m_lastFailureAt;
+    std::int64_t m_lastSuccessAt;
     std::string m_lastFailureReason;
 };
 

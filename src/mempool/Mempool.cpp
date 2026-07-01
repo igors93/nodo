@@ -586,6 +586,25 @@ std::size_t Mempool::pruneExpired(
     return expiredIds.size();
 }
 
+std::size_t Mempool::removeConflicting(
+    const std::string& sender,
+    std::uint64_t upToNonce
+) {
+    std::vector<std::string> conflictingIds;
+    for (const auto& [id, entry] : m_entriesById) {
+        if (entry.transaction().fromAddress() == sender &&
+            entry.transaction().nonce() <= upToNonce) {
+            conflictingIds.push_back(id);
+        }
+    }
+
+    for (const std::string& id : conflictingIds) {
+        removeTransaction(id);
+    }
+
+    return conflictingIds.size();
+}
+
 std::vector<core::Transaction> Mempool::transactionsForBlock(
     std::size_t maxCount
 ) const {

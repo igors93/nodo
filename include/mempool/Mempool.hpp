@@ -183,6 +183,11 @@ public:
         const std::string& transactionId
     );
 
+    std::size_t removeConflicting(
+        const std::string& sender,
+        std::uint64_t upToNonce
+    );
+
     std::size_t pruneExpired(
         std::int64_t currentTime
     );

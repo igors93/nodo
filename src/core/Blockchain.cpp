@@ -8,26 +8,24 @@ namespace nodo::core {
 Blockchain::Blockchain() = default;
 
 void Blockchain::addGenesisBlock(const Block& block) {
-    if (!m_blocks.empty()) {
-        throw std::logic_error("Genesis block can only be added to an empty blockchain.");
+    if (!empty()) {
+        throw std::logic_error("Genesis block must be the first block.");
     }
-
     if (!isValidGenesisBlock(block)) {
-        throw std::invalid_argument("Invalid genesis block rejected by Blockchain.");
+        throw std::invalid_argument("Invalid genesis block.");
     }
-
+    m_blockIndicesByHash[block.hash()] = m_blocks.size();
     m_blocks.push_back(block);
 }
 
 void Blockchain::addBlock(const Block& block) {
-    if (m_blocks.empty()) {
-        throw std::logic_error("Cannot add a regular block before genesis block.");
+    if (empty()) {
+        throw std::logic_error("Cannot add block before genesis.");
     }
-
     if (!canAppendBlock(block)) {
         throw std::invalid_argument("Invalid block rejected by Blockchain.");
     }
-
+    m_blockIndicesByHash[block.hash()] = m_blocks.size();
     m_blocks.push_back(block);
 }
 
@@ -57,6 +55,21 @@ const Block& Blockchain::latestBlock() const {
 
 const std::vector<Block>& Blockchain::blocks() const {
     return m_blocks;
+}
+
+std::optional<Block> Blockchain::blockByHash(const std::string& hash) const {
+    auto it = m_blockIndicesByHash.find(hash);
+    if (it != m_blockIndicesByHash.end()) {
+        return m_blocks[it->second];
+    }
+    return std::nullopt;
+}
+
+std::optional<Block> Blockchain::blockByHeight(std::uint64_t height) const {
+    if (height < m_blocks.size()) {
+        return m_blocks[height];
+    }
+    return std::nullopt;
 }
 
 bool Blockchain::isValid() const {
@@ -139,6 +152,10 @@ bool Blockchain::isValidNextBlock(
     const Block& currentBlock,
     bool requireProtocolCommitmentsForCurrentBlock
 ) const {
+    if (currentBlock.serialize().size() > 2097152) { // 2MB hard limit
+        return false;
+    }
+
     if (!previousBlock.isValid(requireProtocolCommitmentsForCurrentBlock)) {
         return false;
     }

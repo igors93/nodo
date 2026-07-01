@@ -599,7 +599,7 @@ void NodeOrchestrator::tick(std::int64_t now) {
 
                 if (applyResult.applied()) {
                     currentCheckpoint = applyResult.checkpoint().value();
-                    m_syncHealth.recordSuccess();
+                    m_syncHealth.recordSuccess(now);
                 } else {
                     m_syncHealth.recordBatchFailure(applyResult.reason(), now);
                 }

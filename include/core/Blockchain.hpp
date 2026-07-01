@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <map>
+#include <optional>
 
 namespace nodo::core {
 
@@ -30,6 +32,9 @@ public:
     const Block& latestBlock() const;
     const std::vector<Block>& blocks() const;
 
+    std::optional<Block> blockByHash(const std::string& hash) const;
+    std::optional<Block> blockByHeight(std::uint64_t height) const;
+
     bool isValid() const;
     bool isValid(bool requireProtocolCommitments) const;
 
@@ -47,6 +52,7 @@ public:
 
 private:
     std::vector<Block> m_blocks;
+    std::map<std::string, std::size_t> m_blockIndicesByHash;
 
     bool isValidGenesisBlock(const Block& block) const;
 
