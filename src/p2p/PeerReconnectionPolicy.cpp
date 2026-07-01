@@ -28,7 +28,11 @@ bool isSafePeerExchangeScalar(
             character == '-' ||
             character == '.' ||
             character == ':' ||
-            character == '/';
+            character == '/' ||
+            character == '{' ||
+            character == '}' ||
+            character == '=' ||
+            character == ';';
 
         if (!allowed) {
             return false;
@@ -188,6 +192,7 @@ std::vector<std::string> splitPeerExchangeEntries(
 
 bool PeerReconnectionState::isReadyToRetry(std::int64_t now) const {
     if (quarantined) return false;
+    if (attemptInFlight) return false;
     if (attempts >= PeerReconnectionPolicy::MAX_ATTEMPTS) return false;
     return now >= nextRetryAt;
 }
@@ -201,11 +206,47 @@ std::string PeerReconnectionState::serialize() const {
         << ";lastAttemptAt=" << lastAttemptAt
         << ";nextRetryAt=" << nextRetryAt
         << ";quarantined=" << (quarantined ? "true" : "false")
+        << ";attemptInFlight=" << (attemptInFlight ? "true" : "false")
         << "}";
     return oss.str();
 }
 
-std::int64_t PeerReconnectionPolicy::backoffDelay(std::uint32_t attempt) {
+bool PeerReconnectionPolicy::isSafeNodeId(const std::string& nodeId) {
+    if (nodeId.empty() || nodeId.size() > 160) {
+        return false;
+    }
+    for (const char character : nodeId) {
+        const bool allowed =
+            (character >= 'a' && character <= 'z') ||
+            (character >= 'A' && character <= 'Z') ||
+            (character >= '0' && character <= '9') ||
+            character == '_' || character == '-' || character == '.' ||
+            character == ':' || character == '/';
+        if (!allowed) return false;
+    }
+    return true;
+}
+
+bool PeerReconnectionPolicy::isSafeEndpoint(const std::string& endpoint) {
+    if (endpoint.empty() || endpoint.size() > 320) {
+        return false;
+    }
+    for (const char character : endpoint) {
+        const bool allowed =
+            (character >= 'a' && character <= 'z') ||
+            (character >= 'A' && character <= 'Z') ||
+            (character >= '0' && character <= '9') ||
+            character == '_' || character == '-' || character == '.' ||
+            character == ':' || character == '/' || character == '{' ||
+            character == '}' || character == '=' || character == ';';
+        if (!allowed) return false;
+    }
+    return true;
+}
+
+std::int64_t PeerReconnectionPolicy::backoffDelayForAttempt(
+    std::uint32_t attempt
+) {
     std::int64_t delay = BASE_DELAY_SECONDS;
     for (std::uint32_t i = 0; i < attempt; ++i) {
         delay *= 2;
@@ -217,26 +258,61 @@ std::int64_t PeerReconnectionPolicy::backoffDelay(std::uint32_t attempt) {
     return delay;
 }
 
-void PeerReconnectionPolicy::recordDisconnect(
+void PeerReconnectionPolicy::recordCandidate(
     const std::string& nodeId,
     const std::string& endpoint,
-    std::int64_t       now
+    std::int64_t       now,
+    bool               immediateRetry
 ) {
-    if (m_states.count(nodeId) == 0) {
+    if (!isSafeNodeId(nodeId) || !isSafeEndpoint(endpoint) || now <= 0) {
+        return;
+    }
+
+    auto it = m_states.find(nodeId);
+    if (it == m_states.end()) {
         PeerReconnectionState state{};
         state.nodeId         = nodeId;
         state.endpoint       = endpoint;
         state.attempts       = 0;
         state.lastAttemptAt  = 0;
-        state.nextRetryAt    = now + BASE_DELAY_SECONDS;
+        state.nextRetryAt    = immediateRetry ? now : now + BASE_DELAY_SECONDS;
         state.quarantined    = false;
+        state.attemptInFlight = false;
         m_states[nodeId] = std::move(state);
-    } else {
-        // Reset only if not quarantined.
-        auto& s = m_states[nodeId];
-        if (!s.quarantined) {
-            s.endpoint    = endpoint;
-            s.nextRetryAt = now + BASE_DELAY_SECONDS;
+        return;
+    }
+
+    PeerReconnectionState& state = it->second;
+    if (state.quarantined) {
+        return;
+    }
+    state.endpoint = endpoint;
+    if (immediateRetry && state.nextRetryAt > now && state.attempts == 0) {
+        state.nextRetryAt = now;
+    }
+}
+
+void PeerReconnectionPolicy::recordDisconnect(
+    const std::string& nodeId,
+    const std::string& endpoint,
+    std::int64_t       now
+) {
+    if (!isSafeNodeId(nodeId) || !isSafeEndpoint(endpoint) || now <= 0) {
+        return;
+    }
+
+    auto it = m_states.find(nodeId);
+    if (it == m_states.end()) {
+        recordCandidate(nodeId, endpoint, now, false);
+        return;
+    }
+
+    PeerReconnectionState& state = it->second;
+    if (!state.quarantined) {
+        state.endpoint = endpoint;
+        state.attemptInFlight = false;
+        if (state.nextRetryAt < now + BASE_DELAY_SECONDS) {
+            state.nextRetryAt = now + BASE_DELAY_SECONDS;
         }
     }
 }
@@ -246,13 +322,15 @@ void PeerReconnectionPolicy::recordAttempt(
     std::int64_t       now
 ) {
     auto it = m_states.find(nodeId);
-    if (it == m_states.end()) return;
+    if (it == m_states.end() || now <= 0) return;
 
-    auto& s = it->second;
-    s.attempts++;
-    s.lastAttemptAt    = now;
-    s.nextRetryAt      = now + backoffDelay(s.attempts);
-    s.attemptInFlight  = true;
+    PeerReconnectionState& state = it->second;
+    if (state.quarantined) return;
+
+    state.attempts++;
+    state.lastAttemptAt    = now;
+    state.nextRetryAt      = now + backoffDelayForAttempt(state.attempts);
+    state.attemptInFlight  = true;
 }
 
 void PeerReconnectionPolicy::recordSuccess(const std::string& nodeId) {
@@ -264,15 +342,22 @@ void PeerReconnectionPolicy::recordFailure(
     std::int64_t       now
 ) {
     auto it = m_states.find(nodeId);
-    if (it == m_states.end()) return;
+    if (it == m_states.end() || now <= 0) return;
 
-    auto& s = it->second;
-    // If recordAttempt() was not called first, increment here so backoff still grows.
-    if (!s.attemptInFlight) {
-        s.attempts++;
+    PeerReconnectionState& state = it->second;
+    if (!state.attemptInFlight) {
+        state.attempts++;
     }
-    s.attemptInFlight = false;
-    s.nextRetryAt     = now + backoffDelay(s.attempts);
+    state.attemptInFlight = false;
+
+    if (state.attempts >= MAX_ATTEMPTS) {
+        state.quarantined = true;
+        state.quarantineReason = "Maximum reconnection attempts reached.";
+        state.nextRetryAt = now + QUARANTINE_COOLDOWN;
+        return;
+    }
+
+    state.nextRetryAt = now + backoffDelayForAttempt(state.attempts);
 }
 
 void PeerReconnectionPolicy::quarantine(
@@ -280,23 +365,44 @@ void PeerReconnectionPolicy::quarantine(
     const std::string& reason,
     std::int64_t       now
 ) {
-    auto it = m_states.find(nodeId);
-    if (it == m_states.end()) return;
+    if (!isSafeNodeId(nodeId) || now <= 0) return;
 
-    auto& s = it->second;
-    s.quarantined       = true;
-    s.quarantineReason  = reason;
-    s.nextRetryAt       = now + QUARANTINE_COOLDOWN;
+    auto it = m_states.find(nodeId);
+    if (it == m_states.end()) {
+        PeerReconnectionState state{};
+        state.nodeId = nodeId;
+        state.endpoint = "quarantined";
+        state.attempts = 0;
+        state.lastAttemptAt = 0;
+        state.nextRetryAt = now + QUARANTINE_COOLDOWN;
+        state.quarantined = true;
+        state.quarantineReason = reason;
+        m_states[nodeId] = std::move(state);
+        return;
+    }
+
+    PeerReconnectionState& state = it->second;
+    state.quarantined       = true;
+    state.quarantineReason  = reason;
+    state.nextRetryAt       = now + QUARANTINE_COOLDOWN;
+    state.attemptInFlight   = false;
 }
 
-void PeerReconnectionPolicy::lift(const std::string& nodeId) {
+void PeerReconnectionPolicy::lift(
+    const std::string& nodeId,
+    std::int64_t now
+) {
     auto it = m_states.find(nodeId);
     if (it == m_states.end()) return;
 
-    auto& s = it->second;
-    s.quarantined      = false;
-    s.quarantineReason = "";
-    s.attempts         = 0;
+    PeerReconnectionState& state = it->second;
+    state.quarantined      = false;
+    state.quarantineReason = "";
+    state.attempts         = 0;
+    state.attemptInFlight  = false;
+    if (now > 0) {
+        state.nextRetryAt = now;
+    }
 }
 
 std::vector<PeerReconnectionState> PeerReconnectionPolicy::candidatesForReconnect(
@@ -304,6 +410,7 @@ std::vector<PeerReconnectionState> PeerReconnectionPolicy::candidatesForReconnec
 ) const {
     std::vector<PeerReconnectionState> result;
     for (const auto& [id, state] : m_states) {
+        (void)id;
         if (state.isReadyToRetry(now)) {
             result.push_back(state);
         }
@@ -311,7 +418,10 @@ std::vector<PeerReconnectionState> PeerReconnectionPolicy::candidatesForReconnec
     std::sort(
         result.begin(), result.end(),
         [](const PeerReconnectionState& a, const PeerReconnectionState& b) {
-            return a.nextRetryAt < b.nextRetryAt;
+            if (a.nextRetryAt != b.nextRetryAt) {
+                return a.nextRetryAt < b.nextRetryAt;
+            }
+            return a.nodeId < b.nodeId;
         }
     );
     return result;
@@ -339,8 +449,9 @@ std::size_t PeerReconnectionPolicy::trackedCount() const {
 
 std::size_t PeerReconnectionPolicy::quarantineCount() const {
     std::size_t count = 0;
-    for (const auto& [id, s] : m_states) {
-        if (s.quarantined) ++count;
+    for (const auto& [id, state] : m_states) {
+        (void)id;
+        if (state.quarantined) ++count;
     }
     return count;
 }
@@ -382,7 +493,7 @@ void PeerExchangeService::mergeInto(
     for (const auto& entry : entries) {
         if (!policy.isTracked(entry.nodeId) &&
             !policy.isQuarantined(entry.nodeId)) {
-            policy.recordDisconnect(entry.nodeId, entry.endpoint, now);
+            policy.recordCandidate(entry.nodeId, entry.endpoint, now, true);
         }
     }
 }
@@ -463,7 +574,7 @@ std::vector<PeerExchangeEntry> PeerExchangeService::deserializePayload(
         const std::optional<PeerEndpoint> endpoint =
             parsePeerExchangeEndpoint(endpointText);
 
-        if (!isSafePeerExchangeScalar(nodeId, 160) ||
+        if (!PeerReconnectionPolicy::isSafeNodeId(nodeId) ||
             !endpoint.has_value() ||
             !isSafePeerExchangeScalar(fingerprint, 160)) {
             return {};

@@ -507,3 +507,7 @@ no critical security finding open.
 ### P2P hardening activation ✅
 
 The P2P foundations are now wired into the real TCP testnet path. Authenticated peer sessions are required for non-handshake messages, inbound envelopes are validated before dispatch, rate limiting is tracked per peer and message type, repeated invalid traffic quarantines and disconnects peers, peer penalty state persists through the peer store, and `EclipseGuard` checks peer admission before registration. Remaining work is production-grade discovery policy and external network audit.
+
+### Discovery/reconnection policy activation ✅
+
+`DiscoveryService`, bootstrap peers and `PeerReconnectionPolicy` are now wired into the live daemon path. Static peers and discovered peers are treated as reconnect candidates; TCP attempts are bounded per tick, retried with exponential backoff, and blocked for quarantined peers. Remaining networking work should focus on NAT traversal, richer peer exchange and external network auditing.

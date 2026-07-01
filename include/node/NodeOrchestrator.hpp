@@ -17,18 +17,24 @@
 #include "p2p/GossipMesh.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 #include "p2p/Peer.hpp"
-#include "p2p/DiscoveryService.hpp"
+#include "p2p/PeerReconnectionPolicy.hpp"
 
 #include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <map>
+#include <set>
 #include <string>
 #include <thread>
 
 namespace nodo::storage {
 class SlashingEvidenceStore;
+}
+
+namespace nodo::p2p {
+class DiscoveryService;
 }
 
 namespace nodo::node {
@@ -201,12 +207,22 @@ public:
         std::int64_t now
     );
 
-    // Connect a peer provisionally and initiate its authenticated handshake.
-    // Registration occurs only after its signed PEER_HELLO is verified.
+    // Register a bootstrap or operator-provided peer as a network candidate.
+    // The actual TCP attempt is made only through the reconnection policy, so
+    // bootstrap and discovery obey the same backoff/quarantine rules.
+    void registerBootstrapPeer(
+        const p2p::PeerMetadata& peer,
+        std::int64_t now
+    );
+
+    // Compatibility entry point for tests and daemon helpers. It now feeds the
+    // real reconnection policy instead of bypassing discovery/backoff.
     void addAndConnectPeer(
         const p2p::PeerMetadata& peer,
         std::int64_t now
     );
+
+    const p2p::PeerReconnectionPolicy& reconnectionPolicy() const;
 
     // Evaluate a remote peer's ChainStatusMessage and broadcast a
     // BLOCK_SYNC_REQUEST if the durable sync checkpoint is behind.
@@ -230,6 +246,9 @@ private:
     std::unique_ptr<storage::SlashingEvidenceStore> m_slashingEvidenceStore;
     consensus::EvidencePool                  m_evidencePool;
     std::unique_ptr<p2p::DiscoveryService>   m_discoveryService;
+    p2p::PeerReconnectionPolicy              m_reconnectionPolicy;
+    std::map<std::string, p2p::PeerEndpoint> m_reconnectEndpoints;
+    std::set<std::string> m_discoverySeededPeers;
 
     std::atomic<bool> m_running;
     std::optional<crypto::Signer> m_localSigner;
@@ -258,6 +277,36 @@ private:
     ) const;
 
     TcpTestnetNodeRuntimeConfig buildTransportConfig() const;
+
+    void trackPeerCandidate(
+        const std::string& nodeId,
+        const p2p::PeerEndpoint& endpoint,
+        std::int64_t now,
+        bool immediateRetry
+    );
+
+    void seedDiscoveryPeer(
+        const std::string& nodeId,
+        const p2p::PeerEndpoint& endpoint
+    );
+
+    void handleDiscoveredPeer(
+        const std::string& peerId,
+        const std::string& host,
+        std::uint16_t tcpPort,
+        std::int64_t now
+    );
+
+    void driveNetworkPeerPolicy(std::int64_t now);
+
+    std::optional<p2p::PeerEndpoint> endpointForReconnectCandidate(
+        const p2p::PeerReconnectionState& state
+    ) const;
+
+    bool attemptReconnectCandidate(
+        const p2p::PeerReconnectionState& state,
+        std::int64_t now
+    );
 };
 
 } // namespace nodo::node

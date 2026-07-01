@@ -67,3 +67,7 @@ node-b 127.0.0.1 30334 fingerprint-b
 - production-grade async event loop.
 
 Those should be implemented after this testnet runtime boundary is stable.
+
+## Bootstrap and reconnection
+
+The TCP runtime remains a deterministic tick-driven transport, but the daemon path now treats peer connectivity as policy. `NodeDaemon` registers `--peer` entries as bootstrap candidates; `NodeOrchestrator` feeds them into discovery and `PeerReconnectionPolicy`; and only due candidates are connected. A disconnected peer is retried after backoff instead of every tick, and an authenticated session clears the pending reconnect state.

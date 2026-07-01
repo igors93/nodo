@@ -98,7 +98,7 @@ void NodeDaemon::registerStaticPeers(std::int64_t now) {
             false
         );
 
-        m_orchestrator.addAndConnectPeer(meta, now);
+        m_orchestrator.registerBootstrapPeer(meta, now);
     }
 }
 

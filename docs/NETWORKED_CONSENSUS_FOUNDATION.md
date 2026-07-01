@@ -43,3 +43,7 @@ Those should be implemented after this boundary is merged and stable.
 ## Required P2P gate for consensus traffic
 
 Consensus traffic reaches `ConsensusEventLoop` only after the P2P admission gate accepts it. The gate requires authenticated sessions for `BLOCK_PROPOSAL`, `VALIDATOR_VOTE`, QC, sync and slashing messages; validates `NetworkEnvelope` fields and payload hash; applies per-message-type rate limits; and records/quarantines abusive peers. This keeps consensus code free of transport-specific checks while preventing unauthenticated or malformed network traffic from entering the protocol path.
+
+## Peer connectivity policy
+
+Consensus traffic still enters only through the hardened P2P gate. The peer-connectivity side now has the same discipline: bootstrap peers, discovered peers and disconnected known peers are routed through one reconnection policy with exponential backoff and quarantine awareness before any new TCP attempt or handshake is made.

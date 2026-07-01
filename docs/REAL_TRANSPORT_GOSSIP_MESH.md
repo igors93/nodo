@@ -54,3 +54,7 @@ Those should be implemented after this transport boundary is stable and tested.
 ## Hardened runtime path
 
 The TCP testnet runtime now creates a hardened `GossipMesh`. Handshake messages are the only unauthenticated messages. After handshake, non-handshake envelopes must be protected by an authenticated encrypted peer session and then pass the inbound envelope validator. Rate limits are per peer and message type, invalid messages consume extra budget, and quarantine disconnects the peer. Peer registration is no longer only a registry write: the mesh applies `EclipseGuard` before admitting a new cryptographic peer identity.
+
+## Discovery/reconnection policy
+
+Static peers, persisted peers and peers learned from UDP discovery now converge on `PeerReconnectionPolicy`. Discovery is a source of candidates, not a direct socket-opening shortcut. The orchestrator seeds discovery, records candidates, attempts only the due candidates per tick, initiates the authenticated handshake after a successful provisional TCP connection, and records success/failure so backoff grows deterministically. Quarantined peers are not retried.

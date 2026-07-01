@@ -13,12 +13,13 @@ namespace nodo::p2p {
 /*
  * PeerReconnectionState tracks retry metadata for one peer.
  *
- * Backoff schedule (exponential with jitter cap):
- *   attempt 0 : base_delay
- *   attempt n : min(base_delay * 2^n, max_delay)
+ * Backoff schedule:
+ *   first scheduled candidate : immediate or base_delay depending on caller
+ *   attempt n                 : min(base_delay * 2^n, max_delay)
  *
- * A peer that has been quarantined is not eligible for reconnection until
- * the quarantine cooldown has elapsed.
+ * A peer that has been quarantined is not eligible for reconnection until the
+ * quarantine cooldown has elapsed.  attemptInFlight prevents the same candidate
+ * from being returned every tick while the TCP/handshake path is still trying.
  */
 struct PeerReconnectionState {
     std::string   nodeId;
@@ -28,26 +29,17 @@ struct PeerReconnectionState {
     std::int64_t  nextRetryAt;
     bool          quarantined;
     std::string   quarantineReason;
-    bool          attemptInFlight{false}; // true after recordAttempt(), cleared by recordFailure/recordSuccess
+    bool          attemptInFlight{false};
 
     bool isReadyToRetry(std::int64_t now) const;
     std::string serialize() const;
 };
 
 /*
- * PeerReconnectionPolicy manages the reconnection state machine for all
- * known peers.
- *
- * Usage:
- *   policy.recordDisconnect("node-a", "127.0.0.1:30333", now);
- *   ...
- *   auto candidates = policy.candidatesForReconnect(now);
- *   for (auto& c : candidates) { transport.connect(c.endpoint); }
- *   policy.recordAttempt("node-a", now);
- *   // on success:
- *   policy.recordSuccess("node-a");
- *   // on failure:
- *   policy.recordFailure("node-a", now);
+ * PeerReconnectionPolicy is the deterministic peer-connectivity state machine.
+ * Bootstrap peers, discovery results and disconnected known peers all enter this
+ * same policy before a TCP connection attempt is made.  Callers never retry in a
+ * tight loop: candidates are returned only when their backoff window opens.
  */
 class PeerReconnectionPolicy {
 public:
@@ -57,6 +49,13 @@ public:
     static constexpr std::int64_t  QUARANTINE_COOLDOWN = 3600;
 
     PeerReconnectionPolicy() = default;
+
+    void recordCandidate(
+        const std::string& nodeId,
+        const std::string& endpoint,
+        std::int64_t       now,
+        bool               immediateRetry = true
+    );
 
     void recordDisconnect(
         const std::string& nodeId,
@@ -82,7 +81,7 @@ public:
         std::int64_t       now
     );
 
-    void lift(const std::string& nodeId);
+    void lift(const std::string& nodeId, std::int64_t now = 0);
 
     std::vector<PeerReconnectionState> candidatesForReconnect(
         std::int64_t now
@@ -97,10 +96,12 @@ public:
 
     std::string serialize() const;
 
+    static std::int64_t backoffDelayForAttempt(std::uint32_t attempt);
+    static bool isSafeNodeId(const std::string& nodeId);
+    static bool isSafeEndpoint(const std::string& endpoint);
+
 private:
     std::map<std::string, PeerReconnectionState> m_states;
-
-    static std::int64_t backoffDelay(std::uint32_t attempt);
 };
 
 /*

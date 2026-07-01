@@ -383,3 +383,7 @@ Finalized block sync no longer depends on a peer having seen the original slashi
 ### Mandatory P2P hardening boundary
 
 The live TCP testnet path now treats P2P security controls as mandatory protocol admission gates, not optional helpers. Non-handshake traffic must arrive through an authenticated encrypted peer session, every envelope is validated against network id, chain id, protocol version, TTL, clock skew, duplicate message id and payload hash, rate limits are enforced per peer and per message type, repeated abuse quarantines and disconnects the peer, and peer admission is checked by `EclipseGuard` before registration. Local loopback tests may still instantiate `GossipMesh` without the hardened config, but `TcpTestnetNodeRuntime` always enables the hardened path.
+
+### Discovery and reconnection policy
+
+Bootstrap peers, UDP discovery results and disconnected authenticated peers now enter one deterministic reconnection policy before any TCP attempt is made. The daemon no longer connects discovered/static peers through an immediate shortcut: candidates are tracked, seeded into discovery, retried with exponential backoff, capped per tick, and suppressed when peer quarantine state is active. This keeps peer discovery useful without allowing tight reconnect loops or bypassing the hardened P2P admission gate.

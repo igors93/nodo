@@ -16,6 +16,7 @@
 #include "node/PeerHandshakeAutoRegistrar.hpp"
 #include "node/PersistentBlockStateSync.hpp"
 #include "node/PersistentSlashingEvidencePool.hpp"
+#include "p2p/DiscoveryService.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeStateLoader.hpp"
@@ -105,6 +106,66 @@ std::optional<std::vector<unsigned char>> tryUnwrapCanonical(
     } catch (...) {
         return std::nullopt;
     }
+}
+
+
+std::optional<p2p::PeerEndpoint> parseReconnectEndpoint(
+    const std::string& serialized
+) {
+    if (serialized.rfind("PeerEndpoint{", 0) == 0 &&
+        serialized.size() > 15 && serialized.back() == '}') {
+        const std::string hostPrefix = "host=";
+        const std::string portPrefix = ";port=";
+        const std::size_t hostStart = serialized.find(hostPrefix);
+        const std::size_t portStart = serialized.rfind(portPrefix);
+        if (hostStart == std::string::npos ||
+            portStart == std::string::npos ||
+            portStart <= hostStart + hostPrefix.size()) {
+            return std::nullopt;
+        }
+        const std::string host = serialized.substr(
+            hostStart + hostPrefix.size(),
+            portStart - (hostStart + hostPrefix.size())
+        );
+        const std::string portText = serialized.substr(
+            portStart + portPrefix.size(),
+            serialized.size() - (portStart + portPrefix.size()) - 1
+        );
+        try {
+            std::size_t consumed = 0;
+            const unsigned long parsed = std::stoul(portText, &consumed);
+            if (consumed != portText.size() || parsed == 0 || parsed > 65535) {
+                return std::nullopt;
+            }
+            p2p::PeerEndpoint endpoint(host, static_cast<std::uint16_t>(parsed));
+            if (endpoint.isValid() && endpoint.serialize() == serialized) {
+                return endpoint;
+            }
+        } catch (...) {
+            return std::nullopt;
+        }
+    }
+
+    const std::size_t colon = serialized.rfind(':');
+    if (colon == std::string::npos || colon == 0 || colon + 1 >= serialized.size()) {
+        return std::nullopt;
+    }
+    try {
+        const std::string host = serialized.substr(0, colon);
+        const std::string portText = serialized.substr(colon + 1);
+        std::size_t consumed = 0;
+        const unsigned long parsed = std::stoul(portText, &consumed);
+        if (consumed != portText.size() || parsed == 0 || parsed > 65535) {
+            return std::nullopt;
+        }
+        p2p::PeerEndpoint endpoint(host, static_cast<std::uint16_t>(parsed));
+        if (endpoint.isValid()) {
+            return endpoint;
+        }
+    } catch (...) {
+        return std::nullopt;
+    }
+    return std::nullopt;
 }
 
 // Build a PersistentBlockSyncBatch from [fromHeight, fromHeight+maxItems) of the
@@ -265,6 +326,11 @@ void NodeOrchestrator::runBlocking(std::int64_t tickIntervalMs) {
 
 void NodeOrchestrator::tick(std::int64_t now) {
     if (!m_tcpRuntime || !m_runtime) return;
+
+    // Maintain static/discovered peer connectivity through the same policy used
+    // for reconnection. This runs before IO so due candidates can be attempted
+    // and their handshake traffic flushed in the same tick.
+    driveNetworkPeerPolicy(now);
 
     // Drive the gossip/TCP layer: receive inbound + flush outbound.
     m_tcpRuntime->tick(now);
@@ -495,6 +561,9 @@ void NodeOrchestrator::tick(std::int64_t now) {
         }
     }
 
+    // Reconcile policy state after this tick may have completed handshakes,
+    // quarantined peers, or observed disconnects.
+    driveNetworkPeerPolicy(now);
 }
 
 // ---- Accessors ------------------------------------------------------------
@@ -544,29 +613,27 @@ p2p::GossipDeliveryReport NodeOrchestrator::gossipBroadcast(
     return m_tcpRuntime->gossipMesh().broadcast(type, payload, now);
 }
 
+void NodeOrchestrator::registerBootstrapPeer(
+    const p2p::PeerMetadata& peer,
+    std::int64_t now
+) {
+    if (now <= 0 || peer.nodeId().empty() || !peer.endpoint().isValid()) {
+        return;
+    }
+    trackPeerCandidate(peer.nodeId(), peer.endpoint(), now, true);
+    seedDiscoveryPeer(peer.nodeId(), peer.endpoint());
+    driveNetworkPeerPolicy(now);
+}
+
 void NodeOrchestrator::addAndConnectPeer(
     const p2p::PeerMetadata& peer,
     std::int64_t now
 ) {
-    if (!m_tcpRuntime || !m_localNodeIdentity.has_value() || now <= 0) {
-        return;
-    }
+    registerBootstrapPeer(peer, now);
+}
 
-    const p2p::TransportResult connected =
-        m_tcpRuntime->connectUnverifiedPeer(
-            peer.nodeId(),
-            peer.endpoint()
-        );
-    if (!connected.success()) return;
-
-    const auto localPeer = localHandshakePeer(now);
-    if (localPeer.has_value()) {
-        PeerHandshakeAutoRegistrar::initiateHandshake(
-            m_tcpRuntime->gossipMesh(),
-            peer.nodeId(),
-            now
-        );
-    }
+const p2p::PeerReconnectionPolicy& NodeOrchestrator::reconnectionPolicy() const {
+    return m_reconnectionPolicy;
 }
 
 void NodeOrchestrator::triggerSyncIfBehind(
@@ -756,21 +823,15 @@ bool NodeOrchestrator::startTransport() {
 
     m_discoveryService->registerPeerDiscoveredCallback(
         [this](const std::string& peerId, const std::string& host, std::uint16_t port) {
-            if (m_tcpRuntime) {
-                const auto nowSec = std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::system_clock::now().time_since_epoch()
-                ).count();
-                p2p::PeerMetadata peerMeta(
-                    peerId,
-                    p2p::PeerEndpoint(host, port),
-                    "",
-                    nowSec,
-                    nowSec,
-                    0,
-                    false
-                );
-                addAndConnectPeer(peerMeta, nowSec);
-            }
+            const auto nowSec = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+            handleDiscoveredPeer(
+                peerId,
+                host,
+                port,
+                static_cast<std::int64_t>(nowSec)
+            );
         }
     );
 
@@ -783,22 +844,35 @@ bool NodeOrchestrator::startTransport() {
 
     m_tcpRuntime->loadPeersFromDisk(now);
 
+    std::vector<std::pair<std::string, std::pair<std::string, std::uint16_t>>> discoverySeeds;
     const auto entries = TcpTestnetPeerStore::load(m_tcpRuntime->config().peersFilePath());
     for (const auto& entry : entries) {
         if (entry.hasPersistentState() && entry.quarantined()) {
             continue;
         }
+        trackPeerCandidate(entry.nodeId(), entry.endpoint(), now, true);
         if (entry.endpoint().port() ==
             std::numeric_limits<std::uint16_t>::max()) {
             continue;
         }
+        const std::uint16_t udpPort =
+            static_cast<std::uint16_t>(entry.endpoint().port() + 1);
         m_discoveryService->addPeer(
             entry.nodeId(),
             entry.endpoint().host(),
             entry.endpoint().port(),
-            static_cast<std::uint16_t>(entry.endpoint().port() + 1)
+            udpPort
         );
+        discoverySeeds.push_back({
+            entry.nodeId(),
+            {entry.endpoint().host(), udpPort}
+        });
     }
+
+    if (!discoverySeeds.empty()) {
+        m_discoveryService->bootstrap(discoverySeeds);
+    }
+    driveNetworkPeerPolicy(static_cast<std::int64_t>(now));
 
     return true;
 }
@@ -1101,6 +1175,214 @@ std::optional<p2p::PeerMetadata> NodeOrchestrator::localHandshakePeer(
         0,
         false
     );
+}
+
+
+void NodeOrchestrator::trackPeerCandidate(
+    const std::string& nodeId,
+    const p2p::PeerEndpoint& endpoint,
+    std::int64_t now,
+    bool immediateRetry
+) {
+    if (nodeId.empty() || nodeId == m_config.localPeer().peerId() ||
+        !endpoint.isValid() || now <= 0) {
+        return;
+    }
+    m_reconnectEndpoints[nodeId] = endpoint;
+    m_reconnectionPolicy.recordCandidate(
+        nodeId,
+        endpoint.serialize(),
+        now,
+        immediateRetry
+    );
+}
+
+void NodeOrchestrator::seedDiscoveryPeer(
+    const std::string& nodeId,
+    const p2p::PeerEndpoint& endpoint
+) {
+    if (!m_discoveryService || nodeId.empty() || !endpoint.isValid() ||
+        endpoint.port() == std::numeric_limits<std::uint16_t>::max()) {
+        return;
+    }
+    const std::uint16_t udpPort =
+        static_cast<std::uint16_t>(endpoint.port() + 1);
+    m_discoveryService->addPeer(
+        nodeId,
+        endpoint.host(),
+        endpoint.port(),
+        udpPort
+    );
+
+    if (!m_discoverySeededPeers.insert(nodeId).second) {
+        return;
+    }
+
+    std::vector<std::pair<std::string, std::pair<std::string, std::uint16_t>>> seeds;
+    seeds.push_back({nodeId, {endpoint.host(), udpPort}});
+    m_discoveryService->bootstrap(seeds);
+}
+
+void NodeOrchestrator::handleDiscoveredPeer(
+    const std::string& peerId,
+    const std::string& host,
+    std::uint16_t tcpPort,
+    std::int64_t now
+) {
+    const p2p::PeerEndpoint endpoint(host, tcpPort);
+    trackPeerCandidate(peerId, endpoint, now, true);
+}
+
+std::optional<p2p::PeerEndpoint> NodeOrchestrator::endpointForReconnectCandidate(
+    const p2p::PeerReconnectionState& state
+) const {
+    const auto mapped = m_reconnectEndpoints.find(state.nodeId);
+    if (mapped != m_reconnectEndpoints.end() && mapped->second.isValid()) {
+        return mapped->second;
+    }
+    return parseReconnectEndpoint(state.endpoint);
+}
+
+bool NodeOrchestrator::attemptReconnectCandidate(
+    const p2p::PeerReconnectionState& state,
+    std::int64_t now
+) {
+    if (!m_tcpRuntime || !m_localNodeIdentity.has_value() || now <= 0) {
+        return false;
+    }
+
+    const std::optional<p2p::PeerEndpoint> endpoint =
+        endpointForReconnectCandidate(state);
+    if (!endpoint.has_value()) {
+        m_reconnectionPolicy.recordFailure(state.nodeId, now);
+        return false;
+    }
+
+    const p2p::PeerMetadata* registered =
+        m_tcpRuntime->gossipMesh().peerRegistry().peer(state.nodeId);
+    if (registered != nullptr && registered->quarantined()) {
+        m_reconnectionPolicy.quarantine(
+            state.nodeId,
+            "Peer registry is quarantined.",
+            now
+        );
+        return false;
+    }
+
+    if (m_tcpRuntime->hasAuthenticatedSession(state.nodeId)) {
+        m_reconnectionPolicy.recordSuccess(state.nodeId);
+        return true;
+    }
+
+    if (m_tcpRuntime->transport().connected(
+            m_config.localPeer().peerId(),
+            state.nodeId)) {
+        // A TCP session exists but authenticated handshake is still in progress.
+        return true;
+    }
+
+    m_reconnectionPolicy.recordAttempt(state.nodeId, now);
+    const p2p::TransportResult connected =
+        m_tcpRuntime->connectUnverifiedPeer(state.nodeId, *endpoint);
+    if (!connected.success()) {
+        m_reconnectionPolicy.recordFailure(state.nodeId, now);
+        return false;
+    }
+
+    const auto localPeer = localHandshakePeer(now);
+    if (!localPeer.has_value()) {
+        m_reconnectionPolicy.recordFailure(state.nodeId, now);
+        return false;
+    }
+
+    const p2p::GossipDeliveryReport report =
+        PeerHandshakeAutoRegistrar::initiateHandshake(
+            m_tcpRuntime->gossipMesh(),
+            state.nodeId,
+            now
+        );
+    if (!report.allAccepted()) {
+        m_reconnectionPolicy.recordFailure(state.nodeId, now);
+        return false;
+    }
+    return true;
+}
+
+void NodeOrchestrator::driveNetworkPeerPolicy(std::int64_t now) {
+    if (!m_tcpRuntime || now <= 0) {
+        return;
+    }
+
+    const std::vector<p2p::PeerMetadata> knownPeers =
+        m_tcpRuntime->gossipMesh().peerRegistry().allPeers();
+    for (const p2p::PeerMetadata& peer : knownPeers) {
+        if (peer.nodeId() == m_config.localPeer().peerId()) {
+            continue;
+        }
+        if (peer.quarantined()) {
+            m_reconnectionPolicy.quarantine(
+                peer.nodeId(),
+                "Peer registry is quarantined.",
+                now
+            );
+            continue;
+        }
+        m_reconnectEndpoints[peer.nodeId()] = peer.endpoint();
+        seedDiscoveryPeer(peer.nodeId(), peer.endpoint());
+        if (m_tcpRuntime->hasAuthenticatedSession(peer.nodeId())) {
+            m_reconnectionPolicy.recordSuccess(peer.nodeId());
+            continue;
+        }
+        const bool connected = m_tcpRuntime->transport().connected(
+            m_config.localPeer().peerId(), peer.nodeId());
+        const p2p::PeerReconnectionState* tracked =
+            m_reconnectionPolicy.state(peer.nodeId());
+        if (!connected && tracked != nullptr && tracked->attemptInFlight &&
+            now >= tracked->lastAttemptAt + p2p::PeerReconnectionPolicy::BASE_DELAY_SECONDS) {
+            m_reconnectionPolicy.recordFailure(peer.nodeId(), now);
+            tracked = m_reconnectionPolicy.state(peer.nodeId());
+        }
+        if (!connected && tracked == nullptr) {
+            m_reconnectionPolicy.recordDisconnect(
+                peer.nodeId(),
+                peer.endpoint().serialize(),
+                now
+            );
+        }
+    }
+
+    for (const auto& [nodeId, endpoint] : m_reconnectEndpoints) {
+        (void)endpoint;
+        if (m_tcpRuntime->hasAuthenticatedSession(nodeId)) {
+            m_reconnectionPolicy.recordSuccess(nodeId);
+            continue;
+        }
+        const p2p::PeerReconnectionState* tracked =
+            m_reconnectionPolicy.state(nodeId);
+        const bool connected = m_tcpRuntime->transport().connected(
+            m_config.localPeer().peerId(), nodeId);
+        if (tracked != nullptr && tracked->attemptInFlight && !connected &&
+            now >= tracked->lastAttemptAt + p2p::PeerReconnectionPolicy::BASE_DELAY_SECONDS) {
+            m_reconnectionPolicy.recordFailure(nodeId, now);
+        }
+    }
+
+    std::size_t attemptsThisTick = 0;
+    constexpr std::size_t MAX_RECONNECT_ATTEMPTS_PER_TICK = 8;
+    const std::vector<p2p::PeerReconnectionState> candidates =
+        m_reconnectionPolicy.candidatesForReconnect(now);
+    for (const p2p::PeerReconnectionState& candidate : candidates) {
+        if (attemptsThisTick >= MAX_RECONNECT_ATTEMPTS_PER_TICK) {
+            break;
+        }
+        if (m_tcpRuntime->hasAuthenticatedSession(candidate.nodeId)) {
+            m_reconnectionPolicy.recordSuccess(candidate.nodeId);
+            continue;
+        }
+        if (attemptReconnectCandidate(candidate, now)) {
+            ++attemptsThisTick;
+        }
+    }
 }
 
 TcpTestnetNodeRuntimeConfig NodeOrchestrator::buildTransportConfig() const {
