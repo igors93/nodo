@@ -98,3 +98,6 @@ The real node networking path does not accept protocol messages directly from tr
 ## P2P peer exchange
 
 `PEER_EXCHANGE` messages carry canonical, bounded peer candidate lists. They are accepted only after peer authentication and envelope validation. Candidates are persisted separately from authenticated peers, checked with `EclipseGuard`, and retried through `PeerReconnectionPolicy` so peer exchange cannot bypass rate limits, quarantine or handshake validation.
+### Connection slot policy
+
+The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.

@@ -47,6 +47,47 @@ private:
     std::chrono::milliseconds m_maxBackoff;
 };
 
+
+
+enum class TcpConnectionDirection {
+    INBOUND,
+    OUTBOUND
+};
+
+std::string tcpConnectionDirectionToString(TcpConnectionDirection direction);
+
+class TcpConnectionSlotPolicy {
+public:
+    static constexpr std::size_t DEFAULT_MAX_TOTAL = 64;
+    static constexpr std::size_t DEFAULT_MAX_INBOUND = 32;
+    static constexpr std::size_t DEFAULT_MAX_OUTBOUND = 32;
+    static constexpr std::size_t DEFAULT_MAX_PER_IP = 8;
+    static constexpr std::size_t DEFAULT_MAX_PER_SUBNET = 16;
+
+    TcpConnectionSlotPolicy();
+    TcpConnectionSlotPolicy(
+        std::size_t maxTotal,
+        std::size_t maxInbound,
+        std::size_t maxOutbound,
+        std::size_t maxPerIp,
+        std::size_t maxPerSubnet
+    );
+
+    std::size_t maxTotal() const;
+    std::size_t maxInbound() const;
+    std::size_t maxOutbound() const;
+    std::size_t maxPerIp() const;
+    std::size_t maxPerSubnet() const;
+    bool isValid() const;
+
+private:
+    std::size_t m_maxTotal;
+    std::size_t m_maxInbound;
+    std::size_t m_maxOutbound;
+    std::size_t m_maxPerIp;
+    std::size_t m_maxPerSubnet;
+};
+
 class TcpCandidatePolicy {
 public:
     static constexpr std::size_t DEFAULT_MAX_TOTAL = 64;
@@ -65,18 +106,37 @@ public:
         std::chrono::milliseconds authenticationTimeout,
         TcpIpRateLimitPolicy ipRateLimit
     );
+    TcpCandidatePolicy(
+        std::size_t maxTotal,
+        std::size_t maxPerIp,
+        std::chrono::milliseconds authenticationTimeout,
+        TcpIpRateLimitPolicy ipRateLimit,
+        TcpConnectionSlotPolicy connectionSlots
+    );
+    TcpCandidatePolicy(
+        std::size_t maxTotal,
+        std::size_t maxPerIp,
+        std::size_t maxPerSubnet,
+        std::chrono::milliseconds authenticationTimeout,
+        TcpIpRateLimitPolicy ipRateLimit,
+        TcpConnectionSlotPolicy connectionSlots
+    );
 
     std::size_t maxTotal() const;
     std::size_t maxPerIp() const;
+    std::size_t maxPerSubnet() const;
     std::chrono::milliseconds authenticationTimeout() const;
     const TcpIpRateLimitPolicy& ipRateLimit() const;
+    const TcpConnectionSlotPolicy& connectionSlots() const;
     bool isValid() const;
 
 private:
     std::size_t m_maxTotal;
     std::size_t m_maxPerIp;
+    std::size_t m_maxPerSubnet;
     std::chrono::milliseconds m_authenticationTimeout;
     TcpIpRateLimitPolicy m_ipRateLimit;
+    TcpConnectionSlotPolicy m_connectionSlots;
 };
 
 /*
@@ -124,17 +184,33 @@ public:
 
     std::vector<std::string> connectedPeers() const;
 
+    std::size_t connectedPeerCount() const;
+    std::size_t connectedInboundCount() const;
+    std::size_t connectedOutboundCount() const;
+    std::size_t connectedCountForIp(const std::string& remoteIp) const;
+    std::size_t connectedCountForSubnet(const std::string& subnetPrefix) const;
+    std::size_t evictedConnectionCount() const;
+    std::size_t slotRejectedConnectionCount() const;
+    std::size_t subnetRateLimitedConnectionCount() const;
+
     std::size_t pendingCandidateCount() const;
     std::size_t pendingCandidateCountForIp(
         const std::string& remoteIp
+    ) const;
+    std::size_t pendingCandidateCountForSubnet(
+        const std::string& subnetPrefix
     ) const;
     std::size_t expiredCandidateCount() const;
     std::size_t rateLimitedCandidateCount() const;
     std::size_t temporalRateLimitedConnectionCount() const;
     std::size_t ipAdmissionStateCount() const;
     bool ipBackedOff(const std::string& remoteIp) const;
+    bool subnetBackedOff(const std::string& subnetPrefix) const;
     std::chrono::milliseconds ipBackoffRemaining(
         const std::string& remoteIp
+    ) const;
+    std::chrono::milliseconds subnetBackoffRemaining(
+        const std::string& subnetPrefix
     ) const;
 
     TransportResult connect(
@@ -187,6 +263,10 @@ private:
         SocketHandle fd;
         TransportConnectionId id;
         bool authenticated;
+        TcpConnectionDirection direction;
+        std::string remoteIp;
+        std::string remoteSubnet;
+        std::chrono::steady_clock::time_point establishedAt;
     };
 
     struct CandidateConnection {
@@ -194,6 +274,7 @@ private:
         TransportConnectionId id;
         std::string claimedNodeId;
         std::string remoteIp;
+        std::string remoteSubnet;
         std::chrono::steady_clock::time_point acceptedAt;
     };
 
@@ -215,11 +296,16 @@ private:
         m_candidateInboundConnections;
     std::map<std::string, TransportConnectionId> m_candidateByPeer;
     std::map<std::string, std::size_t> m_candidateCountByIp;
+    std::map<std::string, std::size_t> m_candidateCountBySubnet;
     std::map<std::string, IpAdmissionState> m_ipAdmissionByAddress;
+    std::map<std::string, IpAdmissionState> m_subnetAdmissionByPrefix;
     TcpCandidatePolicy m_candidatePolicy;
     std::size_t m_expiredCandidateCount;
     std::size_t m_rateLimitedCandidateCount;
     std::size_t m_temporalRateLimitedConnectionCount;
+    std::size_t m_subnetRateLimitedConnectionCount;
+    std::size_t m_evictedConnectionCount;
+    std::size_t m_slotRejectedConnectionCount;
     TransportConnectionId m_nextConnectionId;
     // Guards all public methods that access shared maps/fds.
     // Recursive because send() may call connect() internally.
@@ -249,7 +335,9 @@ private:
     void rememberConnection(
         const std::string& remoteNodeId,
         SocketHandle fd,
-        bool authenticated
+        bool authenticated,
+        TcpConnectionDirection direction,
+        std::string remoteIp
     );
 
     TransportConnectionId nextConnectionId();
@@ -261,11 +349,17 @@ private:
         std::chrono::steady_clock::time_point now
     );
     void decrementCandidateIpCount(const std::string& remoteIp);
+    void decrementCandidateSubnetCount(const std::string& subnetPrefix);
     bool consumeIpAdmissionToken(
         const std::string& remoteIp,
         std::chrono::steady_clock::time_point now
     );
+    bool consumeSubnetAdmissionToken(
+        const std::string& subnetPrefix,
+        std::chrono::steady_clock::time_point now
+    );
     void recordSuccessfulIpAuthentication(const std::string& remoteIp);
+    void recordSuccessfulSubnetAuthentication(const std::string& subnetPrefix);
     void pruneIdleIpAdmissionStates(
         std::chrono::steady_clock::time_point now
     );
@@ -273,10 +367,26 @@ private:
         std::size_t limitHits
     ) const;
 
+    bool ensureConnectionSlotFor(
+        const std::string& remoteNodeId,
+        const std::string& remoteIp,
+        TcpConnectionDirection direction,
+        std::chrono::steady_clock::time_point now
+    );
+    std::optional<std::string> evictionCandidateFor(
+        const std::string& remoteNodeId,
+        const std::string& remoteIp,
+        TcpConnectionDirection direction
+    ) const;
+    std::size_t connectedDirectionCount(
+        TcpConnectionDirection direction
+    ) const;
+
     void closeFd(SocketHandle fd);
     void closePeerConnection(const std::string& remoteNodeId);
 
     static bool isSafeNodeId(const std::string& nodeId);
+    static std::string subnetPrefixForIp(const std::string& ip);
     static bool isSafeHost(const std::string& host);
 };
 

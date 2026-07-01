@@ -69,3 +69,6 @@ Discovery does not bypass peer admission. A discovered or bootstrap peer is only
 ## Peer exchange safety
 
 A peer-exchange payload cannot create a trusted peer record. It must arrive over an authenticated session, pass canonical decoding and `EclipseGuard` screening, and is persisted only as an untrusted reconnect candidate. The candidate becomes trusted only after the regular signed peer handshake and hardened envelope gate succeed.
+### Connection slot policy
+
+The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.

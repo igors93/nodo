@@ -391,3 +391,6 @@ Bootstrap peers, UDP discovery results and disconnected authenticated peers now 
 ### Authenticated peer exchange
 
 Peer exchange is now a canonical authenticated P2P message. Nodes broadcast capped `PEER_EXCHANGE` payloads only through authenticated encrypted sessions, parse them through the strict peer-exchange codec, screen each candidate with `EclipseGuard`, persist accepted reconnect candidates separately from trusted peer metadata, and route every learned peer through `PeerReconnectionPolicy` instead of opening direct sockets.
+### Connection slot policy
+
+The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.

@@ -71,3 +71,6 @@ Those should be implemented after this testnet runtime boundary is stable.
 ## Bootstrap and reconnection
 
 The TCP runtime remains a deterministic tick-driven transport, but the daemon path now treats peer connectivity as policy. `NodeDaemon` registers `--peer` entries as bootstrap candidates; `NodeOrchestrator` feeds them into discovery and `PeerReconnectionPolicy`; and only due candidates are connected. A disconnected peer is retried after backoff instead of every tick, and an authenticated session clears the pending reconnect state.
+### Connection slot policy
+
+The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.

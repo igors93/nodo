@@ -1,5 +1,6 @@
 #include "p2p/TcpTransport.hpp"
 
+#include "p2p/EclipseGuard.hpp"
 #include "p2p/TcpTransportFrameCodec.hpp"
 
 #include <algorithm>
@@ -374,11 +375,59 @@ bool TcpIpRateLimitPolicy::isValid() const {
            m_maxBackoff <= maximumDuration;
 }
 
+
+std::string tcpConnectionDirectionToString(TcpConnectionDirection direction) {
+    switch (direction) {
+        case TcpConnectionDirection::INBOUND: return "INBOUND";
+        case TcpConnectionDirection::OUTBOUND: return "OUTBOUND";
+    }
+    return "INBOUND";
+}
+
+TcpConnectionSlotPolicy::TcpConnectionSlotPolicy()
+    : m_maxTotal(DEFAULT_MAX_TOTAL),
+      m_maxInbound(DEFAULT_MAX_INBOUND),
+      m_maxOutbound(DEFAULT_MAX_OUTBOUND),
+      m_maxPerIp(DEFAULT_MAX_PER_IP),
+      m_maxPerSubnet(DEFAULT_MAX_PER_SUBNET) {}
+
+TcpConnectionSlotPolicy::TcpConnectionSlotPolicy(
+    std::size_t maxTotal,
+    std::size_t maxInbound,
+    std::size_t maxOutbound,
+    std::size_t maxPerIp,
+    std::size_t maxPerSubnet
+) : m_maxTotal(maxTotal),
+    m_maxInbound(maxInbound),
+    m_maxOutbound(maxOutbound),
+    m_maxPerIp(maxPerIp),
+    m_maxPerSubnet(maxPerSubnet) {}
+
+std::size_t TcpConnectionSlotPolicy::maxTotal() const { return m_maxTotal; }
+std::size_t TcpConnectionSlotPolicy::maxInbound() const { return m_maxInbound; }
+std::size_t TcpConnectionSlotPolicy::maxOutbound() const { return m_maxOutbound; }
+std::size_t TcpConnectionSlotPolicy::maxPerIp() const { return m_maxPerIp; }
+std::size_t TcpConnectionSlotPolicy::maxPerSubnet() const { return m_maxPerSubnet; }
+
+bool TcpConnectionSlotPolicy::isValid() const {
+    return m_maxTotal > 0 &&
+           m_maxInbound > 0 &&
+           m_maxOutbound > 0 &&
+           m_maxPerIp > 0 &&
+           m_maxPerSubnet > 0 &&
+           m_maxInbound <= m_maxTotal &&
+           m_maxOutbound <= m_maxTotal &&
+           m_maxPerIp <= m_maxTotal &&
+           m_maxPerSubnet <= m_maxTotal;
+}
+
 TcpCandidatePolicy::TcpCandidatePolicy()
     : m_maxTotal(DEFAULT_MAX_TOTAL),
       m_maxPerIp(DEFAULT_MAX_PER_IP),
+      m_maxPerSubnet(DEFAULT_MAX_TOTAL),
       m_authenticationTimeout(DEFAULT_TIMEOUT_MILLISECONDS),
-      m_ipRateLimit() {}
+      m_ipRateLimit(),
+      m_connectionSlots() {}
 
 TcpCandidatePolicy::TcpCandidatePolicy(
     std::size_t maxTotal,
@@ -386,8 +435,10 @@ TcpCandidatePolicy::TcpCandidatePolicy(
     std::chrono::milliseconds authenticationTimeout
 ) : m_maxTotal(maxTotal),
     m_maxPerIp(maxPerIp),
+    m_maxPerSubnet(maxTotal),
     m_authenticationTimeout(authenticationTimeout),
-    m_ipRateLimit() {}
+    m_ipRateLimit(),
+    m_connectionSlots() {}
 
 TcpCandidatePolicy::TcpCandidatePolicy(
     std::size_t maxTotal,
@@ -396,24 +447,60 @@ TcpCandidatePolicy::TcpCandidatePolicy(
     TcpIpRateLimitPolicy ipRateLimit
 ) : m_maxTotal(maxTotal),
     m_maxPerIp(maxPerIp),
+    m_maxPerSubnet(maxTotal),
     m_authenticationTimeout(authenticationTimeout),
-    m_ipRateLimit(std::move(ipRateLimit)) {}
+    m_ipRateLimit(std::move(ipRateLimit)),
+    m_connectionSlots() {}
+
+TcpCandidatePolicy::TcpCandidatePolicy(
+    std::size_t maxTotal,
+    std::size_t maxPerIp,
+    std::chrono::milliseconds authenticationTimeout,
+    TcpIpRateLimitPolicy ipRateLimit,
+    TcpConnectionSlotPolicy connectionSlots
+) : m_maxTotal(maxTotal),
+    m_maxPerIp(maxPerIp),
+    m_maxPerSubnet(maxTotal),
+    m_authenticationTimeout(authenticationTimeout),
+    m_ipRateLimit(std::move(ipRateLimit)),
+    m_connectionSlots(std::move(connectionSlots)) {}
+
+TcpCandidatePolicy::TcpCandidatePolicy(
+    std::size_t maxTotal,
+    std::size_t maxPerIp,
+    std::size_t maxPerSubnet,
+    std::chrono::milliseconds authenticationTimeout,
+    TcpIpRateLimitPolicy ipRateLimit,
+    TcpConnectionSlotPolicy connectionSlots
+) : m_maxTotal(maxTotal),
+    m_maxPerIp(maxPerIp),
+    m_maxPerSubnet(maxPerSubnet),
+    m_authenticationTimeout(authenticationTimeout),
+    m_ipRateLimit(std::move(ipRateLimit)),
+    m_connectionSlots(std::move(connectionSlots)) {}
 
 std::size_t TcpCandidatePolicy::maxTotal() const { return m_maxTotal; }
 std::size_t TcpCandidatePolicy::maxPerIp() const { return m_maxPerIp; }
+std::size_t TcpCandidatePolicy::maxPerSubnet() const { return m_maxPerSubnet; }
 std::chrono::milliseconds TcpCandidatePolicy::authenticationTimeout() const {
     return m_authenticationTimeout;
 }
 const TcpIpRateLimitPolicy& TcpCandidatePolicy::ipRateLimit() const {
     return m_ipRateLimit;
 }
+const TcpConnectionSlotPolicy& TcpCandidatePolicy::connectionSlots() const {
+    return m_connectionSlots;
+}
 
 bool TcpCandidatePolicy::isValid() const {
     return m_maxTotal > 0 &&
            m_maxPerIp > 0 &&
+           m_maxPerSubnet > 0 &&
            m_maxPerIp <= m_maxTotal &&
+           m_maxPerSubnet <= m_maxTotal &&
            m_authenticationTimeout.count() > 0 &&
-           m_ipRateLimit.isValid();
+           m_ipRateLimit.isValid() &&
+           m_connectionSlots.isValid();
 }
 
 TcpTransport::TcpTransport()
@@ -429,11 +516,16 @@ TcpTransport::TcpTransport(TcpCandidatePolicy candidatePolicy)
       m_candidateInboundConnections(),
       m_candidateByPeer(),
       m_candidateCountByIp(),
+      m_candidateCountBySubnet(),
       m_ipAdmissionByAddress(),
+      m_subnetAdmissionByPrefix(),
       m_candidatePolicy(std::move(candidatePolicy)),
       m_expiredCandidateCount(0),
       m_rateLimitedCandidateCount(0),
       m_temporalRateLimitedConnectionCount(0),
+      m_subnetRateLimitedConnectionCount(0),
+      m_evictedConnectionCount(0),
+      m_slotRejectedConnectionCount(0),
       m_nextConnectionId(1) {
     if (!m_candidatePolicy.isValid()) {
         throw std::invalid_argument("TCP candidate policy is invalid.");
@@ -612,6 +704,7 @@ bool TcpTransport::hasPeerEndpoint(
 }
 
 std::vector<std::string> TcpTransport::connectedPeers() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     std::vector<std::string> peers;
     peers.reserve(m_connectionsByPeer.size());
 
@@ -621,6 +714,64 @@ std::vector<std::string> TcpTransport::connectedPeers() const {
     }
 
     return peers;
+}
+
+std::size_t TcpTransport::connectedPeerCount() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return m_connectionsByPeer.size();
+}
+
+std::size_t TcpTransport::connectedInboundCount() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return connectedDirectionCount(TcpConnectionDirection::INBOUND);
+}
+
+std::size_t TcpTransport::connectedOutboundCount() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return connectedDirectionCount(TcpConnectionDirection::OUTBOUND);
+}
+
+std::size_t TcpTransport::connectedCountForIp(
+    const std::string& remoteIp
+) const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::size_t count = 0;
+    for (const auto& [peer, connection] : m_connectionsByPeer) {
+        (void)peer;
+        if (connection.remoteIp == remoteIp) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::size_t TcpTransport::connectedCountForSubnet(
+    const std::string& subnetPrefix
+) const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::size_t count = 0;
+    for (const auto& [peer, connection] : m_connectionsByPeer) {
+        (void)peer;
+        if (connection.remoteSubnet == subnetPrefix) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::size_t TcpTransport::evictedConnectionCount() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return m_evictedConnectionCount;
+}
+
+std::size_t TcpTransport::slotRejectedConnectionCount() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return m_slotRejectedConnectionCount;
+}
+
+std::size_t TcpTransport::subnetRateLimitedConnectionCount() const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return m_subnetRateLimitedConnectionCount;
 }
 
 std::size_t TcpTransport::pendingCandidateCount() const {
@@ -634,6 +785,14 @@ std::size_t TcpTransport::pendingCandidateCountForIp(
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     const auto found = m_candidateCountByIp.find(remoteIp);
     return found == m_candidateCountByIp.end() ? 0 : found->second;
+}
+
+std::size_t TcpTransport::pendingCandidateCountForSubnet(
+    const std::string& subnetPrefix
+) const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    const auto found = m_candidateCountBySubnet.find(subnetPrefix);
+    return found == m_candidateCountBySubnet.end() ? 0 : found->second;
 }
 
 std::size_t TcpTransport::expiredCandidateCount() const {
@@ -663,6 +822,13 @@ bool TcpTransport::ipBackedOff(const std::string& remoteIp) const {
            std::chrono::steady_clock::now() < found->second.blockedUntil;
 }
 
+bool TcpTransport::subnetBackedOff(const std::string& subnetPrefix) const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    const auto found = m_subnetAdmissionByPrefix.find(subnetPrefix);
+    return found != m_subnetAdmissionByPrefix.end() &&
+           std::chrono::steady_clock::now() < found->second.blockedUntil;
+}
+
 std::chrono::milliseconds TcpTransport::ipBackoffRemaining(
     const std::string& remoteIp
 ) const {
@@ -670,6 +836,24 @@ std::chrono::milliseconds TcpTransport::ipBackoffRemaining(
     const auto found = m_ipAdmissionByAddress.find(remoteIp);
     const auto now = std::chrono::steady_clock::now();
     if (found == m_ipAdmissionByAddress.end() ||
+        now >= found->second.blockedUntil) {
+        return std::chrono::milliseconds(0);
+    }
+    const auto remaining = found->second.blockedUntil - now;
+    const auto milliseconds =
+        std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
+    return milliseconds.count() > 0
+        ? milliseconds
+        : std::chrono::milliseconds(1);
+}
+
+std::chrono::milliseconds TcpTransport::subnetBackoffRemaining(
+    const std::string& subnetPrefix
+) const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    const auto found = m_subnetAdmissionByPrefix.find(subnetPrefix);
+    const auto now = std::chrono::steady_clock::now();
+    if (found == m_subnetAdmissionByPrefix.end() ||
         now >= found->second.blockedUntil) {
         return std::chrono::milliseconds(0);
     }
@@ -720,6 +904,30 @@ TransportResult TcpTransport::connect(
         return TransportResult(
             TransportStatus::REJECTED,
             "Unable to initialize TCP socket runtime."
+        );
+    }
+
+    const std::string remoteIp = endpoint->second.host();
+    const std::string remoteSubnet = subnetPrefixForIp(remoteIp);
+    const auto admissionNow = std::chrono::steady_clock::now();
+    if (remoteSubnet.empty() ||
+        !consumeIpAdmissionToken(remoteIp, admissionNow) ||
+        !consumeSubnetAdmissionToken(remoteSubnet, admissionNow)) {
+        ++m_temporalRateLimitedConnectionCount;
+        return TransportResult(
+            TransportStatus::REJECTED,
+            "Outbound TCP endpoint exceeded per-IP or per-subnet connection rate limit."
+        );
+    }
+
+    if (!ensureConnectionSlotFor(
+            remoteNodeId,
+            remoteIp,
+            TcpConnectionDirection::OUTBOUND,
+            admissionNow)) {
+        return TransportResult(
+            TransportStatus::REJECTED,
+            "No outbound TCP connection slot available for peer."
         );
     }
 
@@ -792,7 +1000,13 @@ TransportResult TcpTransport::connect(
         }
     }
 
-    rememberConnection(remoteNodeId, fd, false);
+    rememberConnection(
+        remoteNodeId,
+        fd,
+        false,
+        TcpConnectionDirection::OUTBOUND,
+        remoteIp
+    );
 
     return TransportResult(
         TransportStatus::SENT,
@@ -825,6 +1039,7 @@ bool TcpTransport::connected(
     const std::string& localNodeId,
     const std::string& remoteNodeId
 ) const {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (localNodeId != m_localNodeId) {
         return false;
     }
@@ -1022,10 +1237,23 @@ bool TcpTransport::authenticateConnection(
         return false;
     }
 
+    if (!ensureConnectionSlotFor(
+            remoteNodeId,
+            candidate->second.remoteIp,
+            TcpConnectionDirection::INBOUND,
+            std::chrono::steady_clock::now())) {
+        closeCandidateConnection(connectionId);
+        return false;
+    }
+
     const ManagedConnection promoted{
         candidate->second.fd,
         candidate->second.id,
-        true
+        true,
+        TcpConnectionDirection::INBOUND,
+        candidate->second.remoteIp,
+        candidate->second.remoteSubnet,
+        std::chrono::steady_clock::now()
     };
     if (active != m_connectionsByPeer.end()) {
         SocketHandle oldFd = active->second.fd;
@@ -1033,7 +1261,9 @@ bool TcpTransport::authenticateConnection(
         m_connectionsByPeer.erase(active);
     }
     recordSuccessfulIpAuthentication(candidate->second.remoteIp);
+    recordSuccessfulSubnetAuthentication(candidate->second.remoteSubnet);
     decrementCandidateIpCount(candidate->second.remoteIp);
+    decrementCandidateSubnetCount(candidate->second.remoteSubnet);
     m_candidateByPeer.erase(remoteNodeId);
     m_candidateInboundConnections.erase(candidate);
     m_connectionsByPeer[remoteNodeId] = promoted;
@@ -1087,7 +1317,9 @@ void TcpTransport::closeAll() {
     m_candidateInboundConnections.clear();
     m_candidateByPeer.clear();
     m_candidateCountByIp.clear();
+    m_candidateCountBySubnet.clear();
     m_ipAdmissionByAddress.clear();
+    m_subnetAdmissionByPrefix.clear();
 
     closeSocket(m_listenFd);
 }
@@ -1150,18 +1382,27 @@ TransportResult TcpTransport::acceptAvailableConnections() {
             continue;
         }
         const std::string remoteIp(convertedIp);
+        const std::string remoteSubnet = subnetPrefixForIp(remoteIp);
         const auto now = std::chrono::steady_clock::now();
-        if (!consumeIpAdmissionToken(remoteIp, now)) {
+        if (remoteSubnet.empty() ||
+            !consumeIpAdmissionToken(remoteIp, now) ||
+            !consumeSubnetAdmissionToken(remoteSubnet, now)) {
             ++m_temporalRateLimitedConnectionCount;
+            if (!remoteSubnet.empty()) {
+                ++m_subnetRateLimitedConnectionCount;
+            }
             SocketHandle closeFd = fd;
             closeSocket(closeFd);
             continue;
         }
         const std::size_t candidatesForIp =
             pendingCandidateCountForIp(remoteIp);
+        const std::size_t candidatesForSubnet =
+            pendingCandidateCountForSubnet(remoteSubnet);
         if (m_candidateInboundConnections.size() >=
                 m_candidatePolicy.maxTotal() ||
-            candidatesForIp >= m_candidatePolicy.maxPerIp()) {
+            candidatesForIp >= m_candidatePolicy.maxPerIp() ||
+            candidatesForSubnet >= m_candidatePolicy.maxPerSubnet()) {
             ++m_rateLimitedCandidateCount;
             SocketHandle closeFd = fd;
             closeSocket(closeFd);
@@ -1181,10 +1422,12 @@ TransportResult TcpTransport::acceptAvailableConnections() {
                 connectionId,
                 "",
                 remoteIp,
+                remoteSubnet,
                 now
             }
         );
         ++m_candidateCountByIp[remoteIp];
+        ++m_candidateCountBySubnet[remoteSubnet];
     }
 
     return TransportResult(
@@ -1291,9 +1534,18 @@ TcpTransport::PollFdResult TcpTransport::pollFd(
 void TcpTransport::rememberConnection(
     const std::string& remoteNodeId,
     SocketHandle fd,
-    bool authenticated
+    bool authenticated,
+    TcpConnectionDirection direction,
+    std::string remoteIp
 ) {
     if (!isSafeNodeId(remoteNodeId) || fd == INVALID_FD) {
+        return;
+    }
+
+    const std::string subnet = subnetPrefixForIp(remoteIp);
+    if (remoteIp.empty() || subnet.empty()) {
+        SocketHandle closeFd = fd;
+        closeSocket(closeFd);
         return;
     }
 
@@ -1309,8 +1561,15 @@ void TcpTransport::rememberConnection(
         closeSocket(closeFd);
         return;
     }
-    m_connectionsByPeer[remoteNodeId] =
-        ManagedConnection{fd, connectionId, authenticated};
+    m_connectionsByPeer[remoteNodeId] = ManagedConnection{
+        fd,
+        connectionId,
+        authenticated,
+        direction,
+        std::move(remoteIp),
+        subnet,
+        std::chrono::steady_clock::now()
+    };
 }
 
 TransportConnectionId TcpTransport::nextConnectionId() {
@@ -1385,6 +1644,7 @@ void TcpTransport::closeCandidateConnection(
         }
     }
     decrementCandidateIpCount(found->second.remoteIp);
+    decrementCandidateSubnetCount(found->second.remoteSubnet);
     SocketHandle fd = found->second.fd;
     closeSocket(fd);
     m_candidateInboundConnections.erase(found);
@@ -1414,6 +1674,18 @@ void TcpTransport::decrementCandidateIpCount(
     if (found == m_candidateCountByIp.end()) return;
     if (found->second <= 1) {
         m_candidateCountByIp.erase(found);
+    } else {
+        --found->second;
+    }
+}
+
+void TcpTransport::decrementCandidateSubnetCount(
+    const std::string& subnetPrefix
+) {
+    const auto found = m_candidateCountBySubnet.find(subnetPrefix);
+    if (found == m_candidateCountBySubnet.end()) return;
+    if (found->second <= 1) {
+        m_candidateCountBySubnet.erase(found);
     } else {
         --found->second;
     }
@@ -1475,11 +1747,82 @@ bool TcpTransport::consumeIpAdmissionToken(
     return false;
 }
 
+bool TcpTransport::consumeSubnetAdmissionToken(
+    const std::string& subnetPrefix,
+    std::chrono::steady_clock::time_point now
+) {
+    if (subnetPrefix.empty()) {
+        return false;
+    }
+
+    const TcpIpRateLimitPolicy& policy = m_candidatePolicy.ipRateLimit();
+    const auto inserted = m_subnetAdmissionByPrefix.emplace(
+        subnetPrefix,
+        IpAdmissionState{
+            policy.bucketCapacity(),
+            0,
+            now,
+            now,
+            now
+        }
+    );
+    IpAdmissionState& state = inserted.first->second;
+    state.lastActivityAt = now;
+
+    if (now < state.blockedUntil) return false;
+
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - state.lastRefillAt);
+    const std::int64_t refillIntervals =
+        elapsed.count() / policy.refillInterval().count();
+    if (refillIntervals > 0) {
+        const std::size_t missingTokens =
+            policy.bucketCapacity() - state.tokens;
+        const std::uint64_t intervals =
+            static_cast<std::uint64_t>(refillIntervals);
+        const std::uint64_t intervalsToFill =
+            (missingTokens + policy.refillTokens() - 1) /
+            policy.refillTokens();
+        if (intervals >= intervalsToFill) {
+            state.tokens = policy.bucketCapacity();
+        } else {
+            state.tokens += static_cast<std::size_t>(intervals) *
+                            policy.refillTokens();
+        }
+        state.lastRefillAt +=
+            policy.refillInterval() * refillIntervals;
+        if (state.tokens == policy.bucketCapacity()) {
+            state.consecutiveLimitHits = 0;
+        }
+    }
+
+    if (state.tokens > 0) {
+        --state.tokens;
+        return true;
+    }
+
+    ++state.consecutiveLimitHits;
+    state.blockedUntil = now +
+        backoffForLimitHits(state.consecutiveLimitHits);
+    return false;
+}
+
 void TcpTransport::recordSuccessfulIpAuthentication(
     const std::string& remoteIp
 ) {
     const auto found = m_ipAdmissionByAddress.find(remoteIp);
     if (found == m_ipAdmissionByAddress.end()) return;
+    const auto now = std::chrono::steady_clock::now();
+    found->second.consecutiveLimitHits = 0;
+    found->second.blockedUntil = now;
+    found->second.lastActivityAt = now;
+}
+
+void TcpTransport::recordSuccessfulSubnetAuthentication(
+    const std::string& subnetPrefix
+) {
+    const auto found = m_subnetAdmissionByPrefix.find(subnetPrefix);
+    if (found == m_subnetAdmissionByPrefix.end()) return;
     const auto now = std::chrono::steady_clock::now();
     found->second.consecutiveLimitHits = 0;
     found->second.blockedUntil = now;
@@ -1506,6 +1849,19 @@ void TcpTransport::pruneIdleIpAdmissionStates(
             ++iterator;
         }
     }
+
+    for (auto iterator = m_subnetAdmissionByPrefix.begin();
+         iterator != m_subnetAdmissionByPrefix.end();) {
+        const bool hasCandidates =
+            m_candidateCountBySubnet.find(iterator->first) !=
+            m_candidateCountBySubnet.end();
+        if (!hasCandidates && now >= iterator->second.blockedUntil &&
+            now - iterator->second.lastActivityAt >= retention) {
+            iterator = m_subnetAdmissionByPrefix.erase(iterator);
+        } else {
+            ++iterator;
+        }
+    }
 }
 
 std::chrono::milliseconds TcpTransport::backoffForLimitHits(
@@ -1522,6 +1878,144 @@ std::chrono::milliseconds TcpTransport::backoffForLimitHits(
         backoff *= 2;
     }
     return std::min(backoff, policy.maxBackoff());
+}
+
+
+bool TcpTransport::ensureConnectionSlotFor(
+    const std::string& remoteNodeId,
+    const std::string& remoteIp,
+    TcpConnectionDirection direction,
+    std::chrono::steady_clock::time_point now
+) {
+    (void)now;
+    const TcpConnectionSlotPolicy& policy = m_candidatePolicy.connectionSlots();
+    const std::string subnet = subnetPrefixForIp(remoteIp);
+    if (!policy.isValid() || !isSafeNodeId(remoteNodeId) || subnet.empty()) {
+        ++m_slotRejectedConnectionCount;
+        return false;
+    }
+
+    const auto existing = m_connectionsByPeer.find(remoteNodeId);
+    const bool replacingExisting = existing != m_connectionsByPeer.end();
+
+    const std::size_t totalAfter = m_connectionsByPeer.size() +
+        (replacingExisting ? 0 : 1);
+    const std::size_t directionAfter = connectedDirectionCount(direction) +
+        (replacingExisting && existing->second.direction == direction ? 0 : 1);
+
+    std::size_t ipAfter = connectedCountForIp(remoteIp) + 1;
+    std::size_t subnetAfter = connectedCountForSubnet(subnet) + 1;
+    if (replacingExisting) {
+        if (existing->second.remoteIp == remoteIp && ipAfter > 0) {
+            --ipAfter;
+        }
+        if (existing->second.remoteSubnet == subnet && subnetAfter > 0) {
+            --subnetAfter;
+        }
+    }
+
+    if (ipAfter > policy.maxPerIp() || subnetAfter > policy.maxPerSubnet()) {
+        ++m_slotRejectedConnectionCount;
+        return false;
+    }
+
+    const bool needsEviction =
+        totalAfter > policy.maxTotal() ||
+        (direction == TcpConnectionDirection::INBOUND &&
+         directionAfter > policy.maxInbound()) ||
+        (direction == TcpConnectionDirection::OUTBOUND &&
+         directionAfter > policy.maxOutbound());
+
+    if (!needsEviction) {
+        return true;
+    }
+
+    const std::optional<std::string> evict =
+        evictionCandidateFor(remoteNodeId, remoteIp, direction);
+    if (!evict.has_value()) {
+        ++m_slotRejectedConnectionCount;
+        return false;
+    }
+
+    closePeerConnection(*evict);
+    ++m_evictedConnectionCount;
+
+    const std::size_t finalTotal = m_connectionsByPeer.size() +
+        (m_connectionsByPeer.find(remoteNodeId) == m_connectionsByPeer.end() ? 1 : 0);
+    const auto finalExisting = m_connectionsByPeer.find(remoteNodeId);
+    const std::size_t finalDirection = connectedDirectionCount(direction) +
+        ((finalExisting == m_connectionsByPeer.end() ||
+          finalExisting->second.direction != direction) ? 1 : 0);
+    if (finalTotal > policy.maxTotal() ||
+        (direction == TcpConnectionDirection::INBOUND &&
+         finalDirection > policy.maxInbound()) ||
+        (direction == TcpConnectionDirection::OUTBOUND &&
+         finalDirection > policy.maxOutbound())) {
+        ++m_slotRejectedConnectionCount;
+        return false;
+    }
+
+    return true;
+}
+
+std::optional<std::string> TcpTransport::evictionCandidateFor(
+    const std::string& remoteNodeId,
+    const std::string& remoteIp,
+    TcpConnectionDirection direction
+) const {
+    if (m_connectionsByPeer.empty()) {
+        return std::nullopt;
+    }
+
+    const std::string subnet = subnetPrefixForIp(remoteIp);
+    std::optional<std::string> bestPeer;
+    std::chrono::steady_clock::time_point bestTime =
+        std::chrono::steady_clock::time_point::max();
+
+    const auto consider = [&](bool sameDirectionOnly, bool sameSubnetOnly, bool unauthOnly) {
+        for (const auto& [peerId, connection] : m_connectionsByPeer) {
+            if (peerId == remoteNodeId) {
+                continue;
+            }
+            if (sameDirectionOnly && connection.direction != direction) {
+                continue;
+            }
+            if (sameSubnetOnly && connection.remoteSubnet != subnet) {
+                continue;
+            }
+            if (unauthOnly && connection.authenticated) {
+                continue;
+            }
+            if (!bestPeer.has_value() || connection.establishedAt < bestTime ||
+                (connection.establishedAt == bestTime && peerId < *bestPeer)) {
+                bestPeer = peerId;
+                bestTime = connection.establishedAt;
+            }
+        }
+        return bestPeer.has_value();
+    };
+
+    if (consider(true, true, true)) return bestPeer;
+    if (consider(true, false, true)) return bestPeer;
+    if (consider(true, true, false)) return bestPeer;
+    if (consider(true, false, false)) return bestPeer;
+    if (consider(false, true, true)) return bestPeer;
+    if (consider(false, false, true)) return bestPeer;
+    (void)consider(false, false, false);
+    return bestPeer;
+}
+
+std::size_t TcpTransport::connectedDirectionCount(
+    TcpConnectionDirection direction
+) const {
+    std::size_t count = 0;
+    for (const auto& [peerId, connection] : m_connectionsByPeer) {
+        (void)peerId;
+        if (connection.direction == direction) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 void TcpTransport::closeFd(SocketHandle fd) {
@@ -1589,6 +2083,10 @@ bool TcpTransport::isSafeNodeId(const std::string& nodeId) {
 
 bool TcpTransport::isSafeHost(const std::string& host) {
     return !host.empty() && host.size() <= 255;
+}
+
+std::string TcpTransport::subnetPrefixForIp(const std::string& ip) {
+    return PeerSubnetInfo::extractSubnetPrefix(ip);
 }
 
 } // namespace nodo::p2p

@@ -52,3 +52,6 @@ Consensus traffic still enters only through the hardened P2P gate. The peer-conn
 ## Canonical peer exchange
 
 Peer lists from the network are treated as hints, not trust. Authenticated peers may send a capped `PEER_EXCHANGE` payload. The orchestrator accepts only canonical entries that pass subnet-diversity checks, persists them as reconnect candidates, and lets the reconnection policy decide when a TCP attempt is due.
+### Connection slot policy
+
+The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.

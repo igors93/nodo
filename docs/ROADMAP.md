@@ -176,7 +176,7 @@ ready for a semi-public testnet with untrusted peers.
 ### 3.4 Rate Limiting Hardening
 - `PeerRateLimiter` exists; verify it is applied per-message-type, not just
   per-connection.
-- Add per-IP and per-subnet rate limits for connection attempts.
+- Add per-IP and per-subnet rate limits for connection attempts. ✅
 - `TRANSACTION_GOSSIP` relay must be rate-limited to prevent amplification
   through `SeenTransactionCache` bypass tricks.
 
@@ -514,3 +514,7 @@ The P2P foundations are now wired into the real TCP testnet path. Authenticated 
 ### Authenticated peer exchange activation ✅
 
 `PEER_EXCHANGE` is now a real network message rather than an in-memory helper. The hardened gossip path requires an authenticated session before a peer-exchange envelope reaches the orchestrator. The payload is canonical, bounded, parsed strictly, screened against active peer subnets with `EclipseGuard`, persisted as untrusted reconnect candidates, and retried only through `PeerReconnectionPolicy`.
+
+### Connection slot policy activation ✅
+
+The TCP testnet path now enforces real connection slots: total, inbound, outbound, per-IP and per-/24 subnet limits apply before authenticated peers can occupy the node. Candidate handshakes retain IP/subnet token-bucket rate limits, full directional pools evict the oldest replaceable connection deterministically, and saturated IP/subnet pools reject new peers to preserve diversity.
