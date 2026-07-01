@@ -20,6 +20,7 @@ namespace {
 
 constexpr std::int32_t kInvalidMessageScorePenalty = -10;
 constexpr std::int32_t kRateLimitScorePenalty = -5;
+constexpr std::int32_t kTemporaryBanScoreThreshold = -50;
 
 bool isSafeScalar(const std::string& value) {
     if (value.empty() || value.size() > 200) {
@@ -52,6 +53,7 @@ GossipMeshConfig::GossipMeshConfig()
       m_genesisId(""),
       m_defaultTtlSeconds(0),
       m_invalidMessageQuarantineThreshold(0),
+      m_temporaryBanSeconds(3600),
       m_requireAuthenticatedSessions(false),
       m_enforceEclipseGuard(false),
       m_eclipseGuardConfig(EclipseGuardConfig::defaults()) {}
@@ -71,6 +73,7 @@ GossipMeshConfig::GossipMeshConfig(
     m_genesisId(std::move(genesisId)),
     m_defaultTtlSeconds(defaultTtlSeconds),
     m_invalidMessageQuarantineThreshold(invalidMessageQuarantineThreshold),
+    m_temporaryBanSeconds(3600),
     m_requireAuthenticatedSessions(false),
     m_enforceEclipseGuard(false),
     m_eclipseGuardConfig(EclipseGuardConfig::defaults()) {}
@@ -85,7 +88,8 @@ GossipMeshConfig::GossipMeshConfig(
     std::size_t invalidMessageQuarantineThreshold,
     bool requireAuthenticatedSessions,
     bool enforceEclipseGuard,
-    EclipseGuardConfig eclipseGuardConfig
+    EclipseGuardConfig eclipseGuardConfig,
+    std::int64_t temporaryBanSeconds
 ) : m_localNodeId(std::move(localNodeId)),
     m_networkId(std::move(networkId)),
     m_chainId(std::move(chainId)),
@@ -93,6 +97,7 @@ GossipMeshConfig::GossipMeshConfig(
     m_genesisId(std::move(genesisId)),
     m_defaultTtlSeconds(defaultTtlSeconds),
     m_invalidMessageQuarantineThreshold(invalidMessageQuarantineThreshold),
+    m_temporaryBanSeconds(temporaryBanSeconds),
     m_requireAuthenticatedSessions(requireAuthenticatedSessions),
     m_enforceEclipseGuard(enforceEclipseGuard),
     m_eclipseGuardConfig(std::move(eclipseGuardConfig)) {}
@@ -104,6 +109,7 @@ const std::string& GossipMeshConfig::protocolVersion() const { return m_protocol
 const std::string& GossipMeshConfig::genesisId() const { return m_genesisId; }
 std::uint32_t GossipMeshConfig::defaultTtlSeconds() const { return m_defaultTtlSeconds; }
 std::size_t GossipMeshConfig::invalidMessageQuarantineThreshold() const { return m_invalidMessageQuarantineThreshold; }
+std::int64_t GossipMeshConfig::temporaryBanSeconds() const { return m_temporaryBanSeconds; }
 bool GossipMeshConfig::requireAuthenticatedSessions() const { return m_requireAuthenticatedSessions; }
 bool GossipMeshConfig::enforceEclipseGuard() const { return m_enforceEclipseGuard; }
 const EclipseGuardConfig& GossipMeshConfig::eclipseGuardConfig() const { return m_eclipseGuardConfig; }
@@ -117,6 +123,8 @@ bool GossipMeshConfig::isValid() const {
            m_defaultTtlSeconds > 0 &&
            m_defaultTtlSeconds <= 3600 &&
            m_invalidMessageQuarantineThreshold > 0 &&
+           m_temporaryBanSeconds > 0 &&
+           m_temporaryBanSeconds <= 86400 * 30 &&
            (!m_enforceEclipseGuard || m_eclipseGuardConfig.isValid());
 }
 
@@ -393,10 +401,10 @@ TransportResult GossipMesh::connectPeer(const std::string& remoteNodeId) {
         );
     }
 
-    if (peer->quarantined()) {
+    if (peer->quarantined() || peer->bannedUntil() > 0) {
         return TransportResult(
             TransportStatus::REJECTED,
-            "Cannot connect quarantined peer."
+            "Cannot connect quarantined or temporarily banned peer."
         );
     }
 
@@ -443,8 +451,9 @@ GossipDeliveryReport GossipMesh::broadcast(
     std::size_t accepted = 0;
     std::size_t rejected = 0;
 
-    for (const PeerMetadata& peer : m_peerRegistry.activePeers()) {
-        if (peer.nodeId() == m_config.localNodeId() || peer.quarantined()) {
+    for (const PeerMetadata& peer : m_peerRegistry.activePeersAt(now)) {
+        if (peer.nodeId() == m_config.localNodeId() || peer.quarantined() ||
+            peer.bannedAt(now)) {
             continue;
         }
 
@@ -485,7 +494,7 @@ GossipDeliveryReport GossipMesh::sendTo(
     }
 
     const PeerMetadata* peer = m_peerRegistry.peer(targetNodeId);
-    if (peer == nullptr || peer->quarantined()) {
+    if (peer == nullptr || peer->quarantined() || peer->bannedAt(now)) {
         return GossipDeliveryReport(0, 1);
     }
 
@@ -609,7 +618,8 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
 
         const PeerMetadata* senderPeer =
             m_peerRegistry.peer(message->fromNodeId());
-        if (senderPeer != nullptr && senderPeer->quarantined()) {
+        if (senderPeer != nullptr &&
+            (senderPeer->quarantined() || senderPeer->bannedAt(now))) {
             (void)m_transport.disconnect(m_config.localNodeId(), message->fromNodeId());
             ++rejected;
             continue;
@@ -750,6 +760,16 @@ bool GossipMesh::restorePeerPenaltyState(
     const std::string& nodeId,
     std::size_t invalidMessageCount
 ) {
+    return restorePeerPenaltyState(nodeId, invalidMessageCount, 0, "", 0);
+}
+
+bool GossipMesh::restorePeerPenaltyState(
+    const std::string& nodeId,
+    std::size_t invalidMessageCount,
+    std::int64_t bannedUntil,
+    const std::string& banReason,
+    std::int64_t now
+) {
     if (!m_peerRegistry.contains(nodeId)) {
         return false;
     }
@@ -758,13 +778,55 @@ bool GossipMesh::restorePeerPenaltyState(
         invalidMessageCount,
         m_config.invalidMessageQuarantineThreshold()
     );
-    if (shouldQuarantinePeer(nodeId)) {
+
+    if (bannedUntil > 0 && (now <= 0 || bannedUntil > now)) {
+        m_peerRegistry.banPeer(
+            nodeId,
+            bannedUntil,
+            banReason.empty() ? "Peer temporary ban restored from persistent state." : banReason
+        );
+    } else if (shouldQuarantinePeer(nodeId)) {
         m_peerRegistry.quarantinePeer(
             nodeId,
             "Peer quarantine restored from persistent state."
         );
+    } else if (bannedUntil > 0 && now > 0 && bannedUntil <= now) {
+        m_peerRegistry.liftPeerPenalty(nodeId, now);
+        m_invalidMessagesByIdentity[identityKeyForNodeId(nodeId)] = 0;
     }
     return true;
+}
+
+std::size_t GossipMesh::liftExpiredPeerPenalties(std::int64_t now) {
+    if (now <= 0) {
+        return 0;
+    }
+
+    std::vector<std::string> expiredIdentityKeys;
+    for (const PeerMetadata& peer : m_peerRegistry.allPeers()) {
+        if (peer.quarantined() &&
+            peer.bannedUntil() > 0 &&
+            peer.bannedUntil() <= now) {
+            expiredIdentityKeys.push_back(peer.identityKey());
+        }
+    }
+
+    const std::size_t lifted = m_peerRegistry.liftExpiredPeerPenalties(now);
+    if (lifted > 0) {
+        for (const std::string& identityKey : expiredIdentityKeys) {
+            m_invalidMessagesByIdentity[identityKey] = 0;
+        }
+        persistPeerPenaltyState();
+    }
+    return lifted;
+}
+
+bool GossipMesh::peerBannedAt(
+    const std::string& nodeId,
+    std::int64_t now
+) const {
+    const PeerMetadata* peer = m_peerRegistry.peer(nodeId);
+    return peer != nullptr && peer->bannedAt(now);
 }
 
 void GossipMesh::setPeerPenaltyPersistenceHandler(
@@ -818,10 +880,13 @@ void GossipMesh::recordInvalidMessage(
     }
 
     const PeerMetadata* peerMeta = m_peerRegistry.peer(nodeId);
-    const bool wasQuarantinedBefore = peerMeta != nullptr && peerMeta->quarantined();
+    const bool wasQuarantinedBefore =
+        peerMeta != nullptr && peerMeta->quarantined();
+    const bool wasBannedBefore =
+        peerMeta != nullptr && peerMeta->bannedAt(now);
     bool peerStateChanged = false;
 
-    if (peerMeta != nullptr && !wasQuarantinedBefore) {
+    if (peerMeta != nullptr && !wasBannedBefore) {
         const std::int32_t scorePenalty =
             type == PeerMisbehaviorType::RATE_LIMIT_EXCEEDED
                 ? kRateLimitScorePenalty
@@ -833,20 +898,27 @@ void GossipMesh::recordInvalidMessage(
         ).success();
     }
 
-    if (shouldQuarantinePeer(nodeId) && m_peerRegistry.contains(nodeId)) {
-        if (!wasQuarantinedBefore) {
-            peerStateChanged =
-                m_peerRegistry.quarantinePeer(nodeId, reason).success() ||
-                peerStateChanged;
-        }
+    const PeerMetadata* scoredPeer = m_peerRegistry.peer(nodeId);
+    const bool crossedBanBoundary =
+        scoredPeer != nullptr &&
+        (shouldQuarantinePeer(nodeId) ||
+         scoredPeer->score() <= kTemporaryBanScoreThreshold);
+    if (crossedBanBoundary && !wasBannedBefore && m_peerRegistry.contains(nodeId)) {
+        const std::int64_t bannedUntil = now + m_config.temporaryBanSeconds();
+        peerStateChanged =
+            m_peerRegistry.banPeer(nodeId, bannedUntil, reason).success() ||
+            peerStateChanged;
     }
 
     const PeerMetadata* updatedPeer = m_peerRegistry.peer(nodeId);
+    const bool newlyBanned =
+        !wasBannedBefore && updatedPeer != nullptr &&
+        updatedPeer->bannedAt(now);
     const bool newlyQuarantined =
         !wasQuarantinedBefore && updatedPeer != nullptr &&
         updatedPeer->quarantined();
 
-    if (newlyQuarantined) {
+    if (newlyBanned || newlyQuarantined) {
         (void)m_transport.disconnect(m_config.localNodeId(), nodeId);
     }
 
@@ -861,7 +933,10 @@ void GossipMesh::recordInvalidMessage(
     // Determine evidence type from context.
     economics::ProtocolEvidenceType evidenceType;
     std::string ruleId;
-    if (newlyQuarantined) {
+    if (newlyBanned) {
+        evidenceType = economics::ProtocolEvidenceType::P2P_PEER_BANNED;
+        ruleId = "p2p.temporary-ban";
+    } else if (newlyQuarantined) {
         evidenceType = economics::ProtocolEvidenceType::P2P_PEER_QUARANTINED;
         ruleId = "p2p.quarantine.threshold";
     } else if (type == PeerMisbehaviorType::RATE_LIMIT_EXCEEDED) {

@@ -66,3 +66,8 @@ Peer exchange is no longer an internal helper only. `PEER_EXCHANGE` is a canonic
 ### Connection slot policy
 
 The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.
+
+
+## Persistent peer reputation
+
+`GossipMesh` is the reputation boundary for protocol traffic. When a peer repeatedly sends invalid, unauthenticated or rate-limited messages, the mesh records abuse evidence, adjusts score, applies a temporary ban, disconnects the peer and persists the penalty state through the TCP peer store. Expired bans are lifted during runtime ticks before reconnect candidates are considered.

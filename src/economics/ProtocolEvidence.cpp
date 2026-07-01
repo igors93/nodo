@@ -91,6 +91,7 @@ std::string protocolEvidenceTypeToString(ProtocolEvidenceType type) {
         case ProtocolEvidenceType::P2P_INVALID_MESSAGE:     return "P2P_INVALID_MESSAGE";
         case ProtocolEvidenceType::P2P_RATE_LIMIT_EXCEEDED: return "P2P_RATE_LIMIT_EXCEEDED";
         case ProtocolEvidenceType::P2P_PEER_QUARANTINED:    return "P2P_PEER_QUARANTINED";
+        case ProtocolEvidenceType::P2P_PEER_BANNED:         return "P2P_PEER_BANNED";
         case ProtocolEvidenceType::DATA_AVAILABILITY_FAILURE: return "DATA_AVAILABILITY_FAILURE";
         case ProtocolEvidenceType::DOUBLE_SIGN:             return "DOUBLE_SIGN";
         case ProtocolEvidenceType::INVALID_BLOCK_VOTE:      return "INVALID_BLOCK_VOTE";
@@ -102,6 +103,7 @@ bool protocolEvidenceTypeFromString(const std::string& s, ProtocolEvidenceType& 
     if (s == "P2P_INVALID_MESSAGE")       { out = ProtocolEvidenceType::P2P_INVALID_MESSAGE;     return true; }
     if (s == "P2P_RATE_LIMIT_EXCEEDED")   { out = ProtocolEvidenceType::P2P_RATE_LIMIT_EXCEEDED; return true; }
     if (s == "P2P_PEER_QUARANTINED")      { out = ProtocolEvidenceType::P2P_PEER_QUARANTINED;    return true; }
+    if (s == "P2P_PEER_BANNED")           { out = ProtocolEvidenceType::P2P_PEER_BANNED;         return true; }
     if (s == "DATA_AVAILABILITY_FAILURE") { out = ProtocolEvidenceType::DATA_AVAILABILITY_FAILURE; return true; }
     if (s == "DOUBLE_SIGN")               { out = ProtocolEvidenceType::DOUBLE_SIGN;             return true; }
     if (s == "INVALID_BLOCK_VOTE")        { out = ProtocolEvidenceType::INVALID_BLOCK_VOTE;      return true; }

@@ -6,6 +6,31 @@
 
 namespace nodo::p2p {
 
+namespace {
+
+std::string canonicalPenaltyReason(std::string reason) {
+    if (reason.empty()) {
+        return "p2p.temporary-ban";
+    }
+    if (reason.size() > 160) {
+        reason.resize(160);
+    }
+    for (char& character : reason) {
+        const bool allowed =
+            (character >= 'a' && character <= 'z') ||
+            (character >= 'A' && character <= 'Z') ||
+            (character >= '0' && character <= '9') ||
+            character == '_' || character == '-' || character == '.' ||
+            character == ':' || character == '/';
+        if (!allowed) {
+            character = '_';
+        }
+    }
+    return reason;
+}
+
+} // namespace
+
 std::string peerRegistryStatusToString(PeerRegistryStatus status) {
     switch (status) {
         case PeerRegistryStatus::REGISTERED: return "REGISTERED";
@@ -85,7 +110,9 @@ PeerRegistryResult PeerRegistry::registerPeer(PeerMetadata peerMetadata) {
                 peerMetadata.lastSeenAt()
             ),
             existing->second.score(),
-            existing->second.quarantined()
+            existing->second.quarantined(),
+            existing->second.bannedUntil(),
+            existing->second.banReason()
         );
     }
 
@@ -141,6 +168,64 @@ PeerRegistryResult PeerRegistry::quarantinePeer(
     return PeerRegistryResult(PeerRegistryStatus::UPDATED, std::move(reason));
 }
 
+PeerRegistryResult PeerRegistry::banPeer(
+    const std::string& nodeId,
+    std::int64_t bannedUntil,
+    std::string reason
+) {
+    const auto found = m_peersByNodeId.find(nodeId);
+    if (found == m_peersByNodeId.end()) {
+        return PeerRegistryResult(PeerRegistryStatus::NOT_FOUND, "Peer was not found.");
+    }
+    if (bannedUntil <= 0) {
+        return PeerRegistryResult(PeerRegistryStatus::REJECTED, "Peer ban is invalid.");
+    }
+
+    const std::string canonicalReason = canonicalPenaltyReason(std::move(reason));
+    const PeerMetadata banned = found->second.bannedCopy(
+        bannedUntil,
+        canonicalReason
+    );
+    if (!banned.isValid()) {
+        return PeerRegistryResult(PeerRegistryStatus::REJECTED, "Peer ban produced invalid metadata.");
+    }
+    found->second = banned;
+    return PeerRegistryResult(PeerRegistryStatus::UPDATED, "Peer temporary ban applied.");
+}
+
+PeerRegistryResult PeerRegistry::liftPeerPenalty(
+    const std::string& nodeId,
+    std::int64_t seenAt
+) {
+    const auto found = m_peersByNodeId.find(nodeId);
+    if (found == m_peersByNodeId.end()) {
+        return PeerRegistryResult(PeerRegistryStatus::NOT_FOUND, "Peer was not found.");
+    }
+    if (seenAt <= 0) {
+        return PeerRegistryResult(PeerRegistryStatus::REJECTED, "Penalty lift timestamp is invalid.");
+    }
+
+    found->second = found->second.penaltyLiftedCopy(seenAt);
+    return PeerRegistryResult(PeerRegistryStatus::UPDATED, "Expired peer penalty lifted.");
+}
+
+std::size_t PeerRegistry::liftExpiredPeerPenalties(std::int64_t now) {
+    if (now <= 0) {
+        return 0;
+    }
+    std::size_t lifted = 0;
+    for (auto& [nodeId, peerMetadata] : m_peersByNodeId) {
+        (void)nodeId;
+        if (peerMetadata.quarantined() &&
+            peerMetadata.bannedUntil() > 0 &&
+            peerMetadata.bannedUntil() <= now) {
+            peerMetadata = peerMetadata.penaltyLiftedCopy(now);
+            ++lifted;
+        }
+    }
+    return lifted;
+}
+
 bool PeerRegistry::contains(const std::string& nodeId) const {
     return m_peersByNodeId.find(nodeId) != m_peersByNodeId.end();
 }
@@ -170,7 +255,19 @@ std::vector<PeerMetadata> PeerRegistry::activePeers() const {
     peers.reserve(m_peersByNodeId.size());
 
     for (const auto& [_, peerMetadata] : m_peersByNodeId) {
-        if (!peerMetadata.quarantined()) {
+        if (!peerMetadata.quarantined() && peerMetadata.bannedUntil() == 0) {
+            peers.push_back(peerMetadata);
+        }
+    }
+    return peers;
+}
+
+std::vector<PeerMetadata> PeerRegistry::activePeersAt(std::int64_t now) const {
+    std::vector<PeerMetadata> peers;
+    peers.reserve(m_peersByNodeId.size());
+
+    for (const auto& [_, peerMetadata] : m_peersByNodeId) {
+        if (!peerMetadata.quarantined() && !peerMetadata.bannedAt(now)) {
             peers.push_back(peerMetadata);
         }
     }

@@ -394,3 +394,7 @@ Peer exchange is now a canonical authenticated P2P message. Nodes broadcast capp
 ### Connection slot policy
 
 The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.
+
+### P2P reputation and temporary bans
+
+Peer abuse handling is now persistent and time-bounded. Repeated invalid or rate-limited traffic lowers the peer score, creates audit evidence, applies a temporary ban with `bannedUntil` and canonical reason, disconnects the peer, suppresses reconnect attempts while the ban is active, and lifts the ban deterministically after expiry. Peer penalty state is stored in `peers.conf` together with score, quarantine flag and invalid-message count.

@@ -72,3 +72,8 @@ A peer-exchange payload cannot create a trusted peer record. It must arrive over
 ### Connection slot policy
 
 The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.
+
+
+## Temporary peer bans
+
+Peer quarantine is now time-bounded and auditable on the TCP testnet path. Abuse counters, score, `bannedUntil` and ban reason survive restart. A banned peer cannot occupy connection slots, receive outbound gossip, send inbound protocol messages or be retried by reconnection policy until the expiration tick lifts the penalty.

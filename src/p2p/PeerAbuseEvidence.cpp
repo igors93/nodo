@@ -10,6 +10,7 @@ std::string peerAbuseActionToString(PeerAbuseAction action) {
         case PeerAbuseAction::REJECTED:     return "REJECTED";
         case PeerAbuseAction::RATE_LIMITED: return "RATE_LIMITED";
         case PeerAbuseAction::QUARANTINED:  return "QUARANTINED";
+        case PeerAbuseAction::BANNED:       return "BANNED";
         default:                             return "UNKNOWN";
     }
 }
@@ -84,6 +85,9 @@ economics::ProtocolEvidence PeerAbuseEvidence::toProtocolEvidence() const {
     switch (m_action) {
         case PeerAbuseAction::QUARANTINED:
             evidenceType = economics::ProtocolEvidenceType::P2P_PEER_QUARANTINED;
+            break;
+        case PeerAbuseAction::BANNED:
+            evidenceType = economics::ProtocolEvidenceType::P2P_PEER_BANNED;
             break;
         case PeerAbuseAction::RATE_LIMITED:
             evidenceType = economics::ProtocolEvidenceType::P2P_RATE_LIMIT_EXCEEDED;

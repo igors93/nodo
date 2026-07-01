@@ -65,6 +65,7 @@ void testTypeRoundTrip() {
         ProtocolEvidenceType::P2P_INVALID_MESSAGE,
         ProtocolEvidenceType::P2P_RATE_LIMIT_EXCEEDED,
         ProtocolEvidenceType::P2P_PEER_QUARANTINED,
+        ProtocolEvidenceType::P2P_PEER_BANNED,
         ProtocolEvidenceType::DATA_AVAILABILITY_FAILURE,
         ProtocolEvidenceType::DOUBLE_SIGN,
         ProtocolEvidenceType::INVALID_BLOCK_VOTE

@@ -54,7 +54,8 @@ public:
         std::size_t invalidMessageQuarantineThreshold,
         bool requireAuthenticatedSessions,
         bool enforceEclipseGuard,
-        EclipseGuardConfig eclipseGuardConfig
+        EclipseGuardConfig eclipseGuardConfig,
+        std::int64_t temporaryBanSeconds = 3600
     );
 
     const std::string& localNodeId() const;
@@ -64,6 +65,7 @@ public:
     const std::string& genesisId() const;
     std::uint32_t defaultTtlSeconds() const;
     std::size_t invalidMessageQuarantineThreshold() const;
+    std::int64_t temporaryBanSeconds() const;
     bool requireAuthenticatedSessions() const;
     bool enforceEclipseGuard() const;
     const EclipseGuardConfig& eclipseGuardConfig() const;
@@ -78,6 +80,7 @@ private:
     std::string m_genesisId;
     std::uint32_t m_defaultTtlSeconds;
     std::size_t m_invalidMessageQuarantineThreshold;
+    std::int64_t m_temporaryBanSeconds;
     bool m_requireAuthenticatedSessions;
     bool m_enforceEclipseGuard;
     EclipseGuardConfig m_eclipseGuardConfig;
@@ -212,6 +215,21 @@ public:
         const std::string& nodeId,
         std::size_t invalidMessageCount
     );
+
+    bool restorePeerPenaltyState(
+        const std::string& nodeId,
+        std::size_t invalidMessageCount,
+        std::int64_t bannedUntil,
+        const std::string& banReason,
+        std::int64_t now
+    );
+
+    std::size_t liftExpiredPeerPenalties(std::int64_t now);
+
+    bool peerBannedAt(
+        const std::string& nodeId,
+        std::int64_t now
+    ) const;
 
     void setPeerPenaltyPersistenceHandler(
         std::function<void()> handler

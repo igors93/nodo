@@ -27,7 +27,9 @@ int main() {
         1050,
         -25,
         true,
-        3
+        3,
+        2000,
+        "p2p.temporary-ban"
     );
 
     node::TcpTestnetPeerStore::save(peersFile, peers);
@@ -45,6 +47,8 @@ int main() {
     assert(loaded[1].score() == -25);
     assert(loaded[1].quarantined());
     assert(loaded[1].invalidMessageCount() == 3);
+    assert(loaded[1].bannedUntil() == 2000);
+    assert(loaded[1].banReason() == "p2p.temporary-ban");
     assert(!loaded[0].hasPersistentState());
 
     std::filesystem::remove_all(root);

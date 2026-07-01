@@ -63,7 +63,9 @@ PeerMetadata::PeerMetadata()
       m_firstSeenAt(0),
       m_lastSeenAt(0),
       m_score(0),
-      m_quarantined(false) {}
+      m_quarantined(false),
+      m_bannedUntil(0),
+      m_banReason("") {}
 
 PeerMetadata::PeerMetadata(
     std::string nodeId,
@@ -73,13 +75,37 @@ PeerMetadata::PeerMetadata(
     std::int64_t lastSeenAt,
     std::int32_t score,
     bool quarantined
+) : PeerMetadata(
+    std::move(nodeId),
+    std::move(endpoint),
+    std::move(publicKeyFingerprint),
+    firstSeenAt,
+    lastSeenAt,
+    score,
+    quarantined,
+    0,
+    ""
+) {}
+
+PeerMetadata::PeerMetadata(
+    std::string nodeId,
+    PeerEndpoint endpoint,
+    std::string publicKeyFingerprint,
+    std::int64_t firstSeenAt,
+    std::int64_t lastSeenAt,
+    std::int32_t score,
+    bool quarantined,
+    std::int64_t bannedUntil,
+    std::string banReason
 ) : m_nodeId(std::move(nodeId)),
     m_endpoint(std::move(endpoint)),
     m_publicKeyFingerprint(std::move(publicKeyFingerprint)),
     m_firstSeenAt(firstSeenAt),
     m_lastSeenAt(lastSeenAt),
     m_score(score),
-    m_quarantined(quarantined) {}
+    m_quarantined(quarantined),
+    m_bannedUntil(bannedUntil),
+    m_banReason(std::move(banReason)) {}
 
 const std::string& PeerMetadata::nodeId() const { return m_nodeId; }
 const PeerEndpoint& PeerMetadata::endpoint() const { return m_endpoint; }
@@ -88,6 +114,11 @@ std::int64_t PeerMetadata::firstSeenAt() const { return m_firstSeenAt; }
 std::int64_t PeerMetadata::lastSeenAt() const { return m_lastSeenAt; }
 std::int32_t PeerMetadata::score() const { return m_score; }
 bool PeerMetadata::quarantined() const { return m_quarantined; }
+std::int64_t PeerMetadata::bannedUntil() const { return m_bannedUntil; }
+const std::string& PeerMetadata::banReason() const { return m_banReason; }
+bool PeerMetadata::bannedAt(std::int64_t now) const {
+    return now > 0 && m_bannedUntil > now;
+}
 
 std::string PeerMetadata::identityKey() const {
     std::string canonicalFingerprint = m_publicKeyFingerprint;
@@ -114,7 +145,9 @@ PeerMetadata PeerMetadata::withHeartbeat(std::int64_t lastSeenAt) const {
         m_firstSeenAt,
         lastSeenAt,
         m_score,
-        m_quarantined
+        m_quarantined,
+        m_bannedUntil,
+        m_banReason
     );
 }
 
@@ -135,7 +168,9 @@ PeerMetadata PeerMetadata::withScoreDelta(std::int32_t delta) const {
         m_firstSeenAt,
         m_lastSeenAt,
         static_cast<std::int32_t>(bounded),
-        m_quarantined
+        m_quarantined,
+        m_bannedUntil,
+        m_banReason
     );
 }
 
@@ -147,7 +182,38 @@ PeerMetadata PeerMetadata::quarantinedCopy() const {
         m_firstSeenAt,
         m_lastSeenAt,
         m_score,
-        true
+        true,
+        m_bannedUntil,
+        m_banReason
+    );
+}
+
+PeerMetadata PeerMetadata::bannedCopy(std::int64_t bannedUntil, std::string reason) const {
+    return PeerMetadata(
+        m_nodeId,
+        m_endpoint,
+        m_publicKeyFingerprint,
+        m_firstSeenAt,
+        m_lastSeenAt,
+        m_score,
+        true,
+        bannedUntil,
+        std::move(reason)
+    );
+}
+
+PeerMetadata PeerMetadata::penaltyLiftedCopy(std::int64_t seenAt) const {
+    const std::int64_t lastSeen = seenAt > m_lastSeenAt ? seenAt : m_lastSeenAt;
+    return PeerMetadata(
+        m_nodeId,
+        m_endpoint,
+        m_publicKeyFingerprint,
+        m_firstSeenAt,
+        lastSeen,
+        m_score,
+        false,
+        0,
+        ""
     );
 }
 
@@ -156,7 +222,9 @@ bool PeerMetadata::isValid() const {
            m_endpoint.isValid() &&
            isSafePeerScalar(m_publicKeyFingerprint, 160) &&
            m_firstSeenAt > 0 &&
-           m_lastSeenAt >= m_firstSeenAt;
+           m_lastSeenAt >= m_firstSeenAt &&
+           m_bannedUntil >= 0 &&
+           (m_banReason.empty() || isSafePeerScalar(m_banReason, 200));
 }
 
 std::string PeerMetadata::serialize() const {
@@ -169,6 +237,8 @@ std::string PeerMetadata::serialize() const {
            << ";lastSeenAt=" << m_lastSeenAt
            << ";score=" << m_score
            << ";quarantined=" << (m_quarantined ? "true" : "false")
+           << ";bannedUntil=" << m_bannedUntil
+           << ";banReason=" << m_banReason
            << "}";
     return output.str();
 }

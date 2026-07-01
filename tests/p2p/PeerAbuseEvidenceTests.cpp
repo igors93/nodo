@@ -61,6 +61,7 @@ void testActionToString() {
     assert(peerAbuseActionToString(PeerAbuseAction::REJECTED) == "REJECTED");
     assert(peerAbuseActionToString(PeerAbuseAction::RATE_LIMITED) == "RATE_LIMITED");
     assert(peerAbuseActionToString(PeerAbuseAction::QUARANTINED) == "QUARANTINED");
+    assert(peerAbuseActionToString(PeerAbuseAction::BANNED) == "BANNED");
 }
 
 void testConvertsToProtocolEvidence() {
@@ -81,6 +82,13 @@ void testRateLimitedConvertsCorrectType() {
     assert(pe.evidenceType() == nodo::economics::ProtocolEvidenceType::P2P_RATE_LIMIT_EXCEEDED);
 }
 
+void testBannedConvertsCorrectType() {
+    const auto pae = validEvidence("pae-ban", PeerAbuseAction::BANNED);
+    assert(pae.isValid());
+    const auto pe = pae.toProtocolEvidence();
+    assert(pe.evidenceType() == nodo::economics::ProtocolEvidenceType::P2P_PEER_BANNED);
+}
+
 void testSerialize() {
     const auto ev = validEvidence();
     assert(ev.isValid());
@@ -98,6 +106,7 @@ int main() {
     testActionToString();
     testConvertsToProtocolEvidence();
     testRateLimitedConvertsCorrectType();
+    testBannedConvertsCorrectType();
     testSerialize();
     return 0;
 }

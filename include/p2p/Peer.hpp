@@ -36,6 +36,18 @@ public:
         bool quarantined
     );
 
+    PeerMetadata(
+        std::string nodeId,
+        PeerEndpoint endpoint,
+        std::string publicKeyFingerprint,
+        std::int64_t firstSeenAt,
+        std::int64_t lastSeenAt,
+        std::int32_t score,
+        bool quarantined,
+        std::int64_t bannedUntil,
+        std::string banReason
+    );
+
     const std::string& nodeId() const;
     const PeerEndpoint& endpoint() const;
     const std::string& publicKeyFingerprint() const;
@@ -43,6 +55,9 @@ public:
     std::int64_t lastSeenAt() const;
     std::int32_t score() const;
     bool quarantined() const;
+    std::int64_t bannedUntil() const;
+    const std::string& banReason() const;
+    bool bannedAt(std::int64_t now) const;
 
     // Stable reputation key derived from the cryptographic identity rather
     // than the operator-selected node id.
@@ -51,6 +66,8 @@ public:
     PeerMetadata withHeartbeat(std::int64_t lastSeenAt) const;
     PeerMetadata withScoreDelta(std::int32_t delta) const;
     PeerMetadata quarantinedCopy() const;
+    PeerMetadata bannedCopy(std::int64_t bannedUntil, std::string reason) const;
+    PeerMetadata penaltyLiftedCopy(std::int64_t seenAt) const;
 
     bool isValid() const;
     std::string serialize() const;
@@ -63,6 +80,8 @@ private:
     std::int64_t m_lastSeenAt;
     std::int32_t m_score;
     bool m_quarantined;
+    std::int64_t m_bannedUntil;
+    std::string m_banReason;
 };
 
 } // namespace nodo::p2p

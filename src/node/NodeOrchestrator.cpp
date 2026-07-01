@@ -368,6 +368,8 @@ void NodeOrchestrator::runBlocking(std::int64_t tickIntervalMs) {
 void NodeOrchestrator::tick(std::int64_t now) {
     if (!m_tcpRuntime || !m_runtime) return;
 
+    m_tcpRuntime->gossipMesh().liftExpiredPeerPenalties(now);
+
     // Maintain static/discovered peer connectivity through the same policy used
     // for reconnection. This runs before IO so due candidates can be attempted
     // and their handshake traffic flushed in the same tick.
@@ -1487,10 +1489,13 @@ bool NodeOrchestrator::attemptReconnectCandidate(
 
     const p2p::PeerMetadata* registered =
         m_tcpRuntime->gossipMesh().peerRegistry().peer(state.nodeId);
-    if (registered != nullptr && registered->quarantined()) {
+    if (registered != nullptr &&
+        (registered->quarantined() || registered->bannedAt(now))) {
         m_reconnectionPolicy.quarantine(
             state.nodeId,
-            "Peer registry is quarantined.",
+            registered->bannedAt(now)
+                ? "Peer registry has an active temporary ban."
+                : "Peer registry is quarantined.",
             now
         );
         return false;
@@ -1510,7 +1515,7 @@ bool NodeOrchestrator::attemptReconnectCandidate(
 
     m_reconnectionPolicy.recordAttempt(state.nodeId, now);
     const p2p::TransportResult connected =
-        m_tcpRuntime->connectUnverifiedPeer(state.nodeId, *endpoint);
+        m_tcpRuntime->connectUnverifiedPeer(state.nodeId, *endpoint, now);
     if (!connected.success()) {
         m_reconnectionPolicy.recordFailure(state.nodeId, now);
         return false;
@@ -1546,10 +1551,12 @@ void NodeOrchestrator::driveNetworkPeerPolicy(std::int64_t now) {
         if (peer.nodeId() == m_config.localPeer().peerId()) {
             continue;
         }
-        if (peer.quarantined()) {
+        if (peer.quarantined() || peer.bannedAt(now)) {
             m_reconnectionPolicy.quarantine(
                 peer.nodeId(),
-                "Peer registry is quarantined.",
+                peer.bannedAt(now)
+                    ? "Peer registry has an active temporary ban."
+                    : "Peer registry is quarantined.",
                 now
             );
             continue;

@@ -177,7 +177,9 @@ TcpTestnetPeerFileEntry::TcpTestnetPeerFileEntry()
       m_lastSeenAt(0),
       m_score(0),
       m_quarantined(false),
-      m_invalidMessageCount(0) {}
+      m_invalidMessageCount(0),
+      m_bannedUntil(0),
+      m_banReason("") {}
 
 TcpTestnetPeerFileEntry::TcpTestnetPeerFileEntry(
     std::string nodeId,
@@ -191,7 +193,9 @@ TcpTestnetPeerFileEntry::TcpTestnetPeerFileEntry(
     m_lastSeenAt(0),
     m_score(0),
     m_quarantined(false),
-    m_invalidMessageCount(0) {}
+    m_invalidMessageCount(0),
+    m_bannedUntil(0),
+    m_banReason("") {}
 
 TcpTestnetPeerFileEntry::TcpTestnetPeerFileEntry(
     std::string nodeId,
@@ -202,6 +206,30 @@ TcpTestnetPeerFileEntry::TcpTestnetPeerFileEntry(
     std::int32_t score,
     bool quarantined,
     std::size_t invalidMessageCount
+) : TcpTestnetPeerFileEntry(
+    std::move(nodeId),
+    std::move(endpoint),
+    std::move(publicKeyFingerprint),
+    firstSeenAt,
+    lastSeenAt,
+    score,
+    quarantined,
+    invalidMessageCount,
+    0,
+    ""
+) {}
+
+TcpTestnetPeerFileEntry::TcpTestnetPeerFileEntry(
+    std::string nodeId,
+    p2p::PeerEndpoint endpoint,
+    std::string publicKeyFingerprint,
+    std::int64_t firstSeenAt,
+    std::int64_t lastSeenAt,
+    std::int32_t score,
+    bool quarantined,
+    std::size_t invalidMessageCount,
+    std::int64_t bannedUntil,
+    std::string banReason
 ) : m_nodeId(std::move(nodeId)),
     m_endpoint(std::move(endpoint)),
     m_publicKeyFingerprint(std::move(publicKeyFingerprint)),
@@ -210,7 +238,9 @@ TcpTestnetPeerFileEntry::TcpTestnetPeerFileEntry(
     m_lastSeenAt(lastSeenAt),
     m_score(score),
     m_quarantined(quarantined),
-    m_invalidMessageCount(invalidMessageCount) {}
+    m_invalidMessageCount(invalidMessageCount),
+    m_bannedUntil(bannedUntil),
+    m_banReason(std::move(banReason)) {}
 
 const std::string& TcpTestnetPeerFileEntry::nodeId() const { return m_nodeId; }
 const p2p::PeerEndpoint& TcpTestnetPeerFileEntry::endpoint() const { return m_endpoint; }
@@ -221,6 +251,8 @@ std::int64_t TcpTestnetPeerFileEntry::lastSeenAt() const { return m_lastSeenAt; 
 std::int32_t TcpTestnetPeerFileEntry::score() const { return m_score; }
 bool TcpTestnetPeerFileEntry::quarantined() const { return m_quarantined; }
 std::size_t TcpTestnetPeerFileEntry::invalidMessageCount() const { return m_invalidMessageCount; }
+std::int64_t TcpTestnetPeerFileEntry::bannedUntil() const { return m_bannedUntil; }
+const std::string& TcpTestnetPeerFileEntry::banReason() const { return m_banReason; }
 
 bool TcpTestnetPeerFileEntry::isValid() const {
     const bool identityValid = isSafeScalar(m_nodeId) &&
@@ -228,7 +260,9 @@ bool TcpTestnetPeerFileEntry::isValid() const {
            isSafeScalar(m_publicKeyFingerprint);
     return identityValid &&
            (!m_hasPersistentState ||
-            (m_firstSeenAt > 0 && m_lastSeenAt >= m_firstSeenAt));
+            (m_firstSeenAt > 0 && m_lastSeenAt >= m_firstSeenAt &&
+             m_bannedUntil >= 0 &&
+             (m_banReason.empty() || isSafeScalar(m_banReason))));
 }
 
 std::string TcpTestnetPeerFileEntry::serialize() const {
@@ -242,7 +276,9 @@ std::string TcpTestnetPeerFileEntry::serialize() const {
                << " " << m_lastSeenAt
                << " " << m_score
                << " " << (m_quarantined ? 1 : 0)
-               << " " << m_invalidMessageCount;
+               << " " << m_invalidMessageCount
+               << " " << m_bannedUntil
+               << " " << (m_banReason.empty() ? "none" : m_banReason);
     }
     return output.str();
 }
@@ -257,17 +293,19 @@ TcpTestnetPeerFileEntry TcpTestnetPeerFileEntry::parseLine(
         fields.push_back(std::move(field));
     }
 
-    if (fields.size() != 4 && fields.size() != 9) {
+    if (fields.size() != 4 && fields.size() != 9 && fields.size() != 11) {
         throw std::invalid_argument("Peer file line is malformed.");
     }
 
-    TcpTestnetPeerFileEntry entry = fields.size() == 4
-        ? TcpTestnetPeerFileEntry(
+    TcpTestnetPeerFileEntry entry;
+    if (fields.size() == 4) {
+        entry = TcpTestnetPeerFileEntry(
             fields[0],
             p2p::PeerEndpoint(fields[1], parsePort(fields[2])),
             fields[3]
-        )
-        : TcpTestnetPeerFileEntry(
+        );
+    } else if (fields.size() == 9) {
+        entry = TcpTestnetPeerFileEntry(
             fields[0],
             p2p::PeerEndpoint(fields[1], parsePort(fields[2])),
             fields[3],
@@ -277,6 +315,21 @@ TcpTestnetPeerFileEntry TcpTestnetPeerFileEntry::parseLine(
             parseBool(fields[7]),
             parseSize(fields[8], "invalidMessageCount")
         );
+    } else {
+        const std::string banReason = fields[10] == "none" ? "" : fields[10];
+        entry = TcpTestnetPeerFileEntry(
+            fields[0],
+            p2p::PeerEndpoint(fields[1], parsePort(fields[2])),
+            fields[3],
+            parseInt64(fields[4], "firstSeenAt"),
+            parseInt64(fields[5], "lastSeenAt"),
+            parseInt32(fields[6], "score"),
+            parseBool(fields[7]),
+            parseSize(fields[8], "invalidMessageCount"),
+            parseInt64(fields[9], "bannedUntil"),
+            banReason
+        );
+    }
 
     if (!entry.isValid()) {
         throw std::invalid_argument("Peer file entry is invalid.");
@@ -316,7 +369,7 @@ void TcpTestnetPeerStore::save(
 
     std::ostringstream output;
     output << "# nodeId host port publicKeyFingerprint firstSeenAt "
-              "lastSeenAt score quarantined invalidMessageCount\n";
+              "lastSeenAt score quarantined invalidMessageCount bannedUntil banReason\n";
 
     for (const auto& peer : peers) {
         if (peer.isValid()) {
@@ -436,14 +489,19 @@ std::size_t TcpTestnetNodeRuntime::loadPeersFromDisk(
             firstSeenAt,
             lastSeenAt,
             entry.hasPersistentState() ? entry.score() : 0,
-            entry.hasPersistentState() && entry.quarantined()
+            entry.hasPersistentState() && entry.quarantined(),
+            entry.hasPersistentState() ? entry.bannedUntil() : 0,
+            entry.hasPersistentState() ? entry.banReason() : ""
         );
 
         if (addPeer(peer).success()) {
             if (entry.hasPersistentState()) {
                 m_gossipMesh.restorePeerPenaltyState(
                     entry.nodeId(),
-                    entry.invalidMessageCount()
+                    entry.invalidMessageCount(),
+                    entry.bannedUntil(),
+                    entry.banReason(),
+                    now
                 );
             }
             ++loaded;
@@ -465,7 +523,9 @@ void TcpTestnetNodeRuntime::savePeersToDisk() const {
             peer.lastSeenAt(),
             peer.score(),
             peer.quarantined(),
-            m_gossipMesh.invalidMessageCountForPeer(peer.nodeId())
+            m_gossipMesh.invalidMessageCountForPeer(peer.nodeId()),
+            peer.bannedUntil(),
+            peer.banReason()
         );
     }
 
@@ -483,7 +543,8 @@ p2p::TransportResult TcpTestnetNodeRuntime::connectPeer(
 
 p2p::TransportResult TcpTestnetNodeRuntime::connectUnverifiedPeer(
     const std::string& remoteNodeId,
-    const p2p::PeerEndpoint& endpoint
+    const p2p::PeerEndpoint& endpoint,
+    std::int64_t now
 ) {
     if (remoteNodeId.empty() || !endpoint.isValid()) {
         return p2p::TransportResult(
@@ -493,10 +554,13 @@ p2p::TransportResult TcpTestnetNodeRuntime::connectUnverifiedPeer(
     }
     const p2p::PeerMetadata* knownPeer =
         m_gossipMesh.peerRegistry().peer(remoteNodeId);
-    if (knownPeer != nullptr && knownPeer->quarantined()) {
+    if (knownPeer != nullptr &&
+        (knownPeer->quarantined() ||
+         knownPeer->bannedAt(now) ||
+         (now <= 0 && knownPeer->bannedUntil() > 0))) {
         return p2p::TransportResult(
             p2p::TransportStatus::REJECTED,
-            "Cannot connect quarantined peer for handshake."
+            "Cannot connect quarantined or temporarily banned peer for handshake."
         );
     }
     m_transport.registerPeerEndpoint(remoteNodeId, endpoint);
@@ -531,6 +595,8 @@ p2p::GossipDeliveryReport TcpTestnetNodeRuntime::broadcastChainStatus(
 p2p::GossipDeliveryReport TcpTestnetNodeRuntime::tick(
     std::int64_t now
 ) {
+    m_gossipMesh.liftExpiredPeerPenalties(now);
+
     const p2p::GossipDeliveryReport outbound =
         m_gossipMesh.flushOutbound(now);
 

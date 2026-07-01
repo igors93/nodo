@@ -101,3 +101,8 @@ The real node networking path does not accept protocol messages directly from tr
 ### Connection slot policy
 
 The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.
+
+
+## P2P peer reputation and temporary bans
+
+The hardened P2P path now treats repeated abuse as a persistent peer-reputation state, not only as an in-memory counter. Invalid envelopes and rate-limit violations reduce score and may produce a temporary ban. Banned peers are disconnected, excluded from outbound gossip and reconnection, persisted with `bannedUntil` plus reason, and restored only when the ban expires.

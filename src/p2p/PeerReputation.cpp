@@ -1,17 +1,40 @@
 #include "p2p/PeerReputation.hpp"
 
 #include <array>
+#include <algorithm>
 #include <limits>
 #include <sstream>
 #include <vector>
 
 namespace nodo::p2p {
 
-PeerReputation::PeerReputation(int32_t threshold, size_t maxPeersPerSubnet)
-    : m_banThreshold(threshold), m_maxPeersPerSubnet(maxPeersPerSubnet) {}
+PeerReputation::PeerReputation(
+    std::int32_t threshold,
+    std::size_t maxPeersPerSubnet,
+    std::int64_t temporaryBanSeconds
+) : m_banThreshold(threshold),
+    m_maxPeersPerSubnet(maxPeersPerSubnet),
+    m_temporaryBanSeconds(temporaryBanSeconds > 0 ? temporaryBanSeconds : 3600) {}
 
-void PeerReputation::reportBehavior(const std::string& nodeId, const std::string& ipAddress, int32_t delta) {
+void PeerReputation::reportBehavior(
+    const std::string& nodeId,
+    const std::string& ipAddress,
+    std::int32_t delta
+) {
+    reportBehavior(nodeId, ipAddress, delta, 0, "score-only");
+}
+
+void PeerReputation::reportBehavior(
+    const std::string& nodeId,
+    const std::string& ipAddress,
+    std::int32_t delta,
+    std::int64_t now,
+    const std::string& reason
+) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (nodeId.empty()) {
+        return;
+    }
     if (m_peerScores.find(nodeId) == m_peerScores.end()) {
         m_peerScores[nodeId] = 100;
     }
@@ -25,9 +48,14 @@ void PeerReputation::reportBehavior(const std::string& nodeId, const std::string
         m_peerScores[nodeId] = static_cast<std::int32_t>(adjusted);
     }
     m_peerIps[nodeId] = ipAddress;
+
+    if (now > 0 && m_peerScores[nodeId] < m_banThreshold) {
+        m_bannedUntil[nodeId] = now + m_temporaryBanSeconds;
+        m_banReasons[nodeId] = reason.empty() ? "peer.reputation.threshold" : reason;
+    }
 }
 
-int32_t PeerReputation::getScore(const std::string& nodeId) const {
+std::int32_t PeerReputation::getScore(const std::string& nodeId) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_peerScores.find(nodeId);
     return (it != m_peerScores.end()) ? it->second : 100;
@@ -36,10 +64,41 @@ int32_t PeerReputation::getScore(const std::string& nodeId) const {
 bool PeerReputation::isBanned(const std::string& nodeId) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_peerScores.find(nodeId);
-    if (it != m_peerScores.end()) {
-        return it->second < m_banThreshold;
+    return it != m_peerScores.end() && it->second < m_banThreshold;
+}
+
+bool PeerReputation::isTemporarilyBanned(
+    const std::string& nodeId,
+    std::int64_t now
+) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const auto it = m_bannedUntil.find(nodeId);
+    return now > 0 && it != m_bannedUntil.end() && it->second > now;
+}
+
+std::int64_t PeerReputation::bannedUntil(const std::string& nodeId) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const auto it = m_bannedUntil.find(nodeId);
+    return it == m_bannedUntil.end() ? 0 : it->second;
+}
+
+std::size_t PeerReputation::liftExpiredBans(std::int64_t now) {
+    if (now <= 0) {
+        return 0;
     }
-    return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::size_t lifted = 0;
+    auto it = m_bannedUntil.begin();
+    while (it != m_bannedUntil.end()) {
+        if (it->second <= now) {
+            m_banReasons.erase(it->first);
+            it = m_bannedUntil.erase(it);
+            ++lifted;
+        } else {
+            ++it;
+        }
+    }
+    return lifted;
 }
 
 bool PeerReputation::allowConnection(const std::string& ipAddress) {
@@ -68,6 +127,22 @@ void PeerReputation::releaseConnection(const std::string& ipAddress) {
             m_subnetCounts.erase(it);
         }
     }
+}
+
+std::string PeerReputation::serialize() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::ostringstream output;
+    output << "PeerReputation{peers=" << m_peerScores.size()
+           << ";bans=" << m_bannedUntil.size()
+           << ";scores=[";
+    bool first = true;
+    for (const auto& [nodeId, score] : m_peerScores) {
+        if (!first) output << ",";
+        output << nodeId << ":" << score;
+        first = false;
+    }
+    output << "]}";
+    return output.str();
 }
 
 std::string PeerReputation::getSubnet(const std::string& ipAddress) {

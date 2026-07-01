@@ -44,6 +44,16 @@ public:
         std::string reason
     );
     PeerRegistryResult quarantinePeer(const std::string& nodeId, std::string reason);
+    PeerRegistryResult banPeer(
+        const std::string& nodeId,
+        std::int64_t bannedUntil,
+        std::string reason
+    );
+    PeerRegistryResult liftPeerPenalty(
+        const std::string& nodeId,
+        std::int64_t seenAt
+    );
+    std::size_t liftExpiredPeerPenalties(std::int64_t now);
 
     bool contains(const std::string& nodeId) const;
     bool containsIdentityKey(const std::string& identityKey) const;
@@ -52,6 +62,7 @@ public:
         const std::string& identityKey
     ) const;
     std::vector<PeerMetadata> activePeers() const;
+    std::vector<PeerMetadata> activePeersAt(std::int64_t now) const;
     std::vector<PeerMetadata> allPeers() const;
     std::size_t size() const;
     bool isValid() const;

@@ -78,6 +78,19 @@ public:
         std::size_t invalidMessageCount
     );
 
+    TcpTestnetPeerFileEntry(
+        std::string nodeId,
+        p2p::PeerEndpoint endpoint,
+        std::string publicKeyFingerprint,
+        std::int64_t firstSeenAt,
+        std::int64_t lastSeenAt,
+        std::int32_t score,
+        bool quarantined,
+        std::size_t invalidMessageCount,
+        std::int64_t bannedUntil,
+        std::string banReason
+    );
+
     const std::string& nodeId() const;
     const p2p::PeerEndpoint& endpoint() const;
     const std::string& publicKeyFingerprint() const;
@@ -87,6 +100,8 @@ public:
     std::int32_t score() const;
     bool quarantined() const;
     std::size_t invalidMessageCount() const;
+    std::int64_t bannedUntil() const;
+    const std::string& banReason() const;
 
     bool isValid() const;
     std::string serialize() const;
@@ -105,6 +120,8 @@ private:
     std::int32_t m_score;
     bool m_quarantined;
     std::size_t m_invalidMessageCount;
+    std::int64_t m_bannedUntil;
+    std::string m_banReason;
 };
 
 class TcpTestnetPeerStore {
@@ -156,7 +173,8 @@ public:
 
     p2p::TransportResult connectUnverifiedPeer(
         const std::string& remoteNodeId,
-        const p2p::PeerEndpoint& endpoint
+        const p2p::PeerEndpoint& endpoint,
+        std::int64_t now = 0
     );
 
     p2p::GossipDeliveryReport broadcast(

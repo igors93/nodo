@@ -55,3 +55,8 @@ Peer lists from the network are treated as hints, not trust. Authenticated peers
 ### Connection slot policy
 
 The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.
+
+
+## Reputation-gated networking
+
+Consensus messages only reach the protocol after the P2P gate accepts the peer. That gate now includes persistent reputation: peers that cross abuse thresholds are disconnected, temporarily banned, stored durably and suppressed from reconnect/peer exchange until the ban expires.

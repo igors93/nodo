@@ -14,7 +14,8 @@ namespace nodo::p2p {
 enum class PeerAbuseAction {
     REJECTED,
     RATE_LIMITED,
-    QUARANTINED
+    QUARANTINED,
+    BANNED
 };
 
 std::string peerAbuseActionToString(PeerAbuseAction action);

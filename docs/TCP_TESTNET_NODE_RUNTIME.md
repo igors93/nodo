@@ -74,3 +74,8 @@ The TCP runtime remains a deterministic tick-driven transport, but the daemon pa
 ### Connection slot policy
 
 The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.
+
+
+## Peer penalty persistence
+
+`peers.conf` persists reputation state for authenticated peers: score, quarantine flag, invalid-message count, temporary ban expiration and canonical ban reason. Loading peers restores active bans and drops expired ones through the same runtime lifting path used during ticks.

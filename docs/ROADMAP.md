@@ -518,3 +518,8 @@ The P2P foundations are now wired into the real TCP testnet path. Authenticated 
 ### Connection slot policy activation ✅
 
 The TCP testnet path now enforces real connection slots: total, inbound, outbound, per-IP and per-/24 subnet limits apply before authenticated peers can occupy the node. Candidate handshakes retain IP/subnet token-bucket rate limits, full directional pools evict the oldest replaceable connection deterministically, and saturated IP/subnet pools reject new peers to preserve diversity.
+
+
+### P2P reputation / banning activation ✅
+
+Peer abuse scoring, quarantine and temporary bans are wired into the real TCP path. Invalid or rate-limited traffic lowers score, creates audit evidence, persists penalty state, disconnects the peer, suppresses reconnect attempts and automatically lifts the ban after expiration. Remaining P2P work should focus on bandwidth accounting and NAT traversal/external network audit.
