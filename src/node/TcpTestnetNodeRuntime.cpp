@@ -501,7 +501,8 @@ std::size_t TcpTestnetNodeRuntime::loadPeersFromDisk(
                     entry.invalidMessageCount(),
                     entry.bannedUntil(),
                     entry.banReason(),
-                    now
+                    now,
+                    entry.hasPersistentState() ? entry.score() : 100
                 );
             }
             ++loaded;

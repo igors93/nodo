@@ -18,6 +18,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <list>
 
 namespace nodo::storage {
 class ProtocolEvidenceStore;
@@ -213,7 +214,8 @@ public:
 
     bool restorePeerPenaltyState(
         const std::string& nodeId,
-        std::size_t invalidMessageCount
+        std::size_t invalidMessageCount,
+        std::int32_t score = 100
     );
 
     bool restorePeerPenaltyState(
@@ -221,7 +223,8 @@ public:
         std::size_t invalidMessageCount,
         std::int64_t bannedUntil,
         const std::string& banReason,
-        std::int64_t now
+        std::int64_t now,
+        std::int32_t score = 100
     );
 
     std::size_t liftExpiredPeerPenalties(std::int64_t now);
@@ -264,6 +267,11 @@ private:
     node::EvidenceCaptureHealth m_evidenceCaptureHealth;
     std::function<void()> m_peerPenaltyPersistenceHandler;
     std::string m_lastPeerPenaltyPersistenceError;
+
+    // LRU for m_invalidMessagesByIdentity
+    std::list<std::string> m_lruInvalidMessages;
+    std::map<std::string, std::list<std::string>::iterator> m_lruInvalidMessagesMap;
+    static constexpr std::size_t MAX_INVALID_TRACKING = 4096;
 
     bool hasAuthenticatedInboundSession(
         const std::string& nodeId

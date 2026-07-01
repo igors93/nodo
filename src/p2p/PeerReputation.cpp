@@ -11,10 +11,14 @@ namespace nodo::p2p {
 PeerReputation::PeerReputation(
     std::int32_t threshold,
     std::size_t maxPeersPerSubnet,
-    std::int64_t temporaryBanSeconds
+    std::int64_t temporaryBanSeconds,
+    std::int32_t scoreRecoveryPerHour,
+    std::size_t maxTrackedPeers
 ) : m_banThreshold(threshold),
     m_maxPeersPerSubnet(maxPeersPerSubnet),
-    m_temporaryBanSeconds(temporaryBanSeconds > 0 ? temporaryBanSeconds : 3600) {}
+    m_temporaryBanSeconds(temporaryBanSeconds > 0 ? temporaryBanSeconds : 3600),
+    m_scoreRecoveryPerHour(scoreRecoveryPerHour),
+    m_maxTrackedPeers(maxTrackedPeers > 0 ? maxTrackedPeers : 4096) {}
 
 void PeerReputation::reportBehavior(
     const std::string& nodeId,
@@ -35,6 +39,10 @@ void PeerReputation::reportBehavior(
     if (nodeId.empty()) {
         return;
     }
+
+    touchLru(nodeId);
+    recoverScore(nodeId, now);
+
     if (m_peerScores.find(nodeId) == m_peerScores.end()) {
         m_peerScores[nodeId] = 100;
     }
@@ -48,21 +56,32 @@ void PeerReputation::reportBehavior(
         m_peerScores[nodeId] = static_cast<std::int32_t>(adjusted);
     }
     m_peerIps[nodeId] = ipAddress;
+    m_lastScoreUpdate[nodeId] = now > 0 ? now : 0;
 
     if (now > 0 && m_peerScores[nodeId] < m_banThreshold) {
         m_bannedUntil[nodeId] = now + m_temporaryBanSeconds;
         m_banReasons[nodeId] = reason.empty() ? "peer.reputation.threshold" : reason;
     }
+
+    evictLru();
 }
 
-std::int32_t PeerReputation::getScore(const std::string& nodeId) const {
+std::int32_t PeerReputation::getScore(const std::string& nodeId, std::int64_t now) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (!nodeId.empty()) {
+        touchLru(nodeId);
+        recoverScore(nodeId, now);
+    }
     auto it = m_peerScores.find(nodeId);
     return (it != m_peerScores.end()) ? it->second : 100;
 }
 
-bool PeerReputation::isBanned(const std::string& nodeId) const {
+bool PeerReputation::isBanned(const std::string& nodeId, std::int64_t now) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (!nodeId.empty()) {
+        touchLru(nodeId);
+        recoverScore(nodeId, now);
+    }
     auto it = m_peerScores.find(nodeId);
     return it != m_peerScores.end() && it->second < m_banThreshold;
 }
@@ -70,8 +89,11 @@ bool PeerReputation::isBanned(const std::string& nodeId) const {
 bool PeerReputation::isTemporarilyBanned(
     const std::string& nodeId,
     std::int64_t now
-) const {
+) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (!nodeId.empty()) {
+        touchLru(nodeId);
+    }
     const auto it = m_bannedUntil.find(nodeId);
     return now > 0 && it != m_bannedUntil.end() && it->second > now;
 }
@@ -143,6 +165,53 @@ std::string PeerReputation::serialize() const {
     }
     output << "]}";
     return output.str();
+}
+
+void PeerReputation::recoverScore(const std::string& nodeId, std::int64_t now) {
+    if (now <= 0 || m_scoreRecoveryPerHour <= 0) return;
+    
+    auto scoreIt = m_peerScores.find(nodeId);
+    if (scoreIt == m_peerScores.end() || scoreIt->second >= 100) {
+        return;
+    }
+
+    auto lastUpdateIt = m_lastScoreUpdate.find(nodeId);
+    if (lastUpdateIt == m_lastScoreUpdate.end() || lastUpdateIt->second <= 0) {
+        m_lastScoreUpdate[nodeId] = now;
+        return;
+    }
+
+    std::int64_t elapsed = now - lastUpdateIt->second;
+    if (elapsed >= 3600) {
+        std::int64_t hours = elapsed / 3600;
+        std::int32_t recovered = static_cast<std::int32_t>(hours * m_scoreRecoveryPerHour);
+        
+        scoreIt->second = std::min(100, scoreIt->second + recovered);
+        m_lastScoreUpdate[nodeId] = lastUpdateIt->second + (hours * 3600);
+    }
+}
+
+void PeerReputation::touchLru(const std::string& nodeId) {
+    auto it = m_lruMap.find(nodeId);
+    if (it != m_lruMap.end()) {
+        m_lruPeers.erase(it->second);
+    }
+    m_lruPeers.push_front(nodeId);
+    m_lruMap[nodeId] = m_lruPeers.begin();
+}
+
+void PeerReputation::evictLru() {
+    while (m_lruPeers.size() > m_maxTrackedPeers) {
+        const std::string evicted = m_lruPeers.back();
+        m_lruPeers.pop_back();
+        m_lruMap.erase(evicted);
+
+        m_peerScores.erase(evicted);
+        m_peerIps.erase(evicted);
+        m_bannedUntil.erase(evicted);
+        m_banReasons.erase(evicted);
+        m_lastScoreUpdate.erase(evicted);
+    }
 }
 
 std::string PeerReputation::getSubnet(const std::string& ipAddress) {

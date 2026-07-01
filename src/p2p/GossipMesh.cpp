@@ -369,23 +369,47 @@ PeerRegistryResult GossipMesh::registerPeer(PeerMetadata peer) {
         );
     }
 
-    if (m_config.enforceEclipseGuard() &&
-        !m_peerRegistry.contains(peer.nodeId())) {
-        const std::optional<PeerSubnetInfo> candidate =
-            subnetInfoForPeer(peer);
-        if (!candidate.has_value()) {
-            return PeerRegistryResult(
-                PeerRegistryStatus::REJECTED,
-                "Peer endpoint cannot be classified for eclipse protection."
-            );
+    if (m_config.enforceEclipseGuard()) {
+        const PeerMetadata* existing = m_peerRegistry.peer(peer.nodeId());
+        bool skipEclipseCheck = false;
+        
+        if (existing != nullptr) {
+            auto oldInfo = subnetInfoForPeer(*existing);
+            auto newInfo = subnetInfoForPeer(peer);
+            if (oldInfo.has_value() && newInfo.has_value() && oldInfo->subnetPrefix == newInfo->subnetPrefix) {
+                skipEclipseCheck = true;
+            }
         }
-        const EclipseCheckResult admission =
-            m_eclipseGuard.checkAdmission(*candidate, activePeerSubnets());
-        if (!admission.isAllowed()) {
-            return PeerRegistryResult(
-                PeerRegistryStatus::REJECTED,
-                "Eclipse guard rejected peer admission: " + admission.detail()
-            );
+
+        if (!skipEclipseCheck) {
+            const std::optional<PeerSubnetInfo> candidate = subnetInfoForPeer(peer);
+            if (!candidate.has_value()) {
+                return PeerRegistryResult(
+                    PeerRegistryStatus::REJECTED,
+                    "Peer endpoint cannot be classified for eclipse protection."
+                );
+            }
+            
+            std::vector<PeerSubnetInfo> currentSubnets = activePeerSubnets();
+            if (existing != nullptr) {
+                auto oldInfo = subnetInfoForPeer(*existing);
+                if (oldInfo.has_value()) {
+                    auto it = std::find_if(currentSubnets.begin(), currentSubnets.end(), 
+                        [&](const PeerSubnetInfo& info) { return info.peerId == oldInfo->peerId; });
+                    if (it != currentSubnets.end()) {
+                        currentSubnets.erase(it);
+                    }
+                }
+            }
+            
+            const EclipseCheckResult admission =
+                m_eclipseGuard.checkAdmission(*candidate, currentSubnets);
+            if (!admission.isAllowed()) {
+                return PeerRegistryResult(
+                    PeerRegistryStatus::REJECTED,
+                    "Eclipse guard rejected peer admission: " + admission.detail()
+                );
+            }
         }
     }
 
@@ -758,9 +782,10 @@ void GossipMesh::reportPeerMisbehavior(
 
 bool GossipMesh::restorePeerPenaltyState(
     const std::string& nodeId,
-    std::size_t invalidMessageCount
+    std::size_t invalidMessageCount,
+    std::int32_t score
 ) {
-    return restorePeerPenaltyState(nodeId, invalidMessageCount, 0, "", 0);
+    return restorePeerPenaltyState(nodeId, invalidMessageCount, 0, "", 0, score);
 }
 
 bool GossipMesh::restorePeerPenaltyState(
@@ -768,16 +793,37 @@ bool GossipMesh::restorePeerPenaltyState(
     std::size_t invalidMessageCount,
     std::int64_t bannedUntil,
     const std::string& banReason,
-    std::int64_t now
+    std::int64_t now,
+    std::int32_t score
 ) {
     if (!m_peerRegistry.contains(nodeId)) {
         return false;
     }
 
-    m_invalidMessagesByIdentity[identityKeyForNodeId(nodeId)] = std::min(
+    const std::string identityKey = identityKeyForNodeId(nodeId);
+    auto lruIt = m_lruInvalidMessagesMap.find(identityKey);
+    if (lruIt != m_lruInvalidMessagesMap.end()) {
+        m_lruInvalidMessages.erase(lruIt->second);
+    }
+    m_lruInvalidMessages.push_front(identityKey);
+    m_lruInvalidMessagesMap[identityKey] = m_lruInvalidMessages.begin();
+
+    m_invalidMessagesByIdentity[identityKey] = std::min(
         invalidMessageCount,
         m_config.invalidMessageQuarantineThreshold()
     );
+
+    while (m_lruInvalidMessages.size() > MAX_INVALID_TRACKING) {
+        const std::string evicted = m_lruInvalidMessages.back();
+        m_lruInvalidMessages.pop_back();
+        m_lruInvalidMessagesMap.erase(evicted);
+        m_invalidMessagesByIdentity.erase(evicted);
+    }
+
+    std::int32_t currentScore = m_peerRegistry.peer(nodeId)->score();
+    if (currentScore != score) {
+        m_peerRegistry.adjustScore(nodeId, score - currentScore, "restored");
+    }
 
     if (bannedUntil > 0 && (now <= 0 || bannedUntil > now)) {
         m_peerRegistry.banPeer(
@@ -869,14 +915,32 @@ void GossipMesh::recordInvalidMessage(
     }
 
     if (envelope != nullptr) {
-        m_rateLimiter.recordInvalidMessage(nodeId, envelope->messageType(), now);
+        bool stillAllowed = m_rateLimiter.recordInvalidMessage(nodeId, envelope->messageType(), now);
+        if (!stillAllowed && type != PeerMisbehaviorType::RATE_LIMIT_EXCEEDED) {
+            type = PeerMisbehaviorType::RATE_LIMIT_EXCEEDED;
+        }
     }
 
     const std::string identityKey = identityKeyForNodeId(nodeId);
+    
+    auto lruIt = m_lruInvalidMessagesMap.find(identityKey);
+    if (lruIt != m_lruInvalidMessagesMap.end()) {
+        m_lruInvalidMessages.erase(lruIt->second);
+    }
+    m_lruInvalidMessages.push_front(identityKey);
+    m_lruInvalidMessagesMap[identityKey] = m_lruInvalidMessages.begin();
+
     std::size_t& invalidCount =
         m_invalidMessagesByIdentity[identityKey];
     if (invalidCount < m_config.invalidMessageQuarantineThreshold()) {
         ++invalidCount;
+    }
+
+    while (m_lruInvalidMessages.size() > MAX_INVALID_TRACKING) {
+        const std::string evicted = m_lruInvalidMessages.back();
+        m_lruInvalidMessages.pop_back();
+        m_lruInvalidMessagesMap.erase(evicted);
+        m_invalidMessagesByIdentity.erase(evicted);
     }
 
     const PeerMetadata* peerMeta = m_peerRegistry.peer(nodeId);

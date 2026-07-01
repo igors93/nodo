@@ -42,9 +42,9 @@ public:
         std::int64_t now
     );
 
-    void recordInvalidMessage(const std::string& nodeId, std::int64_t now);
+    bool recordInvalidMessage(const std::string& nodeId, std::int64_t now);
 
-    void recordInvalidMessage(
+    bool recordInvalidMessage(
         const std::string& nodeId,
         NetworkMessageType messageType,
         std::int64_t now

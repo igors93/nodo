@@ -72,19 +72,20 @@ bool PeerRateLimiter::shouldAllow(
     return true;
 }
 
-void PeerRateLimiter::recordInvalidMessage(const std::string& nodeId, std::int64_t now) {
-    recordInvalidMessage(nodeId, NetworkMessageType::UNKNOWN, now);
+bool PeerRateLimiter::recordInvalidMessage(const std::string& nodeId, std::int64_t now) {
+    return recordInvalidMessage(nodeId, NetworkMessageType::UNKNOWN, now);
 }
 
-void PeerRateLimiter::recordInvalidMessage(
+bool PeerRateLimiter::recordInvalidMessage(
     const std::string& nodeId,
     NetworkMessageType messageType,
     std::int64_t now
 ) {
     // Invalid messages are more dangerous than normal traffic, so they consume
     // extra budget in the same fixed window for the same message type.
-    (void)shouldAllow(nodeId, messageType, now);
-    (void)shouldAllow(nodeId, messageType, now);
+    bool allowed1 = shouldAllow(nodeId, messageType, now);
+    bool allowed2 = shouldAllow(nodeId, messageType, now);
+    return allowed1 && allowed2;
 }
 
 std::uint32_t PeerRateLimiter::messageCount(
