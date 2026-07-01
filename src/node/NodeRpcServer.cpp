@@ -1,6 +1,7 @@
 #include "node/NodeRpcServer.hpp"
 
 #include "core/LedgerRecord.hpp"
+#include "core/StateRootCalculator.hpp"
 #include "core/Transaction.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
@@ -306,6 +307,7 @@ NodeRpcServer::NodeRpcServer(
     , m_bindAddr(bindAddr)
     , m_running(false)
     , m_serverFd(-1)
+    , m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS)
 {}
 
 NodeRpcServer::NodeRpcServer(
@@ -320,6 +322,7 @@ NodeRpcServer::NodeRpcServer(
     , m_bindAddr(bindAddr)
     , m_running(false)
     , m_serverFd(-1)
+    , m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS)
 {}
 
 NodeRpcServer::~NodeRpcServer() {
@@ -412,6 +415,26 @@ void NodeRpcServer::runLoop() {
         );
         if (clientFd < 0) {
             if (!m_running.load()) break;
+            continue;
+        }
+
+        char ipBuffer[INET_ADDRSTRLEN] = {0};
+        const char* ipStr = ::inet_ntop(
+            AF_INET, &clientAddr.sin_addr, ipBuffer, sizeof(ipBuffer)
+        );
+        const std::string clientIp = ipStr != nullptr ? std::string(ipStr) : std::string("unknown");
+
+        const std::int64_t now =
+            std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+
+        if (!m_rateLimiter.shouldAllow(clientIp, now)) {
+            const std::string resp = httpResponse(
+                429, jsonError("Rate limit exceeded. Try again later.")
+            );
+            (void)sendAll(clientFd, resp);
+            close_socket(clientFd);
             continue;
         }
 
@@ -575,6 +598,9 @@ std::pair<int, std::string> NodeRpcServer::dispatch(
     }
     if (route == "account" && method == "GET") {
         if (param.empty()) return {400, jsonError("Missing address")};
+        if (pathSegment(cleanPath, 3) == "proof") {
+            return {200, handleAccountProof(param)};
+        }
         return {200, handleAccount(param)};
     }
     if (route == "validators" && method == "GET") {
@@ -761,6 +787,44 @@ std::string NodeRpcServer::handleAccount(const std::string& address) const {
         << ",\"balance\":" << account.balance().rawUnits()
         << ",\"nonce\":" << account.nonce()
         << "}";
+    return oss.str();
+}
+
+std::string NodeRpcServer::handleAccountProof(const std::string& address) const {
+    const std::uint64_t minimumFeeRaw =
+        m_runtime.effectiveMinimumFeeRawUnits();
+    if (minimumFeeRaw > static_cast<std::uint64_t>(
+            std::numeric_limits<std::int64_t>::max())) {
+        return jsonError("Network minimum fee exceeds supported range.");
+    }
+    const core::AccountStateView& view =
+        m_runtime.cachedAccountStateAtTip(
+            static_cast<std::int64_t>(minimumFeeRaw)
+        );
+
+    if (!view.hasAccount(address)) {
+        return jsonError("Address not present in current account state: " + address);
+    }
+
+    const core::MerkleProof proof =
+        core::StateRootCalculator::accountInclusionProof(view, address);
+    if (!proof.isValid()) {
+        return jsonError("Failed to build inclusion proof for address: " + address);
+    }
+
+    std::ostringstream oss;
+    oss << "{"
+        << "\"address\":" << jsonString(address)
+        << ",\"accountStateRoot\":" << jsonString(proof.reconstructRoot())
+        << ",\"leafHash\":" << jsonString(proof.leafHash())
+        << ",\"path\":[";
+    const auto& steps = proof.steps();
+    for (std::size_t i = 0; i < steps.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << "{\"siblingHash\":" << jsonString(steps[i].siblingHash)
+            << ",\"siblingIsLeft\":" << (steps[i].siblingIsLeft ? "true" : "false") << "}";
+    }
+    oss << "]}";
     return oss.str();
 }
 

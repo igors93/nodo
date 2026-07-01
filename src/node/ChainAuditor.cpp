@@ -382,6 +382,92 @@ ChainAuditResult auditImpl(
             }
         }
 
+        // E. Intra-artifact locked stake position validity.
+        // Every LockedStakePosition embedded in a finalized artifact must
+        // satisfy its own validity contract. A structurally invalid position
+        // indicates tampering or a serialisation bug in the stake lock
+        // lifecycle.
+        for (const auto& artifact : load.loadedArtifacts()) {
+            for (const auto& position : artifact.lockedStakePositions()) {
+                if (!position.isValid()) {
+                    return ChainAuditResult::failed(
+                        "chain audit: structurally invalid locked stake position "
+                        "for owner " + position.ownerAddress() +
+                        " at block " + std::to_string(artifact.block().index()) +
+                        ". Locked stake positions must satisfy their own "
+                        "validity contract after deserialization."
+                    );
+                }
+            }
+        }
+
+        // F. Intra-artifact cryptographic slashing evidence and summary
+        // consistency. Mirrors the double-vote/proposer-equivocation slash
+        // evidence checks above (B), but for the cryptographic double-vote
+        // evidence path and its penalty summary.
+        for (const auto& artifact : load.loadedArtifacts()) {
+            for (const auto& record : artifact.cryptographicSlashingEvidenceRecords()) {
+                if (!record.isValid()) {
+                    return ChainAuditResult::failed(
+                        "chain audit: structurally invalid cryptographic "
+                        "slashing evidence for validator " +
+                        record.validatorAddress() + " at block " +
+                        std::to_string(artifact.block().index()) + "."
+                    );
+                }
+            }
+
+            const auto& cryptoSummary = artifact.cryptographicSlashingSummary();
+            if (!cryptoSummary.active()) {
+                continue;
+            }
+
+            const auto actualCryptoEvidenceCount = static_cast<std::uint64_t>(
+                artifact.cryptographicSlashingEvidenceRecords().size()
+            );
+
+            if (cryptoSummary.evidenceCount() != actualCryptoEvidenceCount) {
+                return ChainAuditResult::failed(
+                    "chain audit: cryptographic slashing summary count "
+                    "mismatch at block " +
+                    std::to_string(artifact.block().index()) +
+                    ": summary declares " +
+                    std::to_string(cryptoSummary.evidenceCount()) +
+                    " evidence records but " +
+                    std::to_string(actualCryptoEvidenceCount) +
+                    " are present in the artifact."
+                );
+            }
+
+            if (cryptoSummary.slashableEvidenceCount() > cryptoSummary.evidenceCount()) {
+                return ChainAuditResult::failed(
+                    "chain audit: cryptographic slashing summary at block " +
+                    std::to_string(artifact.block().index()) +
+                    " claims more slashable records (" +
+                    std::to_string(cryptoSummary.slashableEvidenceCount()) +
+                    ") than total evidence records (" +
+                    std::to_string(cryptoSummary.evidenceCount()) + ")."
+                );
+            }
+        }
+
+        // G. Intra-artifact stake penalty record validity.
+        // Every StakePenaltyRecord must be individually valid; this is the
+        // auditable trail proving a slash was applied to a specific stake
+        // lock rather than fabricated after the fact.
+        for (const auto& artifact : load.loadedArtifacts()) {
+            for (const auto& penalty : artifact.stakePenaltyRecords()) {
+                if (!penalty.isValid()) {
+                    return ChainAuditResult::failed(
+                        "chain audit: structurally invalid stake penalty "
+                        "record for validator " + penalty.validatorAddress() +
+                        " at block " +
+                        std::to_string(artifact.block().index()) + "."
+                    );
+                }
+            }
+        }
+
         // Treasury report verification.
         if (!treasuryReportPath.empty()) {
             if (!std::filesystem::exists(treasuryReportPath)) {

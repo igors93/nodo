@@ -3,6 +3,7 @@
 
 #include "node/NodeRuntime.hpp"
 #include "p2p/GossipMesh.hpp"
+#include "p2p/PeerRateLimiter.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -18,12 +19,17 @@ namespace nodo::node {
  * Transport: POSIX TCP sockets, single-threaded accept loop.
  * Protocol:  Plain HTTP/1.0 with JSON response bodies.
  * Auth:      None — bind to loopback by default.
+ * Rate limit: per-source-IP request cap (see MAX_REQUESTS_PER_WINDOW /
+ *   RATE_LIMIT_WINDOW_SECONDS) to bound resource exhaustion from a local
+ *   process hammering the endpoint; excess requests get HTTP 429.
  *
  * Endpoints (all read-only except /submit):
  *   GET  /status               — node height, round, peer count, mempool size
  *   GET  /block/{height}       — serialized block at given height
  *   GET  /tx/{txId}            — ledger record with matching id or sourceId
  *   GET  /account/{address}    — balance and nonce for address
+ *   GET  /account/{address}/proof — Merkle inclusion proof of the address's
+ *        balance/nonce against the current account-state root
  *   GET  /validators            — list of active validator addresses
  *   GET  /stake/status/{validator}
  *   GET  /stake/positions/{owner}
@@ -49,6 +55,8 @@ class NodeRpcServer {
 public:
     static constexpr std::uint16_t DEFAULT_PORT    = 8545;
     static constexpr std::size_t   MAX_REQUEST_LEN = 65536;
+    static constexpr std::uint32_t MAX_REQUESTS_PER_WINDOW  = 120;
+    static constexpr std::uint64_t RATE_LIMIT_WINDOW_SECONDS = 60;
 
     NodeRpcServer(
         NodeRuntime&       runtime,
@@ -80,6 +88,7 @@ private:
     std::atomic<bool>  m_running;
     std::thread        m_thread;
     std::atomic<int>   m_serverFd;
+    p2p::PeerRateLimiter m_rateLimiter;
 
     void runLoop();
     void handleClient(int clientFd);
@@ -96,6 +105,7 @@ private:
     std::string handleBlock(const std::string& heightStr) const;
     std::string handleTx(const std::string& txId) const;
     std::string handleAccount(const std::string& address) const;
+    std::string handleAccountProof(const std::string& address) const;
     std::string handleValidators() const;
     std::string handleStakeStatus(const std::string& validatorAddress) const;
     std::string handleStakePositions(const std::string& ownerAddress) const;

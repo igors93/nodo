@@ -89,7 +89,7 @@ Implemented foundations include:
 | Mainnet | Blocked by design. Not suitable for production use. |
 | QC persistence | Fully implemented; QC proofs survive node restart. |
 | Block sync | Fast-path (`QC_REQUIRED`) and persistent-path both implemented and tested. |
-| P2P networking | Real socket/gossip foundations exist; live distributed consensus is in progress (Phase 2). |
+| P2P networking | Real socket/gossip transport, peer authentication, discovery, banning/quarantine, rate limiting and eclipse protection are implemented and tested; live distributed consensus over TCP (proposer selection, two-phase prevote/precommit, view change on timeout) is implemented and tested (Phase 2 complete). |
 | Keys and custody | Local development keys exist; production custody is not ready. |
 | Governance | Vote evidence and lifecycle audit foundations exist; public governance workflow is still in development. |
 | Treasury | Evidence-backed execution validation exists; production operator process is still in development. |
@@ -329,16 +329,16 @@ Completed foundations:
 - distributed node daemon: transaction gossip, block proposal relay, proposer authentication, finalized artifact QC verification;
 - durable QC persistence (`FinalizedBlockRecordStore`): QC proofs survive restart, fast-path `QC_REQUIRED` sync is fully functional, sync responses carry QC proofs to peers;
 - signed consensus-vote recovery: `ConsensusRecoveryStore` persists exact signed PREVOTE/PRECOMMIT records so restart can safely resubmit/rebroadcast the same votes without double-voting;
-- canonical slashing penalties: finalized evidence creates one deterministic penalty decision, updates validator jail/tombstone status and applies bounded stake slashing into the staking registry.
+- canonical slashing penalties: finalized evidence creates one deterministic penalty decision, updates validator jail/tombstone status and applies bounded stake slashing into the staking registry;
+- live distributed consensus (Phase 2): proposer selection wired to the daemon, networked prevote/precommit driven by round timeout, view change with proposer rotation on timeout, all tested end-to-end over real TCP;
+- network hardening and peer operations (Phase 3): authenticated peer handshake and encrypted channel, live peer discovery, banning/quarantine, per-message-type rate limiting, exponential-backoff reconnection, eclipse-attack subnet protection.
 
 In progress:
 
-- live distributed consensus (Phase 2): proposer selection wired to daemon, networked prevote/precommit, view change and recovery hardening around persisted signed votes;
 - official testnet runtime hardening;
 - production key safety and custody boundaries;
-- governance lifecycle transitions;
-- validator reward settlement and protection scoring;
-- network hardening and peer operations.
+- governance lifecycle transitions (network gossip of proposals across peers is not yet wired; decision/execution and audit are implemented);
+- validator reward settlement and protection scoring.
 
 Planned:
 

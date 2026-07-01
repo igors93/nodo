@@ -2,6 +2,7 @@
 #define NODO_CORE_STATE_ROOT_CALCULATOR_HPP
 
 #include "core/AccountStateView.hpp"
+#include "core/MerkleTree.hpp"
 
 #include <string>
 #include <map>
@@ -21,6 +22,18 @@ public:
     static std::string calculateProtocolStateRoot(
         const AccountStateView& view,
         const std::map<std::string, std::string>& deterministicDomains
+    );
+
+    /*
+     * Builds a Merkle inclusion proof for a single address against the
+     * account-state root returned by calculateAccountStateRoot (the
+     * "accounts" domain root, not the full protocol state root). Returns an
+     * invalid (empty leafHash) MerkleProof if the view is invalid or the
+     * address is not present in it.
+     */
+    static MerkleProof accountInclusionProof(
+        const AccountStateView& view,
+        const std::string& address
     );
 };
 
