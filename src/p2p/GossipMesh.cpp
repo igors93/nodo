@@ -1,6 +1,7 @@
 #include "p2p/GossipMesh.hpp"
 
 #include "core/ProtocolLimits.hpp"
+#include "p2p/AuthenticatedSessionTransport.hpp"
 
 #include "crypto/hash.h"
 #include "economics/ProtocolEvidence.hpp"
@@ -9,6 +10,7 @@
 #include <stdexcept>
 
 #include <algorithm>
+#include <optional>
 #include <sstream>
 #include <utility>
 
@@ -49,7 +51,10 @@ GossipMeshConfig::GossipMeshConfig()
       m_protocolVersion(""),
       m_genesisId(""),
       m_defaultTtlSeconds(0),
-      m_invalidMessageQuarantineThreshold(0) {}
+      m_invalidMessageQuarantineThreshold(0),
+      m_requireAuthenticatedSessions(false),
+      m_enforceEclipseGuard(false),
+      m_eclipseGuardConfig(EclipseGuardConfig::defaults()) {}
 
 GossipMeshConfig::GossipMeshConfig(
     std::string localNodeId,
@@ -65,7 +70,32 @@ GossipMeshConfig::GossipMeshConfig(
     m_protocolVersion(std::move(protocolVersion)),
     m_genesisId(std::move(genesisId)),
     m_defaultTtlSeconds(defaultTtlSeconds),
-    m_invalidMessageQuarantineThreshold(invalidMessageQuarantineThreshold) {}
+    m_invalidMessageQuarantineThreshold(invalidMessageQuarantineThreshold),
+    m_requireAuthenticatedSessions(false),
+    m_enforceEclipseGuard(false),
+    m_eclipseGuardConfig(EclipseGuardConfig::defaults()) {}
+
+GossipMeshConfig::GossipMeshConfig(
+    std::string localNodeId,
+    std::string networkId,
+    std::string chainId,
+    std::string protocolVersion,
+    std::string genesisId,
+    std::uint32_t defaultTtlSeconds,
+    std::size_t invalidMessageQuarantineThreshold,
+    bool requireAuthenticatedSessions,
+    bool enforceEclipseGuard,
+    EclipseGuardConfig eclipseGuardConfig
+) : m_localNodeId(std::move(localNodeId)),
+    m_networkId(std::move(networkId)),
+    m_chainId(std::move(chainId)),
+    m_protocolVersion(std::move(protocolVersion)),
+    m_genesisId(std::move(genesisId)),
+    m_defaultTtlSeconds(defaultTtlSeconds),
+    m_invalidMessageQuarantineThreshold(invalidMessageQuarantineThreshold),
+    m_requireAuthenticatedSessions(requireAuthenticatedSessions),
+    m_enforceEclipseGuard(enforceEclipseGuard),
+    m_eclipseGuardConfig(std::move(eclipseGuardConfig)) {}
 
 const std::string& GossipMeshConfig::localNodeId() const { return m_localNodeId; }
 const std::string& GossipMeshConfig::networkId() const { return m_networkId; }
@@ -74,6 +104,9 @@ const std::string& GossipMeshConfig::protocolVersion() const { return m_protocol
 const std::string& GossipMeshConfig::genesisId() const { return m_genesisId; }
 std::uint32_t GossipMeshConfig::defaultTtlSeconds() const { return m_defaultTtlSeconds; }
 std::size_t GossipMeshConfig::invalidMessageQuarantineThreshold() const { return m_invalidMessageQuarantineThreshold; }
+bool GossipMeshConfig::requireAuthenticatedSessions() const { return m_requireAuthenticatedSessions; }
+bool GossipMeshConfig::enforceEclipseGuard() const { return m_enforceEclipseGuard; }
+const EclipseGuardConfig& GossipMeshConfig::eclipseGuardConfig() const { return m_eclipseGuardConfig; }
 
 bool GossipMeshConfig::isValid() const {
     return isSafeScalar(m_localNodeId) &&
@@ -83,7 +116,8 @@ bool GossipMeshConfig::isValid() const {
            !m_genesisId.empty() &&
            m_defaultTtlSeconds > 0 &&
            m_defaultTtlSeconds <= 3600 &&
-           m_invalidMessageQuarantineThreshold > 0;
+           m_invalidMessageQuarantineThreshold > 0 &&
+           (!m_enforceEclipseGuard || m_eclipseGuardConfig.isValid());
 }
 
 GossipDeliveryReport::GossipDeliveryReport()
@@ -200,6 +234,7 @@ GossipMesh::GossipMesh(
     m_outboundQueue(1024),
     m_inboundValidator(),
     m_rateLimiter(),
+    m_eclipseGuard(m_config.eclipseGuardConfig()),
     m_inbox(),
     m_connectionByMessageId(),
     m_invalidMessagesByIdentity(),
@@ -223,6 +258,7 @@ GossipMesh::GossipMesh(
     m_outboundQueue(1024),
     m_inboundValidator(),
     m_rateLimiter(),
+    m_eclipseGuard(m_config.eclipseGuardConfig()),
     m_inbox(),
     m_connectionByMessageId(),
     m_invalidMessagesByIdentity(),
@@ -257,6 +293,59 @@ const node::EvidenceCaptureHealth& GossipMesh::evidenceCaptureHealth() const {
     return m_evidenceCaptureHealth;
 }
 
+bool GossipMesh::requiresAuthenticatedEnvelope(NetworkMessageType type) const {
+    return m_config.requireAuthenticatedSessions() &&
+           type != NetworkMessageType::PEER_CHALLENGE &&
+           type != NetworkMessageType::PEER_HELLO;
+}
+
+bool GossipMesh::hasAuthenticatedInboundSession(const std::string& nodeId) const {
+    if (!m_config.requireAuthenticatedSessions()) {
+        return true;
+    }
+    const auto* authTransport =
+        dynamic_cast<const AuthenticatedSessionTransport*>(&m_transport);
+    return authTransport != nullptr &&
+           authTransport->hasInboundSession(m_config.localNodeId(), nodeId);
+}
+
+bool GossipMesh::hasAuthenticatedOutboundSession(const std::string& nodeId) const {
+    if (!m_config.requireAuthenticatedSessions()) {
+        return true;
+    }
+    const auto* authTransport =
+        dynamic_cast<const AuthenticatedSessionTransport*>(&m_transport);
+    return authTransport != nullptr &&
+           authTransport->hasOutboundSession(m_config.localNodeId(), nodeId);
+}
+
+std::optional<PeerSubnetInfo> GossipMesh::subnetInfoForPeer(
+    const PeerMetadata& peer
+) {
+    const std::string subnet =
+        PeerSubnetInfo::extractSubnetPrefix(peer.endpoint().host());
+    if (subnet.empty()) {
+        return std::nullopt;
+    }
+    PeerSubnetInfo info;
+    info.peerId = peer.nodeId();
+    info.ipAddress = peer.endpoint().host();
+    info.subnetPrefix = subnet;
+    info.port = peer.endpoint().port();
+    return info.isValid() ? std::optional<PeerSubnetInfo>(info) : std::nullopt;
+}
+
+std::vector<PeerSubnetInfo> GossipMesh::activePeerSubnets() const {
+    std::vector<PeerSubnetInfo> peers;
+    for (const PeerMetadata& peer : m_peerRegistry.activePeers()) {
+        const auto info = subnetInfoForPeer(peer);
+        if (info.has_value()) {
+            peers.push_back(*info);
+        }
+    }
+    return peers;
+}
+
 PeerRegistryResult GossipMesh::registerPeer(PeerMetadata peer) {
     if (!m_config.isValid()) {
         return PeerRegistryResult(
@@ -270,6 +359,26 @@ PeerRegistryResult GossipMesh::registerPeer(PeerMetadata peer) {
             PeerRegistryStatus::REJECTED,
             "Cannot register local node as remote peer."
         );
+    }
+
+    if (m_config.enforceEclipseGuard() &&
+        !m_peerRegistry.contains(peer.nodeId())) {
+        const std::optional<PeerSubnetInfo> candidate =
+            subnetInfoForPeer(peer);
+        if (!candidate.has_value()) {
+            return PeerRegistryResult(
+                PeerRegistryStatus::REJECTED,
+                "Peer endpoint cannot be classified for eclipse protection."
+            );
+        }
+        const EclipseCheckResult admission =
+            m_eclipseGuard.checkAdmission(*candidate, activePeerSubnets());
+        if (!admission.isAllowed()) {
+            return PeerRegistryResult(
+                PeerRegistryStatus::REJECTED,
+                "Eclipse guard rejected peer admission: " + admission.detail()
+            );
+        }
     }
 
     return m_peerRegistry.registerPeer(std::move(peer));
@@ -339,6 +448,12 @@ GossipDeliveryReport GossipMesh::broadcast(
             continue;
         }
 
+        if (requiresAuthenticatedEnvelope(type) &&
+            !hasAuthenticatedOutboundSession(peer.nodeId())) {
+            ++rejected;
+            continue;
+        }
+
         const OutboundQueueResult result =
             m_outboundQueue.enqueue(peer.nodeId(), envelope);
 
@@ -371,6 +486,11 @@ GossipDeliveryReport GossipMesh::sendTo(
 
     const PeerMetadata* peer = m_peerRegistry.peer(targetNodeId);
     if (peer == nullptr || peer->quarantined()) {
+        return GossipDeliveryReport(0, 1);
+    }
+
+    if (requiresAuthenticatedEnvelope(type) &&
+        !hasAuthenticatedOutboundSession(targetNodeId)) {
         return GossipDeliveryReport(0, 1);
     }
 
@@ -438,6 +558,12 @@ GossipDeliveryReport GossipMesh::flushOutbound(std::int64_t now) {
                 break;
             }
 
+            if (requiresAuthenticatedEnvelope(envelope->messageType()) &&
+                !hasAuthenticatedOutboundSession(peer.nodeId())) {
+                ++rejected;
+                continue;
+            }
+
             TransportMessage message(
                 m_config.localNodeId(),
                 peer.nodeId(),
@@ -478,15 +604,25 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
             continue;
         }
 
+        const NetworkMessageType messageType =
+            message->envelope().messageType();
+
         const PeerMetadata* senderPeer =
             m_peerRegistry.peer(message->fromNodeId());
         if (senderPeer != nullptr && senderPeer->quarantined()) {
+            (void)m_transport.disconnect(m_config.localNodeId(), message->fromNodeId());
             ++rejected;
             continue;
         }
 
-        if (!m_rateLimiter.shouldAllow(message->fromNodeId(), now)) {
-            recordInvalidMessage(message->fromNodeId(), "Peer exceeded message rate limit.", now);
+        if (!m_rateLimiter.shouldAllow(message->fromNodeId(), messageType, now)) {
+            recordInvalidMessage(
+                message->fromNodeId(),
+                "Peer exceeded per-message-type rate limit.",
+                now,
+                PeerMisbehaviorType::RATE_LIMIT_EXCEEDED,
+                &message->envelope()
+            );
             ++rejected;
             continue;
         }
@@ -495,9 +631,40 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
         // transport sender. Without this check, any connected peer can claim to be
         // another node id and bypass per-sender rate limits.
         if (message->envelope().senderNodeId() != message->fromNodeId()) {
-            recordInvalidMessage(message->fromNodeId(), "Envelope sender id does not match transport sender.", now);
+            recordInvalidMessage(
+                message->fromNodeId(),
+                "Envelope sender id does not match transport sender.",
+                now,
+                PeerMisbehaviorType::INVALID_MESSAGE,
+                &message->envelope()
+            );
             ++rejected;
             continue;
+        }
+
+        if (requiresAuthenticatedEnvelope(messageType)) {
+            if (!m_peerRegistry.contains(message->fromNodeId())) {
+                recordInvalidMessage(
+                    message->fromNodeId(),
+                    "Unauthenticated peer sent a non-handshake message.",
+                    now,
+                    PeerMisbehaviorType::INVALID_MESSAGE,
+                    &message->envelope()
+                );
+                ++rejected;
+                continue;
+            }
+            if (!hasAuthenticatedInboundSession(message->fromNodeId())) {
+                recordInvalidMessage(
+                    message->fromNodeId(),
+                    "Peer sent non-handshake message without an authenticated inbound session.",
+                    now,
+                    PeerMisbehaviorType::INVALID_MESSAGE,
+                    &message->envelope()
+                );
+                ++rejected;
+                continue;
+            }
         }
 
         const InboundMessageResult validation =
@@ -510,20 +677,16 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
             );
 
         if (!validation.accepted()) {
-            recordInvalidMessage(message->fromNodeId(), validation.reason(), now);
-            ++rejected;
-            continue;
-        }
-
-        const NetworkMessageType messageType =
-            message->envelope().messageType();
-        if (!m_peerRegistry.contains(message->fromNodeId()) &&
-            messageType != NetworkMessageType::PEER_CHALLENGE &&
-            messageType != NetworkMessageType::PEER_HELLO) {
+            const PeerMisbehaviorType misbehavior =
+                validation.status() == InboundMessageStatus::RATE_LIMITED
+                    ? PeerMisbehaviorType::RATE_LIMIT_EXCEEDED
+                    : PeerMisbehaviorType::INVALID_MESSAGE;
             recordInvalidMessage(
                 message->fromNodeId(),
-                "Unauthenticated peer sent a non-handshake message.",
-                now
+                validation.reason(),
+                now,
+                misbehavior,
+                &message->envelope()
             );
             ++rejected;
             continue;
@@ -637,6 +800,10 @@ void GossipMesh::recordInvalidMessage(
         return;
     }
 
+    if (envelope != nullptr) {
+        m_rateLimiter.recordInvalidMessage(nodeId, envelope->messageType(), now);
+    }
+
     const std::string identityKey = identityKeyForNodeId(nodeId);
     std::size_t& invalidCount =
         m_invalidMessagesByIdentity[identityKey];
@@ -672,6 +839,10 @@ void GossipMesh::recordInvalidMessage(
     const bool newlyQuarantined =
         !wasQuarantinedBefore && updatedPeer != nullptr &&
         updatedPeer->quarantined();
+
+    if (newlyQuarantined) {
+        (void)m_transport.disconnect(m_config.localNodeId(), nodeId);
+    }
 
     if (peerStateChanged || !peerPenaltyPersistenceHealthy()) {
         persistPeerPenaltyState();

@@ -54,3 +54,8 @@ slashing remains outside the current localnet activation path.
 Local key files are written atomically and parsed strictly. The current
 localnet key format stores private material for the temporary provider and must
 not be used for production networks.
+
+
+## P2P hardening
+
+The network layer follows a deny-by-default admission model on the real TCP path. A peer must complete signed challenge/hello authentication and establish an encrypted session before sending consensus, sync, transaction or slashing messages. Envelopes with wrong network, wrong chain, wrong protocol, bad TTL, clock skew, duplicate ids, malformed payload hashes or sender/transport mismatch are rejected and counted as peer misbehavior. Repeated misbehavior reduces peer score, persists penalty state, disconnects the peer and quarantines it. Peer admission is also checked by `EclipseGuard` to limit subnet concentration.

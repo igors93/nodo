@@ -502,3 +502,8 @@ no critical security finding open.
 - No mainnet genesis before an external security audit is published.
 
 - Finalized slashing sync audit: peers that miss evidence gossip can import finalized blocks carrying `SLASHING_EVIDENCE`, replay the canonical penalty transition, prune pending evidence, and reject any artifact or sync batch whose penalty ledger, validator registry or staking registry diverges.
+
+
+### P2P hardening activation ✅
+
+The P2P foundations are now wired into the real TCP testnet path. Authenticated peer sessions are required for non-handshake messages, inbound envelopes are validated before dispatch, rate limiting is tracked per peer and message type, repeated invalid traffic quarantines and disconnects peers, peer penalty state persists through the peer store, and `EclipseGuard` checks peer admission before registration. Remaining work is production-grade discovery policy and external network audit.

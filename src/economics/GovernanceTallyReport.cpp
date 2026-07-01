@@ -157,7 +157,8 @@ GovernanceTallyReport::GovernanceTallyReport(
     }
 
     m_voteCount = m_yesCount + m_noCount + m_abstainCount;
-    if (m_voteCount < m_yesCount || m_voteCount < m_noCount) {
+    if (m_voteCount < m_yesCount || m_voteCount < m_noCount ||
+        m_voteCount < m_abstainCount) {
         m_rejectionReason = "GovernanceTallyReport: vote count overflow.";
         return;
     }

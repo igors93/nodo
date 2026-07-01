@@ -544,6 +544,14 @@ p2p::GossipDeliveryReport TcpTestnetNodeRuntime::tick(
 }
 
 p2p::GossipMeshConfig TcpTestnetNodeRuntime::makeGossipConfig() const {
+    p2p::EclipseGuardConfig eclipseConfig = p2p::EclipseGuardConfig::defaults();
+    // Testnet/localnet nodes commonly run several peers on loopback during
+    // integration tests. Keep the guard mandatory while allowing enough peers
+    // from one /24 for local multi-node clusters; public deployments can tighten
+    // this through a future config file without changing the admission path.
+    eclipseConfig.maxPeersPerSubnet = 8;
+    eclipseConfig.maxSingleSubnetFraction = 1.0;
+
     return p2p::GossipMeshConfig(
         m_config.nodeId(),
         m_config.networkId(),
@@ -551,7 +559,10 @@ p2p::GossipMeshConfig TcpTestnetNodeRuntime::makeGossipConfig() const {
         m_config.protocolVersion(),
         m_config.genesisId(),
         m_config.defaultTtlSeconds(),
-        m_config.invalidMessageQuarantineThreshold()
+        m_config.invalidMessageQuarantineThreshold(),
+        true,
+        true,
+        eclipseConfig
     );
 }
 

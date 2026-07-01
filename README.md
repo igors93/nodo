@@ -379,3 +379,7 @@ No repository license file is currently present. Until a license is added, do no
 ### Finalized slashing evidence sync audit
 
 Finalized block sync no longer depends on a peer having seen the original slashing-evidence gossip. When a synchronized finalized block carries `SLASHING_EVIDENCE` records, the import path replays the block, verifies that each evidence id produced exactly one `ValidatorPenaltyDecision`, and audits that `ValidatorRegistry` and `StakingRegistry` mirror the finalized jail/tombstone/slash effects before publishing the new runtime state. Evidence that was still pending locally is removed from the pending evidence store once its penalty is finalized by block sync.
+
+### Mandatory P2P hardening boundary
+
+The live TCP testnet path now treats P2P security controls as mandatory protocol admission gates, not optional helpers. Non-handshake traffic must arrive through an authenticated encrypted peer session, every envelope is validated against network id, chain id, protocol version, TTL, clock skew, duplicate message id and payload hash, rate limits are enforced per peer and per message type, repeated abuse quarantines and disconnects the peer, and peer admission is checked by `EclipseGuard` before registration. Local loopback tests may still instantiate `GossipMesh` without the hardened config, but `TcpTestnetNodeRuntime` always enables the hardened path.

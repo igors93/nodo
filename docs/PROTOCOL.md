@@ -88,3 +88,8 @@ same vote without producing a different one.
 ## Finalized slashing evidence sync
 
 `SLASHING_EVIDENCE` records are part of the finalized block payload. A node that did not receive the original `SLASHING_EVIDENCE_ANNOUNCE` can still verify the evidence during block sync because the canonical state transition replays those records and applies the deterministic penalty. Finalized import and reload audit the resulting `ValidatorPenaltyLedger`, `ValidatorRegistry` and `StakingRegistry` before accepting the synced state root.
+
+
+## Mandatory P2P admission boundary
+
+The real node networking path does not accept protocol messages directly from transport. `TcpTestnetNodeRuntime` constructs `GossipMesh` with authenticated sessions and eclipse protection enabled. Only `PEER_CHALLENGE` and `PEER_HELLO` are allowed before peer authentication. All other messages must pass encrypted-session authentication, envelope validation, per-peer/per-message-type rate limiting, quarantine checks and eclipse-guarded peer admission before they can reach consensus, sync, mempool or slashing handlers.

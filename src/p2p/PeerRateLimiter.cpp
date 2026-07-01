@@ -1,5 +1,7 @@
 #include "p2p/PeerRateLimiter.hpp"
 
+#include <limits>
+
 namespace nodo::p2p {
 
 PeerRateLimiter::PeerRateLimiter()
@@ -12,6 +14,15 @@ PeerRateLimiter::PeerRateLimiter(
 )
     : m_maxMessagesPerWindow(maxMessagesPerWindow),
       m_windowSeconds(windowSeconds) {}
+
+std::string PeerRateLimiter::windowKey(
+    const std::string& nodeId,
+    NetworkMessageType messageType
+) {
+    return nodeId + "|" + (messageType == NetworkMessageType::UNKNOWN
+        ? std::string("GENERIC")
+        : networkMessageTypeToString(messageType));
+}
 
 void PeerRateLimiter::advanceWindowIfExpired(PeerWindow& window, std::int64_t now) const {
     const bool clockMovedBackwards = now < window.windowStart;
@@ -26,12 +37,21 @@ void PeerRateLimiter::advanceWindowIfExpired(PeerWindow& window, std::int64_t no
 }
 
 bool PeerRateLimiter::shouldAllow(const std::string& nodeId, std::int64_t now) {
+    return shouldAllow(nodeId, NetworkMessageType::UNKNOWN, now);
+}
+
+bool PeerRateLimiter::shouldAllow(
+    const std::string& nodeId,
+    NetworkMessageType messageType,
+    std::int64_t now
+) {
     if (nodeId.empty() || now <= 0 || m_maxMessagesPerWindow == 0 ||
         m_windowSeconds == 0) {
         return false;
     }
 
-    auto it = m_windows.find(nodeId);
+    const std::string key = windowKey(nodeId, messageType);
+    auto it = m_windows.find(key);
     if (it == m_windows.end()) {
         if (m_windows.size() >= MAX_TRACKED_RATE_LIMIT_PEERS) {
             pruneExpiredWindows(now);
@@ -39,7 +59,7 @@ bool PeerRateLimiter::shouldAllow(const std::string& nodeId, std::int64_t now) {
                 return false;
             }
         }
-        it = m_windows.emplace(nodeId, PeerWindow{now, 0}).first;
+        it = m_windows.emplace(key, PeerWindow{now, 0}).first;
     }
 
     advanceWindowIfExpired(it->second, now);
@@ -53,17 +73,51 @@ bool PeerRateLimiter::shouldAllow(const std::string& nodeId, std::int64_t now) {
 }
 
 void PeerRateLimiter::recordInvalidMessage(const std::string& nodeId, std::int64_t now) {
-    // Invalid messages are more dangerous than normal traffic, so they consume
-    // extra budget in the same fixed window.
-    shouldAllow(nodeId, now);
-    shouldAllow(nodeId, now);
+    recordInvalidMessage(nodeId, NetworkMessageType::UNKNOWN, now);
 }
 
-std::uint32_t PeerRateLimiter::messageCount(const std::string& nodeId, std::int64_t now) const {
+void PeerRateLimiter::recordInvalidMessage(
+    const std::string& nodeId,
+    NetworkMessageType messageType,
+    std::int64_t now
+) {
+    // Invalid messages are more dangerous than normal traffic, so they consume
+    // extra budget in the same fixed window for the same message type.
+    (void)shouldAllow(nodeId, messageType, now);
+    (void)shouldAllow(nodeId, messageType, now);
+}
+
+std::uint32_t PeerRateLimiter::messageCount(
+    const std::string& nodeId,
+    std::int64_t now
+) const {
     if (nodeId.empty() || now <= 0 || m_windowSeconds == 0) {
         return 0;
     }
-    auto it = m_windows.find(nodeId);
+    std::uint64_t total = 0;
+    const std::string prefix = nodeId + "|";
+    for (const auto& [key, storedWindow] : m_windows) {
+        if (key.rfind(prefix, 0) != 0) {
+            continue;
+        }
+        PeerWindow window = storedWindow;
+        advanceWindowIfExpired(window, now);
+        total += window.count;
+    }
+    return total > static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())
+        ? std::numeric_limits<std::uint32_t>::max()
+        : static_cast<std::uint32_t>(total);
+}
+
+std::uint32_t PeerRateLimiter::messageCount(
+    const std::string& nodeId,
+    NetworkMessageType messageType,
+    std::int64_t now
+) const {
+    if (nodeId.empty() || now <= 0 || m_windowSeconds == 0) {
+        return 0;
+    }
+    const auto it = m_windows.find(windowKey(nodeId, messageType));
     if (it == m_windows.end()) {
         return 0;
     }

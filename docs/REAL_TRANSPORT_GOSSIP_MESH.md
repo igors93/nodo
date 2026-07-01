@@ -49,3 +49,8 @@ library too early.
 - Bandwidth accounting.
 
 Those should be implemented after this transport boundary is stable and tested.
+
+
+## Hardened runtime path
+
+The TCP testnet runtime now creates a hardened `GossipMesh`. Handshake messages are the only unauthenticated messages. After handshake, non-handshake envelopes must be protected by an authenticated encrypted peer session and then pass the inbound envelope validator. Rate limits are per peer and message type, invalid messages consume extra budget, and quarantine disconnects the peer. Peer registration is no longer only a registry write: the mesh applies `EclipseGuard` before admitting a new cryptographic peer identity.

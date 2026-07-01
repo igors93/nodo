@@ -57,6 +57,21 @@ void testDefaultConstructorHasSensibleDefaults() {
     assert(limiter.windowSeconds() == nodo::p2p::DEFAULT_RATE_LIMIT_WINDOW_SECONDS);
 }
 
+void testLimitsArePerMessageType() {
+    nodo::p2p::PeerRateLimiter limiter(2, 60);
+    assert(limiter.shouldAllow("peer-a", nodo::p2p::NetworkMessageType::PING, 1000));
+    assert(limiter.shouldAllow("peer-a", nodo::p2p::NetworkMessageType::PING, 1001));
+    assert(!limiter.shouldAllow("peer-a", nodo::p2p::NetworkMessageType::PING, 1002));
+
+    assert(limiter.shouldAllow("peer-a", nodo::p2p::NetworkMessageType::PONG, 1003));
+    assert(limiter.shouldAllow("peer-a", nodo::p2p::NetworkMessageType::PONG, 1004));
+    assert(!limiter.shouldAllow("peer-a", nodo::p2p::NetworkMessageType::PONG, 1005));
+
+    assert(limiter.messageCount("peer-a", nodo::p2p::NetworkMessageType::PING, 1006) == 2);
+    assert(limiter.messageCount("peer-a", nodo::p2p::NetworkMessageType::PONG, 1006) == 2);
+    assert(limiter.messageCount("peer-a", 1006) == 4);
+}
+
 } // namespace
 
 int main() {
@@ -66,5 +81,6 @@ int main() {
     testDifferentPeersAreIndependent();
     testMessageCountReturnsCorrectValue();
     testDefaultConstructorHasSensibleDefaults();
+    testLimitsArePerMessageType();
     return 0;
 }

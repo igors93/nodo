@@ -2,6 +2,7 @@
 #define NODO_P2P_GOSSIP_MESH_HPP
 
 #include "node/EvidenceCaptureHealth.hpp"
+#include "p2p/EclipseGuard.hpp"
 #include "p2p/InboundMessageValidator.hpp"
 #include "p2p/OutboundMessageQueue.hpp"
 #include "p2p/PeerRegistry.hpp"
@@ -13,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -42,6 +44,19 @@ public:
         std::size_t invalidMessageQuarantineThreshold
     );
 
+    GossipMeshConfig(
+        std::string localNodeId,
+        std::string networkId,
+        std::string chainId,
+        std::string protocolVersion,
+        std::string genesisId,
+        std::uint32_t defaultTtlSeconds,
+        std::size_t invalidMessageQuarantineThreshold,
+        bool requireAuthenticatedSessions,
+        bool enforceEclipseGuard,
+        EclipseGuardConfig eclipseGuardConfig
+    );
+
     const std::string& localNodeId() const;
     const std::string& networkId() const;
     const std::string& chainId() const;
@@ -49,6 +64,9 @@ public:
     const std::string& genesisId() const;
     std::uint32_t defaultTtlSeconds() const;
     std::size_t invalidMessageQuarantineThreshold() const;
+    bool requireAuthenticatedSessions() const;
+    bool enforceEclipseGuard() const;
+    const EclipseGuardConfig& eclipseGuardConfig() const;
 
     bool isValid() const;
 
@@ -60,6 +78,9 @@ private:
     std::string m_genesisId;
     std::uint32_t m_defaultTtlSeconds;
     std::size_t m_invalidMessageQuarantineThreshold;
+    bool m_requireAuthenticatedSessions;
+    bool m_enforceEclipseGuard;
+    EclipseGuardConfig m_eclipseGuardConfig;
 };
 
 class GossipDeliveryReport {
@@ -216,6 +237,7 @@ private:
     OutboundMessageQueue m_outboundQueue;
     InboundMessageValidator m_inboundValidator;
     PeerRateLimiter m_rateLimiter;
+    EclipseGuard m_eclipseGuard;
     GossipInbox m_inbox;
     std::map<std::string, TransportConnectionId> m_connectionByMessageId;
     std::map<std::string, std::size_t> m_invalidMessagesByIdentity;
@@ -224,6 +246,24 @@ private:
     node::EvidenceCaptureHealth m_evidenceCaptureHealth;
     std::function<void()> m_peerPenaltyPersistenceHandler;
     std::string m_lastPeerPenaltyPersistenceError;
+
+    bool hasAuthenticatedInboundSession(
+        const std::string& nodeId
+    ) const;
+
+    bool hasAuthenticatedOutboundSession(
+        const std::string& nodeId
+    ) const;
+
+    bool requiresAuthenticatedEnvelope(
+        NetworkMessageType type
+    ) const;
+
+    std::vector<PeerSubnetInfo> activePeerSubnets() const;
+
+    static std::optional<PeerSubnetInfo> subnetInfoForPeer(
+        const PeerMetadata& peer
+    );
 
     bool shouldQuarantinePeer(
         const std::string& nodeId

@@ -1,6 +1,8 @@
 #ifndef NODO_P2P_PEER_RATE_LIMITER_HPP
 #define NODO_P2P_PEER_RATE_LIMITER_HPP
 
+#include "p2p/NetworkEnvelope.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -13,13 +15,15 @@ constexpr std::uint64_t DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60;
 constexpr std::size_t MAX_TRACKED_RATE_LIMIT_PEERS = 4096;
 
 /*
- * PeerRateLimiter enforces a per-peer message rate cap.
+ * PeerRateLimiter enforces a per-peer, per-message-type rate cap.
  *
  * Security principle:
  * A flooded peer can exhaust CPU and memory resources and disrupt consensus.
- * This limiter uses a fixed-window counter per peer. When a peer exceeds the
- * configured message threshold within the window, further messages are blocked
- * until the window resets. The design is simple and stateless across restarts.
+ * The limiter tracks each (peer, message type) independently so a peer cannot
+ * consume one global bucket with low-value messages and then bypass protection
+ * on consensus-critical messages. The legacy peer-only overloads remain as
+ * aggregate helpers for diagnostics and older tests; production callers should
+ * pass the NetworkMessageType.
  */
 class PeerRateLimiter {
 public:
@@ -32,9 +36,27 @@ public:
 
     bool shouldAllow(const std::string& nodeId, std::int64_t now);
 
+    bool shouldAllow(
+        const std::string& nodeId,
+        NetworkMessageType messageType,
+        std::int64_t now
+    );
+
     void recordInvalidMessage(const std::string& nodeId, std::int64_t now);
 
+    void recordInvalidMessage(
+        const std::string& nodeId,
+        NetworkMessageType messageType,
+        std::int64_t now
+    );
+
     std::uint32_t messageCount(const std::string& nodeId, std::int64_t now) const;
+
+    std::uint32_t messageCount(
+        const std::string& nodeId,
+        NetworkMessageType messageType,
+        std::int64_t now
+    ) const;
 
     std::uint32_t maxMessagesPerWindow() const;
     std::uint64_t windowSeconds() const;
@@ -48,6 +70,11 @@ private:
     std::map<std::string, PeerWindow> m_windows;
     std::uint32_t m_maxMessagesPerWindow;
     std::uint64_t m_windowSeconds;
+
+    static std::string windowKey(
+        const std::string& nodeId,
+        NetworkMessageType messageType
+    );
 
     void advanceWindowIfExpired(PeerWindow& window, std::int64_t now) const;
     void pruneExpiredWindows(std::int64_t now);

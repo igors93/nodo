@@ -217,13 +217,16 @@ std::vector<ProposerEquivocationEvidence> EvidencePool::proposerEquivocationEvid
 }
 
 bool EvidencePool::removeEvidence(const std::string& evidenceId) {
-    const bool removed = m_evidenceById.erase(evidenceId) > 0;
+    if (m_evidenceById.find(evidenceId) == m_evidenceById.end()) {
+        return false;
+    }
+    if (m_persistence != nullptr && !m_persistence->erase(evidenceId)) {
+        return false;
+    }
+    m_evidenceById.erase(evidenceId);
     m_doubleVoteEvidenceById.erase(evidenceId);
     m_proposerEquivocationEvidenceById.erase(evidenceId);
-    if (!removed || m_persistence == nullptr) {
-        return removed;
-    }
-    return m_persistence->erase(evidenceId);
+    return true;
 }
 
 std::vector<SlashingEvidenceRecord> EvidencePool::evidenceForValidator(
