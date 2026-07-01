@@ -642,11 +642,14 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
             continue;
         }
 
-        if (requiresAuthenticatedEnvelope(messageType)) {
+        const bool isHandshake = (messageType == NetworkMessageType::PEER_CHALLENGE ||
+                                  messageType == NetworkMessageType::PEER_HELLO);
+
+        if (!isHandshake) {
             if (!m_peerRegistry.contains(message->fromNodeId())) {
                 recordInvalidMessage(
                     message->fromNodeId(),
-                    "Unauthenticated peer sent a non-handshake message.",
+                    "Unknown peer sent a non-handshake message.",
                     now,
                     PeerMisbehaviorType::INVALID_MESSAGE,
                     &message->envelope()
@@ -654,6 +657,9 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
                 ++rejected;
                 continue;
             }
+        }
+
+        if (requiresAuthenticatedEnvelope(messageType)) {
             if (!hasAuthenticatedInboundSession(message->fromNodeId())) {
                 recordInvalidMessage(
                     message->fromNodeId(),
