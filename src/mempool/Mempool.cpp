@@ -359,6 +359,20 @@ MempoolAdmissionResult Mempool::admitTransaction(
         );
     }
 
+    if (transaction.fee().rawUnits() > 1000000000000LL) {
+        return MempoolAdmissionResult::rejected(
+            MempoolAdmissionStatus::INVALID_TRANSACTION,
+            "Transaction fee is absurdly high (Fat-Finger protection limit)."
+        );
+    }
+
+    if (transaction.fromAddress() == transaction.toAddress()) {
+        return MempoolAdmissionResult::rejected(
+            MempoolAdmissionStatus::INVALID_TRANSACTION,
+            "Self-transfers are not allowed."
+        );
+    }
+
     if (contains(transaction.id())) {
         return MempoolAdmissionResult::duplicate(
             transaction.id()

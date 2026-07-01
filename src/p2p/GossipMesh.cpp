@@ -436,6 +436,12 @@ TransportResult GossipMesh::connectPeer(const std::string& remoteNodeId) {
 }
 
 TransportResult GossipMesh::disconnectPeer(const std::string& remoteNodeId) {
+    if (remoteNodeId == m_config.localNodeId()) {
+        return TransportResult(
+            TransportStatus::REJECTED,
+            "Cannot disconnect self."
+        );
+    }
     return m_transport.disconnect(m_config.localNodeId(), remoteNodeId);
 }
 

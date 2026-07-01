@@ -262,6 +262,13 @@ BlockProductionResult produceCandidateBlockImpl(
         );
     }
 
+    if (!blockchain.empty() && timestamp <= blockchain.latestBlock().timestamp()) {
+        return BlockProductionResult::rejected(
+            BlockProductionStatus::BLOCK_AUDIT_FAILED,
+            "Block timestamp must be strictly greater than the previous block."
+        );
+    }
+
     if (!mempool.isValid(
             policy,
             context

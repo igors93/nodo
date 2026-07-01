@@ -45,7 +45,7 @@ bool PeerRateLimiter::shouldAllow(
     NetworkMessageType messageType,
     std::int64_t now
 ) {
-    if (nodeId.empty() || now <= 0 || m_maxMessagesPerWindow == 0 ||
+    if (nodeId.empty() || nodeId.size() > 128 || now <= 0 || m_maxMessagesPerWindow == 0 ||
         m_windowSeconds == 0) {
         return false;
     }
