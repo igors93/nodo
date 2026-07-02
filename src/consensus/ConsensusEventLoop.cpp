@@ -47,10 +47,9 @@ ConsensusEventLoop::ConsensusEventLoop(
     const crypto::CryptoPolicy &policy,
     const crypto::SignatureProvider &provider)
     : m_runtime(runtime), m_gossip(gossip), m_policy(policy),
-      m_provider(provider), m_running(false),
-      m_tickIntervalMs(DEFAULT_TICK_INTERVAL_MS) {}
+      m_provider(provider) {}
 
-ConsensusEventLoop::~ConsensusEventLoop() { stop(); }
+ConsensusEventLoop::~ConsensusEventLoop() {}
 
 void ConsensusEventLoop::setFinalizedCallback(FinalizedCallback cb) {
   m_onFinalized = std::move(cb);
@@ -94,50 +93,7 @@ void ConsensusEventLoop::loadFromRecoveryState(
   m_lastProcessedHeight = state.height();
 }
 
-void ConsensusEventLoop::start(std::int64_t tickIntervalMs) {
-  if (m_running.load())
-    return;
-  if (tickIntervalMs <= 0) {
-    throw std::invalid_argument("Consensus tick interval must be positive.");
-  }
-  if (m_thread.joinable()) {
-    m_thread.join();
-  }
-  m_tickIntervalMs = tickIntervalMs;
-  m_running.store(true);
-  try {
-    m_thread = std::thread([this] { runLoop(); });
-  } catch (...) {
-    m_running.store(false);
-    throw;
-  }
-}
-
-void ConsensusEventLoop::stop() {
-  m_running.store(false);
-  if (m_thread.joinable()) {
-    m_thread.join();
-  }
-}
-
-bool ConsensusEventLoop::isRunning() const { return m_running.load(); }
-
-void ConsensusEventLoop::runLoop() {
-  while (m_running.load()) {
-    const auto now = std::chrono::duration_cast<std::chrono::seconds>(
-                         std::chrono::system_clock::now().time_since_epoch())
-                         .count();
-
-    try {
-      tick(static_cast<std::int64_t>(now));
-    } catch (...) {
-      m_running.store(false);
-      break;
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(m_tickIntervalMs));
-  }
-}
+bool ConsensusEventLoop::isRunning() const { return m_runtime.isRunning(); }
 
 ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
   ConsensusTickResult result = drainVotesAndCollect(now);
@@ -193,11 +149,41 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
   // are processed via processBlockProposals().
   // -------------------------------------------------------------------------
 
+  const auto &params = m_runtime.config().genesisConfig().networkParameters();
+  const std::int64_t elapsedMs = (now - state.roundStartedAt()) * 1000;
+
   // A missing proposal must not bypass the timeout check; otherwise an
   // offline proposer would permanently stall this height.
   if (!m_pendingCandidate.has_value() ||
       m_pendingCandidate->block.index() != height ||
       m_pendingCandidate->round != round) {
+
+    if (elapsedMs >= params.proposalTimeoutMs() && !m_votedPrevote &&
+        m_localSigner &&
+        validators.isEligibleForConsensus(m_localSigner->address())) {
+      const auto nilVote = m_localSigner->signValidatorVote(
+          height, "nil", "nil", round, ValidatorVoteDecision::REJECT, "nil",
+          now);
+      m_runtime.submitConsensusVote(nilVote);
+      m_persistedPrevote = nilVote;
+      saveRecoveryState();
+      m_votedPrevote = true;
+    }
+
+    if (m_votedPrevote && !m_votedPrecommit &&
+        elapsedMs >= params.proposalTimeoutMs() + params.prevoteTimeoutMs()) {
+      if (m_localSigner &&
+          validators.isEligibleForConsensus(m_localSigner->address())) {
+        const auto nilPrecommit = m_localSigner->signValidatorVote(
+            height, "nil", "nil", round, ValidatorVoteDecision::REJECT, "nil",
+            now);
+        m_runtime.submitConsensusVote(nilPrecommit);
+        m_persistedPrecommit = nilPrecommit;
+        saveRecoveryState();
+        m_votedPrecommit = true;
+      }
+    }
+
     advanceRoundIfTimedOut(now, result);
     return result;
   }
@@ -286,9 +272,22 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
             throw std::overflow_error("Prevote weight overflow.");
           }
           prevoteWeight += ownWeight;
-        } else {
-          result.errorMessage = prevoteResult.reason();
         }
+      }
+    }
+  } else if (!m_votedPrevote && m_localSigner &&
+             elapsedMs >= params.proposalTimeoutMs()) {
+    if (validators.isEligibleForConsensus(m_localSigner->address())) {
+      const auto nilVote = m_localSigner->signValidatorVote(
+          height, "nil", "nil", round, ValidatorVoteDecision::REJECT, "nil",
+          now);
+      const VoteCastResult prevoteResult =
+          BlockVotingPhase::submitAndBroadcastSignedVote(m_runtime, nilVote,
+                                                         now, m_gossip);
+      if (prevoteResult.cast()) {
+        m_persistedPrevote = nilVote;
+        saveRecoveryState();
+        m_votedPrevote = true;
       }
     }
   }
@@ -335,6 +334,22 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
         } else {
           result.errorMessage = precommitResult.reason();
         }
+      }
+    }
+  } else if (!m_votedPrecommit && m_localSigner &&
+             elapsedMs >=
+                 params.proposalTimeoutMs() + params.prevoteTimeoutMs()) {
+    if (validators.isEligibleForConsensus(m_localSigner->address())) {
+      const auto nilPrecommit = m_localSigner->signValidatorVote(
+          height, "nil", "nil", round, ValidatorVoteDecision::REJECT, "nil",
+          now);
+      const VoteCastResult precommitResult =
+          BlockVotingPhase::submitAndBroadcastSignedVote(
+              m_runtime, nilPrecommit, now, m_gossip);
+      if (precommitResult.cast()) {
+        m_persistedPrecommit = nilPrecommit;
+        saveRecoveryState();
+        m_votedPrecommit = true;
       }
     }
   }

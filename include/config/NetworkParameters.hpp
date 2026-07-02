@@ -52,7 +52,10 @@ public:
                     std::uint64_t targetBlockTimeSeconds = 60,
                     std::uint64_t finalityDepth = 1,
                     std::string signatureAlgorithm = "NODO_CRYPTO_SUITE_V1",
-                    std::string storageFormatVersion = "NODO_STORAGE_V2");
+                    std::string storageFormatVersion = "NODO_STORAGE_V2",
+                    std::uint64_t proposalTimeoutMs = 3000,
+                    std::uint64_t prevoteTimeoutMs = 3000,
+                    std::uint64_t precommitTimeoutMs = 3000);
 
   const std::string &chainId() const;
   const std::string &networkName() const;
@@ -69,6 +72,9 @@ public:
   std::uint64_t finalityDepth() const;
   const std::string &signatureAlgorithm() const;
   const std::string &storageFormatVersion() const;
+  std::uint64_t proposalTimeoutMs() const;
+  std::uint64_t prevoteTimeoutMs() const;
+  std::uint64_t precommitTimeoutMs() const;
 
   bool isValid() const;
 
@@ -97,6 +103,9 @@ private:
   std::uint64_t m_finalityDepth;
   std::string m_signatureAlgorithm;
   std::string m_storageFormatVersion;
+  std::uint64_t m_proposalTimeoutMs;
+  std::uint64_t m_prevoteTimeoutMs;
+  std::uint64_t m_precommitTimeoutMs;
 };
 
 /*

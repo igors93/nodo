@@ -333,8 +333,6 @@ void NodeOrchestrator::stop() {
 
   if (m_rpcServer)
     m_rpcServer->stop();
-  if (m_consensusLoop)
-    m_consensusLoop->stop();
   if (m_discoveryService)
     m_discoveryService->stop();
   if (m_tcpRuntime)
@@ -582,6 +580,10 @@ void NodeOrchestrator::tick(std::int64_t now) {
   // Reconcile policy state after this tick may have completed handshakes,
   // quarantined peers, or observed disconnects.
   driveNetworkPeerPolicy(now);
+
+  if (m_consensusLoop && m_consensusLoop->isRunning()) {
+    m_consensusLoop->tick(now);
+  }
 }
 
 // ---- Accessors ------------------------------------------------------------
@@ -1031,7 +1033,6 @@ bool NodeOrchestrator::startConsensus() {
     }
   });
 
-  m_consensusLoop->start(m_config.consensusTickMs());
   return true;
 }
 

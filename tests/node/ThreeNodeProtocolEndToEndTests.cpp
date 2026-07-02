@@ -243,8 +243,8 @@ void configureConsensus(TestNode &node,
 }
 
 void finalizeWithTwoOfThreeValidators(TestNode &first, TestNode &second) {
-  for (std::int64_t step = 0; step < 20; ++step) {
-    const std::int64_t now = kTransactionTimestamp + 20 + step;
+  for (std::int64_t step = 0; step < 40; ++step) {
+    const std::int64_t now = kGenesisTimestamp + 1 + step;
     pumpNetwork(first, second, now);
 
     const consensus::ConsensusTickResult firstResult =

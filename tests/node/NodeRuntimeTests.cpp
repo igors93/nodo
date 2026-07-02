@@ -166,10 +166,10 @@ void testRuntimeAdvancesConsensusRoundOnTimeout() {
   nodo::node::NodeRuntime runtime = start.runtime();
 
   requireCondition(
-      !runtime.advanceConsensusRoundIfTimedOut(kTimestamp + 10),
+      !runtime.advanceConsensusRoundIfTimedOut(kTimestamp + 8),
       "Runtime should not advance consensus round before timeout.");
 
-  requireCondition(runtime.advanceConsensusRoundIfTimedOut(kTimestamp + 61),
+  requireCondition(runtime.advanceConsensusRoundIfTimedOut(kTimestamp + 10),
                    "Runtime should advance consensus round after timeout.");
 
   const std::string expectedProposer =
