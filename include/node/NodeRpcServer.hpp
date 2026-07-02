@@ -21,7 +21,10 @@ namespace nodo::node {
  * Auth:      None — bind to loopback by default.
  * Rate limit: per-source-IP request cap (see MAX_REQUESTS_PER_WINDOW /
  *   RATE_LIMIT_WINDOW_SECONDS) to bound resource exhaustion from a local
- *   process hammering the endpoint; excess requests get HTTP 429.
+ *   process hammering the endpoint; excess requests get HTTP 429. The
+ *   window is fixed (not sliding), so budget sized only for casual polling
+ *   leaves legitimate pollers (dashboards, integration test harnesses)
+ *   locked out for the rest of the window once tripped.
  *
  * Endpoints (all read-only except /submit):
  *   GET  /status               — node height, round, peer count, mempool size
@@ -55,7 +58,7 @@ class NodeRpcServer {
 public:
     static constexpr std::uint16_t DEFAULT_PORT    = 8545;
     static constexpr std::size_t   MAX_REQUEST_LEN = 65536;
-    static constexpr std::uint32_t MAX_REQUESTS_PER_WINDOW  = 120;
+    static constexpr std::uint32_t MAX_REQUESTS_PER_WINDOW  = 3000;
     static constexpr std::uint64_t RATE_LIMIT_WINDOW_SECONDS = 60;
 
     NodeRpcServer(

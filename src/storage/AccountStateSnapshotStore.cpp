@@ -14,181 +14,175 @@ namespace nodo::storage {
 
 namespace {
 
-bool parseUint64Strict(const std::string& value, std::uint64_t& out) {
-    try {
-        std::size_t consumed = 0;
-        const unsigned long long parsed = std::stoull(value, &consumed);
-        if (consumed != value.size() ||
-            parsed > std::numeric_limits<std::uint64_t>::max() ||
-            std::to_string(parsed) != value) {
-            return false;
-        }
-        out = static_cast<std::uint64_t>(parsed);
-        return true;
-    } catch (...) {
-        return false;
+bool parseUint64Strict(const std::string &value, std::uint64_t &out) {
+  try {
+    std::size_t consumed = 0;
+    const unsigned long long parsed = std::stoull(value, &consumed);
+    if (consumed != value.size() ||
+        parsed > std::numeric_limits<std::uint64_t>::max() ||
+        std::to_string(parsed) != value) {
+      return false;
     }
+    out = static_cast<std::uint64_t>(parsed);
+    return true;
+  } catch (...) {
+    return false;
+  }
 }
 
-bool parseInt64Strict(const std::string& value, std::int64_t& out) {
-    try {
-        std::size_t consumed = 0;
-        const long long parsed = std::stoll(value, &consumed);
-        if (consumed != value.size() || std::to_string(parsed) != value) {
-            return false;
-        }
-        out = static_cast<std::int64_t>(parsed);
-        return true;
-    } catch (...) {
-        return false;
+bool parseInt64Strict(const std::string &value, std::int64_t &out) {
+  try {
+    std::size_t consumed = 0;
+    const long long parsed = std::stoll(value, &consumed);
+    if (consumed != value.size() || std::to_string(parsed) != value) {
+      return false;
     }
+    out = static_cast<std::int64_t>(parsed);
+    return true;
+  } catch (...) {
+    return false;
+  }
 }
 
 } // namespace
 
 AccountStateSnapshot::AccountStateSnapshot()
-    : m_genesisConfigId("")
-    , m_height(0)
-    , m_blockHash("")
-    , m_view()
-{}
+    : m_genesisConfigId(""), m_height(0), m_blockHash(""), m_view() {}
 
-AccountStateSnapshot::AccountStateSnapshot(
-    std::string genesisConfigId,
-    std::uint64_t height,
-    std::string blockHash,
-    core::AccountStateView view
-)
-    : m_genesisConfigId(std::move(genesisConfigId))
-    , m_height(height)
-    , m_blockHash(std::move(blockHash))
-    , m_view(std::move(view))
-{}
+AccountStateSnapshot::AccountStateSnapshot(std::string genesisConfigId,
+                                           std::uint64_t height,
+                                           std::string blockHash,
+                                           core::AccountStateView view)
+    : m_genesisConfigId(std::move(genesisConfigId)), m_height(height),
+      m_blockHash(std::move(blockHash)), m_view(std::move(view)) {}
 
-const std::string& AccountStateSnapshot::genesisConfigId() const {
-    return m_genesisConfigId;
+const std::string &AccountStateSnapshot::genesisConfigId() const {
+  return m_genesisConfigId;
 }
 
-std::uint64_t AccountStateSnapshot::height() const {
-    return m_height;
+std::uint64_t AccountStateSnapshot::height() const { return m_height; }
+
+const std::string &AccountStateSnapshot::blockHash() const {
+  return m_blockHash;
 }
 
-const std::string& AccountStateSnapshot::blockHash() const {
-    return m_blockHash;
-}
-
-const core::AccountStateView& AccountStateSnapshot::view() const {
-    return m_view;
+const core::AccountStateView &AccountStateSnapshot::view() const {
+  return m_view;
 }
 
 bool AccountStateSnapshot::isValid() const {
-    return !m_genesisConfigId.empty() &&
-           !m_blockHash.empty() &&
-           m_view.isValid();
+  return !m_genesisConfigId.empty() && !m_blockHash.empty() && m_view.isValid();
 }
 
 AccountStateSnapshotStore::AccountStateSnapshotStore(
-    const std::filesystem::path& dataRoot
-)
-    : m_dataRoot(dataRoot)
-{}
+    const std::filesystem::path &dataRoot)
+    : m_dataRoot(dataRoot) {}
 
 std::filesystem::path AccountStateSnapshotStore::snapshotPath() const {
-    return m_dataRoot / kSnapshotFileName;
+  return m_dataRoot / kSnapshotFileName;
 }
 
 void AccountStateSnapshotStore::save(
-    const AccountStateSnapshot& snapshot
-) const {
-    if (!snapshot.isValid()) return;
+    const AccountStateSnapshot &snapshot) const {
+  if (!snapshot.isValid())
+    return;
 
-    std::ostringstream oss;
-    oss << "NODO_ACCOUNT_SNAPSHOT_V1\n";
-    oss << "genesisConfigId=" << snapshot.genesisConfigId() << "\n";
-    oss << "height=" << snapshot.height() << "\n";
-    oss << "blockHash=" << snapshot.blockHash() << "\n";
-    for (const auto& account : snapshot.view().accounts()) {
-        oss << account.address()
-            << "\t" << account.balance().rawUnits()
-            << "\t" << account.nonce()
-            << "\n";
-    }
+  std::ostringstream oss;
+  oss << "NODO_ACCOUNT_SNAPSHOT_V1\n";
+  oss << "genesisConfigId=" << snapshot.genesisConfigId() << "\n";
+  oss << "height=" << snapshot.height() << "\n";
+  oss << "blockHash=" << snapshot.blockHash() << "\n";
+  for (const auto &account : snapshot.view().accounts()) {
+    oss << account.address() << "\t" << account.balance().rawUnits() << "\t"
+        << account.nonce() << "\n";
+  }
 
-    AtomicFile::writeTextFile(snapshotPath(), oss.str());
+  AtomicFile::writeTextFile(snapshotPath(), oss.str());
 }
 
 /**
  * Loads and parses the account state snapshot from disk.
- * Reads the atomic file, reconstructing the exact account balances, nonces, and 
+ * Reads the atomic file, reconstructing the exact account balances, nonces, and
  * genesis configuration state valid at the saved block height.
  */
 std::optional<AccountStateSnapshot> AccountStateSnapshotStore::load() const {
-    const std::filesystem::path path = snapshotPath();
-    if (!std::filesystem::exists(path)) return std::nullopt;
+  const std::filesystem::path path = snapshotPath();
+  if (!std::filesystem::exists(path))
+    return std::nullopt;
 
-    std::string content;
-    try {
-        content = AtomicFile::readTextFile(path);
-    } catch (...) {
-        return std::nullopt;
+  std::string content;
+  try {
+    content = AtomicFile::readTextFile(path);
+  } catch (...) {
+    return std::nullopt;
+  }
+
+  std::istringstream iss(content);
+  std::string line;
+
+  if (!std::getline(iss, line) || line != "NODO_ACCOUNT_SNAPSHOT_V1") {
+    return std::nullopt;
+  }
+
+  std::string genesisConfigId;
+  std::uint64_t height = 0;
+  std::string blockHash;
+
+  auto parseField = [](const std::string &l,
+                       const std::string &key) -> std::string {
+    if (l.rfind(key, 0) == 0)
+      return l.substr(key.size());
+    return {};
+  };
+
+  if (!std::getline(iss, line))
+    return std::nullopt;
+  genesisConfigId = parseField(line, "genesisConfigId=");
+  if (genesisConfigId.empty())
+    return std::nullopt;
+
+  if (!std::getline(iss, line))
+    return std::nullopt;
+  const std::string heightStr = parseField(line, "height=");
+  if (!parseUint64Strict(heightStr, height))
+    return std::nullopt;
+
+  if (!std::getline(iss, line))
+    return std::nullopt;
+  blockHash = parseField(line, "blockHash=");
+  if (blockHash.empty())
+    return std::nullopt;
+
+  core::AccountStateView view;
+  while (std::getline(iss, line)) {
+    if (line.empty())
+      continue;
+    const auto tab1 = line.find('\t');
+    if (tab1 == std::string::npos)
+      return std::nullopt;
+    const auto tab2 = line.find('\t', tab1 + 1);
+    if (tab2 == std::string::npos)
+      return std::nullopt;
+
+    const std::string address = line.substr(0, tab1);
+    std::int64_t balanceRaw = 0;
+    std::uint64_t nonce = 0;
+    if (!parseInt64Strict(line.substr(tab1 + 1, tab2 - tab1 - 1), balanceRaw) ||
+        balanceRaw < 0 || !parseUint64Strict(line.substr(tab2 + 1), nonce) ||
+        view.hasAccount(address)) {
+      return std::nullopt;
     }
-
-    std::istringstream iss(content);
-    std::string line;
-
-    if (!std::getline(iss, line) || line != "NODO_ACCOUNT_SNAPSHOT_V1") {
-        return std::nullopt;
+    if (!view.putAccount(
+            core::AccountState(address, utils::Amount(balanceRaw), nonce))) {
+      return std::nullopt;
     }
+  }
 
-    std::string genesisConfigId;
-    std::uint64_t height = 0;
-    std::string blockHash;
-
-    auto parseField = [](const std::string& l, const std::string& key) -> std::string {
-        if (l.rfind(key, 0) == 0) return l.substr(key.size());
-        return {};
-    };
-
-    if (!std::getline(iss, line)) return std::nullopt;
-    genesisConfigId = parseField(line, "genesisConfigId=");
-    if (genesisConfigId.empty()) return std::nullopt;
-
-    if (!std::getline(iss, line)) return std::nullopt;
-    const std::string heightStr = parseField(line, "height=");
-    if (!parseUint64Strict(heightStr, height)) return std::nullopt;
-
-    if (!std::getline(iss, line)) return std::nullopt;
-    blockHash = parseField(line, "blockHash=");
-    if (blockHash.empty()) return std::nullopt;
-
-    core::AccountStateView view;
-    while (std::getline(iss, line)) {
-        if (line.empty()) continue;
-        const auto tab1 = line.find('\t');
-        if (tab1 == std::string::npos) return std::nullopt;
-        const auto tab2 = line.find('\t', tab1 + 1);
-        if (tab2 == std::string::npos) return std::nullopt;
-
-        const std::string address = line.substr(0, tab1);
-        std::int64_t balanceRaw = 0;
-        std::uint64_t nonce = 0;
-        if (!parseInt64Strict(
-                line.substr(tab1 + 1, tab2 - tab1 - 1),
-                balanceRaw) ||
-            balanceRaw < 0 ||
-            !parseUint64Strict(line.substr(tab2 + 1), nonce) ||
-            view.hasAccount(address)) {
-            return std::nullopt;
-        }
-        if (!view.putAccount(
-                core::AccountState(address, utils::Amount(balanceRaw), nonce))) {
-            return std::nullopt;
-        }
-    }
-
-    AccountStateSnapshot snapshot(genesisConfigId, height, blockHash, std::move(view));
-    if (!snapshot.isValid()) return std::nullopt;
-    return snapshot;
+  AccountStateSnapshot snapshot(genesisConfigId, height, blockHash,
+                                std::move(view));
+  if (!snapshot.isValid())
+    return std::nullopt;
+  return snapshot;
 }
 
 } // namespace nodo::storage

@@ -600,7 +600,10 @@ bool waitUntil(std::chrono::seconds timeout, Predicate predicate) {
     if (predicate()) {
       return true;
     }
-    std::this_thread::sleep_for(25ms);
+    // 100ms keeps polling responsive while staying well under the RPC
+    // server's per-source-IP rate limit even when a predicate issues
+    // several requests per node per tick (e.g. checking multiple specs).
+    std::this_thread::sleep_for(100ms);
   }
   return false;
 }
@@ -668,9 +671,21 @@ std::uint64_t mempoolSize(const NodeSpec &spec) {
 bool reachedFinalizedHeight(const NodeSpec &spec, std::uint64_t height) {
   const auto response = statusResponse(spec);
   if (!response.has_value()) {
+    std::cout << "[DEBUG] reachedFinalizedHeight: no response for "
+              << spec.nodeId << std::endl;
     return false;
   }
   const auto current = jsonUnsigned(response->body, "finalizedHeight");
+  if (!current.has_value()) {
+    std::cout << "[DEBUG] reachedFinalizedHeight: no finalizedHeight field for "
+              << spec.nodeId << " body: " << response->body << std::endl;
+  } else if (current.value() < height) {
+    std::cout << "[DEBUG] reachedFinalizedHeight: " << spec.nodeId << " is at "
+              << current.value() << " (want " << height << ")" << std::endl;
+  } else {
+    std::cout << "[DEBUG] reachedFinalizedHeight: " << spec.nodeId
+              << " reached " << current.value() << std::endl;
+  }
   return current.has_value() && current.value() >= height;
 }
 
@@ -716,7 +731,10 @@ std::size_t scheduledProposerIndexAt(const NodeSpecs &specs,
 
 std::size_t scheduledProposerIndex(const NodeSpecs &specs,
                                    const config::GenesisConfig &genesis) {
-  return scheduledProposerIndexAt(specs, genesis, 1, 0);
+  // Consensus rounds are 1-based: NodeRuntime boots the round manager at
+  // round 1 and RuntimeBlockPipeline advances each new height to round 1,
+  // so the first scheduled proposer of height 1 is selected at round 1.
+  return scheduledProposerIndexAt(specs, genesis, 1, 1);
 }
 
 core::Transaction signedTransfer(const config::GenesisConfig &genesis,

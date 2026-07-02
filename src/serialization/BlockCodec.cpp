@@ -11,100 +11,87 @@
 
 namespace nodo::serialization {
 
-core::Block BlockCodec::deserialize(
-    const std::string& serializedBlock
-) {
-    if (serializedBlock.rfind("Block{", 0) != 0) {
-        throw std::invalid_argument("Serialized object is not a Block.");
-    }
+core::Block BlockCodec::deserialize(const std::string &serializedBlock) {
+  if (serializedBlock.rfind("Block{", 0) != 0) {
+    throw std::invalid_argument("Serialized object is not a Block.");
+  }
 
-    const storage::BlockSnapshotHeader snapshotHeader =
-        storage::BlockSnapshotHeader::fromSerializedBlock(serializedBlock);
+  const storage::BlockSnapshotHeader snapshotHeader =
+      storage::BlockSnapshotHeader::fromSerializedBlock(serializedBlock);
 
-    std::vector<core::LedgerRecord> records =
-        LedgerRecordCodec::deserializeListFromBlockHeaderPayload(
-            snapshotHeader.headerPayload()
-        );
+  std::vector<core::LedgerRecord> records =
+      LedgerRecordCodec::deserializeListFromBlockHeaderPayload(
+          snapshotHeader.headerPayload());
 
-    if (records.size() != snapshotHeader.recordCount()) {
-        throw std::logic_error("BlockCodec record count mismatch.");
-    }
+  if (records.size() != snapshotHeader.recordCount()) {
+    throw std::logic_error("BlockCodec record count mismatch.");
+  }
 
-    const std::string stateRoot =
-        FieldCodec::extractField(serializedBlock, "stateRoot");
+  const std::string stateRoot =
+      FieldCodec::extractField(serializedBlock, "stateRoot");
 
-    const std::string receiptsRoot =
-        FieldCodec::extractField(serializedBlock, "receiptsRoot");
+  const std::string receiptsRoot =
+      FieldCodec::extractField(serializedBlock, "receiptsRoot");
 
-    /*
-     * Block constructor recalculates the block hash from the reconstructed
-     * header payload. This protects against trusting the serialized hash field.
-     */
-    core::Block block(
-        snapshotHeader.blockIndex(),
-        snapshotHeader.previousHash(),
-        std::move(records),
-        snapshotHeader.timestamp(),
-        stateRoot,
-        receiptsRoot
-    );
+  /*
+   * Block constructor recalculates the block hash from the reconstructed
+   * header payload. This protects against trusting the serialized hash field.
+   */
+  core::Block block(snapshotHeader.blockIndex(), snapshotHeader.previousHash(),
+                    std::move(records), snapshotHeader.timestamp(), stateRoot,
+                    receiptsRoot);
 
-    if (!block.isValid(false)) {
-        throw std::invalid_argument("Deserialized Block is invalid.");
-    }
+  if (!block.isValid(false)) {
+    throw std::invalid_argument("Deserialized Block is invalid.");
+  }
 
-    if (block.hash() != snapshotHeader.blockHash()) {
-        throw std::logic_error("Deserialized Block hash mismatch.");
-    }
+  if (block.hash() != snapshotHeader.blockHash()) {
+    throw std::logic_error("Deserialized Block hash mismatch.");
+  }
 
-    if (block.serialize() != serializedBlock) {
-        throw std::logic_error("Block round-trip serialization mismatch.");
-    }
+  if (block.serialize() != serializedBlock) {
+    throw std::logic_error("Block round-trip serialization mismatch.");
+  }
 
-    return block;
+  return block;
 }
 
-core::Block BlockCodec::deserializeFromFile(
-    const std::string& filePath
-) {
-    return deserialize(readFile(filePath));
+core::Block BlockCodec::deserializeFromFile(const std::string &filePath) {
+  return deserialize(readFile(filePath));
 }
 
-std::vector<core::Block> BlockCodec::deserializeFiles(
-    const std::vector<std::string>& filePaths
-) {
-    std::vector<core::Block> blocks;
+std::vector<core::Block>
+BlockCodec::deserializeFiles(const std::vector<std::string> &filePaths) {
+  std::vector<core::Block> blocks;
 
-    for (const auto& filePath : filePaths) {
-        blocks.push_back(
-            deserializeFromFile(filePath)
-        );
-    }
+  for (const auto &filePath : filePaths) {
+    blocks.push_back(deserializeFromFile(filePath));
+  }
 
-    return blocks;
+  return blocks;
 }
 
-std::string BlockCodec::readFile(
-    const std::string& filePath
-) {
-    if (filePath.empty()) {
-        throw std::invalid_argument("Block snapshot file path cannot be empty.");
-    }
+std::string BlockCodec::readFile(const std::string &filePath) {
+  if (filePath.empty()) {
+    throw std::invalid_argument("Block snapshot file path cannot be empty.");
+  }
 
-    std::ifstream input(filePath, std::ios::in | std::ios::binary);
+  std::ifstream input(filePath, std::ios::in | std::ios::binary);
 
-    if (!input.is_open()) {
-        throw std::runtime_error("Failed to open block snapshot file for BlockCodec.");
-    }
+  if (!input.is_open()) {
+    throw std::runtime_error(
+        "Failed to open block snapshot file for BlockCodec.");
+  }
 
-    std::ostringstream buffer;
-    buffer << input.rdbuf();
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
 
-    if (!input.good() && !input.eof()) {
-        throw std::runtime_error("Failed while reading block snapshot file for BlockCodec.");
-    }
+  if (!input.good() && !input.eof()) {
+    throw std::runtime_error(
+        "Failed while reading block snapshot file for BlockCodec.");
+  }
 
-    return buffer.str();
+  return buffer.str();
 }
 
 } // namespace nodo::serialization

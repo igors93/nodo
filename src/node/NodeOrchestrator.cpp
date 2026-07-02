@@ -25,6 +25,8 @@
 #include "storage/AtomicFile.hpp"
 #include "storage/SlashingEvidenceStore.hpp"
 
+#include <iostream>
+
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -499,9 +501,11 @@ void NodeOrchestrator::tick(std::int64_t now) {
             req.requesterNodeId(), p2p::NetworkMessageType::BLOCK_SYNC_RESPONSE,
             kOrchestratorCanonicalPrefix + crypto::hexEncode(encoded), now);
       } catch (const std::exception &e) {
+        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST serve error: " << e.what() << std::endl;
         m_syncHealth.recordServeFailure(
             std::string("BLOCK_SYNC_REQUEST serve error: ") + e.what(), now);
       } catch (...) {
+        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST unknown serve error." << std::endl;
         m_syncHealth.recordServeFailure(
             "BLOCK_SYNC_REQUEST unknown serve error.", now);
       }
@@ -565,12 +569,15 @@ void NodeOrchestrator::tick(std::int64_t now) {
           currentCheckpoint = applyResult.checkpoint().value();
           m_syncHealth.recordSuccess(now);
         } else {
+          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE import failed: " << applyResult.reason() << std::endl;
           m_syncHealth.recordBatchFailure(applyResult.reason(), now);
         }
       } catch (const std::exception &e) {
+        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE exception: " << e.what() << std::endl;
         m_syncHealth.recordBatchFailure(
             std::string("BLOCK_SYNC_RESPONSE import error: ") + e.what(), now);
       } catch (...) {
+        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE unknown exception." << std::endl;
         m_syncHealth.recordBatchFailure(
             "BLOCK_SYNC_RESPONSE unknown import error.", now);
       }
@@ -1103,8 +1110,11 @@ std::optional<core::Block> NodeOrchestrator::produceBlock(std::uint64_t height,
       consensus::BlockProductionPhase::produce(*m_runtime, pipelineConfig,
                                                pendingEvidence);
 
-  if (!candidate.produced())
+  if (!candidate.produced()) {
+    std::cout << "[NodeOrchestrator] candidate failed to produce: "
+              << candidate.reason() << std::endl;
     return std::nullopt;
+  }
 
   return candidate.block();
 }

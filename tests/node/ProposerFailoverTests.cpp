@@ -1,9 +1,10 @@
 // Real multi-node TCP end-to-end test for view change / proposer failover
 // (roadmap item 1.3):
 //
-//   (a) The round-0 scheduled proposer never comes online. The two other
-//       validators must time out round 0, advance to round 1 (a different
-//       scheduled proposer), and finalize block 1 without it.
+//   (a) The first-round scheduled proposer never comes online. The two other
+//       validators must time out round 1 (rounds are 1-based), advance to
+//       round 2 (a different scheduled proposer), and finalize block 1
+//       without it.
 //   (b) The absent validator then starts fresh, authenticates, catches up
 //       via persistent block sync instead of waiting on a stale round, and
 //       keeps tracking the chain as the network finalizes a further block.
@@ -40,7 +41,7 @@ void testProposerFailoverAndLaggingNodeRecovery() {
     const std::size_t onlineA = onlineIndices[0];
     const std::size_t onlineB = onlineIndices[1];
 
-    // (a) The round-0 proposer is never started (equivalent to it being
+    // (a) The first-round proposer is never started (equivalent to it being
     // killed before it could propose). Only the two other validators
     // come online.
     nodes.start(onlineA);
@@ -65,16 +66,17 @@ void testProposerFailoverAndLaggingNodeRecovery() {
     require(firstSubmitted.has_value() && firstSubmitted->statusCode == 200,
             "First transaction submission did not return HTTP 200.");
 
-    // The round-0 proposer never proposes, so both online validators
-    // must time out and advance past round 0 before any block can be
-    // finalized. Catching round > 0 here proves the view change fired
-    // rather than the block having been finalized by some other means.
+    // The first-round proposer never proposes, so both online validators
+    // must time out and advance past round 1 (rounds are 1-based) before
+    // any block can be finalized. Catching round > 1 here proves the view
+    // change fired rather than the block having been finalized by some
+    // other means.
     require(waitUntil(90s,
                       [&] {
-                        return currentRound(specs[onlineA]) >= 1 ||
+                        return currentRound(specs[onlineA]) >= 2 ||
                                reachedFinalizedHeight(specs[onlineA], 1);
                       }),
-            "Round did not advance past round 0 despite the scheduled "
+            "Round did not advance past round 1 despite the scheduled "
             "proposer being absent.");
 
     require(waitUntil(180s,

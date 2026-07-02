@@ -1,6 +1,6 @@
 // Real multi-node TCP end-to-end test (roadmap item 1.4, gate scenario 5):
-// the round-0 scheduled proposer signs and broadcasts two different valid
-// blocks at the same (height, round) — proposer equivocation. Honest peers
+// the first-round scheduled proposer signs and broadcasts two different
+// valid blocks at the same (height, round) — proposer equivocation. Honest peers
 // must detect the conflicting signed proposals
 // (ConsensusEventLoop::processBlockProposals already does this whenever it
 // holds a pending candidate from a proposer and receives a second,
@@ -49,10 +49,10 @@ std::uint64_t stakeSlashedRawUnits(const NodeSpec &spec,
 // Runs a validator directly around NodeOrchestrator. Starts normally
 // (transport, gossip, consensus loop, RPC), authenticates with its static
 // peers, then — once — signs and broadcasts two different valid blocks for
-// (height=1, round=0), before settling into normal honest ticking (voting
+// (height=1, round=1), before settling into normal honest ticking (voting
 // like any other validator) for the rest of the process lifetime. This node
-// is always the round-0 scheduled proposer by construction, so no waiting
-// for its turn is required.
+// is always the first-round scheduled proposer by construction, so no
+// waiting for its turn is required.
 int runEquivocatingProposerChild(std::size_t nodeIndex, const NodeSpecs &specs,
                                  const config::GenesisConfig &genesis,
                                  const Topology &topology) {
@@ -132,16 +132,19 @@ int runEquivocatingProposerChild(std::size_t nodeIndex, const NodeSpecs &specs,
     }
 
     if (!doubleProposed && mempoolSeeded) {
+      // Rounds are 1-based: every height starts at round 1, so the double
+      // proposal must target (height=1, round=1) to match the honest
+      // validators' current round and this node's scheduled slot.
       const std::optional<core::Block> blockA =
-          orchestrator.produceBlock(1, 0, now);
+          orchestrator.produceBlock(1, 1, now);
       const std::optional<core::Block> blockB =
-          orchestrator.produceBlock(1, 0, now + 1);
+          orchestrator.produceBlock(1, 1, now + 1);
 
       if (blockA.has_value() && blockB.has_value() &&
           blockA->hash() != blockB->hash()) {
         const consensus::BlockProposalResult proposalA =
             consensus::BlockProposalPhase::propose(
-                *blockA, local.validatorKey.address().value(), 0, now,
+                *blockA, local.validatorKey.address().value(), 1, now,
                 localSigner, orchestrator.mutableTcpRuntime().gossipMesh(),
                 validatorProvider);
         if (proposalA.proposed()) {
@@ -151,7 +154,7 @@ int runEquivocatingProposerChild(std::size_t nodeIndex, const NodeSpecs &specs,
 
         const consensus::BlockProposalResult proposalB =
             consensus::BlockProposalPhase::propose(
-                *blockB, local.validatorKey.address().value(), 0, now + 1,
+                *blockB, local.validatorKey.address().value(), 1, now + 1,
                 localSigner, orchestrator.mutableTcpRuntime().gossipMesh(),
                 validatorProvider);
         if (proposalB.proposed()) {
@@ -225,7 +228,7 @@ void testProposerEquivocationIsSlashedEndToEnd() {
             "Honest validators did not authenticate with each other.");
 
     // The network must keep making progress despite the equivocation:
-    // either round 0 splits (honest nodes locking onto different
+    // either round 1 splits (honest nodes locking onto different
     // conflicting blocks) and a later round finalizes, or one of the two
     // conflicting blocks reaches quorum directly. Either way, height 1
     // must eventually finalize.

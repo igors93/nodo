@@ -15,7 +15,11 @@ fi
 export CTEST_PARALLEL_LEVEL
 
 "$ROOT_DIR/scripts/cmake_build.sh"
-ctest --test-dir "$CMAKE_BUILD_DIR" --output-on-failure -j "$CTEST_PARALLEL_LEVEL"
+
+mkdir -p "$ROOT_DIR/data"
+LOG_FILE="$ROOT_DIR/data/test_run_$(date +%Y%m%d_%H%M%S).txt"
+ctest --test-dir "$CMAKE_BUILD_DIR" --output-on-failure -j "$CTEST_PARALLEL_LEVEL" 2>&1 | tee "$LOG_FILE"
 
 echo
 echo "CMake tests completed successfully."
+echo "Log saved to $LOG_FILE"

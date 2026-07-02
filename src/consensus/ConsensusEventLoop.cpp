@@ -6,6 +6,7 @@
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
 #include "crypto/Hex.hpp"
+#include "node/ChainStatusGossipCodec.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "node/DoubleVoteDetector.hpp"
 #include "node/EpochRewardSettlementService.hpp"
@@ -19,6 +20,7 @@
 
 #include <array>
 #include <chrono>
+#include <iostream>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -302,6 +304,9 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
       validators.isEligibleForConsensus(m_localSigner->address())) {
 
     if (prevoteWeight >= requiredWeight) {
+      std::cout << "[DEBUG] PRECOMMIT threshold reached height=" << height
+                << " round=" << round << " prevoteWeight=" << prevoteWeight
+                << " requiredWeight=" << requiredWeight << std::endl;
       const std::string previousLockedBlock = m_lockedBlock;
       const std::uint64_t previousLockedRound = m_lockedRound;
       m_lockedBlock = blockHash;
@@ -368,6 +373,13 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
       BlockFinalizationPhase::tryFinalize(
           m_runtime, candidate, height, blockHash, prevHash, round, m_policy,
           m_provider, now, m_dataDirectoryConfig);
+
+  if (!finResult.finalized() && m_votedPrecommit &&
+      !finResult.reason().empty()) {
+    std::cout << "[DEBUG] tryFinalize not finalized height=" << height
+              << " round=" << round << " reason=" << finResult.reason()
+              << std::endl;
+  }
 
   if (finResult.finalized()) {
     result.quorumFormed = true;
@@ -664,6 +676,9 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
 
       m_pendingCandidate =
           PendingBlockCandidate{block, state.round(), proposal};
+      std::cout << "[DEBUG] processBlockProposals accepted candidate height="
+                << block.index() << " round=" << state.round()
+                << " hash=" << block.hash() << std::endl;
     } catch (const std::exception &) {
       // Malformed or unverifiable peer input is ignored without changing
       // the active candidate or canonical chain.
@@ -745,19 +760,34 @@ void ConsensusEventLoop::rebroadcastPersistedVotesForCandidate(
 }
 
 void ConsensusEventLoop::broadcastRoundAdvancement(std::int64_t now) {
-  const auto &state = m_runtime.consensusRoundManager().currentState();
+  // Round timeouts are the periodic heartbeat that lets lagging peers
+  // discover they are behind: broadcast the local chain status in the same
+  // ChainStatusGossipCodec envelope the handshake uses, so
+  // NodeOrchestrator::tick on the receiving side can decode it and trigger
+  // persistent block sync.
+  const core::Blockchain &chain = m_runtime.blockchain();
+  const std::uint64_t latestHeight =
+      chain.empty() ? 0 : chain.latestBlock().index();
+  const std::string latestHash =
+      chain.empty() ? "" : chain.latestBlock().hash();
 
-  const node::RoundAdvanceMessage message(state.height(), state.round(),
-                                          state.proposerAddress(), now);
+  const auto &registry = m_runtime.finalizationRegistry();
+  const std::uint64_t finalizedHeight = registry.highestFinalizedHeight();
+  const FinalizedBlockRecord *finalizedRecord =
+      registry.recordForHeight(finalizedHeight);
+  const std::string finalizedHash =
+      finalizedRecord != nullptr ? finalizedRecord->blockHash() : latestHash;
 
-  if (!message.isValid())
+  const auto &network =
+      m_runtime.config().genesisConfig().networkParameters();
+  const node::ChainStatusMessage status(
+      network.networkName(), network.chainId(),
+      m_runtime.config().localPeer().protocolVersion(), latestHeight,
+      latestHash, finalizedHeight, finalizedHash);
+
+  const std::string payload = node::ChainStatusGossipCodec::encode(status);
+  if (payload.empty())
     return;
-
-  const std::string payload =
-      kCanonicalPayloadPrefix +
-      crypto::hexEncode(
-          serialization::ProtocolMessageCodec::encodeRoundAdvanceMessage(
-              message));
 
   m_gossip.broadcast(p2p::NetworkMessageType::CHAIN_STATUS, payload, now);
 }

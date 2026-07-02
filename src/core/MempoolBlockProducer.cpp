@@ -2,7 +2,7 @@
 
 #include "core/StateTransitionPreview.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
-
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -10,506 +10,377 @@
 namespace nodo::core {
 
 BlockProductionConfig::BlockProductionConfig()
-    : m_maxTransactionsPerBlock(1000),
-      m_minTransactionsPerBlock(1) {}
+    : m_maxTransactionsPerBlock(1000), m_minTransactionsPerBlock(1) {}
 
 BlockProductionConfig::BlockProductionConfig(
-    std::size_t maxTransactionsPerBlock,
-    std::size_t minTransactionsPerBlock
-)
+    std::size_t maxTransactionsPerBlock, std::size_t minTransactionsPerBlock)
     : m_maxTransactionsPerBlock(maxTransactionsPerBlock),
       m_minTransactionsPerBlock(minTransactionsPerBlock) {}
 
 std::size_t BlockProductionConfig::maxTransactionsPerBlock() const {
-    return m_maxTransactionsPerBlock;
+  return m_maxTransactionsPerBlock;
 }
 
 std::size_t BlockProductionConfig::minTransactionsPerBlock() const {
-    return m_minTransactionsPerBlock;
+  return m_minTransactionsPerBlock;
 }
 
 bool BlockProductionConfig::isValid() const {
-    return m_maxTransactionsPerBlock > 0 &&
-           m_minTransactionsPerBlock <= m_maxTransactionsPerBlock;
+  return m_maxTransactionsPerBlock > 0 &&
+         m_minTransactionsPerBlock <= m_maxTransactionsPerBlock;
 }
 
 BlockProductionPlan::BlockProductionPlan()
-    : m_blockIndex(0),
-      m_previousHash(""),
-      m_transactions(),
-      m_ledgerRecords(),
+    : m_blockIndex(0), m_previousHash(""), m_transactions(), m_ledgerRecords(),
       m_timestamp(0) {}
 
 BlockProductionPlan::BlockProductionPlan(
-    std::uint64_t blockIndex,
-    std::string previousHash,
+    std::uint64_t blockIndex, std::string previousHash,
     std::vector<Transaction> transactions,
-    std::vector<LedgerRecord> ledgerRecords,
-    std::int64_t timestamp
-)
-    : m_blockIndex(blockIndex),
-      m_previousHash(std::move(previousHash)),
+    std::vector<LedgerRecord> ledgerRecords, std::int64_t timestamp)
+    : m_blockIndex(blockIndex), m_previousHash(std::move(previousHash)),
       m_transactions(std::move(transactions)),
-      m_ledgerRecords(std::move(ledgerRecords)),
-      m_timestamp(timestamp) {}
+      m_ledgerRecords(std::move(ledgerRecords)), m_timestamp(timestamp) {}
 
-std::uint64_t BlockProductionPlan::blockIndex() const {
-    return m_blockIndex;
+std::uint64_t BlockProductionPlan::blockIndex() const { return m_blockIndex; }
+
+const std::string &BlockProductionPlan::previousHash() const {
+  return m_previousHash;
 }
 
-const std::string& BlockProductionPlan::previousHash() const {
-    return m_previousHash;
+const std::vector<Transaction> &BlockProductionPlan::transactions() const {
+  return m_transactions;
 }
 
-const std::vector<Transaction>& BlockProductionPlan::transactions() const {
-    return m_transactions;
+const std::vector<LedgerRecord> &BlockProductionPlan::ledgerRecords() const {
+  return m_ledgerRecords;
 }
 
-const std::vector<LedgerRecord>& BlockProductionPlan::ledgerRecords() const {
-    return m_ledgerRecords;
-}
-
-std::int64_t BlockProductionPlan::timestamp() const {
-    return m_timestamp;
-}
+std::int64_t BlockProductionPlan::timestamp() const { return m_timestamp; }
 
 std::vector<std::string> BlockProductionPlan::transactionIds() const {
-    std::vector<std::string> ids;
+  std::vector<std::string> ids;
 
-    for (const auto& transaction : m_transactions) {
-        ids.push_back(transaction.id());
-    }
+  for (const auto &transaction : m_transactions) {
+    ids.push_back(transaction.id());
+  }
 
-    return ids;
+  return ids;
 }
 
 bool BlockProductionPlan::isValid() const {
-    if (m_blockIndex == 0 ||
-        m_previousHash.empty() ||
-        m_timestamp <= 0) {
-        return false;
+  if (m_blockIndex == 0 || m_previousHash.empty() || m_timestamp <= 0) {
+    return false;
+  }
+
+  if (m_transactions.empty() ||
+      m_transactions.size() != m_ledgerRecords.size()) {
+    return false;
+  }
+
+  for (std::size_t index = 0; index < m_transactions.size(); ++index) {
+    if (!m_ledgerRecords[index].isValid()) {
+      return false;
     }
 
-    if (m_transactions.empty() ||
-        m_transactions.size() != m_ledgerRecords.size()) {
-        return false;
+    if (m_ledgerRecords[index].type() != LedgerRecordType::TRANSACTION) {
+      return false;
     }
 
-    for (std::size_t index = 0; index < m_transactions.size(); ++index) {
-        if (!m_ledgerRecords[index].isValid()) {
-            return false;
-        }
-
-        if (m_ledgerRecords[index].type() != LedgerRecordType::TRANSACTION) {
-            return false;
-        }
-
-        if (m_ledgerRecords[index].sourceId() != m_transactions[index].id()) {
-            return false;
-        }
+    if (m_ledgerRecords[index].sourceId() != m_transactions[index].id()) {
+      return false;
     }
+  }
 
-    return true;
+  return true;
 }
 
 std::string BlockProductionPlan::serialize() const {
-    std::ostringstream oss;
+  std::ostringstream oss;
 
-    oss << "BlockProductionPlan{"
-        << "blockIndex=" << m_blockIndex
-        << ";previousHash=" << m_previousHash
-        << ";timestamp=" << m_timestamp
-        << ";transactionIds=[";
+  oss << "BlockProductionPlan{"
+      << "blockIndex=" << m_blockIndex << ";previousHash=" << m_previousHash
+      << ";timestamp=" << m_timestamp << ";transactionIds=[";
 
-    const std::vector<std::string> ids =
-        transactionIds();
+  const std::vector<std::string> ids = transactionIds();
 
-    for (std::size_t index = 0; index < ids.size(); ++index) {
-        if (index != 0) {
-            oss << ",";
-        }
-
-        oss << ids[index];
+  for (std::size_t index = 0; index < ids.size(); ++index) {
+    if (index != 0) {
+      oss << ",";
     }
 
-    oss << "]}";
+    oss << ids[index];
+  }
 
-    return oss.str();
+  oss << "]}";
+
+  return oss.str();
 }
 
-std::string blockProductionStatusToString(
-    BlockProductionStatus status
-) {
-    switch (status) {
-        case BlockProductionStatus::PRODUCED:
-            return "PRODUCED";
-        case BlockProductionStatus::INVALID_CONFIG:
-            return "INVALID_CONFIG";
-        case BlockProductionStatus::INVALID_BLOCKCHAIN:
-            return "INVALID_BLOCKCHAIN";
-        case BlockProductionStatus::INVALID_MEMPOOL:
-            return "INVALID_MEMPOOL";
-        case BlockProductionStatus::EMPTY_MEMPOOL:
-            return "EMPTY_MEMPOOL";
-        case BlockProductionStatus::NOT_ENOUGH_TRANSACTIONS:
-            return "NOT_ENOUGH_TRANSACTIONS";
-        case BlockProductionStatus::INVALID_TRANSACTION:
-            return "INVALID_TRANSACTION";
-        case BlockProductionStatus::BLOCK_AUDIT_FAILED:
-            return "BLOCK_AUDIT_FAILED";
-        default:
-            return "BLOCK_AUDIT_FAILED";
-    }
+std::string blockProductionStatusToString(BlockProductionStatus status) {
+  switch (status) {
+  case BlockProductionStatus::PRODUCED:
+    return "PRODUCED";
+  case BlockProductionStatus::INVALID_CONFIG:
+    return "INVALID_CONFIG";
+  case BlockProductionStatus::INVALID_BLOCKCHAIN:
+    return "INVALID_BLOCKCHAIN";
+  case BlockProductionStatus::INVALID_MEMPOOL:
+    return "INVALID_MEMPOOL";
+  case BlockProductionStatus::EMPTY_MEMPOOL:
+    return "EMPTY_MEMPOOL";
+  case BlockProductionStatus::NOT_ENOUGH_TRANSACTIONS:
+    return "NOT_ENOUGH_TRANSACTIONS";
+  case BlockProductionStatus::INVALID_TRANSACTION:
+    return "INVALID_TRANSACTION";
+  case BlockProductionStatus::BLOCK_AUDIT_FAILED:
+    return "BLOCK_AUDIT_FAILED";
+  default:
+    return "BLOCK_AUDIT_FAILED";
+  }
 }
 
 BlockProductionResult::BlockProductionResult()
     : m_status(BlockProductionStatus::BLOCK_AUDIT_FAILED),
-      m_reason("Uninitialized block production result."),
-      m_block(std::nullopt),
+      m_reason("Uninitialized block production result."), m_block(std::nullopt),
       m_plan() {}
 
-BlockProductionResult BlockProductionResult::produced(
-    Block block,
-    BlockProductionPlan plan
-) {
-    BlockProductionResult result;
-    result.m_status = BlockProductionStatus::PRODUCED;
-    result.m_reason = "";
-    result.m_block = std::move(block);
-    result.m_plan = std::move(plan);
-    return result;
+BlockProductionResult
+BlockProductionResult::produced(Block block, BlockProductionPlan plan) {
+  BlockProductionResult result;
+  result.m_status = BlockProductionStatus::PRODUCED;
+  result.m_reason = "";
+  result.m_block = std::move(block);
+  result.m_plan = std::move(plan);
+  return result;
 }
 
-BlockProductionResult BlockProductionResult::rejected(
-    BlockProductionStatus status,
-    std::string reason
-) {
-    BlockProductionResult result;
-    result.m_status = status;
-    result.m_reason = std::move(reason);
-    return result;
+BlockProductionResult
+BlockProductionResult::rejected(BlockProductionStatus status,
+                                std::string reason) {
+  BlockProductionResult result;
+  result.m_status = status;
+  result.m_reason = std::move(reason);
+  return result;
 }
 
-BlockProductionStatus BlockProductionResult::status() const {
-    return m_status;
-}
+BlockProductionStatus BlockProductionResult::status() const { return m_status; }
 
-const std::string& BlockProductionResult::reason() const {
-    return m_reason;
-}
+const std::string &BlockProductionResult::reason() const { return m_reason; }
 
 bool BlockProductionResult::produced() const {
-    return m_status == BlockProductionStatus::PRODUCED &&
-           m_block.has_value() &&
-           m_plan.isValid();
+  return m_status == BlockProductionStatus::PRODUCED && m_block.has_value() &&
+         m_plan.isValid();
 }
 
-const Block& BlockProductionResult::block() const {
-    if (!m_block.has_value()) {
-        throw std::logic_error("BlockProductionResult has no produced block.");
-    }
+const Block &BlockProductionResult::block() const {
+  if (!m_block.has_value()) {
+    throw std::logic_error("BlockProductionResult has no produced block.");
+  }
 
-    return m_block.value();
+  return m_block.value();
 }
 
-const BlockProductionPlan& BlockProductionResult::plan() const {
-    return m_plan;
+const BlockProductionPlan &BlockProductionResult::plan() const {
+  return m_plan;
 }
 
 std::string BlockProductionResult::serialize() const {
-    std::ostringstream oss;
+  std::ostringstream oss;
 
-    oss << "BlockProductionResult{"
-        << "status=" << blockProductionStatusToString(m_status)
-        << ";reason=" << m_reason
-        << ";block=" << (m_block.has_value() ? m_block->serialize() : "NONE")
-        << ";plan=" << (m_plan.isValid() ? m_plan.serialize() : "NONE")
-        << "}";
+  oss << "BlockProductionResult{"
+      << "status=" << blockProductionStatusToString(m_status)
+      << ";reason=" << m_reason
+      << ";block=" << (m_block.has_value() ? m_block->serialize() : "NONE")
+      << ";plan=" << (m_plan.isValid() ? m_plan.serialize() : "NONE") << "}";
 
-    return oss.str();
+  return oss.str();
 }
 
 namespace {
 
 BlockProductionResult produceCandidateBlockImpl(
-    const Blockchain& blockchain,
-    const mempool::Mempool& mempool,
-    const AccountStateView* accountStateView,
-    const StateTransitionPreviewContext* suppliedPreviewContext,
-    const crypto::CryptoPolicy& policy,
-    crypto::SecurityContext context,
-    const BlockProductionConfig& config,
-    std::int64_t timestamp
-) {
-    if (!config.isValid()) {
+    const Blockchain &blockchain, const mempool::Mempool &mempool,
+    const AccountStateView *accountStateView,
+    const StateTransitionPreviewContext *suppliedPreviewContext,
+    const crypto::CryptoPolicy &policy, crypto::SecurityContext context,
+    const BlockProductionConfig &config, std::int64_t timestamp) {
+  if (!config.isValid()) {
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::INVALID_CONFIG,
+        "Block production config is invalid.");
+  }
+
+  if (blockchain.empty() || !blockchain.isValid(false)) {
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::INVALID_BLOCKCHAIN,
+        "Blockchain is empty or invalid.");
+  }
+
+  if (timestamp <= 0) {
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::BLOCK_AUDIT_FAILED,
+        "Block timestamp must be positive.");
+  }
+
+  if (!blockchain.empty() &&
+      timestamp <= blockchain.latestBlock().timestamp()) {
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::BLOCK_AUDIT_FAILED,
+        "Block timestamp must be strictly greater than the previous block.");
+  }
+
+  if (!mempool.isValid(policy, context)) {
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::INVALID_MEMPOOL,
+        "Mempool failed integrity audit.");
+  }
+
+  std::vector<Transaction> transactions =
+      accountStateView == nullptr
+          ? mempool.transactionsForBlock(config.maxTransactionsPerBlock())
+          : mempool.transactionsForBlock(config.maxTransactionsPerBlock(),
+                                         *accountStateView);
+
+  if (transactions.empty()) {
+    std::cout
+        << "[DEBUG] MempoolBlockProducer transactions empty. Mempool size: "
+        << mempool.size() << std::endl;
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::EMPTY_MEMPOOL,
+        "Mempool has no transactions available for block production.");
+  }
+
+  if (transactions.size() < config.minTransactionsPerBlock()) {
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::NOT_ENOUGH_TRANSACTIONS,
+        "Not enough transactions available for block production.");
+  }
+
+  std::vector<LedgerRecord> ledgerRecords;
+
+  for (const auto &transaction : transactions) {
+    if (!transaction.isStructurallyValid(policy, context)) {
+      return BlockProductionResult::rejected(
+          BlockProductionStatus::INVALID_TRANSACTION,
+          "Selected transaction failed policy validation.");
+    }
+
+    ledgerRecords.push_back(
+        LedgerRecord::fromTransaction(transaction, policy, context, timestamp));
+  }
+
+  // Bound selection by the serialized block limit as well as transaction
+  // count. Reserve the exact commitment-root widths used by the final block
+  // so a draft that fits cannot overflow after roots are calculated.
+  while (ledgerRecords.size() >= config.minTransactionsPerBlock()) {
+    try {
+      const Block sizeProbe(blockchain.size(), blockchain.latestBlock().hash(),
+                            ledgerRecords, timestamp, std::string(64, '0'),
+                            std::string(64, '0'));
+      (void)sizeProbe;
+      break;
+    } catch (const std::invalid_argument &error) {
+      if (std::string(error.what()) !=
+          "Block exceeds canonical protocol resource limits.") {
         return BlockProductionResult::rejected(
-            BlockProductionStatus::INVALID_CONFIG,
-            "Block production config is invalid."
-        );
+            BlockProductionStatus::BLOCK_AUDIT_FAILED, error.what());
+      }
+      ledgerRecords.pop_back();
+      transactions.pop_back();
     }
+  }
 
-    if (blockchain.empty() || !blockchain.isValid(false)) {
-        return BlockProductionResult::rejected(
-            BlockProductionStatus::INVALID_BLOCKCHAIN,
-            "Blockchain is empty or invalid."
-        );
-    }
+  if (transactions.size() < config.minTransactionsPerBlock()) {
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::NOT_ENOUGH_TRANSACTIONS,
+        "Transactions selected from the mempool do not fit in one canonical "
+        "block.");
+  }
 
-    if (timestamp <= 0) {
-        return BlockProductionResult::rejected(
-            BlockProductionStatus::BLOCK_AUDIT_FAILED,
-            "Block timestamp must be positive."
-        );
-    }
+  BlockProductionPlan plan(blockchain.size(), blockchain.latestBlock().hash(),
+                           transactions, ledgerRecords, timestamp);
 
-    if (!blockchain.empty() && timestamp <= blockchain.latestBlock().timestamp()) {
-        return BlockProductionResult::rejected(
-            BlockProductionStatus::BLOCK_AUDIT_FAILED,
-            "Block timestamp must be strictly greater than the previous block."
-        );
-    }
+  if (!plan.isValid()) {
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::BLOCK_AUDIT_FAILED,
+        "Block production plan failed audit.");
+  }
 
-    if (!mempool.isValid(
-            policy,
-            context
-        )) {
-        return BlockProductionResult::rejected(
-            BlockProductionStatus::INVALID_MEMPOOL,
-            "Mempool failed integrity audit."
-        );
-    }
+  // A non-genesis protocol block must be produced with a real AccountStateView.
+  // Without one, the state-transition preview runs on an empty account state
+  // and produces stateRoot/receiptsRoot values that do not match the real
+  // economic state.  Such a block would be rejected by every other validator
+  // and must never leave the producer as a finalized protocol block.
+  if (accountStateView == nullptr && plan.blockIndex() > 0) {
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::BLOCK_AUDIT_FAILED,
+        "Cannot produce a non-genesis protocol block without AccountStateView: "
+        "stateRoot and receiptsRoot cannot be computed from real account "
+        "state.");
+  }
 
-    std::vector<Transaction> transactions =
-        accountStateView == nullptr
-            ? mempool.transactionsForBlock(
-                  config.maxTransactionsPerBlock()
-              )
-            : mempool.transactionsForBlock(
-                  config.maxTransactionsPerBlock(),
-                  *accountStateView
-              );
+  Block draftBlock(plan.blockIndex(), plan.previousHash(), plan.ledgerRecords(),
+                   timestamp, "", "");
 
-    if (transactions.empty()) {
-        return BlockProductionResult::rejected(
-            BlockProductionStatus::EMPTY_MEMPOOL,
-            "Mempool has no transactions available for block production."
-        );
-    }
+  StateTransitionPreviewContext previewContext;
+  if (suppliedPreviewContext != nullptr) {
+    previewContext = *suppliedPreviewContext;
+  } else if (accountStateView != nullptr) {
+    previewContext =
+        StateTransitionPreviewContext(0, *accountStateView, true, true);
+  } else {
+    previewContext = StateTransitionPreviewContext::structuralOnly(0);
+  }
 
-    if (transactions.size() < config.minTransactionsPerBlock()) {
-        return BlockProductionResult::rejected(
-            BlockProductionStatus::NOT_ENOUGH_TRANSACTIONS,
-            "Not enough transactions available for block production."
-        );
-    }
+  const StateTransitionPreviewResult preview =
+      StateTransitionPreview::previewBlock(draftBlock, previewContext);
 
-    std::vector<LedgerRecord> ledgerRecords;
+  if (!preview.accepted()) {
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::BLOCK_AUDIT_FAILED,
+        "Candidate state transition failed: " + preview.reason());
+  }
 
-    for (const auto& transaction : transactions) {
-        if (!transaction.isStructurallyValid(
-                policy,
-                context
-            )) {
-            return BlockProductionResult::rejected(
-                BlockProductionStatus::INVALID_TRANSACTION,
-                "Selected transaction failed policy validation."
-            );
-        }
+  Block finalBlock(plan.blockIndex(), plan.previousHash(), plan.ledgerRecords(),
+                   timestamp, preview.stateRoot(), preview.receiptsRoot());
 
-        ledgerRecords.push_back(
-            LedgerRecord::fromTransaction(
-                transaction,
-                policy,
-                context,
-                timestamp
-            )
-        );
-    }
+  if (!finalBlock.isValid(false) || !blockchain.canAppendBlock(finalBlock)) {
+    return BlockProductionResult::rejected(
+        BlockProductionStatus::BLOCK_AUDIT_FAILED,
+        "Produced block failed append audit.");
+  }
 
-    // Bound selection by the serialized block limit as well as transaction
-    // count. Reserve the exact commitment-root widths used by the final block
-    // so a draft that fits cannot overflow after roots are calculated.
-    while (ledgerRecords.size() >= config.minTransactionsPerBlock()) {
-        try {
-            const Block sizeProbe(
-                blockchain.size(),
-                blockchain.latestBlock().hash(),
-                ledgerRecords,
-                timestamp,
-                std::string(64, '0'),
-                std::string(64, '0')
-            );
-            (void)sizeProbe;
-            break;
-        } catch (const std::invalid_argument& error) {
-            if (std::string(error.what()) !=
-                "Block exceeds canonical protocol resource limits.") {
-                return BlockProductionResult::rejected(
-                    BlockProductionStatus::BLOCK_AUDIT_FAILED,
-                    error.what()
-                );
-            }
-            ledgerRecords.pop_back();
-            transactions.pop_back();
-        }
-    }
-
-    if (transactions.size() < config.minTransactionsPerBlock()) {
-        return BlockProductionResult::rejected(
-            BlockProductionStatus::NOT_ENOUGH_TRANSACTIONS,
-            "Transactions selected from the mempool do not fit in one canonical block."
-        );
-    }
-
-    BlockProductionPlan plan(
-        blockchain.size(),
-        blockchain.latestBlock().hash(),
-        transactions,
-        ledgerRecords,
-        timestamp
-    );
-
-    if (!plan.isValid()) {
-        return BlockProductionResult::rejected(
-            BlockProductionStatus::BLOCK_AUDIT_FAILED,
-            "Block production plan failed audit."
-        );
-    }
-
-    // A non-genesis protocol block must be produced with a real AccountStateView.
-    // Without one, the state-transition preview runs on an empty account state and
-    // produces stateRoot/receiptsRoot values that do not match the real economic
-    // state.  Such a block would be rejected by every other validator and must
-    // never leave the producer as a finalized protocol block.
-    if (accountStateView == nullptr && plan.blockIndex() > 0) {
-        return BlockProductionResult::rejected(
-            BlockProductionStatus::BLOCK_AUDIT_FAILED,
-            "Cannot produce a non-genesis protocol block without AccountStateView: "
-            "stateRoot and receiptsRoot cannot be computed from real account state."
-        );
-    }
-
-    Block draftBlock(
-        plan.blockIndex(),
-        plan.previousHash(),
-        plan.ledgerRecords(),
-        timestamp,
-        "",
-        ""
-    );
-
-    StateTransitionPreviewContext previewContext;
-    if (suppliedPreviewContext != nullptr) {
-        previewContext = *suppliedPreviewContext;
-    } else if (accountStateView != nullptr) {
-        previewContext = StateTransitionPreviewContext(
-            0,
-            *accountStateView,
-            true,
-            true
-        );
-    } else {
-        previewContext = StateTransitionPreviewContext::structuralOnly(0);
-    }
-
-    const StateTransitionPreviewResult preview =
-        StateTransitionPreview::previewBlock(
-            draftBlock,
-            previewContext
-        );
-
-    if (!preview.accepted()) {
-        return BlockProductionResult::rejected(
-            BlockProductionStatus::BLOCK_AUDIT_FAILED,
-            "Candidate state transition failed: " + preview.reason()
-        );
-    }
-
-    Block finalBlock(
-        plan.blockIndex(),
-        plan.previousHash(),
-        plan.ledgerRecords(),
-        timestamp,
-        preview.stateRoot(),
-        preview.receiptsRoot()
-    );
-
-    if (!finalBlock.isValid(false) ||
-        !blockchain.canAppendBlock(finalBlock)) {
-        return BlockProductionResult::rejected(
-            BlockProductionStatus::BLOCK_AUDIT_FAILED,
-            "Produced block failed append audit."
-        );
-    }
-
-    return BlockProductionResult::produced(
-        finalBlock,
-        plan
-    );
+  return BlockProductionResult::produced(finalBlock, plan);
 }
 
 } // namespace
 
 BlockProductionResult MempoolBlockProducer::produceCandidateBlock(
-    const Blockchain& blockchain,
-    const mempool::Mempool& mempool,
-    const crypto::CryptoPolicy& policy,
-    crypto::SecurityContext context,
-    const BlockProductionConfig& config,
-    std::int64_t timestamp
-) {
-    return produceCandidateBlockImpl(
-        blockchain,
-        mempool,
-        nullptr,
-        nullptr,
-        policy,
-        context,
-        config,
-        timestamp
-    );
+    const Blockchain &blockchain, const mempool::Mempool &mempool,
+    const crypto::CryptoPolicy &policy, crypto::SecurityContext context,
+    const BlockProductionConfig &config, std::int64_t timestamp) {
+  return produceCandidateBlockImpl(blockchain, mempool, nullptr, nullptr,
+                                   policy, context, config, timestamp);
 }
 
 BlockProductionResult MempoolBlockProducer::produceCandidateBlock(
-    const Blockchain& blockchain,
-    const mempool::Mempool& mempool,
-    const AccountStateView& accountStateView,
-    const crypto::CryptoPolicy& policy,
-    crypto::SecurityContext context,
-    const BlockProductionConfig& config,
-    std::int64_t timestamp
-) {
-    return produceCandidateBlockImpl(
-        blockchain,
-        mempool,
-        &accountStateView,
-        nullptr,
-        policy,
-        context,
-        config,
-        timestamp
-    );
+    const Blockchain &blockchain, const mempool::Mempool &mempool,
+    const AccountStateView &accountStateView,
+    const crypto::CryptoPolicy &policy, crypto::SecurityContext context,
+    const BlockProductionConfig &config, std::int64_t timestamp) {
+  return produceCandidateBlockImpl(blockchain, mempool, &accountStateView,
+                                   nullptr, policy, context, config, timestamp);
 }
 
 BlockProductionResult MempoolBlockProducer::produceCandidateBlock(
-    const Blockchain& blockchain,
-    const mempool::Mempool& mempool,
-    const StateTransitionPreviewContext& previewContext,
-    const crypto::CryptoPolicy& policy,
-    crypto::SecurityContext context,
-    const BlockProductionConfig& config,
-    std::int64_t timestamp
-) {
-    return produceCandidateBlockImpl(
-        blockchain,
-        mempool,
-        &previewContext.accountStateView(),
-        &previewContext,
-        policy,
-        context,
-        config,
-        timestamp
-    );
+    const Blockchain &blockchain, const mempool::Mempool &mempool,
+    const StateTransitionPreviewContext &previewContext,
+    const crypto::CryptoPolicy &policy, crypto::SecurityContext context,
+    const BlockProductionConfig &config, std::int64_t timestamp) {
+  return produceCandidateBlockImpl(
+      blockchain, mempool, &previewContext.accountStateView(), &previewContext,
+      policy, context, config, timestamp);
 }
 
 } // namespace nodo::core

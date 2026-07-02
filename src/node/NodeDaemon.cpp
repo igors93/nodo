@@ -14,6 +14,8 @@
 #include "node/TransactionAdmissionValidator.hpp"
 #include "p2p/Peer.hpp"
 
+#include <iostream>
+
 #include <chrono>
 #include <cstdlib>
 #include <thread>
@@ -147,14 +149,24 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
                 cryptoContext.userSignatureProvider(),
                 runtime.effectiveMinimumFeeRawUnits(), &admissionContext);
         if (validation.accepted()) {
-          admitted =
-              runtime.mutableMempool()
-                  .admitTransaction(decoded->transaction, m_policy,
-                                    crypto::SecurityContext::USER_TRANSACTION,
-                                    decoded->acceptedAt)
-                  .success();
+          auto result = runtime.mutableMempool().admitTransaction(
+              decoded->transaction, m_policy,
+              crypto::SecurityContext::USER_TRANSACTION,
+              decoded->acceptedAt);
+          admitted = result.success();
+          if (!admitted) {
+              std::cout << "[DEBUG] NodeDaemon processTransactionGossip admitTransaction failed: " << result.reason() << std::endl;
+          }
+        } else {
+          std::cout
+              << "[NodeDaemon] processTransactionGossip validation rejected: "
+              << validation.reason() << std::endl;
         }
       }
+    } else {
+      std::cout
+          << "[NodeDaemon] processTransactionGossip failed to decode payload"
+          << std::endl;
     }
 
     if (admitted) {
@@ -176,20 +188,14 @@ void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
         FinalizedArtifactGossipAdmission::admit(envelope,
                                                 m_orchestrator.mutableRuntime(),
                                                 m_policy, m_provider, store);
+    
+    std::cout << "[DEBUG] processFinalizedArtifacts received artifact. " 
+              << "status: " << (int)result.status() << ", reason: " << result.reason() << std::endl;
+
     if (result.fatalConsistencyError()) {
-      // Finality must never remain memory-only or diverge from its
-      // durable proof. Preserve the existing fail-stop safety policy.
       std::abort();
     }
 
-    // A finalized artifact for a height we do not have yet means this node
-    // fell behind: either it missed rounds while offline, or the network
-    // kept finalizing blocks without ever hitting a round timeout (the only
-    // other event that broadcasts CHAIN_STATUS). Without this hook, such a
-    // node would keep rejecting every FINALIZED_BLOCK_ARTIFACT it receives
-    // as BLOCK_UNAVAILABLE forever, staying stuck waiting for a proposal at
-    // its stale height instead of catching up. Treat the artifact itself as
-    // sync-trigger evidence, exactly like an ahead CHAIN_STATUS message.
     if (result.status() ==
         FinalizedArtifactGossipAdmissionStatus::BLOCK_UNAVAILABLE) {
       try {
@@ -205,12 +211,15 @@ void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
               m_orchestrator.runtime().config().localPeer().protocolVersion(),
               record.blockIndex(), record.blockHash(), record.blockIndex(),
               record.blockHash());
+          
+          std::cout << "[DEBUG] Triggering sync for height " << record.blockIndex() << std::endl;
           m_orchestrator.triggerSyncIfBehind(syntheticStatus,
                                              envelope.senderNodeId(), now);
+        } else {
+            std::cout << "[DEBUG] BLOCK_UNAVAILABLE but record structurally invalid." << std::endl;
         }
-      } catch (const std::exception &) {
-        // Malformed payload here was already reported by admit(); do not
-        // let a second parse failure interrupt the tick loop.
+      } catch (const std::exception &e) {
+         std::cout << "[DEBUG] BLOCK_UNAVAILABLE exception: " << e.what() << std::endl;
       }
     }
   }
@@ -246,10 +255,16 @@ void NodeDaemon::maybeProposeBlock(std::int64_t now) {
   if (proposer == m_localSigner->address()) {
     if (m_lastProposedRound.first != height ||
         m_lastProposedRound.second != round) {
-      m_lastProposedRound = {height, round};
 
       std::optional<core::Block> candidateOpt =
           m_orchestrator.produceBlock(height, round, now);
+
+      if (!candidateOpt.has_value()) {
+        // Log to see why it fails
+        std::cout << "[NodeDaemon] Proposer " << proposer
+                  << " failed to produce block at height " << height
+                  << " round " << round << std::endl;
+      }
 
       if (candidateOpt.has_value()) {
         consensus::BlockProposalResult proposal =
@@ -259,6 +274,8 @@ void NodeDaemon::maybeProposeBlock(std::int64_t now) {
                 m_provider);
 
         if (proposal.proposed()) {
+          m_lastProposedRound = {height, round};
+
           m_orchestrator.gossipBroadcast(
               p2p::NetworkMessageType::BLOCK_PROPOSAL,
               proposal.serializedProposal(), now);

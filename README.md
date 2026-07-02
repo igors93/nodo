@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/nodo-readme-hero.svg" alt="Nodo - Proof of Protection Blockchain" />
+  <img src="assets/nodo-architecture.svg" alt="Nodo - Proof of Protection Blockchain" />
 </p>
 
 <p align="center">
