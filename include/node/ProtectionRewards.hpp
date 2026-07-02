@@ -182,6 +182,14 @@ public:
     static constexpr const char* NOT_EVALUATED_REASON =
         "PROTECTION_REWARDS_NOT_EVALUATED";
 
+    // Canonical epoch uptime percentage, rounded to the nearest whole point.
+    // Extra consensus rounds increase eligibleRoundOpportunities and therefore
+    // reduce the score when a validator only signs the final round.
+    static std::uint16_t epochParticipationPercent(
+        std::uint64_t acceptedVotes,
+        std::uint64_t eligibleRoundOpportunities
+    );
+
     static ProtectionWorkRecord buildWorkRecord(
         const ProtectionRewardGrant& grant,
         const std::vector<SecurityScoreRecord>& securityScoreRecords,

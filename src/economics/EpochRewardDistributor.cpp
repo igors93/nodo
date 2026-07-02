@@ -456,7 +456,11 @@ EpochRewardDistribution EpochRewardDistributor::distribute(
         endBlock,
         feesCollected,
         emissionCap,
-        workDemandBasisPoints
+        workDemandBasisPoints,
+        targetWorkWeight,
+        totalAcceptedWorkWeight,
+        policy.policyVersion(),
+        acceptedBlockHash
     );
 
     if (!protectionEpoch.isValid()) {

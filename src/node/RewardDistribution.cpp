@@ -93,7 +93,8 @@ const std::string& RewardDistribution::reason() const {
 bool RewardDistribution::isValid() const {
     if (m_validatorAddress.empty() ||
         m_blockHeight == 0 ||
-        m_reason != RewardDistributionCalculator::BLOCK_FINALIZATION_FEE_REASON ||
+        (m_reason != RewardDistributionCalculator::BLOCK_FINALIZATION_FEE_REASON &&
+         m_reason != RewardDistributionCalculator::EPOCH_PROTECTION_REWARD_REASON) ||
         !m_totalReward.isPositive() ||
         m_liquidReward.isNegative() ||
         m_lockedReward.isNegative()) {
@@ -206,6 +207,29 @@ std::vector<RewardDistribution> RewardDistributionCalculator::buildFromQuorumCer
         validatorAddresses,
         blockHeight
     );
+}
+
+std::vector<RewardDistribution> RewardDistributionCalculator::buildFromEpochRewards(
+    const std::vector<economics::GenesisRewardRecord>& rewardRecords,
+    std::uint64_t settlementBlockHeight
+) {
+    if (settlementBlockHeight == 0) {
+        throw std::invalid_argument("Cannot distribute epoch rewards at genesis height.");
+    }
+    std::set<std::string> recipients;
+    std::vector<RewardDistribution> distributions;
+    distributions.reserve(rewardRecords.size());
+    for (const auto& reward : rewardRecords) {
+        if (!reward.isValid() || !recipients.insert(reward.validatorAddress()).second) {
+            throw std::invalid_argument("Invalid or duplicate canonical epoch reward.");
+        }
+        distributions.emplace_back(
+            reward.validatorAddress(), settlementBlockHeight,
+            reward.amount(), reward.amount(), utils::Amount(),
+            EPOCH_PROTECTION_REWARD_REASON
+        );
+    }
+    return distributions;
 }
 
 utils::Amount RewardDistributionCalculator::totalReward(

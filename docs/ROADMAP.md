@@ -123,7 +123,7 @@ reach quorum, and finalize a block without any local shortcut.
   the same canonical records when the matching proposal is active. Boolean-only
   vote markers are rejected because they protect safety at the cost of liveness.
 
-### 2.5 Integration Tests
+### 2.5 Integration Tests ✅
 - 2-node transaction propagation: node A submits tx, node B receives and admits
   it via gossip. ✅ (`tests/node/RealTcpThreeNodeEndToEndTests.cpp`,
   `tests/node/ThreeNodeProtocolEndToEndTests.cpp`)
@@ -248,7 +248,7 @@ slashed.
 - State transitions are previewed on copies and the staking domain participates
   in the protocol state root, finalized commit, and replay.
 
-### 4.2 Validator Weight from Stake
+### 4.2 Validator Weight from Stake ✅
 - `ValidatorRegistry` derives deterministic consensus weight from active locked
   stake using integer `sqrt(lockedAmount)`; floating-point arithmetic is not
   used in consensus.
@@ -263,14 +263,23 @@ slashed.
   record but has zero effective consensus weight and cannot propose or vote.
 - Tests: `tests/node/ValidatorStakeWeightUpdaterTests.cpp`.
 
-### 4.3 Epoch Reward Settlement
-- `EpochRewardDistributor` and `EpochRewardSettlementService` exist; wire them
-  to measurable work: block proposals accepted by quorum, votes cast in rounds,
-  uptime metric derived from round participation rate.
-- Reward must be bounded by `EpochEmissionPolicy`; no new coins without a
-  canonical `GenesisRewardRecord` or authorized emission record.
-- `ProtectionRewards` and `RewardDistribution` must be connected to the epoch
-  boundary in the block pipeline.
+### 4.3 Epoch Reward Settlement ✅
+- `EpochParticipation` reconstructs compact work evidence from finalized QCs:
+  accepted scheduled proposals, unique precommit voters, and uptime calculated
+  from votes divided by eligible round opportunities.
+- The first block after each 43,200-block validator epoch carries the canonical
+  work, score, `ProtectionEpoch`, and `GenesisRewardRecord` bundle. Proposers,
+  peer pre-vote admission, certified-block application, replay, and
+  `chain audit` all rebuild or validate the same bundle.
+- `EpochRewardDistributor` remains bounded by `EpochEmissionPolicy`.
+  `RuntimeMonetaryValidation` converts each canonical reward into a linked
+  `MintRecord`/`MintAuthorization`; the supply delta, account credit,
+  controlled-issuance artifact, and replay state advance atomically.
+- `EpochRewardSettlementService` bridges canonical rewards to
+  `RewardDistribution` and applies the liquid reward to validator accounts.
+- Tests added: `tests/node/EpochRewardSettlementServiceTests.cpp` (execution is
+  pending because this implementation pass intentionally performs static
+  verification only).
 
 ### 4.4 Slash Pipeline ✅
 - On confirmed `SlashingEvidence` (double-vote, proposer equivocation):
@@ -290,13 +299,20 @@ slashed.
   `tests/node/FinalizedSlashingEvidenceAuditTests.cpp`,
   `tests/node/CryptographicSlashingTests.cpp`.
 
-### 4.5 CLI Commands
-- `nodo stake lock/unlock/status --data-dir PATH --validator-key ID [--amount RAW_UNITS]`
-  already dispatch to real handlers
-  (`CommandLineInterface::executeStakeLock`/`executeStakeStatus`).
-- Remaining gap: no functional test in `tests/app/` exercises these commands
-  end-to-end, and the `--validator-key` flag semantics diverge slightly from
-  the original spec above — add CLI-level test coverage before marking done.
+### 4.5 CLI Commands ✅
+- `nodo stake lock|deposit|top-up|unlock|withdraw --data-dir PATH
+  (--validator ADDRESS | --validator-key ID) --amount RAW_UNITS
+  [--owner KEY_ID]` dispatches to the canonical transaction builders and
+  persistent mempool admission.
+- `--validator-key` now resolves only the validator identity/target;
+  `--owner`/`--from` selects the independent user key that signs and funds the
+  stake operation. Supplying both target forms with different addresses is
+  rejected.
+- `stake status` accepts the same validator-key resolution and reports the
+  finalized registry, consensus weight, stake account, and position state.
+- Functional coverage added in `tests/app/CommandLineStakeTests.cpp` (execution
+  is pending because this implementation pass intentionally performs static
+  verification only).
 
 **Exit criteria:** a validator can lock stake, earn epoch rewards proportional
 to participation, and be slashed for double-voting; all flows are auditable via

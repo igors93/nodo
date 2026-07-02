@@ -117,6 +117,26 @@ stake alone prints coins forever
 
 A validator with stake still needs to perform useful protection work.
 
+## Canonical Epoch Reward Settlement
+
+Validator rewards settle in the first block after a completed 43,200-block
+validator epoch. The settlement evidence is reconstructed from finalized quorum
+certificates and immutable validator-set snapshots:
+
+- the scheduled proposer receives accepted proposal work only when that block
+  was finalized;
+- each unique precommit in the final QC contributes accepted vote work;
+- uptime is the validator's accepted-vote count divided by its eligible round
+  opportunities, so extra rounds reduce the participation score;
+- work and uptime affect distribution, while stake by itself creates no reward.
+
+The settlement block contains compact work and score records followed by one
+`ProtectionEpoch` and its sorted `GenesisRewardRecord` entries. New supply is
+limited by `EpochEmissionPolicy`, represented in the block `SupplyDelta`, and
+credited to validator accounts by the same deterministic transition used for
+proposal validation and replay. `chain audit` rebuilds the records from the
+historical QCs and rejects a mismatch.
+
 ---
 
 ## Infrastructure Contribution

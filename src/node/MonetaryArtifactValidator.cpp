@@ -5,6 +5,7 @@
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtectionRewards.hpp"
 #include "node/ProtectionTreasury.hpp"
+#include "node/RuntimeMonetaryValidation.hpp"
 #include "economics/BurnRecord.hpp"
 
 #include <exception>
@@ -49,33 +50,31 @@ ArtifactValidationResult MonetaryArtifactValidator::validate(
             );
         }
 
-        const economics::MonetaryPolicy supplyPolicy =
-            economics::MonetaryPolicy::localnetDefault(
-                context.genesisConfig().networkParameters().chainId(),
-                MonetaryFirewall::genesisSupply(context.genesisConfig())
+        const RuntimeMonetaryValidationResult monetaryValidation =
+            RuntimeMonetaryValidation::validateCandidate(
+                context.genesisConfig(), block,
+                expectedFeeBalance.burnAmount(), supplyDelta.supplyBefore()
             );
-
-        const ArtifactValidationResult supplyGateValidation =
-            validateSupplyDelta(
-                supplyPolicy,
-                supplyDelta,
-                {}
-            );
-
-        if (!supplyGateValidation.accepted()) {
+        if (!monetaryValidation.isAccepted() ||
+            monetaryValidation.supplyDelta().serialize() != supplyDelta.serialize()) {
             return ArtifactValidationResult::rejected(
-                prefix + supplyGateValidation.reason()
+                prefix + "Persisted SupplyDelta does not pass canonical runtime monetary validation."
             );
         }
 
-        const MonetaryFirewallAudit expectedMonetaryAudit =
-            MonetaryFirewall::buildAuditWithSupplyBefore(
+        const MonetaryFirewallAudit expectedMonetaryAudit = supplyDelta.mintedAmount().isPositive()
+            ? MonetaryFirewall::buildEpochRewardAuditWithSupplyBefore(
                 block.index(),
                 supplyDelta.supplyBefore(),
                 supplyDelta.mintedAmount(),
                 supplyDelta.burnedAmount(),
                 artifact.treasuryFeeRecord().treasuryAmount(),
                 utils::Amount()
+            )
+            : MonetaryFirewall::buildAuditWithSupplyBefore(
+                block.index(), supplyDelta.supplyBefore(), utils::Amount(),
+                supplyDelta.burnedAmount(),
+                artifact.treasuryFeeRecord().treasuryAmount(), utils::Amount()
             );
 
         if (!MonetaryFirewall::sameAudit(expectedMonetaryAudit, artifact.monetaryFirewallAudit())) {
@@ -173,20 +172,41 @@ ArtifactValidationResult MonetaryArtifactValidator::validate(
             );
         }
 
-        const MintAuthorizationRecord expectedMintAuthorization =
-            ControlledIssuance::buildNoMintAuthorization(expectedInflationEpoch);
+        MintAuthorizationRecord expectedMintAuthorization;
+        SupplyExpansionRecord expectedSupplyExpansion;
+        if (supplyDelta.mintedAmount().isPositive()) {
+            if (supplyDelta.mintRecords().empty()) {
+                return ArtifactValidationResult::rejected(
+                    prefix + "Minted SupplyDelta has no MintRecord."
+                );
+            }
+            std::string rewardEvidenceDigest;
+            for (const auto& ledgerRecord : block.records()) {
+                if (ledgerRecord.type() == core::LedgerRecordType::PROTECTION_EPOCH) {
+                    rewardEvidenceDigest = ledgerRecord.payloadHash();
+                    break;
+                }
+            }
+            expectedMintAuthorization = ControlledIssuance::buildEpochRewardAuthorization(
+                expectedInflationEpoch, supplyDelta.mintedAmount(),
+                supplyDelta.mintRecords().front().authorizationId(), rewardEvidenceDigest
+            );
+            expectedSupplyExpansion = ControlledIssuance::buildEpochRewardExpansion(
+                expectedMintAuthorization, expectedInflationEpoch
+            );
+        } else {
+            expectedMintAuthorization =
+                ControlledIssuance::buildNoMintAuthorization(expectedInflationEpoch);
+            expectedSupplyExpansion = ControlledIssuance::buildNoSupplyExpansion(
+                expectedMintAuthorization, expectedInflationEpoch
+            );
+        }
 
         if (!ControlledIssuance::sameAuthorization(expectedMintAuthorization, artifact.mintAuthorizationRecord())) {
             return ArtifactValidationResult::rejected(
                 prefix + "Persisted mint authorization does not match rebuilt controlled issuance policy."
             );
         }
-
-        const SupplyExpansionRecord expectedSupplyExpansion =
-            ControlledIssuance::buildNoSupplyExpansion(
-                expectedMintAuthorization,
-                expectedInflationEpoch
-            );
 
         if (!ControlledIssuance::sameExpansion(expectedSupplyExpansion, artifact.supplyExpansionRecord())) {
             return ArtifactValidationResult::rejected(

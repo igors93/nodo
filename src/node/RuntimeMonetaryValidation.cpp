@@ -2,11 +2,15 @@
 
 #include "economics/BurnRecord.hpp"
 #include "economics/MonetaryPolicy.hpp"
+#include "economics/GenesisRewardRecord.hpp"
+#include "economics/ProtectionEpoch.hpp"
 #include "economics/SupplyDeltaBuilder.hpp"
 #include "core/Transaction.hpp"
 #include "node/MonetaryFirewall.hpp"
+#include "node/ValidatorLifecycle.hpp"
 
 #include <sstream>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -117,13 +121,43 @@ RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
 
     const std::uint64_t blockHeight = candidateBlock.index();
     const std::string& blockHash = candidateBlock.hash();
-    constexpr std::uint64_t kCurrentEpoch = 0;
+    std::uint64_t deltaEpoch = blockHeight == 0
+        ? 0
+        : ValidatorLifecycle::epochIndexForBlock(blockHeight);
+
+    std::vector<economics::GenesisRewardRecord> rewardRecords;
+    std::optional<economics::ProtectionEpoch> protectionEpoch;
+    try {
+        for (const core::LedgerRecord& record : candidateBlock.records()) {
+            if (record.type() == core::LedgerRecordType::PROTECTION_EPOCH) {
+                if (protectionEpoch.has_value()) {
+                    throw std::invalid_argument("duplicate ProtectionEpoch record");
+                }
+                protectionEpoch = economics::ProtectionEpoch::deserialize(record.payload());
+            } else if (record.type() == core::LedgerRecordType::GENESIS_REWARD) {
+                rewardRecords.push_back(
+                    economics::GenesisRewardRecord::deserialize(record.payload())
+                );
+            }
+        }
+        if (!rewardRecords.empty()) {
+            if (!protectionEpoch.has_value() ||
+                !protectionEpoch->hasCanonicalSettlementMetadata()) {
+                throw std::invalid_argument("GenesisReward requires canonical epoch metadata");
+            }
+            deltaEpoch = protectionEpoch->epochId();
+        }
+    } catch (const std::exception& error) {
+        return RuntimeMonetaryValidationResult::contextUnavailable(
+            std::string("RuntimeMonetaryValidation: invalid epoch reward bundle: ") + error.what()
+        );
+    }
 
     std::vector<economics::BurnRecord> burnRecords;
     if (feeBurnAmount.isPositive()) {
         burnRecords.emplace_back(
             "fee-burn-block-" + std::to_string(blockHeight), blockHeight,
-            kCurrentEpoch, "nodo_fee_pool", feeBurnAmount, "fee burn",
+            deltaEpoch, "nodo_fee_pool", feeBurnAmount, "fee burn",
             economics::BurnType::FEE_BURN
         );
     }
@@ -133,7 +167,7 @@ RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
             const core::Transaction tx = core::Transaction::deserialize(record.payload());
             if (tx.type() != core::TransactionType::BURN) continue;
             burnRecords.emplace_back(
-                tx.id(), blockHeight, kCurrentEpoch, tx.fromAddress(), tx.amount(),
+                tx.id(), blockHeight, deltaEpoch, tx.fromAddress(), tx.amount(),
                 "voluntary burn", economics::BurnType::VOLUNTARY_BURN
             );
         }
@@ -143,22 +177,52 @@ RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
         );
     }
 
+    std::vector<economics::MintRecord> mintRecords;
+    std::vector<economics::MintAuthorization> authorizations;
+    if (!rewardRecords.empty()) {
+        const std::string authorizationId =
+            "epoch-reward-" + std::to_string(deltaEpoch) + "-" +
+            protectionEpoch->evidenceBlockHash();
+        for (const auto& reward : rewardRecords) {
+            if (reward.epoch() != deltaEpoch ||
+                reward.policyVersion() != protectionEpoch->policyVersion() ||
+                reward.acceptedBlockHash() != protectionEpoch->evidenceBlockHash() ||
+                reward.timestamp() != candidateBlock.timestamp()) {
+                return RuntimeMonetaryValidationResult::contextUnavailable(
+                    "RuntimeMonetaryValidation: GenesisReward metadata mismatch."
+                );
+            }
+            mintRecords.emplace_back(
+                reward.deterministicId(), authorizationId,
+                reward.validatorAddress(), reward.amount(),
+                economics::MintReason::NETWORK_DEFENSE_REWARD,
+                deltaEpoch, blockHeight, blockHash, reward.timestamp()
+            );
+        }
+        authorizations.emplace_back(
+            authorizationId, policy.policyVersion(), deltaEpoch, deltaEpoch,
+            protectionEpoch->securityEmission(),
+            "canonical epoch protection rewards",
+            protectionEpoch->policyVersion()
+        );
+    }
+
     // Build the SupplyDelta for this candidate block.
     economics::SupplyDelta delta;
 
-    if (burnRecords.empty()) {
+    if (burnRecords.empty() && mintRecords.empty()) {
         // No monetary effects — no-op delta is valid.
         delta = economics::SupplyDelta::noOp(
-            blockHeight, blockHash, kCurrentEpoch, supplyBefore
+            blockHeight, blockHash, deltaEpoch, supplyBefore
         );
     } else {
         try {
             delta = economics::SupplyDeltaBuilder::build(
                 blockHeight,
                 blockHash,
-                kCurrentEpoch,
+                deltaEpoch,
                 supplyBefore,
-                {},           // no mint records in regular blocks
+                mintRecords,
                 burnRecords
             );
         } catch (const std::exception& e) {
@@ -176,11 +240,8 @@ RuntimeMonetaryValidationResult RuntimeMonetaryValidation::validateCandidate(
         );
     }
 
-    // No mint authorizations for regular blocks (no minting).
-    const std::vector<economics::MintAuthorization> noAuthorizations;
-
     const economics::MonetaryValidationGateResult gateResult =
-        economics::MonetaryValidationGate::validate(policy, delta, noAuthorizations);
+        economics::MonetaryValidationGate::validate(policy, delta, authorizations);
 
     if (!gateResult.isAccepted()) {
         return RuntimeMonetaryValidationResult::rejectedByGate(delta, gateResult);

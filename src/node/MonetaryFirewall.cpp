@@ -261,7 +261,8 @@ bool MonetaryFirewallAudit::isValid() const {
         m_annualMintUsedBefore.isNegative() ||
         m_annualMintUsedAfter.isNegative() ||
         m_policyId != MonetaryPolicy::protocolDefault().deterministicId() ||
-        m_reason != MonetaryFirewall::ZERO_MINT_REASON) {
+        (m_reason != MonetaryFirewall::ZERO_MINT_REASON &&
+         m_reason != MonetaryFirewall::EPOCH_REWARD_MINT_REASON)) {
         return false;
     }
 
@@ -425,6 +426,41 @@ MonetaryFirewallAudit MonetaryFirewall::buildAuditWithSupplyBefore(
         annualMintUsedAfter,
         policy.deterministicId(),
         ZERO_MINT_REASON
+    );
+}
+
+MonetaryFirewallAudit MonetaryFirewall::buildEpochRewardAuditWithSupplyBefore(
+    std::uint64_t blockHeight,
+    utils::Amount supplyBefore,
+    utils::Amount minted,
+    utils::Amount burned,
+    utils::Amount treasuryDelta,
+    utils::Amount annualMintUsedBefore
+) {
+    if (blockHeight == 0 || supplyBefore.isNegative() || !minted.isPositive() ||
+        burned.isNegative() || annualMintUsedBefore.isNegative()) {
+        throw std::invalid_argument("Invalid canonical epoch reward audit inputs.");
+    }
+    const MonetaryPolicy policy = MonetaryPolicy::protocolDefault();
+    const utils::Amount annualLimit = annualMintLimit(supplyBefore, policy);
+    const utils::Amount annualMintUsedAfter = annualMintUsedBefore + minted;
+    if (annualMintUsedAfter > annualLimit) {
+        throw std::invalid_argument("Canonical epoch rewards exceed the annual mint limit.");
+    }
+    const utils::Amount supplyAfter = calculateSupplyAfter(supplyBefore, minted, burned);
+    if (supplyAfter.isNegative()) {
+        throw std::invalid_argument("Canonical epoch reward audit has supply underflow.");
+    }
+    return MonetaryFirewallAudit(
+        "PASS",
+        SupplyLedgerSnapshot(
+            blockHeight, supplyBefore, minted, burned, treasuryDelta, supplyAfter
+        ),
+        annualLimit,
+        annualMintUsedBefore,
+        annualMintUsedAfter,
+        policy.deterministicId(),
+        EPOCH_REWARD_MINT_REASON
     );
 }
 

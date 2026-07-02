@@ -79,7 +79,7 @@ private:
  *   - the latest finalized supply as supplyBefore;
  *   - fee burn amounts derived from the transaction fee total;
  *   - voluntary BURN transactions decoded from the candidate block;
- *   - no mint records for regular (non-genesis) blocks.
+ *   - canonical GenesisReward records at epoch settlement boundaries.
  *
  * If feeBurnAmount is zero, a no-op SupplyDelta is built.
  *
@@ -99,8 +99,8 @@ public:
      *   candidateBlock  - the block being validated (blockIndex, blockHash, epoch).
      *   feeBurnAmount   - the portion of fees that will be burned (may be zero).
  *
- * The epoch defaults to 0 for all blocks in the current implementation.
- * Later monetary tasks will introduce proper epoch tracking.
+ * Epochs follow ValidatorLifecycle's canonical block-to-epoch mapping. A
+ * settlement block uses the settled epoch carried by its ProtectionEpoch.
      */
     /*
      * Full form: uses the provided supplyBefore for cumulative tracking.

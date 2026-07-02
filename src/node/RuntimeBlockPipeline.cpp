@@ -1,6 +1,7 @@
 #include "node/RuntimeBlockPipeline.hpp"
 
 #include "node/FeeEconomics.hpp"
+#include "node/EpochRewardSettlementService.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/FinalizedSlashingEvidenceAudit.hpp"
 #include "node/ProtocolStateTransition.hpp"
@@ -10,6 +11,7 @@
 #include "node/ValidatorLifecycle.hpp"
 
 #include "consensus/ValidatorVoteBuilder.hpp"
+#include "consensus/BlockProductionPhase.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "core/AccountState.hpp"
@@ -422,16 +424,28 @@ bool controlledIssuancePlanIsValid(
             return false;
         }
 
-        return epoch.active() &&
-               authorization.isValid() &&
-               expansion.isValid() &&
-               ControlledIssuance::sameAuthorization(
-                   ControlledIssuance::buildNoMintAuthorization(epoch),
-                   authorization
+        if (!epoch.active() || !authorization.isValid() || !expansion.isValid()) {
+            return false;
+        }
+        if (authorization.status() == "ACTIVE") {
+            return ControlledIssuance::sameAuthorization(
+                       ControlledIssuance::buildEpochRewardAuthorization(
+                           epoch, authorization.authorizedAmount(),
+                           authorization.authorizationId(),
+                           authorization.governanceDigest()
+                       ),
+                       authorization
+                   ) &&
+                   ControlledIssuance::sameExpansion(
+                       ControlledIssuance::buildEpochRewardExpansion(authorization, epoch),
+                       expansion
+                   );
+        }
+        return ControlledIssuance::sameAuthorization(
+                   ControlledIssuance::buildNoMintAuthorization(epoch), authorization
                ) &&
                ControlledIssuance::sameExpansion(
-                   ControlledIssuance::buildNoSupplyExpansion(authorization, epoch),
-                   expansion
+                   ControlledIssuance::buildNoSupplyExpansion(authorization, epoch), expansion
                );
     } catch (const std::exception&) {
         return false;
@@ -1468,6 +1482,7 @@ bool RuntimeBlockPipelineResult::finalized() const {
                m_mintAuthorizationRecord,
                m_supplyExpansionRecord
            ) &&
+           m_supplyExpansionRecord.mintedAmount() == m_supplyDelta.mintedAmount() &&
            slashingEvidencePlanIsValid(
                m_block->index(),
                m_validatorRiskAssessments,
@@ -1772,6 +1787,15 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         );
     }
 
+    std::string epochRewardRejection;
+    if (!EpochRewardSettlementService::candidateRecordsMatch(
+            runtime, block, epochRewardRejection)) {
+        return RuntimeBlockPipelineResult::rejected(
+            RuntimeBlockPipelineStatus::STATE_TRANSITION_FAILED,
+            "Epoch reward validation failed: " + epochRewardRejection
+        );
+    }
+
     const crypto::ProtocolCryptoContext cryptoContext =
         crypto::ProtocolCryptoContext::fromNetworkName(
             runtime.config().genesisConfig().networkParameters().networkName()
@@ -1933,8 +1957,16 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         );
         treasuryFeeRecord =
             FeeEconomics::buildTreasuryFeeRecord(feeEconomicBalance);
-        monetaryFirewallAudit =
-            MonetaryFirewall::buildAuditWithSupplyBefore(
+        monetaryFirewallAudit = monetaryValidationResult.supplyDelta().mintedAmount().isPositive()
+            ? MonetaryFirewall::buildEpochRewardAuditWithSupplyBefore(
+                block.index(),
+                monetaryValidationResult.supplyDelta().supplyBefore(),
+                monetaryValidationResult.supplyDelta().mintedAmount(),
+                monetaryValidationResult.supplyDelta().burnedAmount(),
+                treasuryFeeRecord.treasuryAmount(),
+                utils::Amount()
+            )
+            : MonetaryFirewall::buildAuditWithSupplyBefore(
                 block.index(),
                 monetaryValidationResult.supplyDelta().supplyBefore(),
                 utils::Amount(),
@@ -1981,14 +2013,35 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
                 block.index(),
                 monetaryFirewallAudit.annualMintUsedAfter()
             );
-        mintAuthorizationRecord =
-            ControlledIssuance::buildNoMintAuthorization(
-                inflationEpochSnapshot
+        if (monetaryValidationResult.supplyDelta().mintedAmount().isPositive()) {
+            const auto& mints = monetaryValidationResult.supplyDelta().mintRecords();
+            if (mints.empty()) {
+                throw std::logic_error("Minted supply has no canonical mint records.");
+            }
+            std::string rewardEvidenceDigest;
+            for (const auto& ledgerRecord : block.records()) {
+                if (ledgerRecord.type() == core::LedgerRecordType::PROTECTION_EPOCH) {
+                    rewardEvidenceDigest = ledgerRecord.payloadHash();
+                    break;
+                }
+            }
+            mintAuthorizationRecord = ControlledIssuance::buildEpochRewardAuthorization(
+                inflationEpochSnapshot,
+                monetaryValidationResult.supplyDelta().mintedAmount(),
+                mints.front().authorizationId(),
+                rewardEvidenceDigest
             );
-        supplyExpansionRecord =
-            ControlledIssuance::buildNoSupplyExpansion(
+            supplyExpansionRecord = ControlledIssuance::buildEpochRewardExpansion(
                 mintAuthorizationRecord, inflationEpochSnapshot
             );
+        } else {
+            mintAuthorizationRecord = ControlledIssuance::buildNoMintAuthorization(
+                inflationEpochSnapshot
+            );
+            supplyExpansionRecord = ControlledIssuance::buildNoSupplyExpansion(
+                mintAuthorizationRecord, inflationEpochSnapshot
+            );
+        }
         slashingEvidenceRecords = SlashingEvidence::buildEvidenceRecords(
             validatorRiskAssessments,
             validatorNetworkPolicies,
@@ -2283,31 +2336,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock
         );
     }
 
-    core::StateTransitionPreviewContext productionPreviewContext;
-    try {
-        productionPreviewContext =
-            previewContextForRuntime(runtime);
-    } catch (const std::exception& error) {
-        return RuntimeBlockPipelineResult::rejected(
-            RuntimeBlockPipelineStatus::BLOCK_PRODUCTION_FAILED,
-            std::string("Unable to rebuild account state for mempool selection: ")
-            + error.what()
-        );
-    }
-
-    const core::BlockProductionResult production =
-        core::MempoolBlockProducer::produceCandidateBlock(
-            runtime.blockchain(),
-            runtime.mempool(),
-            productionPreviewContext,
-            cryptoContext.policy(),
-            crypto::SecurityContext::USER_TRANSACTION,
-            core::BlockProductionConfig(
-                config.maxTransactionsPerBlock(),
-                config.minTransactionsPerBlock()
-            ),
-            config.timestamp()
-        );
+    const consensus::BlockCandidateResult production =
+        consensus::BlockProductionPhase::produce(runtime, config);
 
     if (!production.produced()) {
         return RuntimeBlockPipelineResult::rejected(

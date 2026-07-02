@@ -1,6 +1,9 @@
 #include "economics/ValidationWorkRecord.hpp"
 
+#include "serialization/FieldCodec.hpp"
+
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace nodo::economics {
@@ -35,6 +38,19 @@ std::string validationWorkTypeToString(
     }
 }
 
+ValidationWorkType validationWorkTypeFromString(
+    const std::string& value
+) {
+    if (value == "VALIDATE_TRANSACTION") return ValidationWorkType::VALIDATE_TRANSACTION;
+    if (value == "VERIFY_COIN_EXISTENCE") return ValidationWorkType::VERIFY_COIN_EXISTENCE;
+    if (value == "VERIFY_SIGNATURE") return ValidationWorkType::VERIFY_SIGNATURE;
+    if (value == "VALIDATE_BLOCK") return ValidationWorkType::VALIDATE_BLOCK;
+    if (value == "RESPOND_INTEGRITY_CHALLENGE") return ValidationWorkType::RESPOND_INTEGRITY_CHALLENGE;
+    if (value == "SERVE_HISTORICAL_BLOCK") return ValidationWorkType::SERVE_HISTORICAL_BLOCK;
+    if (value == "CONSENSUS_VOTE") return ValidationWorkType::CONSENSUS_VOTE;
+    throw std::invalid_argument("Unknown ValidationWorkType: " + value);
+}
+
 std::string validationWorkResultToString(
     ValidationWorkResult result
 ) {
@@ -48,6 +64,14 @@ std::string validationWorkResultToString(
         default:
             return "UNKNOWN";
     }
+}
+
+ValidationWorkResult validationWorkResultFromString(
+    const std::string& value
+) {
+    if (value == "ACCEPTED") return ValidationWorkResult::ACCEPTED;
+    if (value == "REJECTED") return ValidationWorkResult::REJECTED;
+    throw std::invalid_argument("Unknown ValidationWorkResult: " + value);
 }
 
 ValidationWorkRecord::ValidationWorkRecord()
@@ -174,6 +198,32 @@ std::string ValidationWorkRecord::serialize() const {
         << "}";
 
     return oss.str();
+}
+
+ValidationWorkRecord ValidationWorkRecord::deserialize(
+    const std::string& serialized
+) {
+    if (serialized.rfind("ValidationWorkRecord{", 0) != 0) {
+        throw std::invalid_argument("Serialized data is not a ValidationWorkRecord.");
+    }
+
+    const auto field = [&serialized](const std::string& name) {
+        return serialization::FieldCodec::extractField(serialized, name);
+    };
+    ValidationWorkRecord record(
+        field("validator"),
+        static_cast<std::uint64_t>(std::stoull(field("epoch"))),
+        validationWorkTypeFromString(field("workType")),
+        validationWorkResultFromString(field("result")),
+        field("targetHash"),
+        field("evidenceHash"),
+        static_cast<std::uint32_t>(std::stoul(field("workWeight"))),
+        std::stoll(field("timestamp"))
+    );
+    if (!record.isValid() || record.serialize() != serialized) {
+        throw std::invalid_argument("Non-canonical ValidationWorkRecord rejected.");
+    }
+    return record;
 }
 
 } // namespace nodo::economics

@@ -112,6 +112,9 @@ public:
     static constexpr const char* ZERO_MINT_REASON =
         "MONETARY_FIREWALL_ZERO_MINT";
 
+    static constexpr const char* EPOCH_REWARD_MINT_REASON =
+        "MONETARY_FIREWALL_CANONICAL_EPOCH_REWARD";
+
     static constexpr const char* NOT_EVALUATED_REASON =
         "MONETARY_FIREWALL_NOT_EVALUATED";
 
@@ -139,6 +142,15 @@ public:
     );
 
     static MonetaryFirewallAudit buildAuditWithSupplyBefore(
+        std::uint64_t blockHeight,
+        utils::Amount supplyBefore,
+        utils::Amount minted,
+        utils::Amount burned,
+        utils::Amount treasuryDelta,
+        utils::Amount annualMintUsedBefore
+    );
+
+    static MonetaryFirewallAudit buildEpochRewardAuditWithSupplyBefore(
         std::uint64_t blockHeight,
         utils::Amount supplyBefore,
         utils::Amount minted,

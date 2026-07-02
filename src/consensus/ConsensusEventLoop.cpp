@@ -5,6 +5,7 @@
 #include "consensus/ValidatorVoteBuilder.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
+#include "node/EpochRewardSettlementService.hpp"
 #include "crypto/Hex.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "node/DoubleVoteDetector.hpp"
@@ -780,6 +781,12 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult& result) {
                 );
 
             if (!validation.accepted()) continue;
+
+            std::string epochRewardRejection;
+            if (!node::EpochRewardSettlementService::candidateRecordsMatch(
+                    m_runtime, block, epochRewardRejection)) {
+                continue;
+            }
 
             m_pendingCandidate = PendingBlockCandidate{block, state.round(), proposal};
         } catch (const std::exception&) {

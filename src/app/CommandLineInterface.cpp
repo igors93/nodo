@@ -554,6 +554,7 @@ CommandLineOptions::CommandLineOptions()
       endpoint("127.0.0.1:9000"),
       listenAddress(""),
       keyId("local-validator"),
+      validatorKeyId(""),
       keyType("both"),
       toAddress("nodo-localnet-recipient"),
       validatorAddress(""),
@@ -571,7 +572,8 @@ CommandLineOptions::CommandLineOptions()
       governanceEffectiveHeight(0),
       governanceVotingPeriodBlocks(3),
       showHelp(false),
-      keyIdProvided(false) {}
+      keyIdProvided(false),
+      validatorKeyIdProvided(false) {}
 
 std::string commandLineStatusToString(
     CommandLineStatus status
@@ -881,7 +883,11 @@ CommandLineOptions CommandLineInterface::parse(
                 throw std::invalid_argument(option + " requires a value.");
             }
 
-            options.keyId = args[index + 1];
+            const std::string value = args[index + 1];
+            if (options.keyIdProvided && options.keyId != value) {
+                throw std::invalid_argument("Conflicting signing key options.");
+            }
+            options.keyId = value;
             options.keyIdProvided = true;
             index += 2;
             continue;
@@ -1102,8 +1108,19 @@ CommandLineOptions CommandLineInterface::parse(
                 throw std::invalid_argument("--validator-key requires a value.");
             }
 
-            options.keyId = args[index + 1];
-            options.keyIdProvided = true;
+            const std::string value = args[index + 1];
+            if (options.validatorKeyIdProvided && options.validatorKeyId != value) {
+                throw std::invalid_argument("Conflicting --validator-key values.");
+            }
+            options.validatorKeyId = value;
+            options.validatorKeyIdProvided = true;
+            // node run historically exposes this option through keyId. Keep
+            // that public parse contract while stake commands retain a
+            // separate owner signing key.
+            if (options.command == "node run") {
+                options.keyId = value;
+                options.keyIdProvided = true;
+            }
             index += 2;
             continue;
         }
@@ -1113,7 +1130,11 @@ CommandLineOptions CommandLineInterface::parse(
                 throw std::invalid_argument("--validator requires a value (validator address).");
             }
 
-            options.validatorAddress = args[index + 1];
+            const std::string value = args[index + 1];
+            if (!options.validatorAddress.empty() && options.validatorAddress != value) {
+                throw std::invalid_argument("Conflicting --validator values.");
+            }
+            options.validatorAddress = value;
             index += 2;
             continue;
         }
@@ -1123,7 +1144,11 @@ CommandLineOptions CommandLineInterface::parse(
                 throw std::invalid_argument("--owner requires a value (key-id of validator owner).");
             }
 
-            options.keyId = args[index + 1];
+            const std::string value = args[index + 1];
+            if (options.keyIdProvided && options.keyId != value) {
+                throw std::invalid_argument("Conflicting signing key options.");
+            }
+            options.keyId = value;
             options.keyIdProvided = true;
             index += 2;
             continue;
@@ -1166,8 +1191,9 @@ std::string CommandLineInterface::helpText() {
         "  nodo governance propose [--data-dir PATH] [--from KEY_ID] [--proposal-type parameter-change|treasury-spend|text] [--title TEXT] [--body TEXT] [--target PARAM] [--value VALUE] [--effective-height HEIGHT] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--voting-period BLOCKS]\n"
         "  nodo governance vote [--data-dir PATH] [--owner KEY_ID] --proposal-id ID --validator ADDRESS [--vote YES|NO|ABSTAIN] [--fee RAW_UNITS]\n"
         "  nodo governance status|list|show|audit [--data-dir PATH] [--proposal-id ID]\n"
-        "  nodo stake deposit|top-up|unlock|withdraw [--data-dir PATH] --validator ADDRESS --amount RAW_UNITS [--from KEY_ID] [--fee RAW_UNITS]\n"
-        "  nodo stake status|positions|audit [--data-dir PATH] [--validator ADDRESS] [--address ADDRESS]\n"
+        "  nodo stake lock|deposit|top-up|unlock|withdraw [--data-dir PATH] (--validator ADDRESS | --validator-key ID) --amount RAW_UNITS [--owner KEY_ID] [--fee RAW_UNITS]\n"
+        "  nodo stake status [--data-dir PATH] (--validator ADDRESS | --validator-key ID)\n"
+        "  nodo stake positions|audit [--data-dir PATH] [--validator ADDRESS] [--address ADDRESS]\n"
         "  nodo block produce [--data-dir PATH]\n"
         "  nodo chain audit [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo validator list [--data-dir PATH]\n"
@@ -1181,7 +1207,7 @@ std::string CommandLineInterface::helpText() {
         "  --endpoint HOST:PORT Local endpoint for init/load. Default: 127.0.0.1:9000\n"
         "  --listen HOST:PORT   Bind address for node run daemon. Overrides --endpoint.\n"
         "  --peer NAME@HOST:PORT Static peer for node run daemon (repeatable).\n"
-        "  --validator-key ID   Key id for the local validator in node run.\n"
+        "  --validator-key ID   Validator identity key for node run, or a stake target resolved to its validator address.\n"
         "  --validator ADDRESS Validator address for lifecycle, stake, and governance vote commands.\n"
         "  --address ADDRESS   Owner/delegator address for stake positions.\n"
         "  --owner KEY_ID       Alias for --key-id when signing validator-owned operations.\n"
@@ -3475,14 +3501,12 @@ CommandLineResult CommandLineInterface::executeValidatorUnjail(
 CommandLineResult CommandLineInterface::executeStakeLock(
     const CommandLineOptions& options
 ) {
-    const std::string validatorAddr = options.validatorAddress.empty()
-        ? options.toAddress
-        : options.validatorAddress;
+    std::string validatorAddr = options.validatorAddress;
 
-    if (validatorAddr.empty()) {
+    if (validatorAddr.empty() && !options.validatorKeyIdProvided) {
         return CommandLineResult::failure(
             CommandLineStatus::INVALID_ARGUMENTS,
-            "Provide --validator <address> for the stake operation.\n"
+            "Provide --validator <address> or --validator-key <id> for the stake operation.\n"
         );
     }
 
@@ -3494,6 +3518,27 @@ CommandLineResult CommandLineInterface::executeStakeLock(
     }
 
     const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+
+    if (options.validatorKeyIdProvided) {
+        const crypto::KeyStoreLoadResult validatorKey = crypto::KeyStore::loadKey(
+            directoryConfig.keysDirectoryPath(), options.validatorKeyId, "", true
+        );
+        if (!validatorKey.loaded() ||
+            validatorKey.metadata().keyType() != crypto::KeyStoreKeyType::VALIDATOR) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "Cannot resolve validator key '" + options.validatorKeyId + "': " +
+                    (validatorKey.loaded() ? "key is not a validator identity" : validatorKey.reason()) + "\n"
+            );
+        }
+        if (!validatorAddr.empty() && validatorAddr != validatorKey.metadata().address()) {
+            return CommandLineResult::failure(
+                CommandLineStatus::INVALID_ARGUMENTS,
+                "--validator and --validator-key resolve to different validator addresses.\n"
+            );
+        }
+        validatorAddr = validatorKey.metadata().address();
+    }
 
     const config::GenesisLookupResult genesisLookup =
         node::RuntimeStartupService::resolveAndVerify(options.networkName);
@@ -3641,7 +3686,9 @@ CommandLineResult CommandLineInterface::executeStakeLock(
             ? "Stake unlock"
             : options.command == "stake withdraw"
                 ? "Stake withdraw"
-                : "Stake deposit";
+                : options.command == "stake lock"
+                    ? "Stake lock"
+                    : "Stake deposit";
     out << label << " submitted.\n"
         << "Validator: " << validatorAddr << "\n"
         << "Amount: " << options.amountRaw << " raw units\n"
@@ -3653,15 +3700,35 @@ CommandLineResult CommandLineInterface::executeStakeLock(
 CommandLineResult CommandLineInterface::executeStakeStatus(
     const CommandLineOptions& options
 ) {
-    const std::string addr = options.validatorAddress.empty()
-        ? options.toAddress
-        : options.validatorAddress;
+    std::string addr = options.validatorAddress;
 
-    if (addr.empty()) {
+    if (addr.empty() && !options.validatorKeyIdProvided) {
         return CommandLineResult::failure(
             CommandLineStatus::INVALID_ARGUMENTS,
-            "Provide --validator <address> to inspect stake for.\n"
+            "Provide --validator <address> or --validator-key <id> to inspect stake for.\n"
         );
+    }
+
+    if (options.validatorKeyIdProvided) {
+        const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+        const crypto::KeyStoreLoadResult validatorKey = crypto::KeyStore::loadKey(
+            directoryConfig.keysDirectoryPath(), options.validatorKeyId, "", true
+        );
+        if (!validatorKey.loaded() ||
+            validatorKey.metadata().keyType() != crypto::KeyStoreKeyType::VALIDATOR) {
+            return CommandLineResult::failure(
+                CommandLineStatus::COMMAND_FAILED,
+                "Cannot resolve validator key '" + options.validatorKeyId + "': " +
+                    (validatorKey.loaded() ? "key is not a validator identity" : validatorKey.reason()) + "\n"
+            );
+        }
+        if (!addr.empty() && addr != validatorKey.metadata().address()) {
+            return CommandLineResult::failure(
+                CommandLineStatus::INVALID_ARGUMENTS,
+                "--validator and --validator-key resolve to different validator addresses.\n"
+            );
+        }
+        addr = validatorKey.metadata().address();
     }
 
     const config::GenesisLookupResult genesisLookup =

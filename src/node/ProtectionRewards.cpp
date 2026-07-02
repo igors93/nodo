@@ -543,6 +543,22 @@ ProtectionWorkRecord ProtectionRewards::buildWorkRecord(
     );
 }
 
+std::uint16_t ProtectionRewards::epochParticipationPercent(
+    std::uint64_t acceptedVotes,
+    std::uint64_t eligibleRoundOpportunities
+) {
+    if (eligibleRoundOpportunities == 0) return 0;
+    const unsigned __int128 rounded =
+        static_cast<unsigned __int128>(acceptedVotes) * 100U +
+        eligibleRoundOpportunities / 2U;
+    const std::uint64_t percentage = static_cast<std::uint64_t>(
+        rounded / eligibleRoundOpportunities
+    );
+    return static_cast<std::uint16_t>(
+        std::min<std::uint64_t>(percentage, 100U)
+    );
+}
+
 std::vector<ProtectionWorkRecord> ProtectionRewards::buildWorkRecords(
     const std::vector<ProtectionRewardGrant>& grants,
     const std::vector<SecurityScoreRecord>& securityScoreRecords,

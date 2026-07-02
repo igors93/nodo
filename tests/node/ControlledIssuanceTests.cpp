@@ -165,6 +165,26 @@ void testRejectsEpochAboveAnnualCap() {
     );
 }
 
+void testBuildsCanonicalEpochRewardExpansion() {
+    const InflationEpochSnapshot snapshot =
+        ControlledIssuance::buildInflationEpochSnapshot(
+            genesisConfig(), 43201, Amount::fromRawUnits(1000)
+        );
+    const MintAuthorizationRecord authorization =
+        ControlledIssuance::buildEpochRewardAuthorization(
+            snapshot, Amount::fromRawUnits(1000),
+            "epoch-reward-1-evidence", "protection-epoch-payload-hash"
+        );
+    const SupplyExpansionRecord expansion =
+        ControlledIssuance::buildEpochRewardExpansion(authorization, snapshot);
+    requireCondition(
+        authorization.isValid() && authorization.status() == "ACTIVE" &&
+        expansion.isValid() && expansion.status() == "EXECUTED" &&
+        expansion.mintedAmount() == authorization.authorizedAmount(),
+        "Canonical epoch rewards should produce linked authorization and expansion artifacts."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -173,6 +193,7 @@ int main() {
         testBuildsNoMintAuthorization();
         testBuildsNoSupplyExpansion();
         testRejectsEpochAboveAnnualCap();
+        testBuildsCanonicalEpochRewardExpansion();
 
         std::cout << "Nodo controlled issuance tests passed.\n";
         return 0;

@@ -1561,6 +1561,12 @@ bool FinalizedBlockArtifact::isValid() const {
                    m_inflationEpochSnapshot.active() &&
                    m_mintAuthorizationRecord.isValid() &&
                    m_supplyExpansionRecord.isValid() &&
+                   m_supplyExpansionRecord.mintedAmount() == m_supplyDelta.mintedAmount() &&
+                   (m_supplyDelta.mintedAmount().isPositive()
+                        ? (m_mintAuthorizationRecord.status() == "ACTIVE" &&
+                           m_supplyExpansionRecord.status() == "EXECUTED")
+                        : (m_mintAuthorizationRecord.status() == "NONE" &&
+                           m_supplyExpansionRecord.status() == "NONE")) &&
                    FeeEconomics::sameBalance(
                        FeeEconomics::buildFeeEconomicBalance(
                            m_feeEconomicBalance.blockHeight(),
@@ -1684,14 +1690,33 @@ bool FinalizedBlockArtifact::isValid() const {
                    m_protectionRewardSummary
                ) &&
                m_inflationEpochSnapshot.active() &&
-               ControlledIssuance::sameAuthorization(
-                   ControlledIssuance::buildNoMintAuthorization(m_inflationEpochSnapshot),
-                   m_mintAuthorizationRecord
-               ) &&
-               ControlledIssuance::sameExpansion(
-                   ControlledIssuance::buildNoSupplyExpansion(m_mintAuthorizationRecord, m_inflationEpochSnapshot),
-                   m_supplyExpansionRecord
-               ) &&
+               m_mintAuthorizationRecord.isValid() &&
+               m_supplyExpansionRecord.isValid() &&
+               m_supplyExpansionRecord.mintedAmount() == m_supplyDelta.mintedAmount() &&
+               (m_mintAuthorizationRecord.status() == "ACTIVE"
+                    ? (ControlledIssuance::sameAuthorization(
+                           ControlledIssuance::buildEpochRewardAuthorization(
+                               m_inflationEpochSnapshot,
+                               m_mintAuthorizationRecord.authorizedAmount(),
+                               m_mintAuthorizationRecord.authorizationId(),
+                               m_mintAuthorizationRecord.governanceDigest()
+                           ),
+                           m_mintAuthorizationRecord
+                       ) && ControlledIssuance::sameExpansion(
+                           ControlledIssuance::buildEpochRewardExpansion(
+                               m_mintAuthorizationRecord, m_inflationEpochSnapshot
+                           ),
+                           m_supplyExpansionRecord
+                       ))
+                    : (ControlledIssuance::sameAuthorization(
+                           ControlledIssuance::buildNoMintAuthorization(m_inflationEpochSnapshot),
+                           m_mintAuthorizationRecord
+                       ) && ControlledIssuance::sameExpansion(
+                           ControlledIssuance::buildNoSupplyExpansion(
+                               m_mintAuthorizationRecord, m_inflationEpochSnapshot
+                           ),
+                           m_supplyExpansionRecord
+                       ))) &&
                m_feeEconomicBalance.active() &&
                FeeEconomics::sameBalance(
                    FeeEconomics::buildFeeEconomicBalance(
@@ -2645,13 +2670,32 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
         throw std::invalid_argument("Finalized block protection reward summary does not match settlements.");
     }
 
-    if (!inflationEpochSnapshot.active() ||
-        !ControlledIssuance::sameAuthorization(
-            ControlledIssuance::buildNoMintAuthorization(inflationEpochSnapshot),
-            mintAuthorizationRecord) ||
-        !ControlledIssuance::sameExpansion(
-            ControlledIssuance::buildNoSupplyExpansion(mintAuthorizationRecord, inflationEpochSnapshot),
-            supplyExpansionRecord)) {
+    const bool issuanceMatches = mintAuthorizationRecord.status() == "ACTIVE"
+        ? ControlledIssuance::sameAuthorization(
+              ControlledIssuance::buildEpochRewardAuthorization(
+                  inflationEpochSnapshot,
+                  mintAuthorizationRecord.authorizedAmount(),
+                  mintAuthorizationRecord.authorizationId(),
+                  mintAuthorizationRecord.governanceDigest()
+              ),
+              mintAuthorizationRecord
+          ) && ControlledIssuance::sameExpansion(
+              ControlledIssuance::buildEpochRewardExpansion(
+                  mintAuthorizationRecord, inflationEpochSnapshot
+              ),
+              supplyExpansionRecord
+          )
+        : ControlledIssuance::sameAuthorization(
+              ControlledIssuance::buildNoMintAuthorization(inflationEpochSnapshot),
+              mintAuthorizationRecord
+          ) && ControlledIssuance::sameExpansion(
+              ControlledIssuance::buildNoSupplyExpansion(
+                  mintAuthorizationRecord, inflationEpochSnapshot
+              ),
+              supplyExpansionRecord
+          );
+    if (!inflationEpochSnapshot.active() || !mintAuthorizationRecord.isValid() ||
+        !supplyExpansionRecord.isValid() || !issuanceMatches) {
         throw std::invalid_argument("Finalized block controlled issuance records are invalid.");
     }
 

@@ -34,8 +34,16 @@ std::string validationWorkTypeToString(
     ValidationWorkType type
 );
 
+ValidationWorkType validationWorkTypeFromString(
+    const std::string& value
+);
+
 std::string validationWorkResultToString(
     ValidationWorkResult result
+);
+
+ValidationWorkResult validationWorkResultFromString(
+    const std::string& value
 );
 
 class ValidationWorkRecord {
@@ -74,6 +82,10 @@ public:
     bool isValid() const;
 
     std::string serialize() const;
+
+    static ValidationWorkRecord deserialize(
+        const std::string& serialized
+    );
 
 private:
     std::string m_validatorAddress;

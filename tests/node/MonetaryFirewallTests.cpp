@@ -128,6 +128,20 @@ void testRejectsInflationAboveCap() {
     );
 }
 
+void testCanonicalEpochRewardAuditPassesWithinCap() {
+    const MonetaryFirewallAudit audit =
+        MonetaryFirewall::buildEpochRewardAuditWithSupplyBefore(
+            43201, Amount::fromRawUnits(5000000),
+            Amount::fromRawUnits(1000), Amount::fromRawUnits(20),
+            Amount::fromRawUnits(10), Amount::fromRawUnits(0)
+        );
+    requireCondition(
+        audit.passed() && audit.supplyLedger().minted().rawUnits() == 1000 &&
+        audit.supplyLedger().supplyAfter().rawUnits() == 5000980,
+        "Authorized epoch reward audit should account for mint and burn atomically."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -136,6 +150,7 @@ int main() {
         testAnnualMintLimit();
         testZeroMintAuditPasses();
         testRejectsInflationAboveCap();
+        testCanonicalEpochRewardAuditPassesWithinCap();
 
         std::cout << "Nodo monetary firewall tests passed.\n";
         return 0;

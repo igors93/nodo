@@ -9,6 +9,7 @@
 #include "economics/EpochTreasuryReport.hpp"
 #include "economics/MonetaryPolicy.hpp"
 #include "node/EpochMonetaryReportStore.hpp"
+#include "node/EpochRewardSettlementService.hpp"
 #include "node/EpochTreasuryReportStore.hpp"
 #include "node/EpochTreasuryReportVerifier.hpp"
 #include "node/FinalizedSupplyAudit.hpp"
@@ -208,6 +209,19 @@ ChainAuditResult auditImpl(
         // verifiable work evidence. Extraordinary rewards are not permitted in
         // the current localnet configuration (no extraordinary minting path exists).
         for (const auto& artifact : load.loadedArtifacts()) {
+            std::string epochRewardReason;
+            if (!EpochRewardSettlementService::finalizedRecordsMatch(
+                    runtime,
+                    artifact.block(),
+                    artifact.supplyDelta().supplyBefore(),
+                    epochRewardReason)) {
+                return ChainAuditResult::failed(
+                    "chain audit: epoch reward evidence mismatch at block " +
+                    std::to_string(artifact.block().index()) + ": " +
+                    epochRewardReason
+                );
+            }
+
             const RewardEvidenceAuditResult rewardAudit =
                 ProtectionRewards::auditSettlementEvidence(
                     artifact.protectionRewardSettlements()

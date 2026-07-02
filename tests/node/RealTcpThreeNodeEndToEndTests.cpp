@@ -614,16 +614,24 @@ bool reachedFinalizedHeight(const NodeSpec& spec, std::uint64_t height) {
 }
 
 std::string blockHashAt(const NodeSpec& spec, std::uint64_t height) {
-    const auto response = httpRequest(
-        spec.rpcPort,
-        "GET",
-        "/block/" + std::to_string(height)
+    std::optional<std::string> hash;
+    const bool querySucceeded = waitUntil(
+        10s,
+        [&] {
+            const auto response = httpRequest(
+                spec.rpcPort,
+                "GET",
+                "/block/" + std::to_string(height)
+            );
+            if (!response.has_value() || response->statusCode != 200) {
+                return false;
+            }
+            hash = jsonString(response->body, "hash");
+            return hash.has_value() && !hash->empty();
+        }
     );
-    require(response.has_value() && response->statusCode == 200,
+    require(querySucceeded,
             "Unable to query finalized block from " + spec.nodeId + ".");
-    const auto hash = jsonString(response->body, "hash");
-    require(hash.has_value() && !hash->empty(),
-            "RPC block response has no hash for " + spec.nodeId + ".");
     return hash.value();
 }
 

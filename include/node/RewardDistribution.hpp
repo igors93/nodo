@@ -2,6 +2,7 @@
 #define NODO_NODE_REWARD_DISTRIBUTION_HPP
 
 #include "consensus/QuorumCertificate.hpp"
+#include "economics/GenesisRewardRecord.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
@@ -50,6 +51,9 @@ public:
     static constexpr const char* BLOCK_FINALIZATION_FEE_REASON =
         "BLOCK_FINALIZATION_FEE";
 
+    static constexpr const char* EPOCH_PROTECTION_REWARD_REASON =
+        "EPOCH_PROTECTION_REWARD";
+
     static std::vector<RewardDistribution> buildForVoters(
         utils::Amount totalReward,
         const std::vector<std::string>& validatorAddresses,
@@ -60,6 +64,11 @@ public:
         utils::Amount totalReward,
         const consensus::QuorumCertificate& certificate,
         std::uint64_t blockHeight
+    );
+
+    static std::vector<RewardDistribution> buildFromEpochRewards(
+        const std::vector<economics::GenesisRewardRecord>& rewardRecords,
+        std::uint64_t settlementBlockHeight
     );
 
     static utils::Amount totalReward(

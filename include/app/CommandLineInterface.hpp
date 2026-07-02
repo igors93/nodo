@@ -24,6 +24,7 @@ public:
     std::string listenAddress;          // --listen HOST:PORT for node run
     std::vector<std::string> peers;     // --peer NAME@HOST:PORT (repeatable)
     std::string keyId;
+    std::string validatorKeyId;
     std::string keyType;
     std::string toAddress;
     std::string validatorAddress;
@@ -42,6 +43,7 @@ public:
     std::uint64_t governanceVotingPeriodBlocks;
     bool showHelp;
     bool keyIdProvided;
+    bool validatorKeyIdProvided;
 };
 
 enum class CommandLineStatus {

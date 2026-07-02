@@ -3,7 +3,10 @@
 #include "consensus/SlashingEvidence.hpp"
 #include "economics/GenesisRewardRecord.hpp"
 #include "economics/MintRecord.hpp"
+#include "economics/ProtectionEpoch.hpp"
+#include "economics/ValidationWorkRecord.hpp"
 #include "economics/ValidatorPenaltyRecord.hpp"
+#include "economics/ValidatorScoreRecord.hpp"
 
 #include <exception>
 #include <string>
@@ -12,29 +15,9 @@ namespace nodo::core {
 
 namespace {
 
-constexpr std::size_t kMaxPayloadBytes = 64 * 1024;
-
 bool hasPrefix(const std::string& s, const char* prefix) {
     const std::size_t n = __builtin_strlen(prefix);
     return s.size() >= n && s.compare(0, n, prefix) == 0;
-}
-
-LedgerRecordDomainValidator::Result checkFormatPrefix(
-    const std::string& payload,
-    const char* expectedPrefix,
-    const char* typeName
-) {
-    if (payload.empty() || payload.size() > kMaxPayloadBytes) {
-        return LedgerRecordDomainValidator::Result::fail(
-            std::string(typeName) + " ledger record payload is empty or too large."
-        );
-    }
-    if (!hasPrefix(payload, expectedPrefix)) {
-        return LedgerRecordDomainValidator::Result::fail(
-            std::string(typeName) + " ledger record payload has unexpected format."
-        );
-    }
-    return LedgerRecordDomainValidator::Result::ok();
 }
 
 } // namespace
@@ -64,21 +47,42 @@ LedgerRecordDomainValidator::Result LedgerRecordDomainValidator::validateMint(
 LedgerRecordDomainValidator::Result LedgerRecordDomainValidator::validateValidationWork(
     const LedgerRecord& record
 ) {
-    return checkFormatPrefix(record.payload(), "ValidationWorkRecord{", "VALIDATION_WORK");
+    try {
+        (void)economics::ValidationWorkRecord::deserialize(record.payload());
+        return Result::ok();
+    } catch (const std::exception& error) {
+        return Result::fail(
+            std::string("VALIDATION_WORK payload failed deserialization: ") + error.what()
+        );
+    }
 }
 
 // static
 LedgerRecordDomainValidator::Result LedgerRecordDomainValidator::validateValidatorScore(
     const LedgerRecord& record
 ) {
-    return checkFormatPrefix(record.payload(), "ValidatorScoreRecord{", "VALIDATOR_SCORE");
+    try {
+        (void)economics::ValidatorScoreRecord::deserialize(record.payload());
+        return Result::ok();
+    } catch (const std::exception& error) {
+        return Result::fail(
+            std::string("VALIDATOR_SCORE payload failed deserialization: ") + error.what()
+        );
+    }
 }
 
 // static
 LedgerRecordDomainValidator::Result LedgerRecordDomainValidator::validateProtectionEpoch(
     const LedgerRecord& record
 ) {
-    return checkFormatPrefix(record.payload(), "ProtectionEpoch{", "PROTECTION_EPOCH");
+    try {
+        (void)economics::ProtectionEpoch::deserialize(record.payload());
+        return Result::ok();
+    } catch (const std::exception& error) {
+        return Result::fail(
+            std::string("PROTECTION_EPOCH payload failed deserialization: ") + error.what()
+        );
+    }
 }
 
 // static

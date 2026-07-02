@@ -9,6 +9,7 @@
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "node/FeeEconomics.hpp"
 #include "node/CanonicalSlashingTransition.hpp"
+#include "node/EpochRewardSettlementService.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeMonetaryValidation.hpp"
 
@@ -76,6 +77,10 @@ BlockCandidateResult BlockProductionPhase::produce(
         );
     }
 
+    const std::uint64_t candidateHeight = runtime.blockchain().size();
+    const bool epochSettlementOnly =
+        node::EpochRewardSettlementService::isSettlementHeight(candidateHeight);
+
     const core::BlockProductionResult production =
         core::MempoolBlockProducer::produceCandidateBlock(
             runtime.blockchain(),
@@ -85,17 +90,17 @@ BlockCandidateResult BlockProductionPhase::produce(
             crypto::SecurityContext::USER_TRANSACTION,
             core::BlockProductionConfig(
                 config.maxTransactionsPerBlock(),
-                config.minTransactionsPerBlock()
+                epochSettlementOnly ? 0U : config.minTransactionsPerBlock()
             ),
             config.timestamp()
         );
 
-    const bool evidenceOnly =
+    const bool protocolRecordsOnly =
         !production.produced() &&
         production.status() == core::BlockProductionStatus::EMPTY_MEMPOOL &&
-        !slashingEvidence.empty() &&
-        config.minTransactionsPerBlock() == 0;
-    if (!production.produced() && !evidenceOnly) {
+        (epochSettlementOnly ||
+         (!slashingEvidence.empty() && config.minTransactionsPerBlock() == 0));
+    if (!production.produced() && !protocolRecordsOnly) {
         return BlockCandidateResult::failed(production.reason());
     }
 
@@ -155,7 +160,24 @@ BlockCandidateResult BlockProductionPhase::produce(
         return BlockCandidateResult::failed(error.what());
     }
 
-    const std::uint64_t candidateHeight = runtime.blockchain().size();
+    if (epochSettlementOnly) {
+        try {
+            const node::EpochRewardSettlement settlement =
+                node::EpochRewardSettlementService::buildForCandidate(
+                    runtime, candidateHeight, config.timestamp()
+                );
+            records.insert(
+                records.end(),
+                settlement.canonicalRecords().begin(),
+                settlement.canonicalRecords().end()
+            );
+        } catch (const std::exception& error) {
+            return BlockCandidateResult::failed(
+                std::string("Unable to build epoch reward settlement: ") + error.what()
+            );
+        }
+    }
+
     if (candidateHeight != activeRound.height()) {
         return BlockCandidateResult::failed(
             "Candidate block height " + std::to_string(candidateHeight) +

@@ -267,6 +267,18 @@ const std::string& MintAuthorizationRecord::sourceEpochDigest() const {
 }
 
 bool MintAuthorizationRecord::isValid() const {
+    if (m_status == "ACTIVE") {
+        return m_blockHeight > 0 &&
+               !m_authorizationId.empty() &&
+               m_authorizedAmount.isPositive() &&
+               m_activationBlock == m_blockHeight &&
+               m_expirationBlock == m_blockHeight &&
+               m_requiredApprovalBasisPoints == 10000 &&
+               m_timelockBlocks == 0 &&
+               !m_governanceDigest.empty() &&
+               m_reason == ControlledIssuance::EPOCH_REWARD_AUTHORIZATION_REASON &&
+               !m_sourceEpochDigest.empty();
+    }
     if (m_status != "NONE" ||
         m_blockHeight == 0 ||
         m_authorizationId != "NO_ACTIVE_MINT_AUTHORIZATION" ||
@@ -387,6 +399,15 @@ const std::string& SupplyExpansionRecord::sourceAuthorizationDigest() const {
 }
 
 bool SupplyExpansionRecord::isValid() const {
+    if (m_status == "EXECUTED") {
+        return m_blockHeight > 0 &&
+               m_mintedAmount.isPositive() &&
+               m_recipientAddress == "MULTIPLE_VALIDATORS" &&
+               !m_authorizationId.empty() &&
+               !m_policyId.empty() &&
+               m_reason == ControlledIssuance::EPOCH_REWARD_EXPANSION_REASON &&
+               !m_sourceAuthorizationDigest.empty();
+    }
     return m_status == "NONE" &&
            m_blockHeight > 0 &&
            m_mintedAmount.isZero() &&
@@ -481,6 +502,42 @@ SupplyExpansionRecord ControlledIssuance::buildNoSupplyExpansion(
         authorization,
         epoch
     );
+}
+
+MintAuthorizationRecord ControlledIssuance::buildEpochRewardAuthorization(
+    const InflationEpochSnapshot& epoch,
+    utils::Amount authorizedAmount,
+    const std::string& authorizationId,
+    const std::string& rewardEvidenceDigest
+) {
+    if (!epoch.active() || !authorizedAmount.isPositive() ||
+        authorizedAmount > epoch.mintedThisEpoch() || authorizationId.empty() ||
+        rewardEvidenceDigest.empty()) {
+        throw std::invalid_argument("Cannot authorize invalid canonical epoch rewards.");
+    }
+    MintAuthorizationRecord record(
+        "ACTIVE", epoch.blockHeight(), authorizationId, authorizedAmount,
+        epoch.blockHeight(), epoch.blockHeight(), 10000, 0,
+        rewardEvidenceDigest, EPOCH_REWARD_AUTHORIZATION_REASON, epoch.serialize()
+    );
+    if (!record.isValid()) throw std::logic_error("Invalid epoch reward authorization produced.");
+    return record;
+}
+
+SupplyExpansionRecord ControlledIssuance::buildEpochRewardExpansion(
+    const MintAuthorizationRecord& authorization,
+    const InflationEpochSnapshot& epoch
+) {
+    if (!authorization.isValid() || authorization.status() != "ACTIVE" || !epoch.active()) {
+        throw std::invalid_argument("Cannot expand supply from invalid epoch reward authorization.");
+    }
+    SupplyExpansionRecord record(
+        "EXECUTED", epoch.blockHeight(), authorization.authorizedAmount(),
+        "MULTIPLE_VALIDATORS", authorization.authorizationId(), epoch.policyId(),
+        EPOCH_REWARD_EXPANSION_REASON, authorization.serialize()
+    );
+    if (!record.isValid()) throw std::logic_error("Invalid epoch reward expansion produced.");
+    return record;
 }
 
 bool ControlledIssuance::sameEpoch(

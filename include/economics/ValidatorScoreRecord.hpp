@@ -30,6 +30,10 @@ std::string validatorScoreReasonToString(
     ValidatorScoreReason reason
 );
 
+ValidatorScoreReason validatorScoreReasonFromString(
+    const std::string& value
+);
+
 class ValidatorScoreRecord {
 public:
     static constexpr std::int32_t MIN_SCORE = 0;
@@ -69,6 +73,10 @@ public:
     bool isValid() const;
 
     std::string serialize() const;
+
+    static ValidatorScoreRecord deserialize(
+        const std::string& serialized
+    );
 
 private:
     static bool isScoreInRange(

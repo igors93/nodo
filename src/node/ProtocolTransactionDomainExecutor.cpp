@@ -7,6 +7,7 @@
 #include "economics/BurnRecord.hpp"
 #include "node/CanonicalSlashingTransition.hpp"
 #include "node/FeeEconomics.hpp"
+#include "node/EpochRewardSettlementService.hpp"
 #include "node/ProtocolStateTransition.hpp"
 #include "node/ValidatorLifecycle.hpp"
 #include "node/ValidatorStakeWeightUpdater.hpp"
@@ -32,6 +33,7 @@ public:
     ) : m_state(std::move(state)), m_validatorSetHistory(std::move(validatorSetHistory)),
         m_chainId(std::move(chainId)), m_networkName(std::move(networkName)),
         m_tracker(std::move(tracker)),
+        m_blockSupplyBefore(m_state.supply),
         m_burnRecords(m_state.burns) {
         refreshDomains();
     }
@@ -218,10 +220,30 @@ public:
     ) override {
         core::AccountStateView settledAccounts =
             ProtocolStateTransition::settleFees(accounts, blockHeight, totalFee);
+        EpochRewardSettlement epochSettlement;
+        try {
+            epochSettlement = EpochRewardSettlementService::settleCanonicalRecords(
+                blockHeight,
+                blockTimestamp,
+                protocolRecords,
+                m_blockSupplyBefore,
+                settledAccounts
+            );
+            if (EpochRewardSettlementService::isSettlementHeight(blockHeight)) {
+                settledAccounts = epochSettlement.updatedAccounts();
+            }
+        } catch (const std::exception& error) {
+            return core::TransactionDomainExecutionResult::rejected(
+                "EPOCH_REWARD_RULE_VIOLATION", error.what()
+            );
+        }
         return atomically(accounts, [&] {
             const FeeEconomicBalance fees = FeeEconomics::buildFeeEconomicBalance(blockHeight, totalFee);
             if (fees.burnAmount() > m_state.supply) throw std::invalid_argument("Fee burn exceeds current supply.");
             m_state.supply = m_state.supply - fees.burnAmount();
+            if (epochSettlement.totalMinted().isPositive()) {
+                m_state.supply = m_state.supply + epochSettlement.totalMinted();
+            }
             if (fees.burnAmount().isPositive()) {
                 m_burnRecords.emplace_back(
                     "fee-burn-block-" + std::to_string(blockHeight), blockHeight, 0,
@@ -262,6 +284,7 @@ private:
     std::string m_chainId;
     std::string m_networkName;
     std::shared_ptr<ProtocolExecutionState> m_tracker;
+    utils::Amount m_blockSupplyBefore;
     std::vector<economics::BurnRecord> m_burnRecords;
     std::map<std::string, std::string> m_domains;
 

@@ -1,6 +1,9 @@
 #include "economics/ValidatorScoreRecord.hpp"
 
+#include "serialization/FieldCodec.hpp"
+
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace nodo::economics {
@@ -39,6 +42,21 @@ std::string validatorScoreReasonToString(
         default:
             return "UNKNOWN";
     }
+}
+
+ValidatorScoreReason validatorScoreReasonFromString(
+    const std::string& value
+) {
+    if (value == "INITIAL_REGISTRATION") return ValidatorScoreReason::INITIAL_REGISTRATION;
+    if (value == "CONSISTENT_VALIDATION") return ValidatorScoreReason::CONSISTENT_VALIDATION;
+    if (value == "SUCCESSFUL_CHALLENGE_RESPONSE") return ValidatorScoreReason::SUCCESSFUL_CHALLENGE_RESPONSE;
+    if (value == "USEFUL_STORAGE_SERVICE") return ValidatorScoreReason::USEFUL_STORAGE_SERVICE;
+    if (value == "NETWORK_CLUSTER_PENALTY") return ValidatorScoreReason::NETWORK_CLUSTER_PENALTY;
+    if (value == "MISSED_CHALLENGE") return ValidatorScoreReason::MISSED_CHALLENGE;
+    if (value == "INVALID_WORK") return ValidatorScoreReason::INVALID_WORK;
+    if (value == "CONFLICTING_SIGNATURE") return ValidatorScoreReason::CONFLICTING_SIGNATURE;
+    if (value == "MANUAL_REVIEW") return ValidatorScoreReason::MANUAL_REVIEW;
+    throw std::invalid_argument("Unknown ValidatorScoreReason: " + value);
 }
 
 ValidatorScoreRecord::ValidatorScoreRecord()
@@ -161,6 +179,31 @@ std::string ValidatorScoreRecord::serialize() const {
         << "}";
 
     return oss.str();
+}
+
+ValidatorScoreRecord ValidatorScoreRecord::deserialize(
+    const std::string& serialized
+) {
+    if (serialized.rfind("ValidatorScoreRecord{", 0) != 0) {
+        throw std::invalid_argument("Serialized data is not a ValidatorScoreRecord.");
+    }
+
+    const auto field = [&serialized](const std::string& name) {
+        return serialization::FieldCodec::extractField(serialized, name);
+    };
+    ValidatorScoreRecord record(
+        field("validator"),
+        static_cast<std::uint64_t>(std::stoull(field("epoch"))),
+        static_cast<std::int32_t>(std::stoi(field("previousScore"))),
+        static_cast<std::int32_t>(std::stoi(field("newScore"))),
+        validatorScoreReasonFromString(field("reason")),
+        field("evidenceHash"),
+        std::stoll(field("timestamp"))
+    );
+    if (!record.isValid() || record.serialize() != serialized) {
+        throw std::invalid_argument("Non-canonical ValidatorScoreRecord rejected.");
+    }
+    return record;
 }
 
 bool ValidatorScoreRecord::isScoreInRange(

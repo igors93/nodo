@@ -12,6 +12,8 @@ nodo node run [--network localnet|testnet-candidate] [--data-dir PATH] [--listen
 nodo keys create [--data-dir PATH] [--type user|validator|both] [--key-id ID]
 nodo keys list [--data-dir PATH]
 nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]
+nodo stake lock|deposit|top-up|unlock|withdraw [--data-dir PATH] (--validator ADDRESS | --validator-key ID) --amount RAW_UNITS [--owner KEY_ID] [--fee RAW_UNITS]
+nodo stake status [--data-dir PATH] (--validator ADDRESS | --validator-key ID)
 nodo block produce [--data-dir PATH]
 nodo chain audit [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
 nodo validator list [--data-dir PATH]
@@ -44,6 +46,14 @@ nodo validator list [--data-dir PATH]
   account state derived from canonical protocol replay. Duplicate transactions,
   duplicate sender/nonce, old nonces, unsupported future nonces, low fees and
   invalid signatures are rejected before persistence.
+- `stake lock`/`deposit`/`top-up`/`unlock`/`withdraw`: resolves the target from
+  an explicit validator address or from validator-key metadata, signs with the
+  independent owner key (`--owner`, default `local-user` on localnet), applies
+  runtime stake admission rules, and persists only accepted transactions.
+  When both target forms are supplied they must resolve to the same address.
+- `stake status`: resolves the same validator identity without loading private
+  key material and reports canonical registry, stake-account, and position
+  state rebuilt from finalized blocks.
 - `block produce`: DEVELOPMENT_LOCAL-only helper. It reloads runtime, produces
   and finalizes one local block with a single local PRECOMMIT-backed QC, persists
   it and removes finalized transactions from persistent mempool. It does not

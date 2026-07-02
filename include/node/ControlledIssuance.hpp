@@ -168,6 +168,12 @@ public:
     static constexpr const char* NO_SUPPLY_EXPANSION_REASON =
         "NO_SUPPLY_EXPANSION_EXECUTED";
 
+    static constexpr const char* EPOCH_REWARD_AUTHORIZATION_REASON =
+        "CANONICAL_EPOCH_REWARD_AUTHORIZATION";
+
+    static constexpr const char* EPOCH_REWARD_EXPANSION_REASON =
+        "CANONICAL_EPOCH_REWARD_EXPANSION";
+
     static constexpr const char* GOVERNANCE_LOCKED_DIGEST =
         "GOVERNANCE_LOCKED_FOR_FUTURE_PHASE";
 
@@ -188,6 +194,18 @@ public:
     );
 
     static SupplyExpansionRecord buildNoSupplyExpansion(
+        const MintAuthorizationRecord& authorization,
+        const InflationEpochSnapshot& epoch
+    );
+
+    static MintAuthorizationRecord buildEpochRewardAuthorization(
+        const InflationEpochSnapshot& epoch,
+        utils::Amount authorizedAmount,
+        const std::string& authorizationId,
+        const std::string& rewardEvidenceDigest
+    );
+
+    static SupplyExpansionRecord buildEpochRewardExpansion(
         const MintAuthorizationRecord& authorization,
         const InflationEpochSnapshot& epoch
     );

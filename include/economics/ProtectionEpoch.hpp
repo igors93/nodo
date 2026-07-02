@@ -29,12 +29,30 @@ public:
         std::uint32_t workDemandBasisPoints
     );
 
+    ProtectionEpoch(
+        std::uint64_t epochId,
+        std::uint64_t startBlock,
+        std::uint64_t endBlock,
+        utils::Amount feesCollected,
+        utils::Amount emissionCap,
+        std::uint32_t workDemandBasisPoints,
+        std::uint64_t targetWorkWeight,
+        std::uint64_t acceptedWorkWeight,
+        std::string policyVersion,
+        std::string evidenceBlockHash
+    );
+
     std::uint64_t epochId() const;
     std::uint64_t startBlock() const;
     std::uint64_t endBlock() const;
     utils::Amount feesCollected() const;
     utils::Amount emissionCap() const;
     std::uint32_t workDemandBasisPoints() const;
+    std::uint64_t targetWorkWeight() const;
+    std::uint64_t acceptedWorkWeight() const;
+    const std::string& policyVersion() const;
+    const std::string& evidenceBlockHash() const;
+    bool hasCanonicalSettlementMetadata() const;
 
     bool isValid() const;
 
@@ -42,6 +60,10 @@ public:
     utils::Amount rewardPool() const;
 
     std::string serialize() const;
+
+    static ProtectionEpoch deserialize(
+        const std::string& serialized
+    );
 
 private:
     static std::int64_t multiplyDivideRawUnits(
@@ -56,6 +78,10 @@ private:
     utils::Amount m_feesCollected;
     utils::Amount m_emissionCap;
     std::uint32_t m_workDemandBasisPoints;
+    std::uint64_t m_targetWorkWeight;
+    std::uint64_t m_acceptedWorkWeight;
+    std::string m_policyVersion;
+    std::string m_evidenceBlockHash;
 };
 
 } // namespace nodo::economics
