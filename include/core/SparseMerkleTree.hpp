@@ -20,6 +20,12 @@ public:
     SparseMerkleTree();
     ~SparseMerkleTree();
 
+    SparseMerkleTree(SparseMerkleTree&&) noexcept = default;
+    SparseMerkleTree& operator=(SparseMerkleTree&&) noexcept = default;
+
+    SparseMerkleTree(const SparseMerkleTree&) = delete;
+    SparseMerkleTree& operator=(const SparseMerkleTree&) = delete;
+
     // Inserts or updates a leaf in the tree.
     // @param keyHex     64-character hex string representing a 256-bit key.
     // @param valueHash  Pre-calculated hash of the leaf content.
