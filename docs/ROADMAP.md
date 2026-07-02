@@ -150,9 +150,11 @@ reach quorum, and finalize a block without any local shortcut.
 - Quorum formation: 2/3 weight threshold produces a valid `QuorumCertificate`. ✅
   (`tests/consensus/QuorumCertificatePrecommitOnlyTests.cpp`)
 - Finalized artifact validation: peer-received `FINALIZED_BLOCK_ARTIFACT`
-  verified before recording; malformed artifact silently discarded. Wired in
-  `NodeDaemon::processFinalizedArtifacts`; still missing a dedicated test that
-  drives a malformed/tampered artifact through the gossip-inbox path.
+  is checked by `FinalizedArtifactGossipAdmission` against the canonical block
+  and historical validator set, persisted before in-memory registration, and
+  malformed, mismatched or signature-tampered payloads are discarded.
+  (`tests/node/FinalizedArtifactGossipAdmissionTests.cpp` drives every case
+  through the `GossipMesh` inbox and includes a valid control artifact.)
 - Peer rejection for wrong genesis / wrong protocol version. ✅
   (`tests/p2p/PeerHandshakeGenesisEnforcementTests.cpp`,
   `tests/node/GenesisCompatibilityEnforcementTests.cpp`)
@@ -247,11 +249,19 @@ slashed.
   in the protocol state root, finalized commit, and replay.
 
 ### 4.2 Validator Weight from Stake
-- `ValidatorRegistry` must derive each validator's consensus weight from its
-  current locked stake (formula: `sqrt(lockedAmount)` to prevent plutocracy).
-- Quorum threshold must be recalculated from the new weight distribution every
-  epoch.
-- Validator with zero unlocked stake must be ineligible to propose or vote.
+- `ValidatorRegistry` derives deterministic consensus weight from active locked
+  stake using integer `sqrt(lockedAmount)`; floating-point arithmetic is not
+  used in consensus.
+- `ValidatorStakeWeightUpdater` projects the authoritative `StakingRegistry`
+  balances atomically at each epoch boundary. Stake deposits, top-ups, unlocks
+  and withdrawals cannot change consensus weight during the active epoch.
+- The next-height `ValidatorSetHistory` snapshot carries the new distribution;
+  proposer selection, vote collection and QC building/verification therefore
+  recalculate quorum from one immutable set while historical QCs retain their
+  original weight roots.
+- An active registration below the minimum stake remains a valid lifecycle
+  record but has zero effective consensus weight and cannot propose or vote.
+- Tests: `tests/node/ValidatorStakeWeightUpdaterTests.cpp`.
 
 ### 4.3 Epoch Reward Settlement
 - `EpochRewardDistributor` and `EpochRewardSettlementService` exist; wire them

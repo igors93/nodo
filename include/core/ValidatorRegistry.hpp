@@ -296,6 +296,7 @@ public:
     std::uint64_t totalConsensusWeight() const;
     std::string validatorSetRoot() const;
 
+    std::vector<std::string> validatorAddresses() const;
     std::vector<std::string> activeValidatorAddresses() const;
     std::vector<std::string> eligibleValidatorAddresses() const;
     std::vector<std::string> jailedValidatorAddresses() const;

@@ -10,6 +10,7 @@
 #include "node/NodeRuntime.hpp"
 #include "node/ProtectionTreasury.hpp"
 #include "node/ValidatorLifecycle.hpp"
+#include "node/ValidatorStakeWeightUpdater.hpp"
 
 #include <limits>
 #include <stdexcept>
@@ -166,11 +167,20 @@ void ProtocolStateTransition::applyValidatorEpochTransition(
     std::int64_t blockTimestamp
 ) {
     if (blockHeight == 0 || blockHeight % NODO_VALIDATOR_EPOCH_BLOCKS != 0) return;
-    const std::uint64_t epoch = ValidatorLifecycle::epochIndexForBlock(blockHeight);
+    const std::uint64_t effectiveEpoch =
+        ValidatorStakeWeightUpdater::effectiveEpochForBoundary(blockHeight);
     for (const std::string& address : validators.pendingValidatorAddresses()) {
         const auto* entry = validators.entryForAddress(address);
-        if (entry != nullptr && entry->registrationRecord().activationEpoch() <= epoch) {
-            const auto result = validators.activateValidator(address, epoch, blockTimestamp);
+        if (entry != nullptr &&
+            entry->registrationRecord().activationEpoch() <= effectiveEpoch &&
+            entry->stakeAmount() >=
+                core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS &&
+            entry->consensusWeight() > 0) {
+            const auto result = validators.activateValidator(
+                address,
+                effectiveEpoch,
+                blockTimestamp
+            );
             if (!result.success()) throw std::logic_error("Projected validator activation failed.");
         }
     }

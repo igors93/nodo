@@ -330,11 +330,9 @@ bool ValidatorRegistryEntry::isValid() const {
         return false;
     }
 
-    if (m_status == ValidatorRegistrationStatus::ACTIVE &&
-        m_stakeAmount < ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS) {
-        return false;
-    }
-
+    // ACTIVE is a lifecycle state, not proof of current consensus eligibility.
+    // A validator may remain auditable as ACTIVE after its epoch stake falls
+    // below the minimum; eligibleForConsensus() still assigns it zero weight.
     return true;
 }
 
@@ -774,6 +772,18 @@ const ValidatorRegistryEntry* ValidatorRegistry::entryForAddress(
     return &entry->second;
 }
 
+std::vector<std::string> ValidatorRegistry::validatorAddresses() const {
+    std::vector<std::string> addresses;
+    addresses.reserve(m_entries.size());
+
+    for (const auto& [address, entry] : m_entries) {
+        (void)entry;
+        addresses.push_back(address);
+    }
+
+    return addresses;
+}
+
 std::vector<std::string> ValidatorRegistry::activeValidatorAddresses() const {
     std::vector<std::string> addresses;
 
@@ -1096,6 +1106,13 @@ ValidatorRegistryUpdateResult ValidatorRegistry::updateStake(
         existing.exitRequestHeight(),
         existing.ownerAddress()
     );
+
+    if (!updated.isValid()) {
+        return ValidatorRegistryUpdateResult::rejected(
+            ValidatorRegistryUpdateStatus::INVALID_RECORD,
+            "Stake update would produce an invalid validator registry entry."
+        );
+    }
 
     it->second = updated;
     return ValidatorRegistryUpdateResult::accepted(updated);

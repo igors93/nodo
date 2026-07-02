@@ -29,6 +29,26 @@ different block or round invalidate the certificate. Finality means the block
 has a valid PRECOMMIT quorum certificate, has been accepted by the finalizer and
 has been persisted with an auditable finalized record.
 
+## Validator Weight and Epoch Boundaries
+
+Consensus weight is the integer square root of the validator's active locked
+stake. The integer calculation is deterministic on every platform and gives
+diminishing influence to additional stake.
+
+Stake lifecycle transactions update `StakingRegistry` immediately, but they do
+not rewrite the active consensus distribution mid-epoch. At the last finalized
+block of each validator epoch, `ValidatorStakeWeightUpdater` atomically projects
+active stake into `ValidatorRegistry`. The resulting registry is recorded for
+the next height in `ValidatorSetHistory`; proposer selection, votes and quorum
+certificates all consume that same snapshot. Slashing and lifecycle status may
+remove an unsafe validator immediately, while ordinary stake changes become
+effective only at the boundary.
+
+A validator whose projected stake is below the protocol minimum has zero
+effective weight and is absent from proposer and voter eligibility. Historical
+certificates are always verified against the validator-set snapshot committed
+for their own height.
+
 Current localnet signs user transactions with Ed25519 through OpenSSL and
 validator votes/proposals with BLS12-381 through blst. Future testnet and
 mainnet configs must refuse startup unless the configured crypto suite and key
@@ -51,9 +71,10 @@ The gossip layer carries the following consensus-specific message types:
   Peers that missed votes may use this to advance their consensus state.
 - `FINALIZED_BLOCK_ARTIFACT`: a `FinalizedBlockRecord` carrying the block index,
   block hash, previous hash, round, finalization timestamp and quorum
-  certificate. Receiving nodes verify the QC against their local validator
-  registry before recording finality. Malformed or unverifiable artifacts are
-  silently discarded; no implicit trust is granted to peers.
+  certificate. Receiving nodes verify the exact canonical block and the QC
+  against `ValidatorSetHistory` at that height, persist the proof atomically,
+  and only then record finality in memory. Malformed or unverifiable artifacts
+  are silently discarded; no implicit trust is granted to peers.
 - `BLOCK_SYNC_REQUEST` / `BLOCK_SYNC_RESPONSE`: used to fetch blocks a peer
   missed during downtime or initial block download.
 

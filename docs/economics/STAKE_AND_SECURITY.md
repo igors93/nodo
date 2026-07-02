@@ -60,7 +60,7 @@ more stake helps,
 but each extra coin gives less additional influence
 ```
 
-Possible rule:
+Protocol rule:
 
 ```text
 StakeWeight = sqrt(locked amount)
@@ -72,6 +72,29 @@ In simple terms:
 locking more coins helps,
 but rich validators cannot buy the whole network easily
 ```
+
+## Epoch Weight Activation
+
+`StakingRegistry` is the source of truth for active locked stake. Deposits,
+top-ups, unlock requests and withdrawals are recorded there as canonical state,
+but ordinary stake changes do not alter proposer or voting power in the middle
+of an epoch.
+
+At each validator-epoch boundary, `ValidatorStakeWeightUpdater` copies active
+stake into `ValidatorRegistry` on a temporary projection and commits the whole
+projection only if it is valid. The next-height validator-set snapshot then
+freezes those weights for consensus and preserves the prior snapshots for
+historical QC verification.
+
+The effective rule is:
+
+```text
+ConsensusWeight = integer_sqrt(active locked stake)
+```
+
+Validators below the minimum active stake have zero effective weight. They are
+not eligible to propose or vote even if their lifecycle registration remains
+present for audit and later recovery.
 
 ---
 

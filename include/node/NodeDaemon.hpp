@@ -105,7 +105,7 @@ private:
     void processTransactionGossip(std::int64_t now);
 
     // Handle incoming FINALIZED_BLOCK_ARTIFACT messages.
-    void processFinalizedArtifacts(std::int64_t now);
+    void processFinalizedArtifacts();
 };
 
 } // namespace nodo::node

@@ -1,6 +1,6 @@
 #include "node/NodeDaemon.hpp"
 
-#include "consensus/BlockFinalizer.hpp"
+#include "node/FinalizedArtifactGossipAdmission.hpp"
 #include "node/FinalizedBlockRecordStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
@@ -77,7 +77,7 @@ void NodeDaemon::setLocalNodeIdentity(
 void NodeDaemon::tick(std::int64_t now) {
     m_orchestrator.tick(now);
     processTransactionGossip(now);
-    processFinalizedArtifacts(now);
+    processFinalizedArtifacts();
 }
 
 const NodeOrchestrator& NodeDaemon::orchestrator() const {
@@ -172,69 +172,30 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
     }
 }
 
-void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
+void NodeDaemon::processFinalizedArtifacts() {
     const auto messages = m_orchestrator.drainGossipInbox(
         p2p::NetworkMessageType::FINALIZED_BLOCK_ARTIFACT
     );
 
+    FinalizedBlockRecordStore store(
+        m_config.orchestratorConfig.dataDirectory().rootPath()
+    );
+
     for (const auto& envelope : messages) {
-        if (envelope.payload().empty()) continue;
-
-        try {
-            const consensus::FinalizedBlockRecord record =
-                consensus::FinalizedBlockRecord::deserialize(envelope.payload());
-
-            if (!record.isStructurallyValid()) continue;
-
-            NodeRuntime& runtime = m_orchestrator.mutableRuntime();
-            const std::uint64_t blockIndex = record.blockIndex();
-            const auto& blocks = runtime.blockchain().blocks();
-
-            // A quorum certificate alone is not canonical state. Never advance
-            // the finalization registry unless the exact block is already in
-            // the local canonical chain. Missing blocks must arrive through the
-            // validated, atomic BLOCK_SYNC_RESPONSE pipeline.
-            if (blockIndex >= blocks.size() ||
-                !record.matchesBlock(
-                    blocks[static_cast<std::size_t>(blockIndex)])) {
-                continue;
-            }
-
-            if (!runtime.validatorSetHistory().hasSet(blockIndex)) {
-                continue;
-            }
-
-            // Verify against the validator set committed for this height, not
-            // the mutable current registry.
-            if (!record.verify(
-                    runtime.validatorSetHistory().setAt(blockIndex),
-                    m_policy,
-                    m_provider)) {
-                continue;
-            }
-
-            // Record in the local finalization registry.
-            const auto regResult = runtime.mutableFinalizationRegistry()
-                .registerFinalizedBlock(record);
-
-            // Persist to disk so BlockSyncQcMode::QC_REQUIRED works after
-            // restart and so sync responses to peers carry QC proofs.
-            if (regResult.registered()) {
-                try {
-                    FinalizedBlockRecordStore qcStore(
-                        m_config.orchestratorConfig.dataDirectory().rootPath()
-                    );
-                    qcStore.save(record);
-                } catch (...) {
-                    std::abort();
-                }
-            }
-        } catch (...) {
-            // Malformed artifact from peer — silently discard.
+        const FinalizedArtifactGossipAdmissionResult result =
+            FinalizedArtifactGossipAdmission::admit(
+                envelope,
+                m_orchestrator.mutableRuntime(),
+                m_policy,
+                m_provider,
+                store
+            );
+        if (result.fatalConsistencyError()) {
+            // Finality must never remain memory-only or diverge from its
+            // durable proof. Preserve the existing fail-stop safety policy.
+            std::abort();
         }
     }
-
-    (void)now;
 }
 
 } // namespace nodo::node

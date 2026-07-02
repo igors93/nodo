@@ -19,21 +19,9 @@ bool governanceVoterAuthorized(
 }
 
 std::uint64_t governanceVotingWeight(
-    const StakingRegistry& staking,
-    const core::ValidatorRegistryEntry& entry,
-    const std::string& validatorAddress
+    const core::ValidatorRegistryEntry& entry
 ) {
-    const std::int64_t availableStake =
-        staking.activeStakeFor(validatorAddress).rawUnits();
-    if (availableStake > 0) {
-        return core::ValidatorRegistry::consensusWeightFromStake(
-            static_cast<std::uint64_t>(availableStake)
-        );
-    }
-    if (entry.stakeAmount() > 0) {
-        return entry.consensusWeight();
-    }
-    return 0;
+    return entry.eligibleForConsensus() ? entry.consensusWeight() : 0;
 }
 
 } // namespace
@@ -241,8 +229,7 @@ bool TransactionAdmissionPolicy::validateDomain(
                 const auto* entry = context.validators().entryForAddress(vote.validatorAddress());
                 const std::uint64_t votingWeight = entry == nullptr
                     ? 0
-                    : governanceVotingWeight(
-                          context.staking(), *entry, vote.validatorAddress());
+                    : governanceVotingWeight(*entry);
                 if (!context.governance().hasProposal(transaction.toAddress()) || entry == nullptr ||
                     !entry->eligibleForConsensus() ||
                     !governanceVoterAuthorized(
