@@ -65,7 +65,8 @@ public:
 
     /*
      * Builds a crypto context from the network name stored in NetworkParameters.
-     * Accepted names: localnet, testnet, testnet-candidate, mainnet.
+     * Accepted names: localnet, localnet-soak, testnet, testnet-candidate,
+     * mainnet.
      */
     static ProtocolCryptoContext fromNetworkName(
         const std::string& networkName

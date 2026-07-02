@@ -184,7 +184,8 @@ KeyEncryptionLevel StoredKeyMetadata::encryptionLevel() const {
 }
 
 bool StoredKeyMetadata::isLocalnetOnly() const {
-    return m_networkProfile == KeyStore::LOCAL_NETWORK_PROFILE;
+    return m_networkProfile == KeyStore::LOCAL_NETWORK_PROFILE ||
+           m_networkProfile == "localnet-soak";
 }
 
 bool StoredKeyMetadata::isValid() const {

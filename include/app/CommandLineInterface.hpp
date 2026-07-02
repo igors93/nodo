@@ -21,9 +21,12 @@ public:
   std::string peerId;
   std::string endpoint;
   std::string listenAddress;      // --listen HOST:PORT for node run
+  std::string rpcBindAddress;     // host from --rpc-listen HOST:PORT
+  std::uint16_t rpcPort;          // port from --rpc-listen HOST:PORT
   std::vector<std::string> peers; // --peer NAME@HOST:PORT (repeatable)
   std::string keyId;
   std::string validatorKeyId;
+  std::string identityKeyId;
   std::string keyType;
   std::string toAddress;
   std::string validatorAddress;

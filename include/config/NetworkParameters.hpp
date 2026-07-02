@@ -85,6 +85,7 @@ public:
   std::string serialize() const;
 
   static NetworkParameters developmentLocal();
+  static NetworkParameters developmentSoak();
   static NetworkParameters testnetCandidate();
 
 private:

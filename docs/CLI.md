@@ -8,7 +8,7 @@ nodo init [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
 nodo status [--data-dir PATH]
 nodo inspect [--data-dir PATH]
 nodo node reload [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
-nodo node run [--network localnet|testnet-candidate] [--data-dir PATH] [--listen HOST:PORT] [--peer NAME@HOST:PORT]... [--validator-key ID]
+nodo node run [--network localnet|localnet-soak|testnet-candidate] [--data-dir PATH] [--listen HOST:PORT] [--rpc-listen HOST:PORT] [--peer NAME@HOST:PORT]... [--validator-key ID] [--identity-key ID]
 nodo keys create [--data-dir PATH] [--type user|validator|both] [--key-id ID]
 nodo keys list [--data-dir PATH]
 nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]
@@ -34,7 +34,9 @@ nodo diagnostics [--network localnet|testnet-candidate] [--data-dir PATH] [--key
   persistent mempool, then reports loaded counts.
 - `node run`: starts a long-running node daemon. Verifies genesis, checks
   data-dir compatibility, loads an optional validator key (via
-  `--validator-key`), registers static peers (`--peer NAME@HOST:PORT`), then
+  `--validator-key`), loads an independent Ed25519 peer key
+  (`--identity-key`), binds its operator RPC endpoint (`--rpc-listen`, default
+  `127.0.0.1:8545`), registers static peers (`--peer NAME@HOST:PORT`), then
   runs the `NodeDaemon` tick loop until SIGINT or SIGTERM. Rejected for
   `LOCKED_PRODUCTION` (mainnet) networks. Uses `ProductionKeySafetyGate` to
   refuse localnet-only keys on official networks. Each tick drains gossip

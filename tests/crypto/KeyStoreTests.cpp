@@ -148,6 +148,34 @@ void testRejectsUnsafeKeyId() {
     );
 }
 
+void testSoakProfileUsesDevelopmentKeyPolicy() {
+    const std::filesystem::path path = tempPath();
+    clean(path);
+
+    const auto created = KeyStore::createLocalKey(
+        path,
+        "soak-validator",
+        KeyStoreKeyType::VALIDATOR,
+        "soak-validator-a",
+        kTimestamp,
+        "",
+        "localnet-soak"
+    );
+
+    requireCondition(
+        created.success() &&
+            created.metadata().networkProfile() == "localnet-soak" &&
+            created.metadata().isLocalnetOnly(),
+        "The isolated soak profile should accept plaintext development keys."
+    );
+    requireCondition(
+        KeyStore::loadKey(path, "soak-validator").loaded(),
+        "A soak-profile development key should round-trip through KeyStore."
+    );
+
+    clean(path);
+}
+
 void testRejectsMalformedKeyFile() {
     const std::filesystem::path path =
         tempPath();
@@ -308,6 +336,7 @@ int main() {
     try {
         testCreateLoadAndListKey();
         testRejectsUnsafeKeyId();
+        testSoakProfileUsesDevelopmentKeyPolicy();
         testRejectsMalformedKeyFile();
         testEncryptedKey();
 

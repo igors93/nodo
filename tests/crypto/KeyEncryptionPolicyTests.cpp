@@ -10,6 +10,10 @@ void testLocalnetAcceptsPlaintext() {
         nodo::crypto::KeyEncryptionLevel::PLAINTEXT,
         "localnet"
     ));
+    assert(nodo::crypto::KeyEncryptionPolicy::isAcceptable(
+        nodo::crypto::KeyEncryptionLevel::PLAINTEXT,
+        "localnet-soak"
+    ));
 }
 
 void testTestnetRejectsPlaintext() {
@@ -49,6 +53,8 @@ void testOfficialNetworkDetection() {
     assert(nodo::crypto::KeyEncryptionPolicy::isOfficialNetwork("testnet-candidate"));
     assert(nodo::crypto::KeyEncryptionPolicy::isOfficialNetwork("mainnet"));
     assert(!nodo::crypto::KeyEncryptionPolicy::isOfficialNetwork("localnet"));
+    assert(!nodo::crypto::KeyEncryptionPolicy::isOfficialNetwork(
+        "localnet-soak"));
 }
 
 void testToString() {

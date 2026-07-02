@@ -56,7 +56,8 @@ public:
                          std::string localValidatorAddress,
                          std::uint16_t rpcPort, std::string rpcBindAddr,
                          std::int64_t consensusTickMs,
-                         std::size_t maxBlockTransactions);
+                         std::size_t maxBlockTransactions,
+                         bool enablePeerExchange = true);
 
   const config::GenesisConfig &genesisConfig() const;
   const NodeDataDirectoryConfig &dataDirectory() const;
@@ -66,6 +67,7 @@ public:
   const std::string &rpcBindAddr() const;
   std::int64_t consensusTickMs() const;
   std::size_t maxBlockTransactions() const;
+  bool enablePeerExchange() const;
 
   bool isValid() const;
 
@@ -78,6 +80,7 @@ private:
   std::string m_rpcBindAddr;
   std::int64_t m_consensusTickMs;
   std::size_t m_maxBlockTransactions;
+  bool m_enablePeerExchange;
 };
 
 enum class NodeOrchestratorStartStatus {

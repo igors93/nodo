@@ -6,6 +6,7 @@ namespace nodo::config {
 
 bool NetworkProfileRegistry::isKnown(const std::string& networkName) {
     return networkName == "localnet" ||
+           networkName == "localnet-soak" ||
            networkName == "testnet-candidate" ||
            networkName == "mainnet";
 }
@@ -23,6 +24,7 @@ bool NetworkProfileRegistry::isMainnetLocked(const std::string& networkName) {
 std::vector<std::string> NetworkProfileRegistry::knownProfiles() {
     return {
         "localnet",
+        "localnet-soak",
         "testnet-candidate",
         "mainnet"
     };
@@ -31,6 +33,9 @@ std::vector<std::string> NetworkProfileRegistry::knownProfiles() {
 NetworkParameters NetworkProfileRegistry::get(const std::string& networkName) {
     if (networkName == "localnet") {
         return NetworkParameters::developmentLocal();
+    }
+    if (networkName == "localnet-soak") {
+        return NetworkParameters::developmentSoak();
     }
     if (networkName == "testnet-candidate") {
         return NetworkParameters::testnetCandidate();

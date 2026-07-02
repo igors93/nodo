@@ -3,6 +3,7 @@
 
 #include "config/NetworkParameters.hpp"
 
+#include <cstddef>
 #include <string>
 
 namespace nodo::config {
@@ -40,9 +41,9 @@ private:
  * Unknown networks and networks without a registered genesis fail immediately.
  * This registry must never silently substitute a placeholder genesis.
  *
- * Development keys embedded in localnet and testnet-candidate genesis are
- * deterministic and clearly labeled. They must not be used in production
- * networks.
+ * Development keys embedded in localnet, localnet-soak and
+ * testnet-candidate genesis are deterministic and clearly labeled. They must
+ * not be used in production networks.
  */
 class GenesisRegistry {
 public:
@@ -61,6 +62,8 @@ public:
   // Exposed so callers can locate or create the matching key without
   // duplicating the literal string.
   static std::string localnetUserKeySeed();
+  static std::string soakUserKeySeed();
+  static std::string soakValidatorKeySeed(std::size_t index);
 };
 
 } // namespace nodo::config

@@ -8,6 +8,7 @@ namespace {
 
 void testKnownProfiles() {
   assert(nodo::config::NetworkProfileRegistry::isKnown("localnet"));
+  assert(nodo::config::NetworkProfileRegistry::isKnown("localnet-soak"));
   assert(nodo::config::NetworkProfileRegistry::isKnown("testnet-candidate"));
   assert(nodo::config::NetworkProfileRegistry::isKnown("mainnet"));
 }
@@ -22,6 +23,8 @@ void testOfficialNetworks() {
       "testnet-candidate"));
   assert(nodo::config::NetworkProfileRegistry::isOfficialNetwork("mainnet"));
   assert(!nodo::config::NetworkProfileRegistry::isOfficialNetwork("localnet"));
+  assert(!nodo::config::NetworkProfileRegistry::isOfficialNetwork(
+      "localnet-soak"));
 }
 
 void testMainnetLocked() {
@@ -45,6 +48,16 @@ void testGetTestnetCandidate() {
   assert(params.finalityDepth() >= 2);
   assert(params.minimumFeeRawUnits() > 0);
   assert(params.minimumValidatorCount() >= 4);
+}
+
+void testGetSoakLocalnet() {
+  const auto params =
+      nodo::config::NetworkProfileRegistry::get("localnet-soak");
+  assert(params.isValid());
+  assert(params.networkClass() ==
+         nodo::config::NetworkClass::DEVELOPMENT_LOCAL);
+  assert(params.chainId() == "nodo-localnet-soak-1");
+  assert(params.minimumValidatorCount() == 3);
 }
 
 void testGetUnknownThrows() {
@@ -82,6 +95,7 @@ int main() {
   testMainnetLocked();
   testGetLocalnet();
   testGetTestnetCandidate();
+  testGetSoakLocalnet();
   testGetUnknownThrows();
   testGetMainnetThrows();
   testKnownProfilesList();

@@ -42,7 +42,11 @@ void testTwoHopTransactionPropagation() {
     waitForRpc(nodeB);
     waitForRpc(nodeC);
 
-    require(waitUntil(90s,
+    // 120s, not 90s: matches the more generous budget already used for
+    // comparable authenticated-peer waits elsewhere in this test family
+    // (e.g. ProposerFailoverTests' post-recovery wait) to absorb slower
+    // process-startup/handshake timing on loaded CI runners.
+    require(waitUntil(120s,
                       [&] {
                         return authenticatedPeerCount(nodeA) == 1 &&
                                authenticatedPeerCount(nodeB) == 2 &&

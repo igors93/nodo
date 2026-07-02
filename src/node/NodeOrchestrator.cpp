@@ -45,20 +45,22 @@ namespace nodo::node {
 
 NodeOrchestratorConfig::NodeOrchestratorConfig()
     : m_rpcPort(8545), m_rpcBindAddr("127.0.0.1"), m_consensusTickMs(100),
-      m_maxBlockTransactions(500) {}
+      m_maxBlockTransactions(500), m_enablePeerExchange(true) {}
 
 NodeOrchestratorConfig::NodeOrchestratorConfig(
     config::GenesisConfig genesisConfig, NodeDataDirectoryConfig dataDirectory,
     p2p::PeerInfo localPeer, std::string localValidatorAddress,
     std::uint16_t rpcPort, std::string rpcBindAddr,
-    std::int64_t consensusTickMs, std::size_t maxBlockTransactions)
+    std::int64_t consensusTickMs, std::size_t maxBlockTransactions,
+    bool enablePeerExchange)
     : m_genesisConfig(std::move(genesisConfig)),
       m_dataDirectory(std::move(dataDirectory)),
       m_localPeer(std::move(localPeer)),
       m_localValidatorAddress(std::move(localValidatorAddress)),
       m_rpcPort(rpcPort), m_rpcBindAddr(std::move(rpcBindAddr)),
       m_consensusTickMs(consensusTickMs),
-      m_maxBlockTransactions(maxBlockTransactions) {}
+      m_maxBlockTransactions(maxBlockTransactions),
+      m_enablePeerExchange(enablePeerExchange) {}
 
 const config::GenesisConfig &NodeOrchestratorConfig::genesisConfig() const {
   return m_genesisConfig;
@@ -81,6 +83,9 @@ std::int64_t NodeOrchestratorConfig::consensusTickMs() const {
 }
 std::size_t NodeOrchestratorConfig::maxBlockTransactions() const {
   return m_maxBlockTransactions;
+}
+bool NodeOrchestratorConfig::enablePeerExchange() const {
+  return m_enablePeerExchange;
 }
 
 bool NodeOrchestratorConfig::isValid() const {
@@ -1257,7 +1262,7 @@ void NodeOrchestrator::persistPeerExchangeCandidates(
 }
 
 void NodeOrchestrator::processPeerExchangeMessages(std::int64_t now) {
-  if (!m_tcpRuntime || now <= 0) {
+  if (!m_config.enablePeerExchange() || !m_tcpRuntime || now <= 0) {
     return;
   }
 
@@ -1313,7 +1318,7 @@ void NodeOrchestrator::processPeerExchangeMessages(std::int64_t now) {
 }
 
 void NodeOrchestrator::broadcastPeerExchange(std::int64_t now) {
-  if (!m_tcpRuntime || now <= 0) {
+  if (!m_config.enablePeerExchange() || !m_tcpRuntime || now <= 0) {
     return;
   }
 

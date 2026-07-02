@@ -184,7 +184,7 @@ std::uint64_t NetworkParameters::precommitTimeoutMs() const {
 }
 
 NetworkClass NetworkParameters::networkClass() const {
-  if (m_networkName == "localnet") {
+  if (m_networkName == "localnet" || m_networkName == "localnet-soak") {
     return NetworkClass::DEVELOPMENT_LOCAL;
   }
   if (m_networkName == "testnet-candidate") {
@@ -257,6 +257,13 @@ NetworkParameters NetworkParameters::developmentLocal() {
   return NetworkParameters(
       "nodo-localnet-1", "localnet", "nodo/0.1", 60, 1, 2, 3, 1000, 128, 10000,
       0, 60, 1, "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2", 3000, 3000, 3000);
+}
+
+NetworkParameters NetworkParameters::developmentSoak() {
+  return NetworkParameters(
+      "nodo-localnet-soak-1", "localnet-soak", "nodo/0.1", 60, 3, 2, 3,
+      1000, 128, 10000, 0, 60, 1, "NODO_CRYPTO_SUITE_V1",
+      "NODO_STORAGE_V2", 3000, 3000, 3000);
 }
 
 NetworkParameters NetworkParameters::testnetCandidate() {

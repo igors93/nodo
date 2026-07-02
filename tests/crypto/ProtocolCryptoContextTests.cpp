@@ -83,6 +83,19 @@ void testNetworkNameMappingAcceptsLocalnet() {
     );
 }
 
+void testNetworkNameMappingAcceptsSoakLocalnet() {
+    const nodo::crypto::ProtocolCryptoContext context =
+        nodo::crypto::ProtocolCryptoContext::fromNetworkName("localnet-soak");
+
+    requireCondition(
+        context.isValid() &&
+            context.profile() ==
+                nodo::crypto::ProtocolNetworkProfile::LOCALNET &&
+            context.networkProfile() == "localnet-soak",
+        "localnet-soak should use the isolated development crypto context."
+    );
+}
+
 void testTestnetRefusesTemporaryProvider() {
     const nodo::crypto::ProtocolCryptoContext context =
         nodo::crypto::ProtocolCryptoContext::testnet();
@@ -169,6 +182,7 @@ int main() {
     try {
         testLocalnetContextIsExplicitAndValid();
         testNetworkNameMappingAcceptsLocalnet();
+        testNetworkNameMappingAcceptsSoakLocalnet();
         testTestnetRefusesTemporaryProvider();
         testMainnetRefusesTemporaryProvider();
         testUnknownNetworkIsRejected();

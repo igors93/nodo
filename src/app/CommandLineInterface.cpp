@@ -198,6 +198,44 @@ std::uint64_t parseUnsignedInt64(
     return static_cast<std::uint64_t>(result);
 }
 
+struct ParsedHostPort {
+    std::string host;
+    std::uint16_t port;
+};
+
+ParsedHostPort parseHostPort(
+    const std::string& option,
+    const std::string& value
+) {
+    const std::size_t separator = value.rfind(':');
+    if (separator == std::string::npos ||
+        separator == 0 ||
+        separator + 1 >= value.size()) {
+        throw std::invalid_argument(
+            option + " requires HOST:PORT with a non-empty host and port."
+        );
+    }
+
+    const std::string host = value.substr(0, separator);
+    const std::string portText = value.substr(separator + 1);
+    for (const char character : portText) {
+        if (character < '0' || character > '9') {
+            throw std::invalid_argument(
+                option + " port must be an integer between 1 and 65535."
+            );
+        }
+    }
+
+    const std::uint64_t parsedPort = parseUnsignedInt64(option, portText);
+    if (parsedPort == 0 || parsedPort > 65535) {
+        throw std::invalid_argument(
+            option + " port must be between 1 and 65535."
+        );
+    }
+
+    return ParsedHostPort{host, static_cast<std::uint16_t>(parsedPort)};
+}
+
 std::string defaultLocalnetUserKeyId() {
     return "local-user";
 }
@@ -553,8 +591,11 @@ CommandLineOptions::CommandLineOptions()
       peerId("local-node"),
       endpoint("127.0.0.1:9000"),
       listenAddress(""),
+      rpcBindAddress("127.0.0.1"),
+      rpcPort(8545),
       keyId("local-validator"),
       validatorKeyId(""),
+      identityKeyId("local-user"),
       keyType("both"),
       toAddress("nodo-localnet-recipient"),
       validatorAddress(""),
@@ -1093,6 +1134,21 @@ CommandLineOptions CommandLineInterface::parse(
             continue;
         }
 
+        if (option == "--rpc-listen") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument(
+                    "--rpc-listen requires a value (HOST:PORT)."
+                );
+            }
+
+            const ParsedHostPort rpc =
+                parseHostPort("--rpc-listen", args[index + 1]);
+            options.rpcBindAddress = rpc.host;
+            options.rpcPort = rpc.port;
+            index += 2;
+            continue;
+        }
+
         if (option == "--peer") {
             if (index + 1 >= args.size()) {
                 throw std::invalid_argument("--peer requires a value (NAME@HOST:PORT).");
@@ -1121,6 +1177,15 @@ CommandLineOptions CommandLineInterface::parse(
                 options.keyId = value;
                 options.keyIdProvided = true;
             }
+            index += 2;
+            continue;
+        }
+
+        if (option == "--identity-key") {
+            if (index + 1 >= args.size()) {
+                throw std::invalid_argument("--identity-key requires a value.");
+            }
+            options.identityKeyId = args[index + 1];
             index += 2;
             continue;
         }
@@ -1183,7 +1248,7 @@ std::string CommandLineInterface::helpText() {
         "  nodo init [--network localnet|testnet-candidate] [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo status [--network localnet|testnet-candidate] [--data-dir PATH]\n"
         "  nodo inspect [--network localnet|testnet-candidate] [--data-dir PATH]\n"
-        "  nodo node run [--network localnet|testnet-candidate] [--data-dir PATH] [--listen HOST:PORT] [--peer NAME@HOST:PORT]... [--validator-key ID]\n"
+        "  nodo node run [--network localnet|localnet-soak|testnet-candidate] [--data-dir PATH] [--listen HOST:PORT] [--rpc-listen HOST:PORT] [--peer NAME@HOST:PORT]... [--validator-key ID] [--identity-key ID]\n"
         "  nodo node reload [--network localnet|testnet-candidate] [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
         "  nodo keys create [--network localnet|testnet-candidate] [--data-dir PATH] [--type user|validator|both] [--key-id ID]\n"
         "  nodo keys list [--data-dir PATH]\n"
@@ -1202,12 +1267,14 @@ std::string CommandLineInterface::helpText() {
         "\n"
         "Options:\n"
         "  --data-dir PATH      Node data directory. Default: .nodo\n"
-        "  --network NAME       Network profile: localnet or testnet-candidate. mainnet is blocked.\n"
+        "  --network NAME       Network profile: localnet, localnet-soak, or testnet-candidate. mainnet is blocked.\n"
         "  --peer-id ID         Local peer id for init/load. Default: local-node\n"
         "  --endpoint HOST:PORT Local endpoint for init/load. Default: 127.0.0.1:9000\n"
         "  --listen HOST:PORT   Bind address for node run daemon. Overrides --endpoint.\n"
+        "  --rpc-listen HOST:PORT RPC bind address for node run. Default: 127.0.0.1:8545\n"
         "  --peer NAME@HOST:PORT Static peer for node run daemon (repeatable).\n"
         "  --validator-key ID   Validator identity key for node run, or a stake target resolved to its validator address.\n"
+        "  --identity-key ID    Ed25519 peer identity key for node run. Default: local-user\n"
         "  --validator ADDRESS Validator address for lifecycle, stake, and governance vote commands.\n"
         "  --address ADDRESS   Owner/delegator address for stake positions.\n"
         "  --owner KEY_ID       Alias for --key-id when signing validator-owned operations.\n"
@@ -3016,7 +3083,7 @@ CommandLineResult CommandLineInterface::executeNodeRun(
     const crypto::KeyStoreLoadResult nodeIdentityKey =
         loadKeyWithPrompt(
             directoryConfig.keysDirectoryPath(),
-            defaultLocalnetUserKeyId()
+            options.identityKeyId
         );
     if (!nodeIdentityKey.loaded() ||
         nodeIdentityKey.metadata().keyType() !=
@@ -3061,8 +3128,8 @@ CommandLineResult CommandLineInterface::executeNodeRun(
         directoryConfig,
         localPeerFromOptions(options),
         localValidatorAddress,
-        8545,
-        "127.0.0.1",
+        options.rpcPort,
+        options.rpcBindAddress,
         100,
         static_cast<std::size_t>(
             genesisConfig.networkParameters().maxTransactionsPerBlock()
@@ -3096,6 +3163,8 @@ CommandLineResult CommandLineInterface::executeNodeRun(
 
     std::cout << "Nodo daemon running on " << options.endpoint
               << " (network: " << options.networkName << ")\n"
+              << "RPC listening on " << options.rpcBindAddress << ":"
+              << options.rpcPort << "\n"
               << "Press Ctrl+C to stop.\n";
     std::cout.flush();
 

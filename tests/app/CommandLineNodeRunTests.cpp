@@ -47,6 +47,44 @@ void testListenOptionSetsEndpoint() {
     );
 }
 
+void testRpcListenOptionIsIndependentFromP2pEndpoint() {
+    const CommandLineOptions opts =
+        CommandLineInterface::parse({
+            "node", "run",
+            "--listen", "127.0.0.1:9001",
+            "--rpc-listen", "127.0.0.1:8601"
+        });
+
+    requireCondition(
+        opts.endpoint == "127.0.0.1:9001",
+        "--rpc-listen must not change the P2P endpoint."
+    );
+    requireCondition(
+        opts.rpcBindAddress == "127.0.0.1" && opts.rpcPort == 8601,
+        "--rpc-listen should populate the RPC bind host and port."
+    );
+}
+
+void testRpcListenDefaultsAndValidation() {
+    const CommandLineOptions defaults =
+        CommandLineInterface::parse({"node", "run"});
+    requireCondition(
+        defaults.rpcBindAddress == "127.0.0.1" &&
+            defaults.rpcPort == 8545,
+        "node run should preserve the existing default RPC endpoint."
+    );
+
+    bool rejected = false;
+    try {
+        (void)CommandLineInterface::parse({
+            "node", "run", "--rpc-listen", "127.0.0.1:70000"
+        });
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    requireCondition(rejected, "Out-of-range RPC ports must be rejected.");
+}
+
 void testPeerOptionAccumulates() {
     const CommandLineOptions opts =
         CommandLineInterface::parse({
@@ -86,6 +124,17 @@ void testValidatorKeyOption() {
     );
 }
 
+void testIdentityKeyOption() {
+    const CommandLineOptions opts =
+        CommandLineInterface::parse({
+            "node", "run", "--identity-key", "peer-identity-a"
+        });
+    requireCondition(
+        opts.identityKeyId == "peer-identity-a",
+        "--identity-key should select the Ed25519 peer identity key."
+    );
+}
+
 void testNetworkOption() {
     const CommandLineOptions opts =
         CommandLineInterface::parse({
@@ -106,6 +155,8 @@ void testFullNodeRunCommandLine() {
             "--network", "testnet-candidate",
             "--data-dir", ".nodo",
             "--listen", "127.0.0.1:9001",
+            "--rpc-listen", "127.0.0.1:8601",
+            "--identity-key", "peer-identity-a",
             "--peer", "validator2@127.0.0.1:9002"
         });
 
@@ -115,6 +166,10 @@ void testFullNodeRunCommandLine() {
         "networkName should be 'testnet-candidate'.");
     requireCondition(opts.listenAddress == "127.0.0.1:9001",
         "listenAddress should be '127.0.0.1:9001'.");
+    requireCondition(opts.rpcPort == 8601,
+        "rpcPort should be 8601.");
+    requireCondition(opts.identityKeyId == "peer-identity-a",
+        "identityKeyId should match the explicit key.");
     requireCondition(opts.peers.size() == 1,
         "Should have 1 peer entry.");
     requireCondition(opts.peers[0] == "validator2@127.0.0.1:9002",
@@ -143,12 +198,20 @@ void testHelpTextContainsNodeRun() {
         "Help text should mention '--listen'."
     );
     requireCondition(
+        help.find("--rpc-listen") != std::string::npos,
+        "Help text should mention '--rpc-listen'."
+    );
+    requireCondition(
         help.find("--peer") != std::string::npos,
         "Help text should mention '--peer'."
     );
     requireCondition(
         help.find("--validator-key") != std::string::npos,
         "Help text should mention '--validator-key'."
+    );
+    requireCondition(
+        help.find("--identity-key") != std::string::npos,
+        "Help text should mention '--identity-key'."
     );
 }
 
@@ -170,8 +233,11 @@ int main() {
     try {
         testNodeRunParsedAsCommand();
         testListenOptionSetsEndpoint();
+        testRpcListenOptionIsIndependentFromP2pEndpoint();
+        testRpcListenDefaultsAndValidation();
         testPeerOptionAccumulates();
         testValidatorKeyOption();
+        testIdentityKeyOption();
         testNetworkOption();
         testFullNodeRunCommandLine();
         testNoPeersDefault();

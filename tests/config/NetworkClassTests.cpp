@@ -15,6 +15,12 @@ void testLocalnetIsDevelopment() {
   assert(networkClassToString(params.networkClass()) == "DEVELOPMENT_LOCAL");
 }
 
+void testSoakLocalnetIsDevelopment() {
+  const NetworkParameters params = NetworkParameters::developmentSoak();
+  assert(params.networkClass() == NetworkClass::DEVELOPMENT_LOCAL);
+  assert(params.networkName() == "localnet-soak");
+}
+
 void testTestnetCandidateIsStaging() {
   const NetworkParameters params = NetworkParameters::testnetCandidate();
   assert(params.networkClass() == NetworkClass::STAGING_CANDIDATE);
@@ -53,6 +59,7 @@ void testDevelopmentLocalNotSafeForProduction() {
 
 int main() {
   testLocalnetIsDevelopment();
+  testSoakLocalnetIsDevelopment();
   testTestnetCandidateIsStaging();
   testMainnetIsLockedProduction();
   testNetworkClassStringConversion();

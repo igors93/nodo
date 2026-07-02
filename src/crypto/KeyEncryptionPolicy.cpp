@@ -14,7 +14,7 @@ std::string keyEncryptionLevelToString(KeyEncryptionLevel level) {
 KeyEncryptionLevel KeyEncryptionPolicy::requiredLevelForNetwork(
     const std::string& networkName
 ) {
-    if (networkName == "localnet") {
+    if (networkName == "localnet" || networkName == "localnet-soak") {
         return KeyEncryptionLevel::PLAINTEXT;
     }
     if (networkName == "testnet" || networkName == "testnet-candidate") {

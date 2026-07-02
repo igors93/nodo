@@ -262,7 +262,8 @@ int runDaemonChild(std::size_t nodeIndex, const NodeSpecs &specs,
       local.validatorKey.address().value(), local.rpcPort, "127.0.0.1",
       kConsensusTickMilliseconds,
       static_cast<std::size_t>(
-          genesis.networkParameters().maxTransactionsPerBlock()));
+          genesis.networkParameters().maxTransactionsPerBlock()),
+      false);
 
   node::NodeDaemonConfig daemonConfig;
   daemonConfig.orchestratorConfig = orchestratorConfig;

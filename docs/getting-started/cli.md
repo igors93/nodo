@@ -20,7 +20,7 @@ On Windows:
 nodo init [--network localnet|testnet-candidate] [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
 nodo status [--network localnet|testnet-candidate] [--data-dir PATH]
 nodo inspect [--network localnet|testnet-candidate] [--data-dir PATH]
-nodo node run [--network localnet|testnet-candidate] [--data-dir PATH] [--listen HOST:PORT] [--peer NAME@HOST:PORT]... [--validator-key ID]
+nodo node run [--network localnet|localnet-soak|testnet-candidate] [--data-dir PATH] [--listen HOST:PORT] [--rpc-listen HOST:PORT] [--peer NAME@HOST:PORT]... [--validator-key ID] [--identity-key ID]
 nodo node reload [--network localnet|testnet-candidate] [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
 nodo keys create [--network localnet|testnet-candidate] [--data-dir PATH] [--type user|validator|both] [--key-id ID]
 nodo keys list [--data-dir PATH]
@@ -43,5 +43,7 @@ For per-command behavior details see the [CLI Reference](../CLI.md).
 ## Network Profiles
 
 - `localnet`: local development path.
+- `localnet-soak`: isolated three-validator development profile used only by
+  the explicit ten-minute soak gate.
 - `testnet-candidate`: official pre-testnet profile with safety gates.
 - `mainnet`: blocked until production readiness requirements are satisfied.

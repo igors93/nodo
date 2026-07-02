@@ -26,6 +26,15 @@ void testTestnetCandidateFound() {
   assert(!result.genesis().bootstrapValidators().empty());
 }
 
+void testSoakGenesisFound() {
+  const GenesisLookupResult result = GenesisRegistry::get("localnet-soak");
+  assert(result.found());
+  assert(result.genesis().networkParameters().networkName() ==
+         "localnet-soak");
+  assert(result.genesis().bootstrapValidators().size() == 3);
+  assert(result.genesis().genesisAccounts().size() == 1);
+}
+
 void testMainnetMissing() {
   const GenesisLookupResult result = GenesisRegistry::get("mainnet");
   assert(!result.found());
@@ -43,6 +52,7 @@ void testUnknownNetworkMissing() {
 void testHasRegisteredGenesis() {
   assert(GenesisRegistry::hasRegisteredGenesis("localnet"));
   assert(GenesisRegistry::hasRegisteredGenesis("testnet-candidate"));
+  assert(GenesisRegistry::hasRegisteredGenesis("localnet-soak"));
   assert(!GenesisRegistry::hasRegisteredGenesis("mainnet"));
   assert(!GenesisRegistry::hasRegisteredGenesis("unknown"));
 }
@@ -85,6 +95,7 @@ void testLocalnetAndTestnetGenesisAreDifferent() {
 int main() {
   testLocalnetGenesisFound();
   testTestnetCandidateFound();
+  testSoakGenesisFound();
   testMainnetMissing();
   testUnknownNetworkMissing();
   testHasRegisteredGenesis();

@@ -86,6 +86,17 @@ ProtocolCryptoContext ProtocolCryptoContext::fromNetworkName(
         return localnet();
     }
 
+    if (networkName == "localnet-soak") {
+        return ProtocolCryptoContext(
+            ProtocolNetworkProfile::LOCALNET,
+            networkName,
+            CryptoPolicy::developmentPolicy(),
+            false,
+            false,
+            ""
+        );
+    }
+
     if (isTestnetName(networkName)) {
         return testnet();
     }
