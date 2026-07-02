@@ -41,9 +41,9 @@ find_path(BLST_INCLUDE_DIR
     NAMES blst.h
     HINTS ${NODO_BLST_PREFIX_HINTS}
     PATH_SUFFIXES
-        include
-        include/blst
-        bindings
+    include
+    include/blst
+    bindings
     NO_DEFAULT_PATH
 )
 
@@ -51,9 +51,9 @@ find_library(BLST_LIBRARY
     NAMES blst libblst
     HINTS ${NODO_BLST_PREFIX_HINTS}
     PATH_SUFFIXES
-        lib
-        lib64
-        .
+    lib
+    lib64
+    .
     NO_DEFAULT_PATH
 )
 
@@ -61,16 +61,16 @@ if(NOT BLST_INCLUDE_DIR OR NOT BLST_LIBRARY)
     find_path(BLST_INCLUDE_DIR
         NAMES blst.h
         PATH_SUFFIXES
-            include
-            include/blst
-            bindings
+        include
+        include/blst
+        bindings
     )
 
     find_library(BLST_LIBRARY
         NAMES blst libblst
         PATH_SUFFIXES
-            lib
-            lib64
+        lib
+        lib64
     )
 endif()
 
@@ -93,7 +93,7 @@ if((NOT BLST_INCLUDE_DIR OR NOT BLST_LIBRARY) AND PkgConfig_FOUND)
 endif()
 
 if(NOT BLST_INCLUDE_DIR OR NOT EXISTS "${BLST_INCLUDE_DIR}/blst.h"
-        OR NOT BLST_LIBRARY OR NOT EXISTS "${BLST_LIBRARY}")
+    OR NOT BLST_LIBRARY OR NOT EXISTS "${BLST_LIBRARY}")
     message(FATAL_ERROR
         "Nodo requires external blst for real BLS12-381 signatures, but CMake could not find blst.h and libblst. "
         "Do not place blst inside the Nodo repository and do not create third_party/blst. "
@@ -106,8 +106,8 @@ if(NOT TARGET blst::blst)
     add_library(blst::blst UNKNOWN IMPORTED)
     set_target_properties(blst::blst
         PROPERTIES
-            IMPORTED_LOCATION "${BLST_LIBRARY}"
-            INTERFACE_INCLUDE_DIRECTORIES "${BLST_INCLUDE_DIR}"
+        IMPORTED_LOCATION "${BLST_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${BLST_INCLUDE_DIR}"
     )
 endif()
 
@@ -116,7 +116,7 @@ include(FetchContent)
 FetchContent_Declare(
     asio
     GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
-    GIT_TAG        asio-1-30-2
+    GIT_TAG asio-1-30-2
 )
 FetchContent_MakeAvailable(asio)
 

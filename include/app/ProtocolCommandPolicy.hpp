@@ -7,11 +7,9 @@ namespace nodo::app {
 
 class ProtocolCommandPolicy {
 public:
-    // Returns true if legacy/development commands are blocked on the given network.
-    // Official networks enforce blocking; localnet does not.
-    static bool legacyCommandBlockingEnforced(
-        const std::string& networkName
-    );
+  // Returns true if legacy/development commands are blocked on the given
+  // network. Official networks enforce blocking; localnet does not.
+  static bool legacyCommandBlockingEnforced(const std::string &networkName);
 };
 
 } // namespace nodo::app

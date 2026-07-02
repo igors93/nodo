@@ -19,20 +19,18 @@ namespace nodo::node {
  * daemon node.
  */
 struct NodeDaemonPeerEntry {
-    std::string nodeId;
-    std::string host;
-    std::uint16_t port = 0;
+  std::string nodeId;
+  std::string host;
+  std::uint16_t port = 0;
 
-    bool isValid() const {
-        return !nodeId.empty() && !host.empty() && port > 0;
-    }
+  bool isValid() const { return !nodeId.empty() && !host.empty() && port > 0; }
 };
 
 struct NodeDaemonConfig {
-    NodeOrchestratorConfig  orchestratorConfig;
-    std::vector<NodeDaemonPeerEntry> staticPeers;
-    std::size_t  seenCacheMaxEntries = SeenTransactionCache::DEFAULT_MAX_ENTRIES;
-    std::int64_t seenCacheTtlSeconds = SeenTransactionCache::DEFAULT_TTL_SECONDS;
+  NodeOrchestratorConfig orchestratorConfig;
+  std::vector<NodeDaemonPeerEntry> staticPeers;
+  std::size_t seenCacheMaxEntries = SeenTransactionCache::DEFAULT_MAX_ENTRIES;
+  std::int64_t seenCacheTtlSeconds = SeenTransactionCache::DEFAULT_TTL_SECONDS;
 };
 
 /*
@@ -58,54 +56,56 @@ struct NodeDaemonConfig {
  */
 class NodeDaemon {
 public:
-    static constexpr std::int64_t DEFAULT_TICK_INTERVAL_MS = 50;
+  static constexpr std::int64_t DEFAULT_TICK_INTERVAL_MS = 50;
 
-    NodeDaemon(
-        NodeDaemonConfig             config,
-        const crypto::CryptoPolicy&  policy,
-        const crypto::SignatureProvider& provider
-    );
+  NodeDaemon(NodeDaemonConfig config, const crypto::CryptoPolicy &policy,
+             const crypto::SignatureProvider &provider);
 
-    ~NodeDaemon();
+  ~NodeDaemon();
 
-    // Start the daemon: init/load state, bind transport, start consensus, register
-    // static peers, start background threads. Returns immediately.
-    NodeOrchestratorStartResult start();
+  // Start the daemon: init/load state, bind transport, start consensus,
+  // register static peers, start background threads. Returns immediately.
+  NodeOrchestratorStartResult start();
 
-    // Run the network tick loop on the calling thread until stop() is called.
-    void runBlocking(std::int64_t tickIntervalMs = DEFAULT_TICK_INTERVAL_MS);
+  // Run the network tick loop on the calling thread until stop() is called.
+  void runBlocking(std::int64_t tickIntervalMs = DEFAULT_TICK_INTERVAL_MS);
 
-    // Signal all subsystems to stop.
-    void stop();
+  // Signal all subsystems to stop.
+  void stop();
 
-    bool isRunning() const;
+  bool isRunning() const;
 
-    // Inject a validator signer (Ed25519/BLS) so this node can vote and propose.
-    void setLocalSigner(crypto::Signer signer);
+  // Inject a validator signer (Ed25519/BLS) so this node can vote and propose.
+  void setLocalSigner(crypto::Signer signer);
 
-    void setLocalNodeIdentity(crypto::KeyPair nodeIdentityKey);
+  void setLocalNodeIdentity(crypto::KeyPair nodeIdentityKey);
 
-    // Execute one combined tick: network + gossip + new message types.
-    void tick(std::int64_t now);
+  // Execute one combined tick: network + gossip + new message types.
+  void tick(std::int64_t now);
 
-    const NodeOrchestrator& orchestrator() const;
+  const NodeOrchestrator &orchestrator() const;
 
 private:
-    NodeDaemonConfig                         m_config;
-    const crypto::CryptoPolicy&              m_policy;
-    const crypto::SignatureProvider&         m_provider;
-    NodeOrchestrator                         m_orchestrator;
-    SeenTransactionCache                     m_seenTxCache;
-    std::atomic<bool>                        m_running;
+  NodeDaemonConfig m_config;
+  const crypto::CryptoPolicy &m_policy;
+  const crypto::SignatureProvider &m_provider;
+  NodeOrchestrator m_orchestrator;
+  SeenTransactionCache m_seenTxCache;
+  std::atomic<bool> m_running;
+  std::pair<std::uint64_t, std::uint64_t> m_lastProposedRound = {0, 0};
+  std::optional<crypto::Signer> m_localSigner;
 
-    // Register static peers into the transport and gossip mesh.
-    void registerStaticPeers(std::int64_t now);
+  // Register static peers into the transport and gossip mesh.
+  void registerStaticPeers(std::int64_t now);
 
-    // Handle incoming TRANSACTION_GOSSIP messages.
-    void processTransactionGossip(std::int64_t now);
+  // Handle incoming TRANSACTION_GOSSIP messages.
+  void processTransactionGossip(std::int64_t now);
 
-    // Handle incoming FINALIZED_BLOCK_ARTIFACT messages.
-    void processFinalizedArtifacts();
+  // Handle incoming FINALIZED_BLOCK_ARTIFACT messages.
+  void processFinalizedArtifacts();
+
+  // Check if local node is proposer and initiate block proposal if true.
+  void maybeProposeBlock(std::int64_t now);
 };
 
 } // namespace nodo::node

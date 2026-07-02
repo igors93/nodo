@@ -20,15 +20,15 @@ namespace nodo::config {
  */
 class NetworkProfileRegistry {
 public:
-    static bool isKnown(const std::string& networkName);
+  static bool isKnown(const std::string &networkName);
 
-    static bool isOfficialNetwork(const std::string& networkName);
+  static bool isOfficialNetwork(const std::string &networkName);
 
-    static bool isMainnetLocked(const std::string& networkName);
+  static bool isMainnetLocked(const std::string &networkName);
 
-    static std::vector<std::string> knownProfiles();
+  static std::vector<std::string> knownProfiles();
 
-    static NetworkParameters get(const std::string& networkName);
+  static NetworkParameters get(const std::string &networkName);
 };
 
 } // namespace nodo::config

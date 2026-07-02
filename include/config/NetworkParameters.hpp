@@ -21,9 +21,9 @@ namespace nodo::config {
  * checks must also consult network class.
  */
 enum class NetworkClass {
-    DEVELOPMENT_LOCAL,
-    STAGING_CANDIDATE,
-    LOCKED_PRODUCTION
+  DEVELOPMENT_LOCAL,
+  STAGING_CANDIDATE,
+  LOCKED_PRODUCTION
 };
 
 std::string networkClassToString(NetworkClass nc);
@@ -37,69 +37,66 @@ std::string networkClassToString(NetworkClass nc);
  */
 class NetworkParameters {
 public:
-    NetworkParameters();
+  NetworkParameters();
 
-    NetworkParameters(
-        std::string chainId,
-        std::string networkName,
-        std::string protocolVersion,
-        std::uint64_t epochDurationSeconds,
-        std::uint64_t minimumValidatorCount,
-        std::uint64_t quorumThresholdNumerator,
-        std::uint64_t quorumThresholdDenominator,
-        std::uint64_t maxTransactionsPerBlock,
-        std::uint64_t maxPeerCount,
-        std::uint64_t maxMempoolTransactions = 10000,
-        std::uint64_t minimumFeeRawUnits = 0,
-        std::uint64_t targetBlockTimeSeconds = 60,
-        std::uint64_t finalityDepth = 1,
-        std::string signatureAlgorithm = "NODO_CRYPTO_SUITE_V1",
-        std::string storageFormatVersion = "NODO_STORAGE_V2"
-    );
+  NetworkParameters(std::string chainId, std::string networkName,
+                    std::string protocolVersion,
+                    std::uint64_t epochDurationSeconds,
+                    std::uint64_t minimumValidatorCount,
+                    std::uint64_t quorumThresholdNumerator,
+                    std::uint64_t quorumThresholdDenominator,
+                    std::uint64_t maxTransactionsPerBlock,
+                    std::uint64_t maxPeerCount,
+                    std::uint64_t maxMempoolTransactions = 10000,
+                    std::uint64_t minimumFeeRawUnits = 0,
+                    std::uint64_t targetBlockTimeSeconds = 60,
+                    std::uint64_t finalityDepth = 1,
+                    std::string signatureAlgorithm = "NODO_CRYPTO_SUITE_V1",
+                    std::string storageFormatVersion = "NODO_STORAGE_V2");
 
-    const std::string& chainId() const;
-    const std::string& networkName() const;
-    const std::string& protocolVersion() const;
-    std::uint64_t epochDurationSeconds() const;
-    std::uint64_t minimumValidatorCount() const;
-    std::uint64_t quorumThresholdNumerator() const;
-    std::uint64_t quorumThresholdDenominator() const;
-    std::uint64_t maxTransactionsPerBlock() const;
-    std::uint64_t maxPeerCount() const;
-    std::uint64_t maxMempoolTransactions() const;
-    std::uint64_t minimumFeeRawUnits() const;
-    std::uint64_t targetBlockTimeSeconds() const;
-    std::uint64_t finalityDepth() const;
-    const std::string& signatureAlgorithm() const;
-    const std::string& storageFormatVersion() const;
+  const std::string &chainId() const;
+  const std::string &networkName() const;
+  const std::string &protocolVersion() const;
+  std::uint64_t epochDurationSeconds() const;
+  std::uint64_t minimumValidatorCount() const;
+  std::uint64_t quorumThresholdNumerator() const;
+  std::uint64_t quorumThresholdDenominator() const;
+  std::uint64_t maxTransactionsPerBlock() const;
+  std::uint64_t maxPeerCount() const;
+  std::uint64_t maxMempoolTransactions() const;
+  std::uint64_t minimumFeeRawUnits() const;
+  std::uint64_t targetBlockTimeSeconds() const;
+  std::uint64_t finalityDepth() const;
+  const std::string &signatureAlgorithm() const;
+  const std::string &storageFormatVersion() const;
 
-    bool isValid() const;
+  bool isValid() const;
 
-    // Derived from networkName. No storage overhead.
-    NetworkClass networkClass() const;
+  // Derived from networkName. No storage overhead.
+  NetworkClass networkClass() const;
 
-    std::string deterministicId() const;
-    std::string serialize() const;
+  std::string deterministicId() const;
+  std::string serialize() const;
 
-    static NetworkParameters developmentLocal();
-    static NetworkParameters testnetCandidate();
+  static NetworkParameters developmentLocal();
+  static NetworkParameters testnetCandidate();
 
 private:
-    std::string m_chainId;
-    std::string m_networkName;
-    std::string m_protocolVersion;
-    std::uint64_t m_epochDurationSeconds;
-    std::uint64_t m_minimumValidatorCount;
-    std::uint64_t m_quorumThresholdNumerator;
-    std::uint64_t m_quorumThresholdDenominator;
-    std::uint64_t m_maxTransactionsPerBlock;
-    std::uint64_t m_maxPeerCount;
-    std::uint64_t m_maxMempoolTransactions;
-    std::uint64_t m_minimumFeeRawUnits;
-    std::uint64_t m_targetBlockTimeSeconds;
-    std::uint64_t m_finalityDepth;
-    std::string m_signatureAlgorithm;
-    std::string m_storageFormatVersion;
+  std::string m_chainId;
+  std::string m_networkName;
+  std::string m_protocolVersion;
+  std::uint64_t m_epochDurationSeconds;
+  std::uint64_t m_minimumValidatorCount;
+  std::uint64_t m_quorumThresholdNumerator;
+  std::uint64_t m_quorumThresholdDenominator;
+  std::uint64_t m_maxTransactionsPerBlock;
+  std::uint64_t m_maxPeerCount;
+  std::uint64_t m_maxMempoolTransactions;
+  std::uint64_t m_minimumFeeRawUnits;
+  std::uint64_t m_targetBlockTimeSeconds;
+  std::uint64_t m_finalityDepth;
+  std::string m_signatureAlgorithm;
+  std::string m_storageFormatVersion;
 };
 
 /*
@@ -110,132 +107,117 @@ private:
  */
 class BootstrapValidatorConfig {
 public:
-    BootstrapValidatorConfig();
+  BootstrapValidatorConfig();
 
-    BootstrapValidatorConfig(
-        crypto::PublicKey validatorPublicKey,
-        std::uint64_t activationEpoch,
-        std::uint32_t bootstrapWeight,
-        std::string metadataHash
-    );
+  BootstrapValidatorConfig(crypto::PublicKey validatorPublicKey,
+                           std::uint64_t activationEpoch,
+                           std::uint32_t bootstrapWeight,
+                           std::string metadataHash);
 
-    const crypto::PublicKey& validatorPublicKey() const;
-    std::uint64_t activationEpoch() const;
-    std::uint32_t bootstrapWeight() const;
-    const std::string& metadataHash() const;
+  const crypto::PublicKey &validatorPublicKey() const;
+  std::uint64_t activationEpoch() const;
+  std::uint32_t bootstrapWeight() const;
+  const std::string &metadataHash() const;
 
-    std::string validatorAddress() const;
+  std::string validatorAddress() const;
 
-    bool isValid() const;
-    std::string serialize() const;
+  bool isValid() const;
+  std::string serialize() const;
 
 private:
-    crypto::PublicKey m_validatorPublicKey;
-    std::uint64_t m_activationEpoch;
-    std::uint32_t m_bootstrapWeight;
-    std::string m_metadataHash;
+  crypto::PublicKey m_validatorPublicKey;
+  std::uint64_t m_activationEpoch;
+  std::uint32_t m_bootstrapWeight;
+  std::string m_metadataHash;
 };
 
 class GenesisAccountConfig {
 public:
-    GenesisAccountConfig();
+  GenesisAccountConfig();
 
-    GenesisAccountConfig(
-        std::string address,
-        utils::Amount balance,
-        std::uint64_t nonce
-    );
+  GenesisAccountConfig(std::string address, utils::Amount balance,
+                       std::uint64_t nonce);
 
-    const std::string& address() const;
-    utils::Amount balance() const;
-    std::uint64_t nonce() const;
+  const std::string &address() const;
+  utils::Amount balance() const;
+  std::uint64_t nonce() const;
 
-    bool isValid() const;
-    std::string serialize() const;
+  bool isValid() const;
+  std::string serialize() const;
 
 private:
-    std::string m_address;
-    utils::Amount m_balance;
-    std::uint64_t m_nonce;
+  std::string m_address;
+  utils::Amount m_balance;
+  std::uint64_t m_nonce;
 };
 
 class GenesisConfig {
 public:
-    GenesisConfig();
+  GenesisConfig();
 
-    GenesisConfig(
-        NetworkParameters networkParameters,
-        std::int64_t genesisTimestamp,
-        std::vector<BootstrapValidatorConfig> bootstrapValidators,
-        std::string genesisMemo
-    );
+  GenesisConfig(NetworkParameters networkParameters,
+                std::int64_t genesisTimestamp,
+                std::vector<BootstrapValidatorConfig> bootstrapValidators,
+                std::string genesisMemo);
 
-    GenesisConfig(
-        NetworkParameters networkParameters,
-        std::int64_t genesisTimestamp,
-        std::vector<BootstrapValidatorConfig> bootstrapValidators,
-        std::vector<GenesisAccountConfig> genesisAccounts,
-        std::string genesisMemo
-    );
+  GenesisConfig(NetworkParameters networkParameters,
+                std::int64_t genesisTimestamp,
+                std::vector<BootstrapValidatorConfig> bootstrapValidators,
+                std::vector<GenesisAccountConfig> genesisAccounts,
+                std::string genesisMemo);
 
-    const NetworkParameters& networkParameters() const;
-    std::int64_t genesisTimestamp() const;
-    const std::vector<BootstrapValidatorConfig>& bootstrapValidators() const;
-    const std::vector<GenesisAccountConfig>& genesisAccounts() const;
-    const std::string& genesisMemo() const;
+  const NetworkParameters &networkParameters() const;
+  std::int64_t genesisTimestamp() const;
+  const std::vector<BootstrapValidatorConfig> &bootstrapValidators() const;
+  const std::vector<GenesisAccountConfig> &genesisAccounts() const;
+  const std::string &genesisMemo() const;
 
-    bool isValid() const;
+  bool isValid() const;
 
-    std::string deterministicId() const;
-    std::string serialize() const;
+  std::string deterministicId() const;
+  std::string serialize() const;
 
 private:
-    NetworkParameters m_networkParameters;
-    std::int64_t m_genesisTimestamp;
-    std::vector<BootstrapValidatorConfig> m_bootstrapValidators;
-    std::vector<GenesisAccountConfig> m_genesisAccounts;
-    std::string m_genesisMemo;
+  NetworkParameters m_networkParameters;
+  std::int64_t m_genesisTimestamp;
+  std::vector<BootstrapValidatorConfig> m_bootstrapValidators;
+  std::vector<GenesisAccountConfig> m_genesisAccounts;
+  std::string m_genesisMemo;
 };
 
 enum class GenesisBuildStatus {
-    BUILT,
-    INVALID_CONFIG,
-    INVALID_VALIDATOR_REGISTRY,
-    INVALID_BLOCKCHAIN
+  BUILT,
+  INVALID_CONFIG,
+  INVALID_VALIDATOR_REGISTRY,
+  INVALID_BLOCKCHAIN
 };
 
-std::string genesisBuildStatusToString(
-    GenesisBuildStatus status
-);
+std::string genesisBuildStatusToString(GenesisBuildStatus status);
 
 class GenesisBuildResult {
 public:
-    GenesisBuildResult();
+  GenesisBuildResult();
 
-    static GenesisBuildResult built(
-        core::Blockchain blockchain,
-        core::ValidatorRegistry validatorRegistry
-    );
+  static GenesisBuildResult built(core::Blockchain blockchain,
+                                  core::ValidatorRegistry validatorRegistry);
 
-    static GenesisBuildResult rejected(
-        GenesisBuildStatus status,
-        std::string reason
-    );
+  static GenesisBuildResult rejected(GenesisBuildStatus status,
+                                     std::string reason);
 
-    GenesisBuildStatus status() const;
-    const std::string& reason() const;
-    bool built() const;
+  GenesisBuildStatus status() const;
+  const std::string &reason() const;
+  bool built() const;
 
-    const core::Blockchain& blockchain() const;
-    const core::ValidatorRegistry& validatorRegistry() const;
+  const core::Blockchain &blockchain() const;
+  const core::ValidatorRegistry &validatorRegistry() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    GenesisBuildStatus m_status;
-    std::string m_reason;
-    core::Blockchain m_blockchain;
-    core::ValidatorRegistry m_validatorRegistry;
+  GenesisBuildStatus m_status;
+  std::string m_reason;
+  core::Blockchain m_blockchain;
+  core::ValidatorRegistry m_validatorRegistry;
 };
 
 /*
@@ -244,9 +226,7 @@ private:
  */
 class GenesisBuilder {
 public:
-    static GenesisBuildResult build(
-        const GenesisConfig& genesisConfig
-    );
+  static GenesisBuildResult build(const GenesisConfig &genesisConfig);
 };
 
 } // namespace nodo::config

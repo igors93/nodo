@@ -43,16 +43,16 @@ function(nodo_copy_mingw_runtime_dlls target_name)
         find_file(NODO_MINGW_RUNTIME_DLL_${NODO_MINGW_RUNTIME_DLL_ID}
             NAMES "${NODO_MINGW_RUNTIME_DLL}"
             HINTS
-                "${NODO_MINGW_COMPILER_DIR}"
-                ENV PATH
+            "${NODO_MINGW_COMPILER_DIR}"
+            ENV PATH
             NO_DEFAULT_PATH
         )
 
         if(NODO_MINGW_RUNTIME_DLL_${NODO_MINGW_RUNTIME_DLL_ID})
             add_custom_command(TARGET ${target_name} POST_BUILD
                 COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                    "${NODO_MINGW_RUNTIME_DLL_${NODO_MINGW_RUNTIME_DLL_ID}}"
-                    "$<TARGET_FILE_DIR:${target_name}>"
+                "${NODO_MINGW_RUNTIME_DLL_${NODO_MINGW_RUNTIME_DLL_ID}}"
+                "$<TARGET_FILE_DIR:${target_name}>"
                 VERBATIM
             )
         endif()
@@ -65,34 +65,34 @@ add_library(nodo_core STATIC
 
 target_include_directories(nodo_core
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${asio_SOURCE_DIR}/asio/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${asio_SOURCE_DIR}/asio/include
 )
 
 target_compile_definitions(nodo_core
     PUBLIC
-        ASIO_STANDALONE
+    ASIO_STANDALONE
 )
 
 target_compile_options(nodo_core
     PRIVATE
-        $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra>
-        $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>
+    $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>
 )
 
 find_package(Threads REQUIRED)
 
 target_link_libraries(nodo_core
     PUBLIC
-        ${NODO_CRYPTO_TARGET}
-        blst::blst
-        Threads::Threads
+    ${NODO_CRYPTO_TARGET}
+    blst::blst
+    Threads::Threads
 )
 
 if(WIN32)
     target_link_libraries(nodo_core
         PUBLIC
-            ws2_32
+        ws2_32
     )
 endif()
 
@@ -102,7 +102,7 @@ file(GLOB_RECURSE NODO_CORE_CPP_SOURCES
 
 target_sources(nodo_core
     PRIVATE
-        ${NODO_CORE_CPP_SOURCES}
+    ${NODO_CORE_CPP_SOURCES}
 )
 
 add_executable(nodo
@@ -111,12 +111,12 @@ add_executable(nodo
 
 set_target_properties(nodo
     PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build"
 )
 
 target_link_libraries(nodo
     PRIVATE
-        nodo_core
+    nodo_core
 )
 
 nodo_copy_mingw_runtime_dlls(nodo)
@@ -130,7 +130,7 @@ function(nodo_add_test test_name test_source)
 
     target_link_libraries(${test_name}
         PRIVATE
-            nodo_core
+        nodo_core
     )
 
     nodo_copy_mingw_runtime_dlls(${test_name})
@@ -168,8 +168,8 @@ if(TARGET node_RealTcpThreeNodeEndToEndTests)
     else()
         set_tests_properties(node_RealTcpThreeNodeEndToEndTests
             PROPERTIES
-                RUN_SERIAL TRUE
-                TIMEOUT 300
+            RUN_SERIAL TRUE
+            TIMEOUT 300
         )
     endif()
 endif()

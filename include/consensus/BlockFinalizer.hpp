@@ -24,94 +24,78 @@ namespace nodo::consensus {
  */
 class FinalizedBlockRecord {
 public:
-    FinalizedBlockRecord();
+  FinalizedBlockRecord();
 
-    FinalizedBlockRecord(
-        std::uint64_t blockIndex,
-        std::string blockHash,
-        std::string previousHash,
-        std::uint64_t round,
-        std::int64_t finalizedAt,
-        QuorumCertificate quorumCertificate
-    );
+  FinalizedBlockRecord(std::uint64_t blockIndex, std::string blockHash,
+                       std::string previousHash, std::uint64_t round,
+                       std::int64_t finalizedAt,
+                       QuorumCertificate quorumCertificate);
 
-    std::uint64_t blockIndex() const;
-    const std::string& blockHash() const;
-    const std::string& previousHash() const;
-    std::uint64_t round() const;
-    std::int64_t finalizedAt() const;
-    const QuorumCertificate& quorumCertificate() const;
+  std::uint64_t blockIndex() const;
+  const std::string &blockHash() const;
+  const std::string &previousHash() const;
+  std::uint64_t round() const;
+  std::int64_t finalizedAt() const;
+  const QuorumCertificate &quorumCertificate() const;
 
-    bool matchesBlock(
-        const core::Block& block
-    ) const;
+  bool matchesBlock(const core::Block &block) const;
 
-    bool isStructurallyValid() const;
+  bool isStructurallyValid() const;
 
-    bool verify(
-        const core::ValidatorRegistry& validatorRegistry,
-        const crypto::CryptoPolicy& policy,
-        const crypto::SignatureProvider& provider
-    ) const;
+  bool verify(const core::ValidatorRegistry &validatorRegistry,
+              const crypto::CryptoPolicy &policy,
+              const crypto::SignatureProvider &provider) const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
-    static FinalizedBlockRecord deserialize(
-        const std::string& serialized
-    );
+  static FinalizedBlockRecord deserialize(const std::string &serialized);
 
 private:
-    std::uint64_t m_blockIndex;
-    std::string m_blockHash;
-    std::string m_previousHash;
-    std::uint64_t m_round;
-    std::int64_t m_finalizedAt;
-    QuorumCertificate m_quorumCertificate;
+  std::uint64_t m_blockIndex;
+  std::string m_blockHash;
+  std::string m_previousHash;
+  std::uint64_t m_round;
+  std::int64_t m_finalizedAt;
+  QuorumCertificate m_quorumCertificate;
 };
 
 enum class BlockFinalizationRegistryStatus {
-    REGISTERED,
-    DUPLICATE,
-    CONFLICTING_FINALIZATION,
-    INVALID_RECORD,
-    INVALID_REGISTRY
+  REGISTERED,
+  DUPLICATE,
+  CONFLICTING_FINALIZATION,
+  INVALID_RECORD,
+  INVALID_REGISTRY
 };
 
-std::string blockFinalizationRegistryStatusToString(
-    BlockFinalizationRegistryStatus status
-);
+std::string
+blockFinalizationRegistryStatusToString(BlockFinalizationRegistryStatus status);
 
 class BlockFinalizationRegistryResult {
 public:
-    BlockFinalizationRegistryResult();
+  BlockFinalizationRegistryResult();
 
-    static BlockFinalizationRegistryResult registered(
-        FinalizedBlockRecord record
-    );
+  static BlockFinalizationRegistryResult
+  registered(FinalizedBlockRecord record);
 
-    static BlockFinalizationRegistryResult duplicate(
-        FinalizedBlockRecord record
-    );
+  static BlockFinalizationRegistryResult duplicate(FinalizedBlockRecord record);
 
-    static BlockFinalizationRegistryResult rejected(
-        BlockFinalizationRegistryStatus status,
-        std::string reason
-    );
+  static BlockFinalizationRegistryResult
+  rejected(BlockFinalizationRegistryStatus status, std::string reason);
 
-    BlockFinalizationRegistryStatus status() const;
-    const std::string& reason() const;
-    const FinalizedBlockRecord& record() const;
+  BlockFinalizationRegistryStatus status() const;
+  const std::string &reason() const;
+  const FinalizedBlockRecord &record() const;
 
-    bool registered() const;
-    bool duplicate() const;
-    bool success() const;
+  bool registered() const;
+  bool duplicate() const;
+  bool success() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    BlockFinalizationRegistryStatus m_status;
-    std::string m_reason;
-    FinalizedBlockRecord m_record;
+  BlockFinalizationRegistryStatus m_status;
+  std::string m_reason;
+  FinalizedBlockRecord m_record;
 };
 
 /*
@@ -122,88 +106,71 @@ private:
  */
 class BlockFinalizationRegistry {
 public:
-    BlockFinalizationRegistry();
+  BlockFinalizationRegistry();
 
-    bool canRegister(
-        const FinalizedBlockRecord& record
-    ) const;
+  bool canRegister(const FinalizedBlockRecord &record) const;
 
-    BlockFinalizationRegistryResult registerFinalizedBlock(
-        const FinalizedBlockRecord& record
-    );
+  BlockFinalizationRegistryResult
+  registerFinalizedBlock(const FinalizedBlockRecord &record);
 
-    bool hasFinalizedHeight(
-        std::uint64_t blockIndex
-    ) const;
+  bool hasFinalizedHeight(std::uint64_t blockIndex) const;
 
-    bool isFinalizedBlock(
-        std::uint64_t blockIndex,
-        const std::string& blockHash
-    ) const;
+  bool isFinalizedBlock(std::uint64_t blockIndex,
+                        const std::string &blockHash) const;
 
-    const FinalizedBlockRecord* recordForHeight(
-        std::uint64_t blockIndex
-    ) const;
+  const FinalizedBlockRecord *recordForHeight(std::uint64_t blockIndex) const;
 
-    std::uint64_t highestFinalizedHeight() const;
-    std::size_t size() const;
+  std::uint64_t highestFinalizedHeight() const;
+  std::size_t size() const;
 
-    bool isValid() const;
+  bool isValid() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    std::map<std::uint64_t, FinalizedBlockRecord> m_recordsByHeight;
+  std::map<std::uint64_t, FinalizedBlockRecord> m_recordsByHeight;
 };
 
 enum class BlockFinalizationStatus {
-    FINALIZED,
-    DUPLICATE_FINALIZATION,
-    INVALID_BLOCKCHAIN,
-    INVALID_BLOCK,
-    INVALID_CERTIFICATE,
-    CERTIFICATE_BLOCK_MISMATCH,
-    INVALID_FINALIZATION_REGISTRY,
-    ALREADY_FINALIZED_CONFLICT,
-    APPEND_REJECTED,
-    REGISTRATION_FAILED
+  FINALIZED,
+  DUPLICATE_FINALIZATION,
+  INVALID_BLOCKCHAIN,
+  INVALID_BLOCK,
+  INVALID_CERTIFICATE,
+  CERTIFICATE_BLOCK_MISMATCH,
+  INVALID_FINALIZATION_REGISTRY,
+  ALREADY_FINALIZED_CONFLICT,
+  APPEND_REJECTED,
+  REGISTRATION_FAILED
 };
 
-std::string blockFinalizationStatusToString(
-    BlockFinalizationStatus status
-);
+std::string blockFinalizationStatusToString(BlockFinalizationStatus status);
 
 class BlockFinalizationResult {
 public:
-    BlockFinalizationResult();
+  BlockFinalizationResult();
 
-    static BlockFinalizationResult finalized(
-        FinalizedBlockRecord record
-    );
+  static BlockFinalizationResult finalized(FinalizedBlockRecord record);
 
-    static BlockFinalizationResult duplicate(
-        FinalizedBlockRecord record
-    );
+  static BlockFinalizationResult duplicate(FinalizedBlockRecord record);
 
-    static BlockFinalizationResult rejected(
-        BlockFinalizationStatus status,
-        std::string reason
-    );
+  static BlockFinalizationResult rejected(BlockFinalizationStatus status,
+                                          std::string reason);
 
-    BlockFinalizationStatus status() const;
-    const std::string& reason() const;
-    const FinalizedBlockRecord& record() const;
+  BlockFinalizationStatus status() const;
+  const std::string &reason() const;
+  const FinalizedBlockRecord &record() const;
 
-    bool finalized() const;
-    bool duplicate() const;
-    bool success() const;
+  bool finalized() const;
+  bool duplicate() const;
+  bool success() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    BlockFinalizationStatus m_status;
-    std::string m_reason;
-    FinalizedBlockRecord m_record;
+  BlockFinalizationStatus m_status;
+  std::string m_reason;
+  FinalizedBlockRecord m_record;
 };
 
 /*
@@ -212,21 +179,17 @@ private:
  */
 class BlockFinalizer {
 public:
-    static BlockFinalizationResult finalizeBlock(
-        core::Blockchain& blockchain,
-        const core::Block& block,
-        const QuorumCertificate& certificate,
-        const core::ValidatorRegistry& validatorRegistry,
-        BlockFinalizationRegistry& finalizationRegistry,
-        const crypto::CryptoPolicy& policy,
-        const crypto::SignatureProvider& provider,
-        std::int64_t finalizedAt
-    );
+  static BlockFinalizationResult
+  finalizeBlock(core::Blockchain &blockchain, const core::Block &block,
+                const QuorumCertificate &certificate,
+                const core::ValidatorRegistry &validatorRegistry,
+                BlockFinalizationRegistry &finalizationRegistry,
+                const crypto::CryptoPolicy &policy,
+                const crypto::SignatureProvider &provider,
+                std::int64_t finalizedAt);
 
-    static bool certificateMatchesBlock(
-        const core::Block& block,
-        const QuorumCertificate& certificate
-    );
+  static bool certificateMatchesBlock(const core::Block &block,
+                                      const QuorumCertificate &certificate);
 };
 
 } // namespace nodo::consensus
