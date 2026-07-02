@@ -40,13 +40,17 @@ This phase is a testnet hardening boundary. It adds confidentiality, message aut
 
 For public network use, this boundary should later be backed by an audited key exchange and AEAD construction, and peer identity should be bound to production validator or node keys.
 
+## Implemented since this boundary
+
+- Ed25519 challenge-based peer authentication during the handshake
+  (`PeerHandshakeManager`), refused on failure.
+- Automatic secure-session gating inside the TCP runtime via
+  `EncryptedPeerTransport`: non-handshake messages require an authenticated
+  session before dispatch.
+- Peer discovery (`DiscoveryService`) wired into the live daemon path.
+
 ## Not included yet
 
 - production-grade Noise/TLS/libp2p secure transport;
-- certificate or validator-key based peer authentication;
-- automatic secure-session negotiation inside the TCP runtime;
 - persistent secure-session resumption;
-- key rotation;
-- public testnet peer discovery.
-
-Those should come after this boundary is stable and tested.
+- key rotation.

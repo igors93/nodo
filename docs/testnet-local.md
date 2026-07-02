@@ -6,7 +6,7 @@ This document explains how to run a local multi-node Nodo testnet for developmen
 
 The local testnet starts four independent Nodo nodes on the same machine, each with its own data directory. Every node initializes from the shared localnet genesis, produces blocks, reloads state from disk, and passes chain audit.
 
-This is not a production testnet. It validates the local block production and audit pipeline across multiple isolated nodes. P2P block gossip between nodes is a later phase.
+This is not a production testnet. It validates the local block production and audit pipeline across multiple isolated nodes. For live networked consensus between nodes, use `node run` (see `docs/TCP_TESTNET_NODE_RUNTIME.md`).
 
 ## Prerequisites
 
@@ -143,7 +143,7 @@ Log entries have the format `[timestamp][node-N] message`.
 The C++ integration test (`TestnetLocalFourNodeIntegrationTests`) validates the same 4-node scenario programmatically via the internal C++ API:
 
 ```bash
-./scripts/test_testnet_local_multi_node.sh
+./scripts/test.sh -R node_TestnetLocalFourNodeIntegrationTests
 ```
 
 Or run directly with CTest after building:
@@ -163,17 +163,18 @@ ctest --test-dir build/cmake -R node_TestnetLocalFourNodeIntegrationTests --outp
 7. A node rejects loading a data directory initialized with a different genesis.
 8. Fresh initialization leaves all 4 nodes at block height 0.
 
-## Known Limitations
+## Scope and Limitations
 
-- **No live P2P block sync**: nodes produce blocks independently. Sharing blocks between nodes requires the P2P gossip and sync layer (next phase).
-- **Shared localnet keys**: the CLI uses deterministic localnet keys (`local-user`, `local-validator`) — all nodes get the same keys. These are not suitable for production or public testnets.
-- **Single-validator consensus**: block production uses a solo-validator genesis so each node can finalize blocks alone. A real multi-node consensus requires all validators to vote over the network.
-- **No automatic peer discovery**: peer addresses must be configured manually.
+This script exercises the **offline, per-node pipeline only**: each node
+produces blocks independently with a solo-validator genesis and deterministic
+localnet keys (`local-user`, `local-validator`), so all nodes share the same
+keys and do not talk to each other. That is by design — it validates init,
+block production, reload, and audit in isolation.
 
-## Next Steps
+The live networked path (P2P gossip, block sync, multi-node consensus voting
+over TCP, peer discovery and reconnection) is implemented separately and is
+exercised by `node run` and by the end-to-end tests
+(`node_RealTcpThreeNodeEndToEndTests`, `node_ThreeNodeProtocolEndToEndTests`).
+See `docs/TCP_TESTNET_NODE_RUNTIME.md` and `docs/PERSISTENT_BLOCK_STATE_SYNC.md`.
 
-1. P2P block sync between nodes (persistent block state sync layer).
-2. Multi-node validator voting over TCP transport.
-3. Encrypted key storage with per-node distinct keys.
-4. Automatic peer discovery and reconnection policy.
-5. Public testnet node with bootnodes.
+Localnet keys remain unsuitable for production or public testnets.

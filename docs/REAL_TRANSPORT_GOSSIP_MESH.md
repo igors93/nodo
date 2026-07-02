@@ -39,16 +39,18 @@ QUIC or libp2p implementations should use.
 Keeping this interface clean avoids coupling consensus logic to one socket
 library too early.
 
+## Implemented since this boundary
+
+- Real TCP transport and server loop (`TcpTransport`, see
+  `TCP_TESTNET_NODE_RUNTIME.md`).
+- Encrypted peer channels (`ENCRYPTED_PEER_CHANNELS.md`).
+- Persistent peer store (`TcpTestnetPeerStore`).
+- Peer discovery (`DiscoveryService`) wired into the daemon path.
+
 ## Not included yet
 
-- Production TCP server loop.
-- Encrypted peer channels.
 - NAT traversal.
-- Persistent peer database.
-- Full peer discovery.
 - Bandwidth accounting.
-
-Those should be implemented after this transport boundary is stable and tested.
 
 
 ## Hardened runtime path

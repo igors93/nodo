@@ -113,20 +113,14 @@ Duplicate evidence could accidentally or maliciously count the same work twice.
 
 The distributor treats duplicate accepted evidence as an error instead of quietly rewarding it.
 
-## What This Does Not Do Yet
+## Follow-up: Automatic Epoch Settlement
 
-This phase does not yet automatically insert reward records into blocks.
-
-That should come next:
-
-```text
-RewardDistributor output
-        ↓
-LedgerRecord::fromProtectionEpoch
-LedgerRecord::fromGenesisRewardRecord
-        ↓
-Block proposal
-```
+A later phase wired automatic reward insertion into the block pipeline:
+`node::EpochRewardSettlementService` builds candidate reward records at epoch
+settlement heights during block production (`BlockProductionPhase`), and
+`RuntimeBlockPipeline` rejects any finalized block whose epoch reward records
+do not match the deterministic settlement
+(`EpochRewardSettlementService::candidateRecordsMatch`).
 
 ## New Test
 

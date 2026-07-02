@@ -32,6 +32,9 @@ Nodo is currently in development and pre-mainnet. Documentation should be read w
 - [Protocol Reference](PROTOCOL.md)
 - [Consensus Rules Reference](CONSENSUS_RULES.md)
 - [State Transition Reference](STATE_TRANSITION.md)
+- [Slashing Evidence and Validator Accountability](SLASHING_EVIDENCE_VALIDATOR_ACCOUNTABILITY.md)
+- [Validator Penalty Application](VALIDATOR_PENALTY_APPLICATION.md)
+- [Canonical Serialization and State Commitment](CANONICAL_SERIALIZATION_STATE_COMMITMENT.md)
 
 ## Economics
 
@@ -65,8 +68,13 @@ Nodo is currently in development and pre-mainnet. Documentation should be read w
 - [Networks](NETWORKS.md)
 - [Node Data Directory](NODE_DATA_DIRECTORY.md)
 - [Development Mode](DEVELOPMENT_MODE.md)
+- [CLI Reference](CLI.md)
+- [Local Testnet](testnet-local.md)
 - [Testnet Node Runtime](TCP_TESTNET_NODE_RUNTIME.md)
 - [Persistent Block State Sync](PERSISTENT_BLOCK_STATE_SYNC.md)
+- [Networked Consensus Foundation](NETWORKED_CONSENSUS_FOUNDATION.md)
+- [Real Transport Gossip Mesh](REAL_TRANSPORT_GOSSIP_MESH.md)
+- [Encrypted Peer Channels](ENCRYPTED_PEER_CHANNELS.md)
 
 ## Development
 

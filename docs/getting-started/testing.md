@@ -22,16 +22,23 @@ Direct CTest:
 ctest --test-dir build/cmake --output-on-failure
 ```
 
-## Module Test Scripts
+## Filtered Test Runs
 
-The repository also includes focused scripts:
+`scripts/test.sh` (Unix-like) and `scripts/test.bat` (Windows) build the
+project and run a subset of the suite:
 
-- `scripts/test_crypto.bat` / `scripts/test_crypto.sh`
-- `scripts/test_consensus.bat` / `scripts/test_consensus.sh`
-- `scripts/test_mempool.bat` / `scripts/test_mempool.sh`
-- `scripts/test_serialization.bat` / `scripts/test_serialization.sh`
-- `scripts/test_storage.bat` / `scripts/test_storage.sh`
-- `scripts/test_economics.bat` / `scripts/test_economics.sh`
+```bash
+./scripts/test.sh                  # all tests
+./scripts/test.sh consensus        # one module (tests/ subdirectory prefix)
+./scripts/test.sh -R "p2p_Encrypted"   # any ctest name regex
+```
+
+Valid module names are the `tests/` subdirectories: `app`, `config`,
+`consensus`, `core`, `crypto`, `economics`, `mempool`, `node`, `p2p`,
+`serialization`, `staking`, `storage`, `utils`.
+
+Test executables are named `<subdir>_<FileName>` (for example
+`consensus_VotePoolTests`), so any grouping can be selected with `-R`.
 
 ## Testing Rules
 

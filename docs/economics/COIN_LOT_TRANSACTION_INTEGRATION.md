@@ -104,13 +104,12 @@ The final registry state after all transactions contributes to the block's
 between the proposer's registry state and a validator's expected state produces
 a mismatched root and causes the block to be rejected.
 
-## What This Does Not Do Yet
+## Follow-up: Explicit Input Lots
 
-This phase does not yet add transaction-declared input lot IDs.
-
-For now, input selection is deterministic and automatic.
-
-Future versions may allow a transaction to explicitly declare the exact input lots it wants to spend.
+A later phase added transaction-declared input lot IDs
+(`Transaction::inputCoinLotIds`), so a transaction can explicitly declare the
+exact lots it wants to spend and validators must not substitute them. See
+[Explicit Transaction CoinLot Inputs](EXPLICIT_TRANSACTION_COIN_LOT_INPUTS.md).
 
 ## New Test
 

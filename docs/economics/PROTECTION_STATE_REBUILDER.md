@@ -62,20 +62,18 @@ GENESIS_REWARD records as reward CoinLots
 
 Rejected work records are preserved in the ledger, but they do not increase accepted work totals.
 
-## What This Does Not Do Yet
+## What This Phase Did Not Do
 
-This phase does not yet:
+This phase only created the rebuildable state boundary. The larger pieces it
+deliberately left out were implemented in later phases:
 
 ```text
-replace the old demo genesis mint
-distribute rewards automatically
-validate consensus
-slash stake
-select validators
-connect peer-to-peer networking
+distribute rewards automatically   -> EpochRewardSettlementService
+validate consensus                 -> ConsensusEventLoop + QuorumCertificate
+slash stake                        -> CanonicalSlashingTransition
+select validators                  -> ProposerSchedule + ValidatorRegistry
+connect peer-to-peer networking    -> TcpTransport + GossipMesh
 ```
-
-It creates the rebuildable state needed before those bigger changes.
 
 ## New Test
 

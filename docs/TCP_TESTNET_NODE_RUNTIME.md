@@ -56,17 +56,21 @@ node-a 127.0.0.1 30333 fingerprint-a
 node-b 127.0.0.1 30334 fingerprint-b
 ```
 
+## Implemented since this boundary
+
+- encrypted peer channels gated by `EncryptedPeerTransport`
+  (`ENCRYPTED_PEER_CHANNELS.md`);
+- Ed25519 challenge authentication during connection setup
+  (`PeerHandshakeManager`);
+- persistent block sync over TCP (`PERSISTENT_BLOCK_STATE_SYNC.md`);
+- automatic peer discovery and reconnection policy (`DiscoveryService`,
+  `PeerReconnectionPolicy`).
+
 ## Not included yet
 
-- encrypted peer channels;
-- authentication during TCP connection setup;
-- persistent block sync over TCP;
-- automatic peer discovery;
 - NAT traversal;
 - bandwidth accounting;
 - production-grade async event loop.
-
-Those should be implemented after this testnet runtime boundary is stable.
 
 ## Bootstrap and reconnection
 

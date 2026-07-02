@@ -78,25 +78,13 @@ State supply audit counts both legacy MintRecord and GenesisRewardRecord
 ChainStateRebuilder accepts protection metadata as public-state no-op
 ```
 
-## What This Does Not Do Yet
+## Follow-up: Automatic Epoch Rewards
 
-This phase does not yet create rewards automatically at epoch end.
-
-That future phase should add:
-
-```text
-RewardDistributor
-```
-
-which will calculate:
-
-```text
-accepted work
-validator score
-emission cap
-reward share
-GenesisReward records
-```
+A later phase implemented automatic reward creation at epoch settlement
+heights: `economics::EpochRewardDistributor` computes the distribution and
+`node::EpochRewardSettlementService` inserts and validates the deterministic
+reward records in the block pipeline. See
+[Epoch Reward Distributor](EPOCH_REWARD_DISTRIBUTOR.md).
 
 ## New Test
 

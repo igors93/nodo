@@ -29,15 +29,16 @@ is accepting unstructured network messages directly into consensus. This package
 creates the boundary where messages must be identified, scoped to one chain,
 validated for freshness, deduplicated and only then passed to consensus modules.
 
-## Not included yet
+## Implemented after this foundation
 
-- Real TCP/QUIC/libp2p transport.
-- Encrypted peer channels.
-- Full gossip mesh.
-- Slashing penalties.
-- Binary canonical message codec.
+The items originally deferred from this boundary have since been built on top
+of it:
 
-Those should be implemented after this boundary is merged and stable.
+- Real TCP transport (`p2p::TcpTransport`, see `TCP_TESTNET_NODE_RUNTIME.md`).
+- Encrypted peer channels (`ENCRYPTED_PEER_CHANNELS.md`).
+- Full gossip mesh (`REAL_TRANSPORT_GOSSIP_MESH.md`).
+- Slashing penalties (`VALIDATOR_PENALTY_APPLICATION.md`).
+- Canonical message codecs (`serialization/CANONICAL_SERIALIZATION.md`).
 
 
 ## Required P2P gate for consensus traffic

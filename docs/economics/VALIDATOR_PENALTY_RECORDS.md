@@ -72,18 +72,19 @@ Penalty output uses canonical order:
 
 The score record points back to the penalty by using the penalty deterministic id as evidence hash.
 
-## What This Does Not Do Yet
+## Follow-up: Automatic Stake Slashing
 
-This phase does not slash locked stake yet.
+Later phases implemented automatic penalty application to locked stake:
+`node::CanonicalSlashingTransition` converts finalized evidence into one
+deterministic penalty decision, deducts a bounded fraction of locked stake in
+the staking registry and emits auditable `StakePenaltyRecord` entries in the
+finalized artifact. See
+[Validator Penalty Application](../VALIDATOR_PENALTY_APPLICATION.md).
 
-Future phases should add:
+Still not implemented:
 
 ```text
-StakeLock registry
-CoinLot slashing
-automatic penalty application to locked stake
 appeal / review flow
-consensus acceptance of penalty records
 ```
 
 ## New Test

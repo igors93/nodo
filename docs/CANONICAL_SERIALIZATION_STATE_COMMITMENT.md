@@ -35,8 +35,8 @@ one context cannot be silently reused in another context.
 ## What this does not do yet
 
 - It does not replace every existing text serialization call.
-- It does not implement full historical chain replay from disk.
-- It does not add Merkle proofs yet.
 - It does not implement a binary block storage migration yet.
 
-Those should come after this canonical boundary is stable.
+Merkle proofs were added later (`core::MerkleProof`, `core::SparseMerkleTree`;
+account inclusion proofs are exposed through the node RPC), and full canonical
+chain replay now exists through `ProtocolStateTransition`/`ProtocolReplayState`.

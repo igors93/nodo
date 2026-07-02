@@ -14,9 +14,15 @@ nodo keys list [--data-dir PATH]
 nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]
 nodo stake lock|deposit|top-up|unlock|withdraw [--data-dir PATH] (--validator ADDRESS | --validator-key ID) --amount RAW_UNITS [--owner KEY_ID] [--fee RAW_UNITS]
 nodo stake status [--data-dir PATH] (--validator ADDRESS | --validator-key ID)
+nodo stake positions|audit [--data-dir PATH] [--validator ADDRESS] [--address ADDRESS]
+nodo governance propose [--data-dir PATH] [--from KEY_ID] [--proposal-type parameter-change|treasury-spend|text] [--title TEXT] [--body TEXT] [--target PARAM] [--value VALUE] [--effective-height HEIGHT] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--voting-period BLOCKS]
+nodo governance vote [--data-dir PATH] [--owner KEY_ID] --proposal-id ID --validator ADDRESS [--vote YES|NO|ABSTAIN] [--fee RAW_UNITS]
+nodo governance status|list|show|audit [--data-dir PATH] [--proposal-id ID]
 nodo block produce [--data-dir PATH]
 nodo chain audit [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
 nodo validator list [--data-dir PATH]
+nodo testnet readiness [--network localnet|testnet-candidate] [--data-dir PATH] [--key-id ID]
+nodo diagnostics [--network localnet|testnet-candidate] [--data-dir PATH] [--key-id ID]
 ```
 
 ## Commands
@@ -88,7 +94,6 @@ build/nodo status --data-dir .nodo
 ```
 
 Current localnet limits remain intentional: the `block produce` shortcut is not
-production P2P consensus, mainnet startup remains blocked, automatic production
-stake-slashing is not active, and local keys are deterministic and unencrypted.
-These limits are audited explicitly instead of being hidden behind demo-only code
-paths.
+production P2P consensus, mainnet startup remains blocked, and local keys are
+deterministic and unencrypted by default. These limits are audited explicitly
+instead of being hidden behind demo-only code paths.

@@ -52,16 +52,13 @@ once state snapshot creation and hash verification are complete.
 
 ## Not included yet
 
-- Direct mutation of `Blockchain` from sync batches.
-- Full block deserialization from network payloads.
-- Quorum certificate validation inside the applier.
-- Historical replay from disk.
 - Merkle proof based snapshot verification.
 - Snapshot sync (runtime hydration from a snapshot manifest).
-- Automatic runtime integration into `TcpTestnetNodeRuntime::tick()`.
 
-Those should be implemented after this boundary is stable and after the real
-block storage format is made fully canonical.
+The sync planner, codec and applier are wired into the live node path through
+`NodeOrchestrator` (`planFromRemoteStatus`, `encodeBlockSyncBatch`,
+`importFinalizedBatch`), so finalized batches flow through the canonical
+runtime pipeline during normal operation.
 
 ## Slashing evidence and penalty audit
 

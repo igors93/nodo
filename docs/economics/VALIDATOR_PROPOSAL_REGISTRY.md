@@ -71,17 +71,14 @@ This is the first protection against a validator trying to support two competing
 
 Future slashing logic can use `ValidatorDoubleSignEvidence` to reduce score, slash locked CoinLots or ban a validator.
 
-## What This Does Not Do Yet
+## Follow-up: Automatic Slashing
 
-This phase does not yet slash the validator automatically.
-
-The next natural phases are:
-
-```text
-turn double-sign evidence into penalty records
-connect penalty records to validator score
-connect severe conflicts to CoinLot slashing
-```
+Later phases implemented automatic penalty application: finalized double-vote
+and proposer-equivocation evidence is converted into a deterministic penalty
+decision by `node::CanonicalSlashingTransition`, which updates validator
+jail/tombstone status and applies bounded stake slashing. See
+[Validator Penalty Application](../VALIDATOR_PENALTY_APPLICATION.md) and
+[Slashing Evidence + Validator Accountability](../SLASHING_EVIDENCE_VALIDATOR_ACCOUNTABILITY.md).
 
 ## New Test
 

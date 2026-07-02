@@ -17,10 +17,16 @@ Local development keys are not production custody. They should not be used to pr
 
 Official network profiles require stronger key policy. Testnet-candidate rejects insecure localnet-only key material. Mainnet remains blocked until audited custody and production key providers exist.
 
+## Implemented
+
+- encrypted durable key storage: `KeyStore` encrypts private key material at
+  rest through `KeyEncryptionService` (PBKDF2-HMAC-SHA256 derived key), and
+  plaintext key files are refused on official networks by
+  `ProductionKeySafetyGate`.
+
 ## Required Future Work
 
-- encrypted durable key storage;
 - audited production signing providers;
-- hardware or custody integration boundaries;
+- hardware or custody integration boundaries (HSM interface);
 - key rotation and revocation procedures;
 - operator documentation for testnet and mainnet.

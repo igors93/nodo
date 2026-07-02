@@ -38,7 +38,7 @@ A node can:
 9. announce, request and respond with either evidence type through network
    message primitives.
 
-## Why penalties are not applied here
+## Why penalties are not applied in this layer
 
 Slashing must be conservative. Before burning or locking funds, the protocol must
 first prove that evidence is:
@@ -49,8 +49,11 @@ first prove that evidence is:
 - durable across restart;
 - auditable by other nodes.
 
-Penalty application should come in the next phase, after this evidence boundary is
-stable.
+The evidence layer therefore only detects, verifies, persists and shares
+evidence. Penalty application itself is implemented separately in the canonical
+slashing transition (`node::CanonicalSlashingTransition`), which converts
+finalized evidence into one deterministic penalty decision — see
+`docs/VALIDATOR_PENALTY_APPLICATION.md`.
 
 ## Sync/reload audit boundary
 
