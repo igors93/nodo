@@ -11,43 +11,40 @@
 namespace nodo::node {
 
 enum class MonetaryReportVerificationStatus {
-    MATCH,
-    FIELD_MISMATCH,
-    PERSISTED_INVALID,
-    REBUILT_INVALID
+  MATCH,
+  FIELD_MISMATCH,
+  PERSISTED_INVALID,
+  REBUILT_INVALID
 };
 
 std::string monetaryReportVerificationStatusToString(
-    MonetaryReportVerificationStatus status
-);
+    MonetaryReportVerificationStatus status);
 
 class MonetaryReportVerificationResult {
 public:
-    MonetaryReportVerificationResult();
+  MonetaryReportVerificationResult();
 
-    static MonetaryReportVerificationResult match();
+  static MonetaryReportVerificationResult match();
 
-    static MonetaryReportVerificationResult fieldMismatch(
-        std::string reason,
-        std::uint64_t epoch,
-        utils::Amount expectedEndingSupply,
-        utils::Amount actualEndingSupply
-    );
+  static MonetaryReportVerificationResult
+  fieldMismatch(std::string reason, std::uint64_t epoch,
+                utils::Amount expectedEndingSupply,
+                utils::Amount actualEndingSupply);
 
-    static MonetaryReportVerificationResult persistedInvalid(std::string reason);
-    static MonetaryReportVerificationResult rebuiltInvalid(std::string reason);
+  static MonetaryReportVerificationResult persistedInvalid(std::string reason);
+  static MonetaryReportVerificationResult rebuiltInvalid(std::string reason);
 
-    bool matched() const;
-    MonetaryReportVerificationStatus status() const;
-    const std::string& reason() const;
-    const MonetaryAuditDiagnostic& diagnostic() const;
+  bool matched() const;
+  MonetaryReportVerificationStatus status() const;
+  const std::string &reason() const;
+  const MonetaryAuditDiagnostic &diagnostic() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    MonetaryReportVerificationStatus m_status;
-    std::string m_reason;
-    MonetaryAuditDiagnostic m_diagnostic;
+  MonetaryReportVerificationStatus m_status;
+  std::string m_reason;
+  MonetaryAuditDiagnostic m_diagnostic;
 };
 
 /*
@@ -60,10 +57,9 @@ private:
  */
 class MonetaryReportVerifier {
 public:
-    static MonetaryReportVerificationResult verify(
-        const economics::EpochMonetaryReport& persisted,
-        const economics::EpochMonetaryReport& rebuilt
-    );
+  static MonetaryReportVerificationResult
+  verify(const economics::EpochMonetaryReport &persisted,
+         const economics::EpochMonetaryReport &rebuilt);
 };
 
 } // namespace nodo::node

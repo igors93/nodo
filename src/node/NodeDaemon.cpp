@@ -1,9 +1,11 @@
 #include "node/NodeDaemon.hpp"
 
+#include "consensus/BlockFinalizer.hpp"
 #include "consensus/BlockProductionPhase.hpp"
 #include "consensus/BlockProposalPhase.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
+#include "node/ChainSyncMessages.hpp"
 #include "node/FinalizedArtifactGossipAdmission.hpp"
 #include "node/FinalizedBlockRecordStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
@@ -73,7 +75,7 @@ void NodeDaemon::setLocalNodeIdentity(crypto::KeyPair nodeIdentityKey) {
 void NodeDaemon::tick(std::int64_t now) {
   m_orchestrator.tick(now);
   processTransactionGossip(now);
-  processFinalizedArtifacts();
+  processFinalizedArtifacts(now);
   maybeProposeBlock(now);
 }
 
@@ -162,7 +164,7 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
   }
 }
 
-void NodeDaemon::processFinalizedArtifacts() {
+void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
   const auto messages = m_orchestrator.drainGossipInbox(
       p2p::NetworkMessageType::FINALIZED_BLOCK_ARTIFACT);
 
@@ -178,6 +180,38 @@ void NodeDaemon::processFinalizedArtifacts() {
       // Finality must never remain memory-only or diverge from its
       // durable proof. Preserve the existing fail-stop safety policy.
       std::abort();
+    }
+
+    // A finalized artifact for a height we do not have yet means this node
+    // fell behind: either it missed rounds while offline, or the network
+    // kept finalizing blocks without ever hitting a round timeout (the only
+    // other event that broadcasts CHAIN_STATUS). Without this hook, such a
+    // node would keep rejecting every FINALIZED_BLOCK_ARTIFACT it receives
+    // as BLOCK_UNAVAILABLE forever, staying stuck waiting for a proposal at
+    // its stale height instead of catching up. Treat the artifact itself as
+    // sync-trigger evidence, exactly like an ahead CHAIN_STATUS message.
+    if (result.status() ==
+        FinalizedArtifactGossipAdmissionStatus::BLOCK_UNAVAILABLE) {
+      try {
+        const consensus::FinalizedBlockRecord record =
+            consensus::FinalizedBlockRecord::deserialize(envelope.payload());
+        if (record.isStructurallyValid()) {
+          const auto &network = m_orchestrator.runtime()
+                                    .config()
+                                    .genesisConfig()
+                                    .networkParameters();
+          const ChainStatusMessage syntheticStatus(
+              network.networkName(), network.chainId(),
+              m_orchestrator.runtime().config().localPeer().protocolVersion(),
+              record.blockIndex(), record.blockHash(), record.blockIndex(),
+              record.blockHash());
+          m_orchestrator.triggerSyncIfBehind(syntheticStatus,
+                                             envelope.senderNodeId(), now);
+        }
+      } catch (const std::exception &) {
+        // Malformed payload here was already reported by admit(); do not
+        // let a second parse failure interrupt the tick loop.
+      }
     }
   }
 }

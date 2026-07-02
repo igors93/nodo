@@ -1,8 +1,8 @@
 #ifndef NODO_CONSENSUS_BLOCK_PRODUCTION_PHASE_HPP
 #define NODO_CONSENSUS_BLOCK_PRODUCTION_PHASE_HPP
 
-#include "core/Block.hpp"
 #include "consensus/SlashingEvidence.hpp"
+#include "core/Block.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 
@@ -19,49 +19,50 @@ namespace nodo::consensus {
  */
 
 struct PendingSlashingEvidenceBatch {
-    std::vector<DoubleVoteEvidence> doubleVotes;
-    std::vector<ProposerEquivocationEvidence> proposerEquivocations;
+  std::vector<DoubleVoteEvidence> doubleVotes;
+  std::vector<ProposerEquivocationEvidence> proposerEquivocations;
 
-    PendingSlashingEvidenceBatch() = default;
+  PendingSlashingEvidenceBatch() = default;
 
-    PendingSlashingEvidenceBatch(std::initializer_list<DoubleVoteEvidence> values)
-        : doubleVotes(values), proposerEquivocations() {}
+  PendingSlashingEvidenceBatch(std::initializer_list<DoubleVoteEvidence> values)
+      : doubleVotes(values), proposerEquivocations() {}
 
-    PendingSlashingEvidenceBatch(
-        std::vector<DoubleVoteEvidence> doubleVoteEvidence,
-        std::vector<ProposerEquivocationEvidence> proposerEquivocationEvidence = {}
-    ) : doubleVotes(std::move(doubleVoteEvidence)),
+  PendingSlashingEvidenceBatch(
+      std::vector<DoubleVoteEvidence> doubleVoteEvidence,
+      std::vector<ProposerEquivocationEvidence> proposerEquivocationEvidence =
+          {})
+      : doubleVotes(std::move(doubleVoteEvidence)),
         proposerEquivocations(std::move(proposerEquivocationEvidence)) {}
 
-    bool empty() const {
-        return doubleVotes.empty() && proposerEquivocations.empty();
-    }
+  bool empty() const {
+    return doubleVotes.empty() && proposerEquivocations.empty();
+  }
 
-    std::size_t size() const {
-        return doubleVotes.size() + proposerEquivocations.size();
-    }
+  std::size_t size() const {
+    return doubleVotes.size() + proposerEquivocations.size();
+  }
 };
 
 struct BlockCandidateResult {
-    bool produced() const { return m_block.has_value(); }
-    const core::Block& block() const { return *m_block; }
-    const std::string& reason() const { return m_reason; }
+  bool produced() const { return m_block.has_value(); }
+  const core::Block &block() const { return *m_block; }
+  const std::string &reason() const { return m_reason; }
 
-    static BlockCandidateResult ok(core::Block block) {
-        BlockCandidateResult r;
-        r.m_block = std::move(block);
-        return r;
-    }
+  static BlockCandidateResult ok(core::Block block) {
+    BlockCandidateResult r;
+    r.m_block = std::move(block);
+    return r;
+  }
 
-    static BlockCandidateResult failed(std::string reason) {
-        BlockCandidateResult r;
-        r.m_reason = std::move(reason);
-        return r;
-    }
+  static BlockCandidateResult failed(std::string reason) {
+    BlockCandidateResult r;
+    r.m_reason = std::move(reason);
+    return r;
+  }
 
 private:
-    std::optional<core::Block> m_block;
-    std::string                m_reason;
+  std::optional<core::Block> m_block;
+  std::string m_reason;
 };
 
 /*
@@ -75,17 +76,16 @@ private:
  */
 class BlockProductionPhase {
 public:
-    /*
-     * Build and validate a candidate block for the current consensus height.
-     *
-     * On success the returned result holds the fully validated block.
-     * On failure the result carries a human-readable rejection reason.
-     */
-    static BlockCandidateResult produce(
-        node::NodeRuntime&                     runtime,
-        const node::RuntimeBlockPipelineConfig& config,
-        PendingSlashingEvidenceBatch slashingEvidence = {}
-    );
+  /*
+   * Build and validate a candidate block for the current consensus height.
+   *
+   * On success the returned result holds the fully validated block.
+   * On failure the result carries a human-readable rejection reason.
+   */
+  static BlockCandidateResult
+  produce(node::NodeRuntime &runtime,
+          const node::RuntimeBlockPipelineConfig &config,
+          PendingSlashingEvidenceBatch slashingEvidence = {});
 };
 
 } // namespace nodo::consensus

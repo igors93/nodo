@@ -14,38 +14,33 @@ namespace nodo::node {
  */
 class DataAvailabilityChallenge {
 public:
-    DataAvailabilityChallenge();
+  DataAvailabilityChallenge();
 
-    DataAvailabilityChallenge(
-        std::string challengeId,
-        std::uint64_t blockHeight,
-        std::string blockHash,
-        std::string artifactDigest,
-        std::string challengerId,
-        std::int64_t issuedAt
-    );
+  DataAvailabilityChallenge(std::string challengeId, std::uint64_t blockHeight,
+                            std::string blockHash, std::string artifactDigest,
+                            std::string challengerId, std::int64_t issuedAt);
 
-    const std::string& challengeId() const;
-    std::uint64_t blockHeight() const;
-    const std::string& blockHash() const;
-    const std::string& artifactDigest() const;
-    const std::string& challengerId() const;
-    std::int64_t issuedAt() const;
+  const std::string &challengeId() const;
+  std::uint64_t blockHeight() const;
+  const std::string &blockHash() const;
+  const std::string &artifactDigest() const;
+  const std::string &challengerId() const;
+  std::int64_t issuedAt() const;
 
-    bool isValid() const;
-    const std::string& rejectionReason() const;
+  bool isValid() const;
+  const std::string &rejectionReason() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    std::string m_challengeId;
-    std::uint64_t m_blockHeight;
-    std::string m_blockHash;
-    std::string m_artifactDigest;
-    std::string m_challengerId;
-    std::int64_t m_issuedAt;
-    bool m_valid;
-    std::string m_rejectionReason;
+  std::string m_challengeId;
+  std::uint64_t m_blockHeight;
+  std::string m_blockHash;
+  std::string m_artifactDigest;
+  std::string m_challengerId;
+  std::int64_t m_issuedAt;
+  bool m_valid;
+  std::string m_rejectionReason;
 };
 
 /*
@@ -55,35 +50,31 @@ private:
  */
 class DataAvailabilityResponse {
 public:
-    DataAvailabilityResponse();
+  DataAvailabilityResponse();
 
-    DataAvailabilityResponse(
-        std::string responseId,
-        std::string challengeId,
-        std::string serverId,
-        std::string artifactDigest,
-        std::int64_t respondedAt
-    );
+  DataAvailabilityResponse(std::string responseId, std::string challengeId,
+                           std::string serverId, std::string artifactDigest,
+                           std::int64_t respondedAt);
 
-    const std::string& responseId() const;
-    const std::string& challengeId() const;
-    const std::string& serverId() const;
-    const std::string& artifactDigest() const;
-    std::int64_t respondedAt() const;
+  const std::string &responseId() const;
+  const std::string &challengeId() const;
+  const std::string &serverId() const;
+  const std::string &artifactDigest() const;
+  std::int64_t respondedAt() const;
 
-    bool isValid() const;
-    const std::string& rejectionReason() const;
+  bool isValid() const;
+  const std::string &rejectionReason() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    std::string m_responseId;
-    std::string m_challengeId;
-    std::string m_serverId;
-    std::string m_artifactDigest;
-    std::int64_t m_respondedAt;
-    bool m_valid;
-    std::string m_rejectionReason;
+  std::string m_responseId;
+  std::string m_challengeId;
+  std::string m_serverId;
+  std::string m_artifactDigest;
+  std::int64_t m_respondedAt;
+  bool m_valid;
+  std::string m_rejectionReason;
 };
 
 /*
@@ -93,35 +84,32 @@ private:
  */
 class DataAvailabilityAttestation {
 public:
-    DataAvailabilityAttestation();
+  DataAvailabilityAttestation();
 
-    DataAvailabilityAttestation(
-        std::string attestationId,
-        std::uint64_t blockHeight,
-        std::string artifactDigest,
-        std::string attestorId,
-        std::int64_t attestedAt
-    );
+  DataAvailabilityAttestation(std::string attestationId,
+                              std::uint64_t blockHeight,
+                              std::string artifactDigest,
+                              std::string attestorId, std::int64_t attestedAt);
 
-    const std::string& attestationId() const;
-    std::uint64_t blockHeight() const;
-    const std::string& artifactDigest() const;
-    const std::string& attestorId() const;
-    std::int64_t attestedAt() const;
+  const std::string &attestationId() const;
+  std::uint64_t blockHeight() const;
+  const std::string &artifactDigest() const;
+  const std::string &attestorId() const;
+  std::int64_t attestedAt() const;
 
-    bool isValid() const;
-    const std::string& rejectionReason() const;
+  bool isValid() const;
+  const std::string &rejectionReason() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    std::string m_attestationId;
-    std::uint64_t m_blockHeight;
-    std::string m_artifactDigest;
-    std::string m_attestorId;
-    std::int64_t m_attestedAt;
-    bool m_valid;
-    std::string m_rejectionReason;
+  std::string m_attestationId;
+  std::uint64_t m_blockHeight;
+  std::string m_artifactDigest;
+  std::string m_attestorId;
+  std::int64_t m_attestedAt;
+  bool m_valid;
+  std::string m_rejectionReason;
 };
 
 /*
@@ -136,38 +124,35 @@ private:
  */
 class DataAvailabilityFailureEvidence {
 public:
-    DataAvailabilityFailureEvidence();
+  DataAvailabilityFailureEvidence();
 
-    DataAvailabilityFailureEvidence(
-        std::string evidenceId,
-        std::string challengeId,
-        std::uint64_t blockHeight,
-        std::string failedNodeId,
-        std::string reason,
-        std::int64_t recordedAt
-    );
+  DataAvailabilityFailureEvidence(std::string evidenceId,
+                                  std::string challengeId,
+                                  std::uint64_t blockHeight,
+                                  std::string failedNodeId, std::string reason,
+                                  std::int64_t recordedAt);
 
-    const std::string& evidenceId() const;
-    const std::string& challengeId() const;
-    std::uint64_t blockHeight() const;
-    const std::string& failedNodeId() const;
-    const std::string& reason() const;
-    std::int64_t recordedAt() const;
+  const std::string &evidenceId() const;
+  const std::string &challengeId() const;
+  std::uint64_t blockHeight() const;
+  const std::string &failedNodeId() const;
+  const std::string &reason() const;
+  std::int64_t recordedAt() const;
 
-    bool isValid() const;
-    const std::string& rejectionReason() const;
+  bool isValid() const;
+  const std::string &rejectionReason() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    std::string m_evidenceId;
-    std::string m_challengeId;
-    std::uint64_t m_blockHeight;
-    std::string m_failedNodeId;
-    std::string m_reason;
-    std::int64_t m_recordedAt;
-    bool m_valid;
-    std::string m_rejectionReason;
+  std::string m_evidenceId;
+  std::string m_challengeId;
+  std::uint64_t m_blockHeight;
+  std::string m_failedNodeId;
+  std::string m_reason;
+  std::int64_t m_recordedAt;
+  bool m_valid;
+  std::string m_rejectionReason;
 };
 
 } // namespace nodo::node

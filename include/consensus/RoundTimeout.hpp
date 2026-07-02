@@ -18,30 +18,27 @@ constexpr std::uint64_t DEFAULT_ROUND_TIMEOUT_SECONDS = 30;
  */
 class RoundTimeout {
 public:
-    RoundTimeout();
+  RoundTimeout();
 
-    RoundTimeout(
-        std::uint64_t height,
-        std::uint64_t round,
-        std::int64_t startedAt,
-        std::uint64_t timeoutSeconds = DEFAULT_ROUND_TIMEOUT_SECONDS
-    );
+  RoundTimeout(std::uint64_t height, std::uint64_t round,
+               std::int64_t startedAt,
+               std::uint64_t timeoutSeconds = DEFAULT_ROUND_TIMEOUT_SECONDS);
 
-    std::uint64_t height() const;
-    std::uint64_t round() const;
-    std::int64_t startedAt() const;
-    std::uint64_t timeoutSeconds() const;
+  std::uint64_t height() const;
+  std::uint64_t round() const;
+  std::int64_t startedAt() const;
+  std::uint64_t timeoutSeconds() const;
 
-    bool hasExpired(std::int64_t now) const;
-    std::int64_t expiresAt() const;
+  bool hasExpired(std::int64_t now) const;
+  std::int64_t expiresAt() const;
 
-    bool isValid() const;
+  bool isValid() const;
 
 private:
-    std::uint64_t m_height;
-    std::uint64_t m_round;
-    std::int64_t m_startedAt;
-    std::uint64_t m_timeoutSeconds;
+  std::uint64_t m_height;
+  std::uint64_t m_round;
+  std::int64_t m_startedAt;
+  std::uint64_t m_timeoutSeconds;
 };
 
 } // namespace nodo::consensus

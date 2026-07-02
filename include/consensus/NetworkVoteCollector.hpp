@@ -1,9 +1,9 @@
 #ifndef NODO_CONSENSUS_NETWORK_VOTE_COLLECTOR_HPP
 #define NODO_CONSENSUS_NETWORK_VOTE_COLLECTOR_HPP
 
+#include "consensus/SlashingEvidence.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
 #include "consensus/VotePool.hpp"
-#include "consensus/SlashingEvidence.hpp"
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureProvider.hpp"
 
@@ -15,35 +15,33 @@
 namespace nodo::consensus {
 
 enum class VoteCollectStatus {
-    ACCEPTED,
-    REJECTED_STALE_ROUND,
-    REJECTED_REPLAY,
-    REJECTED_CONFLICTING,
-    REJECTED_INVALID,
-    REJECTED_NOT_ELIGIBLE,
-    DOUBLE_VOTE_DETECTED
+  ACCEPTED,
+  REJECTED_STALE_ROUND,
+  REJECTED_REPLAY,
+  REJECTED_CONFLICTING,
+  REJECTED_INVALID,
+  REJECTED_NOT_ELIGIBLE,
+  DOUBLE_VOTE_DETECTED
 };
 
 std::string voteCollectStatusToString(VoteCollectStatus status);
 
 class VoteCollectResult {
 public:
-    VoteCollectResult();
-    VoteCollectResult(
-        VoteCollectStatus status,
-        std::string reason,
-        std::optional<DoubleVoteEvidence> doubleVoteEvidence = std::nullopt
-    );
+  VoteCollectResult();
+  VoteCollectResult(
+      VoteCollectStatus status, std::string reason,
+      std::optional<DoubleVoteEvidence> doubleVoteEvidence = std::nullopt);
 
-    VoteCollectStatus status() const;
-    const std::string& reason() const;
-    bool accepted() const;
-    const std::optional<DoubleVoteEvidence>& doubleVoteEvidence() const;
+  VoteCollectStatus status() const;
+  const std::string &reason() const;
+  bool accepted() const;
+  const std::optional<DoubleVoteEvidence> &doubleVoteEvidence() const;
 
 private:
-    VoteCollectStatus m_status;
-    std::string m_reason;
-    std::optional<DoubleVoteEvidence> m_doubleVoteEvidence;
+  VoteCollectStatus m_status;
+  std::string m_reason;
+  std::optional<DoubleVoteEvidence> m_doubleVoteEvidence;
 };
 
 /*
@@ -59,37 +57,33 @@ private:
  */
 class NetworkVoteCollector {
 public:
-    NetworkVoteCollector();
+  NetworkVoteCollector();
 
-    NetworkVoteCollector(
-        std::uint64_t currentHeight,
-        std::uint64_t currentRound
-    );
+  NetworkVoteCollector(std::uint64_t currentHeight, std::uint64_t currentRound);
 
-    void setCurrentRound(std::uint64_t height, std::uint64_t round);
+  void setCurrentRound(std::uint64_t height, std::uint64_t round);
 
-    std::uint64_t currentHeight() const;
-    std::uint64_t currentRound() const;
+  std::uint64_t currentHeight() const;
+  std::uint64_t currentRound() const;
 
-    VoteCollectResult submitNetworkVote(
-        const ValidatorVoteRecord& vote,
-        const crypto::CryptoPolicy& policy,
-        const crypto::SignatureProvider& provider
-    );
+  VoteCollectResult
+  submitNetworkVote(const ValidatorVoteRecord &vote,
+                    const crypto::CryptoPolicy &policy,
+                    const crypto::SignatureProvider &provider);
 
-    void setEligibleValidators(std::vector<std::string> eligibleAddresses);
+  void setEligibleValidators(std::vector<std::string> eligibleAddresses);
 
-    bool hasDoubleVote(const ValidatorVoteRecord& vote) const;
+  bool hasDoubleVote(const ValidatorVoteRecord &vote) const;
 
-    const VotePool& votePool() const;
+  const VotePool &votePool() const;
 
-    std::size_t acceptedVoteCount() const;
+  std::size_t acceptedVoteCount() const;
 
 private:
-    VotePool m_pool;
-    std::uint64_t m_currentHeight;
-    std::uint64_t m_currentRound;
-    std::vector<std::string> m_eligibleValidators;
+  VotePool m_pool;
+  std::uint64_t m_currentHeight;
+  std::uint64_t m_currentRound;
+  std::vector<std::string> m_eligibleValidators;
 };
 
 } // namespace nodo::consensus

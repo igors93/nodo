@@ -173,3 +173,37 @@ if(TARGET node_RealTcpThreeNodeEndToEndTests)
         )
     endif()
 endif()
+
+# Every multi-node real-TCP end-to-end test built on
+# tests/common/RealTcpNodeTestSupport.hpp spawns real OS processes bound to
+# ports derived from its own PID. Two such tests running concurrently under
+# ctest -j can race on the same port (or otherwise starve each other's
+# handshake timing), so they must never run in parallel with each other or
+# with anything else, matching node_RealTcpThreeNodeEndToEndTests above.
+set(NODO_REAL_TCP_MULTI_NODE_TESTS
+    node_DistributedFinalizationTests
+    node_TransactionPropagationTests
+    node_WrongGenesisRejectionTests
+    node_ProposerFailoverTests
+    node_EquivocationSlashingE2ETests
+)
+foreach(NODO_REAL_TCP_TEST ${NODO_REAL_TCP_MULTI_NODE_TESTS})
+    if(TARGET ${NODO_REAL_TCP_TEST})
+        if(WIN32)
+            set_tests_properties(${NODO_REAL_TCP_TEST}
+                PROPERTIES DISABLED TRUE
+            )
+        else()
+            # 450s, not 300s: some of these tests (e.g. proposer failover,
+            # equivocation slashing) sum multiple sequential waitUntil()
+            # budgets that can total close to 300s in the worst case, and a
+            # ctest-level TIMEOUT firing first would mask the test's own,
+            # more specific failure message.
+            set_tests_properties(${NODO_REAL_TCP_TEST}
+                PROPERTIES
+                RUN_SERIAL TRUE
+                TIMEOUT 450
+            )
+        endif()
+    endif()
+endforeach()

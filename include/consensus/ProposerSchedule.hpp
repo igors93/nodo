@@ -19,18 +19,13 @@ namespace nodo::consensus {
  */
 class ProposerSchedule {
 public:
-    static std::string selectProposer(
-        const core::ValidatorRegistry& registry,
-        const std::string& chainId,
-        std::uint64_t height,
-        std::uint64_t round
-    );
+  static std::string selectProposer(const core::ValidatorRegistry &registry,
+                                    const std::string &chainId,
+                                    std::uint64_t height, std::uint64_t round);
 
-    static std::string buildSelectionKey(
-        const std::string& chainId,
-        std::uint64_t height,
-        std::uint64_t round
-    );
+  static std::string buildSelectionKey(const std::string &chainId,
+                                       std::uint64_t height,
+                                       std::uint64_t round);
 };
 
 } // namespace nodo::consensus

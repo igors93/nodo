@@ -18,26 +18,19 @@ namespace nodo::node {
  */
 class EpochMonetaryReportStore {
 public:
-    static const std::string& schemaId();
+  static const std::string &schemaId();
 
-    static void write(
-        const std::filesystem::path& filePath,
-        const economics::EpochMonetaryReport& report
-    );
+  static void write(const std::filesystem::path &filePath,
+                    const economics::EpochMonetaryReport &report);
 
-    static economics::EpochMonetaryReport read(
-        const std::filesystem::path& filePath,
-        const economics::MonetaryPolicy& policy
-    );
+  static economics::EpochMonetaryReport
+  read(const std::filesystem::path &filePath,
+       const economics::MonetaryPolicy &policy);
 
-    static std::string encode(
-        const economics::EpochMonetaryReport& report
-    );
+  static std::string encode(const economics::EpochMonetaryReport &report);
 
-    static economics::EpochMonetaryReport decode(
-        const std::string& contents,
-        const economics::MonetaryPolicy& policy
-    );
+  static economics::EpochMonetaryReport
+  decode(const std::string &contents, const economics::MonetaryPolicy &policy);
 };
 
 } // namespace nodo::node

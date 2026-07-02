@@ -9,19 +9,13 @@ namespace nodo::consensus {
 
 class EvidencePoolPersistence {
 public:
-    virtual ~EvidencePoolPersistence() = default;
+  virtual ~EvidencePoolPersistence() = default;
 
-    virtual void persist(
-        const DoubleVoteEvidence& evidence
-    ) = 0;
+  virtual void persist(const DoubleVoteEvidence &evidence) = 0;
 
-    virtual void persist(
-        const ProposerEquivocationEvidence& evidence
-    ) = 0;
+  virtual void persist(const ProposerEquivocationEvidence &evidence) = 0;
 
-    virtual bool erase(
-        const std::string& evidenceId
-    ) = 0;
+  virtual bool erase(const std::string &evidenceId) = 0;
 };
 
 } // namespace nodo::consensus

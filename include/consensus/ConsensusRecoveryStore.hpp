@@ -22,18 +22,13 @@ namespace nodo::consensus {
  */
 class ConsensusRecoveryStore {
 public:
-    static bool save(
-        const std::filesystem::path& path,
-        const ConsensusRoundState& state
-    );
+  static bool save(const std::filesystem::path &path,
+                   const ConsensusRoundState &state);
 
-    static std::optional<ConsensusRoundState> load(
-        const std::filesystem::path& path
-    );
+  static std::optional<ConsensusRoundState>
+  load(const std::filesystem::path &path);
 
-    static bool remove(
-        const std::filesystem::path& path
-    );
+  static bool remove(const std::filesystem::path &path);
 };
 
 } // namespace nodo::consensus

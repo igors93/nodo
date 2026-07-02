@@ -7,27 +7,24 @@
 
 namespace nodo::node {
 
-enum class DefenseGateStatus {
-    ALLOWED,
-    BLOCKED_DEFENSE_MODE_ACTIVE
-};
+enum class DefenseGateStatus { ALLOWED, BLOCKED_DEFENSE_MODE_ACTIVE };
 
 std::string defenseGateStatusToString(DefenseGateStatus status);
 
 class DefenseGateResult {
 public:
-    DefenseGateResult();
+  DefenseGateResult();
 
-    static DefenseGateResult allowed();
-    static DefenseGateResult blocked(std::string reason);
+  static DefenseGateResult allowed();
+  static DefenseGateResult blocked(std::string reason);
 
-    bool isAllowed() const;
-    DefenseGateStatus status() const;
-    const std::string& reason() const;
+  bool isAllowed() const;
+  DefenseGateStatus status() const;
+  const std::string &reason() const;
 
 private:
-    DefenseGateStatus m_status;
-    std::string m_reason;
+  DefenseGateStatus m_status;
+  std::string m_reason;
 };
 
 /*
@@ -41,24 +38,20 @@ private:
  */
 class DefenseModeGuard {
 public:
-    static DefenseGateResult checkTreasurySpend(
-        economics::DefenseModeState state,
-        const economics::DefenseModePolicy& policy
-    );
+  static DefenseGateResult
+  checkTreasurySpend(economics::DefenseModeState state,
+                     const economics::DefenseModePolicy &policy);
 
-    static DefenseGateResult checkExtraordinaryMint(
-        economics::DefenseModeState state,
-        const economics::DefenseModePolicy& policy
-    );
+  static DefenseGateResult
+  checkExtraordinaryMint(economics::DefenseModeState state,
+                         const economics::DefenseModePolicy &policy);
 
-    static DefenseGateResult checkExtraordinaryReward(
-        economics::DefenseModeState state,
-        const economics::DefenseModePolicy& policy
-    );
+  static DefenseGateResult
+  checkExtraordinaryReward(economics::DefenseModeState state,
+                           const economics::DefenseModePolicy &policy);
 
-    static DefenseGateResult checkGovernanceApproval(
-        economics::DefenseModeState state
-    );
+  static DefenseGateResult
+  checkGovernanceApproval(economics::DefenseModeState state);
 };
 
 } // namespace nodo::node

@@ -101,8 +101,13 @@ private:
   // Handle incoming TRANSACTION_GOSSIP messages.
   void processTransactionGossip(std::int64_t now);
 
-  // Handle incoming FINALIZED_BLOCK_ARTIFACT messages.
-  void processFinalizedArtifacts();
+  // Handle incoming FINALIZED_BLOCK_ARTIFACT messages. When an artifact
+  // references a height this node does not yet have, this triggers a
+  // persistent block sync request instead of silently discarding it, so a
+  // node that fell behind (e.g. after a restart, or after missing rounds
+  // while the rest of the network kept finalizing without a round timeout)
+  // recovers instead of waiting forever for a proposal at its stale height.
+  void processFinalizedArtifacts(std::int64_t now);
 
   // Check if local node is proposer and initiate block proposal if true.
   void maybeProposeBlock(std::int64_t now);
