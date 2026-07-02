@@ -1,5 +1,6 @@
 #include "node/FinalizedBlockStore.hpp"
 
+#include "crypto/Hex.hpp"
 #include "economics/SupplyDelta.hpp"
 #include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedArtifactSchema.hpp"
@@ -24,6 +25,19 @@ namespace {
 
 constexpr const char* FINALIZATION_JOURNAL_SCHEMA =
     "NODO_FINALIZATION_COMMIT_V1";
+constexpr const char* MULTILINE_VALUE_HEX_PREFIX = "hex:";
+
+std::string encodeKeyValueSafeSerialization(const std::string& serialized) {
+    if (serialized.find('\n') == std::string::npos &&
+        serialized.find('\r') == std::string::npos) {
+        return serialized;
+    }
+
+    return std::string(MULTILINE_VALUE_HEX_PREFIX) + crypto::hexEncode(
+        reinterpret_cast<const unsigned char*>(serialized.data()),
+        serialized.size()
+    );
+}
 
 std::uint64_t parseJournalU64(
     const std::string& value,
@@ -729,7 +743,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
     for (std::size_t index = 0; index < records.size(); ++index) {
         fields.emplace_back(
             "record." + std::to_string(index),
-            records[index].serialize()
+            encodeKeyValueSafeSerialization(records[index].serialize())
         );
     }
 
@@ -1197,7 +1211,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
 
     fields.emplace_back(
         "block",
-        pipelineResult.block().serialize()
+        encodeKeyValueSafeSerialization(pipelineResult.block().serialize())
     );
 
     fields.emplace_back(

@@ -255,16 +255,20 @@ void NodeDaemon::maybeProposeBlock(std::int64_t now) {
   if (proposer == m_localSigner->address()) {
     if (m_lastProposedRound.first != height ||
         m_lastProposedRound.second != round) {
+      // NodeDaemon may be ticked every 20-50ms, while consensus timestamps are
+      // second-granularity. Retrying an unavailable block on every daemon tick
+      // performs the same expensive work and floods logs without observing a
+      // different protocol time. Retry once when the next second begins.
+      if (m_lastProposalAttemptRound.first == height &&
+          m_lastProposalAttemptRound.second == round &&
+          m_lastProposalAttemptAt == now) {
+        return;
+      }
+      m_lastProposalAttemptRound = {height, round};
+      m_lastProposalAttemptAt = now;
 
       std::optional<core::Block> candidateOpt =
           m_orchestrator.produceBlock(height, round, now);
-
-      if (!candidateOpt.has_value()) {
-        // Log to see why it fails
-        std::cout << "[NodeDaemon] Proposer " << proposer
-                  << " failed to produce block at height " << height
-                  << " round " << round << std::endl;
-      }
 
       if (candidateOpt.has_value()) {
         consensus::BlockProposalResult proposal =
@@ -276,10 +280,9 @@ void NodeDaemon::maybeProposeBlock(std::int64_t now) {
         if (proposal.proposed()) {
           m_lastProposedRound = {height, round};
 
-          m_orchestrator.gossipBroadcast(
-              p2p::NetworkMessageType::BLOCK_PROPOSAL,
-              proposal.serializedProposal(), now);
-
+          // BlockProposalPhase::propose() already broadcasts to every peer.
+          // Only inject the proposal locally here; broadcasting it again
+          // doubled normal consensus traffic and consumed peer-rate budgets.
           m_orchestrator.gossipInjectLoopback(
               p2p::NetworkMessageType::BLOCK_PROPOSAL,
               proposal.serializedProposal(), now);

@@ -2,6 +2,7 @@
 
 #include "crypto/Hex.hpp"
 
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -228,7 +229,19 @@ void ConsensusRoundManager::advanceToHeight(
     std::uint64_t timeoutSeconds
 ) {
     m_state = ConsensusRoundState(height, round, proposerAddress, now);
-    m_voteCollector = NetworkVoteCollector(height, round);
+    const bool consecutiveRoundAtSameHeight =
+        m_voteCollector.currentHeight() == height &&
+        m_voteCollector.currentRound() !=
+            std::numeric_limits<std::uint64_t>::max() &&
+        round == m_voteCollector.currentRound() + 1;
+    if (consecutiveRoundAtSameHeight) {
+        // Preserve authenticated votes already received for this height,
+        // including votes buffered one round ahead. Votes are keyed by round,
+        // so retaining them cannot contribute to a different round's quorum.
+        m_voteCollector.setCurrentRound(height, round);
+    } else {
+        m_voteCollector = NetworkVoteCollector(height, round);
+    }
     m_timeout = RoundTimeout(height, round, now, timeoutSeconds);
 }
 

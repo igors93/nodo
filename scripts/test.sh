@@ -42,10 +42,7 @@ else
     ctest_args+=(-R "^$1_")
 fi
 
-mkdir -p "$ROOT_DIR/data"
-LOG_FILE="$ROOT_DIR/data/test_run_$(date +%Y%m%d_%H%M%S).txt"
-ctest "${ctest_args[@]}" 2>&1 | tee "$LOG_FILE"
+ctest "${ctest_args[@]}"
 
 echo
 echo "Nodo tests completed successfully."
-echo "Log saved to $LOG_FILE"

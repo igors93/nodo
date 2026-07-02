@@ -20,7 +20,6 @@
 
 #include <array>
 #include <chrono>
-#include <iostream>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -304,9 +303,6 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
       validators.isEligibleForConsensus(m_localSigner->address())) {
 
     if (prevoteWeight >= requiredWeight) {
-      std::cout << "[DEBUG] PRECOMMIT threshold reached height=" << height
-                << " round=" << round << " prevoteWeight=" << prevoteWeight
-                << " requiredWeight=" << requiredWeight << std::endl;
       const std::string previousLockedBlock = m_lockedBlock;
       const std::uint64_t previousLockedRound = m_lockedRound;
       m_lockedBlock = blockHash;
@@ -373,13 +369,6 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
       BlockFinalizationPhase::tryFinalize(
           m_runtime, candidate, height, blockHash, prevHash, round, m_policy,
           m_provider, now, m_dataDirectoryConfig);
-
-  if (!finResult.finalized() && m_votedPrecommit &&
-      !finResult.reason().empty()) {
-    std::cout << "[DEBUG] tryFinalize not finalized height=" << height
-              << " round=" << round << " reason=" << finResult.reason()
-              << std::endl;
-  }
 
   if (finResult.finalized()) {
     result.quorumFormed = true;
@@ -576,15 +565,36 @@ void ConsensusEventLoop::admitAndBroadcastProposerEquivocationEvidence(
 }
 
 void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
-  const auto messages =
+  auto messages =
       m_gossip.drainInbox(p2p::NetworkMessageType::BLOCK_PROPOSAL);
 
-  if (messages.empty() || m_runtime.blockchain().empty())
+  if (m_runtime.blockchain().empty())
     return;
 
   const core::Blockchain &chain = m_runtime.blockchain();
   const ConsensusRoundState &state =
       m_runtime.consensusRoundManager().currentState();
+
+  if (!m_bufferedNextRoundProposals.empty()) {
+    if (m_bufferedProposalHeight == state.height() &&
+        m_bufferedProposalRound == state.round()) {
+      messages.insert(messages.begin(),
+                      m_bufferedNextRoundProposals.begin(),
+                      m_bufferedNextRoundProposals.end());
+      m_bufferedNextRoundProposals.clear();
+      m_bufferedProposalHeight = 0;
+      m_bufferedProposalRound = 0;
+    } else if (m_bufferedProposalHeight < state.height() ||
+               (m_bufferedProposalHeight == state.height() &&
+                m_bufferedProposalRound < state.round())) {
+      m_bufferedNextRoundProposals.clear();
+      m_bufferedProposalHeight = 0;
+      m_bufferedProposalRound = 0;
+    }
+  }
+
+  if (messages.empty())
+    return;
 
   if (!m_runtime.validatorSetHistory().hasSet(state.height()))
     return;
@@ -596,12 +606,6 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
 
   const std::string chainId =
       m_runtime.config().genesisConfig().networkParameters().chainId();
-  const std::string expectedProposer = ProposerSchedule::selectProposer(
-      validators, chainId, state.height(), state.round());
-
-  if (expectedProposer.empty())
-    return;
-
   for (const auto &envelope : messages) {
     if (envelope.payload().empty())
       continue;
@@ -610,10 +614,21 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
       const node::SignedBlockProposalMessage proposal =
           node::SignedBlockProposalMessage::deserialize(envelope.payload());
 
-      if (!proposal.isValid() || proposal.blockIndex() != state.height() ||
-          proposal.round() != state.round()) {
+      if (!proposal.isValid() || proposal.blockIndex() != state.height()) {
         continue;
       }
+
+      const bool forCurrentRound = proposal.round() == state.round();
+      const bool forNextRound =
+          state.round() != std::numeric_limits<std::uint64_t>::max() &&
+          proposal.round() == state.round() + 1;
+      if (!forCurrentRound && !forNextRound)
+        continue;
+
+      const std::string expectedProposer = ProposerSchedule::selectProposer(
+          validators, chainId, state.height(), proposal.round());
+      if (expectedProposer.empty())
+        continue;
 
       if (!proposal.verify(expectedProposer, validators, m_policy,
                            m_provider)) {
@@ -674,11 +689,23 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
         continue;
       }
 
+      if (forNextRound) {
+        constexpr std::size_t kMaxBufferedNextRoundProposals = 16;
+        if (m_bufferedNextRoundProposals.empty() ||
+            (m_bufferedProposalHeight == proposal.blockIndex() &&
+             m_bufferedProposalRound == proposal.round())) {
+          m_bufferedProposalHeight = proposal.blockIndex();
+          m_bufferedProposalRound = proposal.round();
+          if (m_bufferedNextRoundProposals.size() <
+              kMaxBufferedNextRoundProposals) {
+            m_bufferedNextRoundProposals.push_back(envelope);
+          }
+        }
+        continue;
+      }
+
       m_pendingCandidate =
           PendingBlockCandidate{block, state.round(), proposal};
-      std::cout << "[DEBUG] processBlockProposals accepted candidate height="
-                << block.index() << " round=" << state.round()
-                << " hash=" << block.hash() << std::endl;
     } catch (const std::exception &) {
       // Malformed or unverifiable peer input is ignored without changing
       // the active candidate or canonical chain.
@@ -778,8 +805,7 @@ void ConsensusEventLoop::broadcastRoundAdvancement(std::int64_t now) {
   const std::string finalizedHash =
       finalizedRecord != nullptr ? finalizedRecord->blockHash() : latestHash;
 
-  const auto &network =
-      m_runtime.config().genesisConfig().networkParameters();
+  const auto &network = m_runtime.config().genesisConfig().networkParameters();
   const node::ChainStatusMessage status(
       network.networkName(), network.chainId(),
       m_runtime.config().localPeer().protocolVersion(), latestHeight,

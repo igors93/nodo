@@ -671,21 +671,9 @@ std::uint64_t mempoolSize(const NodeSpec &spec) {
 bool reachedFinalizedHeight(const NodeSpec &spec, std::uint64_t height) {
   const auto response = statusResponse(spec);
   if (!response.has_value()) {
-    std::cout << "[DEBUG] reachedFinalizedHeight: no response for "
-              << spec.nodeId << std::endl;
     return false;
   }
   const auto current = jsonUnsigned(response->body, "finalizedHeight");
-  if (!current.has_value()) {
-    std::cout << "[DEBUG] reachedFinalizedHeight: no finalizedHeight field for "
-              << spec.nodeId << " body: " << response->body << std::endl;
-  } else if (current.value() < height) {
-    std::cout << "[DEBUG] reachedFinalizedHeight: " << spec.nodeId << " is at "
-              << current.value() << " (want " << height << ")" << std::endl;
-  } else {
-    std::cout << "[DEBUG] reachedFinalizedHeight: " << spec.nodeId
-              << " reached " << current.value() << std::endl;
-  }
   return current.has_value() && current.value() >= height;
 }
 
@@ -783,20 +771,19 @@ void verifyAccountNonce(const NodeSpec &spec, const std::string &seedPrefix,
           spec.nodeId + " account nonce does not reflect expected transfers.");
 }
 
-// Loads a stopped node's on-disk data directory and runs the same
-// ChainAuditor pass the `chain audit` CLI command runs, against the exact
-// genesis config the test network was started with (this genesis is ad hoc
-// and not registered in GenesisRegistry, so the CLI's by-name lookup path
-// cannot be reused here).
+// Loads a stopped node's on-disk data directory and audits the finalized
+// chain against the exact ad-hoc genesis used by this local test network.
+// Epoch reports are intentionally skipped here: these short E2E scenarios
+// stop before an epoch report is produced, while the remaining chain audit
+// (artifacts, state, supply continuity, rewards, and treasury) still runs.
 void requireChainAuditPasses(const NodeSpec &spec,
                              const config::GenesisConfig &genesis) {
   const node::NodeDataDirectoryConfig directoryConfig(spec.dataDirectory);
   const node::RuntimeStateLoadResult load =
       node::RuntimeStateLoader::loadFromDataDirectory(
           directoryConfig, genesis, peerInfo(spec, genesis.genesisTimestamp()));
-  const node::ChainAuditResult audit = node::ChainAuditor::auditLoadedRuntime(
-      load, directoryConfig.epochMonetaryReportPath(),
-      directoryConfig.epochTreasuryReportPath());
+  const node::ChainAuditResult audit =
+      node::ChainAuditor::auditLoadedRuntimeDevMode(load);
   require(audit.passed(), spec.nodeId + " failed chain audit: " +
                               audit.toHumanReadableString());
 }

@@ -49,8 +49,10 @@ private:
  *
  * Security principle:
  * Votes from stale rounds must be rejected to prevent a malicious peer from
- * replaying old votes for a different block. This collector sits above VotePool
- * and enforces round-currency before delegating to the underlying pool.
+ * replaying old votes for a different block. A cryptographically valid vote
+ * for exactly the next round may be retained so small clock/tick skew between
+ * honest validators does not destroy it before the local round advances.
+ * Votes farther in the future remain invalid.
  *
  * Note: This class does NOT depend on TCP or any transport layer. It operates
  * purely on ValidatorVoteRecord values received from any source.

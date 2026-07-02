@@ -126,6 +126,57 @@ void testAdvanceRound() {
     assert(mgr.currentState().proposerAddress() == "validator-b");
 }
 
+void testNextRoundVoteIsBufferedAcrossRoundAdvance() {
+    nodo::consensus::ConsensusRoundManager mgr;
+    mgr.advanceToHeight(3, 1, "validator-a", 1000000);
+
+    const nodo::crypto::ProtocolCryptoContext ctx =
+        nodo::crypto::ProtocolCryptoContext::localnet();
+    const auto nextRoundVote = makeVote("validator-x", 3, 2);
+    const auto admitted = mgr.submitVote(
+        nextRoundVote, ctx.policy(), ctx.validatorSignatureProvider());
+
+    assert(admitted.accepted());
+    assert(mgr.voteCollector().votePool().voteCountForBlock(
+               3, nextRoundVote.blockHash(), 2) == 1);
+
+    mgr.advanceRound(2, "validator-b", 1000001);
+
+    assert(mgr.voteCollector().currentRound() == 2);
+    assert(mgr.voteCollector().votePool().voteCountForBlock(
+               3, nextRoundVote.blockHash(), 2) == 1);
+}
+
+void testVoteMoreThanOneRoundAheadIsRejected() {
+    nodo::consensus::ConsensusRoundManager mgr;
+    mgr.advanceToHeight(3, 1, "validator-a", 1000000);
+
+    const nodo::crypto::ProtocolCryptoContext ctx =
+        nodo::crypto::ProtocolCryptoContext::localnet();
+    const auto distantFutureVote = makeVote("validator-x", 3, 3);
+    const auto result = mgr.submitVote(
+        distantFutureVote, ctx.policy(), ctx.validatorSignatureProvider());
+
+    assert(!result.accepted());
+    assert(result.status() ==
+           nodo::consensus::VoteCollectStatus::REJECTED_INVALID);
+}
+
+void testAdvancingHeightClearsBufferedVotes() {
+    nodo::consensus::ConsensusRoundManager mgr;
+    mgr.advanceToHeight(3, 1, "validator-a", 1000000);
+
+    const nodo::crypto::ProtocolCryptoContext ctx =
+        nodo::crypto::ProtocolCryptoContext::localnet();
+    const auto nextRoundVote = makeVote("validator-x", 3, 2);
+    assert(mgr.submitVote(nextRoundVote, ctx.policy(),
+                          ctx.validatorSignatureProvider()).accepted());
+
+    mgr.advanceToHeight(4, 1, "validator-c", 1000001);
+
+    assert(mgr.voteCollector().acceptedVoteCount() == 0);
+}
+
 void testRoundStateSerializes() {
     const nodo::consensus::ConsensusRoundState state(5, 2, "validator-a", 1000000);
     const std::string s = state.serialize();
@@ -209,6 +260,9 @@ int main() {
     testDuplicateVoteRejectedAsReplay();
     testTimeoutExpires();
     testAdvanceRound();
+    testNextRoundVoteIsBufferedAcrossRoundAdvance();
+    testVoteMoreThanOneRoundAheadIsRejected();
+    testAdvancingHeightClearsBufferedVotes();
     testRoundStateSerializes();
     testRoundStateSerializesLockFields();
     testRoundStateDeserializeRoundTrip();

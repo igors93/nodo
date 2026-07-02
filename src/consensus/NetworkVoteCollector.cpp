@@ -1,5 +1,6 @@
 #include "consensus/NetworkVoteCollector.hpp"
 
+#include <limits>
 #include <utility>
 
 namespace nodo::consensus {
@@ -114,11 +115,16 @@ VoteCollectResult NetworkVoteCollector::submitNetworkVote(
             " is above current height " + std::to_string(m_currentHeight)
         );
     }
-    if (vote.round() > m_currentRound) {
+    const bool moreThanOneRoundAhead =
+        vote.round() > m_currentRound &&
+        (m_currentRound == std::numeric_limits<std::uint64_t>::max() ||
+         vote.round() != m_currentRound + 1);
+    if (moreThanOneRoundAhead) {
         return VoteCollectResult(
             VoteCollectStatus::REJECTED_INVALID,
             "Vote round " + std::to_string(vote.round()) +
-            " is above current round " + std::to_string(m_currentRound) +
+            " is more than one round above current round " +
+            std::to_string(m_currentRound) +
             " for height " + std::to_string(m_currentHeight)
         );
     }

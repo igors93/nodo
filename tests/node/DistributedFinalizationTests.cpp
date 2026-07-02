@@ -60,12 +60,16 @@ void testDistributedFinalizationOfTenBlocks() {
 
       require(waitUntil(120s,
                         [&] {
+                          bool allFinalized = true;
                           for (const NodeSpec &spec : specs) {
-                            if (!reachedFinalizedHeight(spec, height)) {
-                              return false;
-                            }
+                            // Query every node on every pass. Short-circuiting
+                            // here used to hammer node A's single-threaded RPC
+                            // server while hiding B/C's actual progress.
+                            allFinalized =
+                                reachedFinalizedHeight(spec, height) &&
+                                allFinalized;
                           }
-                          return true;
+                          return allFinalized;
                         }),
               "The three validators did not finalize height " +
                   std::to_string(height) + ".");

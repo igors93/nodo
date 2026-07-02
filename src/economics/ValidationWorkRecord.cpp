@@ -8,222 +8,195 @@
 
 namespace nodo::economics {
 
-std::string validationWorkTypeToString(
-    ValidationWorkType type
-) {
-    switch (type) {
-        case ValidationWorkType::VALIDATE_TRANSACTION:
-            return "VALIDATE_TRANSACTION";
+std::string validationWorkTypeToString(ValidationWorkType type) {
+  switch (type) {
+  case ValidationWorkType::VALIDATE_TRANSACTION:
+    return "VALIDATE_TRANSACTION";
 
-        case ValidationWorkType::VERIFY_COIN_EXISTENCE:
-            return "VERIFY_COIN_EXISTENCE";
+  case ValidationWorkType::VERIFY_COIN_EXISTENCE:
+    return "VERIFY_COIN_EXISTENCE";
 
-        case ValidationWorkType::VERIFY_SIGNATURE:
-            return "VERIFY_SIGNATURE";
+  case ValidationWorkType::VERIFY_SIGNATURE:
+    return "VERIFY_SIGNATURE";
 
-        case ValidationWorkType::VALIDATE_BLOCK:
-            return "VALIDATE_BLOCK";
+  case ValidationWorkType::VALIDATE_BLOCK:
+    return "VALIDATE_BLOCK";
 
-        case ValidationWorkType::RESPOND_INTEGRITY_CHALLENGE:
-            return "RESPOND_INTEGRITY_CHALLENGE";
+  case ValidationWorkType::RESPOND_INTEGRITY_CHALLENGE:
+    return "RESPOND_INTEGRITY_CHALLENGE";
 
-        case ValidationWorkType::SERVE_HISTORICAL_BLOCK:
-            return "SERVE_HISTORICAL_BLOCK";
+  case ValidationWorkType::SERVE_HISTORICAL_BLOCK:
+    return "SERVE_HISTORICAL_BLOCK";
 
-        case ValidationWorkType::CONSENSUS_VOTE:
-            return "CONSENSUS_VOTE";
+  case ValidationWorkType::CONSENSUS_VOTE:
+    return "CONSENSUS_VOTE";
 
-        default:
-            return "UNKNOWN";
-    }
+  default:
+    return "UNKNOWN";
+  }
 }
 
-ValidationWorkType validationWorkTypeFromString(
-    const std::string& value
-) {
-    if (value == "VALIDATE_TRANSACTION") return ValidationWorkType::VALIDATE_TRANSACTION;
-    if (value == "VERIFY_COIN_EXISTENCE") return ValidationWorkType::VERIFY_COIN_EXISTENCE;
-    if (value == "VERIFY_SIGNATURE") return ValidationWorkType::VERIFY_SIGNATURE;
-    if (value == "VALIDATE_BLOCK") return ValidationWorkType::VALIDATE_BLOCK;
-    if (value == "RESPOND_INTEGRITY_CHALLENGE") return ValidationWorkType::RESPOND_INTEGRITY_CHALLENGE;
-    if (value == "SERVE_HISTORICAL_BLOCK") return ValidationWorkType::SERVE_HISTORICAL_BLOCK;
-    if (value == "CONSENSUS_VOTE") return ValidationWorkType::CONSENSUS_VOTE;
-    throw std::invalid_argument("Unknown ValidationWorkType: " + value);
+ValidationWorkType validationWorkTypeFromString(const std::string &value) {
+  if (value == "VALIDATE_TRANSACTION")
+    return ValidationWorkType::VALIDATE_TRANSACTION;
+  if (value == "VERIFY_COIN_EXISTENCE")
+    return ValidationWorkType::VERIFY_COIN_EXISTENCE;
+  if (value == "VERIFY_SIGNATURE")
+    return ValidationWorkType::VERIFY_SIGNATURE;
+  if (value == "VALIDATE_BLOCK")
+    return ValidationWorkType::VALIDATE_BLOCK;
+  if (value == "RESPOND_INTEGRITY_CHALLENGE")
+    return ValidationWorkType::RESPOND_INTEGRITY_CHALLENGE;
+  if (value == "SERVE_HISTORICAL_BLOCK")
+    return ValidationWorkType::SERVE_HISTORICAL_BLOCK;
+  if (value == "CONSENSUS_VOTE")
+    return ValidationWorkType::CONSENSUS_VOTE;
+  throw std::invalid_argument("Unknown ValidationWorkType: " + value);
 }
 
-std::string validationWorkResultToString(
-    ValidationWorkResult result
-) {
-    switch (result) {
-        case ValidationWorkResult::ACCEPTED:
-            return "ACCEPTED";
+std::string validationWorkResultToString(ValidationWorkResult result) {
+  switch (result) {
+  case ValidationWorkResult::ACCEPTED:
+    return "ACCEPTED";
 
-        case ValidationWorkResult::REJECTED:
-            return "REJECTED";
+  case ValidationWorkResult::REJECTED:
+    return "REJECTED";
 
-        default:
-            return "UNKNOWN";
-    }
+  default:
+    return "UNKNOWN";
+  }
 }
 
-ValidationWorkResult validationWorkResultFromString(
-    const std::string& value
-) {
-    if (value == "ACCEPTED") return ValidationWorkResult::ACCEPTED;
-    if (value == "REJECTED") return ValidationWorkResult::REJECTED;
-    throw std::invalid_argument("Unknown ValidationWorkResult: " + value);
+ValidationWorkResult validationWorkResultFromString(const std::string &value) {
+  if (value == "ACCEPTED")
+    return ValidationWorkResult::ACCEPTED;
+  if (value == "REJECTED")
+    return ValidationWorkResult::REJECTED;
+  throw std::invalid_argument("Unknown ValidationWorkResult: " + value);
 }
 
 ValidationWorkRecord::ValidationWorkRecord()
-    : m_validatorAddress(""),
-      m_epoch(0),
+    : m_validatorAddress(""), m_epoch(0),
       m_workType(ValidationWorkType::UNKNOWN),
-      m_result(ValidationWorkResult::UNKNOWN),
-      m_targetHash(""),
-      m_evidenceHash(""),
-      m_workWeight(0),
-      m_timestamp(0) {}
+      m_result(ValidationWorkResult::UNKNOWN), m_targetHash(""),
+      m_evidenceHash(""), m_workWeight(0), m_timestamp(0) {}
 
 ValidationWorkRecord::ValidationWorkRecord(
-    std::string validatorAddress,
-    std::uint64_t epoch,
-    ValidationWorkType workType,
-    ValidationWorkResult result,
-    std::string targetHash,
-    std::string evidenceHash,
-    std::uint32_t workWeight,
-    std::int64_t timestamp
-)
-    : m_validatorAddress(std::move(validatorAddress)),
-      m_epoch(epoch),
-      m_workType(workType),
-      m_result(result),
+    std::string validatorAddress, std::uint64_t epoch,
+    ValidationWorkType workType, ValidationWorkResult result,
+    std::string targetHash, std::string evidenceHash, std::uint32_t workWeight,
+    std::int64_t timestamp)
+    : m_validatorAddress(std::move(validatorAddress)), m_epoch(epoch),
+      m_workType(workType), m_result(result),
       m_targetHash(std::move(targetHash)),
-      m_evidenceHash(std::move(evidenceHash)),
-      m_workWeight(workWeight),
+      m_evidenceHash(std::move(evidenceHash)), m_workWeight(workWeight),
       m_timestamp(timestamp) {}
 
-const std::string& ValidationWorkRecord::validatorAddress() const {
-    return m_validatorAddress;
+const std::string &ValidationWorkRecord::validatorAddress() const {
+  return m_validatorAddress;
 }
 
-std::uint64_t ValidationWorkRecord::epoch() const {
-    return m_epoch;
+std::uint64_t ValidationWorkRecord::epoch() const { return m_epoch; }
+
+ValidationWorkType ValidationWorkRecord::workType() const { return m_workType; }
+
+ValidationWorkResult ValidationWorkRecord::result() const { return m_result; }
+
+const std::string &ValidationWorkRecord::targetHash() const {
+  return m_targetHash;
 }
 
-ValidationWorkType ValidationWorkRecord::workType() const {
-    return m_workType;
+const std::string &ValidationWorkRecord::evidenceHash() const {
+  return m_evidenceHash;
 }
 
-ValidationWorkResult ValidationWorkRecord::result() const {
-    return m_result;
-}
+std::uint32_t ValidationWorkRecord::workWeight() const { return m_workWeight; }
 
-const std::string& ValidationWorkRecord::targetHash() const {
-    return m_targetHash;
-}
-
-const std::string& ValidationWorkRecord::evidenceHash() const {
-    return m_evidenceHash;
-}
-
-std::uint32_t ValidationWorkRecord::workWeight() const {
-    return m_workWeight;
-}
-
-std::int64_t ValidationWorkRecord::timestamp() const {
-    return m_timestamp;
-}
+std::int64_t ValidationWorkRecord::timestamp() const { return m_timestamp; }
 
 bool ValidationWorkRecord::isAccepted() const {
-    return m_result == ValidationWorkResult::ACCEPTED;
+  return m_result == ValidationWorkResult::ACCEPTED;
 }
 
 bool ValidationWorkRecord::isRejected() const {
-    return m_result == ValidationWorkResult::REJECTED;
+  return m_result == ValidationWorkResult::REJECTED;
 }
 
 bool ValidationWorkRecord::contributesToReward() const {
-    return isValid() && isAccepted();
+  return isValid() && isAccepted();
 }
 
 bool ValidationWorkRecord::isValid() const {
-    if (m_validatorAddress.empty()) {
-        return false;
-    }
+  if (m_validatorAddress.empty()) {
+    return false;
+  }
 
-    if (m_epoch == 0) {
-        return false;
-    }
+  if (m_epoch == 0) {
+    return false;
+  }
 
-    if (m_workType == ValidationWorkType::UNKNOWN) {
-        return false;
-    }
+  if (m_workType == ValidationWorkType::UNKNOWN) {
+    return false;
+  }
 
-    if (m_result == ValidationWorkResult::UNKNOWN) {
-        return false;
-    }
+  if (m_result == ValidationWorkResult::UNKNOWN) {
+    return false;
+  }
 
-    if (m_targetHash.empty()) {
-        return false;
-    }
+  if (m_targetHash.empty()) {
+    return false;
+  }
 
-    if (m_evidenceHash.empty()) {
-        return false;
-    }
+  if (m_evidenceHash.empty()) {
+    return false;
+  }
 
-    if (m_workWeight == 0) {
-        return false;
-    }
+  if (m_workWeight == 0) {
+    return false;
+  }
 
-    if (m_timestamp <= 0) {
-        return false;
-    }
+  if (m_timestamp <= 0) {
+    return false;
+  }
 
-    return true;
+  return true;
 }
 
 std::string ValidationWorkRecord::serialize() const {
-    std::ostringstream oss;
+  std::ostringstream oss;
 
-    oss << "ValidationWorkRecord{"
-        << "validator=" << m_validatorAddress
-        << ";epoch=" << m_epoch
-        << ";workType=" << validationWorkTypeToString(m_workType)
-        << ";result=" << validationWorkResultToString(m_result)
-        << ";targetHash=" << m_targetHash
-        << ";evidenceHash=" << m_evidenceHash
-        << ";workWeight=" << m_workWeight
-        << ";timestamp=" << m_timestamp
-        << "}";
+  oss << "ValidationWorkRecord{"
+      << "validator=" << m_validatorAddress << ";epoch=" << m_epoch
+      << ";workType=" << validationWorkTypeToString(m_workType)
+      << ";result=" << validationWorkResultToString(m_result)
+      << ";targetHash=" << m_targetHash << ";evidenceHash=" << m_evidenceHash
+      << ";workWeight=" << m_workWeight << ";timestamp=" << m_timestamp << "}";
 
-    return oss.str();
+  return oss.str();
 }
 
-ValidationWorkRecord ValidationWorkRecord::deserialize(
-    const std::string& serialized
-) {
-    if (serialized.rfind("ValidationWorkRecord{", 0) != 0) {
-        throw std::invalid_argument("Serialized data is not a ValidationWorkRecord.");
-    }
+ValidationWorkRecord
+ValidationWorkRecord::deserialize(const std::string &serialized) {
+  if (serialized.rfind("ValidationWorkRecord{", 0) != 0) {
+    throw std::invalid_argument(
+        "Serialized data is not a ValidationWorkRecord.");
+  }
 
-    const auto field = [&serialized](const std::string& name) {
-        return serialization::FieldCodec::extractField(serialized, name);
-    };
-    ValidationWorkRecord record(
-        field("validator"),
-        static_cast<std::uint64_t>(std::stoull(field("epoch"))),
-        validationWorkTypeFromString(field("workType")),
-        validationWorkResultFromString(field("result")),
-        field("targetHash"),
-        field("evidenceHash"),
-        static_cast<std::uint32_t>(std::stoul(field("workWeight"))),
-        std::stoll(field("timestamp"))
-    );
-    if (!record.isValid() || record.serialize() != serialized) {
-        throw std::invalid_argument("Non-canonical ValidationWorkRecord rejected.");
-    }
-    return record;
+  const auto field = [&serialized](const std::string &name) {
+    return serialization::FieldCodec::extractField(serialized, name);
+  };
+  ValidationWorkRecord record(
+      field("validator"),
+      static_cast<std::uint64_t>(std::stoull(field("epoch"))),
+      validationWorkTypeFromString(field("workType")),
+      validationWorkResultFromString(field("result")), field("targetHash"),
+      field("evidenceHash"),
+      static_cast<std::uint32_t>(std::stoul(field("workWeight"))),
+      std::stoll(field("timestamp")));
+  if (!record.isValid() || record.serialize() != serialized) {
+    throw std::invalid_argument("Non-canonical ValidationWorkRecord rejected.");
+  }
+  return record;
 }
 
 } // namespace nodo::economics

@@ -1,6 +1,6 @@
 // Real multi-node TCP end-to-end test (roadmap item 1.4, gate scenario 5):
-// the first-round scheduled proposer signs and broadcasts two different
-// valid blocks at the same (height, round) — proposer equivocation. Honest peers
+// a scheduled proposer signs and broadcasts two different valid blocks at the
+// same (height, round) — proposer equivocation. Honest peers
 // must detect the conflicting signed proposals
 // (ConsensusEventLoop::processBlockProposals already does this whenever it
 // holds a pending candidate from a proposer and receives a second,
@@ -19,6 +19,7 @@
 #include "../common/RealTcpNodeTestSupport.hpp"
 
 #include "consensus/BlockProposalPhase.hpp"
+#include "node/PersistentMempoolStore.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 #include "p2p/Peer.hpp"
 
@@ -48,11 +49,11 @@ std::uint64_t stakeSlashedRawUnits(const NodeSpec &spec,
 
 // Runs a validator directly around NodeOrchestrator. Starts normally
 // (transport, gossip, consensus loop, RPC), authenticates with its static
-// peers, then — once — signs and broadcasts two different valid blocks for
-// (height=1, round=1), before settling into normal honest ticking (voting
-// like any other validator) for the rest of the process lifetime. This node
-// is always the first-round scheduled proposer by construction, so no
-// waiting for its turn is required.
+// peers, then — once — signs and broadcasts two different valid blocks at
+// height 1 in the first round for which it is the scheduled proposer,
+// before settling into normal honest ticking (voting like any other
+// validator) for the rest of the process lifetime. Waiting for the actual
+// scheduled round avoids racing startup/handshake time against round 1.
 int runEquivocatingProposerChild(std::size_t nodeIndex, const NodeSpecs &specs,
                                  const config::GenesisConfig &genesis,
                                  const Topology &topology) {
@@ -108,59 +109,91 @@ int runEquivocatingProposerChild(std::size_t nodeIndex, const NodeSpecs &specs,
 
   bool doubleProposed = false;
   bool mempoolSeeded = false;
+  std::uint64_t equivocationRound = 0;
   while (!gChildStopRequested && orchestrator.isRunning()) {
     const std::int64_t now = unixTime();
     orchestrator.tick(now);
 
-    // A block only gets produced when the mempool holds at least one
-    // pending transaction (empty blocks are refused outside
-    // epoch-settlement heights). Admit one directly into this node's own
-    // mempool — bypassing RPC/gossip, since this node's own local state is
-    // all that matters for producing its own candidate blocks — so both
-    // produceBlock() calls below succeed. Both candidates end up carrying
-    // the same single transaction; they still differ in hash because they
-    // carry different timestamps.
-    if (!mempoolSeeded && hasAuthenticatedPeer(local)) {
+    std::size_t authenticatedNetworkPeers = 0;
+    for (const NodeSpec &peer : specs) {
+      if (peer.nodeId != local.nodeId &&
+          orchestrator.mutableTcpRuntime().hasAuthenticatedSession(
+              peer.nodeId)) {
+        ++authenticatedNetworkPeers;
+      }
+    }
+
+    const consensus::ConsensusRoundState &state =
+        orchestrator.mutableRuntime().consensusRoundManager().currentState();
+
+    // Seed the transaction only when this validator actually owns the active
+    // proposer slot. Gossip the same transaction to the honest validators so
+    // a later round can still produce a block after detecting equivocation.
+    // The old fixture kept it private, making every honest proposer fail with
+    // an empty mempool forever after round 1.
+    if (!mempoolSeeded && authenticatedNetworkPeers == 2 &&
+        state.height() == 1 &&
+        state.proposerAddress() == local.validatorKey.address().value()) {
       const core::Transaction seedTransfer = signedTransfer(
           genesis, "equivocation", "equivocation-recipient", 1, now);
-      mempoolSeeded =
+      const bool admitted =
           orchestrator.mutableRuntime()
               .mutableMempool()
               .admitTransaction(seedTransfer, policy,
                                 crypto::SecurityContext::USER_TRANSACTION, now)
               .success();
+
+      std::string gossipPayload;
+      if (admitted && seedTransfer.hasSignatureBundle() &&
+          !seedTransfer.signatureBundle().signatures().empty()) {
+        gossipPayload = node::PersistentMempoolStore::serializeForGossip(
+            seedTransfer,
+            seedTransfer.signatureBundle().signatures().front().publicKey(),
+            now);
+      }
+      if (!gossipPayload.empty()) {
+        const p2p::GossipDeliveryReport delivery =
+            orchestrator.gossipBroadcast(
+                p2p::NetworkMessageType::TRANSACTION_GOSSIP, gossipPayload,
+                now);
+        mempoolSeeded = delivery.acceptedCount() > 0;
+        if (mempoolSeeded) {
+          equivocationRound = state.round();
+        }
+      }
     }
 
-    if (!doubleProposed && mempoolSeeded) {
-      // Rounds are 1-based: every height starts at round 1, so the double
-      // proposal must target (height=1, round=1) to match the honest
-      // validators' current round and this node's scheduled slot.
+    if (!doubleProposed && mempoolSeeded && state.height() == 1 &&
+        state.round() == equivocationRound &&
+        state.proposerAddress() == local.validatorKey.address().value()) {
       const std::optional<core::Block> blockA =
-          orchestrator.produceBlock(1, 1, now);
+          orchestrator.produceBlock(1, equivocationRound, now);
       const std::optional<core::Block> blockB =
-          orchestrator.produceBlock(1, 1, now + 1);
+          orchestrator.produceBlock(1, equivocationRound, now + 1);
 
       if (blockA.has_value() && blockB.has_value() &&
           blockA->hash() != blockB->hash()) {
         const consensus::BlockProposalResult proposalA =
             consensus::BlockProposalPhase::propose(
-                *blockA, local.validatorKey.address().value(), 1, now,
-                localSigner, orchestrator.mutableTcpRuntime().gossipMesh(),
+                *blockA, local.validatorKey.address().value(),
+                equivocationRound, now, localSigner,
+                orchestrator.mutableTcpRuntime().gossipMesh(),
                 validatorProvider);
         if (proposalA.proposed()) {
-          orchestrator.gossipBroadcast(p2p::NetworkMessageType::BLOCK_PROPOSAL,
-                                       proposalA.serializedProposal(), now);
+          // BlockProposalPhase already broadcasts to peers. Inject only the
+          // first proposal locally so the equivocator can participate without
+          // sending either network proposal twice.
+          orchestrator.gossipInjectLoopback(
+              p2p::NetworkMessageType::BLOCK_PROPOSAL,
+              proposalA.serializedProposal(), now);
         }
 
         const consensus::BlockProposalResult proposalB =
             consensus::BlockProposalPhase::propose(
-                *blockB, local.validatorKey.address().value(), 1, now + 1,
-                localSigner, orchestrator.mutableTcpRuntime().gossipMesh(),
+                *blockB, local.validatorKey.address().value(),
+                equivocationRound, now + 1, localSigner,
+                orchestrator.mutableTcpRuntime().gossipMesh(),
                 validatorProvider);
-        if (proposalB.proposed()) {
-          orchestrator.gossipBroadcast(p2p::NetworkMessageType::BLOCK_PROPOSAL,
-                                       proposalB.serializedProposal(), now + 1);
-        }
 
         doubleProposed = proposalA.proposed() && proposalB.proposed();
       }
@@ -234,11 +267,26 @@ void testProposerEquivocationIsSlashedEndToEnd() {
     // must eventually finalize.
     require(waitUntil(300s,
                       [&] {
-                        return reachedFinalizedHeight(honestA, 1) &&
-                               reachedFinalizedHeight(honestB, 1);
+                        const bool finalizedA =
+                            reachedFinalizedHeight(honestA, 1);
+                        const bool finalizedB =
+                            reachedFinalizedHeight(honestB, 1);
+                        return finalizedA && finalizedB;
                       }),
             "Honest validators did not finalize block 1 despite proposer "
             "equivocation.");
+
+    // Ensure there is work for a subsequent proposer if the equivocation
+    // evidence was detected too late to be included in block 1. Without this
+    // transaction, an evidence-only follow-up block cannot be produced by the
+    // current block-production policy.
+    const core::Transaction continuationTransfer = signedTransfer(
+        genesis, "equivocation", "equivocation-recipient", 2, unixTime());
+    const auto continuationSubmitted =
+        submitTransaction(honestA, continuationTransfer);
+    require(continuationSubmitted.has_value() &&
+                continuationSubmitted->statusCode == 200,
+            "Continuation transaction submission did not return HTTP 200.");
 
     // Evidence must be detected, gossiped, finalized, and the canonical
     // slashing pipeline must apply a real penalty. This can land in a

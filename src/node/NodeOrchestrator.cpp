@@ -1289,13 +1289,12 @@ void NodeOrchestrator::processPeerExchangeMessages(std::int64_t now) {
             entries, m_config.localPeer().peerId(), activePeerSubnets(),
             gossip.config().eclipseGuardConfig(), m_reconnectionPolicy, now);
 
-    if (admitted.rejectedCount() > 0 && !admitted.hasAcceptedEntries()) {
-      gossip.reportPeerMisbehavior(
-          envelope, p2p::PeerMisbehaviorType::INVALID_MESSAGE,
-          "Peer exchange payload had no admissible candidates.", now);
-      continue;
-    }
-
+    // A canonical peer-exchange payload is allowed to contain only entries
+    // that are already known, refer to this node, or are rejected by the local
+    // eclipse policy.  That means "no admissible candidates" is not evidence
+    // of peer misbehavior.  Penalizing it made honest peers lose 10 reputation
+    // points during ordinary mesh formation and eventually disconnected them.
+    // Malformed payloads were rejected above and remain punishable.
     if (!admitted.hasAcceptedEntries()) {
       continue;
     }

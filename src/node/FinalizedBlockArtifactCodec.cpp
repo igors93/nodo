@@ -1,5 +1,6 @@
 #include "node/FinalizedBlockArtifactCodec.hpp"
 
+#include "crypto/Hex.hpp"
 #include "crypto/hash.h"
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/QuorumCertificate.hpp"
@@ -22,6 +23,46 @@
 namespace nodo::node {
 
 namespace {
+
+constexpr const char* MULTILINE_VALUE_HEX_PREFIX = "hex:";
+
+std::string decodeKeyValueSafeSerialization(
+    const std::string& value,
+    const std::string& fieldName
+) {
+    const std::string prefix(MULTILINE_VALUE_HEX_PREFIX);
+    if (value.rfind(prefix, 0) != 0) {
+        return value;
+    }
+
+    const std::string encoded = value.substr(prefix.size());
+    if (!crypto::isHexString(encoded)) {
+        throw std::invalid_argument(
+            "Malformed hex-encoded finalized block field: " + fieldName
+        );
+    }
+
+    const std::vector<unsigned char> bytes = crypto::hexDecode(encoded);
+    const std::string decoded(bytes.begin(), bytes.end());
+    if (decoded.find('\n') == std::string::npos &&
+        decoded.find('\r') == std::string::npos) {
+        throw std::invalid_argument(
+            "Non-canonical hex encoding for single-line finalized block field: " +
+            fieldName
+        );
+    }
+
+    const std::string canonical = prefix + crypto::hexEncode(
+        reinterpret_cast<const unsigned char*>(decoded.data()),
+        decoded.size()
+    );
+    if (value != canonical) {
+        throw std::invalid_argument(
+            "Non-canonical hex-encoded finalized block field: " + fieldName
+        );
+    }
+    return decoded;
+}
 
 std::string readTextFile(
     const std::filesystem::path& path
@@ -2354,7 +2395,9 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
      * validator lifecycle accounting. The canonical block serialization remains
      * the integrity anchor for the block payload itself.
      */
-    const std::string serializedBlock = document.requireField("block");
+    const std::string storedBlock = document.requireField("block");
+    const std::string serializedBlock =
+        decodeKeyValueSafeSerialization(storedBlock, "block");
     core::Block block = serialization::BlockCodec::deserialize(serializedBlock);
 
     const std::uint64_t index = static_cast<std::uint64_t>(parseU64Strict(document.requireField("blockIndex"), "blockIndex"));
@@ -2559,7 +2602,8 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
 
     for (std::size_t recordIndex = 0; recordIndex < recordCount; ++recordIndex) {
         const std::string key = "record." + std::to_string(recordIndex);
-        if (block.records()[recordIndex].serialize() != document.requireField(key)) {
+        if (block.records()[recordIndex].serialize() !=
+            decodeKeyValueSafeSerialization(document.requireField(key), key)) {
             throw std::invalid_argument("Finalized block record line does not match block payload.");
         }
     }
@@ -3202,7 +3246,7 @@ FinalizedBlockArtifact FinalizedBlockArtifactCodec::decodeBlockArtifactFileConte
     canonicalFields.emplace_back("validatorLifecycleSummary.reason", validatorLifecycleSummary.reason());
     canonicalFields.emplace_back("validatorLifecycleSummary.sourceEpochDigest", validatorLifecycleSummary.sourceEpochDigest());
 
-    canonicalFields.emplace_back("block", serializedBlock);
+    canonicalFields.emplace_back("block", storedBlock);
     canonicalFields.emplace_back("quorumCertificate", quorumCertificate.serialize());
     canonicalFields.emplace_back("finalizedRecord", finalizedRecord.serialize());
 

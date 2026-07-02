@@ -93,6 +93,8 @@ private:
   SeenTransactionCache m_seenTxCache;
   std::atomic<bool> m_running;
   std::pair<std::uint64_t, std::uint64_t> m_lastProposedRound = {0, 0};
+  std::pair<std::uint64_t, std::uint64_t> m_lastProposalAttemptRound = {0, 0};
+  std::int64_t m_lastProposalAttemptAt = 0;
   std::optional<crypto::Signer> m_localSigner;
 
   // Register static peers into the transport and gossip mesh.

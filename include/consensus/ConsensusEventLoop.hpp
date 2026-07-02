@@ -27,6 +27,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace nodo::consensus {
 
@@ -205,6 +206,14 @@ private:
   // A proposal is not canonical state. It remains here until a valid quorum
   // certificate authorizes BlockFinalizer to append it to the blockchain.
   std::optional<PendingBlockCandidate> m_pendingCandidate;
+
+  // An authenticated proposal for exactly the next round may arrive before a
+  // slightly slower local clock advances. Keep a small, round-scoped buffer so
+  // it can be processed once that round becomes current instead of being
+  // destroyed by transport timing.
+  std::vector<p2p::NetworkEnvelope> m_bufferedNextRoundProposals;
+  std::uint64_t m_bufferedProposalHeight = 0;
+  std::uint64_t m_bufferedProposalRound = 0;
 
   std::optional<std::filesystem::path> m_recoveryPath;
   const node::NodeDataDirectoryConfig *m_dataDirectoryConfig = nullptr;
