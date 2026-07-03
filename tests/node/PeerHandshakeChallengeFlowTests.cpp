@@ -118,6 +118,7 @@ int main() {
   assert(!replayedHello.front().registered);
   assert(replayedHello.front().reason.find("already consumed") !=
          std::string::npos);
+  assert(meshA.invalidMessageCountForPeer("node-b") == 1);
 
   const p2p::NetworkEnvelope forgedPing("localnet", "chain-localnet", "1",
                                         p2p::NetworkMessageType::PING, "node-b",
