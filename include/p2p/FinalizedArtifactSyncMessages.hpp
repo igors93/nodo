@@ -17,43 +17,38 @@ namespace nodo::p2p {
  */
 class FinalizedArtifactAnnouncement {
 public:
-    FinalizedArtifactAnnouncement();
+  FinalizedArtifactAnnouncement();
 
-    FinalizedArtifactAnnouncement(
-        std::string senderNodeId,
-        std::string networkId,
-        std::string chainId,
-        std::string genesisId,
-        std::uint64_t height,
-        std::string blockHash,
-        std::string previousBlockHash,
-        std::string artifactDigest,
-        std::int64_t createdAt
-    );
+  FinalizedArtifactAnnouncement(std::string senderNodeId, std::string networkId,
+                                std::string chainId, std::string genesisId,
+                                std::uint64_t height, std::string blockHash,
+                                std::string previousBlockHash,
+                                std::string artifactDigest,
+                                std::int64_t createdAt);
 
-    const std::string& senderNodeId() const;
-    const std::string& networkId() const;
-    const std::string& chainId() const;
-    const std::string& genesisId() const;
-    std::uint64_t height() const;
-    const std::string& blockHash() const;
-    const std::string& previousBlockHash() const;
-    const std::string& artifactDigest() const;
-    std::int64_t createdAt() const;
+  const std::string &senderNodeId() const;
+  const std::string &networkId() const;
+  const std::string &chainId() const;
+  const std::string &genesisId() const;
+  std::uint64_t height() const;
+  const std::string &blockHash() const;
+  const std::string &previousBlockHash() const;
+  const std::string &artifactDigest() const;
+  std::int64_t createdAt() const;
 
-    bool isValid() const;
-    std::string serialize() const;
+  bool isValid() const;
+  std::string serialize() const;
 
 private:
-    std::string m_senderNodeId;
-    std::string m_networkId;
-    std::string m_chainId;
-    std::string m_genesisId;
-    std::uint64_t m_height;
-    std::string m_blockHash;
-    std::string m_previousBlockHash;
-    std::string m_artifactDigest;
-    std::int64_t m_createdAt;
+  std::string m_senderNodeId;
+  std::string m_networkId;
+  std::string m_chainId;
+  std::string m_genesisId;
+  std::uint64_t m_height;
+  std::string m_blockHash;
+  std::string m_previousBlockHash;
+  std::string m_artifactDigest;
+  std::int64_t m_createdAt;
 };
 
 /*
@@ -67,55 +62,49 @@ private:
  */
 class FinalizedArtifactRequest {
 public:
-    FinalizedArtifactRequest();
+  FinalizedArtifactRequest();
 
-    FinalizedArtifactRequest(
-        std::string requesterNodeId,
-        std::string networkId,
-        std::string chainId,
-        std::string genesisId,
-        std::uint64_t height,
-        std::string expectedBlockHash,
-        std::string expectedArtifactDigest,
-        std::int64_t createdAt
-    );
+  FinalizedArtifactRequest(std::string requesterNodeId, std::string networkId,
+                           std::string chainId, std::string genesisId,
+                           std::uint64_t height, std::string expectedBlockHash,
+                           std::string expectedArtifactDigest,
+                           std::int64_t createdAt);
 
-    const std::string& requesterNodeId() const;
-    const std::string& networkId() const;
-    const std::string& chainId() const;
-    const std::string& genesisId() const;
-    std::uint64_t height() const;
-    const std::string& expectedBlockHash() const;
-    const std::string& expectedArtifactDigest() const;
-    std::int64_t createdAt() const;
+  const std::string &requesterNodeId() const;
+  const std::string &networkId() const;
+  const std::string &chainId() const;
+  const std::string &genesisId() const;
+  std::uint64_t height() const;
+  const std::string &expectedBlockHash() const;
+  const std::string &expectedArtifactDigest() const;
+  std::int64_t createdAt() const;
 
-    bool isValid() const;
-    std::string serialize() const;
+  bool isValid() const;
+  std::string serialize() const;
 
 private:
-    std::string m_requesterNodeId;
-    std::string m_networkId;
-    std::string m_chainId;
-    std::string m_genesisId;
-    std::uint64_t m_height;
-    std::string m_expectedBlockHash;
-    std::string m_expectedArtifactDigest;
-    std::int64_t m_createdAt;
+  std::string m_requesterNodeId;
+  std::string m_networkId;
+  std::string m_chainId;
+  std::string m_genesisId;
+  std::uint64_t m_height;
+  std::string m_expectedBlockHash;
+  std::string m_expectedArtifactDigest;
+  std::int64_t m_createdAt;
 };
 
 enum class FinalizedArtifactResponseStatus {
-    ARTIFACT_FOUND,
-    ARTIFACT_NOT_FOUND,
-    HEIGHT_MISMATCH,
-    HASH_MISMATCH,
-    GENESIS_MISMATCH,
-    NETWORK_MISMATCH,
-    REQUEST_INVALID
+  ARTIFACT_FOUND,
+  ARTIFACT_NOT_FOUND,
+  HEIGHT_MISMATCH,
+  HASH_MISMATCH,
+  GENESIS_MISMATCH,
+  NETWORK_MISMATCH,
+  REQUEST_INVALID
 };
 
-std::string finalizedArtifactResponseStatusToString(
-    FinalizedArtifactResponseStatus status
-);
+std::string
+finalizedArtifactResponseStatusToString(FinalizedArtifactResponseStatus status);
 
 /*
  * FinalizedArtifactResponse carries the raw artifact content in response to a
@@ -128,71 +117,55 @@ std::string finalizedArtifactResponseStatusToString(
  */
 class FinalizedArtifactResponse {
 public:
-    FinalizedArtifactResponse();
+  FinalizedArtifactResponse();
 
-    static FinalizedArtifactResponse withArtifact(
-        std::string responderNodeId,
-        std::string networkId,
-        std::string chainId,
-        std::string genesisId,
-        std::uint64_t height,
-        std::string blockHash,
-        std::string artifactDigest,
-        std::string rawArtifactContents,
-        std::int64_t createdAt
-    );
+  static FinalizedArtifactResponse
+  withArtifact(std::string responderNodeId, std::string networkId,
+               std::string chainId, std::string genesisId, std::uint64_t height,
+               std::string blockHash, std::string artifactDigest,
+               std::string rawArtifactContents, std::int64_t createdAt);
 
-    static FinalizedArtifactResponse rejected(
-        std::string responderNodeId,
-        FinalizedArtifactResponseStatus status,
-        std::string reason,
-        std::int64_t createdAt
-    );
+  static FinalizedArtifactResponse
+  rejected(std::string responderNodeId, FinalizedArtifactResponseStatus status,
+           std::string reason, std::int64_t createdAt);
 
-    bool hasArtifact() const;
-    const std::string& responderNodeId() const;
-    const std::string& networkId() const;
-    const std::string& chainId() const;
-    const std::string& genesisId() const;
-    std::uint64_t height() const;
-    const std::string& blockHash() const;
-    const std::string& artifactDigest() const;
-    const std::string& rawArtifactContents() const;
-    FinalizedArtifactResponseStatus status() const;
-    const std::string& reason() const;
-    std::int64_t createdAt() const;
+  bool hasArtifact() const;
+  const std::string &responderNodeId() const;
+  const std::string &networkId() const;
+  const std::string &chainId() const;
+  const std::string &genesisId() const;
+  std::uint64_t height() const;
+  const std::string &blockHash() const;
+  const std::string &artifactDigest() const;
+  const std::string &rawArtifactContents() const;
+  FinalizedArtifactResponseStatus status() const;
+  const std::string &reason() const;
+  std::int64_t createdAt() const;
 
-    bool isValid() const;
-    std::string serialize() const;
+  bool isValid() const;
+  std::string serialize() const;
 
 private:
-    FinalizedArtifactResponse(
-        bool hasArtifact,
-        std::string responderNodeId,
-        std::string networkId,
-        std::string chainId,
-        std::string genesisId,
-        std::uint64_t height,
-        std::string blockHash,
-        std::string artifactDigest,
-        std::string rawArtifactContents,
-        FinalizedArtifactResponseStatus status,
-        std::string reason,
-        std::int64_t createdAt
-    );
+  FinalizedArtifactResponse(bool hasArtifact, std::string responderNodeId,
+                            std::string networkId, std::string chainId,
+                            std::string genesisId, std::uint64_t height,
+                            std::string blockHash, std::string artifactDigest,
+                            std::string rawArtifactContents,
+                            FinalizedArtifactResponseStatus status,
+                            std::string reason, std::int64_t createdAt);
 
-    bool m_hasArtifact;
-    std::string m_responderNodeId;
-    std::string m_networkId;
-    std::string m_chainId;
-    std::string m_genesisId;
-    std::uint64_t m_height;
-    std::string m_blockHash;
-    std::string m_artifactDigest;
-    std::string m_rawArtifactContents;
-    FinalizedArtifactResponseStatus m_status;
-    std::string m_reason;
-    std::int64_t m_createdAt;
+  bool m_hasArtifact;
+  std::string m_responderNodeId;
+  std::string m_networkId;
+  std::string m_chainId;
+  std::string m_genesisId;
+  std::uint64_t m_height;
+  std::string m_blockHash;
+  std::string m_artifactDigest;
+  std::string m_rawArtifactContents;
+  FinalizedArtifactResponseStatus m_status;
+  std::string m_reason;
+  std::int64_t m_createdAt;
 };
 
 } // namespace nodo::p2p

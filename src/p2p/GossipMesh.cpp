@@ -50,13 +50,17 @@ GossipMeshConfig::GossipMeshConfig()
       m_genesisId(""), m_defaultTtlSeconds(0),
       m_invalidMessageQuarantineThreshold(0), m_temporaryBanSeconds(3600),
       m_requireAuthenticatedSessions(false), m_enforceEclipseGuard(false),
-      m_eclipseGuardConfig(EclipseGuardConfig::defaults()) {}
+      m_eclipseGuardConfig(EclipseGuardConfig::defaults()),
+      m_maxGossipMessagesPerPeerWindow(100),
+      m_maxTransactionGossipPerPeerWindow(50) {}
 
 GossipMeshConfig::GossipMeshConfig(
     std::string localNodeId, std::string networkId, std::string chainId,
     std::string protocolVersion, std::string genesisId,
     std::uint32_t defaultTtlSeconds,
-    std::size_t invalidMessageQuarantineThreshold)
+    std::size_t invalidMessageQuarantineThreshold,
+    std::uint32_t maxGossipMessagesPerPeerWindow,
+    std::uint32_t maxTransactionGossipPerPeerWindow)
     : m_localNodeId(std::move(localNodeId)), m_networkId(std::move(networkId)),
       m_chainId(std::move(chainId)),
       m_protocolVersion(std::move(protocolVersion)),
@@ -64,7 +68,9 @@ GossipMeshConfig::GossipMeshConfig(
       m_invalidMessageQuarantineThreshold(invalidMessageQuarantineThreshold),
       m_temporaryBanSeconds(3600), m_requireAuthenticatedSessions(false),
       m_enforceEclipseGuard(false),
-      m_eclipseGuardConfig(EclipseGuardConfig::defaults()) {}
+      m_eclipseGuardConfig(EclipseGuardConfig::defaults()),
+      m_maxGossipMessagesPerPeerWindow(maxGossipMessagesPerPeerWindow),
+      m_maxTransactionGossipPerPeerWindow(maxTransactionGossipPerPeerWindow) {}
 
 GossipMeshConfig::GossipMeshConfig(
     std::string localNodeId, std::string networkId, std::string chainId,
@@ -72,7 +78,10 @@ GossipMeshConfig::GossipMeshConfig(
     std::uint32_t defaultTtlSeconds,
     std::size_t invalidMessageQuarantineThreshold,
     bool requireAuthenticatedSessions, bool enforceEclipseGuard,
-    EclipseGuardConfig eclipseGuardConfig, std::int64_t temporaryBanSeconds)
+    EclipseGuardConfig eclipseGuardConfig,
+    std::uint32_t maxGossipMessagesPerPeerWindow,
+    std::uint32_t maxTransactionGossipPerPeerWindow,
+    std::int64_t temporaryBanSeconds)
     : m_localNodeId(std::move(localNodeId)), m_networkId(std::move(networkId)),
       m_chainId(std::move(chainId)),
       m_protocolVersion(std::move(protocolVersion)),
@@ -81,7 +90,9 @@ GossipMeshConfig::GossipMeshConfig(
       m_temporaryBanSeconds(temporaryBanSeconds),
       m_requireAuthenticatedSessions(requireAuthenticatedSessions),
       m_enforceEclipseGuard(enforceEclipseGuard),
-      m_eclipseGuardConfig(std::move(eclipseGuardConfig)) {}
+      m_eclipseGuardConfig(std::move(eclipseGuardConfig)),
+      m_maxGossipMessagesPerPeerWindow(maxGossipMessagesPerPeerWindow),
+      m_maxTransactionGossipPerPeerWindow(maxTransactionGossipPerPeerWindow) {}
 
 const std::string &GossipMeshConfig::localNodeId() const {
   return m_localNodeId;
@@ -109,6 +120,12 @@ bool GossipMeshConfig::enforceEclipseGuard() const {
 }
 const EclipseGuardConfig &GossipMeshConfig::eclipseGuardConfig() const {
   return m_eclipseGuardConfig;
+}
+std::uint32_t GossipMeshConfig::maxGossipMessagesPerPeerWindow() const {
+  return m_maxGossipMessagesPerPeerWindow;
+}
+std::uint32_t GossipMeshConfig::maxTransactionGossipPerPeerWindow() const {
+  return m_maxTransactionGossipPerPeerWindow;
 }
 
 bool GossipMeshConfig::isValid() const {
@@ -231,6 +248,10 @@ GossipMesh::GossipMesh(GossipMeshConfig config, Transport &transport)
       m_connectionByMessageId(), m_invalidMessagesByIdentity(),
       m_lastEvidenceAt(), m_evidenceCaptureHealth(),
       m_peerPenaltyPersistenceHandler(), m_lastPeerPenaltyPersistenceError() {
+  m_rateLimiter =
+      PeerRateLimiter(m_config.maxGossipMessagesPerPeerWindow(), 60);
+  m_rateLimiter.setLimitForType(NetworkMessageType::TRANSACTION_GOSSIP,
+                                m_config.maxTransactionGossipPerPeerWindow());
   m_evidenceCaptureHealth.markUnavailable();
 }
 
@@ -243,6 +264,10 @@ GossipMesh::GossipMesh(GossipMeshConfig config, Transport &transport,
       m_connectionByMessageId(), m_invalidMessagesByIdentity(),
       m_lastEvidenceAt(), m_evidenceCaptureHealth(),
       m_peerPenaltyPersistenceHandler(), m_lastPeerPenaltyPersistenceError() {
+  m_rateLimiter =
+      PeerRateLimiter(m_config.maxGossipMessagesPerPeerWindow(), 60);
+  m_rateLimiter.setLimitForType(NetworkMessageType::TRANSACTION_GOSSIP,
+                                m_config.maxTransactionGossipPerPeerWindow());
   if (evidenceStore == nullptr) {
     m_evidenceCaptureHealth.markUnavailable();
   }

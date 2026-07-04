@@ -23,7 +23,10 @@ public:
                               std::string genesisId,
                               std::filesystem::path dataDirectory,
                               std::uint32_t defaultTtlSeconds,
-                              std::size_t invalidMessageQuarantineThreshold);
+                              std::size_t invalidMessageQuarantineThreshold,
+                              std::uint32_t maxGossipMessagesPerPeerWindow,
+                              std::uint32_t maxTransactionGossipPerPeerWindow,
+                              std::uint32_t maxTransactionRelayPerSecond);
 
   const std::string &nodeId() const;
   const std::string &host() const;
@@ -35,6 +38,9 @@ public:
   const std::filesystem::path &dataDirectory() const;
   std::uint32_t defaultTtlSeconds() const;
   std::size_t invalidMessageQuarantineThreshold() const;
+  std::uint32_t maxGossipMessagesPerPeerWindow() const;
+  std::uint32_t maxTransactionGossipPerPeerWindow() const;
+  std::uint32_t maxTransactionRelayPerSecond() const;
 
   std::filesystem::path peersFilePath() const;
   bool isValid() const;
@@ -50,6 +56,9 @@ private:
   std::filesystem::path m_dataDirectory;
   std::uint32_t m_defaultTtlSeconds;
   std::size_t m_invalidMessageQuarantineThreshold;
+  std::uint32_t m_maxGossipMessagesPerPeerWindow;
+  std::uint32_t m_maxTransactionGossipPerPeerWindow;
+  std::uint32_t m_maxTransactionRelayPerSecond;
 };
 
 class TcpTestnetPeerFileEntry {

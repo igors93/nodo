@@ -96,6 +96,10 @@ private:
   std::pair<std::uint64_t, std::uint64_t> m_lastProposalAttemptRound = {0, 0};
   std::int64_t m_lastProposalAttemptAt = 0;
   std::optional<crypto::Signer> m_localSigner;
+  
+  std::uint32_t m_txRelayBudgetCounter = 0;
+  std::int64_t m_txRelayBudgetSecond = 0;
+  std::uint64_t m_txRelayDroppedCount = 0;
 
   // Register static peers into the transport and gossip mesh.
   void registerStaticPeers(std::int64_t now);

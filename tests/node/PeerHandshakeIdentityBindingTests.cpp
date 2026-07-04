@@ -74,7 +74,7 @@ int main() {
   p2p::LoopbackTransport remoteTransport(bus);
   p2p::GossipMesh localMesh(p2p::GossipMeshConfig("node-local", "localnet",
                                                   "chain-localnet", "1",
-                                                  "genesis-localnet", 60, 3),
+                                                  "genesis-localnet", 60, 3, 100, 50),
                             localTransport);
   const crypto::KeyPair localIdentity =
       crypto::KeyPair::createDeterministicEd25519KeyPair(
@@ -83,7 +83,7 @@ int main() {
 
   const p2p::GossipMeshConfig originalConfig("node-remote", "localnet",
                                              "chain-localnet", "1",
-                                             "genesis-localnet", 60, 3);
+                                             "genesis-localnet", 60, 3, 100, 50);
   const crypto::KeyPair originalIdentity =
       crypto::KeyPair::createDeterministicEd25519KeyPair(
           "peer-identity-binding-original");
@@ -145,7 +145,7 @@ int main() {
 
   const p2p::GossipMeshConfig aliasConfig("node-remote-rotated", "localnet",
                                           "chain-localnet", "1",
-                                          "genesis-localnet", 60, 3);
+                                          "genesis-localnet", 60, 3, 100, 50);
   const p2p::PeerMetadata alias =
       peer("node-remote-rotated", originalIdentity, 1003);
   deliverHello(remoteTransport, localMesh, aliasConfig, alias, originalIdentity,
@@ -181,7 +181,7 @@ int main() {
   const p2p::PeerMetadata forgerPeer = peer(forgerNodeId, forgerIdentity, 1005);
   const p2p::GossipMeshConfig forgerConfig(forgerNodeId, "localnet",
                                            "chain-localnet", "1",
-                                           "genesis-localnet", 60, 3);
+                                           "genesis-localnet", 60, 3, 100, 50);
   const auto forgerChallenge =
       localMesh.handshakeReplayGuard().issueChallengeMaterial(
           forgerNodeId, 1005, localMesh.config().defaultTtlSeconds());

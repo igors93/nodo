@@ -49,795 +49,665 @@ constexpr std::chrono::seconds kRpcStartupTimeout = 60s;
 
 volatile std::sig_atomic_t gChildStopRequested = 0;
 
-void requestChildStop(int) {
-    gChildStopRequested = 1;
-}
+void requestChildStop(int) { gChildStopRequested = 1; }
 
-void require(bool condition, const std::string& message) {
-    if (!condition) {
-        throw std::runtime_error(message);
-    }
+void require(bool condition, const std::string &message) {
+  if (!condition) {
+    throw std::runtime_error(message);
+  }
 }
 
 std::int64_t unixTime() {
-    return std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()
-    ).count();
+  return std::chrono::duration_cast<std::chrono::seconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
 }
 
 bool canBindPort(std::uint16_t port, int socketType) {
-    const int fd = ::socket(AF_INET, socketType, 0);
-    if (fd < 0) {
-        return false;
-    }
+  const int fd = ::socket(AF_INET, socketType, 0);
+  if (fd < 0) {
+    return false;
+  }
 
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    address.sin_port = htons(port);
-    const bool available = ::bind(
-        fd,
-        reinterpret_cast<sockaddr*>(&address),
-        sizeof(address)
-    ) == 0;
-    ::close(fd);
-    return available;
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  address.sin_port = htons(port);
+  const bool available =
+      ::bind(fd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0;
+  ::close(fd);
+  return available;
 }
 
-std::uint16_t findTcpPort(
-    std::uint16_t start,
-    const std::vector<std::uint16_t>& reserved
-) {
-    for (std::uint32_t candidate = start; candidate < 60000; ++candidate) {
-        const auto port = static_cast<std::uint16_t>(candidate);
-        if (std::find(reserved.begin(), reserved.end(), port) == reserved.end() &&
-            canBindPort(port, SOCK_STREAM)) {
-            return port;
-        }
+std::uint16_t findTcpPort(std::uint16_t start,
+                          const std::vector<std::uint16_t> &reserved) {
+  for (std::uint32_t candidate = start; candidate < 60000; ++candidate) {
+    const auto port = static_cast<std::uint16_t>(candidate);
+    if (std::find(reserved.begin(), reserved.end(), port) == reserved.end() &&
+        canBindPort(port, SOCK_STREAM)) {
+      return port;
     }
-    throw std::runtime_error("Unable to allocate a local TCP port for E2E test.");
+  }
+  throw std::runtime_error("Unable to allocate a local TCP port for E2E test.");
 }
 
-std::uint16_t findP2pPort(
-    std::uint16_t start,
-    const std::vector<std::uint16_t>& reserved
-) {
-    for (std::uint32_t candidate = start; candidate < 59999; candidate += 2) {
-        const auto tcpPort = static_cast<std::uint16_t>(candidate);
-        const auto udpPort = static_cast<std::uint16_t>(candidate + 1);
-        const bool reservedPort =
-            std::find(reserved.begin(), reserved.end(), tcpPort) != reserved.end() ||
-            std::find(reserved.begin(), reserved.end(), udpPort) != reserved.end();
-        if (!reservedPort &&
-            canBindPort(tcpPort, SOCK_STREAM) &&
-            canBindPort(udpPort, SOCK_DGRAM)) {
-            return tcpPort;
-        }
+std::uint16_t findP2pPort(std::uint16_t start,
+                          const std::vector<std::uint16_t> &reserved) {
+  for (std::uint32_t candidate = start; candidate < 59999; candidate += 2) {
+    const auto tcpPort = static_cast<std::uint16_t>(candidate);
+    const auto udpPort = static_cast<std::uint16_t>(candidate + 1);
+    const bool reservedPort =
+        std::find(reserved.begin(), reserved.end(), tcpPort) !=
+            reserved.end() ||
+        std::find(reserved.begin(), reserved.end(), udpPort) != reserved.end();
+    if (!reservedPort && canBindPort(tcpPort, SOCK_STREAM) &&
+        canBindPort(udpPort, SOCK_DGRAM)) {
+      return tcpPort;
     }
-    throw std::runtime_error("Unable to allocate local P2P ports for E2E test.");
+  }
+  throw std::runtime_error("Unable to allocate local P2P ports for E2E test.");
 }
 
 struct NodeSpec {
-    std::string nodeId;
-    std::filesystem::path dataDirectory;
-    std::uint16_t p2pPort;
-    std::uint16_t rpcPort;
-    crypto::KeyPair validatorKey;
-    crypto::KeyPair identityKey;
+  std::string nodeId;
+  std::filesystem::path dataDirectory;
+  std::uint16_t p2pPort;
+  std::uint16_t rpcPort;
+  crypto::KeyPair validatorKey;
+  crypto::KeyPair identityKey;
 };
 
-std::filesystem::path childStatusPath(const NodeSpec& spec) {
-    return spec.dataDirectory.parent_path() / (spec.nodeId + ".status");
+std::filesystem::path childStatusPath(const NodeSpec &spec) {
+  return spec.dataDirectory.parent_path() / (spec.nodeId + ".status");
 }
 
-void writeChildStatus(const NodeSpec& spec, const std::string& status) {
-    std::error_code directoryError;
-    std::filesystem::create_directories(
-        spec.dataDirectory.parent_path(),
-        directoryError
-    );
-    std::ofstream output(childStatusPath(spec), std::ios::trunc);
-    if (output) {
-        output << status;
-    }
+void writeChildStatus(const NodeSpec &spec, const std::string &status) {
+  std::error_code directoryError;
+  std::filesystem::create_directories(spec.dataDirectory.parent_path(),
+                                      directoryError);
+  std::ofstream output(childStatusPath(spec), std::ios::trunc);
+  if (output) {
+    output << status;
+  }
 }
 
-std::string readChildStatus(const NodeSpec& spec) {
-    std::ifstream input(childStatusPath(spec));
-    if (!input) {
-        return "NO_STATUS";
-    }
-    return std::string(
-        std::istreambuf_iterator<char>(input),
-        std::istreambuf_iterator<char>()
-    );
+std::string readChildStatus(const NodeSpec &spec) {
+  std::ifstream input(childStatusPath(spec));
+  if (!input) {
+    return "NO_STATUS";
+  }
+  return std::string(std::istreambuf_iterator<char>(input),
+                     std::istreambuf_iterator<char>());
 }
 
-std::array<NodeSpec, 3> makeNodeSpecs(
-    const std::filesystem::path& root
-) {
-    std::vector<std::uint16_t> reserved;
-    const std::uint16_t seed = static_cast<std::uint16_t>(
-        24000 + (static_cast<unsigned long>(::getpid()) % 1000UL) * 20UL
-    );
+std::array<NodeSpec, 3> makeNodeSpecs(const std::filesystem::path &root) {
+  std::vector<std::uint16_t> reserved;
+  const std::uint16_t seed = static_cast<std::uint16_t>(
+      24000 + (static_cast<unsigned long>(::getpid()) % 1000UL) * 20UL);
 
-    std::array<NodeSpec, 3> specs;
-    for (std::size_t index = 0; index < specs.size(); ++index) {
-        const std::uint16_t p2pPort = findP2pPort(
-            static_cast<std::uint16_t>(seed + index * 4),
-            reserved
-        );
-        reserved.push_back(p2pPort);
-        reserved.push_back(static_cast<std::uint16_t>(p2pPort + 1));
-        const std::uint16_t rpcPort = findTcpPort(
-            static_cast<std::uint16_t>(seed + 100 + index),
-            reserved
-        );
-        reserved.push_back(rpcPort);
+  std::array<NodeSpec, 3> specs;
+  for (std::size_t index = 0; index < specs.size(); ++index) {
+    const std::uint16_t p2pPort =
+        findP2pPort(static_cast<std::uint16_t>(seed + index * 4), reserved);
+    reserved.push_back(p2pPort);
+    reserved.push_back(static_cast<std::uint16_t>(p2pPort + 1));
+    const std::uint16_t rpcPort =
+        findTcpPort(static_cast<std::uint16_t>(seed + 100 + index), reserved);
+    reserved.push_back(rpcPort);
 
-        const std::string suffix(1, static_cast<char>('a' + index));
-        specs[index] = NodeSpec{
-            "real-e2e-node-" + suffix,
-            root / ("node-" + suffix),
-            p2pPort,
-            rpcPort,
-            crypto::KeyPair::createDeterministicBls12381KeyPair(
-                "real-tcp-e2e-validator-" + suffix
-            ),
-            crypto::KeyPair::createDeterministicEd25519KeyPair(
-                "real-tcp-e2e-identity-" + suffix
-            )
-        };
-    }
-    return specs;
+    const std::string suffix(1, static_cast<char>('a' + index));
+    specs[index] = NodeSpec{"real-e2e-node-" + suffix,
+                            root / ("node-" + suffix),
+                            p2pPort,
+                            rpcPort,
+                            crypto::KeyPair::createDeterministicBls12381KeyPair(
+                                "real-tcp-e2e-validator-" + suffix),
+                            crypto::KeyPair::createDeterministicEd25519KeyPair(
+                                "real-tcp-e2e-identity-" + suffix)};
+  }
+  return specs;
 }
 
 crypto::KeyPair testUserKey() {
-    return crypto::KeyPair::createDeterministicEd25519KeyPair(
-        "real-tcp-e2e-funded-user"
-    );
+  return crypto::KeyPair::createDeterministicEd25519KeyPair(
+      "real-tcp-e2e-funded-user");
 }
 
-config::GenesisConfig makeGenesis(
-    const std::array<NodeSpec, 3>& specs,
-    std::int64_t genesisTimestamp
-) {
-    std::vector<config::BootstrapValidatorConfig> validators;
-    validators.reserve(specs.size());
-    for (const NodeSpec& spec : specs) {
-        validators.emplace_back(
-            spec.validatorKey.publicKey(),
-            1,
-            1,
-            "real-tcp-e2e-" + spec.nodeId
-        );
-    }
+config::GenesisConfig makeGenesis(const std::array<NodeSpec, 3> &specs,
+                                  std::int64_t genesisTimestamp) {
+  std::vector<config::BootstrapValidatorConfig> validators;
+  validators.reserve(specs.size());
+  for (const NodeSpec &spec : specs) {
+    validators.emplace_back(spec.validatorKey.publicKey(), 1, 1,
+                            "real-tcp-e2e-" + spec.nodeId);
+  }
 
-    return config::GenesisConfig(
-        config::NetworkParameters::developmentLocal(),
-        genesisTimestamp,
-        validators,
-        {
-            config::GenesisAccountConfig(
-                testUserKey().address().value(),
-                utils::Amount::fromRawUnits(2'000'000'000'000LL),
-                0
-            )
-        },
-        "real-tcp-three-node-e2e-genesis"
-    );
+  return config::GenesisConfig(
+      config::NetworkParameters::developmentLocal(), genesisTimestamp,
+      validators,
+      {config::GenesisAccountConfig(
+          testUserKey().address().value(),
+          utils::Amount::fromRawUnits(2'000'000'000'000LL), 0)},
+      "real-tcp-three-node-e2e-genesis");
 }
 
-p2p::PeerInfo peerInfo(
-    const NodeSpec& spec,
-    std::int64_t timestamp
-) {
-    return p2p::PeerInfo(
-        spec.nodeId,
-        "127.0.0.1:" + std::to_string(spec.p2pPort),
-        "nodo/0.1",
-        0,
-        timestamp
-    );
+p2p::PeerInfo peerInfo(const NodeSpec &spec, std::int64_t timestamp) {
+  return p2p::PeerInfo(spec.nodeId, "127.0.0.1:" + std::to_string(spec.p2pPort),
+                       "nodo/0.1", 0, timestamp);
 }
 
-int runDaemonChild(
-    std::size_t nodeIndex,
-    const std::array<NodeSpec, 3>& specs,
-    const config::GenesisConfig& genesis
-) {
-    gChildStopRequested = 0;
-    std::signal(SIGTERM, requestChildStop);
-    std::signal(SIGINT, requestChildStop);
+int runDaemonChild(std::size_t nodeIndex, const std::array<NodeSpec, 3> &specs,
+                   const config::GenesisConfig &genesis) {
+  gChildStopRequested = 0;
+  std::signal(SIGTERM, requestChildStop);
+  std::signal(SIGINT, requestChildStop);
 
-    const crypto::CryptoPolicy policy =
-        crypto::CryptoPolicy::developmentPolicy();
-    const crypto::Bls12381SignatureProvider validatorProvider;
-    const NodeSpec& local = specs.at(nodeIndex);
-    writeChildStatus(local, "STARTING");
+  const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+  const crypto::Bls12381SignatureProvider validatorProvider;
+  const NodeSpec &local = specs.at(nodeIndex);
+  writeChildStatus(local, "STARTING");
 
-    node::NodeOrchestratorConfig orchestratorConfig(
-        genesis,
-        node::NodeDataDirectoryConfig(local.dataDirectory),
-        peerInfo(local, genesis.genesisTimestamp()),
-        local.validatorKey.address().value(),
-        local.rpcPort,
-        "127.0.0.1",
-        kConsensusTickMilliseconds,
-        static_cast<std::size_t>(
-            genesis.networkParameters().maxTransactionsPerBlock()
-        )
-    );
+  node::NodeOrchestratorConfig orchestratorConfig(
+      genesis, node::NodeDataDirectoryConfig(local.dataDirectory),
+      peerInfo(local, genesis.genesisTimestamp()),
+      local.validatorKey.address().value(), local.rpcPort, "127.0.0.1",
+      kConsensusTickMilliseconds,
+      static_cast<std::size_t>(
+          genesis.networkParameters().maxTransactionsPerBlock()));
 
-    node::NodeDaemonConfig daemonConfig;
-    daemonConfig.orchestratorConfig = orchestratorConfig;
-    for (std::size_t index = 0; index < specs.size(); ++index) {
-        if (index == nodeIndex || local.nodeId >= specs[index].nodeId) {
-            continue;
-        }
-        daemonConfig.staticPeers.push_back(node::NodeDaemonPeerEntry{
-            specs[index].nodeId,
-            "127.0.0.1",
-            specs[index].p2pPort
-        });
+  node::NodeDaemonConfig daemonConfig;
+  daemonConfig.orchestratorConfig = orchestratorConfig;
+  for (std::size_t index = 0; index < specs.size(); ++index) {
+    if (index == nodeIndex || local.nodeId >= specs[index].nodeId) {
+      continue;
     }
+    daemonConfig.staticPeers.push_back(node::NodeDaemonPeerEntry{
+        specs[index].nodeId, "127.0.0.1", specs[index].p2pPort});
+  }
 
-    node::NodeDaemon daemon(daemonConfig, policy, validatorProvider);
-    daemon.setLocalSigner(crypto::Signer(local.validatorKey, validatorProvider));
-    daemon.setLocalNodeIdentity(local.identityKey);
+  node::NodeDaemon daemon(daemonConfig, policy, validatorProvider);
+  daemon.setLocalSigner(crypto::Signer(local.validatorKey, validatorProvider));
+  daemon.setLocalNodeIdentity(local.identityKey);
 
-    const node::NodeOrchestratorStartResult started = daemon.start();
-    if (!started.running()) {
-        writeChildStatus(local, "FAILED: daemon start: " + started.reason);
-        std::cerr << local.nodeId << " failed to start: "
-                  << started.reason << '\n';
-        return 2;
-    }
-    if (!daemon.orchestrator().rpcRunning()) {
-        writeChildStatus(
-            local,
-            "FAILED: RPC server on port " +
-                std::to_string(local.rpcPort) + ": " +
-                daemon.orchestrator().rpcStartError()
-        );
-        daemon.stop();
-        return 3;
-    }
-    writeChildStatus(local, "RUNNING");
-
-    while (!gChildStopRequested && daemon.isRunning()) {
-        daemon.tick(unixTime());
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(kDaemonTickMilliseconds)
-        );
-    }
-
+  const node::NodeOrchestratorStartResult started = daemon.start();
+  if (!started.running()) {
+    writeChildStatus(local, "FAILED: daemon start: " + started.reason);
+    std::cerr << local.nodeId << " failed to start: " << started.reason << '\n';
+    return 2;
+  }
+  if (!daemon.orchestrator().rpcRunning()) {
+    writeChildStatus(local, "FAILED: RPC server on port " +
+                                std::to_string(local.rpcPort) + ": " +
+                                daemon.orchestrator().rpcStartError());
     daemon.stop();
-    return 0;
+    return 3;
+  }
+  writeChildStatus(local, "RUNNING");
+
+  while (!gChildStopRequested && daemon.isRunning()) {
+    daemon.tick(unixTime());
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(kDaemonTickMilliseconds));
+  }
+
+  daemon.stop();
+  return 0;
 }
 
 class ChildProcesses {
 public:
-    ChildProcesses(
-        const std::array<NodeSpec, 3>& specs,
-        const config::GenesisConfig& genesis
-    ) : m_specs(specs), m_genesis(genesis), m_pids{} {}
+  ChildProcesses(const std::array<NodeSpec, 3> &specs,
+                 const config::GenesisConfig &genesis)
+      : m_specs(specs), m_genesis(genesis), m_pids{} {}
 
-    ~ChildProcesses() {
-        stopAll();
+  ~ChildProcesses() { stopAll(); }
+
+  void start(std::size_t index) {
+    require(index < m_pids.size(), "Child process index is invalid.");
+    require(m_pids[index] == 0, "Child process is already running.");
+
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+      throw std::runtime_error("fork() failed for daemon child.");
+    }
+    if (pid == 0) {
+      const int result = runDaemonChild(index, m_specs, m_genesis);
+      ::_exit(result);
+    }
+    m_pids[index] = pid;
+  }
+
+  void stop(std::size_t index) {
+    if (index >= m_pids.size() || m_pids[index] == 0) {
+      return;
     }
 
-    void start(std::size_t index) {
-        require(index < m_pids.size(), "Child process index is invalid.");
-        require(m_pids[index] == 0, "Child process is already running.");
-
-        const pid_t pid = ::fork();
-        if (pid < 0) {
-            throw std::runtime_error("fork() failed for daemon child.");
-        }
-        if (pid == 0) {
-            const int result = runDaemonChild(index, m_specs, m_genesis);
-            ::_exit(result);
-        }
-        m_pids[index] = pid;
+    const pid_t pid = m_pids[index];
+    (void)::kill(pid, SIGTERM);
+    for (int attempt = 0; attempt < 100; ++attempt) {
+      int status = 0;
+      const pid_t waited = ::waitpid(pid, &status, WNOHANG);
+      if (waited == pid) {
+        m_pids[index] = 0;
+        require(WIFEXITED(status) && WEXITSTATUS(status) == 0,
+                m_specs[index].nodeId + " exited with an error.");
+        return;
+      }
+      std::this_thread::sleep_for(50ms);
     }
 
-    void stop(std::size_t index) {
-        if (index >= m_pids.size() || m_pids[index] == 0) {
-            return;
-        }
+    (void)::kill(pid, SIGKILL);
+    int status = 0;
+    (void)::waitpid(pid, &status, 0);
+    m_pids[index] = 0;
+    throw std::runtime_error(m_specs[index].nodeId +
+                             " did not stop gracefully.");
+  }
 
-        const pid_t pid = m_pids[index];
-        (void)::kill(pid, SIGTERM);
-        for (int attempt = 0; attempt < 100; ++attempt) {
-            int status = 0;
-            const pid_t waited = ::waitpid(pid, &status, WNOHANG);
-            if (waited == pid) {
-                m_pids[index] = 0;
-                require(
-                    WIFEXITED(status) && WEXITSTATUS(status) == 0,
-                    m_specs[index].nodeId + " exited with an error."
-                );
-                return;
-            }
-            std::this_thread::sleep_for(50ms);
+  void stopAll() noexcept {
+    for (std::size_t index = 0; index < m_pids.size(); ++index) {
+      if (m_pids[index] == 0) {
+        continue;
+      }
+      const pid_t pid = m_pids[index];
+      (void)::kill(pid, SIGTERM);
+      for (int attempt = 0; attempt < 40; ++attempt) {
+        int status = 0;
+        if (::waitpid(pid, &status, WNOHANG) == pid) {
+          m_pids[index] = 0;
+          break;
         }
-
+        std::this_thread::sleep_for(50ms);
+      }
+      if (m_pids[index] != 0) {
         (void)::kill(pid, SIGKILL);
         int status = 0;
         (void)::waitpid(pid, &status, 0);
         m_pids[index] = 0;
-        throw std::runtime_error(
-            m_specs[index].nodeId + " did not stop gracefully."
-        );
+      }
     }
-
-    void stopAll() noexcept {
-        for (std::size_t index = 0; index < m_pids.size(); ++index) {
-            if (m_pids[index] == 0) {
-                continue;
-            }
-            const pid_t pid = m_pids[index];
-            (void)::kill(pid, SIGTERM);
-            for (int attempt = 0; attempt < 40; ++attempt) {
-                int status = 0;
-                if (::waitpid(pid, &status, WNOHANG) == pid) {
-                    m_pids[index] = 0;
-                    break;
-                }
-                std::this_thread::sleep_for(50ms);
-            }
-            if (m_pids[index] != 0) {
-                (void)::kill(pid, SIGKILL);
-                int status = 0;
-                (void)::waitpid(pid, &status, 0);
-                m_pids[index] = 0;
-            }
-        }
-    }
+  }
 
 private:
-    const std::array<NodeSpec, 3>& m_specs;
-    const config::GenesisConfig& m_genesis;
-    std::array<pid_t, 3> m_pids;
+  const std::array<NodeSpec, 3> &m_specs;
+  const config::GenesisConfig &m_genesis;
+  std::array<pid_t, 3> m_pids;
 };
 
 struct HttpResponse {
-    int statusCode = 0;
-    std::string body;
+  int statusCode = 0;
+  std::string body;
 };
 
-bool sendAll(int fd, const std::string& request) {
-    std::size_t sent = 0;
-    while (sent < request.size()) {
-        const ssize_t result = ::send(
-            fd,
-            request.data() + sent,
-            request.size() - sent,
+bool sendAll(int fd, const std::string &request) {
+  std::size_t sent = 0;
+  while (sent < request.size()) {
+    const ssize_t result =
+        ::send(fd, request.data() + sent, request.size() - sent,
 #ifdef MSG_NOSIGNAL
-            MSG_NOSIGNAL
+               MSG_NOSIGNAL
 #else
-            0
+               0
 #endif
         );
-        if (result <= 0) {
-            return false;
-        }
-        sent += static_cast<std::size_t>(result);
+    if (result <= 0) {
+      return false;
     }
-    return true;
+    sent += static_cast<std::size_t>(result);
+  }
+  return true;
 }
 
-std::optional<HttpResponse> httpRequest(
-    std::uint16_t port,
-    const std::string& method,
-    const std::string& path,
-    const std::string& body = ""
-) {
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        return std::nullopt;
-    }
+std::optional<HttpResponse> httpRequest(std::uint16_t port,
+                                        const std::string &method,
+                                        const std::string &path,
+                                        const std::string &body = "") {
+  const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) {
+    return std::nullopt;
+  }
 
-    timeval timeout{};
-    timeout.tv_sec = 5;
-    (void)::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    (void)::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+  timeval timeout{};
+  timeout.tv_sec = 5;
+  (void)::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+  (void)::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_port = htons(port);
-    (void)::inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
-    if (::connect(
-            fd,
-            reinterpret_cast<sockaddr*>(&address),
-            sizeof(address)
-        ) != 0) {
-        ::close(fd);
-        return std::nullopt;
-    }
-
-    std::string request = method + " " + path + " HTTP/1.0\r\n"
-        "Host: 127.0.0.1\r\n"
-        "Connection: close\r\n";
-    if (!body.empty()) {
-        request += "Content-Type: text/plain\r\nContent-Length: " +
-            std::to_string(body.size()) + "\r\n";
-    }
-    request += "\r\n" + body;
-
-    if (!sendAll(fd, request)) {
-        ::close(fd);
-        return std::nullopt;
-    }
-
-    std::string response;
-    std::array<char, 4096> buffer{};
-    while (true) {
-        const ssize_t received = ::recv(fd, buffer.data(), buffer.size(), 0);
-        if (received == 0) {
-            break;
-        }
-        if (received < 0) {
-            ::close(fd);
-            return std::nullopt;
-        }
-        response.append(buffer.data(), static_cast<std::size_t>(received));
-    }
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_port = htons(port);
+  (void)::inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
+  if (::connect(fd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) !=
+      0) {
     ::close(fd);
+    return std::nullopt;
+  }
 
-    const std::size_t lineEnd = response.find("\r\n");
-    const std::size_t bodyStart = response.find("\r\n\r\n");
-    if (lineEnd == std::string::npos || bodyStart == std::string::npos) {
-        return std::nullopt;
-    }
+  std::string request = method + " " + path +
+                        " HTTP/1.0\r\n"
+                        "Host: 127.0.0.1\r\n"
+                        "Connection: close\r\n";
+  if (!body.empty()) {
+    request += "Content-Type: text/plain\r\nContent-Length: " +
+               std::to_string(body.size()) + "\r\n";
+  }
+  request += "\r\n" + body;
 
-    HttpResponse parsed;
-    const std::string statusLine = response.substr(0, lineEnd);
-    const std::size_t firstSpace = statusLine.find(' ');
-    const std::size_t secondSpace = statusLine.find(' ', firstSpace + 1);
-    if (firstSpace == std::string::npos || secondSpace == std::string::npos) {
-        return std::nullopt;
+  if (!sendAll(fd, request)) {
+    ::close(fd);
+    return std::nullopt;
+  }
+
+  std::string response;
+  std::array<char, 4096> buffer{};
+  while (true) {
+    const ssize_t received = ::recv(fd, buffer.data(), buffer.size(), 0);
+    if (received == 0) {
+      break;
     }
-    parsed.statusCode = std::stoi(
-        statusLine.substr(firstSpace + 1, secondSpace - firstSpace - 1)
-    );
-    parsed.body = response.substr(bodyStart + 4);
-    return parsed;
+    if (received < 0) {
+      ::close(fd);
+      return std::nullopt;
+    }
+    response.append(buffer.data(), static_cast<std::size_t>(received));
+  }
+  ::close(fd);
+
+  const std::size_t lineEnd = response.find("\r\n");
+  const std::size_t bodyStart = response.find("\r\n\r\n");
+  if (lineEnd == std::string::npos || bodyStart == std::string::npos) {
+    return std::nullopt;
+  }
+
+  HttpResponse parsed;
+  const std::string statusLine = response.substr(0, lineEnd);
+  const std::size_t firstSpace = statusLine.find(' ');
+  const std::size_t secondSpace = statusLine.find(' ', firstSpace + 1);
+  if (firstSpace == std::string::npos || secondSpace == std::string::npos) {
+    return std::nullopt;
+  }
+  parsed.statusCode = std::stoi(
+      statusLine.substr(firstSpace + 1, secondSpace - firstSpace - 1));
+  parsed.body = response.substr(bodyStart + 4);
+  return parsed;
 }
 
-std::optional<std::uint64_t> jsonUnsigned(
-    const std::string& json,
-    const std::string& field
-) {
-    const std::string marker = "\"" + field + "\":";
-    const std::size_t start = json.find(marker);
-    if (start == std::string::npos) {
-        return std::nullopt;
-    }
-    std::size_t cursor = start + marker.size();
-    std::size_t end = cursor;
-    while (end < json.size() && json[end] >= '0' && json[end] <= '9') {
-        ++end;
-    }
-    if (end == cursor) {
-        return std::nullopt;
-    }
-    return static_cast<std::uint64_t>(
-        std::stoull(json.substr(cursor, end - cursor))
-    );
+std::optional<std::uint64_t> jsonUnsigned(const std::string &json,
+                                          const std::string &field) {
+  const std::string marker = "\"" + field + "\":";
+  const std::size_t start = json.find(marker);
+  if (start == std::string::npos) {
+    return std::nullopt;
+  }
+  std::size_t cursor = start + marker.size();
+  std::size_t end = cursor;
+  while (end < json.size() && json[end] >= '0' && json[end] <= '9') {
+    ++end;
+  }
+  if (end == cursor) {
+    return std::nullopt;
+  }
+  return static_cast<std::uint64_t>(
+      std::stoull(json.substr(cursor, end - cursor)));
 }
 
-std::optional<std::string> jsonString(
-    const std::string& json,
-    const std::string& field
-) {
-    const std::string marker = "\"" + field + "\":\"";
-    const std::size_t start = json.find(marker);
-    if (start == std::string::npos) {
-        return std::nullopt;
-    }
-    const std::size_t valueStart = start + marker.size();
-    const std::size_t end = json.find('"', valueStart);
-    if (end == std::string::npos) {
-        return std::nullopt;
-    }
-    return json.substr(valueStart, end - valueStart);
+std::optional<std::string> jsonString(const std::string &json,
+                                      const std::string &field) {
+  const std::string marker = "\"" + field + "\":\"";
+  const std::size_t start = json.find(marker);
+  if (start == std::string::npos) {
+    return std::nullopt;
+  }
+  const std::size_t valueStart = start + marker.size();
+  const std::size_t end = json.find('"', valueStart);
+  if (end == std::string::npos) {
+    return std::nullopt;
+  }
+  return json.substr(valueStart, end - valueStart);
 }
 
-template<typename Predicate>
+template <typename Predicate>
 bool waitUntil(std::chrono::seconds timeout, Predicate predicate) {
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (std::chrono::steady_clock::now() < deadline) {
-        if (predicate()) {
-            return true;
-        }
-        std::this_thread::sleep_for(25ms);
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (predicate()) {
+      return true;
     }
+    std::this_thread::sleep_for(25ms);
+  }
+  return false;
+}
+
+std::optional<HttpResponse> statusResponse(const NodeSpec &spec) {
+  return httpRequest(spec.rpcPort, "GET", "/status");
+}
+
+bool rpcReady(const NodeSpec &spec) {
+  const auto response = statusResponse(spec);
+  return response.has_value() && response->statusCode == 200;
+}
+
+void waitForRpc(const NodeSpec &spec) {
+  const auto deadline = std::chrono::steady_clock::now() + kRpcStartupTimeout;
+  std::string status = "NO_STATUS";
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (rpcReady(spec)) {
+      return;
+    }
+    status = readChildStatus(spec);
+    if (status.rfind("FAILED:", 0) == 0) {
+      throw std::runtime_error(spec.nodeId + " " + status);
+    }
+    std::this_thread::sleep_for(25ms);
+  }
+  throw std::runtime_error(spec.nodeId + " RPC did not become ready within " +
+                           std::to_string(kRpcStartupTimeout.count()) +
+                           " seconds. Child status: " + status);
+}
+
+bool hasAuthenticatedPeer(const NodeSpec &spec) {
+  const auto response = statusResponse(spec);
+  if (!response.has_value()) {
     return false;
+  }
+  const auto peers = jsonUnsigned(response->body, "authenticatedPeerCount");
+  const auto sessions = jsonUnsigned(response->body, "encryptedSessionCount");
+  return peers.has_value() && peers.value() > 0 && sessions.has_value() &&
+         sessions.value() > 0;
 }
 
-std::optional<HttpResponse> statusResponse(const NodeSpec& spec) {
-    return httpRequest(spec.rpcPort, "GET", "/status");
+bool reachedFinalizedHeight(const NodeSpec &spec, std::uint64_t height) {
+  const auto response = statusResponse(spec);
+  if (!response.has_value()) {
+    return false;
+  }
+  const auto current = jsonUnsigned(response->body, "finalizedHeight");
+  return current.has_value() && current.value() >= height;
 }
 
-bool rpcReady(const NodeSpec& spec) {
-    const auto response = statusResponse(spec);
-    return response.has_value() && response->statusCode == 200;
-}
-
-void waitForRpc(const NodeSpec& spec) {
-    const auto deadline =
-        std::chrono::steady_clock::now() + kRpcStartupTimeout;
-    std::string status = "NO_STATUS";
-    while (std::chrono::steady_clock::now() < deadline) {
-        if (rpcReady(spec)) {
-            return;
-        }
-        status = readChildStatus(spec);
-        if (status.rfind("FAILED:", 0) == 0) {
-            throw std::runtime_error(spec.nodeId + " " + status);
-        }
-        std::this_thread::sleep_for(25ms);
+std::string blockHashAt(const NodeSpec &spec, std::uint64_t height) {
+  std::optional<std::string> hash;
+  const bool querySucceeded = waitUntil(10s, [&] {
+    const auto response =
+        httpRequest(spec.rpcPort, "GET", "/block/" + std::to_string(height));
+    if (!response.has_value() || response->statusCode != 200) {
+      return false;
     }
-    throw std::runtime_error(
-        spec.nodeId + " RPC did not become ready within " +
-        std::to_string(kRpcStartupTimeout.count()) +
-        " seconds. Child status: " + status
-    );
+    hash = jsonString(response->body, "hash");
+    return hash.has_value() && !hash->empty();
+  });
+  require(querySucceeded,
+          "Unable to query finalized block from " + spec.nodeId + ".");
+  return hash.value();
 }
 
-bool hasAuthenticatedPeer(const NodeSpec& spec) {
-    const auto response = statusResponse(spec);
-    if (!response.has_value()) {
-        return false;
+std::size_t scheduledProposerIndex(const std::array<NodeSpec, 3> &specs,
+                                   const config::GenesisConfig &genesis) {
+  const auto runtimeStart =
+      node::NodeRuntimeFactory::startFromGenesis(node::NodeRuntimeConfig(
+          genesis, peerInfo(specs.front(), genesis.genesisTimestamp()), 16));
+  require(runtimeStart.started(), "Unable to derive the scheduled proposer.");
+  const node::NodeRuntime &runtime = runtimeStart.runtime();
+  const auto &round = runtime.consensusRoundManager().currentState();
+  const std::string address = consensus::ProposerSchedule::selectProposer(
+      runtime.validatorRegistry(), genesis.networkParameters().chainId(),
+      round.height(), round.round());
+  for (std::size_t index = 0; index < specs.size(); ++index) {
+    if (specs[index].validatorKey.address().value() == address) {
+      return index;
     }
-    const auto peers = jsonUnsigned(
-        response->body,
-        "authenticatedPeerCount"
-    );
-    const auto sessions = jsonUnsigned(
-        response->body,
-        "encryptedSessionCount"
-    );
-    return peers.has_value() && peers.value() > 0 &&
-           sessions.has_value() && sessions.value() > 0;
+  }
+  throw std::runtime_error("Scheduled proposer is absent from E2E genesis.");
 }
 
-bool reachedFinalizedHeight(const NodeSpec& spec, std::uint64_t height) {
-    const auto response = statusResponse(spec);
-    if (!response.has_value()) {
-        return false;
-    }
-    const auto current = jsonUnsigned(response->body, "finalizedHeight");
-    return current.has_value() && current.value() >= height;
+core::Transaction signedTransfer(const config::GenesisConfig &genesis) {
+  const crypto::Ed25519SignatureProvider provider;
+  return core::TransactionBuilder::buildSignedTransfer(
+      core::TransactionBuildRequest(
+          "real-tcp-e2e-recipient", utils::Amount::fromRawUnits(1'000),
+          utils::Amount::fromRawUnits(100), 1, unixTime()),
+      crypto::Signer(testUserKey(), provider),
+      genesis.networkParameters().chainId());
 }
 
-std::string blockHashAt(const NodeSpec& spec, std::uint64_t height) {
-    std::optional<std::string> hash;
-    const bool querySucceeded = waitUntil(
-        10s,
-        [&] {
-            const auto response = httpRequest(
-                spec.rpcPort,
-                "GET",
-                "/block/" + std::to_string(height)
-            );
-            if (!response.has_value() || response->statusCode != 200) {
-                return false;
-            }
-            hash = jsonString(response->body, "hash");
-            return hash.has_value() && !hash->empty();
-        }
-    );
-    require(querySucceeded,
-            "Unable to query finalized block from " + spec.nodeId + ".");
-    return hash.value();
+void verifyTransactionFinalized(const NodeSpec &spec,
+                                const std::string &transactionId) {
+  const auto response =
+      httpRequest(spec.rpcPort, "GET", "/tx/" + transactionId);
+  require(response.has_value() && response->statusCode == 200,
+          "Unable to query transaction from " + spec.nodeId + ".");
+  require(response->body.find("\"blockHeight\":1") != std::string::npos,
+          spec.nodeId + " did not index the transaction in block 1.");
 }
 
-std::size_t scheduledProposerIndex(
-    const std::array<NodeSpec, 3>& specs,
-    const config::GenesisConfig& genesis
-) {
-    const auto runtimeStart = node::NodeRuntimeFactory::startFromGenesis(
-        node::NodeRuntimeConfig(
-            genesis,
-            peerInfo(specs.front(), genesis.genesisTimestamp()),
-            16
-        )
-    );
-    require(runtimeStart.started(), "Unable to derive the scheduled proposer.");
-    const node::NodeRuntime& runtime = runtimeStart.runtime();
-    const auto& round = runtime.consensusRoundManager().currentState();
-    const std::string address = consensus::ProposerSchedule::selectProposer(
-        runtime.validatorRegistry(),
-        genesis.networkParameters().chainId(),
-        round.height(),
-        round.round()
-    );
-    for (std::size_t index = 0; index < specs.size(); ++index) {
-        if (specs[index].validatorKey.address().value() == address) {
-            return index;
-        }
-    }
-    throw std::runtime_error("Scheduled proposer is absent from E2E genesis.");
-}
-
-core::Transaction signedTransfer(
-    const config::GenesisConfig& genesis
-) {
-    const crypto::Ed25519SignatureProvider provider;
-    return core::TransactionBuilder::buildSignedTransfer(
-        core::TransactionBuildRequest(
-            "real-tcp-e2e-recipient",
-            utils::Amount::fromRawUnits(1'000),
-            utils::Amount::fromRawUnits(100),
-            1,
-            unixTime()
-        ),
-        crypto::Signer(testUserKey(), provider),
-        genesis.networkParameters().chainId()
-    );
-}
-
-void verifyTransactionFinalized(
-    const NodeSpec& spec,
-    const std::string& transactionId
-) {
-    const auto response = httpRequest(
-        spec.rpcPort,
-        "GET",
-        "/tx/" + transactionId
-    );
-    require(response.has_value() && response->statusCode == 200,
-            "Unable to query transaction from " + spec.nodeId + ".");
-    require(response->body.find("\"blockHeight\":1") != std::string::npos,
-            spec.nodeId + " did not index the transaction in block 1.");
-}
-
-void verifyAccountNonce(const NodeSpec& spec) {
-    const auto response = httpRequest(
-        spec.rpcPort,
-        "GET",
-        "/account/" + testUserKey().address().value()
-    );
-    require(response.has_value() && response->statusCode == 200,
-            "Unable to query account state from " + spec.nodeId + ".");
-    require(jsonUnsigned(response->body, "nonce") == 1,
-            spec.nodeId + " account nonce does not reflect the transfer.");
+void verifyAccountNonce(const NodeSpec &spec) {
+  const auto response = httpRequest(
+      spec.rpcPort, "GET", "/account/" + testUserKey().address().value());
+  require(response.has_value() && response->statusCode == 200,
+          "Unable to query account state from " + spec.nodeId + ".");
+  require(jsonUnsigned(response->body, "nonce") == 1,
+          spec.nodeId + " account nonce does not reflect the transfer.");
 }
 
 void testRealTcpThreeNodeLifecycle() {
-    const std::filesystem::path root =
-        std::filesystem::temp_directory_path() /
-        ("nodo-real-tcp-three-node-e2e-" + std::to_string(::getpid()));
-    std::error_code cleanupError;
-    std::filesystem::remove_all(root, cleanupError);
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() /
+      ("nodo-real-tcp-three-node-e2e-" + std::to_string(::getpid()));
+  std::error_code cleanupError;
+  std::filesystem::remove_all(root, cleanupError);
 
-    const std::array<NodeSpec, 3> specs = makeNodeSpecs(root);
-    const config::GenesisConfig genesis = makeGenesis(specs, unixTime() - 5);
-    ChildProcesses children(specs, genesis);
+  const std::array<NodeSpec, 3> specs = makeNodeSpecs(root);
+  const config::GenesisConfig genesis = makeGenesis(specs, unixTime() - 5);
+  ChildProcesses children(specs, genesis);
 
-    try {
-        const std::size_t proposerIndex =
-            scheduledProposerIndex(specs, genesis);
-        std::size_t laggingIndex = 0;
-        while (laggingIndex == proposerIndex) {
-            ++laggingIndex;
-        }
-        std::size_t voterIndex = 0;
-        while (voterIndex == proposerIndex || voterIndex == laggingIndex) {
-            ++voterIndex;
-        }
-        const std::size_t firstOnline = std::max(proposerIndex, voterIndex);
-        const std::size_t secondOnline = std::min(proposerIndex, voterIndex);
-        const std::size_t restartIndex = secondOnline;
-
-        children.start(firstOnline);
-        waitForRpc(specs[firstOnline]);
-        children.start(secondOnline);
-        waitForRpc(specs[secondOnline]);
-        require(
-            waitUntil(30s, [&] {
-                return hasAuthenticatedPeer(specs[proposerIndex]) &&
-                       hasAuthenticatedPeer(specs[voterIndex]);
-            }),
-            "Validators did not establish mutually authenticated encrypted sessions."
-        );
-
-        std::this_thread::sleep_for(2000ms);
-        const core::Transaction transaction = signedTransfer(genesis);
-        const std::string submission =
-            serialization::KeyValueFileCodec::serialize(
-                "NODO_RPC_TRANSACTION_SUBMISSION_V1",
-                {{"transaction", transaction.serialize()}}
-            );
-        const auto submitted = httpRequest(
-            specs[proposerIndex].rpcPort,
-            "POST",
-            "/submit",
-            submission
-        );
-        require(submitted.has_value() && submitted->statusCode == 200,
-                "RPC transaction submission did not return HTTP 200.");
-        require(submitted->body.find("\"status\":\"ACCEPTED\"") !=
-                    std::string::npos,
-                "RPC transaction submission was not accepted: " +
-                    submitted->body);
-
-        require(
-            waitUntil(10s, [&] {
-                const auto status = statusResponse(specs[voterIndex]);
-                if (!status.has_value()) {
-                    return false;
-                }
-                const auto mempool = jsonUnsigned(status->body, "mempoolSize");
-                const auto height = jsonUnsigned(status->body, "height");
-                return (mempool.has_value() && mempool.value() == 1) ||
-                       (height.has_value() && height.value() >= 1);
-            }),
-            "The RPC transaction did not propagate to the second process."
-        );
-
-        require(
-            waitUntil(60s, [&] {
-                return reachedFinalizedHeight(specs[proposerIndex], 1) &&
-                       reachedFinalizedHeight(specs[voterIndex], 1);
-            }),
-            "The two online validators did not finalize block 1."
-        );
-        const std::string finalizedHash = blockHashAt(specs[proposerIndex], 1);
-        require(blockHashAt(specs[voterIndex], 1) == finalizedHash,
-                "Online validators finalized different block hashes.");
-        verifyTransactionFinalized(specs[proposerIndex], transaction.id());
-        verifyTransactionFinalized(specs[voterIndex], transaction.id());
-
-        children.stop(restartIndex);
-        children.start(restartIndex);
-        waitForRpc(specs[restartIndex]);
-        require(
-            waitUntil(30s, [&] {
-                return reachedFinalizedHeight(specs[restartIndex], 1);
-            }),
-            "Restarted validator did not recover finalized block 1."
-        );
-        require(blockHashAt(specs[restartIndex], 1) == finalizedHash,
-                "Restarted validator recovered a different block hash.");
-
-        children.start(laggingIndex);
-        waitForRpc(specs[laggingIndex]);
-        require(
-            waitUntil(60s, [&] {
-                return hasAuthenticatedPeer(specs[laggingIndex]) &&
-                       reachedFinalizedHeight(specs[laggingIndex], 1);
-            }),
-            "Lagging node did not authenticate and synchronize block 1."
-        );
-        require(blockHashAt(specs[laggingIndex], 1) == finalizedHash,
-                "Lagging node synchronized a different block hash.");
-        verifyTransactionFinalized(specs[laggingIndex], transaction.id());
-        verifyAccountNonce(specs[laggingIndex]);
-
-        children.stop(laggingIndex);
-        children.start(laggingIndex);
-        waitForRpc(specs[laggingIndex]);
-        require(
-            waitUntil(30s, [&] {
-                return reachedFinalizedHeight(specs[laggingIndex], 1);
-            }),
-            "Synchronized node did not recover its imported block after restart."
-        );
-        require(blockHashAt(specs[laggingIndex], 1) == finalizedHash,
-                "Synchronized block was not durable after restart.");
-        verifyAccountNonce(specs[laggingIndex]);
-
-        children.stopAll();
-        std::filesystem::remove_all(root, cleanupError);
-    } catch (...) {
-        children.stopAll();
-        std::filesystem::remove_all(root, cleanupError);
-        throw;
+  try {
+    const std::size_t proposerIndex = scheduledProposerIndex(specs, genesis);
+    std::size_t laggingIndex = 0;
+    while (laggingIndex == proposerIndex) {
+      ++laggingIndex;
     }
+    std::size_t voterIndex = 0;
+    while (voterIndex == proposerIndex || voterIndex == laggingIndex) {
+      ++voterIndex;
+    }
+    const std::size_t firstOnline = std::max(proposerIndex, voterIndex);
+    const std::size_t secondOnline = std::min(proposerIndex, voterIndex);
+    const std::size_t restartIndex = secondOnline;
+
+    children.start(firstOnline);
+    waitForRpc(specs[firstOnline]);
+    children.start(secondOnline);
+    waitForRpc(specs[secondOnline]);
+    require(waitUntil(30s,
+                      [&] {
+                        return hasAuthenticatedPeer(specs[proposerIndex]) &&
+                               hasAuthenticatedPeer(specs[voterIndex]);
+                      }),
+            "Validators did not establish mutually authenticated encrypted "
+            "sessions.");
+
+    std::this_thread::sleep_for(2000ms);
+    const core::Transaction transaction = signedTransfer(genesis);
+    const std::string submission = serialization::KeyValueFileCodec::serialize(
+        "NODO_RPC_TRANSACTION_SUBMISSION_V1",
+        {{"transaction", transaction.serialize()}});
+    const auto submitted = httpRequest(specs[proposerIndex].rpcPort, "POST",
+                                       "/submit", submission);
+    require(submitted.has_value() && submitted->statusCode == 200,
+            "RPC transaction submission did not return HTTP 200.");
+    require(submitted->body.find("\"status\":\"ACCEPTED\"") !=
+                std::string::npos,
+            "RPC transaction submission was not accepted: " + submitted->body);
+
+    require(waitUntil(10s,
+                      [&] {
+                        const auto status = statusResponse(specs[voterIndex]);
+                        if (!status.has_value()) {
+                          return false;
+                        }
+                        const auto mempool =
+                            jsonUnsigned(status->body, "mempoolSize");
+                        const auto height =
+                            jsonUnsigned(status->body, "height");
+                        return (mempool.has_value() && mempool.value() == 1) ||
+                               (height.has_value() && height.value() >= 1);
+                      }),
+            "The RPC transaction did not propagate to the second process.");
+
+    require(waitUntil(60s,
+                      [&] {
+                        return reachedFinalizedHeight(specs[proposerIndex],
+                                                      1) &&
+                               reachedFinalizedHeight(specs[voterIndex], 1);
+                      }),
+            "The two online validators did not finalize block 1.");
+    const std::string finalizedHash = blockHashAt(specs[proposerIndex], 1);
+    require(blockHashAt(specs[voterIndex], 1) == finalizedHash,
+            "Online validators finalized different block hashes.");
+    verifyTransactionFinalized(specs[proposerIndex], transaction.id());
+    verifyTransactionFinalized(specs[voterIndex], transaction.id());
+
+    children.stop(restartIndex);
+    children.start(restartIndex);
+    waitForRpc(specs[restartIndex]);
+    require(waitUntil(
+                30s,
+                [&] { return reachedFinalizedHeight(specs[restartIndex], 1); }),
+            "Restarted validator did not recover finalized block 1.");
+    require(blockHashAt(specs[restartIndex], 1) == finalizedHash,
+            "Restarted validator recovered a different block hash.");
+
+    children.start(laggingIndex);
+    waitForRpc(specs[laggingIndex]);
+    require(waitUntil(60s,
+                      [&] {
+                        return hasAuthenticatedPeer(specs[laggingIndex]) &&
+                               reachedFinalizedHeight(specs[laggingIndex], 1);
+                      }),
+            "Lagging node did not authenticate and synchronize block 1.");
+    require(blockHashAt(specs[laggingIndex], 1) == finalizedHash,
+            "Lagging node synchronized a different block hash.");
+    verifyTransactionFinalized(specs[laggingIndex], transaction.id());
+    verifyAccountNonce(specs[laggingIndex]);
+
+    children.stop(laggingIndex);
+    children.start(laggingIndex);
+    waitForRpc(specs[laggingIndex]);
+    require(
+        waitUntil(
+            30s,
+            [&] { return reachedFinalizedHeight(specs[laggingIndex], 1); }),
+        "Synchronized node did not recover its imported block after restart.");
+    require(blockHashAt(specs[laggingIndex], 1) == finalizedHash,
+            "Synchronized block was not durable after restart.");
+    verifyAccountNonce(specs[laggingIndex]);
+
+    children.stopAll();
+    std::filesystem::remove_all(root, cleanupError);
+  } catch (...) {
+    children.stopAll();
+    std::filesystem::remove_all(root, cleanupError);
+    throw;
+  }
 }
 
 #endif
@@ -846,17 +716,17 @@ void testRealTcpThreeNodeLifecycle() {
 
 int main() {
 #ifdef _WIN32
-    std::cout << "Real TCP three-node E2E test requires POSIX process control.\n";
-    return 0;
+  std::cout << "Real TCP three-node E2E test requires POSIX process control.\n";
+  return 0;
 #else
-    try {
-        testRealTcpThreeNodeLifecycle();
-        std::cout << "Real TCP three-node end-to-end test passed.\n";
-        return 0;
-    } catch (const std::exception& error) {
-        std::cerr << "Real TCP three-node end-to-end test FAILED: "
-                  << error.what() << '\n';
-        return 1;
-    }
+  try {
+    testRealTcpThreeNodeLifecycle();
+    std::cout << "Real TCP three-node end-to-end test passed.\n";
+    return 0;
+  } catch (const std::exception &error) {
+    std::cerr << "Real TCP three-node end-to-end test FAILED: " << error.what()
+              << '\n';
+    return 1;
+  }
 #endif
 }

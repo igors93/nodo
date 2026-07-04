@@ -1,5 +1,7 @@
 #include "node/NodeOrchestrator.hpp"
 
+#include <iostream>
+
 #include "node/CanonicalSlashingTransition.hpp"
 
 #include "consensus/ConsensusRecoveryStore.hpp"
@@ -25,17 +27,8 @@
 #include "storage/AtomicFile.hpp"
 #include "storage/SlashingEvidenceStore.hpp"
 
-#include <iostream>
-
 #include <algorithm>
-#include <chrono>
 #include <filesystem>
-#include <limits>
-#include <map>
-#include <set>
-#include <sstream>
-#include <stdexcept>
-#include <thread>
 
 namespace nodo::node {
 
@@ -1587,8 +1580,10 @@ TcpTestnetNodeRuntimeConfig NodeOrchestrator::buildTransportConfig() const {
       peer.protocolVersion(), genesis.deterministicId(),
       m_config.dataDirectory().rootPath(),
       30, // defaultTtlSeconds
-      10  // invalidMessageQuarantineThreshold
-  );
+      10, // invalidMessageQuarantineThreshold
+      np.maxGossipMessagesPerPeerWindow(),
+      np.maxTransactionGossipPerPeerWindow(),
+      np.maxTransactionRelayPerSecond());
 }
 
 } // namespace nodo::node

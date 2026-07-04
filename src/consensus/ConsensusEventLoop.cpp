@@ -106,7 +106,6 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
   // thread prevents the daemon from mutating the canonical chain concurrently.
   processBlockProposals(result);
 
-  const core::Blockchain &chain = m_runtime.blockchain();
   const auto &state = m_runtime.consensusRoundManager().currentState();
   const std::uint64_t height = state.height();
   const std::uint64_t round = state.round();
@@ -159,7 +158,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
       m_pendingCandidate->block.index() != height ||
       m_pendingCandidate->round != round) {
 
-    if (elapsedMs >= params.proposalTimeoutMs() && !m_votedPrevote &&
+    if (elapsedMs >= static_cast<std::int64_t>(params.proposalTimeoutMs()) && !m_votedPrevote &&
         m_localSigner &&
         validators.isEligibleForConsensus(m_localSigner->address())) {
       const auto nilVote = m_localSigner->signValidatorVote(
@@ -172,7 +171,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     }
 
     if (m_votedPrevote && !m_votedPrecommit &&
-        elapsedMs >= params.proposalTimeoutMs() + params.prevoteTimeoutMs()) {
+        elapsedMs >= static_cast<std::int64_t>(params.proposalTimeoutMs() + params.prevoteTimeoutMs())) {
       if (m_localSigner &&
           validators.isEligibleForConsensus(m_localSigner->address())) {
         const auto nilPrecommit = m_localSigner->signValidatorVote(
@@ -277,7 +276,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
       }
     }
   } else if (!m_votedPrevote && m_localSigner &&
-             elapsedMs >= params.proposalTimeoutMs()) {
+             elapsedMs >= static_cast<std::int64_t>(params.proposalTimeoutMs())) {
     if (validators.isEligibleForConsensus(m_localSigner->address())) {
       const auto nilVote = m_localSigner->signValidatorVote(
           height, "nil", "nil", round, ValidatorVoteDecision::REJECT, "nil",
@@ -339,7 +338,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     }
   } else if (!m_votedPrecommit && m_localSigner &&
              elapsedMs >=
-                 params.proposalTimeoutMs() + params.prevoteTimeoutMs()) {
+                 static_cast<std::int64_t>(params.proposalTimeoutMs() + params.prevoteTimeoutMs())) {
     if (validators.isEligibleForConsensus(m_localSigner->address())) {
       const auto nilPrecommit = m_localSigner->signValidatorVote(
           height, "nil", "nil", round, ValidatorVoteDecision::REJECT, "nil",

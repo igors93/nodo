@@ -11,45 +11,38 @@
 
 namespace nodo::p2p {
 
-enum class OutboundQueueStatus {
-    ENQUEUED,
-    REJECTED
-};
+enum class OutboundQueueStatus { ENQUEUED, REJECTED };
 
 class OutboundQueueResult {
 public:
-    OutboundQueueResult();
-    OutboundQueueResult(OutboundQueueStatus status, std::string reason);
+  OutboundQueueResult();
+  OutboundQueueResult(OutboundQueueStatus status, std::string reason);
 
-    OutboundQueueStatus status() const;
-    const std::string& reason() const;
-    bool enqueued() const;
+  OutboundQueueStatus status() const;
+  const std::string &reason() const;
+  bool enqueued() const;
 
 private:
-    OutboundQueueStatus m_status;
-    std::string m_reason;
+  OutboundQueueStatus m_status;
+  std::string m_reason;
 };
 
 class OutboundMessageQueue {
 public:
-    explicit OutboundMessageQueue(std::size_t maxMessagesPerPeer = 1024);
+  explicit OutboundMessageQueue(std::size_t maxMessagesPerPeer = 1024);
 
-    OutboundQueueResult enqueue(
-        const std::string& peerNodeId,
-        const NetworkEnvelope& envelope
-    );
+  OutboundQueueResult enqueue(const std::string &peerNodeId,
+                              const NetworkEnvelope &envelope);
 
-    std::optional<NetworkEnvelope> dequeue(
-        const std::string& peerNodeId
-    );
+  std::optional<NetworkEnvelope> dequeue(const std::string &peerNodeId);
 
-    std::size_t sizeForPeer(const std::string& peerNodeId) const;
-    std::size_t totalSize() const;
-    bool empty() const;
+  std::size_t sizeForPeer(const std::string &peerNodeId) const;
+  std::size_t totalSize() const;
+  bool empty() const;
 
 private:
-    std::size_t m_maxMessagesPerPeer;
-    std::map<std::string, std::deque<NetworkEnvelope>> m_messagesByPeer;
+  std::size_t m_maxMessagesPerPeer;
+  std::map<std::string, std::deque<NetworkEnvelope>> m_messagesByPeer;
 };
 
 } // namespace nodo::p2p

@@ -34,7 +34,9 @@ public:
   GossipMeshConfig(std::string localNodeId, std::string networkId,
                    std::string chainId, std::string protocolVersion,
                    std::string genesisId, std::uint32_t defaultTtlSeconds,
-                   std::size_t invalidMessageQuarantineThreshold);
+                   std::size_t invalidMessageQuarantineThreshold,
+                   std::uint32_t maxGossipMessagesPerPeerWindow,
+                   std::uint32_t maxTransactionGossipPerPeerWindow);
 
   GossipMeshConfig(std::string localNodeId, std::string networkId,
                    std::string chainId, std::string protocolVersion,
@@ -42,6 +44,8 @@ public:
                    std::size_t invalidMessageQuarantineThreshold,
                    bool requireAuthenticatedSessions, bool enforceEclipseGuard,
                    EclipseGuardConfig eclipseGuardConfig,
+                   std::uint32_t maxGossipMessagesPerPeerWindow,
+                   std::uint32_t maxTransactionGossipPerPeerWindow,
                    std::int64_t temporaryBanSeconds = 3600);
 
   const std::string &localNodeId() const;
@@ -55,6 +59,8 @@ public:
   bool requireAuthenticatedSessions() const;
   bool enforceEclipseGuard() const;
   const EclipseGuardConfig &eclipseGuardConfig() const;
+  std::uint32_t maxGossipMessagesPerPeerWindow() const;
+  std::uint32_t maxTransactionGossipPerPeerWindow() const;
 
   bool isValid() const;
 
@@ -70,6 +76,8 @@ private:
   bool m_requireAuthenticatedSessions;
   bool m_enforceEclipseGuard;
   EclipseGuardConfig m_eclipseGuardConfig;
+  std::uint32_t m_maxGossipMessagesPerPeerWindow;
+  std::uint32_t m_maxTransactionGossipPerPeerWindow;
 };
 
 class GossipDeliveryReport {

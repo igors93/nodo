@@ -84,7 +84,9 @@ NetworkParameters::NetworkParameters()
       m_maxMempoolTransactions(0), m_minimumFeeRawUnits(0),
       m_targetBlockTimeSeconds(0), m_finalityDepth(0), m_signatureAlgorithm(""),
       m_storageFormatVersion(""), m_proposalTimeoutMs(0), m_prevoteTimeoutMs(0),
-      m_precommitTimeoutMs(0) {}
+      m_precommitTimeoutMs(0), m_maxGossipMessagesPerPeerWindow(0),
+      m_maxTransactionGossipPerPeerWindow(0),
+      m_maxTransactionRelayPerSecond(0) {}
 
 NetworkParameters::NetworkParameters(
     std::string chainId, std::string networkName, std::string protocolVersion,
@@ -96,7 +98,10 @@ NetworkParameters::NetworkParameters(
     std::uint64_t targetBlockTimeSeconds, std::uint64_t finalityDepth,
     std::string signatureAlgorithm, std::string storageFormatVersion,
     std::uint64_t proposalTimeoutMs, std::uint64_t prevoteTimeoutMs,
-    std::uint64_t precommitTimeoutMs)
+    std::uint64_t precommitTimeoutMs,
+    std::uint32_t maxGossipMessagesPerPeerWindow,
+    std::uint32_t maxTransactionGossipPerPeerWindow,
+    std::uint32_t maxTransactionRelayPerSecond)
     : m_chainId(std::move(chainId)), m_networkName(std::move(networkName)),
       m_protocolVersion(std::move(protocolVersion)),
       m_epochDurationSeconds(epochDurationSeconds),
@@ -113,7 +118,10 @@ NetworkParameters::NetworkParameters(
       m_storageFormatVersion(std::move(storageFormatVersion)),
       m_proposalTimeoutMs(proposalTimeoutMs),
       m_prevoteTimeoutMs(prevoteTimeoutMs),
-      m_precommitTimeoutMs(precommitTimeoutMs) {}
+      m_precommitTimeoutMs(precommitTimeoutMs),
+      m_maxGossipMessagesPerPeerWindow(maxGossipMessagesPerPeerWindow),
+      m_maxTransactionGossipPerPeerWindow(maxTransactionGossipPerPeerWindow),
+      m_maxTransactionRelayPerSecond(maxTransactionRelayPerSecond) {}
 
 const std::string &NetworkParameters::chainId() const { return m_chainId; }
 
@@ -183,6 +191,18 @@ std::uint64_t NetworkParameters::precommitTimeoutMs() const {
   return m_precommitTimeoutMs;
 }
 
+std::uint32_t NetworkParameters::maxGossipMessagesPerPeerWindow() const {
+  return m_maxGossipMessagesPerPeerWindow;
+}
+
+std::uint32_t NetworkParameters::maxTransactionGossipPerPeerWindow() const {
+  return m_maxTransactionGossipPerPeerWindow;
+}
+
+std::uint32_t NetworkParameters::maxTransactionRelayPerSecond() const {
+  return m_maxTransactionRelayPerSecond;
+}
+
 NetworkClass NetworkParameters::networkClass() const {
   if (m_networkName == "localnet" || m_networkName == "localnet-soak") {
     return NetworkClass::DEVELOPMENT_LOCAL;
@@ -248,29 +268,35 @@ std::string NetworkParameters::serialize() const {
       << ";storageFormatVersion=" << m_storageFormatVersion
       << ";proposalTimeoutMs=" << m_proposalTimeoutMs
       << ";prevoteTimeoutMs=" << m_prevoteTimeoutMs
-      << ";precommitTimeoutMs=" << m_precommitTimeoutMs << "}";
+      << ";precommitTimeoutMs=" << m_precommitTimeoutMs
+      << ";maxGossipMessagesPerPeerWindow=" << m_maxGossipMessagesPerPeerWindow
+      << ";maxTransactionGossipPerPeerWindow="
+      << m_maxTransactionGossipPerPeerWindow
+      << ";maxTransactionRelayPerSecond=" << m_maxTransactionRelayPerSecond
+      << "}";
 
   return oss.str();
 }
 
 NetworkParameters NetworkParameters::developmentLocal() {
-  return NetworkParameters(
-      "nodo-localnet-1", "localnet", "nodo/0.1", 60, 1, 2, 3, 1000, 128, 10000,
-      0, 60, 1, "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2", 3000, 3000, 3000);
+  return NetworkParameters("nodo-localnet-1", "localnet", "nodo/0.1", 60, 1, 2,
+                           3, 1000, 128, 10000, 0, 60, 1,
+                           "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2", 3000,
+                           3000, 3000, 100, 50, 20);
 }
 
 NetworkParameters NetworkParameters::developmentSoak() {
-  return NetworkParameters(
-      "nodo-localnet-soak-1", "localnet-soak", "nodo/0.1", 60, 3, 2, 3,
-      1000, 128, 10000, 0, 60, 1, "NODO_CRYPTO_SUITE_V1",
-      "NODO_STORAGE_V2", 3000, 3000, 3000);
+  return NetworkParameters("nodo-localnet-soak-1", "localnet-soak", "nodo/0.1",
+                           60, 3, 2, 3, 1000, 128, 10000, 0, 60, 1,
+                           "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2", 3000,
+                           3000, 3000, 100, 50, 20);
 }
 
 NetworkParameters NetworkParameters::testnetCandidate() {
   return NetworkParameters("nodo-testnet-1", "testnet-candidate", "nodo/0.1",
                            300, 4, 2, 3, 500, 64, 5000, 1000, 30, 3,
                            "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2", 3000,
-                           3000, 3000);
+                           3000, 3000, 100, 50, 20);
 }
 
 BootstrapValidatorConfig::BootstrapValidatorConfig()

@@ -10,84 +10,64 @@
 namespace nodo::p2p {
 
 struct PeerHandshakeChallengeMaterial {
-    std::string nonce;
-    std::string ephemeralPublicKeyHex;
-    std::string ephemeralPrivateKeyHex;
+  std::string nonce;
+  std::string ephemeralPublicKeyHex;
+  std::string ephemeralPrivateKeyHex;
 
-    bool isValid() const;
+  bool isValid() const;
 };
 
 class PeerHandshakeReplayGuard {
 public:
-    static constexpr std::size_t DEFAULT_MAX_ENTRIES = 4096;
-    static constexpr std::size_t NONCE_BYTES = 32;
+  static constexpr std::size_t DEFAULT_MAX_ENTRIES = 4096;
+  static constexpr std::size_t NONCE_BYTES = 32;
 
-    explicit PeerHandshakeReplayGuard(
-        std::size_t maxEntries = DEFAULT_MAX_ENTRIES
-    );
+  explicit PeerHandshakeReplayGuard(
+      std::size_t maxEntries = DEFAULT_MAX_ENTRIES);
 
-    std::optional<std::string> issueChallenge(
-        const std::string& peerNodeId,
-        std::int64_t now,
-        std::uint32_t ttlSeconds
-    );
+  std::optional<std::string> issueChallenge(const std::string &peerNodeId,
+                                            std::int64_t now,
+                                            std::uint32_t ttlSeconds);
 
-    std::optional<PeerHandshakeChallengeMaterial> issueChallengeMaterial(
-        const std::string& peerNodeId,
-        std::int64_t now,
-        std::uint32_t ttlSeconds
-    );
+  std::optional<PeerHandshakeChallengeMaterial>
+  issueChallengeMaterial(const std::string &peerNodeId, std::int64_t now,
+                         std::uint32_t ttlSeconds);
 
-    std::optional<std::string> outstandingChallenge(
-        const std::string& peerNodeId,
-        std::int64_t now
-    );
+  std::optional<std::string> outstandingChallenge(const std::string &peerNodeId,
+                                                  std::int64_t now);
 
-    std::optional<PeerHandshakeChallengeMaterial>
-    outstandingChallengeMaterial(
-        const std::string& peerNodeId,
-        std::int64_t now
-    );
+  std::optional<PeerHandshakeChallengeMaterial>
+  outstandingChallengeMaterial(const std::string &peerNodeId, std::int64_t now);
 
-    bool consumeChallenge(
-        const std::string& peerNodeId,
-        const std::string& nonce,
-        std::int64_t now
-    );
+  bool consumeChallenge(const std::string &peerNodeId, const std::string &nonce,
+                        std::int64_t now);
 
-    bool discardChallenge(
-        const std::string& peerNodeId,
-        const std::string& nonce
-    );
+  bool discardChallenge(const std::string &peerNodeId,
+                        const std::string &nonce);
 
-    bool wasChallengeConsumed(
-        const std::string& peerNodeId,
-        const std::string& nonce,
-        std::int64_t now
-    );
+  bool wasChallengeConsumed(const std::string &peerNodeId,
+                            const std::string &nonce, std::int64_t now);
 
-    void prune(std::int64_t now);
+  void prune(std::int64_t now);
 
-    std::size_t outstandingCount() const;
-    std::size_t consumedCount() const;
+  std::size_t outstandingCount() const;
+  std::size_t consumedCount() const;
 
-    static bool isValidNonce(const std::string& nonce);
+  static bool isValidNonce(const std::string &nonce);
 
 private:
-    struct ChallengeEntry {
-        PeerHandshakeChallengeMaterial material;
-        std::int64_t expiresAt;
-    };
+  struct ChallengeEntry {
+    PeerHandshakeChallengeMaterial material;
+    std::int64_t expiresAt;
+  };
 
-    static bool isValidPeerNodeId(const std::string& peerNodeId);
-    static std::string challengeKey(
-        const std::string& peerNodeId,
-        const std::string& nonce
-    );
+  static bool isValidPeerNodeId(const std::string &peerNodeId);
+  static std::string challengeKey(const std::string &peerNodeId,
+                                  const std::string &nonce);
 
-    std::size_t m_maxEntries;
-    std::unordered_map<std::string, ChallengeEntry> m_outstandingByPeer;
-    std::unordered_map<std::string, std::int64_t> m_consumedChallenges;
+  std::size_t m_maxEntries;
+  std::unordered_map<std::string, ChallengeEntry> m_outstandingByPeer;
+  std::unordered_map<std::string, std::int64_t> m_consumedChallenges;
 };
 
 } // namespace nodo::p2p

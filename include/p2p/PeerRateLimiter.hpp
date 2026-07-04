@@ -27,57 +27,50 @@ constexpr std::size_t MAX_TRACKED_RATE_LIMIT_PEERS = 4096;
  */
 class PeerRateLimiter {
 public:
-    PeerRateLimiter();
+  PeerRateLimiter();
 
-    PeerRateLimiter(
-        std::uint32_t maxMessagesPerWindow,
-        std::uint64_t windowSeconds
-    );
+  PeerRateLimiter(std::uint32_t maxMessagesPerWindow,
+                  std::uint64_t windowSeconds);
 
-    bool shouldAllow(const std::string& nodeId, std::int64_t now);
+  void setLimitForType(NetworkMessageType type, std::uint32_t limit);
 
-    bool shouldAllow(
-        const std::string& nodeId,
-        NetworkMessageType messageType,
-        std::int64_t now
-    );
+  bool shouldAllow(const std::string &nodeId, std::int64_t now);
 
-    bool recordInvalidMessage(const std::string& nodeId, std::int64_t now);
+  bool shouldAllow(const std::string &nodeId, NetworkMessageType messageType,
+                   std::int64_t now);
 
-    bool recordInvalidMessage(
-        const std::string& nodeId,
-        NetworkMessageType messageType,
-        std::int64_t now
-    );
+  bool recordInvalidMessage(const std::string &nodeId, std::int64_t now);
 
-    std::uint32_t messageCount(const std::string& nodeId, std::int64_t now) const;
+  bool recordInvalidMessage(const std::string &nodeId,
+                            NetworkMessageType messageType, std::int64_t now);
 
-    std::uint32_t messageCount(
-        const std::string& nodeId,
-        NetworkMessageType messageType,
-        std::int64_t now
-    ) const;
+  std::uint32_t messageCount(const std::string &nodeId, std::int64_t now) const;
 
-    std::uint32_t maxMessagesPerWindow() const;
-    std::uint64_t windowSeconds() const;
+  std::uint32_t messageCount(const std::string &nodeId,
+                             NetworkMessageType messageType,
+                             std::int64_t now) const;
+
+  std::uint32_t maxMessagesPerWindow() const;
+  std::uint64_t windowSeconds() const;
+
+  std::uint32_t limitForType(NetworkMessageType type) const;
 
 private:
-    struct PeerWindow {
-        std::int64_t windowStart;
-        std::uint32_t count;
-    };
+  struct PeerWindow {
+    std::int64_t windowStart;
+    std::uint32_t count;
+  };
 
-    std::map<std::string, PeerWindow> m_windows;
-    std::uint32_t m_maxMessagesPerWindow;
-    std::uint64_t m_windowSeconds;
+  std::map<std::string, PeerWindow> m_windows;
+  std::uint32_t m_maxMessagesPerWindow;
+  std::uint64_t m_windowSeconds;
+  std::map<NetworkMessageType, std::uint32_t> m_customLimits;
 
-    static std::string windowKey(
-        const std::string& nodeId,
-        NetworkMessageType messageType
-    );
+  static std::string windowKey(const std::string &nodeId,
+                               NetworkMessageType messageType);
 
-    void advanceWindowIfExpired(PeerWindow& window, std::int64_t now) const;
-    void pruneExpiredWindows(std::int64_t now);
+  void advanceWindowIfExpired(PeerWindow &window, std::int64_t now) const;
+  void pruneExpiredWindows(std::int64_t now);
 };
 
 } // namespace nodo::p2p

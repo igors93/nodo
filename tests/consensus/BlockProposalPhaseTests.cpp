@@ -65,7 +65,7 @@ struct TestGossipMesh {
         , transport(bus)
         , mesh(
               p2p::GossipMeshConfig(nodeId, "localnet", "chain-localnet", "1",
-                                    genesisId, 60, 2),
+                                    genesisId, 60, 2, 100, 50),
               transport
           )
     {}

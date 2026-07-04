@@ -139,7 +139,7 @@ public:
         mesh(p2p::GossipMeshConfig(
                  spec.nodeId, genesis.networkParameters().networkName(),
                  genesis.networkParameters().chainId(), kProtocolVersion,
-                 genesis.deterministicId(), 120, 8),
+                 genesis.deterministicId(), 120, 8, 100, 50),
              transport) {}
 
   NodeSpec spec;
@@ -242,7 +242,8 @@ void configureConsensus(TestNode &node,
                         const crypto::Bls12381SignatureProvider &provider) {
   node.validatorSigner.emplace(node.spec.validatorKey, provider);
   node.consensusLoop = std::make_unique<consensus::ConsensusEventLoop>(
-      node.runtime, node.mesh, node.validatedInbox, developmentPolicy(), provider);
+      node.runtime, node.mesh, node.validatedInbox, developmentPolicy(),
+      provider);
   node.consensusLoop->setLocalValidatorAddress(node.validatorSigner->address());
   node.consensusLoop->setLocalSigner(&node.validatorSigner.value());
   node.consensusLoop->setRecoveryPath(node.directory.consensusRecoveryPath());

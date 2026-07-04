@@ -55,7 +55,10 @@ public:
                     std::string storageFormatVersion = "NODO_STORAGE_V2",
                     std::uint64_t proposalTimeoutMs = 3000,
                     std::uint64_t prevoteTimeoutMs = 3000,
-                    std::uint64_t precommitTimeoutMs = 3000);
+                    std::uint64_t precommitTimeoutMs = 3000,
+                    std::uint32_t maxGossipMessagesPerPeerWindow = 100,
+                    std::uint32_t maxTransactionGossipPerPeerWindow = 50,
+                    std::uint32_t maxTransactionRelayPerSecond = 20);
 
   const std::string &chainId() const;
   const std::string &networkName() const;
@@ -75,6 +78,9 @@ public:
   std::uint64_t proposalTimeoutMs() const;
   std::uint64_t prevoteTimeoutMs() const;
   std::uint64_t precommitTimeoutMs() const;
+  std::uint32_t maxGossipMessagesPerPeerWindow() const;
+  std::uint32_t maxTransactionGossipPerPeerWindow() const;
+  std::uint32_t maxTransactionRelayPerSecond() const;
 
   bool isValid() const;
 
@@ -107,6 +113,9 @@ private:
   std::uint64_t m_proposalTimeoutMs;
   std::uint64_t m_prevoteTimeoutMs;
   std::uint64_t m_precommitTimeoutMs;
+  std::uint32_t m_maxGossipMessagesPerPeerWindow;
+  std::uint32_t m_maxTransactionGossipPerPeerWindow;
+  std::uint32_t m_maxTransactionRelayPerSecond;
 };
 
 /*

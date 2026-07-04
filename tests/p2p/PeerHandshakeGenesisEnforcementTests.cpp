@@ -15,9 +15,9 @@ int main() {
     const std::string genesisA = "genesis-network-a-v1";
     const std::string genesisB = "genesis-network-b-v1";
 
-    GossipMeshConfig localConfig("node-local", "localnet", "chain-1", "1", genesisA, 60, 2);
-    GossipMeshConfig remoteConfigSameGenesis("node-remote", "localnet", "chain-1", "1", genesisA, 60, 2);
-    GossipMeshConfig remoteConfigDifferentGenesis("node-remote", "localnet", "chain-1", "1", genesisB, 60, 2);
+    GossipMeshConfig localConfig("node-local", "localnet", "chain-1", "1", genesisA, 60, 2, 100, 50);
+    GossipMeshConfig remoteConfigSameGenesis("node-remote", "localnet", "chain-1", "1", genesisA, 60, 2, 100, 50);
+    GossipMeshConfig remoteConfigDifferentGenesis("node-remote", "localnet", "chain-1", "1", genesisB, 60, 2, 100, 50);
 
     PeerMetadata remotePeer(
         "node-remote",
@@ -70,7 +70,7 @@ int main() {
     assert(rejectedResult.reason().find("genesis") != std::string::npos);
 
     // Peer with wrong network must also be rejected.
-    GossipMeshConfig wrongNetConfig("node-remote", "wrongnet", "chain-1", "1", genesisA, 60, 2);
+    GossipMeshConfig wrongNetConfig("node-remote", "wrongnet", "chain-1", "1", genesisA, 60, 2, 100, 50);
     ChainStatusMessage wrongNetStatus(
         "wrongnet", "chain-1", "1",
         10, "block-hash-10",

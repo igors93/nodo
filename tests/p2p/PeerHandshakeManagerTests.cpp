@@ -13,8 +13,8 @@ int main() {
             "peer-handshake-manager-remote"
         );
     const std::string sharedGenesisId = "localnet-genesis-test-v1";
-    GossipMeshConfig localConfig("node-a", "localnet", "chain-localnet", "1", sharedGenesisId, 60, 2);
-    GossipMeshConfig remoteConfig("node-b", "localnet", "chain-localnet", "1", sharedGenesisId, 60, 2);
+    GossipMeshConfig localConfig("node-a", "localnet", "chain-localnet", "1", sharedGenesisId, 60, 2, 100, 50);
+    GossipMeshConfig remoteConfig("node-b", "localnet", "chain-localnet", "1", sharedGenesisId, 60, 2, 100, 50);
 
     const NetworkEnvelope challenge =
         PeerHandshakeManager::createChallengeEnvelope(
@@ -80,7 +80,7 @@ int main() {
 
     assert(accepted.accepted());
 
-    GossipMeshConfig wrongChain("node-a", "localnet", "other-chain", "1", sharedGenesisId, 60, 2);
+    GossipMeshConfig wrongChain("node-a", "localnet", "other-chain", "1", sharedGenesisId, 60, 2, 100, 50);
     const PeerHandshakeResult rejected =
         PeerHandshakeManager::validateHello(
             wrongChain, hello, challengeNonce, 1001

@@ -302,8 +302,8 @@ struct GossipPair {
         : bus(std::make_shared<p2p::LoopbackTransportBus>())
         , transportA(bus)
         , transportB(bus)
-        , meshA(p2p::GossipMeshConfig("node-a", "localnet", "qc-test", "1", "genesis-id-qc", 60, 5), transportA)
-        , meshB(p2p::GossipMeshConfig("node-b", "localnet", "qc-test", "1", "genesis-id-qc", 60, 5), transportB)
+        , meshA(p2p::GossipMeshConfig("node-a", "localnet", "qc-test", "1", "genesis-id-qc", 60, 5, 100, 50), transportA)
+        , meshB(p2p::GossipMeshConfig("node-b", "localnet", "qc-test", "1", "genesis-id-qc", 60, 5, 100, 50), transportB)
     {
         meshA.registerPeer(p2p::PeerMetadata("node-b", p2p::PeerEndpoint("127.0.0.1", 19200), "fp-b", kTimestamp, kTimestamp, 0, false));
         meshB.registerPeer(p2p::PeerMetadata("node-a", p2p::PeerEndpoint("127.0.0.1", 19201), "fp-a", kTimestamp, kTimestamp, 0, false));

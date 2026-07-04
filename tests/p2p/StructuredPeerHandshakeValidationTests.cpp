@@ -23,7 +23,7 @@ GossipMeshConfig makeConfig(
     const std::string& nodeId,
     const std::string& genesisId
 ) {
-    return GossipMeshConfig(nodeId, "testnet", "chain-1", "1", genesisId, 60, 2);
+    return GossipMeshConfig(nodeId, "testnet", "chain-1", "1", genesisId, 60, 2, 100, 50);
 }
 
 crypto::KeyPair makeIdentity(const std::string& nodeId) {
@@ -138,7 +138,7 @@ void testSelfHandshakeRejected() {
 void testWrongNetworkRejected() {
     const GossipMeshConfig local = makeConfig("node-local", "genesis-ok");
     const GossipMeshConfig remote(
-        "node-remote", "different-network", "chain-1", "1", "genesis-ok", 60, 2
+        "node-remote", "different-network", "chain-1", "1", "genesis-ok", 60, 2, 100, 50
     );
     const crypto::KeyPair identity = makeIdentity("node-remote");
     const ChainStatusMessage remoteStatus(

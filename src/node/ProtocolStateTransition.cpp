@@ -20,13 +20,7 @@ namespace nodo::node {
 
 namespace {
 
-std::vector<economics::BurnRecord> finalizedBurns(const RuntimeSupplyState& supply) {
-    std::vector<economics::BurnRecord> burns;
-    for (const auto& delta : supply.finalizedDeltas()) {
-        burns.insert(burns.end(), delta.burnRecords().begin(), delta.burnRecords().end());
-    }
-    return burns;
-}
+
 
 core::AccountStateView credit(
     core::AccountStateView accounts,

@@ -12,15 +12,15 @@ namespace nodo::p2p {
  * block height.
  */
 struct LightClientProofRequest {
-    std::string requestId;
-    std::string transactionId;   // filled for tx inclusion request
-    std::string address;         // filled for account state request
-    std::uint64_t blockHeight;
-    bool isTransactionRequest;   // true = tx inclusion, false = account state
+  std::string requestId;
+  std::string transactionId; // filled for tx inclusion request
+  std::string address;       // filled for account state request
+  std::uint64_t blockHeight;
+  bool isTransactionRequest; // true = tx inclusion, false = account state
 
-    bool isValid() const;
-    std::string serialize() const;
-    static LightClientProofRequest deserialize(const std::string& s);
+  bool isValid() const;
+  std::string serialize() const;
+  static LightClientProofRequest deserialize(const std::string &s);
 };
 
 /*
@@ -29,14 +29,14 @@ struct LightClientProofRequest {
  * AccountStateProof. On failure, reason explains why the proof is unavailable.
  */
 struct LightClientProofResponse {
-    std::string requestId;
-    bool found;
-    std::string proofPayload;   // serialized proof, or empty if !found
-    std::string reason;         // error reason if !found
+  std::string requestId;
+  bool found;
+  std::string proofPayload; // serialized proof, or empty if !found
+  std::string reason;       // error reason if !found
 
-    bool isValid() const;
-    std::string serialize() const;
-    static LightClientProofResponse deserialize(const std::string& s);
+  bool isValid() const;
+  std::string serialize() const;
+  static LightClientProofResponse deserialize(const std::string &s);
 };
 
 } // namespace nodo::p2p

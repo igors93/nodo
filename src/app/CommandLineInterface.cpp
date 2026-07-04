@@ -2,12 +2,10 @@
 #include "app/ProtocolCommandPolicy.hpp"
 #include "node/NodeDaemon.hpp"
 
-
 #include "config/GenesisRegistry.hpp"
 #include "config/NetworkProfileRegistry.hpp"
-#include "node/RuntimeStartupService.hpp"
-#include "core/TransactionBuilder.hpp"
 #include "core/Transaction.hpp"
+#include "core/TransactionBuilder.hpp"
 #include "core/TransactionType.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoAlgorithm.hpp"
@@ -16,12 +14,12 @@
 #include "crypto/KeyStore.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "crypto/PublicKey.hpp"
-#include "crypto/Signer.hpp"
 #include "crypto/SignatureBundle.hpp"
+#include "crypto/Signer.hpp"
 #include "economics/EpochTreasuryReport.hpp"
 #include "economics/MonetaryPolicy.hpp"
-#include "node/ChainAuditor.hpp"
 #include "node/ChainAuditResult.hpp"
+#include "node/ChainAuditor.hpp"
 #include "node/EpochTreasuryReportStore.hpp"
 #include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedBlockStore.hpp"
@@ -32,27 +30,24 @@
 #include "node/OperatorDiagnostics.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/ProductionKeySafetyGate.hpp"
+#include "node/ReadinessContext.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeMonetaryReportService.hpp"
-#include "node/ReadinessContext.hpp"
+#include "node/RuntimeStartupService.hpp"
 #include "node/RuntimeStateLoader.hpp"
 #include "node/TestnetReadinessChecker.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
 #include "utils/Amount.hpp"
 
 #include <atomic>
-#include <cctype>
-#include <chrono>
 #include <csignal>
+#include <cstring>
 #include <filesystem>
-#include <functional>
 #include <iostream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
-#include <thread>
-#include <cstring>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -68,2884 +63,2449 @@ namespace nodo::app {
 
 namespace {
 
-std::string readPasswordNoEcho(const std::string& prompt) {
-    std::cout << prompt;
-    std::cout.flush();
+std::string readPasswordNoEcho(const std::string &prompt) {
+  std::cout << prompt;
+  std::cout.flush();
 
-    std::string password;
+  std::string password;
 
 #ifdef _WIN32
-    HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
-    DWORD mode = 0;
-    GetConsoleMode(hStdin, &mode);
-    SetConsoleMode(hStdin, mode & (~ENABLE_ECHO_INPUT));
+  HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+  DWORD mode = 0;
+  GetConsoleMode(hStdin, &mode);
+  SetConsoleMode(hStdin, mode & (~ENABLE_ECHO_INPUT));
 
-    std::getline(std::cin, password);
+  std::getline(std::cin, password);
 
-    SetConsoleMode(hStdin, mode);
+  SetConsoleMode(hStdin, mode);
 #else
-    termios oldt;
-    tcgetattr(STDIN_FILENO, &oldt);
-    termios newt = oldt;
-    newt.c_lflag &= ~ECHO;
-    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+  termios oldt;
+  tcgetattr(STDIN_FILENO, &oldt);
+  termios newt = oldt;
+  newt.c_lflag &= ~ECHO;
+  tcsetattr(STDIN_FILENO, TCSANOW, &newt);
 
-    std::getline(std::cin, password);
+  std::getline(std::cin, password);
 
-    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+  tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
 #endif
 
-    std::cout << "\n";
-    return password;
+  std::cout << "\n";
+  return password;
 }
 
-crypto::KeyStoreLoadResult loadKeyWithPrompt(
-    const std::filesystem::path& keysDir,
-    const std::string& keyId
-) {
-    const crypto::KeyStoreLoadResult metaLoad =
-        crypto::KeyStore::loadKey(
-            keysDir,
-            keyId,
-            "",
-            true
-        );
-    
-    if (metaLoad.status() != crypto::KeyStoreStatus::OK) {
-        return metaLoad;
-    }
-    
-    if (metaLoad.metadata().encryptionLevel() == crypto::KeyEncryptionLevel::PLAINTEXT) {
-        return crypto::KeyStore::loadKey(keysDir, keyId);
-    }
-    
-    const char* envVal = std::getenv("NODO_KEY_PASSWORD");
-    std::string password;
-    if (envVal && std::strlen(envVal) > 0) {
-        password = envVal;
-    } else {
-        password = readPasswordNoEcho("Enter password for key '" + keyId + "': ");
-    }
-    
-    return crypto::KeyStore::loadKey(keysDir, keyId, password);
+crypto::KeyStoreLoadResult
+loadKeyWithPrompt(const std::filesystem::path &keysDir,
+                  const std::string &keyId) {
+  const crypto::KeyStoreLoadResult metaLoad =
+      crypto::KeyStore::loadKey(keysDir, keyId, "", true);
+
+  if (metaLoad.status() != crypto::KeyStoreStatus::OK) {
+    return metaLoad;
+  }
+
+  if (metaLoad.metadata().encryptionLevel() ==
+      crypto::KeyEncryptionLevel::PLAINTEXT) {
+    return crypto::KeyStore::loadKey(keysDir, keyId);
+  }
+
+  const char *envVal = std::getenv("NODO_KEY_PASSWORD");
+  std::string password;
+  if (envVal && std::strlen(envVal) > 0) {
+    password = envVal;
+  } else {
+    password = readPasswordNoEcho("Enter password for key '" + keyId + "': ");
+  }
+
+  return crypto::KeyStore::loadKey(keysDir, keyId, password);
 }
 
 std::int64_t nowUnixSeconds() {
-    return std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()
-    ).count();
+  return std::chrono::duration_cast<std::chrono::seconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
 }
 
-std::int64_t parseSignedInt64(
-    const std::string& option,
-    const std::string& value
-) {
-    if (value.empty()) {
-        throw std::invalid_argument(option + " value must not be empty.");
-    }
+std::int64_t parseSignedInt64(const std::string &option,
+                              const std::string &value) {
+  if (value.empty()) {
+    throw std::invalid_argument(option + " value must not be empty.");
+  }
 
-    std::size_t pos = 0;
-    long long result = 0;
+  std::size_t pos = 0;
+  long long result = 0;
 
-    try {
-        result = std::stoll(value, &pos);
-    } catch (const std::out_of_range&) {
-        throw std::invalid_argument(option + " value out of range: " + value);
-    } catch (...) {
-        throw std::invalid_argument(option + " value is not a valid integer: " + value);
-    }
+  try {
+    result = std::stoll(value, &pos);
+  } catch (const std::out_of_range &) {
+    throw std::invalid_argument(option + " value out of range: " + value);
+  } catch (...) {
+    throw std::invalid_argument(option +
+                                " value is not a valid integer: " + value);
+  }
 
-    if (pos != value.size()) {
-        throw std::invalid_argument(
-            option + " value contains non-numeric characters: " + value
-        );
-    }
+  if (pos != value.size()) {
+    throw std::invalid_argument(
+        option + " value contains non-numeric characters: " + value);
+  }
 
-    return static_cast<std::int64_t>(result);
+  return static_cast<std::int64_t>(result);
 }
 
-std::uint64_t parseUnsignedInt64(
-    const std::string& option,
-    const std::string& value
-) {
-    if (value.empty()) {
-        throw std::invalid_argument(option + " value must not be empty.");
-    }
+std::uint64_t parseUnsignedInt64(const std::string &option,
+                                 const std::string &value) {
+  if (value.empty()) {
+    throw std::invalid_argument(option + " value must not be empty.");
+  }
 
-    if (!value.empty() && value[0] == '-') {
-        throw std::invalid_argument(
-            option + " requires a non-negative integer, got: " + value
-        );
-    }
+  if (!value.empty() && value[0] == '-') {
+    throw std::invalid_argument(
+        option + " requires a non-negative integer, got: " + value);
+  }
 
-    std::size_t pos = 0;
-    unsigned long long result = 0;
+  std::size_t pos = 0;
+  unsigned long long result = 0;
 
-    try {
-        result = std::stoull(value, &pos);
-    } catch (const std::out_of_range&) {
-        throw std::invalid_argument(option + " value out of range: " + value);
-    } catch (...) {
-        throw std::invalid_argument(option + " value is not a valid integer: " + value);
-    }
+  try {
+    result = std::stoull(value, &pos);
+  } catch (const std::out_of_range &) {
+    throw std::invalid_argument(option + " value out of range: " + value);
+  } catch (...) {
+    throw std::invalid_argument(option +
+                                " value is not a valid integer: " + value);
+  }
 
-    if (pos != value.size()) {
-        throw std::invalid_argument(
-            option + " value contains non-numeric characters: " + value
-        );
-    }
+  if (pos != value.size()) {
+    throw std::invalid_argument(
+        option + " value contains non-numeric characters: " + value);
+  }
 
-    return static_cast<std::uint64_t>(result);
+  return static_cast<std::uint64_t>(result);
 }
 
 struct ParsedHostPort {
-    std::string host;
-    std::uint16_t port;
+  std::string host;
+  std::uint16_t port;
 };
 
-ParsedHostPort parseHostPort(
-    const std::string& option,
-    const std::string& value
-) {
-    const std::size_t separator = value.rfind(':');
-    if (separator == std::string::npos ||
-        separator == 0 ||
-        separator + 1 >= value.size()) {
-        throw std::invalid_argument(
-            option + " requires HOST:PORT with a non-empty host and port."
-        );
-    }
+ParsedHostPort parseHostPort(const std::string &option,
+                             const std::string &value) {
+  const std::size_t separator = value.rfind(':');
+  if (separator == std::string::npos || separator == 0 ||
+      separator + 1 >= value.size()) {
+    throw std::invalid_argument(
+        option + " requires HOST:PORT with a non-empty host and port.");
+  }
 
-    const std::string host = value.substr(0, separator);
-    const std::string portText = value.substr(separator + 1);
-    for (const char character : portText) {
-        if (character < '0' || character > '9') {
-            throw std::invalid_argument(
-                option + " port must be an integer between 1 and 65535."
-            );
-        }
+  const std::string host = value.substr(0, separator);
+  const std::string portText = value.substr(separator + 1);
+  for (const char character : portText) {
+    if (character < '0' || character > '9') {
+      throw std::invalid_argument(
+          option + " port must be an integer between 1 and 65535.");
     }
+  }
 
-    const std::uint64_t parsedPort = parseUnsignedInt64(option, portText);
-    if (parsedPort == 0 || parsedPort > 65535) {
-        throw std::invalid_argument(
-            option + " port must be between 1 and 65535."
-        );
-    }
+  const std::uint64_t parsedPort = parseUnsignedInt64(option, portText);
+  if (parsedPort == 0 || parsedPort > 65535) {
+    throw std::invalid_argument(option + " port must be between 1 and 65535.");
+  }
 
-    return ParsedHostPort{host, static_cast<std::uint16_t>(parsedPort)};
+  return ParsedHostPort{host, static_cast<std::uint16_t>(parsedPort)};
 }
 
-std::string defaultLocalnetUserKeyId() {
-    return "local-user";
-}
+std::string defaultLocalnetUserKeyId() { return "local-user"; }
 
 std::string defaultLocalnetUserKeySeed() {
-    return config::GenesisRegistry::localnetUserKeySeed();
+  return config::GenesisRegistry::localnetUserKeySeed();
 }
 
-bool isOption(
-    const std::string& value
-) {
-    return value.rfind("--", 0) == 0;
+bool isOption(const std::string &value) { return value.rfind("--", 0) == 0; }
+
+bool isCommandGroup(const std::string &value) {
+  return value == "tx" || value == "block" || value == "node" ||
+         value == "chain" || value == "keys" || value == "validator" ||
+         value == "stake" || value == "rewards" || value == "slashing" ||
+         value == "governance" || value == "testnet";
 }
 
-bool isCommandGroup(
-    const std::string& value
-) {
-    return value == "tx" ||
-           value == "block" ||
-           value == "node" ||
-           value == "chain" ||
-           value == "keys" ||
-           value == "validator" ||
-           value == "stake" ||
-           value == "rewards" ||
-           value == "slashing" ||
-           value == "governance" ||
-           value == "testnet";
+bool isLegacyDevelopmentCommand(const std::string &command) {
+  return command == "demo" || command == "reload" ||
+         command == "submit-demo-transaction" ||
+         command == "produce-demo-block";
 }
 
-bool isLegacyDevelopmentCommand(
-    const std::string& command
-) {
-    return command == "demo" ||
-           command == "reload" ||
-           command == "submit-demo-transaction" ||
-           command == "produce-demo-block";
+config::NetworkParameters
+networkParametersForOptions(const CommandLineOptions &options) {
+  return config::NetworkProfileRegistry::get(options.networkName);
 }
 
-config::NetworkParameters networkParametersForOptions(
-    const CommandLineOptions& options
-) {
-    return config::NetworkProfileRegistry::get(options.networkName);
+CommandLineResult validateSelectedNetwork(const CommandLineOptions &options) {
+  if (!config::NetworkProfileRegistry::isKnown(options.networkName)) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Unknown network profile: " + options.networkName + "\n");
+  }
+
+  const config::NetworkParameters params = networkParametersForOptions(options);
+
+  const node::StartupValidationResult profileCheck =
+      node::RuntimeStartupService::validateNetworkProfile(params);
+
+  if (!profileCheck.valid()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      profileCheck.reason() + "\n");
+  }
+
+  return CommandLineResult::success("");
 }
 
-CommandLineResult validateSelectedNetwork(
-    const CommandLineOptions& options
-) {
-    if (!config::NetworkProfileRegistry::isKnown(options.networkName)) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Unknown network profile: " + options.networkName + "\n"
-        );
-    }
+std::optional<std::string>
+manifestNetworkMismatch(const node::NodeRuntimeManifest &manifest,
+                        const CommandLineOptions &options) {
+  const config::GenesisLookupResult lookup =
+      node::RuntimeStartupService::resolveGenesis(options.networkName);
 
-    const config::NetworkParameters params =
-        networkParametersForOptions(options);
+  if (!lookup.found()) {
+    return "Cannot resolve genesis for network '" + options.networkName +
+           "': " + lookup.reason();
+  }
 
-    const node::StartupValidationResult profileCheck =
-        node::RuntimeStartupService::validateNetworkProfile(params);
+  const node::StartupValidationResult compatCheck =
+      node::RuntimeStartupService::validateDataDirectoryCompatibility(
+          manifest, lookup.genesis());
 
-    if (!profileCheck.valid()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            profileCheck.reason() + "\n"
-        );
-    }
+  if (!compatCheck.valid()) {
+    return compatCheck.reason();
+  }
 
-    return CommandLineResult::success("");
-}
-
-std::optional<std::string> manifestNetworkMismatch(
-    const node::NodeRuntimeManifest& manifest,
-    const CommandLineOptions& options
-) {
-    const config::GenesisLookupResult lookup =
-        node::RuntimeStartupService::resolveGenesis(options.networkName);
-
-    if (!lookup.found()) {
-        return "Cannot resolve genesis for network '" + options.networkName +
-               "': " + lookup.reason();
-    }
-
-    const node::StartupValidationResult compatCheck =
-        node::RuntimeStartupService::validateDataDirectoryCompatibility(
-            manifest, lookup.genesis()
-        );
-
-    if (!compatCheck.valid()) {
-        return compatCheck.reason();
-    }
-
-    return std::nullopt;
+  return std::nullopt;
 }
 
 std::string normalizeGovernanceToken(std::string value) {
-    for (char& c : value) {
-        if (c == '-') {
-            c = '_';
-        } else {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
+  for (char &c : value) {
+    if (c == '-') {
+      c = '_';
+    } else {
+      c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
-    return value;
+  }
+  return value;
 }
 
-core::GovernanceProposalType parseGovernanceProposalTypeOption(
-    const std::string& value
-) {
-    return core::governanceProposalTypeFromString(
-        normalizeGovernanceToken(value)
-    );
+core::GovernanceProposalType
+parseGovernanceProposalTypeOption(const std::string &value) {
+  return core::governanceProposalTypeFromString(
+      normalizeGovernanceToken(value));
 }
 
-core::GovernanceVoteChoice parseGovernanceVoteChoiceOption(
-    const std::string& value
-) {
-    return core::governanceVoteChoiceFromString(
-        normalizeGovernanceToken(value)
-    );
+core::GovernanceVoteChoice
+parseGovernanceVoteChoiceOption(const std::string &value) {
+  return core::governanceVoteChoiceFromString(normalizeGovernanceToken(value));
 }
 
 CommandLineResult submitSignedTransactionToPersistentMempool(
-    const CommandLineOptions& options,
-    const std::string& actionLabel,
-    const std::string& defaultKeyId,
-    const std::function<core::Transaction(
-        const crypto::Signer&,
-        const std::string&,
-        std::uint64_t
-    )>& buildTransaction
-) {
-    const node::NodeDataDirectoryConfig directoryConfig(
-        options.dataDirectory
-    );
+    const CommandLineOptions &options, const std::string &actionLabel,
+    const std::string &defaultKeyId,
+    const std::function<core::Transaction(const crypto::Signer &,
+                                          const std::string &, std::uint64_t)>
+        &buildTransaction) {
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
 
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
-    const config::NetworkParameters networkParameters =
-        genesisConfig.networkParameters();
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+  const config::NetworkParameters networkParameters =
+      genesisConfig.networkParameters();
 
-    const node::NodeDataDirectoryReadResult manifest =
-        node::NodeDataDirectory::loadManifest(directoryConfig);
+  const node::NodeDataDirectoryReadResult manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig);
 
-    if (!manifest.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit " + actionLabel + " before init: "
-            + manifest.reason()
-            + "\n"
-        );
-    }
+  if (!manifest.loaded()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "Cannot submit " + actionLabel +
+                                          " before init: " + manifest.reason() +
+                                          "\n");
+  }
 
-    const std::optional<std::string> mismatch =
-        manifestNetworkMismatch(manifest.manifest(), options);
-    if (mismatch.has_value()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            *mismatch + "\n"
-        );
-    }
+  const std::optional<std::string> mismatch =
+      manifestNetworkMismatch(manifest.manifest(), options);
+  if (mismatch.has_value()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      *mismatch + "\n");
+  }
 
-    const crypto::ProtocolCryptoContext cryptoContext =
-        crypto::ProtocolCryptoContext::fromNetworkName(
-            networkParameters.networkName()
-        );
+  const crypto::ProtocolCryptoContext cryptoContext =
+      crypto::ProtocolCryptoContext::fromNetworkName(
+          networkParameters.networkName());
 
-    if (!cryptoContext.isValid()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit " + actionLabel + ": invalid crypto context for network "
-            + networkParameters.networkName()
-            + ": "
-            + cryptoContext.rejectionReason()
-            + "\n"
-        );
-    }
+  if (!cryptoContext.isValid()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit " + actionLabel +
+            ": invalid crypto context for network " +
+            networkParameters.networkName() + ": " +
+            cryptoContext.rejectionReason() + "\n");
+  }
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            directoryConfig,
-            genesisConfig,
-            CommandLineInterface::localPeerFromOptions(options)
-        );
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          directoryConfig, genesisConfig,
+          CommandLineInterface::localPeerFromOptions(options));
 
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit " + actionLabel + ": runtime reload failed before mempool admission: "
-            + load.reason()
-            + "\n"
-        );
-    }
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit " + actionLabel +
+            ": runtime reload failed before mempool admission: " +
+            load.reason() + "\n");
+  }
 
-    const std::string signingKeyId =
-        options.keyIdProvided ? options.keyId : defaultKeyId;
+  const std::string signingKeyId =
+      options.keyIdProvided ? options.keyId : defaultKeyId;
 
-    const crypto::KeyStoreLoadResult key =
-        loadKeyWithPrompt(
-            directoryConfig.keysDirectoryPath(),
-            signingKeyId
-        );
+  const crypto::KeyStoreLoadResult key =
+      loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), signingKeyId);
 
-    if (!key.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit " + actionLabel + " without local key '"
-            + signingKeyId
-            + "': "
-            + key.reason()
-            + "\n"
-        );
-    }
+  if (!key.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit " + actionLabel + " without local key '" + signingKeyId +
+            "': " + key.reason() + "\n");
+  }
 
-    const node::KeySafetyCheckResult keySafety =
-        node::ProductionKeySafetyGate::check(
-            key.metadata(),
-            manifest.manifest().networkName()
-        );
+  const node::KeySafetyCheckResult keySafety =
+      node::ProductionKeySafetyGate::check(key.metadata(),
+                                           manifest.manifest().networkName());
 
-    if (!keySafety.isApproved()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit " + actionLabel + ": " + keySafety.reason() + "\n"
-        );
-    }
+  if (!keySafety.isApproved()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "Cannot submit " + actionLabel + ": " +
+                                          keySafety.reason() + "\n");
+  }
 
-    const crypto::Ed25519SignatureProvider provider;
-    const crypto::Signer signer(
-        key.keyPair(),
-        provider
-    );
+  const crypto::Ed25519SignatureProvider provider;
+  const crypto::Signer signer(key.keyPair(), provider);
 
-    const core::AccountStateView accountState =
-        node::RuntimeAccountStateBuilder::accountStateViewAtTip(
-            genesisConfig,
-            load.runtime().blockchain(),
-            static_cast<std::int64_t>(
-                networkParameters.minimumFeeRawUnits()
-            )
-        );
+  const core::AccountStateView accountState =
+      node::RuntimeAccountStateBuilder::accountStateViewAtTip(
+          genesisConfig, load.runtime().blockchain(),
+          static_cast<std::int64_t>(networkParameters.minimumFeeRawUnits()));
 
-    if (!accountState.hasAccount(key.metadata().address())) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit " + actionLabel + ": signing account does not exist in current state.\n"
-        );
-    }
+  if (!accountState.hasAccount(key.metadata().address())) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit " + actionLabel +
+            ": signing account does not exist in current state.\n");
+  }
 
-    const std::uint64_t nonce =
-        options.nonce == 0
-            ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
-            : options.nonce;
+  const std::uint64_t nonce =
+      options.nonce == 0
+          ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
+          : options.nonce;
 
-    std::optional<core::Transaction> transaction;
-    try {
-        transaction = buildTransaction(
-            signer,
-            networkParameters.chainId(),
-            nonce
-        );
-    } catch (const std::exception& error) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Cannot build " + actionLabel + ": " + error.what() + "\n"
-        );
-    }
+  std::optional<core::Transaction> transaction;
+  try {
+    transaction = buildTransaction(signer, networkParameters.chainId(), nonce);
+  } catch (const std::exception &error) {
+    return CommandLineResult::failure(CommandLineStatus::INVALID_ARGUMENTS,
+                                      "Cannot build " + actionLabel + ": " +
+                                          error.what() + "\n");
+  }
 
-    const core::Transaction& signedTransaction = *transaction;
+  const core::Transaction &signedTransaction = *transaction;
 
-    const node::TransactionAdmissionContext admissionContext(
-        accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
-        load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
-        load.runtime().blockchain().size()
-    );
+  const node::TransactionAdmissionContext admissionContext(
+      accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
+      load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
+      load.runtime().blockchain().size());
 
-    const node::TransactionAdmissionResult admission =
-        node::TransactionAdmissionValidator::validateRuntimeSubmission(
-            signedTransaction,
-            key.metadata(),
-            networkParameters,
-            accountState,
-            load.runtime().mempool(),
-            cryptoContext.policy(),
-            crypto::SecurityContext::USER_TRANSACTION,
-            provider,
-            load.runtime().effectiveMinimumFeeRawUnits(),
-            &admissionContext
-        );
+  const node::TransactionAdmissionResult admission =
+      node::TransactionAdmissionValidator::validateRuntimeSubmission(
+          signedTransaction, key.metadata(), networkParameters, accountState,
+          load.runtime().mempool(), cryptoContext.policy(),
+          crypto::SecurityContext::USER_TRANSACTION, provider,
+          load.runtime().effectiveMinimumFeeRawUnits(), &admissionContext);
 
-    if (!admission.accepted()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            actionLabel + " rejected before mempool persistence: "
-            + admission.reason()
-            + "\n"
-        );
-    }
+  if (!admission.accepted()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        actionLabel + " rejected before mempool persistence: " +
+            admission.reason() + "\n");
+  }
 
-    const node::PersistentMempoolWriteResult persisted =
-        node::PersistentMempoolStore::persistTransaction(
-            directoryConfig,
-            signedTransaction,
-            key.metadata().publicKey(),
-            signedTransaction.timestamp() + 1
-        );
+  const node::PersistentMempoolWriteResult persisted =
+      node::PersistentMempoolStore::persistTransaction(
+          directoryConfig, signedTransaction, key.metadata().publicKey(),
+          signedTransaction.timestamp() + 1);
 
-    if (!persisted.success()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to persist " + actionLabel + ": "
-            + persisted.reason()
-            + "\n"
-        );
-    }
+  if (!persisted.success()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "Failed to persist " + actionLabel +
+                                          ": " + persisted.reason() + "\n");
+  }
 
-    std::ostringstream output;
+  std::ostringstream output;
 
-    output << actionLabel << " submitted.\n"
-           << "Key id: " << key.keyId() << "\n"
-           << "From: " << signedTransaction.fromAddress() << "\n"
-           << "To: " << signedTransaction.toAddress() << "\n"
-           << "Type: " << core::transactionTypeToString(signedTransaction.type()) << "\n"
-           << "Nonce: " << signedTransaction.nonce() << "\n"
-           << "Transaction id: " << persisted.transactionId() << "\n";
+  output << actionLabel << " submitted.\n"
+         << "Key id: " << key.keyId() << "\n"
+         << "From: " << signedTransaction.fromAddress() << "\n"
+         << "To: " << signedTransaction.toAddress() << "\n"
+         << "Type: " << core::transactionTypeToString(signedTransaction.type())
+         << "\n"
+         << "Nonce: " << signedTransaction.nonce() << "\n"
+         << "Transaction id: " << persisted.transactionId() << "\n";
 
-    if (signedTransaction.type() == core::TransactionType::GOVERNANCE_PROPOSE) {
-        output << "Proposal id: " << signedTransaction.id() << "\n";
-    } else if (signedTransaction.type() == core::TransactionType::GOVERNANCE_VOTE) {
-        output << "Proposal id: " << signedTransaction.toAddress() << "\n";
-    }
+  if (signedTransaction.type() == core::TransactionType::GOVERNANCE_PROPOSE) {
+    output << "Proposal id: " << signedTransaction.id() << "\n";
+  } else if (signedTransaction.type() ==
+             core::TransactionType::GOVERNANCE_VOTE) {
+    output << "Proposal id: " << signedTransaction.toAddress() << "\n";
+  }
 
-    output << "Mempool file: " << persisted.path().string() << "\n";
+  output << "Mempool file: " << persisted.path().string() << "\n";
 
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
 } // namespace
 
 CommandLineOptions::CommandLineOptions()
-    : command("help"),
-      dataDirectory(".nodo"),
-      networkName("localnet"),
-      peerId("local-node"),
-      endpoint("127.0.0.1:9000"),
-      listenAddress(""),
-      rpcBindAddress("127.0.0.1"),
-      rpcPort(8545),
-      keyId("local-validator"),
-      validatorKeyId(""),
-      identityKeyId("local-user"),
-      keyType("both"),
-      toAddress("nodo-localnet-recipient"),
-      validatorAddress(""),
-      governanceProposalId(""),
-      governanceProposalType("parameter-change"),
+    : command("help"), dataDirectory(".nodo"), networkName("localnet"),
+      peerId("local-node"), endpoint("127.0.0.1:9000"), listenAddress(""),
+      rpcBindAddress("127.0.0.1"), rpcPort(8545), keyId("local-validator"),
+      validatorKeyId(""), identityKeyId("local-user"), keyType("both"),
+      toAddress("nodo-localnet-recipient"), validatorAddress(""),
+      governanceProposalId(""), governanceProposalType("parameter-change"),
       governanceProposalTitle("Governance proposal"),
-      governanceProposalBody("Submitted from Nodo CLI."),
-      governanceTarget(""),
-      governanceValue(""),
-      governanceVoteChoice("YES"),
-      amountRaw(1000),
-      feeRaw(100),
-      nonce(0),
-      timestamp(nowUnixSeconds()),
-      governanceEffectiveHeight(0),
-      governanceVotingPeriodBlocks(3),
-      showHelp(false),
-      keyIdProvided(false),
-      validatorKeyIdProvided(false) {}
+      governanceProposalBody("Submitted from Nodo CLI."), governanceTarget(""),
+      governanceValue(""), governanceVoteChoice("YES"), amountRaw(1000),
+      feeRaw(100), nonce(0), timestamp(nowUnixSeconds()),
+      governanceEffectiveHeight(0), governanceVotingPeriodBlocks(3),
+      showHelp(false), keyIdProvided(false), validatorKeyIdProvided(false) {}
 
-std::string commandLineStatusToString(
-    CommandLineStatus status
-) {
-    switch (status) {
-        case CommandLineStatus::SUCCESS:
-            return "SUCCESS";
-        case CommandLineStatus::INVALID_ARGUMENTS:
-            return "INVALID_ARGUMENTS";
-        case CommandLineStatus::COMMAND_FAILED:
-            return "COMMAND_FAILED";
-        default:
-            return "COMMAND_FAILED";
-    }
+std::string commandLineStatusToString(CommandLineStatus status) {
+  switch (status) {
+  case CommandLineStatus::SUCCESS:
+    return "SUCCESS";
+  case CommandLineStatus::INVALID_ARGUMENTS:
+    return "INVALID_ARGUMENTS";
+  case CommandLineStatus::COMMAND_FAILED:
+    return "COMMAND_FAILED";
+  default:
+    return "COMMAND_FAILED";
+  }
 }
 
 CommandLineResult::CommandLineResult()
     : m_status(CommandLineStatus::COMMAND_FAILED),
       m_message("Uninitialized command result.") {}
 
-CommandLineResult CommandLineResult::success(
-    std::string message
-) {
-    CommandLineResult result;
-    result.m_status = CommandLineStatus::SUCCESS;
-    result.m_message = std::move(message);
-    return result;
+CommandLineResult CommandLineResult::success(std::string message) {
+  CommandLineResult result;
+  result.m_status = CommandLineStatus::SUCCESS;
+  result.m_message = std::move(message);
+  return result;
 }
 
-CommandLineResult CommandLineResult::failure(
-    CommandLineStatus status,
-    std::string message
-) {
-    CommandLineResult result;
-    result.m_status = status;
-    result.m_message = std::move(message);
-    return result;
+CommandLineResult CommandLineResult::failure(CommandLineStatus status,
+                                             std::string message) {
+  CommandLineResult result;
+  result.m_status = status;
+  result.m_message = std::move(message);
+  return result;
 }
 
-CommandLineStatus CommandLineResult::status() const {
-    return m_status;
-}
+CommandLineStatus CommandLineResult::status() const { return m_status; }
 
-const std::string& CommandLineResult::message() const {
-    return m_message;
-}
+const std::string &CommandLineResult::message() const { return m_message; }
 
 bool CommandLineResult::success() const {
-    return m_status == CommandLineStatus::SUCCESS;
+  return m_status == CommandLineStatus::SUCCESS;
 }
 
-int CommandLineInterface::run(
-    int argc,
-    char** argv
-) {
-    std::vector<std::string> args;
+int CommandLineInterface::run(int argc, char **argv) {
+  std::vector<std::string> args;
 
-    for (int index = 1; index < argc; ++index) {
-        args.emplace_back(argv[index]);
-    }
+  for (int index = 1; index < argc; ++index) {
+    args.emplace_back(argv[index]);
+  }
 
-    const CommandLineResult result =
-        execute(args);
+  const CommandLineResult result = execute(args);
 
-    if (result.success()) {
-        std::cout << result.message();
-        return 0;
-    }
+  if (result.success()) {
+    std::cout << result.message();
+    return 0;
+  }
 
-    std::cerr << result.message();
-    return 1;
+  std::cerr << result.message();
+  return 1;
 }
 
-CommandLineResult CommandLineInterface::execute(
-    const std::vector<std::string>& args
-) {
-    try {
-        const CommandLineOptions options =
-            parse(args);
+CommandLineResult
+CommandLineInterface::execute(const std::vector<std::string> &args) {
+  try {
+    const CommandLineOptions options = parse(args);
 
-        if (options.showHelp ||
-            options.command == "help") {
-            return CommandLineResult::success(
-                helpText()
-            );
-        }
-
-        const CommandLineResult networkValidation =
-            validateSelectedNetwork(options);
-
-        if (!networkValidation.success()) {
-            return networkValidation;
-        }
-
-        if (isLegacyDevelopmentCommand(options.command) &&
-            ProtocolCommandPolicy::legacyCommandBlockingEnforced(options.networkName)) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Legacy development command '" + options.command +
-                    "' is not permitted on official network '" +
-                    options.networkName + "'.\n"
-            );
-        }
-
-        if (options.command == "init") {
-            return executeInit(options);
-        }
-
-        if (options.command == "status") {
-            return executeStatus(options);
-        }
-
-        if (options.command == "inspect") {
-            return executeInspect(options);
-        }
-
-        if (options.command == "node reload") {
-            return executeReload(options);
-        }
-
-        if (options.command == "node run") {
-            return executeNodeRun(options);
-        }
-
-        if (options.command == "chain audit") {
-            return executeChainAudit(options);
-        }
-
-        if (options.command == "testnet readiness") {
-            return executeTestnetReadiness(options);
-        }
-
-        if (options.command == "diagnostics") {
-            return executeDiagnostics(options);
-        }
-
-        if (options.command == "block produce") {
-            return executeProduceBlock(options);
-        }
-
-        if (options.command == "tx submit") {
-            return executeSubmitTransaction(options);
-        }
-
-        if (options.command == "governance propose") {
-            return executeGovernancePropose(options);
-        }
-
-        if (options.command == "governance vote") {
-            return executeGovernanceVote(options);
-        }
-
-        if (options.command == "governance status") {
-            return executeGovernanceStatus(options);
-        }
-
-        if (options.command == "governance list") {
-            return executeGovernanceList(options);
-        }
-
-        if (options.command == "governance show") {
-            return executeGovernanceShow(options);
-        }
-
-        if (options.command == "governance audit") {
-            return executeGovernanceAudit(options);
-        }
-
-        if (options.command == "keys create") {
-            return executeKeysCreate(options);
-        }
-
-        if (options.command == "keys list") {
-            return executeKeysList(options);
-        }
-
-        if (options.command == "validator list") {
-            return executeValidatorList(options);
-        }
-
-        if (options.command == "validator status") {
-            return executeValidatorStatus(options);
-        }
-
-        if (options.command == "validator exit") {
-            return executeValidatorExit(options);
-        }
-
-        if (options.command == "validator unjail") {
-            return executeValidatorUnjail(options);
-        }
-
-        if (options.command == "stake lock" ||
-            options.command == "stake deposit" ||
-            options.command == "stake top-up" ||
-            options.command == "stake unlock" ||
-            options.command == "stake withdraw") {
-            return executeStakeLock(options);
-        }
-
-        if (options.command == "stake status") {
-            return executeStakeStatus(options);
-        }
-
-        if (options.command == "stake positions") {
-            return executeStakePositions(options);
-        }
-
-        if (options.command == "stake audit") {
-            return executeStakeAudit(options);
-        }
-
-        if (options.command == "rewards status") {
-            return executeRewardsStatus(options);
-        }
-
-        if (options.command == "slashing evidence") {
-            return executeSlashingEvidence(options);
-        }
-
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Unknown command: " + options.command + "\n\n" + helpText()
-        );
-    } catch (const std::exception& error) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            std::string("Invalid command line: ") + error.what() + "\n\n" + helpText()
-        );
+    if (options.showHelp || options.command == "help") {
+      return CommandLineResult::success(helpText());
     }
+
+    const CommandLineResult networkValidation =
+        validateSelectedNetwork(options);
+
+    if (!networkValidation.success()) {
+      return networkValidation;
+    }
+
+    if (isLegacyDevelopmentCommand(options.command) &&
+        ProtocolCommandPolicy::legacyCommandBlockingEnforced(
+            options.networkName)) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          "Legacy development command '" + options.command +
+              "' is not permitted on official network '" + options.networkName +
+              "'.\n");
+    }
+
+    if (options.command == "init") {
+      return executeInit(options);
+    }
+
+    if (options.command == "status") {
+      return executeStatus(options);
+    }
+
+    if (options.command == "inspect") {
+      return executeInspect(options);
+    }
+
+    if (options.command == "node reload") {
+      return executeReload(options);
+    }
+
+    if (options.command == "node run") {
+      return executeNodeRun(options);
+    }
+
+    if (options.command == "chain audit") {
+      return executeChainAudit(options);
+    }
+
+    if (options.command == "testnet readiness") {
+      return executeTestnetReadiness(options);
+    }
+
+    if (options.command == "diagnostics") {
+      return executeDiagnostics(options);
+    }
+
+    if (options.command == "block produce") {
+      return executeProduceBlock(options);
+    }
+
+    if (options.command == "tx submit") {
+      return executeSubmitTransaction(options);
+    }
+
+    if (options.command == "governance propose") {
+      return executeGovernancePropose(options);
+    }
+
+    if (options.command == "governance vote") {
+      return executeGovernanceVote(options);
+    }
+
+    if (options.command == "governance status") {
+      return executeGovernanceStatus(options);
+    }
+
+    if (options.command == "governance list") {
+      return executeGovernanceList(options);
+    }
+
+    if (options.command == "governance show") {
+      return executeGovernanceShow(options);
+    }
+
+    if (options.command == "governance audit") {
+      return executeGovernanceAudit(options);
+    }
+
+    if (options.command == "keys create") {
+      return executeKeysCreate(options);
+    }
+
+    if (options.command == "keys list") {
+      return executeKeysList(options);
+    }
+
+    if (options.command == "validator list") {
+      return executeValidatorList(options);
+    }
+
+    if (options.command == "validator status") {
+      return executeValidatorStatus(options);
+    }
+
+    if (options.command == "validator exit") {
+      return executeValidatorExit(options);
+    }
+
+    if (options.command == "validator unjail") {
+      return executeValidatorUnjail(options);
+    }
+
+    if (options.command == "stake lock" || options.command == "stake deposit" ||
+        options.command == "stake top-up" ||
+        options.command == "stake unlock" ||
+        options.command == "stake withdraw") {
+      return executeStakeLock(options);
+    }
+
+    if (options.command == "stake status") {
+      return executeStakeStatus(options);
+    }
+
+    if (options.command == "stake positions") {
+      return executeStakePositions(options);
+    }
+
+    if (options.command == "stake audit") {
+      return executeStakeAudit(options);
+    }
+
+    if (options.command == "rewards status") {
+      return executeRewardsStatus(options);
+    }
+
+    if (options.command == "slashing evidence") {
+      return executeSlashingEvidence(options);
+    }
+
+    return CommandLineResult::failure(CommandLineStatus::INVALID_ARGUMENTS,
+                                      "Unknown command: " + options.command +
+                                          "\n\n" + helpText());
+  } catch (const std::exception &error) {
+    return CommandLineResult::failure(CommandLineStatus::INVALID_ARGUMENTS,
+                                      std::string("Invalid command line: ") +
+                                          error.what() + "\n\n" + helpText());
+  }
 }
 
-CommandLineOptions CommandLineInterface::parse(
-    const std::vector<std::string>& args
-) {
-    CommandLineOptions options;
+CommandLineOptions
+CommandLineInterface::parse(const std::vector<std::string> &args) {
+  CommandLineOptions options;
 
-    std::size_t index = 0;
+  std::size_t index = 0;
 
-    if (!args.empty() &&
-        !isOption(args.front())) {
-        options.command = args.front();
-        index = 1;
+  if (!args.empty() && !isOption(args.front())) {
+    options.command = args.front();
+    index = 1;
 
-        if (isCommandGroup(options.command) &&
-            index < args.size() &&
-            !isOption(args[index])) {
-            options.command += " " + args[index];
-            ++index;
-        }
+    if (isCommandGroup(options.command) && index < args.size() &&
+        !isOption(args[index])) {
+      options.command += " " + args[index];
+      ++index;
+    }
+  }
+
+  while (index < args.size()) {
+    const std::string &option = args[index];
+
+    if (option == "--help" || option == "-h") {
+      options.showHelp = true;
+      ++index;
+      continue;
     }
 
-    while (index < args.size()) {
-        const std::string& option =
-            args[index];
-
-        if (option == "--help" ||
-            option == "-h") {
-            options.showHelp = true;
-            ++index;
-            continue;
-        }
-
-        if (option == "--data-dir") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--data-dir requires a value.");
-            }
-
-            options.dataDirectory = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--network") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--network requires a value.");
-            }
-
-            options.networkName = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--peer-id") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--peer-id requires a value.");
-            }
-
-            options.peerId = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--endpoint") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--endpoint requires a value.");
-            }
-
-            options.endpoint = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--from" ||
-            option == "--key-id") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument(option + " requires a value.");
-            }
-
-            const std::string value = args[index + 1];
-            if (options.keyIdProvided && options.keyId != value) {
-                throw std::invalid_argument("Conflicting signing key options.");
-            }
-            options.keyId = value;
-            options.keyIdProvided = true;
-            index += 2;
-            continue;
-        }
-
-        if (option == "--type") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--type requires a value.");
-            }
-
-            options.keyType = args[index + 1];
-
-            if (options.keyType != "user" &&
-                options.keyType != "validator" &&
-                options.keyType != "both") {
-                throw std::invalid_argument("--type must be user, validator, or both.");
-            }
-
-            index += 2;
-            continue;
-        }
-
-        if (option == "--to") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--to requires a value.");
-            }
-
-            options.toAddress = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--address") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--address requires a value.");
-            }
-
-            options.toAddress = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--amount") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--amount requires a value.");
-            }
-
-            options.amountRaw =
-                parseSignedInt64("--amount", args[index + 1]);
-
-            if (options.amountRaw < 0) {
-                throw std::invalid_argument("--amount must be non-negative.");
-            }
-
-            index += 2;
-            continue;
-        }
-
-        if (option == "--fee") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--fee requires a value.");
-            }
-
-            options.feeRaw =
-                parseSignedInt64("--fee", args[index + 1]);
-
-            if (options.feeRaw < 0) {
-                throw std::invalid_argument("--fee must be non-negative.");
-            }
-
-            index += 2;
-            continue;
-        }
-
-        if (option == "--nonce") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--nonce requires a value.");
-            }
-
-            options.nonce =
-                parseUnsignedInt64("--nonce", args[index + 1]);
-            index += 2;
-            continue;
-        }
-
-        if (option == "--timestamp") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--timestamp requires a value.");
-            }
-
-            options.timestamp =
-                parseSignedInt64("--timestamp", args[index + 1]);
-            index += 2;
-            continue;
-        }
-
-        if (option == "--proposal-id") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--proposal-id requires a value.");
-            }
-
-            options.governanceProposalId = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--proposal-type") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--proposal-type requires a value.");
-            }
-
-            options.governanceProposalType = args[index + 1];
-            (void)parseGovernanceProposalTypeOption(options.governanceProposalType);
-            index += 2;
-            continue;
-        }
-
-        if (option == "--title") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--title requires a value.");
-            }
-
-            options.governanceProposalTitle = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--body") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--body requires a value.");
-            }
-
-            options.governanceProposalBody = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--target") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--target requires a value.");
-            }
-
-            options.governanceTarget = normalizeGovernanceToken(args[index + 1]);
-            index += 2;
-            continue;
-        }
-
-        if (option == "--value") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--value requires a value.");
-            }
-
-            options.governanceValue = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--effective-height") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--effective-height requires a value.");
-            }
-
-            options.governanceEffectiveHeight =
-                parseUnsignedInt64("--effective-height", args[index + 1]);
-            index += 2;
-            continue;
-        }
-
-        if (option == "--voting-period") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--voting-period requires a value.");
-            }
-
-            options.governanceVotingPeriodBlocks =
-                parseUnsignedInt64("--voting-period", args[index + 1]);
-            if (options.governanceVotingPeriodBlocks == 0) {
-                throw std::invalid_argument("--voting-period must be positive.");
-            }
-            index += 2;
-            continue;
-        }
-
-        if (option == "--vote") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--vote requires a value.");
-            }
-
-            options.governanceVoteChoice = args[index + 1];
-            (void)parseGovernanceVoteChoiceOption(options.governanceVoteChoice);
-            index += 2;
-            continue;
-        }
-
-        if (option == "--listen") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--listen requires a value (HOST:PORT).");
-            }
-
-            options.listenAddress = args[index + 1];
-            // Also propagate to endpoint so localPeerFromOptions() picks it up.
-            options.endpoint = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--rpc-listen") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument(
-                    "--rpc-listen requires a value (HOST:PORT)."
-                );
-            }
-
-            const ParsedHostPort rpc =
-                parseHostPort("--rpc-listen", args[index + 1]);
-            options.rpcBindAddress = rpc.host;
-            options.rpcPort = rpc.port;
-            index += 2;
-            continue;
-        }
-
-        if (option == "--peer") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--peer requires a value (NAME@HOST:PORT).");
-            }
-
-            options.peers.push_back(args[index + 1]);
-            index += 2;
-            continue;
-        }
-
-        if (option == "--validator-key") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--validator-key requires a value.");
-            }
-
-            const std::string value = args[index + 1];
-            if (options.validatorKeyIdProvided && options.validatorKeyId != value) {
-                throw std::invalid_argument("Conflicting --validator-key values.");
-            }
-            options.validatorKeyId = value;
-            options.validatorKeyIdProvided = true;
-            // node run historically exposes this option through keyId. Keep
-            // that public parse contract while stake commands retain a
-            // separate owner signing key.
-            if (options.command == "node run") {
-                options.keyId = value;
-                options.keyIdProvided = true;
-            }
-            index += 2;
-            continue;
-        }
-
-        if (option == "--identity-key") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--identity-key requires a value.");
-            }
-            options.identityKeyId = args[index + 1];
-            index += 2;
-            continue;
-        }
-
-        if (option == "--validator") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--validator requires a value (validator address).");
-            }
-
-            const std::string value = args[index + 1];
-            if (!options.validatorAddress.empty() && options.validatorAddress != value) {
-                throw std::invalid_argument("Conflicting --validator values.");
-            }
-            options.validatorAddress = value;
-            index += 2;
-            continue;
-        }
-
-        if (option == "--owner") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--owner requires a value (key-id of validator owner).");
-            }
-
-            const std::string value = args[index + 1];
-            if (options.keyIdProvided && options.keyId != value) {
-                throw std::invalid_argument("Conflicting signing key options.");
-            }
-            options.keyId = value;
-            options.keyIdProvided = true;
-            index += 2;
-            continue;
-        }
-
-        if (option == "--stake") {
-            if (index + 1 >= args.size()) {
-                throw std::invalid_argument("--stake requires a value (amount in raw units).");
-            }
-
-            options.amountRaw = parseSignedInt64("--stake", args[index + 1]);
-            if (options.amountRaw < 0) {
-                throw std::invalid_argument("--stake must be non-negative.");
-            }
-            index += 2;
-            continue;
-        }
-
-        throw std::invalid_argument("Unknown option: " + option);
+    if (option == "--data-dir") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--data-dir requires a value.");
+      }
+
+      options.dataDirectory = args[index + 1];
+      index += 2;
+      continue;
     }
 
-    return options;
+    if (option == "--network") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--network requires a value.");
+      }
+
+      options.networkName = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--peer-id") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--peer-id requires a value.");
+      }
+
+      options.peerId = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--endpoint") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--endpoint requires a value.");
+      }
+
+      options.endpoint = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--from" || option == "--key-id") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument(option + " requires a value.");
+      }
+
+      const std::string value = args[index + 1];
+      if (options.keyIdProvided && options.keyId != value) {
+        throw std::invalid_argument("Conflicting signing key options.");
+      }
+      options.keyId = value;
+      options.keyIdProvided = true;
+      index += 2;
+      continue;
+    }
+
+    if (option == "--type") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--type requires a value.");
+      }
+
+      options.keyType = args[index + 1];
+
+      if (options.keyType != "user" && options.keyType != "validator" &&
+          options.keyType != "both") {
+        throw std::invalid_argument("--type must be user, validator, or both.");
+      }
+
+      index += 2;
+      continue;
+    }
+
+    if (option == "--to") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--to requires a value.");
+      }
+
+      options.toAddress = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--address") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--address requires a value.");
+      }
+
+      options.toAddress = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--amount") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--amount requires a value.");
+      }
+
+      options.amountRaw = parseSignedInt64("--amount", args[index + 1]);
+
+      if (options.amountRaw < 0) {
+        throw std::invalid_argument("--amount must be non-negative.");
+      }
+
+      index += 2;
+      continue;
+    }
+
+    if (option == "--fee") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--fee requires a value.");
+      }
+
+      options.feeRaw = parseSignedInt64("--fee", args[index + 1]);
+
+      if (options.feeRaw < 0) {
+        throw std::invalid_argument("--fee must be non-negative.");
+      }
+
+      index += 2;
+      continue;
+    }
+
+    if (option == "--nonce") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--nonce requires a value.");
+      }
+
+      options.nonce = parseUnsignedInt64("--nonce", args[index + 1]);
+      index += 2;
+      continue;
+    }
+
+    if (option == "--timestamp") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--timestamp requires a value.");
+      }
+
+      options.timestamp = parseSignedInt64("--timestamp", args[index + 1]);
+      index += 2;
+      continue;
+    }
+
+    if (option == "--proposal-id") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--proposal-id requires a value.");
+      }
+
+      options.governanceProposalId = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--proposal-type") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--proposal-type requires a value.");
+      }
+
+      options.governanceProposalType = args[index + 1];
+      (void)parseGovernanceProposalTypeOption(options.governanceProposalType);
+      index += 2;
+      continue;
+    }
+
+    if (option == "--title") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--title requires a value.");
+      }
+
+      options.governanceProposalTitle = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--body") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--body requires a value.");
+      }
+
+      options.governanceProposalBody = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--target") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--target requires a value.");
+      }
+
+      options.governanceTarget = normalizeGovernanceToken(args[index + 1]);
+      index += 2;
+      continue;
+    }
+
+    if (option == "--value") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--value requires a value.");
+      }
+
+      options.governanceValue = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--effective-height") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--effective-height requires a value.");
+      }
+
+      options.governanceEffectiveHeight =
+          parseUnsignedInt64("--effective-height", args[index + 1]);
+      index += 2;
+      continue;
+    }
+
+    if (option == "--voting-period") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--voting-period requires a value.");
+      }
+
+      options.governanceVotingPeriodBlocks =
+          parseUnsignedInt64("--voting-period", args[index + 1]);
+      if (options.governanceVotingPeriodBlocks == 0) {
+        throw std::invalid_argument("--voting-period must be positive.");
+      }
+      index += 2;
+      continue;
+    }
+
+    if (option == "--vote") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--vote requires a value.");
+      }
+
+      options.governanceVoteChoice = args[index + 1];
+      (void)parseGovernanceVoteChoiceOption(options.governanceVoteChoice);
+      index += 2;
+      continue;
+    }
+
+    if (option == "--listen") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--listen requires a value (HOST:PORT).");
+      }
+
+      options.listenAddress = args[index + 1];
+      // Also propagate to endpoint so localPeerFromOptions() picks it up.
+      options.endpoint = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--rpc-listen") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument(
+            "--rpc-listen requires a value (HOST:PORT).");
+      }
+
+      const ParsedHostPort rpc = parseHostPort("--rpc-listen", args[index + 1]);
+      options.rpcBindAddress = rpc.host;
+      options.rpcPort = rpc.port;
+      index += 2;
+      continue;
+    }
+
+    if (option == "--peer") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument(
+            "--peer requires a value (NAME@HOST:PORT).");
+      }
+
+      options.peers.push_back(args[index + 1]);
+      index += 2;
+      continue;
+    }
+
+    if (option == "--validator-key") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--validator-key requires a value.");
+      }
+
+      const std::string value = args[index + 1];
+      if (options.validatorKeyIdProvided && options.validatorKeyId != value) {
+        throw std::invalid_argument("Conflicting --validator-key values.");
+      }
+      options.validatorKeyId = value;
+      options.validatorKeyIdProvided = true;
+      // node run historically exposes this option through keyId. Keep
+      // that public parse contract while stake commands retain a
+      // separate owner signing key.
+      if (options.command == "node run") {
+        options.keyId = value;
+        options.keyIdProvided = true;
+      }
+      index += 2;
+      continue;
+    }
+
+    if (option == "--identity-key") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--identity-key requires a value.");
+      }
+      options.identityKeyId = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--validator") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument(
+            "--validator requires a value (validator address).");
+      }
+
+      const std::string value = args[index + 1];
+      if (!options.validatorAddress.empty() &&
+          options.validatorAddress != value) {
+        throw std::invalid_argument("Conflicting --validator values.");
+      }
+      options.validatorAddress = value;
+      index += 2;
+      continue;
+    }
+
+    if (option == "--owner") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument(
+            "--owner requires a value (key-id of validator owner).");
+      }
+
+      const std::string value = args[index + 1];
+      if (options.keyIdProvided && options.keyId != value) {
+        throw std::invalid_argument("Conflicting signing key options.");
+      }
+      options.keyId = value;
+      options.keyIdProvided = true;
+      index += 2;
+      continue;
+    }
+
+    if (option == "--stake") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument(
+            "--stake requires a value (amount in raw units).");
+      }
+
+      options.amountRaw = parseSignedInt64("--stake", args[index + 1]);
+      if (options.amountRaw < 0) {
+        throw std::invalid_argument("--stake must be non-negative.");
+      }
+      index += 2;
+      continue;
+    }
+
+    throw std::invalid_argument("Unknown option: " + option);
+  }
+
+  return options;
 }
 
 std::string CommandLineInterface::helpText() {
-    return
-        "Nodo command line\n"
-        "-----------------\n"
-        "\n"
-        "Usage:\n"
-        "  nodo help\n"
-        "  nodo init [--network localnet|testnet-candidate] [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
-        "  nodo status [--network localnet|testnet-candidate] [--data-dir PATH]\n"
-        "  nodo inspect [--network localnet|testnet-candidate] [--data-dir PATH]\n"
-        "  nodo node run [--network localnet|localnet-soak|testnet-candidate] [--data-dir PATH] [--listen HOST:PORT] [--rpc-listen HOST:PORT] [--peer NAME@HOST:PORT]... [--validator-key ID] [--identity-key ID]\n"
-        "  nodo node reload [--network localnet|testnet-candidate] [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
-        "  nodo keys create [--network localnet|testnet-candidate] [--data-dir PATH] [--type user|validator|both] [--key-id ID]\n"
-        "  nodo keys list [--data-dir PATH]\n"
-        "  nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]\n"
-        "  nodo governance propose [--data-dir PATH] [--from KEY_ID] [--proposal-type parameter-change|treasury-spend|text] [--title TEXT] [--body TEXT] [--target PARAM] [--value VALUE] [--effective-height HEIGHT] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--voting-period BLOCKS]\n"
-        "  nodo governance vote [--data-dir PATH] [--owner KEY_ID] --proposal-id ID --validator ADDRESS [--vote YES|NO|ABSTAIN] [--fee RAW_UNITS]\n"
-        "  nodo governance status|list|show|audit [--data-dir PATH] [--proposal-id ID]\n"
-        "  nodo stake lock|deposit|top-up|unlock|withdraw [--data-dir PATH] (--validator ADDRESS | --validator-key ID) --amount RAW_UNITS [--owner KEY_ID] [--fee RAW_UNITS]\n"
-        "  nodo stake status [--data-dir PATH] (--validator ADDRESS | --validator-key ID)\n"
-        "  nodo stake positions|audit [--data-dir PATH] [--validator ADDRESS] [--address ADDRESS]\n"
-        "  nodo block produce [--data-dir PATH]\n"
-        "  nodo chain audit [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
-        "  nodo validator list [--data-dir PATH]\n"
-        "  nodo testnet readiness [--network localnet|testnet-candidate] [--data-dir PATH] [--key-id ID]\n"
-        "  nodo diagnostics [--network localnet|testnet-candidate] [--data-dir PATH] [--key-id ID]\n"
-        "\n"
-        "Options:\n"
-        "  --data-dir PATH      Node data directory. Default: .nodo\n"
-        "  --network NAME       Network profile: localnet, localnet-soak, or testnet-candidate. mainnet is blocked.\n"
-        "  --peer-id ID         Local peer id for init/load. Default: local-node\n"
-        "  --endpoint HOST:PORT Local endpoint for init/load. Default: 127.0.0.1:9000\n"
-        "  --listen HOST:PORT   Bind address for node run daemon. Overrides --endpoint.\n"
-        "  --rpc-listen HOST:PORT RPC bind address for node run. Default: 127.0.0.1:8545\n"
-        "  --peer NAME@HOST:PORT Static peer for node run daemon (repeatable).\n"
-        "  --validator-key ID   Validator identity key for node run, or a stake target resolved to its validator address.\n"
-        "  --identity-key ID    Ed25519 peer identity key for node run. Default: local-user\n"
-        "  --validator ADDRESS Validator address for lifecycle, stake, and governance vote commands.\n"
-        "  --address ADDRESS   Owner/delegator address for stake positions.\n"
-        "  --owner KEY_ID       Alias for --key-id when signing validator-owned operations.\n"
-        "  --key-id ID          Key id for keys create or signing. Defaults depend on command.\n"
-        "  --type TYPE          Key type for keys create. Default: both\n"
-        "  --from KEY_ID        Alias for --key-id in tx submit.\n"
-        "  --to ADDRESS         Recipient address for tx submit.\n"
-        "  --amount RAW_UNITS   Transfer amount for tx submit. Default: 1000\n"
-        "  --fee RAW_UNITS      Transfer fee for tx submit. Default: 100\n"
-        "  --nonce VALUE        Transaction nonce for tx submit. Default: next account nonce\n"
-        "  --timestamp SECONDS  Deterministic timestamp override for tests.\n"
-        "  --proposal-id ID     Governance proposal id for vote/show/tally/decision/execution.\n"
-        "  --proposal-type TYPE Governance proposal type: parameter-change, treasury-spend, or text.\n"
-        "  --target PARAM       Governance parameter target, for example MINIMUM_FEE_RAW.\n"
-        "  --value VALUE        Governance parameter value.\n"
-        "  --effective-height H Block height where a parameter proposal may execute.\n"
-        "  --voting-period N    Governance voting period in blocks. Default: 3\n"
-        "  --vote CHOICE        Governance vote choice: YES, NO, or ABSTAIN. Default: YES\n";
+  return "Nodo command line\n"
+         "-----------------\n"
+         "\n"
+         "Usage:\n"
+         "  nodo help\n"
+         "  nodo init [--network localnet|testnet-candidate] [--data-dir PATH] "
+         "[--peer-id ID] [--endpoint HOST:PORT]\n"
+         "  nodo status [--network localnet|testnet-candidate] [--data-dir "
+         "PATH]\n"
+         "  nodo inspect [--network localnet|testnet-candidate] [--data-dir "
+         "PATH]\n"
+         "  nodo node run [--network localnet|localnet-soak|testnet-candidate] "
+         "[--data-dir PATH] [--listen HOST:PORT] [--rpc-listen HOST:PORT] "
+         "[--peer NAME@HOST:PORT]... [--validator-key ID] [--identity-key ID]\n"
+         "  nodo node reload [--network localnet|testnet-candidate] "
+         "[--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
+         "  nodo keys create [--network localnet|testnet-candidate] "
+         "[--data-dir PATH] [--type user|validator|both] [--key-id ID]\n"
+         "  nodo keys list [--data-dir PATH]\n"
+         "  nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] "
+         "[--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]\n"
+         "  nodo governance propose [--data-dir PATH] [--from KEY_ID] "
+         "[--proposal-type parameter-change|treasury-spend|text] [--title "
+         "TEXT] [--body TEXT] [--target PARAM] [--value VALUE] "
+         "[--effective-height HEIGHT] [--to ADDRESS] [--amount RAW_UNITS] "
+         "[--fee RAW_UNITS] [--voting-period BLOCKS]\n"
+         "  nodo governance vote [--data-dir PATH] [--owner KEY_ID] "
+         "--proposal-id ID --validator ADDRESS [--vote YES|NO|ABSTAIN] [--fee "
+         "RAW_UNITS]\n"
+         "  nodo governance status|list|show|audit [--data-dir PATH] "
+         "[--proposal-id ID]\n"
+         "  nodo stake lock|deposit|top-up|unlock|withdraw [--data-dir PATH] "
+         "(--validator ADDRESS | --validator-key ID) --amount RAW_UNITS "
+         "[--owner KEY_ID] [--fee RAW_UNITS]\n"
+         "  nodo stake status [--data-dir PATH] (--validator ADDRESS | "
+         "--validator-key ID)\n"
+         "  nodo stake positions|audit [--data-dir PATH] [--validator ADDRESS] "
+         "[--address ADDRESS]\n"
+         "  nodo block produce [--data-dir PATH]\n"
+         "  nodo chain audit [--data-dir PATH] [--peer-id ID] [--endpoint "
+         "HOST:PORT]\n"
+         "  nodo validator list [--data-dir PATH]\n"
+         "  nodo testnet readiness [--network localnet|testnet-candidate] "
+         "[--data-dir PATH] [--key-id ID]\n"
+         "  nodo diagnostics [--network localnet|testnet-candidate] "
+         "[--data-dir PATH] [--key-id ID]\n"
+         "\n"
+         "Options:\n"
+         "  --data-dir PATH      Node data directory. Default: .nodo\n"
+         "  --network NAME       Network profile: localnet, localnet-soak, or "
+         "testnet-candidate. mainnet is blocked.\n"
+         "  --peer-id ID         Local peer id for init/load. Default: "
+         "local-node\n"
+         "  --endpoint HOST:PORT Local endpoint for init/load. Default: "
+         "127.0.0.1:9000\n"
+         "  --listen HOST:PORT   Bind address for node run daemon. Overrides "
+         "--endpoint.\n"
+         "  --rpc-listen HOST:PORT RPC bind address for node run. Default: "
+         "127.0.0.1:8545\n"
+         "  --peer NAME@HOST:PORT Static peer for node run daemon "
+         "(repeatable).\n"
+         "  --validator-key ID   Validator identity key for node run, or a "
+         "stake target resolved to its validator address.\n"
+         "  --identity-key ID    Ed25519 peer identity key for node run. "
+         "Default: local-user\n"
+         "  --validator ADDRESS Validator address for lifecycle, stake, and "
+         "governance vote commands.\n"
+         "  --address ADDRESS   Owner/delegator address for stake positions.\n"
+         "  --owner KEY_ID       Alias for --key-id when signing "
+         "validator-owned operations.\n"
+         "  --key-id ID          Key id for keys create or signing. Defaults "
+         "depend on command.\n"
+         "  --type TYPE          Key type for keys create. Default: both\n"
+         "  --from KEY_ID        Alias for --key-id in tx submit.\n"
+         "  --to ADDRESS         Recipient address for tx submit.\n"
+         "  --amount RAW_UNITS   Transfer amount for tx submit. Default: 1000\n"
+         "  --fee RAW_UNITS      Transfer fee for tx submit. Default: 100\n"
+         "  --nonce VALUE        Transaction nonce for tx submit. Default: "
+         "next account nonce\n"
+         "  --timestamp SECONDS  Deterministic timestamp override for tests.\n"
+         "  --proposal-id ID     Governance proposal id for "
+         "vote/show/tally/decision/execution.\n"
+         "  --proposal-type TYPE Governance proposal type: parameter-change, "
+         "treasury-spend, or text.\n"
+         "  --target PARAM       Governance parameter target, for example "
+         "MINIMUM_FEE_RAW.\n"
+         "  --value VALUE        Governance parameter value.\n"
+         "  --effective-height H Block height where a parameter proposal may "
+         "execute.\n"
+         "  --voting-period N    Governance voting period in blocks. Default: "
+         "3\n"
+         "  --vote CHOICE        Governance vote choice: YES, NO, or ABSTAIN. "
+         "Default: YES\n";
 }
 
 std::string CommandLineInterface::defaultLocalnetKeyId() {
-    return "local-validator";
+  return "local-validator";
 }
 
 std::string CommandLineInterface::defaultLocalnetKeySeed() {
-    return "nodo-localnet-validator-seed";
+  return "nodo-localnet-validator-seed";
 }
 
-p2p::PeerInfo CommandLineInterface::localPeerFromOptions(
-    const CommandLineOptions& options
-) {
-    const config::NetworkParameters params =
-        networkParametersForOptions(options);
+p2p::PeerInfo
+CommandLineInterface::localPeerFromOptions(const CommandLineOptions &options) {
+  const config::NetworkParameters params = networkParametersForOptions(options);
 
-    return p2p::PeerInfo(
-        options.peerId,
-        options.endpoint,
-        params.protocolVersion(),
-        0,
-        options.timestamp
-    );
+  return p2p::PeerInfo(options.peerId, options.endpoint,
+                       params.protocolVersion(), 0, options.timestamp);
 }
 
-CommandLineResult CommandLineInterface::executeInit(
-    const CommandLineOptions& options
-) {
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+CommandLineResult
+CommandLineInterface::executeInit(const CommandLineOptions &options) {
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
 
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
-    const node::NodeDataDirectoryInitResult result =
-        node::NodeDataDirectory::initialize(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisConfig,
-            localPeerFromOptions(options),
-            options.timestamp
-        );
+  const node::NodeDataDirectoryInitResult result =
+      node::NodeDataDirectory::initialize(
+          node::NodeDataDirectoryConfig(options.dataDirectory), genesisConfig,
+          localPeerFromOptions(options), options.timestamp);
 
-    if (!result.success()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to initialize Nodo data directory: "
-            + result.reason()
-            + "\n"
-        );
-    }
+  if (!result.success()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Failed to initialize Nodo data directory: " + result.reason() + "\n");
+  }
 
-    std::ostringstream output;
+  std::ostringstream output;
 
-    output << "Nodo data directory "
-           << (result.initialized() ? "initialized" : "already initialized")
-           << ".\n"
-           << "Data directory: " << options.dataDirectory.string() << "\n"
-           << "Network: " << result.manifest().networkName() << "\n"
-           << "Chain id: " << result.manifest().chainId() << "\n"
-           << "Genesis id: " << result.manifest().genesisConfigId() << "\n"
-           << "Latest height: " << result.manifest().latestBlockHeight() << "\n"
-           << "Latest state root: " << result.manifest().latestStateRoot() << "\n";
+  output << "Nodo data directory "
+         << (result.initialized() ? "initialized" : "already initialized")
+         << ".\n"
+         << "Data directory: " << options.dataDirectory.string() << "\n"
+         << "Network: " << result.manifest().networkName() << "\n"
+         << "Chain id: " << result.manifest().chainId() << "\n"
+         << "Genesis id: " << result.manifest().genesisConfigId() << "\n"
+         << "Latest height: " << result.manifest().latestBlockHeight() << "\n"
+         << "Latest state root: " << result.manifest().latestStateRoot()
+         << "\n";
 
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
-CommandLineResult CommandLineInterface::executeStatus(
-    const CommandLineOptions& options
-) {
-    const node::NodeDataDirectoryReadResult result =
-        node::NodeDataDirectory::loadManifest(
-            node::NodeDataDirectoryConfig(options.dataDirectory)
-        );
+CommandLineResult
+CommandLineInterface::executeStatus(const CommandLineOptions &options) {
+  const node::NodeDataDirectoryReadResult result =
+      node::NodeDataDirectory::loadManifest(
+          node::NodeDataDirectoryConfig(options.dataDirectory));
 
-    if (!result.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to read Nodo status: "
-            + result.reason()
-            + "\n"
-        );
-    }
+  if (!result.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Failed to read Nodo status: " + result.reason() + "\n");
+  }
 
-    const node::NodeRuntimeManifest& manifest =
-        result.manifest();
+  const node::NodeRuntimeManifest &manifest = result.manifest();
 
-    const std::optional<std::string> mismatch =
-        manifestNetworkMismatch(manifest, options);
+  const std::optional<std::string> mismatch =
+      manifestNetworkMismatch(manifest, options);
 
-    if (mismatch.has_value()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            *mismatch + "\n"
-        );
-    }
+  if (mismatch.has_value()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      *mismatch + "\n");
+  }
 
-    std::ostringstream output;
+  std::ostringstream output;
 
-    output << "Nodo status\n"
-           << "-----------\n"
-           << "Data directory: " << options.dataDirectory.string() << "\n"
-           << "Chain id: " << manifest.chainId() << "\n"
-           << "Network: " << manifest.networkName() << "\n"
-           << "Protocol: " << manifest.protocolVersion() << "\n"
-           << "Latest height: " << manifest.latestBlockHeight() << "\n"
-           << "Latest hash: " << manifest.latestBlockHash() << "\n"
-           << "Latest state root: " << manifest.latestStateRoot() << "\n"
-           << "Validators: " << manifest.validatorCount() << "\n"
-           << "Peers: " << manifest.peerCount() << "\n";
+  output << "Nodo status\n"
+         << "-----------\n"
+         << "Data directory: " << options.dataDirectory.string() << "\n"
+         << "Chain id: " << manifest.chainId() << "\n"
+         << "Network: " << manifest.networkName() << "\n"
+         << "Protocol: " << manifest.protocolVersion() << "\n"
+         << "Latest height: " << manifest.latestBlockHeight() << "\n"
+         << "Latest hash: " << manifest.latestBlockHash() << "\n"
+         << "Latest state root: " << manifest.latestStateRoot() << "\n"
+         << "Validators: " << manifest.validatorCount() << "\n"
+         << "Peers: " << manifest.peerCount() << "\n";
 
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
-CommandLineResult CommandLineInterface::executeInspect(
-    const CommandLineOptions& options
-) {
-    const node::NodeDataDirectoryReadResult result =
-        node::NodeDataDirectory::loadManifest(
-            node::NodeDataDirectoryConfig(options.dataDirectory)
-        );
+CommandLineResult
+CommandLineInterface::executeInspect(const CommandLineOptions &options) {
+  const node::NodeDataDirectoryReadResult result =
+      node::NodeDataDirectory::loadManifest(
+          node::NodeDataDirectoryConfig(options.dataDirectory));
 
-    if (!result.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to inspect Nodo data directory: "
-            + result.reason()
-            + "\n"
-        );
-    }
+  if (!result.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Failed to inspect Nodo data directory: " + result.reason() + "\n");
+  }
 
-    const std::optional<std::string> mismatch =
-        manifestNetworkMismatch(result.manifest(), options);
+  const std::optional<std::string> mismatch =
+      manifestNetworkMismatch(result.manifest(), options);
 
-    if (mismatch.has_value()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            *mismatch + "\n"
-        );
-    }
+  if (mismatch.has_value()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      *mismatch + "\n");
+  }
 
-    std::ostringstream output;
+  std::ostringstream output;
 
-    output << "Nodo inspect\n"
-           << "------------\n"
-           << "Data directory: " << options.dataDirectory.string() << "\n"
-           << result.manifest().serialize() << "\n";
+  output << "Nodo inspect\n"
+         << "------------\n"
+         << "Data directory: " << options.dataDirectory.string() << "\n"
+         << result.manifest().serialize() << "\n";
 
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
-CommandLineResult CommandLineInterface::executeReload(
-    const CommandLineOptions& options
-) {
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+CommandLineResult
+CommandLineInterface::executeReload(const CommandLineOptions &options) {
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
 
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisConfig,
-            localPeerFromOptions(options)
-        );
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          node::NodeDataDirectoryConfig(options.dataDirectory), genesisConfig,
+          localPeerFromOptions(options));
 
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to reload Nodo runtime: "
-            + load.reason()
-            + "\n"
-        );
-    }
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Failed to reload Nodo runtime: " + load.reason() + "\n");
+  }
 
-    std::ostringstream output;
+  std::ostringstream output;
 
-    output << "Nodo runtime reloaded.\n"
-           << "Data directory: " << options.dataDirectory.string() << "\n"
-           << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
-           << "Latest hash: " << load.manifest().latestBlockHash() << "\n"
-           << "Latest state root: " << load.manifest().latestStateRoot() << "\n"
-           << "Loaded finalized blocks: " << load.loadedBlockCount() << "\n"
-           << "Loaded mempool transactions: " << load.loadedMempoolTransactionCount() << "\n";
+  output << "Nodo runtime reloaded.\n"
+         << "Data directory: " << options.dataDirectory.string() << "\n"
+         << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
+         << "Latest hash: " << load.manifest().latestBlockHash() << "\n"
+         << "Latest state root: " << load.manifest().latestStateRoot() << "\n"
+         << "Loaded finalized blocks: " << load.loadedBlockCount() << "\n"
+         << "Loaded mempool transactions: "
+         << load.loadedMempoolTransactionCount() << "\n";
 
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
-CommandLineResult CommandLineInterface::executeChainAudit(
-    const CommandLineOptions& options
-) {
-    const node::NodeDataDirectoryConfig directoryConfig(
-        options.dataDirectory
-    );
+CommandLineResult
+CommandLineInterface::executeChainAudit(const CommandLineOptions &options) {
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
 
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            directoryConfig,
-            genesisConfig,
-            localPeerFromOptions(options)
-        );
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          directoryConfig, genesisConfig, localPeerFromOptions(options));
 
-    const node::ChainAuditResult audit =
-        node::ChainAuditor::auditLoadedRuntime(
-            load,
-            directoryConfig.epochMonetaryReportPath(),
-            directoryConfig.epochTreasuryReportPath()
-        );
+  const node::ChainAuditResult audit = node::ChainAuditor::auditLoadedRuntime(
+      load, directoryConfig.epochMonetaryReportPath(),
+      directoryConfig.epochTreasuryReportPath());
 
-    if (!audit.passed()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            audit.toHumanReadableString()
-        );
-    }
+  if (!audit.passed()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      audit.toHumanReadableString());
+  }
 
-    std::ostringstream output;
+  std::ostringstream output;
 
-    output << audit.toHumanReadableString()
-           << "Data directory: " << directoryConfig.rootPath().string() << "\n"
-           << "Genesis id: " << load.manifest().genesisConfigId() << "\n";
+  output << audit.toHumanReadableString()
+         << "Data directory: " << directoryConfig.rootPath().string() << "\n"
+         << "Genesis id: " << load.manifest().genesisConfigId() << "\n";
 
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
 CommandLineResult CommandLineInterface::executeTestnetReadiness(
-    const CommandLineOptions& options
-) {
-    const node::NodeDataDirectoryConfig directoryConfig(
-        options.dataDirectory
-    );
+    const CommandLineOptions &options) {
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
 
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
-    const config::NetworkParameters params =
-        genesisConfig.networkParameters();
+  const config::NetworkParameters params = genesisConfig.networkParameters();
 
-    const node::NodeDataDirectoryReadResult manifest =
-        node::NodeDataDirectory::loadManifest(directoryConfig);
+  const node::NodeDataDirectoryReadResult manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig);
 
-    if (manifest.loaded()) {
-        const std::optional<std::string> mismatch =
-            manifestNetworkMismatch(manifest.manifest(), options);
-
-        if (mismatch.has_value()) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                *mismatch + "\n"
-            );
-        }
-    }
-
-    if (config::NetworkProfileRegistry::isOfficialNetwork(options.networkName) &&
-        !options.keyIdProvided) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Official network readiness requires --key-id. "
-            "Do not default to localnet development keys.\n"
-        );
-    }
-
-    const std::string validatorKeyId =
-        options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
-
-    const crypto::KeyStoreLoadResult key =
-        loadKeyWithPrompt(
-            directoryConfig.keysDirectoryPath(),
-            validatorKeyId
-        );
-
-    bool keyPolicyPassed = false;
-    std::vector<std::string> warnings;
-
-    if (key.loaded()) {
-        const node::KeySafetyCheckResult keySafety =
-            node::ProductionKeySafetyGate::check(
-                key.metadata(),
-                params.networkName()
-            );
-        keyPolicyPassed = keySafety.isApproved();
-
-        if (!keyPolicyPassed) {
-            warnings.push_back(keySafety.reason());
-        }
-    } else {
-        warnings.push_back(
-            "Validator key '" + validatorKeyId + "' is not loaded: " +
-            key.reason()
-        );
-    }
-
-    const bool genesisVerified = true; // resolveAndVerify() already verified
-
-    const std::size_t connectedPeers =
-        manifest.loaded() ? manifest.manifest().peerCount() : 0;
-
-    const std::uint64_t finalizedHeight =
-        manifest.loaded() ? manifest.manifest().latestBlockHeight() : 0;
-
-    const std::size_t validatorCount =
-        manifest.loaded()
-            ? manifest.manifest().validatorCount()
-            : genesisConfig.bootstrapValidators().size();
-
-    // Attempt runtime load and chain audit to derive real chain safety facts.
-    bool chainAuditPassed = false;
-    bool treasuryReportVerified = false;
-    if (manifest.loaded() && finalizedHeight > 0) {
-        const node::RuntimeStateLoadResult rtLoad =
-            node::RuntimeStateLoader::loadFromDataDirectory(
-                directoryConfig,
-                genesisConfig,
-                localPeerFromOptions(options)
-            );
-        if (rtLoad.loaded()) {
-            const node::ChainAuditResult auditResult =
-                node::ChainAuditor::auditLoadedRuntime(
-                    rtLoad,
-                    directoryConfig.epochMonetaryReportPath(),
-                    directoryConfig.epochTreasuryReportPath()
-                );
-            chainAuditPassed = auditResult.passed();
-            treasuryReportVerified = auditResult.passed();
-        }
-    } else {
-        // No finalized blocks yet: chain audit and treasury report are vacuously valid.
-        chainAuditPassed = true;
-        treasuryReportVerified = true;
-    }
-
-    // Build the readiness context from real runtime inspection.
-    const crypto::StoredKeyMetadata keyMetadata =
-        key.loaded() ? key.metadata() : crypto::StoredKeyMetadata();
-    node::ReadinessContextBuilder ctxBuilder(
-        directoryConfig, params, keyMetadata
-    );
-    ctxBuilder
-        .withManifest(manifest)
-        .withGenesisFacts(
-            genesisVerified,
-            config::GenesisRegistry::hasRegisteredGenesis(options.networkName),
-            genesisConfig.deterministicId(),
-            config::networkClassToString(params.networkClass())
-        )
-        .withChainAuditResult(chainAuditPassed, treasuryReportVerified)
-        .withSafetyState()
-        .withKeyPolicyResult(keyPolicyPassed);
-
-    for (const auto& w : warnings) {
-        ctxBuilder.addWarning(w);
-    }
-
-    const node::ReadinessContext readinessCtx = ctxBuilder.build();
-
-    // Propagate any safety state warnings back to warnings list.
-    for (const auto& w : readinessCtx.warnings) {
-        bool alreadyPresent = false;
-        for (const auto& existing : warnings) {
-            if (existing == w) {
-                alreadyPresent = true;
-                break;
-            }
-        }
-        if (!alreadyPresent) {
-            warnings.push_back(w);
-        }
-    }
-
-    std::vector<node::ReadinessDiagnostic> checks;
-
-    if (key.loaded()) {
-        const node::TestnetReadinessCheckerConfig readinessConfig(
-            readinessCtx.connectedPeers,
-            readinessCtx.genesisVerified,
-            readinessCtx.finalizedHeight,
-            readinessCtx.governanceLifecycleIntegrated,
-            readinessCtx.defenseModeInactive,
-            readinessCtx.legacyCommandsBlocked,
-            readinessCtx.treasuryReportVerified,
-            readinessCtx.evidenceCaptureHealthy,
-            readinessCtx.chainAuditPassed,
-            readinessCtx.genesisRegistered,
-            readinessCtx.networkClass
-        );
-        checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
-            params,
-            key.metadata(),
-            readinessConfig
-        );
-    } else {
-        checks.emplace_back(
-            "validator_key_loaded",
-            false,
-            "Validator key '" + validatorKeyId + "' is missing or unreadable."
-        );
-        checks.emplace_back(
-            "network_parameters_valid",
-            params.isValid(),
-            params.isValid() ? "Network parameters are valid for " + params.networkName()
-                             : "Network parameters are invalid."
-        );
-        checks.emplace_back(
-            "genesis_verified",
-            genesisVerified,
-            genesisVerified ? "Genesis has been verified."
-                            : "Genesis verification failed."
-        );
-        checks.emplace_back(
-            "peers_connected",
-            connectedPeers > 0,
-            std::to_string(connectedPeers) + " peer(s) connected."
-        );
-    }
-
-    const node::ReadinessStatus status =
-        key.loaded() && keyPolicyPassed
-            ? node::TestnetReadinessChecker::summarize(checks)
-            : node::ReadinessStatus::NOT_READY;
-
-    std::ostringstream output;
-
-    output << "Nodo testnet readiness\n"
-           << "----------------------\n"
-           << "Network: " << params.networkName() << "\n"
-           << "Chain id: " << params.chainId() << "\n"
-           << "Protocol: " << params.protocolVersion() << "\n"
-           << "Genesis verified: " << (readinessCtx.genesisVerified ? "yes" : "no") << "\n"
-           << "Key policy passed: " << (readinessCtx.keyPolicyPassed ? "yes" : "no") << "\n"
-           << "Defense mode: " << (readinessCtx.defenseModeInactive ? "INACTIVE" : "ACTIVE or UNKNOWN") << "\n"
-           << "Peers: " << readinessCtx.connectedPeers << "\n"
-           << "Validators: " << validatorCount << "\n"
-           << "Finalized height: " << readinessCtx.finalizedHeight << "\n"
-           << "Readiness: " << node::readinessStatusToString(status) << "\n";
-
-    for (const node::ReadinessDiagnostic& check : checks) {
-        output << check.serialize() << "\n";
-    }
-
-    for (const std::string& warning : warnings) {
-        output << "NOT_READY: " << warning;
-        if (warning.empty() || warning.back() != '\n') {
-            output << "\n";
-        }
-    }
-
-    return CommandLineResult::success(output.str());
-}
-
-CommandLineResult CommandLineInterface::executeDiagnostics(
-    const CommandLineOptions& options
-) {
-    const node::NodeDataDirectoryConfig directoryConfig(
-        options.dataDirectory
-    );
-
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
-
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
-
-    const config::NetworkParameters params =
-        genesisConfig.networkParameters();
-
-    const node::NodeDataDirectoryReadResult manifest =
-        node::NodeDataDirectory::loadManifest(directoryConfig);
-
-    if (manifest.loaded()) {
-        const std::optional<std::string> mismatch =
-            manifestNetworkMismatch(manifest.manifest(), options);
-
-        if (mismatch.has_value()) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                *mismatch + "\n"
-            );
-        }
-    }
-
-    if (config::NetworkProfileRegistry::isOfficialNetwork(options.networkName) &&
-        !options.keyIdProvided) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Official network diagnostics requires --key-id. "
-            "Do not default to localnet development keys.\n"
-        );
-    }
-
-    const std::string validatorKeyId =
-        options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
-
-    const crypto::KeyStoreLoadResult key =
-        loadKeyWithPrompt(
-            directoryConfig.keysDirectoryPath(),
-            validatorKeyId
-        );
-
-    bool keyPolicyPassed = false;
-    std::vector<std::string> warnings;
-
-    if (key.loaded()) {
-        const node::KeySafetyCheckResult keySafety =
-            node::ProductionKeySafetyGate::check(
-                key.metadata(),
-                params.networkName()
-            );
-        keyPolicyPassed = keySafety.isApproved();
-        if (!keyPolicyPassed) {
-            warnings.push_back(keySafety.reason());
-        }
-    } else {
-        warnings.push_back(
-            "Validator key '" + validatorKeyId + "' is not loaded: " +
-            key.reason()
-        );
-    }
-
-    if (!manifest.loaded()) {
-        warnings.push_back("Node data directory is not initialized: " + manifest.reason());
-    }
-
-    const std::string registeredGenesisId = genesisConfig.deterministicId();
-    const std::string manifestGenesisId =
-        manifest.loaded() ? manifest.manifest().genesisConfigId() : "";
-    const bool genesisCompatible =
-        manifestGenesisId.empty() ||
-        manifestGenesisId == registeredGenesisId;
-
-    const node::OperatorDiagnosticsReport report =
-        node::OperatorDiagnostics::collect(
-            params,
-            registeredGenesisId,
-            manifestGenesisId,
-            config::networkClassToString(params.networkClass()),
-            manifest.loaded() ? manifest.manifest().latestBlockHeight() : 0,
-            manifest.loaded() ? manifest.manifest().latestBlockHash() : "",
-            manifest.loaded() ? manifest.manifest().validatorCount()
-                              : genesisConfig.bootstrapValidators().size(),
-            manifest.loaded() ? manifest.manifest().peerCount() : 0,
-            true, // resolveAndVerify() already verified genesis
-            genesisCompatible,
-            keyPolicyPassed,
-            "",   // latestImportStatus not tracked at CLI level
-            "",   // latestImportRejectionReason
-            false, // defenseRestrictionsActive requires runtime
-            warnings
-        );
-
-    return CommandLineResult::success(report.serialize() + "\n");
-}
-
-CommandLineResult CommandLineInterface::executeKeysCreate(
-    const CommandLineOptions& options
-) {
-    const node::NodeDataDirectoryConfig directoryConfig(
-        options.dataDirectory
-    );
-
-    const node::NodeDataDirectoryReadResult manifest =
-        node::NodeDataDirectory::loadManifest(directoryConfig);
-
-    if (!manifest.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot create key before init: "
-            + manifest.reason()
-            + "\n"
-        );
-    }
-
+  if (manifest.loaded()) {
     const std::optional<std::string> mismatch =
         manifestNetworkMismatch(manifest.manifest(), options);
 
     if (mismatch.has_value()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            *mismatch + "\n"
-        );
+      return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                        *mismatch + "\n");
     }
+  }
 
-    if (config::NetworkProfileRegistry::isOfficialNetwork(
-            manifest.manifest().networkName())) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot create a local plaintext development key for official network '" +
-                manifest.manifest().networkName() +
-                "'. Provide an audited network-appropriate key provider; no development key fallback is allowed.\n"
-        );
+  if (config::NetworkProfileRegistry::isOfficialNetwork(options.networkName) &&
+      !options.keyIdProvided) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Official network readiness requires --key-id. "
+        "Do not default to localnet development keys.\n");
+  }
+
+  const std::string validatorKeyId =
+      options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
+
+  const crypto::KeyStoreLoadResult key =
+      loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), validatorKeyId);
+
+  bool keyPolicyPassed = false;
+  std::vector<std::string> warnings;
+
+  if (key.loaded()) {
+    const node::KeySafetyCheckResult keySafety =
+        node::ProductionKeySafetyGate::check(key.metadata(),
+                                             params.networkName());
+    keyPolicyPassed = keySafety.isApproved();
+
+    if (!keyPolicyPassed) {
+      warnings.push_back(keySafety.reason());
     }
+  } else {
+    warnings.push_back("Validator key '" + validatorKeyId +
+                       "' is not loaded: " + key.reason());
+  }
 
-    if (options.keyType == "both" &&
-        options.keyIdProvided) {
-        throw std::invalid_argument("--key-id requires --type user or --type validator.");
-    }
+  const bool genesisVerified = true; // resolveAndVerify() already verified
 
-    const auto seedFor =
-        [&](const std::string& keyId, crypto::KeyStoreKeyType keyType) {
-            if (keyType == crypto::KeyStoreKeyType::VALIDATOR &&
-                keyId == defaultLocalnetKeyId()) {
-                return defaultLocalnetKeySeed();
-            }
+  const std::size_t connectedPeers =
+      manifest.loaded() ? manifest.manifest().peerCount() : 0;
 
-            if (keyType == crypto::KeyStoreKeyType::USER &&
-                keyId == defaultLocalnetUserKeyId()) {
-                return defaultLocalnetUserKeySeed();
-            }
+  const std::uint64_t finalizedHeight =
+      manifest.loaded() ? manifest.manifest().latestBlockHeight() : 0;
 
-            return manifest.manifest().genesisConfigId()
-                + "#"
-                + crypto::keyStoreKeyTypeToString(keyType)
-                + "#"
-                + keyId;
-        };
+  const std::size_t validatorCount =
+      manifest.loaded() ? manifest.manifest().validatorCount()
+                        : genesisConfig.bootstrapValidators().size();
 
-    std::string password;
-    if (crypto::KeyEncryptionPolicy::isOfficialNetwork(options.networkName)) {
-        const char* envVal = std::getenv("NODO_KEY_PASSWORD");
-        if (envVal && std::strlen(envVal) > 0) {
-            password = envVal;
-        } else {
-            password = readPasswordNoEcho("Enter password to encrypt private key: ");
-            if (password.size() < 8) {
-                return CommandLineResult::failure(
-                    CommandLineStatus::COMMAND_FAILED,
-                    "Error: Password must be at least 8 characters for official networks.\n"
-                );
-            }
-            std::string confirm = readPasswordNoEcho("Confirm password: ");
-            if (password != confirm) {
-                return CommandLineResult::failure(
-                    CommandLineStatus::COMMAND_FAILED,
-                    "Error: Passwords do not match.\n"
-                );
-            }
-        }
-    }
-
-    const auto createKey =
-        [&](const std::string& keyId, crypto::KeyStoreKeyType keyType) {
-            return crypto::KeyStore::createLocalKey(
-                directoryConfig.keysDirectoryPath(),
-                keyId,
-                keyType,
-                seedFor(keyId, keyType),
-                options.timestamp,
-                password,
-                options.networkName
-            );
-        };
-
-    std::vector<crypto::KeyStoreCreateResult> createdKeys;
-
-    if (options.keyType == "both") {
-        createdKeys.push_back(
-            createKey(defaultLocalnetUserKeyId(), crypto::KeyStoreKeyType::USER)
-        );
-        createdKeys.push_back(
-            createKey(defaultLocalnetKeyId(), crypto::KeyStoreKeyType::VALIDATOR)
-        );
-    } else {
-        const crypto::KeyStoreKeyType keyType =
-            crypto::keyStoreKeyTypeFromString(options.keyType);
-
-        const std::string keyId =
-            options.keyIdProvided
-                ? options.keyId
-                : (keyType == crypto::KeyStoreKeyType::USER
-                    ? defaultLocalnetUserKeyId()
-                    : defaultLocalnetKeyId());
-
-        createdKeys.push_back(
-            createKey(keyId, keyType)
-        );
-    }
-
-    for (const crypto::KeyStoreCreateResult& created : createdKeys) {
-        if (!created.success()) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Failed to create key: "
-                + created.reason()
-                + "\n"
-            );
-        }
-    }
-
-    std::ostringstream output;
-
-    output << "Nodo development key created.\n"
-           << "WARNING: this is a deterministic localnet-only development key. "
-           << "Do not use it for custody, production validators, treasury, or mainnet.\n";
-
-    for (const crypto::KeyStoreCreateResult& created : createdKeys) {
-        output << "Key id: " << created.metadata().keyId() << "\n"
-               << "Key type: " << crypto::keyStoreKeyTypeToString(created.metadata().keyType()) << "\n"
-               << "Address: " << created.metadata().address() << "\n"
-               << "Algorithm: " << crypto::cryptoAlgorithmToString(created.metadata().algorithm()) << "\n"
-               << "Provider: " << created.metadata().provider() << "\n"
-               << "Network profile: " << created.metadata().networkProfile() << "\n"
-               << "Key file: " << created.path().string() << "\n";
-    }
-
-    return CommandLineResult::success(output.str());
-}
-
-CommandLineResult CommandLineInterface::executeKeysList(
-    const CommandLineOptions& options
-) {
-    const node::NodeDataDirectoryConfig directoryConfig(
-        options.dataDirectory
-    );
-
-    const node::NodeDataDirectoryReadResult manifest =
-        node::NodeDataDirectory::loadManifest(directoryConfig);
-
-    if (!manifest.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot list keys before init: "
-            + manifest.reason()
-            + "\n"
-        );
-    }
-
-    const std::optional<std::string> mismatch =
-        manifestNetworkMismatch(manifest.manifest(), options);
-
-    if (mismatch.has_value()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            *mismatch + "\n"
-        );
-    }
-
-    const crypto::KeyStoreListResult listed =
-        crypto::KeyStore::listKeys(
-            directoryConfig.keysDirectoryPath()
-        );
-
-    if (!listed.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to list keys: "
-            + listed.reason()
-            + "\n"
-        );
-    }
-
-    std::ostringstream output;
-
-    output << "Nodo keys\n"
-           << "---------\n"
-           << "Key count: " << listed.keys().size() << "\n";
-
-    for (const crypto::StoredKeyMetadata& key : listed.keys()) {
-        output << "Key id: " << key.keyId()
-               << " | Type: " << crypto::keyStoreKeyTypeToString(key.keyType())
-               << " | Address: " << key.address()
-               << " | Algorithm: " << crypto::cryptoAlgorithmToString(key.algorithm())
-               << " | Provider: " << key.provider()
-               << " | Network profile: " << key.networkProfile()
-               << "\n";
-    }
-
-    return CommandLineResult::success(output.str());
-}
-
-CommandLineResult CommandLineInterface::executeValidatorList(
-    const CommandLineOptions& options
-) {
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
-
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
-
-    const node::RuntimeStateLoadResult load =
+  // Attempt runtime load and chain audit to derive real chain safety facts.
+  bool chainAuditPassed = false;
+  bool treasuryReportVerified = false;
+  if (manifest.loaded() && finalizedHeight > 0) {
+    const node::RuntimeStateLoadResult rtLoad =
         node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisConfig,
-            localPeerFromOptions(options)
-        );
+            directoryConfig, genesisConfig, localPeerFromOptions(options));
+    if (rtLoad.loaded()) {
+      const node::ChainAuditResult auditResult =
+          node::ChainAuditor::auditLoadedRuntime(
+              rtLoad, directoryConfig.epochMonetaryReportPath(),
+              directoryConfig.epochTreasuryReportPath());
+      chainAuditPassed = auditResult.passed();
+      treasuryReportVerified = auditResult.passed();
+    }
+  } else {
+    // No finalized blocks yet: chain audit and treasury report are vacuously
+    // valid.
+    chainAuditPassed = true;
+    treasuryReportVerified = true;
+  }
 
-    if (!load.loaded()) {
+  // Build the readiness context from real runtime inspection.
+  const crypto::StoredKeyMetadata keyMetadata =
+      key.loaded() ? key.metadata() : crypto::StoredKeyMetadata();
+  node::ReadinessContextBuilder ctxBuilder(directoryConfig, params,
+                                           keyMetadata);
+  ctxBuilder.withManifest(manifest)
+      .withGenesisFacts(
+          genesisVerified,
+          config::GenesisRegistry::hasRegisteredGenesis(options.networkName),
+          genesisConfig.deterministicId(),
+          config::networkClassToString(params.networkClass()))
+      .withChainAuditResult(chainAuditPassed, treasuryReportVerified)
+      .withSafetyState()
+      .withKeyPolicyResult(keyPolicyPassed);
+
+  for (const auto &w : warnings) {
+    ctxBuilder.addWarning(w);
+  }
+
+  const node::ReadinessContext readinessCtx = ctxBuilder.build();
+
+  // Propagate any safety state warnings back to warnings list.
+  for (const auto &w : readinessCtx.warnings) {
+    bool alreadyPresent = false;
+    for (const auto &existing : warnings) {
+      if (existing == w) {
+        alreadyPresent = true;
+        break;
+      }
+    }
+    if (!alreadyPresent) {
+      warnings.push_back(w);
+    }
+  }
+
+  std::vector<node::ReadinessDiagnostic> checks;
+
+  if (key.loaded()) {
+    const node::TestnetReadinessCheckerConfig readinessConfig(
+        readinessCtx.connectedPeers, readinessCtx.genesisVerified,
+        readinessCtx.finalizedHeight,
+        readinessCtx.governanceLifecycleIntegrated,
+        readinessCtx.defenseModeInactive, readinessCtx.legacyCommandsBlocked,
+        readinessCtx.treasuryReportVerified,
+        readinessCtx.evidenceCaptureHealthy, readinessCtx.chainAuditPassed,
+        readinessCtx.genesisRegistered, readinessCtx.networkClass);
+    checks = node::TestnetReadinessChecker::checkWithProtocolSafetyGates(
+        params, key.metadata(), readinessConfig);
+  } else {
+    checks.emplace_back("validator_key_loaded", false,
+                        "Validator key '" + validatorKeyId +
+                            "' is missing or unreadable.");
+    checks.emplace_back("network_parameters_valid", params.isValid(),
+                        params.isValid() ? "Network parameters are valid for " +
+                                               params.networkName()
+                                         : "Network parameters are invalid.");
+    checks.emplace_back("genesis_verified", genesisVerified,
+                        genesisVerified ? "Genesis has been verified."
+                                        : "Genesis verification failed.");
+    checks.emplace_back("peers_connected", connectedPeers > 0,
+                        std::to_string(connectedPeers) + " peer(s) connected.");
+  }
+
+  const node::ReadinessStatus status =
+      key.loaded() && keyPolicyPassed
+          ? node::TestnetReadinessChecker::summarize(checks)
+          : node::ReadinessStatus::NOT_READY;
+
+  std::ostringstream output;
+
+  output << "Nodo testnet readiness\n"
+         << "----------------------\n"
+         << "Network: " << params.networkName() << "\n"
+         << "Chain id: " << params.chainId() << "\n"
+         << "Protocol: " << params.protocolVersion() << "\n"
+         << "Genesis verified: "
+         << (readinessCtx.genesisVerified ? "yes" : "no") << "\n"
+         << "Key policy passed: "
+         << (readinessCtx.keyPolicyPassed ? "yes" : "no") << "\n"
+         << "Defense mode: "
+         << (readinessCtx.defenseModeInactive ? "INACTIVE"
+                                              : "ACTIVE or UNKNOWN")
+         << "\n"
+         << "Peers: " << readinessCtx.connectedPeers << "\n"
+         << "Validators: " << validatorCount << "\n"
+         << "Finalized height: " << readinessCtx.finalizedHeight << "\n"
+         << "Readiness: " << node::readinessStatusToString(status) << "\n";
+
+  for (const node::ReadinessDiagnostic &check : checks) {
+    output << check.serialize() << "\n";
+  }
+
+  for (const std::string &warning : warnings) {
+    output << "NOT_READY: " << warning;
+    if (warning.empty() || warning.back() != '\n') {
+      output << "\n";
+    }
+  }
+
+  return CommandLineResult::success(output.str());
+}
+
+CommandLineResult
+CommandLineInterface::executeDiagnostics(const CommandLineOptions &options) {
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
+
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+
+  const config::NetworkParameters params = genesisConfig.networkParameters();
+
+  const node::NodeDataDirectoryReadResult manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig);
+
+  if (manifest.loaded()) {
+    const std::optional<std::string> mismatch =
+        manifestNetworkMismatch(manifest.manifest(), options);
+
+    if (mismatch.has_value()) {
+      return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                        *mismatch + "\n");
+    }
+  }
+
+  if (config::NetworkProfileRegistry::isOfficialNetwork(options.networkName) &&
+      !options.keyIdProvided) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Official network diagnostics requires --key-id. "
+        "Do not default to localnet development keys.\n");
+  }
+
+  const std::string validatorKeyId =
+      options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
+
+  const crypto::KeyStoreLoadResult key =
+      loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), validatorKeyId);
+
+  bool keyPolicyPassed = false;
+  std::vector<std::string> warnings;
+
+  if (key.loaded()) {
+    const node::KeySafetyCheckResult keySafety =
+        node::ProductionKeySafetyGate::check(key.metadata(),
+                                             params.networkName());
+    keyPolicyPassed = keySafety.isApproved();
+    if (!keyPolicyPassed) {
+      warnings.push_back(keySafety.reason());
+    }
+  } else {
+    warnings.push_back("Validator key '" + validatorKeyId +
+                       "' is not loaded: " + key.reason());
+  }
+
+  if (!manifest.loaded()) {
+    warnings.push_back("Node data directory is not initialized: " +
+                       manifest.reason());
+  }
+
+  const std::string registeredGenesisId = genesisConfig.deterministicId();
+  const std::string manifestGenesisId =
+      manifest.loaded() ? manifest.manifest().genesisConfigId() : "";
+  const bool genesisCompatible =
+      manifestGenesisId.empty() || manifestGenesisId == registeredGenesisId;
+
+  const node::OperatorDiagnosticsReport report =
+      node::OperatorDiagnostics::collect(
+          params, registeredGenesisId, manifestGenesisId,
+          config::networkClassToString(params.networkClass()),
+          manifest.loaded() ? manifest.manifest().latestBlockHeight() : 0,
+          manifest.loaded() ? manifest.manifest().latestBlockHash() : "",
+          manifest.loaded() ? manifest.manifest().validatorCount()
+                            : genesisConfig.bootstrapValidators().size(),
+          manifest.loaded() ? manifest.manifest().peerCount() : 0,
+          true, // resolveAndVerify() already verified genesis
+          genesisCompatible, keyPolicyPassed,
+          "",    // latestImportStatus not tracked at CLI level
+          "",    // latestImportRejectionReason
+          false, // defenseRestrictionsActive requires runtime
+          warnings);
+
+  return CommandLineResult::success(report.serialize() + "\n");
+}
+
+CommandLineResult
+CommandLineInterface::executeKeysCreate(const CommandLineOptions &options) {
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+
+  const node::NodeDataDirectoryReadResult manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig);
+
+  if (!manifest.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot create key before init: " + manifest.reason() + "\n");
+  }
+
+  const std::optional<std::string> mismatch =
+      manifestNetworkMismatch(manifest.manifest(), options);
+
+  if (mismatch.has_value()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      *mismatch + "\n");
+  }
+
+  if (config::NetworkProfileRegistry::isOfficialNetwork(
+          manifest.manifest().networkName())) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot create a local plaintext development key for official network "
+        "'" +
+            manifest.manifest().networkName() +
+            "'. Provide an audited network-appropriate key provider; no "
+            "development key fallback is allowed.\n");
+  }
+
+  if (options.keyType == "both" && options.keyIdProvided) {
+    throw std::invalid_argument(
+        "--key-id requires --type user or --type validator.");
+  }
+
+  const auto seedFor = [&](const std::string &keyId,
+                           crypto::KeyStoreKeyType keyType) {
+    if (keyType == crypto::KeyStoreKeyType::VALIDATOR &&
+        keyId == defaultLocalnetKeyId()) {
+      return defaultLocalnetKeySeed();
+    }
+
+    if (keyType == crypto::KeyStoreKeyType::USER &&
+        keyId == defaultLocalnetUserKeyId()) {
+      return defaultLocalnetUserKeySeed();
+    }
+
+    return manifest.manifest().genesisConfigId() + "#" +
+           crypto::keyStoreKeyTypeToString(keyType) + "#" + keyId;
+  };
+
+  std::string password;
+  if (crypto::KeyEncryptionPolicy::isOfficialNetwork(options.networkName)) {
+    const char *envVal = std::getenv("NODO_KEY_PASSWORD");
+    if (envVal && std::strlen(envVal) > 0) {
+      password = envVal;
+    } else {
+      password = readPasswordNoEcho("Enter password to encrypt private key: ");
+      if (password.size() < 8) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
-            "Cannot list validators: "
-            + load.reason()
-            + "\n"
-        );
+            "Error: Password must be at least 8 characters for official "
+            "networks.\n");
+      }
+      std::string confirm = readPasswordNoEcho("Confirm password: ");
+      if (password != confirm) {
+        return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                          "Error: Passwords do not match.\n");
+      }
     }
+  }
 
-    const std::vector<std::string> validators =
-        load.runtime().validatorRegistry().activeValidatorAddresses();
+  const auto createKey = [&](const std::string &keyId,
+                             crypto::KeyStoreKeyType keyType) {
+    return crypto::KeyStore::createLocalKey(
+        directoryConfig.keysDirectoryPath(), keyId, keyType,
+        seedFor(keyId, keyType), options.timestamp, password,
+        options.networkName);
+  };
 
-    std::ostringstream output;
+  std::vector<crypto::KeyStoreCreateResult> createdKeys;
 
-    output << "Nodo validators\n"
-           << "---------------\n"
-           << "Active validators: " << validators.size() << "\n"
-           << "Total consensus weight: "
-           << load.runtime().validatorRegistry().totalConsensusWeight() << "\n"
-           << "Validator set root: "
-           << load.runtime().validatorRegistry().validatorSetRoot() << "\n";
+  if (options.keyType == "both") {
+    createdKeys.push_back(
+        createKey(defaultLocalnetUserKeyId(), crypto::KeyStoreKeyType::USER));
+    createdKeys.push_back(
+        createKey(defaultLocalnetKeyId(), crypto::KeyStoreKeyType::VALIDATOR));
+  } else {
+    const crypto::KeyStoreKeyType keyType =
+        crypto::keyStoreKeyTypeFromString(options.keyType);
 
-    for (const std::string& validator : validators) {
-        const core::ValidatorRegistryEntry* entry =
-            load.runtime().validatorRegistry().entryForAddress(validator);
-        output << "Validator: " << validator;
-        if (entry != nullptr) {
-            output << " | status="
-                   << core::validatorRegistrationStatusToString(entry->status())
-                   << " | stakeRaw=" << entry->stakeAmount()
-                   << " | weight=" << entry->consensusWeight();
-        }
-        output << "\n";
+    const std::string keyId = options.keyIdProvided
+                                  ? options.keyId
+                                  : (keyType == crypto::KeyStoreKeyType::USER
+                                         ? defaultLocalnetUserKeyId()
+                                         : defaultLocalnetKeyId());
+
+    createdKeys.push_back(createKey(keyId, keyType));
+  }
+
+  for (const crypto::KeyStoreCreateResult &created : createdKeys) {
+    if (!created.success()) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          "Failed to create key: " + created.reason() + "\n");
     }
+  }
 
-    return CommandLineResult::success(output.str());
+  std::ostringstream output;
+
+  output << "Nodo development key created.\n"
+         << "WARNING: this is a deterministic localnet-only development key. "
+         << "Do not use it for custody, production validators, treasury, or "
+            "mainnet.\n";
+
+  for (const crypto::KeyStoreCreateResult &created : createdKeys) {
+    output << "Key id: " << created.metadata().keyId() << "\n"
+           << "Key type: "
+           << crypto::keyStoreKeyTypeToString(created.metadata().keyType())
+           << "\n"
+           << "Address: " << created.metadata().address() << "\n"
+           << "Algorithm: "
+           << crypto::cryptoAlgorithmToString(created.metadata().algorithm())
+           << "\n"
+           << "Provider: " << created.metadata().provider() << "\n"
+           << "Network profile: " << created.metadata().networkProfile() << "\n"
+           << "Key file: " << created.path().string() << "\n";
+  }
+
+  return CommandLineResult::success(output.str());
+}
+
+CommandLineResult
+CommandLineInterface::executeKeysList(const CommandLineOptions &options) {
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+
+  const node::NodeDataDirectoryReadResult manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig);
+
+  if (!manifest.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot list keys before init: " + manifest.reason() + "\n");
+  }
+
+  const std::optional<std::string> mismatch =
+      manifestNetworkMismatch(manifest.manifest(), options);
+
+  if (mismatch.has_value()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      *mismatch + "\n");
+  }
+
+  const crypto::KeyStoreListResult listed =
+      crypto::KeyStore::listKeys(directoryConfig.keysDirectoryPath());
+
+  if (!listed.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Failed to list keys: " + listed.reason() + "\n");
+  }
+
+  std::ostringstream output;
+
+  output << "Nodo keys\n"
+         << "---------\n"
+         << "Key count: " << listed.keys().size() << "\n";
+
+  for (const crypto::StoredKeyMetadata &key : listed.keys()) {
+    output << "Key id: " << key.keyId()
+           << " | Type: " << crypto::keyStoreKeyTypeToString(key.keyType())
+           << " | Address: " << key.address() << " | Algorithm: "
+           << crypto::cryptoAlgorithmToString(key.algorithm())
+           << " | Provider: " << key.provider()
+           << " | Network profile: " << key.networkProfile() << "\n";
+  }
+
+  return CommandLineResult::success(output.str());
+}
+
+CommandLineResult
+CommandLineInterface::executeValidatorList(const CommandLineOptions &options) {
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
+
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          node::NodeDataDirectoryConfig(options.dataDirectory), genesisConfig,
+          localPeerFromOptions(options));
+
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot list validators: " + load.reason() + "\n");
+  }
+
+  const std::vector<std::string> validators =
+      load.runtime().validatorRegistry().activeValidatorAddresses();
+
+  std::ostringstream output;
+
+  output << "Nodo validators\n"
+         << "---------------\n"
+         << "Active validators: " << validators.size() << "\n"
+         << "Total consensus weight: "
+         << load.runtime().validatorRegistry().totalConsensusWeight() << "\n"
+         << "Validator set root: "
+         << load.runtime().validatorRegistry().validatorSetRoot() << "\n";
+
+  for (const std::string &validator : validators) {
+    const core::ValidatorRegistryEntry *entry =
+        load.runtime().validatorRegistry().entryForAddress(validator);
+    output << "Validator: " << validator;
+    if (entry != nullptr) {
+      output << " | status="
+             << core::validatorRegistrationStatusToString(entry->status())
+             << " | stakeRaw=" << entry->stakeAmount()
+             << " | weight=" << entry->consensusWeight();
+    }
+    output << "\n";
+  }
+
+  return CommandLineResult::success(output.str());
 }
 
 CommandLineResult CommandLineInterface::executeSubmitTransaction(
-    const CommandLineOptions& options
-) {
-    const node::NodeDataDirectoryConfig directoryConfig(
-        options.dataDirectory
-    );
+    const CommandLineOptions &options) {
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
 
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
 
-    const node::NodeDataDirectoryReadResult manifest =
-        node::NodeDataDirectory::loadManifest(directoryConfig);
+  const node::NodeDataDirectoryReadResult manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig);
 
-    if (!manifest.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit transaction before init: "
-            + manifest.reason()
-            + "\n"
-        );
-    }
+  if (!manifest.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit transaction before init: " + manifest.reason() + "\n");
+  }
 
-    const config::NetworkParameters networkParameters =
-        genesisConfig.networkParameters();
+  const config::NetworkParameters networkParameters =
+      genesisConfig.networkParameters();
 
-    if (manifest.manifest().networkName() != networkParameters.networkName()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit transaction: data directory network does not match selected network parameters.\n"
-        );
-    }
+  if (manifest.manifest().networkName() != networkParameters.networkName()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit transaction: data directory network does not match "
+        "selected network parameters.\n");
+  }
 
-    const crypto::ProtocolCryptoContext cryptoContext =
-        crypto::ProtocolCryptoContext::fromNetworkName(
-            networkParameters.networkName()
-        );
+  const crypto::ProtocolCryptoContext cryptoContext =
+      crypto::ProtocolCryptoContext::fromNetworkName(
+          networkParameters.networkName());
 
-    if (!cryptoContext.isValid()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit transaction: invalid crypto context for network "
-            + networkParameters.networkName()
-            + ": "
-            + cryptoContext.rejectionReason()
-            + "\n"
-        );
-    }
+  if (!cryptoContext.isValid()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit transaction: invalid crypto context for network " +
+            networkParameters.networkName() + ": " +
+            cryptoContext.rejectionReason() + "\n");
+  }
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            directoryConfig,
-            genesisConfig,
-            localPeerFromOptions(options)
-        );
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          directoryConfig, genesisConfig, localPeerFromOptions(options));
 
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit transaction: runtime reload failed before mempool admission: "
-            + load.reason()
-            + "\n"
-        );
-    }
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit transaction: runtime reload failed before mempool "
+        "admission: " +
+            load.reason() + "\n");
+  }
 
-    const std::string signingKeyId =
-        options.keyIdProvided
-            ? options.keyId
-            : defaultLocalnetUserKeyId();
+  const std::string signingKeyId =
+      options.keyIdProvided ? options.keyId : defaultLocalnetUserKeyId();
 
-    const crypto::KeyStoreLoadResult key =
-        loadKeyWithPrompt(
-            directoryConfig.keysDirectoryPath(),
-            signingKeyId
-        );
+  const crypto::KeyStoreLoadResult key =
+      loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), signingKeyId);
 
-    if (!key.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit transaction without local key '"
-            + signingKeyId
-            + "': "
-            + key.reason()
-            + "\n"
-        );
-    }
+  if (!key.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit transaction without local key '" + signingKeyId +
+            "': " + key.reason() + "\n");
+  }
 
-    const node::KeySafetyCheckResult keySafety =
-        node::ProductionKeySafetyGate::check(
-            key.metadata(),
-            manifest.manifest().networkName()
-        );
+  const node::KeySafetyCheckResult keySafety =
+      node::ProductionKeySafetyGate::check(key.metadata(),
+                                           manifest.manifest().networkName());
 
-    if (!keySafety.isApproved()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit transaction: " + keySafety.reason() + "\n"
-        );
-    }
+  if (!keySafety.isApproved()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit transaction: " + keySafety.reason() + "\n");
+  }
 
-    const crypto::Ed25519SignatureProvider provider;
-    const crypto::Signer signer(
-        key.keyPair(),
-        provider
-    );
+  const crypto::Ed25519SignatureProvider provider;
+  const crypto::Signer signer(key.keyPair(), provider);
 
-    const core::AccountStateView accountState =
-        node::RuntimeAccountStateBuilder::accountStateViewAtTip(
-            genesisConfig,
-            load.runtime().blockchain(),
-            static_cast<std::int64_t>(
-                networkParameters.minimumFeeRawUnits()
-            )
-        );
+  const core::AccountStateView accountState =
+      node::RuntimeAccountStateBuilder::accountStateViewAtTip(
+          genesisConfig, load.runtime().blockchain(),
+          static_cast<std::int64_t>(networkParameters.minimumFeeRawUnits()));
 
-    if (!accountState.hasAccount(key.metadata().address())) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit transaction: signing account does not exist in current state.\n"
-        );
-    }
+  if (!accountState.hasAccount(key.metadata().address())) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit transaction: signing account does not exist in current "
+        "state.\n");
+  }
 
-    const std::uint64_t nonce =
-        options.nonce == 0
-            ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
-            : options.nonce;
+  const std::uint64_t nonce =
+      options.nonce == 0
+          ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
+          : options.nonce;
 
-    const core::Transaction transaction =
-        core::TransactionBuilder::buildSignedTransfer(
-            core::TransactionBuildRequest(
-                options.toAddress,
-                utils::Amount::fromRawUnits(options.amountRaw),
-                utils::Amount::fromRawUnits(options.feeRaw),
-                nonce,
-                options.timestamp + 10
-            ),
-            signer,
-            networkParameters.chainId()
-        );
+  const core::Transaction transaction =
+      core::TransactionBuilder::buildSignedTransfer(
+          core::TransactionBuildRequest(
+              options.toAddress, utils::Amount::fromRawUnits(options.amountRaw),
+              utils::Amount::fromRawUnits(options.feeRaw), nonce,
+              options.timestamp + 10),
+          signer, networkParameters.chainId());
 
-    const node::TransactionAdmissionContext admissionContext(
-        accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
-        load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
-        load.runtime().blockchain().size()
-    );
+  const node::TransactionAdmissionContext admissionContext(
+      accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
+      load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
+      load.runtime().blockchain().size());
 
-    const node::TransactionAdmissionResult admission =
-        node::TransactionAdmissionValidator::validateRuntimeSubmission(
-            transaction,
-            key.metadata(),
-            networkParameters,
-            accountState,
-            load.runtime().mempool(),
-            cryptoContext.policy(),
-            crypto::SecurityContext::USER_TRANSACTION,
-            provider,
-            load.runtime().effectiveMinimumFeeRawUnits(),
-            &admissionContext
-        );
+  const node::TransactionAdmissionResult admission =
+      node::TransactionAdmissionValidator::validateRuntimeSubmission(
+          transaction, key.metadata(), networkParameters, accountState,
+          load.runtime().mempool(), cryptoContext.policy(),
+          crypto::SecurityContext::USER_TRANSACTION, provider,
+          load.runtime().effectiveMinimumFeeRawUnits(), &admissionContext);
 
-    if (!admission.accepted()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Transaction rejected before mempool persistence: "
-            + admission.reason()
-            + "\n"
-        );
-    }
+  if (!admission.accepted()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Transaction rejected before mempool persistence: " +
+            admission.reason() + "\n");
+  }
 
-    const node::PersistentMempoolWriteResult persisted =
-        node::PersistentMempoolStore::persistTransaction(
-            directoryConfig,
-            transaction,
-            key.metadata().publicKey(),
-            options.timestamp + 11
-        );
+  const node::PersistentMempoolWriteResult persisted =
+      node::PersistentMempoolStore::persistTransaction(
+          directoryConfig, transaction, key.metadata().publicKey(),
+          options.timestamp + 11);
 
-    if (!persisted.success()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to persist transaction: "
-            + persisted.reason()
-            + "\n"
-        );
-    }
+  if (!persisted.success()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Failed to persist transaction: " + persisted.reason() + "\n");
+  }
 
-    std::ostringstream output;
+  std::ostringstream output;
 
-    output << "Nodo transaction submitted.\n"
-           << "Key id: " << key.keyId() << "\n"
-           << "From: " << transaction.fromAddress() << "\n"
-           << "To: " << transaction.toAddress() << "\n"
-           << "Nonce: " << transaction.nonce() << "\n"
-           << "Transaction id: " << persisted.transactionId() << "\n"
-           << "Mempool file: " << persisted.path().string() << "\n";
+  output << "Nodo transaction submitted.\n"
+         << "Key id: " << key.keyId() << "\n"
+         << "From: " << transaction.fromAddress() << "\n"
+         << "To: " << transaction.toAddress() << "\n"
+         << "Nonce: " << transaction.nonce() << "\n"
+         << "Transaction id: " << persisted.transactionId() << "\n"
+         << "Mempool file: " << persisted.path().string() << "\n";
 
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
 CommandLineResult CommandLineInterface::executeGovernancePropose(
-    const CommandLineOptions& options
-) {
-    core::GovernanceProposalPayload payload;
+    const CommandLineOptions &options) {
+  core::GovernanceProposalPayload payload;
 
-    try {
-        const core::GovernanceProposalType type =
-            parseGovernanceProposalTypeOption(options.governanceProposalType);
+  try {
+    const core::GovernanceProposalType type =
+        parseGovernanceProposalTypeOption(options.governanceProposalType);
 
-        switch (type) {
-            case core::GovernanceProposalType::PARAMETER_CHANGE:
-                if (options.governanceTarget.empty() ||
-                    options.governanceValue.empty() ||
-                    options.governanceEffectiveHeight == 0) {
-                    return CommandLineResult::failure(
-                        CommandLineStatus::INVALID_ARGUMENTS,
-                        "Parameter governance proposal requires --target, --value, and --effective-height.\n"
-                    );
-                }
-                payload = core::GovernanceProposalPayload::parameterChange(
-                    options.governanceProposalTitle,
-                    options.governanceProposalBody,
-                    options.governanceTarget,
-                    options.governanceValue,
-                    options.governanceEffectiveHeight,
-                    1,
-                    options.governanceVotingPeriodBlocks
-                );
-                break;
-            case core::GovernanceProposalType::TREASURY_SPEND:
-                if (options.toAddress.empty() || options.amountRaw <= 0) {
-                    return CommandLineResult::failure(
-                        CommandLineStatus::INVALID_ARGUMENTS,
-                        "Treasury spend proposal requires --to and positive --amount.\n"
-                    );
-                }
-                payload = core::GovernanceProposalPayload::treasurySpend(
-                    options.governanceProposalTitle,
-                    options.governanceProposalBody,
-                    options.toAddress,
-                    options.amountRaw,
-                    1,
-                    options.governanceVotingPeriodBlocks
-                );
-                break;
-            case core::GovernanceProposalType::TEXT:
-                payload = core::GovernanceProposalPayload::text(
-                    options.governanceProposalTitle,
-                    options.governanceProposalBody,
-                    1,
-                    options.governanceVotingPeriodBlocks
-                );
-                break;
-        }
-    } catch (const std::exception& error) {
+    switch (type) {
+    case core::GovernanceProposalType::PARAMETER_CHANGE:
+      if (options.governanceTarget.empty() || options.governanceValue.empty() ||
+          options.governanceEffectiveHeight == 0) {
         return CommandLineResult::failure(
             CommandLineStatus::INVALID_ARGUMENTS,
-            std::string("Invalid governance proposal options: ") + error.what() + "\n"
-        );
-    }
-
-    std::string serializedPayload;
-    try {
-        serializedPayload = payload.serialize();
-    } catch (const std::exception& error) {
+            "Parameter governance proposal requires --target, --value, and "
+            "--effective-height.\n");
+      }
+      payload = core::GovernanceProposalPayload::parameterChange(
+          options.governanceProposalTitle, options.governanceProposalBody,
+          options.governanceTarget, options.governanceValue,
+          options.governanceEffectiveHeight, 1,
+          options.governanceVotingPeriodBlocks);
+      break;
+    case core::GovernanceProposalType::TREASURY_SPEND:
+      if (options.toAddress.empty() || options.amountRaw <= 0) {
         return CommandLineResult::failure(
             CommandLineStatus::INVALID_ARGUMENTS,
-            std::string("Invalid governance proposal payload: ") + error.what() + "\n"
-        );
+            "Treasury spend proposal requires --to and positive --amount.\n");
+      }
+      payload = core::GovernanceProposalPayload::treasurySpend(
+          options.governanceProposalTitle, options.governanceProposalBody,
+          options.toAddress, options.amountRaw, 1,
+          options.governanceVotingPeriodBlocks);
+      break;
+    case core::GovernanceProposalType::TEXT:
+      payload = core::GovernanceProposalPayload::text(
+          options.governanceProposalTitle, options.governanceProposalBody, 1,
+          options.governanceVotingPeriodBlocks);
+      break;
     }
+  } catch (const std::exception &error) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        std::string("Invalid governance proposal options: ") + error.what() +
+            "\n");
+  }
 
-    std::string reason;
-    if (!node::GovernanceExecutor::validateProposalPayload(
-            serializedPayload, reason)) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Invalid governance proposal payload: " + reason + "\n"
-        );
-    }
+  std::string serializedPayload;
+  try {
+    serializedPayload = payload.serialize();
+  } catch (const std::exception &error) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        std::string("Invalid governance proposal payload: ") + error.what() +
+            "\n");
+  }
 
-    return submitSignedTransactionToPersistentMempool(
-        options,
-        "Governance proposal",
-        defaultLocalnetUserKeyId(),
-        [serializedPayload, feeRaw = options.feeRaw, timestamp = options.timestamp](
-            const crypto::Signer& signer,
-            const std::string& chainId,
-            std::uint64_t nonce
-        ) {
-            return core::TransactionBuilder::buildSignedGovernanceProposal(
-                serializedPayload,
-                utils::Amount::fromRawUnits(feeRaw),
-                nonce,
-                timestamp + 10,
-                signer,
-                chainId
-            );
-        }
-    );
+  std::string reason;
+  if (!node::GovernanceExecutor::validateProposalPayload(serializedPayload,
+                                                         reason)) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Invalid governance proposal payload: " + reason + "\n");
+  }
+
+  return submitSignedTransactionToPersistentMempool(
+      options, "Governance proposal", defaultLocalnetUserKeyId(),
+      [serializedPayload, feeRaw = options.feeRaw,
+       timestamp = options.timestamp](const crypto::Signer &signer,
+                                      const std::string &chainId,
+                                      std::uint64_t nonce) {
+        return core::TransactionBuilder::buildSignedGovernanceProposal(
+            serializedPayload, utils::Amount::fromRawUnits(feeRaw), nonce,
+            timestamp + 10, signer, chainId);
+      });
 }
 
-CommandLineResult CommandLineInterface::executeGovernanceVote(
-    const CommandLineOptions& options
-) {
-    if (options.governanceProposalId.empty()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Governance vote requires --proposal-id.\n"
-        );
-    }
+CommandLineResult
+CommandLineInterface::executeGovernanceVote(const CommandLineOptions &options) {
+  if (options.governanceProposalId.empty()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Governance vote requires --proposal-id.\n");
+  }
 
-    if (options.validatorAddress.empty()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Governance vote requires --validator <address>.\n"
-        );
-    }
+  if (options.validatorAddress.empty()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Governance vote requires --validator <address>.\n");
+  }
 
-    core::GovernanceVoteChoice choice;
-    try {
-        choice = parseGovernanceVoteChoiceOption(options.governanceVoteChoice);
-    } catch (const std::exception& error) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            std::string("Invalid governance vote choice: ") + error.what() + "\n"
-        );
-    }
+  core::GovernanceVoteChoice choice;
+  try {
+    choice = parseGovernanceVoteChoiceOption(options.governanceVoteChoice);
+  } catch (const std::exception &error) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        std::string("Invalid governance vote choice: ") + error.what() + "\n");
+  }
 
-    const core::GovernanceVotePayload vote(
-        options.governanceProposalId,
-        options.validatorAddress,
-        choice
-    );
+  const core::GovernanceVotePayload vote(options.governanceProposalId,
+                                         options.validatorAddress, choice);
 
-    if (!vote.isValid()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Governance vote payload is invalid.\n"
-        );
-    }
+  if (!vote.isValid()) {
+    return CommandLineResult::failure(CommandLineStatus::INVALID_ARGUMENTS,
+                                      "Governance vote payload is invalid.\n");
+  }
 
-    return submitSignedTransactionToPersistentMempool(
-        options,
-        "Governance vote",
-        defaultLocalnetKeyId(),
-        [proposalId = options.governanceProposalId,
-         vote,
-         feeRaw = options.feeRaw,
-         timestamp = options.timestamp](
-            const crypto::Signer& signer,
-            const std::string& chainId,
-            std::uint64_t nonce
-        ) {
-            return core::TransactionBuilder::buildSignedGovernanceVote(
-                proposalId,
-                vote,
-                utils::Amount::fromRawUnits(feeRaw),
-                nonce,
-                timestamp + 10,
-                signer,
-                chainId
-            );
-        }
-    );
+  return submitSignedTransactionToPersistentMempool(
+      options, "Governance vote", defaultLocalnetKeyId(),
+      [proposalId = options.governanceProposalId, vote, feeRaw = options.feeRaw,
+       timestamp = options.timestamp](const crypto::Signer &signer,
+                                      const std::string &chainId,
+                                      std::uint64_t nonce) {
+        return core::TransactionBuilder::buildSignedGovernanceVote(
+            proposalId, vote, utils::Amount::fromRawUnits(feeRaw), nonce,
+            timestamp + 10, signer, chainId);
+      });
 }
 
 CommandLineResult CommandLineInterface::executeGovernanceStatus(
-    const CommandLineOptions& options
-) {
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
+    const CommandLineOptions &options) {
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisLookup.genesis(),
-            localPeerFromOptions(options)
-        );
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          node::NodeDataDirectoryConfig(options.dataDirectory),
+          genesisLookup.genesis(), localPeerFromOptions(options));
 
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load governance state: " + load.reason() + "\n"
-        );
-    }
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot load governance state: " + load.reason() + "\n");
+  }
 
-    const node::GovernanceExecutor& governance =
-        load.runtime().governanceExecutor();
-    const std::uint64_t nextHeight = load.runtime().blockchain().size();
+  const node::GovernanceExecutor &governance =
+      load.runtime().governanceExecutor();
+  const std::uint64_t nextHeight = load.runtime().blockchain().size();
 
-    std::ostringstream output;
-    output << "Nodo governance status\n"
-           << "----------------------\n"
-           << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
-           << "Active proposals: " << governance.activeProposalCount() << "\n"
-           << "Approved proposals: " << governance.approvedProposalCount() << "\n"
-           << "Executable proposals: " << governance.executableProposalCount(nextHeight) << "\n"
-           << "Executed proposals: " << governance.executedProposalCount() << "\n"
-           << "Effective minimum fee: "
-           << load.runtime().effectiveMinimumFeeRawUnits() << "\n";
+  std::ostringstream output;
+  output << "Nodo governance status\n"
+         << "----------------------\n"
+         << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
+         << "Active proposals: " << governance.activeProposalCount() << "\n"
+         << "Approved proposals: " << governance.approvedProposalCount() << "\n"
+         << "Executable proposals: "
+         << governance.executableProposalCount(nextHeight) << "\n"
+         << "Executed proposals: " << governance.executedProposalCount() << "\n"
+         << "Effective minimum fee: "
+         << load.runtime().effectiveMinimumFeeRawUnits() << "\n";
 
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
-CommandLineResult CommandLineInterface::executeGovernanceList(
-    const CommandLineOptions& options
-) {
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
+CommandLineResult
+CommandLineInterface::executeGovernanceList(const CommandLineOptions &options) {
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisLookup.genesis(),
-            localPeerFromOptions(options)
-        );
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          node::NodeDataDirectoryConfig(options.dataDirectory),
+          genesisLookup.genesis(), localPeerFromOptions(options));
 
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load governance state: " + load.reason() + "\n"
-        );
-    }
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot load governance state: " + load.reason() + "\n");
+  }
 
-    const node::GovernanceExecutor& governance =
-        load.runtime().governanceExecutor();
-    const std::vector<std::string> ids = governance.proposalIds();
+  const node::GovernanceExecutor &governance =
+      load.runtime().governanceExecutor();
+  const std::vector<std::string> ids = governance.proposalIds();
 
-    std::ostringstream output;
-    output << "Nodo governance proposals\n"
-           << "-------------------------\n"
-           << "Count: " << ids.size() << "\n";
+  std::ostringstream output;
+  output << "Nodo governance proposals\n"
+         << "-------------------------\n"
+         << "Count: " << ids.size() << "\n";
 
-    for (const std::string& id : ids) {
-        output << "Proposal: " << id
-               << " | Status: "
-               << node::governanceProposalStatusToString(
-                    governance.proposalStatus(id))
-               << " | Voting: "
-               << governance.proposalVotingStartHeight(id)
-               << "-"
-               << governance.proposalVotingEndHeight(id)
-               << "\n";
-    }
+  for (const std::string &id : ids) {
+    output << "Proposal: " << id << " | Status: "
+           << node::governanceProposalStatusToString(
+                  governance.proposalStatus(id))
+           << " | Voting: " << governance.proposalVotingStartHeight(id) << "-"
+           << governance.proposalVotingEndHeight(id) << "\n";
+  }
 
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
-CommandLineResult CommandLineInterface::executeGovernanceShow(
-    const CommandLineOptions& options
-) {
-    if (options.governanceProposalId.empty()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Governance show requires --proposal-id.\n"
-        );
-    }
+CommandLineResult
+CommandLineInterface::executeGovernanceShow(const CommandLineOptions &options) {
+  if (options.governanceProposalId.empty()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Governance show requires --proposal-id.\n");
+  }
 
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisLookup.genesis(),
-            localPeerFromOptions(options)
-        );
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          node::NodeDataDirectoryConfig(options.dataDirectory),
+          genesisLookup.genesis(), localPeerFromOptions(options));
 
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load governance state: " + load.reason() + "\n"
-        );
-    }
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot load governance state: " + load.reason() + "\n");
+  }
 
-    const node::GovernanceExecutor& governance =
-        load.runtime().governanceExecutor();
+  const node::GovernanceExecutor &governance =
+      load.runtime().governanceExecutor();
 
-    if (!governance.hasProposal(options.governanceProposalId)) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Governance proposal not found: " + options.governanceProposalId + "\n"
-        );
-    }
+  if (!governance.hasProposal(options.governanceProposalId)) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "Governance proposal not found: " +
+                                          options.governanceProposalId + "\n");
+  }
 
-    std::ostringstream output;
-    output << "Nodo governance proposal\n"
-           << "------------------------\n"
-           << governance.proposalDetail(options.governanceProposalId) << "\n"
-           << governance.proposalVotes(options.governanceProposalId) << "\n"
-           << governance.proposalExecutionDetail(options.governanceProposalId) << "\n";
+  std::ostringstream output;
+  output << "Nodo governance proposal\n"
+         << "------------------------\n"
+         << governance.proposalDetail(options.governanceProposalId) << "\n"
+         << governance.proposalVotes(options.governanceProposalId) << "\n"
+         << governance.proposalExecutionDetail(options.governanceProposalId)
+         << "\n";
 
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
 CommandLineResult CommandLineInterface::executeGovernanceAudit(
-    const CommandLineOptions& options
-) {
-    const node::NodeDataDirectoryConfig directoryConfig(
-        options.dataDirectory
-    );
+    const CommandLineOptions &options) {
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
+
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          directoryConfig, genesisLookup.genesis(),
+          localPeerFromOptions(options));
+
+  const node::ChainAuditResult audit = node::ChainAuditor::auditLoadedRuntime(
+      load, directoryConfig.epochMonetaryReportPath(),
+      directoryConfig.epochTreasuryReportPath());
+
+  if (!audit.passed()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      audit.toHumanReadableString());
+  }
+
+  const node::GovernanceExecutor &governance =
+      load.runtime().governanceExecutor();
+  const std::vector<std::string> ids = governance.proposalIds();
+
+  for (const std::string &id : ids) {
+    if (governance.proposalDetail(id).empty() ||
+        governance.tallyForProposal(id).proposalId() != id) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          "Governance audit failed for proposal: " + id + "\n");
     }
+  }
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            directoryConfig,
-            genesisLookup.genesis(),
-            localPeerFromOptions(options)
-        );
+  std::ostringstream output;
+  output << "Nodo governance audit passed.\n"
+         << "Data directory: " << directoryConfig.rootPath().string() << "\n"
+         << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
+         << "Proposal count: " << ids.size() << "\n"
+         << "Governance state bytes: " << governance.serialize().size() << "\n";
 
-    const node::ChainAuditResult audit =
-        node::ChainAuditor::auditLoadedRuntime(
-            load,
-            directoryConfig.epochMonetaryReportPath(),
-            directoryConfig.epochTreasuryReportPath()
-        );
-
-    if (!audit.passed()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            audit.toHumanReadableString()
-        );
-    }
-
-    const node::GovernanceExecutor& governance =
-        load.runtime().governanceExecutor();
-    const std::vector<std::string> ids = governance.proposalIds();
-
-    for (const std::string& id : ids) {
-        if (governance.proposalDetail(id).empty() ||
-            governance.tallyForProposal(id).proposalId() != id) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Governance audit failed for proposal: " + id + "\n"
-            );
-        }
-    }
-
-    std::ostringstream output;
-    output << "Nodo governance audit passed.\n"
-           << "Data directory: " << directoryConfig.rootPath().string() << "\n"
-           << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
-           << "Proposal count: " << ids.size() << "\n"
-           << "Governance state bytes: "
-           << governance.serialize().size() << "\n";
-
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
-CommandLineResult CommandLineInterface::executeProduceBlock(
-    const CommandLineOptions& options
-) {
-    const node::NodeDataDirectoryConfig directoryConfig(
-        options.dataDirectory
-    );
+CommandLineResult
+CommandLineInterface::executeProduceBlock(const CommandLineOptions &options) {
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
 
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
+
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          directoryConfig, genesisConfig, localPeerFromOptions(options));
+
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot load runtime from data directory: " + load.reason() + "\n");
+  }
+
+  node::NodeRuntime runtime = load.runtime();
+
+  if (runtime.mempool().empty()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot produce block: mempool is empty and the current localnet rule "
+        "requires at least one transaction.\n");
+  }
+
+  const std::string validatorKeyId =
+      options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
+
+  const crypto::KeyStoreLoadResult key =
+      loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), validatorKeyId);
+
+  if (!key.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot sign validator vote without local key '" + validatorKeyId +
+            "': " + key.reason() + "\n");
+  }
+
+  const node::KeySafetyCheckResult keySafety =
+      node::ProductionKeySafetyGate::check(key.metadata(),
+                                           load.manifest().networkName());
+
+  if (!keySafety.isApproved()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot sign validator vote: " + keySafety.reason() + "\n");
+  }
+
+  const crypto::Bls12381SignatureProvider provider;
+  const crypto::Signer signer(key.keyPair(), provider);
+
+  const node::RuntimeBlockPipelineResult pipeline =
+      node::RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
+          runtime,
+          node::RuntimeBlockPipelineConfig(
+              static_cast<std::size_t>(
+                  genesisConfig.networkParameters().maxTransactionsPerBlock()),
+              1, 1, options.timestamp + 20),
+          signer, &directoryConfig);
+
+  if (!pipeline.finalized()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Failed to produce finalized block: " + pipeline.reason() + "\n");
+  }
+
+  // Persist epoch monetary report after successful finalization.
+  // Failure here is a hard error: a persisted block without a verifiable
+  // monetary report is not acceptable in the normal production path.
+  {
+    utils::Amount genesisSupply;
+    try {
+      genesisSupply = node::MonetaryFirewall::genesisSupply(genesisConfig);
+    } catch (const std::exception &e) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          std::string("Block persisted but genesis supply unavailable for "
+                      "monetary report: ") +
+              e.what() + "\n");
     }
 
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+    const economics::MonetaryPolicy reportPolicy =
+        economics::MonetaryPolicy::localnetDefault(
+            genesisConfig.networkParameters().chainId(), genesisSupply);
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            directoryConfig,
-            genesisConfig,
-            localPeerFromOptions(options)
-        );
+    const auto reportResult =
+        node::RuntimeMonetaryReportService::buildAndPersist(
+            reportPolicy, runtime.supplyState().finalizedDeltas(), 0,
+            directoryConfig.epochMonetaryReportPath());
 
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load runtime from data directory: "
-            + load.reason()
-            + "\n"
-        );
+    if (!reportResult.succeeded()) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          "Block persisted but monetary report persistence failed: " +
+              reportResult.reason() + "\n");
+    }
+  }
+
+  // Persist epoch treasury report derived from the just-persisted artifact.
+  // The artifact is reloaded from disk to validate the round-trip and derive
+  // the treasury report from its actual treasury section (not a placeholder).
+  {
+    node::FinalizedBlockArtifact persistedArtifact;
+    try {
+      persistedArtifact =
+          node::FinalizedBlockArtifactCodec::readBlockArtifactFile(
+              node::FinalizedBlockStore::blockFilePath(
+                  directoryConfig, pipeline.block().index()));
+    } catch (const std::exception &e) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          std::string("Block persisted but artifact reload failed for treasury "
+                      "report: ") +
+              e.what() + "\n");
     }
 
-    node::NodeRuntime runtime =
-        load.runtime();
+    const node::FinalizedTreasuryAuditResult treasuryAudit =
+        node::FinalizedTreasuryAudit::auditArtifacts(0, {persistedArtifact});
 
-    if (runtime.mempool().empty()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot produce block: mempool is empty and the current localnet rule requires at least one transaction.\n"
-        );
+    if (!treasuryAudit.passed()) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          "Block persisted but treasury audit failed: " +
+              treasuryAudit.reason() + "\n");
     }
 
-    const std::string validatorKeyId =
-        options.keyIdProvided
-            ? options.keyId
-            : defaultLocalnetKeyId();
-
-    const crypto::KeyStoreLoadResult key =
-        loadKeyWithPrompt(
-            directoryConfig.keysDirectoryPath(),
-            validatorKeyId
-        );
-
-    if (!key.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot sign validator vote without local key '"
-            + validatorKeyId
-            + "': "
-            + key.reason()
-            + "\n"
-        );
+    try {
+      node::EpochTreasuryReportStore::write(
+          directoryConfig.epochTreasuryReportPath(),
+          treasuryAudit.rebuiltReport());
+    } catch (const std::exception &e) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          std::string(
+              "Block persisted but treasury report persistence failed: ") +
+              e.what() + "\n");
     }
+  }
 
-    const node::KeySafetyCheckResult keySafety =
-        node::ProductionKeySafetyGate::check(
-            key.metadata(),
-            load.manifest().networkName()
-        );
+  const node::NodeRuntimeManifest manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig).manifest();
 
-    if (!keySafety.isApproved()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot sign validator vote: " + keySafety.reason() + "\n"
-        );
-    }
+  std::ostringstream output;
 
-    const crypto::Bls12381SignatureProvider provider;
-    const crypto::Signer signer(
-        key.keyPair(),
-        provider
-    );
+  output << "Nodo block finalized and persisted.\n"
+         << "Block height: " << pipeline.block().index() << "\n"
+         << "Block hash: " << pipeline.block().hash() << "\n"
+         << "Transactions finalized: "
+         << pipeline.finalizedTransactionIds().size() << "\n"
+         << "Persistent mempool updated by finalization commit.\n"
+         << "Block file: "
+         << node::FinalizedBlockStore::blockFilePath(directoryConfig,
+                                                     pipeline.block().index())
+                .string()
+         << "\n"
+         << "Manifest latest height: " << manifest.latestBlockHeight() << "\n"
+         << "Manifest latest state root: " << manifest.latestStateRoot()
+         << "\n";
 
-    const node::RuntimeBlockPipelineResult pipeline =
-        node::RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock(
-            runtime,
-            node::RuntimeBlockPipelineConfig(
-                static_cast<std::size_t>(
-                    genesisConfig.networkParameters().maxTransactionsPerBlock()
-                ),
-                1,
-                1,
-                options.timestamp + 20
-            ),
-            signer,
-            &directoryConfig
-        );
-
-    if (!pipeline.finalized()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to produce finalized block: "
-            + pipeline.reason()
-            + "\n"
-        );
-    }
-
-    // Persist epoch monetary report after successful finalization.
-    // Failure here is a hard error: a persisted block without a verifiable
-    // monetary report is not acceptable in the normal production path.
-    {
-        utils::Amount genesisSupply;
-        try {
-            genesisSupply = node::MonetaryFirewall::genesisSupply(genesisConfig);
-        } catch (const std::exception& e) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                std::string("Block persisted but genesis supply unavailable for monetary report: ") +
-                e.what() + "\n"
-            );
-        }
-
-        const economics::MonetaryPolicy reportPolicy =
-            economics::MonetaryPolicy::localnetDefault(
-                genesisConfig.networkParameters().chainId(),
-                genesisSupply
-            );
-
-        const auto reportResult = node::RuntimeMonetaryReportService::buildAndPersist(
-            reportPolicy,
-            runtime.supplyState().finalizedDeltas(),
-            0,
-            directoryConfig.epochMonetaryReportPath()
-        );
-
-        if (!reportResult.succeeded()) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Block persisted but monetary report persistence failed: " +
-                reportResult.reason() + "\n"
-            );
-        }
-    }
-
-    // Persist epoch treasury report derived from the just-persisted artifact.
-    // The artifact is reloaded from disk to validate the round-trip and derive
-    // the treasury report from its actual treasury section (not a placeholder).
-    {
-        node::FinalizedBlockArtifact persistedArtifact;
-        try {
-            persistedArtifact = node::FinalizedBlockArtifactCodec::readBlockArtifactFile(
-                node::FinalizedBlockStore::blockFilePath(directoryConfig, pipeline.block().index())
-            );
-        } catch (const std::exception& e) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                std::string("Block persisted but artifact reload failed for treasury report: ") +
-                e.what() + "\n"
-            );
-        }
-
-        const node::FinalizedTreasuryAuditResult treasuryAudit =
-            node::FinalizedTreasuryAudit::auditArtifacts(0, {persistedArtifact});
-
-        if (!treasuryAudit.passed()) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Block persisted but treasury audit failed: " +
-                treasuryAudit.reason() + "\n"
-            );
-        }
-
-        try {
-            node::EpochTreasuryReportStore::write(
-                directoryConfig.epochTreasuryReportPath(),
-                treasuryAudit.rebuiltReport()
-            );
-        } catch (const std::exception& e) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                std::string("Block persisted but treasury report persistence failed: ") +
-                e.what() + "\n"
-            );
-        }
-    }
-
-    const node::NodeRuntimeManifest manifest =
-        node::NodeDataDirectory::loadManifest(directoryConfig).manifest();
-
-    std::ostringstream output;
-
-    output << "Nodo block finalized and persisted.\n"
-           << "Block height: " << pipeline.block().index() << "\n"
-           << "Block hash: " << pipeline.block().hash() << "\n"
-           << "Transactions finalized: " << pipeline.finalizedTransactionIds().size() << "\n"
-           << "Persistent mempool updated by finalization commit.\n"
-           << "Block file: " << node::FinalizedBlockStore::blockFilePath(directoryConfig, pipeline.block().index()).string() << "\n"
-           << "Manifest latest height: " << manifest.latestBlockHeight() << "\n"
-           << "Manifest latest state root: " << manifest.latestStateRoot() << "\n";
-
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
 // ---------------------------------------------------------------------------
@@ -2957,233 +2517,201 @@ namespace {
 // SIGINT/SIGTERM flag — set from signal handler, polled by runBlocking loop.
 std::atomic<bool> g_daemonShutdownRequested{false};
 
-node::NodeDaemonPeerEntry parsePeerEntry(const std::string& raw) {
-    // Format: NAME@HOST:PORT
-    const auto atPos = raw.find('@');
-    if (atPos == std::string::npos) {
-        throw std::invalid_argument(
-            "Invalid --peer value '" + raw + "': expected NAME@HOST:PORT"
-        );
-    }
-    const std::string nodeId = raw.substr(0, atPos);
-    const std::string hostPort = raw.substr(atPos + 1);
-    const auto colonPos = hostPort.rfind(':');
-    if (colonPos == std::string::npos) {
-        throw std::invalid_argument(
-            "Invalid --peer value '" + raw + "': missing port in HOST:PORT"
-        );
-    }
-    const std::string host = hostPort.substr(0, colonPos);
-    const std::string portStr = hostPort.substr(colonPos + 1);
+node::NodeDaemonPeerEntry parsePeerEntry(const std::string &raw) {
+  // Format: NAME@HOST:PORT
+  const auto atPos = raw.find('@');
+  if (atPos == std::string::npos) {
+    throw std::invalid_argument("Invalid --peer value '" + raw +
+                                "': expected NAME@HOST:PORT");
+  }
+  const std::string nodeId = raw.substr(0, atPos);
+  const std::string hostPort = raw.substr(atPos + 1);
+  const auto colonPos = hostPort.rfind(':');
+  if (colonPos == std::string::npos) {
+    throw std::invalid_argument("Invalid --peer value '" + raw +
+                                "': missing port in HOST:PORT");
+  }
+  const std::string host = hostPort.substr(0, colonPos);
+  const std::string portStr = hostPort.substr(colonPos + 1);
 
-    std::uint16_t port = 0;
-    try {
-        const unsigned long raw_port = std::stoul(portStr);
-        if (raw_port == 0 || raw_port > 65535) {
-            throw std::out_of_range("port out of range");
-        }
-        port = static_cast<std::uint16_t>(raw_port);
-    } catch (...) {
-        throw std::invalid_argument(
-            "Invalid --peer port in '" + raw + "'"
-        );
+  std::uint16_t port = 0;
+  try {
+    const unsigned long raw_port = std::stoul(portStr);
+    if (raw_port == 0 || raw_port > 65535) {
+      throw std::out_of_range("port out of range");
     }
+    port = static_cast<std::uint16_t>(raw_port);
+  } catch (...) {
+    throw std::invalid_argument("Invalid --peer port in '" + raw + "'");
+  }
 
-    node::NodeDaemonPeerEntry entry;
-    entry.nodeId = nodeId;
-    entry.host   = host;
-    entry.port   = port;
-    return entry;
+  node::NodeDaemonPeerEntry entry;
+  entry.nodeId = nodeId;
+  entry.host = host;
+  entry.port = port;
+  return entry;
 }
 
 } // namespace
 
-CommandLineResult CommandLineInterface::executeNodeRun(
-    const CommandLineOptions& options
-) {
-    // Security gate: reject mainnet.
-    const config::NetworkParameters params =
-        networkParametersForOptions(options);
+CommandLineResult
+CommandLineInterface::executeNodeRun(const CommandLineOptions &options) {
+  // Security gate: reject mainnet.
+  const config::NetworkParameters params = networkParametersForOptions(options);
 
-    if (params.networkClass() == config::NetworkClass::LOCKED_PRODUCTION) {
+  if (params.networkClass() == config::NetworkClass::LOCKED_PRODUCTION) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "node run: mainnet (locked production) "
+                                      "is not supported in this build.\n");
+  }
+
+  // Resolve and verify genesis — refuse to start with an unknown genesis.
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "node run: " + genesisLookup.reason() +
+                                          "\n");
+  }
+
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+
+  // If already initialized, verify data-dir belongs to the same genesis.
+  if (node::NodeDataDirectory::isInitialized(directoryConfig)) {
+    const node::NodeDataDirectoryReadResult manifest =
+        node::NodeDataDirectory::loadManifest(directoryConfig);
+
+    if (manifest.loaded()) {
+      const std::optional<std::string> mismatch =
+          manifestNetworkMismatch(manifest.manifest(), options);
+
+      if (mismatch.has_value()) {
         return CommandLineResult::failure(
             CommandLineStatus::COMMAND_FAILED,
-            "node run: mainnet (locked production) is not supported in this build.\n"
-        );
+            "node run: data directory belongs to a different genesis: " +
+                *mismatch + "\n");
+      }
+    }
+  }
+
+  // BLS provider must outlive the Signer and the daemon.
+  const crypto::Bls12381SignatureProvider blsProvider;
+  const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+
+  // Load optional validator key (for signing blocks / votes).
+  std::optional<crypto::Signer> localSigner;
+  std::string localValidatorAddress;
+
+  const std::string validatorKeyId =
+      options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
+
+  const crypto::KeyStoreLoadResult key =
+      loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), validatorKeyId);
+
+  if (key.loaded()) {
+    const node::KeySafetyCheckResult keySafety =
+        node::ProductionKeySafetyGate::check(key.metadata(),
+                                             params.networkName());
+
+    if (!keySafety.isApproved()) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          "node run: key safety check failed: " + keySafety.reason() + "\n");
     }
 
-    // Resolve and verify genesis — refuse to start with an unknown genesis.
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
+    localSigner.emplace(key.keyPair(), blsProvider);
+    localValidatorAddress = localSigner->address();
+  }
 
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "node run: " + genesisLookup.reason() + "\n"
-        );
+  const crypto::KeyStoreLoadResult nodeIdentityKey = loadKeyWithPrompt(
+      directoryConfig.keysDirectoryPath(), options.identityKeyId);
+  if (!nodeIdentityKey.loaded() ||
+      nodeIdentityKey.metadata().keyType() != crypto::KeyStoreKeyType::USER ||
+      nodeIdentityKey.keyPair().algorithm() !=
+          crypto::CryptoAlgorithm::CLASSIC_ED25519) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "node run: an Ed25519 local-user key is required for signed peer "
+        "identity. "
+        "Run 'nodo keys create --type both' for this data directory.\n");
+  }
+  const node::KeySafetyCheckResult nodeKeySafety =
+      node::ProductionKeySafetyGate::check(nodeIdentityKey.metadata(),
+                                           params.networkName());
+  if (!nodeKeySafety.isApproved()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "node run: node identity key safety check failed: " +
+            nodeKeySafety.reason() + "\n");
+  }
+
+  // Parse static peers.
+  std::vector<node::NodeDaemonPeerEntry> staticPeers;
+  for (const auto &rawPeer : options.peers) {
+    try {
+      staticPeers.push_back(parsePeerEntry(rawPeer));
+    } catch (const std::exception &e) {
+      return CommandLineResult::failure(CommandLineStatus::INVALID_ARGUMENTS,
+                                        std::string("node run: ") + e.what() +
+                                            "\n");
     }
+  }
 
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
-    const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+  // Build daemon config.
+  const node::NodeOrchestratorConfig orchestratorConfig(
+      genesisConfig, directoryConfig, localPeerFromOptions(options),
+      localValidatorAddress, options.rpcPort, options.rpcBindAddress, 100,
+      static_cast<std::size_t>(
+          genesisConfig.networkParameters().maxTransactionsPerBlock()));
 
-    // If already initialized, verify data-dir belongs to the same genesis.
-    if (node::NodeDataDirectory::isInitialized(directoryConfig)) {
-        const node::NodeDataDirectoryReadResult manifest =
-            node::NodeDataDirectory::loadManifest(directoryConfig);
+  node::NodeDaemonConfig daemonConfig;
+  daemonConfig.orchestratorConfig = orchestratorConfig;
+  daemonConfig.staticPeers = std::move(staticPeers);
 
-        if (manifest.loaded()) {
-            const std::optional<std::string> mismatch =
-                manifestNetworkMismatch(manifest.manifest(), options);
+  node::NodeDaemon daemon(daemonConfig, policy, blsProvider);
 
-            if (mismatch.has_value()) {
-                return CommandLineResult::failure(
-                    CommandLineStatus::COMMAND_FAILED,
-                    "node run: data directory belongs to a different genesis: "
-                    + *mismatch + "\n"
-                );
-            }
-        }
-    }
+  daemon.setLocalNodeIdentity(nodeIdentityKey.keyPair());
 
-    // BLS provider must outlive the Signer and the daemon.
-    const crypto::Bls12381SignatureProvider blsProvider;
-    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+  if (localSigner.has_value()) {
+    daemon.setLocalSigner(std::move(*localSigner));
+  }
 
-    // Load optional validator key (for signing blocks / votes).
-    std::optional<crypto::Signer> localSigner;
-    std::string localValidatorAddress;
+  // Set up SIGINT/SIGTERM handler.
+  g_daemonShutdownRequested.store(false);
+  std::signal(SIGINT, [](int) { g_daemonShutdownRequested.store(true); });
+  std::signal(SIGTERM, [](int) { g_daemonShutdownRequested.store(true); });
 
-    const std::string validatorKeyId =
-        options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
+  const auto startResult = daemon.start();
+  if (!startResult.running()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "node run: failed to start daemon: " + startResult.reason + "\n");
+  }
 
-    const crypto::KeyStoreLoadResult key =
-        loadKeyWithPrompt(
-            directoryConfig.keysDirectoryPath(),
-            validatorKeyId
-        );
+  std::cout << "Nodo daemon running on " << options.endpoint
+            << " (network: " << options.networkName << ")\n"
+            << "RPC listening on " << options.rpcBindAddress << ":"
+            << options.rpcPort << "\n"
+            << "Press Ctrl+C to stop.\n";
+  std::cout.flush();
 
-    if (key.loaded()) {
-        const node::KeySafetyCheckResult keySafety =
-            node::ProductionKeySafetyGate::check(
-                key.metadata(),
-                params.networkName()
-            );
+  // Poll g_daemonShutdownRequested in the tick loop instead of runBlocking().
+  while (!g_daemonShutdownRequested.load() && daemon.isRunning()) {
+    const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
 
-        if (!keySafety.isApproved()) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "node run: key safety check failed: " + keySafety.reason() + "\n"
-            );
-        }
+    daemon.tick(static_cast<std::int64_t>(now));
 
-        localSigner.emplace(key.keyPair(), blsProvider);
-        localValidatorAddress = localSigner->address();
-    }
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(node::NodeDaemon::DEFAULT_TICK_INTERVAL_MS));
+  }
 
-    const crypto::KeyStoreLoadResult nodeIdentityKey =
-        loadKeyWithPrompt(
-            directoryConfig.keysDirectoryPath(),
-            options.identityKeyId
-        );
-    if (!nodeIdentityKey.loaded() ||
-        nodeIdentityKey.metadata().keyType() !=
-            crypto::KeyStoreKeyType::USER ||
-        nodeIdentityKey.keyPair().algorithm() !=
-            crypto::CryptoAlgorithm::CLASSIC_ED25519) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "node run: an Ed25519 local-user key is required for signed peer identity. "
-            "Run 'nodo keys create --type both' for this data directory.\n"
-        );
-    }
-    const node::KeySafetyCheckResult nodeKeySafety =
-        node::ProductionKeySafetyGate::check(
-            nodeIdentityKey.metadata(),
-            params.networkName()
-        );
-    if (!nodeKeySafety.isApproved()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "node run: node identity key safety check failed: " +
-                nodeKeySafety.reason() + "\n"
-        );
-    }
+  daemon.stop();
 
-    // Parse static peers.
-    std::vector<node::NodeDaemonPeerEntry> staticPeers;
-    for (const auto& rawPeer : options.peers) {
-        try {
-            staticPeers.push_back(parsePeerEntry(rawPeer));
-        } catch (const std::exception& e) {
-            return CommandLineResult::failure(
-                CommandLineStatus::INVALID_ARGUMENTS,
-                std::string("node run: ") + e.what() + "\n"
-            );
-        }
-    }
-
-    // Build daemon config.
-    const node::NodeOrchestratorConfig orchestratorConfig(
-        genesisConfig,
-        directoryConfig,
-        localPeerFromOptions(options),
-        localValidatorAddress,
-        options.rpcPort,
-        options.rpcBindAddress,
-        100,
-        static_cast<std::size_t>(
-            genesisConfig.networkParameters().maxTransactionsPerBlock()
-        )
-    );
-
-    node::NodeDaemonConfig daemonConfig;
-    daemonConfig.orchestratorConfig = orchestratorConfig;
-    daemonConfig.staticPeers        = std::move(staticPeers);
-
-    node::NodeDaemon daemon(daemonConfig, policy, blsProvider);
-
-    daemon.setLocalNodeIdentity(nodeIdentityKey.keyPair());
-
-    if (localSigner.has_value()) {
-        daemon.setLocalSigner(std::move(*localSigner));
-    }
-
-    // Set up SIGINT/SIGTERM handler.
-    g_daemonShutdownRequested.store(false);
-    std::signal(SIGINT,  [](int) { g_daemonShutdownRequested.store(true); });
-    std::signal(SIGTERM, [](int) { g_daemonShutdownRequested.store(true); });
-
-    const auto startResult = daemon.start();
-    if (!startResult.running()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "node run: failed to start daemon: " + startResult.reason + "\n"
-        );
-    }
-
-    std::cout << "Nodo daemon running on " << options.endpoint
-              << " (network: " << options.networkName << ")\n"
-              << "RPC listening on " << options.rpcBindAddress << ":"
-              << options.rpcPort << "\n"
-              << "Press Ctrl+C to stop.\n";
-    std::cout.flush();
-
-    // Poll g_daemonShutdownRequested in the tick loop instead of runBlocking().
-    while (!g_daemonShutdownRequested.load() && daemon.isRunning()) {
-        const auto now = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()
-        ).count();
-
-        daemon.tick(static_cast<std::int64_t>(now));
-
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(node::NodeDaemon::DEFAULT_TICK_INTERVAL_MS)
-        );
-    }
-
-    daemon.stop();
-
-    return CommandLineResult::success("Nodo daemon stopped.\n");
+  return CommandLineResult::success("Nodo daemon stopped.\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -3191,908 +2719,811 @@ CommandLineResult CommandLineInterface::executeNodeRun(
 // ---------------------------------------------------------------------------
 
 CommandLineResult CommandLineInterface::executeValidatorStatus(
-    const CommandLineOptions& options
-) {
-    const std::string addr = options.validatorAddress.empty()
-        ? (options.toAddress == "nodo-localnet-recipient" ? "" : options.toAddress)
-        : options.validatorAddress;
+    const CommandLineOptions &options) {
+  const std::string addr =
+      options.validatorAddress.empty()
+          ? (options.toAddress == "nodo-localnet-recipient" ? ""
+                                                            : options.toAddress)
+          : options.validatorAddress;
 
-    if (addr.empty()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Provide --validator <address> to inspect a validator.\n"
-        );
+  if (addr.empty()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Provide --validator <address> to inspect a validator.\n");
+  }
+
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
+
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          node::NodeDataDirectoryConfig(options.dataDirectory),
+          genesisLookup.genesis(), localPeerFromOptions(options));
+
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot load runtime state: " + load.reason() + "\n");
+  }
+
+  const core::ValidatorRegistryEntry *entry =
+      load.runtime().validatorRegistry().entryForAddress(addr);
+
+  std::ostringstream out;
+  out << "Validator status\n"
+      << "----------------\n"
+      << "Address: " << addr << "\n";
+
+  if (!entry) {
+    out << "Status: NOT REGISTERED\n";
+  } else {
+    out << "Status: "
+        << core::validatorRegistrationStatusToString(entry->status()) << "\n"
+        << "Eligible for consensus: "
+        << (entry->eligibleForConsensus() ? "yes" : "no") << "\n"
+        << "Stake (raw units): " << entry->stakeAmount() << "\n"
+        << "Consensus weight: " << entry->consensusWeight() << "\n"
+        << "Activation epoch: " << entry->registrationRecord().activationEpoch()
+        << "\n"
+        << "Owner: " << entry->ownerAddress() << "\n";
+
+    if (entry->jailed()) {
+      out << "Jail until epoch: " << entry->jailUntilEpoch() << "\n";
     }
-
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
+    if (entry->status() == core::ValidatorRegistrationStatus::EXIT_REQUESTED) {
+      out << "Exit request height: " << entry->exitRequestHeight() << "\n";
     }
+  }
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisLookup.genesis(),
-            localPeerFromOptions(options)
-        );
-
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load runtime state: " + load.reason() + "\n"
-        );
-    }
-
-    const core::ValidatorRegistryEntry* entry =
-        load.runtime().validatorRegistry().entryForAddress(addr);
-
-    std::ostringstream out;
-    out << "Validator status\n"
-        << "----------------\n"
-        << "Address: " << addr << "\n";
-
-    if (!entry) {
-        out << "Status: NOT REGISTERED\n";
-    } else {
-        out << "Status: "
-            << core::validatorRegistrationStatusToString(entry->status()) << "\n"
-            << "Eligible for consensus: "
-            << (entry->eligibleForConsensus() ? "yes" : "no") << "\n"
-            << "Stake (raw units): " << entry->stakeAmount() << "\n"
-            << "Consensus weight: " << entry->consensusWeight() << "\n"
-            << "Activation epoch: "
-            << entry->registrationRecord().activationEpoch() << "\n"
-            << "Owner: " << entry->ownerAddress() << "\n";
-
-        if (entry->jailed()) {
-            out << "Jail until epoch: " << entry->jailUntilEpoch() << "\n";
-        }
-        if (entry->status() == core::ValidatorRegistrationStatus::EXIT_REQUESTED) {
-            out << "Exit request height: " << entry->exitRequestHeight() << "\n";
-        }
-    }
-
-    return CommandLineResult::success(out.str());
+  return CommandLineResult::success(out.str());
 }
 
-CommandLineResult CommandLineInterface::executeValidatorExit(
-    const CommandLineOptions& options
-) {
-    const std::string validatorAddr = options.validatorAddress.empty()
-        ? options.toAddress
-        : options.validatorAddress;
+CommandLineResult
+CommandLineInterface::executeValidatorExit(const CommandLineOptions &options) {
+  const std::string validatorAddr = options.validatorAddress.empty()
+                                        ? options.toAddress
+                                        : options.validatorAddress;
 
-    if (validatorAddr.empty()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Provide --validator <address> to request exit for.\n"
-        );
-    }
+  if (validatorAddr.empty()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Provide --validator <address> to request exit for.\n");
+  }
 
-    const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
-    const config::NetworkParameters networkParameters = genesisConfig.networkParameters();
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+  const config::NetworkParameters networkParameters =
+      genesisConfig.networkParameters();
 
-    const node::NodeDataDirectoryReadResult manifest =
-        node::NodeDataDirectory::loadManifest(directoryConfig);
-    if (!manifest.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit before init: " + manifest.reason() + "\n"
-        );
-    }
+  const node::NodeDataDirectoryReadResult manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig);
+  if (!manifest.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit before init: " + manifest.reason() + "\n");
+  }
 
-    const crypto::ProtocolCryptoContext cryptoContext =
-        crypto::ProtocolCryptoContext::fromNetworkName(networkParameters.networkName());
-    if (!cryptoContext.isValid()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Invalid crypto context: " + cryptoContext.rejectionReason() + "\n"
-        );
-    }
+  const crypto::ProtocolCryptoContext cryptoContext =
+      crypto::ProtocolCryptoContext::fromNetworkName(
+          networkParameters.networkName());
+  if (!cryptoContext.isValid()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Invalid crypto context: " + cryptoContext.rejectionReason() + "\n");
+  }
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            directoryConfig,
-            genesisConfig,
-            localPeerFromOptions(options)
-        );
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Runtime reload failed: " + load.reason() + "\n"
-        );
-    }
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          directoryConfig, genesisConfig, localPeerFromOptions(options));
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Runtime reload failed: " + load.reason() + "\n");
+  }
 
-    const std::string keyId = options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
-    const crypto::KeyStoreLoadResult key =
-        loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), keyId);
-    if (!key.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load key '" + keyId + "': " + key.reason() + "\n"
-        );
-    }
+  const std::string keyId =
+      options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
+  const crypto::KeyStoreLoadResult key =
+      loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), keyId);
+  if (!key.loaded()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "Cannot load key '" + keyId +
+                                          "': " + key.reason() + "\n");
+  }
 
-    const node::KeySafetyCheckResult keySafety =
-        node::ProductionKeySafetyGate::check(key.metadata(), manifest.manifest().networkName());
-    if (!keySafety.isApproved()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Key safety: " + keySafety.reason() + "\n"
-        );
-    }
+  const node::KeySafetyCheckResult keySafety =
+      node::ProductionKeySafetyGate::check(key.metadata(),
+                                           manifest.manifest().networkName());
+  if (!keySafety.isApproved()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "Key safety: " + keySafety.reason() +
+                                          "\n");
+  }
 
-    const crypto::Ed25519SignatureProvider provider;
-    const crypto::Signer signer(key.keyPair(), provider);
+  const crypto::Ed25519SignatureProvider provider;
+  const crypto::Signer signer(key.keyPair(), provider);
 
-    const core::AccountStateView accountState =
-        node::RuntimeAccountStateBuilder::accountStateViewAtTip(
-            genesisConfig,
-            load.runtime().blockchain(),
-            static_cast<std::int64_t>(networkParameters.minimumFeeRawUnits())
-        );
-    if (!accountState.hasAccount(key.metadata().address())) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Signing account does not exist in current state.\n"
-        );
-    }
+  const core::AccountStateView accountState =
+      node::RuntimeAccountStateBuilder::accountStateViewAtTip(
+          genesisConfig, load.runtime().blockchain(),
+          static_cast<std::int64_t>(networkParameters.minimumFeeRawUnits()));
+  if (!accountState.hasAccount(key.metadata().address())) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Signing account does not exist in current state.\n");
+  }
 
-    const std::uint64_t nextNonce = options.nonce == 0
-        ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
-        : options.nonce;
+  const std::uint64_t nextNonce =
+      options.nonce == 0
+          ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
+          : options.nonce;
 
-    const core::Transaction tx =
-        core::TransactionBuilder::buildSignedValidatorExitRequest(
-            core::TransactionBuildRequest(
-                validatorAddr,
-                utils::Amount(),
-                utils::Amount::fromRawUnits(options.feeRaw),
-                nextNonce,
-                options.timestamp + 10
-            ),
-            signer,
-            networkParameters.chainId()
-        );
+  const core::Transaction tx =
+      core::TransactionBuilder::buildSignedValidatorExitRequest(
+          core::TransactionBuildRequest(
+              validatorAddr, utils::Amount(),
+              utils::Amount::fromRawUnits(options.feeRaw), nextNonce,
+              options.timestamp + 10),
+          signer, networkParameters.chainId());
 
-    const node::TransactionAdmissionContext admissionContext(
-        accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
-        load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
-        load.runtime().blockchain().size()
-    );
+  const node::TransactionAdmissionContext admissionContext(
+      accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
+      load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
+      load.runtime().blockchain().size());
 
-    const node::TransactionAdmissionResult admission =
-        node::TransactionAdmissionValidator::validateRuntimeSubmission(
-            tx,
-            key.metadata(),
-            networkParameters,
-            accountState,
-            load.runtime().mempool(),
-            cryptoContext.policy(),
-            crypto::SecurityContext::USER_TRANSACTION,
-            provider,
-            load.runtime().effectiveMinimumFeeRawUnits(),
-            &admissionContext
-        );
-    if (!admission.accepted()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Transaction rejected: " + admission.reason() + "\n"
-        );
-    }
+  const node::TransactionAdmissionResult admission =
+      node::TransactionAdmissionValidator::validateRuntimeSubmission(
+          tx, key.metadata(), networkParameters, accountState,
+          load.runtime().mempool(), cryptoContext.policy(),
+          crypto::SecurityContext::USER_TRANSACTION, provider,
+          load.runtime().effectiveMinimumFeeRawUnits(), &admissionContext);
+  if (!admission.accepted()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Transaction rejected: " + admission.reason() + "\n");
+  }
 
-    const node::PersistentMempoolWriteResult persisted =
-        node::PersistentMempoolStore::persistTransaction(
-            directoryConfig, tx, key.metadata().publicKey(), tx.timestamp() + 1
-        );
-    if (!persisted.success()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to persist: " + persisted.reason() + "\n"
-        );
-    }
+  const node::PersistentMempoolWriteResult persisted =
+      node::PersistentMempoolStore::persistTransaction(
+          directoryConfig, tx, key.metadata().publicKey(), tx.timestamp() + 1);
+  if (!persisted.success()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Failed to persist: " + persisted.reason() + "\n");
+  }
 
-    std::ostringstream out;
-    out << "Validator exit request submitted.\n"
-        << "Validator: " << validatorAddr << "\n"
-        << "Transaction id: " << persisted.transactionId() << "\n";
-    return CommandLineResult::success(out.str());
+  std::ostringstream out;
+  out << "Validator exit request submitted.\n"
+      << "Validator: " << validatorAddr << "\n"
+      << "Transaction id: " << persisted.transactionId() << "\n";
+  return CommandLineResult::success(out.str());
 }
 
 CommandLineResult CommandLineInterface::executeValidatorUnjail(
-    const CommandLineOptions& options
-) {
-    const std::string validatorAddr = options.validatorAddress.empty()
-        ? options.toAddress
-        : options.validatorAddress;
+    const CommandLineOptions &options) {
+  const std::string validatorAddr = options.validatorAddress.empty()
+                                        ? options.toAddress
+                                        : options.validatorAddress;
 
-    if (validatorAddr.empty()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Provide --validator <address> to unjail.\n"
-        );
+  if (validatorAddr.empty()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Provide --validator <address> to unjail.\n");
+  }
+
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+  const config::NetworkParameters networkParameters =
+      genesisConfig.networkParameters();
+
+  const node::NodeDataDirectoryReadResult manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig);
+  if (!manifest.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit before init: " + manifest.reason() + "\n");
+  }
+
+  const crypto::ProtocolCryptoContext cryptoContext =
+      crypto::ProtocolCryptoContext::fromNetworkName(
+          networkParameters.networkName());
+  if (!cryptoContext.isValid()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Invalid crypto context: " + cryptoContext.rejectionReason() + "\n");
+  }
+
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          directoryConfig, genesisConfig, localPeerFromOptions(options));
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Runtime reload failed: " + load.reason() + "\n");
+  }
+
+  const std::string keyId =
+      options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
+  const crypto::KeyStoreLoadResult key =
+      loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), keyId);
+  if (!key.loaded()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "Cannot load key '" + keyId +
+                                          "': " + key.reason() + "\n");
+  }
+
+  const node::KeySafetyCheckResult keySafety =
+      node::ProductionKeySafetyGate::check(key.metadata(),
+                                           manifest.manifest().networkName());
+  if (!keySafety.isApproved()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "Key safety: " + keySafety.reason() +
+                                          "\n");
+  }
+
+  const crypto::Ed25519SignatureProvider provider;
+  const crypto::Signer signer(key.keyPair(), provider);
+
+  const core::AccountStateView accountState =
+      node::RuntimeAccountStateBuilder::accountStateViewAtTip(
+          genesisConfig, load.runtime().blockchain(),
+          static_cast<std::int64_t>(networkParameters.minimumFeeRawUnits()));
+  if (!accountState.hasAccount(key.metadata().address())) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Signing account does not exist in current state.\n");
+  }
+
+  const std::uint64_t nextNonce =
+      options.nonce == 0
+          ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
+          : options.nonce;
+
+  const core::Transaction tx =
+      core::TransactionBuilder::buildSignedValidatorUnjailRequest(
+          core::TransactionBuildRequest(
+              validatorAddr, utils::Amount(),
+              utils::Amount::fromRawUnits(options.feeRaw), nextNonce,
+              options.timestamp + 10),
+          signer, networkParameters.chainId());
+
+  const node::TransactionAdmissionContext admissionContext(
+      accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
+      load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
+      load.runtime().blockchain().size());
+
+  const node::TransactionAdmissionResult admission =
+      node::TransactionAdmissionValidator::validateRuntimeSubmission(
+          tx, key.metadata(), networkParameters, accountState,
+          load.runtime().mempool(), cryptoContext.policy(),
+          crypto::SecurityContext::USER_TRANSACTION, provider,
+          load.runtime().effectiveMinimumFeeRawUnits(), &admissionContext);
+  if (!admission.accepted()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Transaction rejected: " + admission.reason() + "\n");
+  }
+
+  const node::PersistentMempoolWriteResult persisted =
+      node::PersistentMempoolStore::persistTransaction(
+          directoryConfig, tx, key.metadata().publicKey(), tx.timestamp() + 1);
+  if (!persisted.success()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Failed to persist: " + persisted.reason() + "\n");
+  }
+
+  std::ostringstream out;
+  out << "Validator unjail request submitted.\n"
+      << "Validator: " << validatorAddr << "\n"
+      << "Transaction id: " << persisted.transactionId() << "\n";
+  return CommandLineResult::success(out.str());
+}
+
+CommandLineResult
+CommandLineInterface::executeStakeLock(const CommandLineOptions &options) {
+  std::string validatorAddr = options.validatorAddress;
+
+  if (validatorAddr.empty() && !options.validatorKeyIdProvided) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Provide --validator <address> or --validator-key <id> for the stake "
+        "operation.\n");
+  }
+
+  if (options.amountRaw <= 0) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Provide --amount or --stake (positive integer raw units).\n");
+  }
+
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+
+  if (options.validatorKeyIdProvided) {
+    const crypto::KeyStoreLoadResult validatorKey = crypto::KeyStore::loadKey(
+        directoryConfig.keysDirectoryPath(), options.validatorKeyId, "", true);
+    if (!validatorKey.loaded() || validatorKey.metadata().keyType() !=
+                                      crypto::KeyStoreKeyType::VALIDATOR) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          "Cannot resolve validator key '" + options.validatorKeyId + "': " +
+              (validatorKey.loaded() ? "key is not a validator identity"
+                                     : validatorKey.reason()) +
+              "\n");
     }
+    if (!validatorAddr.empty() &&
+        validatorAddr != validatorKey.metadata().address()) {
+      return CommandLineResult::failure(
+          CommandLineStatus::INVALID_ARGUMENTS,
+          "--validator and --validator-key resolve to different validator "
+          "addresses.\n");
+    }
+    validatorAddr = validatorKey.metadata().address();
+  }
 
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
+  const config::GenesisConfig genesisConfig = genesisLookup.genesis();
+  const config::NetworkParameters networkParameters =
+      genesisConfig.networkParameters();
+
+  const node::NodeDataDirectoryReadResult manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig);
+  if (!manifest.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot submit before init: " + manifest.reason() + "\n");
+  }
+
+  const crypto::ProtocolCryptoContext cryptoContext =
+      crypto::ProtocolCryptoContext::fromNetworkName(
+          networkParameters.networkName());
+  if (!cryptoContext.isValid()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Invalid crypto context: " + cryptoContext.rejectionReason() + "\n");
+  }
+
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          directoryConfig, genesisConfig, localPeerFromOptions(options));
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Runtime reload failed: " + load.reason() + "\n");
+  }
+
+  const std::string keyId =
+      options.keyIdProvided ? options.keyId : defaultLocalnetUserKeyId();
+  const crypto::KeyStoreLoadResult key =
+      loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), keyId);
+  if (!key.loaded()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "Cannot load key '" + keyId +
+                                          "': " + key.reason() + "\n");
+  }
+
+  const node::KeySafetyCheckResult keySafety =
+      node::ProductionKeySafetyGate::check(key.metadata(),
+                                           manifest.manifest().networkName());
+  if (!keySafety.isApproved()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      "Key safety: " + keySafety.reason() +
+                                          "\n");
+  }
+
+  const crypto::Ed25519SignatureProvider provider;
+  const crypto::Signer signer(key.keyPair(), provider);
+
+  const core::AccountStateView accountState =
+      node::RuntimeAccountStateBuilder::accountStateViewAtTip(
+          genesisConfig, load.runtime().blockchain(),
+          static_cast<std::int64_t>(networkParameters.minimumFeeRawUnits()));
+  if (!accountState.hasAccount(key.metadata().address())) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Signing account does not exist in current state.\n");
+  }
+
+  const std::uint64_t nextNonce =
+      options.nonce == 0
+          ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
+          : options.nonce;
+
+  const core::TransactionBuildRequest stakeRequest(
+      validatorAddr, utils::Amount::fromRawUnits(options.amountRaw),
+      utils::Amount::fromRawUnits(options.feeRaw), nextNonce,
+      options.timestamp + 10);
+  core::Transaction tx =
+      options.command == "stake top-up"
+          ? core::TransactionBuilder::buildSignedStakeTopUp(
+                stakeRequest, signer, networkParameters.chainId())
+      : options.command == "stake unlock"
+          ? core::TransactionBuilder::buildSignedStakeUnlock(
+                stakeRequest, signer, networkParameters.chainId())
+      : options.command == "stake withdraw"
+          ? core::TransactionBuilder::buildSignedStakeWithdraw(
+                stakeRequest, signer, networkParameters.chainId())
+          : core::TransactionBuilder::buildSignedStakeDeposit(
+                stakeRequest, signer, networkParameters.chainId());
+
+  const node::TransactionAdmissionContext admissionContext(
+      accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
+      load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
+      load.runtime().blockchain().size());
+
+  const node::TransactionAdmissionResult admission =
+      node::TransactionAdmissionValidator::validateRuntimeSubmission(
+          tx, key.metadata(), networkParameters, accountState,
+          load.runtime().mempool(), cryptoContext.policy(),
+          crypto::SecurityContext::USER_TRANSACTION, provider,
+          load.runtime().effectiveMinimumFeeRawUnits(), &admissionContext);
+  if (!admission.accepted()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Transaction rejected: " + admission.reason() + "\n");
+  }
+
+  const node::PersistentMempoolWriteResult persisted =
+      node::PersistentMempoolStore::persistTransaction(
+          directoryConfig, tx, key.metadata().publicKey(), tx.timestamp() + 1);
+  if (!persisted.success()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Failed to persist: " + persisted.reason() + "\n");
+  }
+
+  std::ostringstream out;
+  const std::string label = options.command == "stake top-up"   ? "Stake top-up"
+                            : options.command == "stake unlock" ? "Stake unlock"
+                            : options.command == "stake withdraw"
+                                ? "Stake withdraw"
+                            : options.command == "stake lock" ? "Stake lock"
+                                                              : "Stake deposit";
+  out << label << " submitted.\n"
+      << "Validator: " << validatorAddr << "\n"
+      << "Amount: " << options.amountRaw << " raw units\n"
+      << "Type: " << core::transactionTypeToString(tx.type()) << "\n"
+      << "Transaction id: " << persisted.transactionId() << "\n";
+  return CommandLineResult::success(out.str());
+}
+
+CommandLineResult
+CommandLineInterface::executeStakeStatus(const CommandLineOptions &options) {
+  std::string addr = options.validatorAddress;
+
+  if (addr.empty() && !options.validatorKeyIdProvided) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Provide --validator <address> or --validator-key <id> to inspect "
+        "stake for.\n");
+  }
+
+  if (options.validatorKeyIdProvided) {
     const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
-
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
+    const crypto::KeyStoreLoadResult validatorKey = crypto::KeyStore::loadKey(
+        directoryConfig.keysDirectoryPath(), options.validatorKeyId, "", true);
+    if (!validatorKey.loaded() || validatorKey.metadata().keyType() !=
+                                      crypto::KeyStoreKeyType::VALIDATOR) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          "Cannot resolve validator key '" + options.validatorKeyId + "': " +
+              (validatorKey.loaded() ? "key is not a validator identity"
+                                     : validatorKey.reason()) +
+              "\n");
     }
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
-    const config::NetworkParameters networkParameters = genesisConfig.networkParameters();
-
-    const node::NodeDataDirectoryReadResult manifest =
-        node::NodeDataDirectory::loadManifest(directoryConfig);
-    if (!manifest.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit before init: " + manifest.reason() + "\n"
-        );
+    if (!addr.empty() && addr != validatorKey.metadata().address()) {
+      return CommandLineResult::failure(
+          CommandLineStatus::INVALID_ARGUMENTS,
+          "--validator and --validator-key resolve to different validator "
+          "addresses.\n");
     }
+    addr = validatorKey.metadata().address();
+  }
 
-    const crypto::ProtocolCryptoContext cryptoContext =
-        crypto::ProtocolCryptoContext::fromNetworkName(networkParameters.networkName());
-    if (!cryptoContext.isValid()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Invalid crypto context: " + cryptoContext.rejectionReason() + "\n"
-        );
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
+
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          node::NodeDataDirectoryConfig(options.dataDirectory),
+          genesisLookup.genesis(), localPeerFromOptions(options));
+
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot load runtime state: " + load.reason() + "\n");
+  }
+
+  const core::ValidatorRegistryEntry *entry =
+      load.runtime().validatorRegistry().entryForAddress(addr);
+
+  std::ostringstream out;
+  out << "Stake status\n"
+      << "------------\n"
+      << "Validator: " << addr << "\n";
+
+  if (!entry) {
+    out << "No validator registration found for this address.\n";
+  } else {
+    const auto stakeAccount =
+        load.runtime().stakingRegistry().accountOrDefault(addr);
+    out << "Registry status: "
+        << core::validatorRegistrationStatusToString(entry->status()) << "\n"
+        << "Registry active stake (raw units): " << entry->stakeAmount() << "\n"
+        << "Consensus weight: " << entry->consensusWeight() << "\n"
+        << "Bonded stake (raw units): "
+        << stakeAccount.bondedAmount().rawUnits() << "\n"
+        << "Active stake (raw units): "
+        << load.runtime().stakingRegistry().activeStakeFor(addr).rawUnits()
+        << "\n"
+        << "Slashed stake (raw units): "
+        << stakeAccount.slashedAmount().rawUnits() << "\n"
+        << "Jailed: " << (stakeAccount.jailed() ? "yes" : "no") << "\n"
+        << "Tombstoned: " << (stakeAccount.tombstoned() ? "yes" : "no") << "\n";
+    const auto positions = load.runtime().stakingRegistry().positions();
+    for (const auto &position : positions) {
+      if (position.validatorAddress != addr)
+        continue;
+      out << "Position: " << position.positionId << "\n"
+          << "  Owner: " << position.ownerAddress << "\n"
+          << "  Status: " << node::stakePositionStatusToString(position.status)
+          << "\n"
+          << "  Pending activation: "
+          << position.pendingActivationAmount.rawUnits() << "\n"
+          << "  Pending unbonding: "
+          << position.pendingUnbondingAmount.rawUnits() << "\n"
+          << "  Withdrawable height: " << position.withdrawableHeight << "\n"
+          << "  Withdrawn: " << position.withdrawnAmount.rawUnits() << "\n";
     }
+  }
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            directoryConfig,
-            genesisConfig,
-            localPeerFromOptions(options)
-        );
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Runtime reload failed: " + load.reason() + "\n"
-        );
-    }
-
-    const std::string keyId = options.keyIdProvided ? options.keyId : defaultLocalnetKeyId();
-    const crypto::KeyStoreLoadResult key =
-        loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), keyId);
-    if (!key.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load key '" + keyId + "': " + key.reason() + "\n"
-        );
-    }
-
-    const node::KeySafetyCheckResult keySafety =
-        node::ProductionKeySafetyGate::check(key.metadata(), manifest.manifest().networkName());
-    if (!keySafety.isApproved()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Key safety: " + keySafety.reason() + "\n"
-        );
-    }
-
-    const crypto::Ed25519SignatureProvider provider;
-    const crypto::Signer signer(key.keyPair(), provider);
-
-    const core::AccountStateView accountState =
-        node::RuntimeAccountStateBuilder::accountStateViewAtTip(
-            genesisConfig,
-            load.runtime().blockchain(),
-            static_cast<std::int64_t>(networkParameters.minimumFeeRawUnits())
-        );
-    if (!accountState.hasAccount(key.metadata().address())) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Signing account does not exist in current state.\n"
-        );
-    }
-
-    const std::uint64_t nextNonce = options.nonce == 0
-        ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
-        : options.nonce;
-
-    const core::Transaction tx =
-        core::TransactionBuilder::buildSignedValidatorUnjailRequest(
-            core::TransactionBuildRequest(
-                validatorAddr,
-                utils::Amount(),
-                utils::Amount::fromRawUnits(options.feeRaw),
-                nextNonce,
-                options.timestamp + 10
-            ),
-            signer,
-            networkParameters.chainId()
-        );
-
-    const node::TransactionAdmissionContext admissionContext(
-        accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
-        load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
-        load.runtime().blockchain().size()
-    );
-
-    const node::TransactionAdmissionResult admission =
-        node::TransactionAdmissionValidator::validateRuntimeSubmission(
-            tx,
-            key.metadata(),
-            networkParameters,
-            accountState,
-            load.runtime().mempool(),
-            cryptoContext.policy(),
-            crypto::SecurityContext::USER_TRANSACTION,
-            provider,
-            load.runtime().effectiveMinimumFeeRawUnits(),
-            &admissionContext
-        );
-    if (!admission.accepted()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Transaction rejected: " + admission.reason() + "\n"
-        );
-    }
-
-    const node::PersistentMempoolWriteResult persisted =
-        node::PersistentMempoolStore::persistTransaction(
-            directoryConfig, tx, key.metadata().publicKey(), tx.timestamp() + 1
-        );
-    if (!persisted.success()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to persist: " + persisted.reason() + "\n"
-        );
-    }
-
-    std::ostringstream out;
-    out << "Validator unjail request submitted.\n"
-        << "Validator: " << validatorAddr << "\n"
-        << "Transaction id: " << persisted.transactionId() << "\n";
-    return CommandLineResult::success(out.str());
+  return CommandLineResult::success(out.str());
 }
 
-CommandLineResult CommandLineInterface::executeStakeLock(
-    const CommandLineOptions& options
-) {
-    std::string validatorAddr = options.validatorAddress;
+CommandLineResult
+CommandLineInterface::executeStakePositions(const CommandLineOptions &options) {
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
 
-    if (validatorAddr.empty() && !options.validatorKeyIdProvided) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Provide --validator <address> or --validator-key <id> for the stake operation.\n"
-        );
-    }
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          node::NodeDataDirectoryConfig(options.dataDirectory),
+          genesisLookup.genesis(), localPeerFromOptions(options));
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot load runtime state: " + load.reason() + "\n");
+  }
 
-    if (options.amountRaw <= 0) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Provide --amount or --stake (positive integer raw units).\n"
-        );
-    }
+  const std::string owner =
+      options.toAddress == "nodo-localnet-recipient" ? "" : options.toAddress;
+  const std::string validator = options.validatorAddress;
+  const auto positions =
+      owner.empty() ? load.runtime().stakingRegistry().positions()
+                    : load.runtime().stakingRegistry().positionsForOwner(owner);
 
-    const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
-
-    if (options.validatorKeyIdProvided) {
-        const crypto::KeyStoreLoadResult validatorKey = crypto::KeyStore::loadKey(
-            directoryConfig.keysDirectoryPath(), options.validatorKeyId, "", true
-        );
-        if (!validatorKey.loaded() ||
-            validatorKey.metadata().keyType() != crypto::KeyStoreKeyType::VALIDATOR) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Cannot resolve validator key '" + options.validatorKeyId + "': " +
-                    (validatorKey.loaded() ? "key is not a validator identity" : validatorKey.reason()) + "\n"
-            );
-        }
-        if (!validatorAddr.empty() && validatorAddr != validatorKey.metadata().address()) {
-            return CommandLineResult::failure(
-                CommandLineStatus::INVALID_ARGUMENTS,
-                "--validator and --validator-key resolve to different validator addresses.\n"
-            );
-        }
-        validatorAddr = validatorKey.metadata().address();
-    }
-
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
-    const config::GenesisConfig genesisConfig = genesisLookup.genesis();
-    const config::NetworkParameters networkParameters = genesisConfig.networkParameters();
-
-    const node::NodeDataDirectoryReadResult manifest =
-        node::NodeDataDirectory::loadManifest(directoryConfig);
-    if (!manifest.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot submit before init: " + manifest.reason() + "\n"
-        );
-    }
-
-    const crypto::ProtocolCryptoContext cryptoContext =
-        crypto::ProtocolCryptoContext::fromNetworkName(networkParameters.networkName());
-    if (!cryptoContext.isValid()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Invalid crypto context: " + cryptoContext.rejectionReason() + "\n"
-        );
-    }
-
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            directoryConfig,
-            genesisConfig,
-            localPeerFromOptions(options)
-        );
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Runtime reload failed: " + load.reason() + "\n"
-        );
-    }
-
-    const std::string keyId = options.keyIdProvided
-        ? options.keyId
-        : defaultLocalnetUserKeyId();
-    const crypto::KeyStoreLoadResult key =
-        loadKeyWithPrompt(directoryConfig.keysDirectoryPath(), keyId);
-    if (!key.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load key '" + keyId + "': " + key.reason() + "\n"
-        );
-    }
-
-    const node::KeySafetyCheckResult keySafety =
-        node::ProductionKeySafetyGate::check(key.metadata(), manifest.manifest().networkName());
-    if (!keySafety.isApproved()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Key safety: " + keySafety.reason() + "\n"
-        );
-    }
-
-    const crypto::Ed25519SignatureProvider provider;
-    const crypto::Signer signer(key.keyPair(), provider);
-
-    const core::AccountStateView accountState =
-        node::RuntimeAccountStateBuilder::accountStateViewAtTip(
-            genesisConfig,
-            load.runtime().blockchain(),
-            static_cast<std::int64_t>(networkParameters.minimumFeeRawUnits())
-        );
-    if (!accountState.hasAccount(key.metadata().address())) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Signing account does not exist in current state.\n"
-        );
-    }
-
-    const std::uint64_t nextNonce = options.nonce == 0
-        ? accountState.accountOrDefault(key.metadata().address()).nonce() + 1
-        : options.nonce;
-
-    const core::TransactionBuildRequest stakeRequest(
-        validatorAddr,
-        utils::Amount::fromRawUnits(options.amountRaw),
-        utils::Amount::fromRawUnits(options.feeRaw),
-        nextNonce,
-        options.timestamp + 10
-    );
-    core::Transaction tx = options.command == "stake top-up"
-        ? core::TransactionBuilder::buildSignedStakeTopUp(
-              stakeRequest, signer, networkParameters.chainId())
-        : options.command == "stake unlock"
-            ? core::TransactionBuilder::buildSignedStakeUnlock(
-                  stakeRequest, signer, networkParameters.chainId())
-            : options.command == "stake withdraw"
-                ? core::TransactionBuilder::buildSignedStakeWithdraw(
-                      stakeRequest, signer, networkParameters.chainId())
-                : core::TransactionBuilder::buildSignedStakeDeposit(
-                      stakeRequest, signer, networkParameters.chainId());
-
-    const node::TransactionAdmissionContext admissionContext(
-        accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
-        load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
-        load.runtime().blockchain().size()
-    );
-
-    const node::TransactionAdmissionResult admission =
-        node::TransactionAdmissionValidator::validateRuntimeSubmission(
-            tx,
-            key.metadata(),
-            networkParameters,
-            accountState,
-            load.runtime().mempool(),
-            cryptoContext.policy(),
-            crypto::SecurityContext::USER_TRANSACTION,
-            provider,
-            load.runtime().effectiveMinimumFeeRawUnits(),
-            &admissionContext
-        );
-    if (!admission.accepted()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Transaction rejected: " + admission.reason() + "\n"
-        );
-    }
-
-    const node::PersistentMempoolWriteResult persisted =
-        node::PersistentMempoolStore::persistTransaction(
-            directoryConfig, tx, key.metadata().publicKey(), tx.timestamp() + 1
-        );
-    if (!persisted.success()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Failed to persist: " + persisted.reason() + "\n"
-        );
-    }
-
-    std::ostringstream out;
-    const std::string label = options.command == "stake top-up"
-        ? "Stake top-up"
-        : options.command == "stake unlock"
-            ? "Stake unlock"
-            : options.command == "stake withdraw"
-                ? "Stake withdraw"
-                : options.command == "stake lock"
-                    ? "Stake lock"
-                    : "Stake deposit";
-    out << label << " submitted.\n"
-        << "Validator: " << validatorAddr << "\n"
-        << "Amount: " << options.amountRaw << " raw units\n"
-        << "Type: " << core::transactionTypeToString(tx.type()) << "\n"
-        << "Transaction id: " << persisted.transactionId() << "\n";
-    return CommandLineResult::success(out.str());
+  std::ostringstream out;
+  out << "Stake positions\n"
+      << "---------------\n";
+  std::size_t count = 0;
+  for (const auto &position : positions) {
+    if (!validator.empty() && position.validatorAddress != validator)
+      continue;
+    ++count;
+    out << "Position: " << position.positionId << "\n"
+        << "Owner: " << position.ownerAddress << "\n"
+        << "Validator: " << position.validatorAddress << "\n"
+        << "Status: " << node::stakePositionStatusToString(position.status)
+        << "\n"
+        << "Active: " << position.activeAmount.rawUnits() << "\n"
+        << "Pending activation: " << position.pendingActivationAmount.rawUnits()
+        << "\n"
+        << "Pending unbonding: " << position.pendingUnbondingAmount.rawUnits()
+        << "\n"
+        << "Withdrawn: " << position.withdrawnAmount.rawUnits() << "\n"
+        << "Slashed: " << position.slashedAmount.rawUnits() << "\n"
+        << "Activation height: " << position.activationHeight << "\n"
+        << "Withdrawable height: " << position.withdrawableHeight << "\n";
+  }
+  out << "Count: " << count << "\n";
+  return CommandLineResult::success(out.str());
 }
 
-CommandLineResult CommandLineInterface::executeStakeStatus(
-    const CommandLineOptions& options
-) {
-    std::string addr = options.validatorAddress;
+CommandLineResult
+CommandLineInterface::executeStakeAudit(const CommandLineOptions &options) {
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          node::NodeDataDirectoryConfig(options.dataDirectory),
+          genesisLookup.genesis(), localPeerFromOptions(options));
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot load runtime state: " + load.reason() + "\n");
+  }
+  if (!load.runtime().stakingRegistry().isValid()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Staking audit failed: staking registry invariants are invalid.\n");
+  }
+  std::ostringstream out;
+  out << "Staking audit passed.\n"
+      << "Stake accounts: "
+      << load.runtime().stakingRegistry().accounts().size() << "\n"
+      << "Stake positions: "
+      << load.runtime().stakingRegistry().positions().size() << "\n"
+      << "Lifecycle records: "
+      << load.runtime().stakingRegistry().lifecycleRecords().size() << "\n";
+  return CommandLineResult::success(out.str());
+}
 
-    if (addr.empty() && !options.validatorKeyIdProvided) {
-        return CommandLineResult::failure(
-            CommandLineStatus::INVALID_ARGUMENTS,
-            "Provide --validator <address> or --validator-key <id> to inspect stake for.\n"
-        );
-    }
+CommandLineResult
+CommandLineInterface::executeRewardsStatus(const CommandLineOptions &options) {
+  const std::string validatorAddr = options.validatorAddress.empty()
+                                        ? options.toAddress
+                                        : options.validatorAddress;
 
-    if (options.validatorKeyIdProvided) {
-        const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
-        const crypto::KeyStoreLoadResult validatorKey = crypto::KeyStore::loadKey(
-            directoryConfig.keysDirectoryPath(), options.validatorKeyId, "", true
-        );
-        if (!validatorKey.loaded() ||
-            validatorKey.metadata().keyType() != crypto::KeyStoreKeyType::VALIDATOR) {
-            return CommandLineResult::failure(
-                CommandLineStatus::COMMAND_FAILED,
-                "Cannot resolve validator key '" + options.validatorKeyId + "': " +
-                    (validatorKey.loaded() ? "key is not a validator identity" : validatorKey.reason()) + "\n"
-            );
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
+
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          node::NodeDataDirectoryConfig(options.dataDirectory),
+          genesisLookup.genesis(), localPeerFromOptions(options));
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot load runtime state: " + load.reason() + "\n");
+  }
+
+  const core::Blockchain &blockchain = load.runtime().blockchain();
+  const std::uint64_t chainHeight =
+      blockchain.empty() ? 0u : blockchain.latestBlock().index();
+  const std::vector<node::FinalizedBlockArtifact> &artifacts =
+      load.loadedArtifacts();
+
+  std::ostringstream output;
+  output << "Nodo rewards status\n"
+         << "-------------------\n"
+         << "Chain height: " << chainHeight << "\n";
+
+  if (!validatorAddr.empty()) {
+    output << "Validator: " << validatorAddr << "\n";
+
+    if (!artifacts.empty()) {
+      const node::FinalizedBlockArtifact &tipArtifact = artifacts.back();
+      std::int64_t totalReward = 0;
+
+      for (const auto &dist : tipArtifact.rewardDistributions()) {
+        if (dist.validatorAddress() == validatorAddr) {
+          totalReward += dist.liquidReward().rawUnits();
+          output << "  Block " << dist.blockHeight()
+                 << " liquid reward: " << dist.liquidReward().rawUnits()
+                 << "\n";
         }
-        if (!addr.empty() && addr != validatorKey.metadata().address()) {
-            return CommandLineResult::failure(
-                CommandLineStatus::INVALID_ARGUMENTS,
-                "--validator and --validator-key resolve to different validator addresses.\n"
-            );
-        }
-        addr = validatorKey.metadata().address();
-    }
-
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
-
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisLookup.genesis(),
-            localPeerFromOptions(options)
-        );
-
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load runtime state: " + load.reason() + "\n"
-        );
-    }
-
-    const core::ValidatorRegistryEntry* entry =
-        load.runtime().validatorRegistry().entryForAddress(addr);
-
-    std::ostringstream out;
-    out << "Stake status\n"
-        << "------------\n"
-        << "Validator: " << addr << "\n";
-
-    if (!entry) {
-        out << "No validator registration found for this address.\n";
+      }
+      output << "Total liquid rewards at tip: " << totalReward
+             << " raw units\n";
     } else {
-        const auto stakeAccount =
-            load.runtime().stakingRegistry().accountOrDefault(addr);
-        out << "Registry status: "
-            << core::validatorRegistrationStatusToString(entry->status()) << "\n"
-            << "Registry active stake (raw units): " << entry->stakeAmount() << "\n"
-            << "Consensus weight: " << entry->consensusWeight() << "\n"
-            << "Bonded stake (raw units): " << stakeAccount.bondedAmount().rawUnits() << "\n"
-            << "Active stake (raw units): "
-            << load.runtime().stakingRegistry().activeStakeFor(addr).rawUnits() << "\n"
-            << "Slashed stake (raw units): " << stakeAccount.slashedAmount().rawUnits() << "\n"
-            << "Jailed: " << (stakeAccount.jailed() ? "yes" : "no") << "\n"
-            << "Tombstoned: " << (stakeAccount.tombstoned() ? "yes" : "no") << "\n";
-        const auto positions = load.runtime().stakingRegistry().positions();
-        for (const auto& position : positions) {
-            if (position.validatorAddress != addr) continue;
-            out << "Position: " << position.positionId << "\n"
-                << "  Owner: " << position.ownerAddress << "\n"
-                << "  Status: " << node::stakePositionStatusToString(position.status) << "\n"
-                << "  Pending activation: " << position.pendingActivationAmount.rawUnits() << "\n"
-                << "  Pending unbonding: " << position.pendingUnbondingAmount.rawUnits() << "\n"
-                << "  Withdrawable height: " << position.withdrawableHeight << "\n"
-                << "  Withdrawn: " << position.withdrawnAmount.rawUnits() << "\n";
-        }
+      output << "No finalized artifacts loaded.\n";
     }
+  } else {
+    output << "Use --validator <address> to see rewards for a specific "
+              "validator.\n";
+  }
 
-    return CommandLineResult::success(out.str());
-}
-
-CommandLineResult CommandLineInterface::executeStakePositions(
-    const CommandLineOptions& options
-) {
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
-
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisLookup.genesis(),
-            localPeerFromOptions(options)
-        );
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load runtime state: " + load.reason() + "\n"
-        );
-    }
-
-    const std::string owner = options.toAddress == "nodo-localnet-recipient"
-        ? ""
-        : options.toAddress;
-    const std::string validator = options.validatorAddress;
-    const auto positions = owner.empty()
-        ? load.runtime().stakingRegistry().positions()
-        : load.runtime().stakingRegistry().positionsForOwner(owner);
-
-    std::ostringstream out;
-    out << "Stake positions\n"
-        << "---------------\n";
-    std::size_t count = 0;
-    for (const auto& position : positions) {
-        if (!validator.empty() && position.validatorAddress != validator) continue;
-        ++count;
-        out << "Position: " << position.positionId << "\n"
-            << "Owner: " << position.ownerAddress << "\n"
-            << "Validator: " << position.validatorAddress << "\n"
-            << "Status: " << node::stakePositionStatusToString(position.status) << "\n"
-            << "Active: " << position.activeAmount.rawUnits() << "\n"
-            << "Pending activation: " << position.pendingActivationAmount.rawUnits() << "\n"
-            << "Pending unbonding: " << position.pendingUnbondingAmount.rawUnits() << "\n"
-            << "Withdrawn: " << position.withdrawnAmount.rawUnits() << "\n"
-            << "Slashed: " << position.slashedAmount.rawUnits() << "\n"
-            << "Activation height: " << position.activationHeight << "\n"
-            << "Withdrawable height: " << position.withdrawableHeight << "\n";
-    }
-    out << "Count: " << count << "\n";
-    return CommandLineResult::success(out.str());
-}
-
-CommandLineResult CommandLineInterface::executeStakeAudit(
-    const CommandLineOptions& options
-) {
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisLookup.genesis(),
-            localPeerFromOptions(options)
-        );
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load runtime state: " + load.reason() + "\n"
-        );
-    }
-    if (!load.runtime().stakingRegistry().isValid()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Staking audit failed: staking registry invariants are invalid.\n"
-        );
-    }
-    std::ostringstream out;
-    out << "Staking audit passed.\n"
-        << "Stake accounts: " << load.runtime().stakingRegistry().accounts().size() << "\n"
-        << "Stake positions: " << load.runtime().stakingRegistry().positions().size() << "\n"
-        << "Lifecycle records: " << load.runtime().stakingRegistry().lifecycleRecords().size() << "\n";
-    return CommandLineResult::success(out.str());
-}
-
-CommandLineResult CommandLineInterface::executeRewardsStatus(
-    const CommandLineOptions& options
-) {
-    const std::string validatorAddr = options.validatorAddress.empty()
-        ? options.toAddress
-        : options.validatorAddress;
-
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
-
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisLookup.genesis(),
-            localPeerFromOptions(options)
-        );
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load runtime state: " + load.reason() + "\n"
-        );
-    }
-
-    const core::Blockchain& blockchain = load.runtime().blockchain();
-    const std::uint64_t chainHeight = blockchain.empty()
-        ? 0u
-        : blockchain.latestBlock().index();
-    const std::vector<node::FinalizedBlockArtifact>& artifacts = load.loadedArtifacts();
-
-    std::ostringstream output;
-    output << "Nodo rewards status\n"
-           << "-------------------\n"
-           << "Chain height: " << chainHeight << "\n";
-
-    if (!validatorAddr.empty()) {
-        output << "Validator: " << validatorAddr << "\n";
-
-        if (!artifacts.empty()) {
-            const node::FinalizedBlockArtifact& tipArtifact = artifacts.back();
-            std::int64_t totalReward = 0;
-
-            for (const auto& dist : tipArtifact.rewardDistributions()) {
-                if (dist.validatorAddress() == validatorAddr) {
-                    totalReward += dist.liquidReward().rawUnits();
-                    output << "  Block " << dist.blockHeight()
-                           << " liquid reward: " << dist.liquidReward().rawUnits() << "\n";
-                }
-            }
-            output << "Total liquid rewards at tip: " << totalReward << " raw units\n";
-        } else {
-            output << "No finalized artifacts loaded.\n";
-        }
-    } else {
-        output << "Use --validator <address> to see rewards for a specific validator.\n";
-    }
-
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
 CommandLineResult CommandLineInterface::executeSlashingEvidence(
-    const CommandLineOptions& options
-) {
-    const std::string validatorAddr = options.validatorAddress.empty()
-        ? options.toAddress
-        : options.validatorAddress;
+    const CommandLineOptions &options) {
+  const std::string validatorAddr = options.validatorAddress.empty()
+                                        ? options.toAddress
+                                        : options.validatorAddress;
 
-    const config::GenesisLookupResult genesisLookup =
-        node::RuntimeStartupService::resolveAndVerify(options.networkName);
-    if (!genesisLookup.found()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            genesisLookup.reason() + "\n"
-        );
-    }
+  const config::GenesisLookupResult genesisLookup =
+      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+  if (!genesisLookup.found()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      genesisLookup.reason() + "\n");
+  }
 
-    const node::RuntimeStateLoadResult load =
-        node::RuntimeStateLoader::loadFromDataDirectory(
-            node::NodeDataDirectoryConfig(options.dataDirectory),
-            genesisLookup.genesis(),
-            localPeerFromOptions(options)
-        );
-    if (!load.loaded()) {
-        return CommandLineResult::failure(
-            CommandLineStatus::COMMAND_FAILED,
-            "Cannot load runtime state: " + load.reason() + "\n"
-        );
-    }
+  const node::RuntimeStateLoadResult load =
+      node::RuntimeStateLoader::loadFromDataDirectory(
+          node::NodeDataDirectoryConfig(options.dataDirectory),
+          genesisLookup.genesis(), localPeerFromOptions(options));
+  if (!load.loaded()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Cannot load runtime state: " + load.reason() + "\n");
+  }
 
-    const core::Blockchain& blockchain = load.runtime().blockchain();
-    const std::uint64_t chainHeight = blockchain.empty()
-        ? 0u
-        : blockchain.latestBlock().index();
-    const std::vector<node::FinalizedBlockArtifact>& artifacts = load.loadedArtifacts();
+  const core::Blockchain &blockchain = load.runtime().blockchain();
+  const std::uint64_t chainHeight =
+      blockchain.empty() ? 0u : blockchain.latestBlock().index();
+  const std::vector<node::FinalizedBlockArtifact> &artifacts =
+      load.loadedArtifacts();
 
-    std::ostringstream output;
-    output << "Nodo slashing evidence\n"
-           << "----------------------\n"
-           << "Chain height: " << chainHeight << "\n";
+  std::ostringstream output;
+  output << "Nodo slashing evidence\n"
+         << "----------------------\n"
+         << "Chain height: " << chainHeight << "\n";
 
-    if (!validatorAddr.empty()) {
-        output << "Validator: " << validatorAddr << "\n";
+  if (!validatorAddr.empty()) {
+    output << "Validator: " << validatorAddr << "\n";
 
-        if (!artifacts.empty()) {
-            const node::FinalizedBlockArtifact& tipArtifact = artifacts.back();
-            std::size_t evidenceCount = 0;
+    if (!artifacts.empty()) {
+      const node::FinalizedBlockArtifact &tipArtifact = artifacts.back();
+      std::size_t evidenceCount = 0;
 
-            for (const auto& rec : tipArtifact.cryptographicSlashingEvidenceRecords()) {
-                if (rec.validatorAddress() == validatorAddr) {
-                    output << "  Evidence at block " << rec.blockHeight()
-                           << " round " << rec.round()
-                           << " severity " << rec.severityScore() << "\n";
-                    ++evidenceCount;
-                }
-            }
-            for (const auto& pen : tipArtifact.stakePenaltyRecords()) {
-                if (pen.validatorAddress() == validatorAddr) {
-                    output << "  Stake penalty: before=" << pen.lockedStakeBefore().rawUnits()
-                           << " after=" << pen.lockedStakeAfter().rawUnits()
-                           << " penalty=" << pen.penaltyAmount().rawUnits() << "\n";
-                }
-            }
-            if (evidenceCount == 0) {
-                output << "No slashing evidence found at current tip.\n";
-            }
-        } else {
-            output << "No finalized artifacts loaded.\n";
+      for (const auto &rec :
+           tipArtifact.cryptographicSlashingEvidenceRecords()) {
+        if (rec.validatorAddress() == validatorAddr) {
+          output << "  Evidence at block " << rec.blockHeight() << " round "
+                 << rec.round() << " severity " << rec.severityScore() << "\n";
+          ++evidenceCount;
         }
+      }
+      for (const auto &pen : tipArtifact.stakePenaltyRecords()) {
+        if (pen.validatorAddress() == validatorAddr) {
+          output << "  Stake penalty: before="
+                 << pen.lockedStakeBefore().rawUnits()
+                 << " after=" << pen.lockedStakeAfter().rawUnits()
+                 << " penalty=" << pen.penaltyAmount().rawUnits() << "\n";
+        }
+      }
+      if (evidenceCount == 0) {
+        output << "No slashing evidence found at current tip.\n";
+      }
     } else {
-        output << "Use --validator <address> to see slashing evidence for a specific validator.\n";
+      output << "No finalized artifacts loaded.\n";
     }
+  } else {
+    output << "Use --validator <address> to see slashing evidence for a "
+              "specific validator.\n";
+  }
 
-    return CommandLineResult::success(output.str());
+  return CommandLineResult::success(output.str());
 }
 
 } // namespace nodo::app

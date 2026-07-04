@@ -148,13 +148,13 @@ void testOfflineNodeSynchronizesAndPersistsEvidence() {
     p2p::LoopbackTransport transportB(bus);
     p2p::GossipMesh meshA(
         p2p::GossipMeshConfig(
-            "node-a", "localnet", "chain-localnet", "1", "genesis", 60, 4
+            "node-a", "localnet", "chain-localnet", "1", "genesis", 60, 4, 100, 50
         ),
         transportA
     );
     p2p::GossipMesh meshB(
         p2p::GossipMeshConfig(
-            "node-b", "localnet", "chain-localnet", "1", "genesis", 60, 4
+            "node-b", "localnet", "chain-localnet", "1", "genesis", 60, 4, 100, 50
         ),
         transportB
     );

@@ -14,7 +14,7 @@ using namespace nodo;
 
 p2p::GossipMeshConfig config(const std::string &nodeId) {
   return p2p::GossipMeshConfig(nodeId, "localnet", "chain-localnet", "1",
-                               "genesis-localnet", 60, 3);
+                               "genesis-localnet", 60, 3, 100, 50);
 }
 
 p2p::PeerMetadata peer(const std::string &nodeId, std::uint16_t port,

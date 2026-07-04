@@ -104,7 +104,7 @@ public:
                                    genesis.networkParameters().networkName(),
                                    genesis.networkParameters().chainId(),
                                    "nodo/test", genesis.deterministicId(), 60,
-                                   3),
+                                   3, 100, 50),
              m_transport) {}
 
   p2p::GossipMesh mesh;
@@ -131,13 +131,13 @@ public:
                           "candidate-test-node",
                           genesis.networkParameters().networkName(),
                           genesis.networkParameters().chainId(), "nodo/test",
-                          genesis.deterministicId(), 60, 3),
+                          genesis.deterministicId(), 60, 3, 100, 50),
                       m_consensusTransport),
         peerMesh(p2p::GossipMeshConfig(
                      "vote-conflict-peer",
                      genesis.networkParameters().networkName(),
                      genesis.networkParameters().chainId(), "nodo/test",
-                     genesis.deterministicId(), 60, 3),
+                     genesis.deterministicId(), 60, 3, 100, 50),
                  m_peerTransport) {
     require(
         consensusMesh.registerPeer(peerMetadata("vote-conflict-peer", 31902))
@@ -304,8 +304,8 @@ void testCandidateDoesNotEnterChainWithoutQuorum() {
                               provider);
 
   consensus::ConsensusEventLoop loop(runtime, network.mesh,
-                                     network.validatedInbox, developmentPolicy(),
-                                     provider);
+                                     network.validatedInbox,
+                                     developmentPolicy(), provider);
   configureProducer(loop, signer);
   injectProposal(runtime, network.mesh, signer, kTimestamp + 2);
 
@@ -331,8 +331,8 @@ void testSingleValidatorCandidateAppendsOnlyDuringFinalization() {
   const crypto::Signer signer(validators.front().keyPair, provider);
 
   consensus::ConsensusEventLoop loop(runtime, network.mesh,
-                                     network.validatedInbox, developmentPolicy(),
-                                     provider);
+                                     network.validatedInbox,
+                                     developmentPolicy(), provider);
   configureProducer(loop, signer);
 
   require(runtime.blockchain().size() == 1,
@@ -359,8 +359,8 @@ void testMissingProposalStillAdvancesRound() {
   const crypto::Bls12381SignatureProvider provider;
 
   consensus::ConsensusEventLoop loop(runtime, network.mesh,
-                                     network.validatedInbox, developmentPolicy(),
-                                     provider);
+                                     network.validatedInbox,
+                                     developmentPolicy(), provider);
 
   const auto timeout =
       runtime.consensusRoundManager().roundTimeout().expiresAt();
@@ -393,8 +393,8 @@ void testConsensusLoopPersistsSignedPrevoteBeforeBroadcast() {
   std::filesystem::remove(recoveryPath, cleanupError);
 
   consensus::ConsensusEventLoop loop(runtime, network.mesh,
-                                     network.validatedInbox, developmentPolicy(),
-                                     provider);
+                                     network.validatedInbox,
+                                     developmentPolicy(), provider);
   loop.setRecoveryPath(recoveryPath);
   configureProducer(loop, signer);
 

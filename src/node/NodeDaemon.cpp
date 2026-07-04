@@ -1,5 +1,7 @@
 #include "node/NodeDaemon.hpp"
 
+#include <iostream>
+
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/BlockProductionPhase.hpp"
 #include "consensus/BlockProposalPhase.hpp"
@@ -13,12 +15,6 @@
 #include "node/SignedBlockProposalMessage.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
 #include "p2p/Peer.hpp"
-
-#include <iostream>
-
-#include <chrono>
-#include <cstdlib>
-#include <thread>
 
 namespace nodo::node {
 
@@ -151,11 +147,12 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
         if (validation.accepted()) {
           auto result = runtime.mutableMempool().admitTransaction(
               decoded->transaction, m_policy,
-              crypto::SecurityContext::USER_TRANSACTION,
-              decoded->acceptedAt);
+              crypto::SecurityContext::USER_TRANSACTION, decoded->acceptedAt);
           admitted = result.success();
           if (!admitted) {
-              std::cout << "[DEBUG] NodeDaemon processTransactionGossip admitTransaction failed: " << result.reason() << std::endl;
+            std::cout << "[DEBUG] NodeDaemon processTransactionGossip "
+                         "admitTransaction failed: "
+                      << result.reason() << std::endl;
           }
         } else {
           std::cout
@@ -170,8 +167,26 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
     }
 
     if (admitted) {
-      m_orchestrator.gossipBroadcast(
-          p2p::NetworkMessageType::TRANSACTION_GOSSIP, payload, now);
+      const std::int64_t currentSecond = now / 1000;
+      if (m_txRelayBudgetSecond != currentSecond) {
+        m_txRelayBudgetSecond = currentSecond;
+        m_txRelayBudgetCounter = 0;
+      }
+
+      const std::uint32_t relayLimit =
+          m_config.orchestratorConfig.genesisConfig()
+              .networkParameters()
+              .maxTransactionRelayPerSecond();
+      if (m_txRelayBudgetCounter < relayLimit) {
+        m_txRelayBudgetCounter++;
+        m_orchestrator.gossipBroadcast(
+            p2p::NetworkMessageType::TRANSACTION_GOSSIP, payload, now);
+      } else {
+        m_txRelayDroppedCount++;
+        std::cout << "[NodeDaemon] Dropping transaction gossip relay to avoid "
+                     "amplification (budget exceeded)."
+                  << std::endl;
+      }
     }
   }
 }
@@ -188,9 +203,10 @@ void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
         FinalizedArtifactGossipAdmission::admit(envelope,
                                                 m_orchestrator.mutableRuntime(),
                                                 m_policy, m_provider, store);
-    
-    std::cout << "[DEBUG] processFinalizedArtifacts received artifact. " 
-              << "status: " << (int)result.status() << ", reason: " << result.reason() << std::endl;
+
+    std::cout << "[DEBUG] processFinalizedArtifacts received artifact. "
+              << "status: " << (int)result.status()
+              << ", reason: " << result.reason() << std::endl;
 
     if (result.fatalConsistencyError()) {
       std::abort();
@@ -211,15 +227,19 @@ void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
               m_orchestrator.runtime().config().localPeer().protocolVersion(),
               record.blockIndex(), record.blockHash(), record.blockIndex(),
               record.blockHash());
-          
-          std::cout << "[DEBUG] Triggering sync for height " << record.blockIndex() << std::endl;
+
+          std::cout << "[DEBUG] Triggering sync for height "
+                    << record.blockIndex() << std::endl;
           m_orchestrator.triggerSyncIfBehind(syntheticStatus,
                                              envelope.senderNodeId(), now);
         } else {
-            std::cout << "[DEBUG] BLOCK_UNAVAILABLE but record structurally invalid." << std::endl;
+          std::cout
+              << "[DEBUG] BLOCK_UNAVAILABLE but record structurally invalid."
+              << std::endl;
         }
       } catch (const std::exception &e) {
-         std::cout << "[DEBUG] BLOCK_UNAVAILABLE exception: " << e.what() << std::endl;
+        std::cout << "[DEBUG] BLOCK_UNAVAILABLE exception: " << e.what()
+                  << std::endl;
       }
     }
   }

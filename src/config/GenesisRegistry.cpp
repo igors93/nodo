@@ -11,134 +11,92 @@ namespace nodo::config {
 
 namespace {
 
-crypto::PublicKey deterministicValidatorKey(const std::string& seed) {
-    return crypto::KeyPair::createDeterministicBls12381KeyPair(seed).publicKey();
+crypto::PublicKey deterministicValidatorKey(const std::string &seed) {
+  return crypto::KeyPair::createDeterministicBls12381KeyPair(seed).publicKey();
 }
 
-crypto::PublicKey deterministicUserKey(const std::string& seed) {
-    return crypto::KeyPair::createDeterministicEd25519KeyPair(seed).publicKey();
+crypto::PublicKey deterministicUserKey(const std::string &seed) {
+  return crypto::KeyPair::createDeterministicEd25519KeyPair(seed).publicKey();
 }
 
 std::string testnetCandidateUserKeySeed() {
-    return "nodo-testnet-candidate-user-seed";
+  return "nodo-testnet-candidate-user-seed";
 }
 
 std::string testnetCandidateValidatorKeySeed(std::size_t index) {
-    return "nodo-testnet-candidate-validator-seed-" + std::to_string(index);
+  return "nodo-testnet-candidate-validator-seed-" + std::to_string(index);
 }
 
 GenesisConfig buildSoakGenesis() {
-    const NetworkParameters params = NetworkParameters::developmentSoak();
-    std::vector<BootstrapValidatorConfig> validators;
-    validators.reserve(params.minimumValidatorCount());
-    for (std::size_t index = 0;
-         index < params.minimumValidatorCount();
-         ++index) {
-        validators.emplace_back(
-            deterministicValidatorKey(
-                GenesisRegistry::soakValidatorKeySeed(index)
-            ),
-            1,
-            1,
-            "localnet-soak-validator-" + std::to_string(index)
-        );
-    }
+  const NetworkParameters params = NetworkParameters::developmentSoak();
+  std::vector<BootstrapValidatorConfig> validators;
+  validators.reserve(params.minimumValidatorCount());
+  for (std::size_t index = 0; index < params.minimumValidatorCount(); ++index) {
+    validators.emplace_back(
+        deterministicValidatorKey(GenesisRegistry::soakValidatorKeySeed(index)),
+        1, 1, "localnet-soak-validator-" + std::to_string(index));
+  }
 
-    const std::string userAddress =
-        crypto::AddressDerivation::deriveFromPublicKey(
-            deterministicUserKey(GenesisRegistry::soakUserKeySeed())
-        ).value();
+  const std::string userAddress =
+      crypto::AddressDerivation::deriveFromPublicKey(
+          deterministicUserKey(GenesisRegistry::soakUserKeySeed()))
+          .value();
 
-    return GenesisConfig(
-        params,
-        1700000000,
-        std::move(validators),
-        {
-            GenesisAccountConfig(
-                userAddress,
-                utils::Amount::fromRawUnits(2'000'000'000'000LL),
-                0
-            )
-        },
-        "nodo-localnet-soak-genesis"
-    );
+  return GenesisConfig(
+      params, 1700000000, std::move(validators),
+      {GenesisAccountConfig(
+          userAddress, utils::Amount::fromRawUnits(2'000'000'000'000LL), 0)},
+      "nodo-localnet-soak-genesis");
 }
 
 GenesisConfig buildLocalnetGenesis() {
-    const NetworkParameters params = NetworkParameters::developmentLocal();
+  const NetworkParameters params = NetworkParameters::developmentLocal();
 
-    const std::string userAddress =
-        crypto::AddressDerivation::deriveFromPublicKey(
-            deterministicUserKey(GenesisRegistry::localnetUserKeySeed())
-        ).value();
+  const std::string userAddress =
+      crypto::AddressDerivation::deriveFromPublicKey(
+          deterministicUserKey(GenesisRegistry::localnetUserKeySeed()))
+          .value();
 
-    return GenesisConfig(
-        params,
-        1900000000,
-        {
-            BootstrapValidatorConfig(
-                deterministicValidatorKey("nodo-localnet-validator-seed"),
-                1,
-                1,
-                "localnet-genesis-validator"
-            )
-        },
-        {
-            GenesisAccountConfig(
-                userAddress,
-                utils::Amount::fromRawUnits(1000000000000),
-                0
-            )
-        },
-        "nodo-localnet-genesis"
-    );
+  return GenesisConfig(
+      params, 1900000000,
+      {BootstrapValidatorConfig(
+          deterministicValidatorKey("nodo-localnet-validator-seed"), 1, 1,
+          "localnet-genesis-validator")},
+      {GenesisAccountConfig(userAddress,
+                            utils::Amount::fromRawUnits(1000000000000), 0)},
+      "nodo-localnet-genesis");
 }
 
 GenesisConfig buildTestnetCandidateGenesis() {
-    const NetworkParameters params = NetworkParameters::testnetCandidate();
+  const NetworkParameters params = NetworkParameters::testnetCandidate();
 
-    std::vector<BootstrapValidatorConfig> validators;
-    validators.reserve(params.minimumValidatorCount());
+  std::vector<BootstrapValidatorConfig> validators;
+  validators.reserve(params.minimumValidatorCount());
 
-    for (std::size_t i = 0; i < params.minimumValidatorCount(); ++i) {
-        validators.emplace_back(
-            deterministicValidatorKey(testnetCandidateValidatorKeySeed(i)),
-            1,
-            1,
-            "testnet-candidate-genesis-validator-" + std::to_string(i)
-        );
-    }
+  for (std::size_t i = 0; i < params.minimumValidatorCount(); ++i) {
+    validators.emplace_back(
+        deterministicValidatorKey(testnetCandidateValidatorKeySeed(i)), 1, 1,
+        "testnet-candidate-genesis-validator-" + std::to_string(i));
+  }
 
-    const std::string userAddress =
-        crypto::AddressDerivation::deriveFromPublicKey(
-            deterministicUserKey(testnetCandidateUserKeySeed())
-        ).value();
+  const std::string userAddress =
+      crypto::AddressDerivation::deriveFromPublicKey(
+          deterministicUserKey(testnetCandidateUserKeySeed()))
+          .value();
 
-    return GenesisConfig(
-        params,
-        1900000000,
-        std::move(validators),
-        {
-            GenesisAccountConfig(
-                userAddress,
-                utils::Amount::fromRawUnits(1000000000000),
-                0
-            )
-        },
-        "nodo-testnet-candidate-genesis"
-    );
+  return GenesisConfig(
+      params, 1900000000, std::move(validators),
+      {GenesisAccountConfig(userAddress,
+                            utils::Amount::fromRawUnits(1000000000000), 0)},
+      "nodo-testnet-candidate-genesis");
 }
 
-bool isLocalnetName(const std::string& name) {
-    return name == "localnet";
-}
+bool isLocalnetName(const std::string &name) { return name == "localnet"; }
 
-bool isSoakName(const std::string& name) {
-    return name == "localnet-soak";
-}
+bool isSoakName(const std::string &name) { return name == "localnet-soak"; }
 
-bool isTestnetCandidateName(const std::string& name) {
-    return name == "testnet-candidate";
+bool isTestnetCandidateName(const std::string &name) {
+  return name == "testnet-candidate";
 }
 
 } // namespace
@@ -148,92 +106,89 @@ bool isTestnetCandidateName(const std::string& name) {
 // ---------------------------------------------------------------------------
 
 GenesisLookupResult::GenesisLookupResult()
-    : m_found(false),
-      m_genesis(),
+    : m_found(false), m_genesis(),
       m_reason("Uninitialized genesis lookup result.") {}
 
 GenesisLookupResult GenesisLookupResult::found(GenesisConfig genesis) {
-    GenesisLookupResult r;
-    r.m_found = true;
-    r.m_genesis = std::move(genesis);
-    r.m_reason = "";
-    return r;
+  GenesisLookupResult r;
+  r.m_found = true;
+  r.m_genesis = std::move(genesis);
+  r.m_reason = "";
+  return r;
 }
 
 GenesisLookupResult GenesisLookupResult::missing(std::string reason) {
-    GenesisLookupResult r;
-    r.m_found = false;
-    r.m_reason = std::move(reason);
-    return r;
+  GenesisLookupResult r;
+  r.m_found = false;
+  r.m_reason = std::move(reason);
+  return r;
 }
 
 bool GenesisLookupResult::found() const { return m_found; }
 
-const GenesisConfig& GenesisLookupResult::genesis() const {
-    if (!m_found) {
-        throw std::logic_error("GenesisLookupResult: genesis not found.");
-    }
-    return m_genesis;
+const GenesisConfig &GenesisLookupResult::genesis() const {
+  if (!m_found) {
+    throw std::logic_error("GenesisLookupResult: genesis not found.");
+  }
+  return m_genesis;
 }
 
-const std::string& GenesisLookupResult::reason() const { return m_reason; }
+const std::string &GenesisLookupResult::reason() const { return m_reason; }
 
 // ---------------------------------------------------------------------------
 // GenesisRegistry
 // ---------------------------------------------------------------------------
 
-GenesisLookupResult GenesisRegistry::get(const std::string& networkName) {
-    if (isLocalnetName(networkName)) {
-        return GenesisLookupResult::found(buildLocalnetGenesis());
-    }
+GenesisLookupResult GenesisRegistry::get(const std::string &networkName) {
+  if (isLocalnetName(networkName)) {
+    return GenesisLookupResult::found(buildLocalnetGenesis());
+  }
 
-    if (isSoakName(networkName)) {
-        return GenesisLookupResult::found(buildSoakGenesis());
-    }
+  if (isSoakName(networkName)) {
+    return GenesisLookupResult::found(buildSoakGenesis());
+  }
 
-    if (isTestnetCandidateName(networkName)) {
-        return GenesisLookupResult::found(buildTestnetCandidateGenesis());
-    }
+  if (isTestnetCandidateName(networkName)) {
+    return GenesisLookupResult::found(buildTestnetCandidateGenesis());
+  }
 
-    if (networkName == "mainnet") {
-        return GenesisLookupResult::missing(
-            "mainnet does not have a registered genesis in this build. "
-            "mainnet startup is not permitted until an audited genesis configuration is registered."
-        );
-    }
-
+  if (networkName == "mainnet") {
     return GenesisLookupResult::missing(
-        "No registered genesis for network '" + networkName + "'. "
-        "Unknown network profiles cannot start a runtime."
-    );
+        "mainnet does not have a registered genesis in this build. "
+        "mainnet startup is not permitted until an audited genesis "
+        "configuration is registered.");
+  }
+
+  return GenesisLookupResult::missing(
+      "No registered genesis for network '" + networkName +
+      "'. "
+      "Unknown network profiles cannot start a runtime.");
 }
 
-bool GenesisRegistry::hasRegisteredGenesis(const std::string& networkName) {
-    return get(networkName).found();
+bool GenesisRegistry::hasRegisteredGenesis(const std::string &networkName) {
+  return get(networkName).found();
 }
 
-std::string GenesisRegistry::registeredGenesisId(const std::string& networkName) {
-    const GenesisLookupResult result = get(networkName);
-    if (!result.found()) {
-        return "";
-    }
-    return result.genesis().deterministicId();
+std::string
+GenesisRegistry::registeredGenesisId(const std::string &networkName) {
+  const GenesisLookupResult result = get(networkName);
+  if (!result.found()) {
+    return "";
+  }
+  return result.genesis().deterministicId();
 }
 
 std::string GenesisRegistry::localnetUserKeySeed() {
-    return "nodo-localnet-user-seed";
+  return "nodo-localnet-user-seed";
 }
 
-std::string GenesisRegistry::soakUserKeySeed() {
-    return "soak-funded-user";
-}
+std::string GenesisRegistry::soakUserKeySeed() { return "soak-funded-user"; }
 
 std::string GenesisRegistry::soakValidatorKeySeed(std::size_t index) {
-    if (index >= 3) {
-        throw std::out_of_range("Soak validator index is out of range.");
-    }
-    return "soak-validator-" +
-           std::string(1, static_cast<char>('a' + index));
+  if (index >= 3) {
+    throw std::out_of_range("Soak validator index is out of range.");
+  }
+  return "soak-validator-" + std::string(1, static_cast<char>('a' + index));
 }
 
 } // namespace nodo::config

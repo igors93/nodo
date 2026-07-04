@@ -4,9 +4,7 @@
 #include "storage/AtomicFile.hpp"
 
 #include <limits>
-#include <sstream>
 #include <stdexcept>
-#include <utility>
 
 namespace nodo::node {
 
@@ -108,21 +106,30 @@ bool parseBool(const std::string &value) {
 TcpTestnetNodeRuntimeConfig::TcpTestnetNodeRuntimeConfig()
     : m_nodeId(), m_host(), m_port(0), m_networkId(), m_chainId(),
       m_protocolVersion(), m_genesisId(), m_dataDirectory(),
-      m_defaultTtlSeconds(30), m_invalidMessageQuarantineThreshold(3) {}
+      m_defaultTtlSeconds(30), m_invalidMessageQuarantineThreshold(3),
+      m_maxGossipMessagesPerPeerWindow(100),
+      m_maxTransactionGossipPerPeerWindow(50),
+      m_maxTransactionRelayPerSecond(20) {}
 
 TcpTestnetNodeRuntimeConfig::TcpTestnetNodeRuntimeConfig(
     std::string nodeId, std::string host, std::uint16_t port,
     std::string networkId, std::string chainId, std::string protocolVersion,
     std::string genesisId, std::filesystem::path dataDirectory,
     std::uint32_t defaultTtlSeconds,
-    std::size_t invalidMessageQuarantineThreshold)
+    std::size_t invalidMessageQuarantineThreshold,
+    std::uint32_t maxGossipMessagesPerPeerWindow,
+    std::uint32_t maxTransactionGossipPerPeerWindow,
+    std::uint32_t maxTransactionRelayPerSecond)
     : m_nodeId(std::move(nodeId)), m_host(std::move(host)), m_port(port),
       m_networkId(std::move(networkId)), m_chainId(std::move(chainId)),
       m_protocolVersion(std::move(protocolVersion)),
       m_genesisId(std::move(genesisId)),
       m_dataDirectory(std::move(dataDirectory)),
       m_defaultTtlSeconds(defaultTtlSeconds),
-      m_invalidMessageQuarantineThreshold(invalidMessageQuarantineThreshold) {}
+      m_invalidMessageQuarantineThreshold(invalidMessageQuarantineThreshold),
+      m_maxGossipMessagesPerPeerWindow(maxGossipMessagesPerPeerWindow),
+      m_maxTransactionGossipPerPeerWindow(maxTransactionGossipPerPeerWindow),
+      m_maxTransactionRelayPerSecond(maxTransactionRelayPerSecond) {}
 
 const std::string &TcpTestnetNodeRuntimeConfig::nodeId() const {
   return m_nodeId;
@@ -151,6 +158,18 @@ std::uint32_t TcpTestnetNodeRuntimeConfig::defaultTtlSeconds() const {
 std::size_t
 TcpTestnetNodeRuntimeConfig::invalidMessageQuarantineThreshold() const {
   return m_invalidMessageQuarantineThreshold;
+}
+std::uint32_t
+TcpTestnetNodeRuntimeConfig::maxGossipMessagesPerPeerWindow() const {
+  return m_maxGossipMessagesPerPeerWindow;
+}
+std::uint32_t
+TcpTestnetNodeRuntimeConfig::maxTransactionGossipPerPeerWindow() const {
+  return m_maxTransactionGossipPerPeerWindow;
+}
+std::uint32_t
+TcpTestnetNodeRuntimeConfig::maxTransactionRelayPerSecond() const {
+  return m_maxTransactionRelayPerSecond;
 }
 
 std::filesystem::path TcpTestnetNodeRuntimeConfig::peersFilePath() const {
@@ -522,7 +541,9 @@ p2p::GossipMeshConfig TcpTestnetNodeRuntime::makeGossipConfig() const {
       m_config.nodeId(), m_config.networkId(), m_config.chainId(),
       m_config.protocolVersion(), m_config.genesisId(),
       m_config.defaultTtlSeconds(),
-      m_config.invalidMessageQuarantineThreshold(), true, true, eclipseConfig);
+      m_config.invalidMessageQuarantineThreshold(), true, true, eclipseConfig,
+      m_config.maxGossipMessagesPerPeerWindow(),
+      m_config.maxTransactionGossipPerPeerWindow());
 }
 
 } // namespace nodo::node

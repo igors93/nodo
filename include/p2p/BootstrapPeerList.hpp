@@ -21,21 +21,16 @@ namespace nodo::p2p {
  */
 class BootstrapPeerList {
 public:
-    static bool isValidPeer(const PeerEndpoint& endpoint);
+  static bool isValidPeer(const PeerEndpoint &endpoint);
 
-    static bool validateAll(
-        const std::vector<PeerEndpoint>& peers,
-        std::string& reason
-    );
+  static bool validateAll(const std::vector<PeerEndpoint> &peers,
+                          std::string &reason);
 
-    static std::vector<PeerEndpoint> parseFromLines(
-        const std::vector<std::string>& lines
-    );
+  static std::vector<PeerEndpoint>
+  parseFromLines(const std::vector<std::string> &lines);
 
-    static std::vector<PeerEndpoint> loadFromFile(
-        const std::filesystem::path& path,
-        std::string& reason
-    );
+  static std::vector<PeerEndpoint>
+  loadFromFile(const std::filesystem::path &path, std::string &reason);
 };
 
 } // namespace nodo::p2p
