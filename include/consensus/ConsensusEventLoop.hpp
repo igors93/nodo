@@ -102,6 +102,7 @@ public:
       std::uint64_t height, std::uint64_t round, std::int64_t now)>;
 
   ConsensusEventLoop(node::NodeRuntime &runtime, p2p::GossipMesh &gossip,
+                     p2p::GossipInbox &validatedInbox,
                      const crypto::CryptoPolicy &policy,
                      const crypto::SignatureProvider &provider);
 
@@ -174,6 +175,7 @@ public:
 private:
   node::NodeRuntime &m_runtime;
   p2p::GossipMesh &m_gossip;
+  p2p::GossipInbox &m_validatedInbox;
   const crypto::CryptoPolicy &m_policy;
   const crypto::SignatureProvider &m_provider;
 

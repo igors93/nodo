@@ -108,6 +108,13 @@ public:
              m_transport) {}
 
   p2p::GossipMesh mesh;
+  p2p::GossipInbox validatedInbox;
+
+  void routeMessages() {
+    for (const auto &msg : mesh.drainAllInbox()) {
+      validatedInbox.add(msg);
+    }
+  }
 };
 
 class TwoPeerConsensusNetwork {
@@ -147,6 +154,13 @@ public:
 
   p2p::GossipMesh consensusMesh;
   p2p::GossipMesh peerMesh;
+  p2p::GossipInbox validatedInbox;
+
+  void routeMessages() {
+    for (const auto &msg : consensusMesh.drainAllInbox()) {
+      validatedInbox.add(msg);
+    }
+  }
 };
 
 const ValidatorFixture &
@@ -228,6 +242,7 @@ void testConflictingVoteCreatesEvidenceImmediately() {
   consensus::EvidencePool evidencePool;
 
   consensus::ConsensusEventLoop loop(runtime, network.consensusMesh,
+                                     network.validatedInbox,
                                      developmentPolicy(), provider);
   loop.setEvidencePool(&evidencePool);
 
@@ -239,6 +254,7 @@ void testConflictingVoteCreatesEvidenceImmediately() {
   sendVoteToConsensusPeer(network, first, kTimestamp + 3);
   sendVoteToConsensusPeer(network, second, kTimestamp + 4);
 
+  network.routeMessages();
   const consensus::ConsensusTickResult result = loop.tick(kTimestamp + 5);
 
   require(result.votesCollected == 1,
@@ -287,11 +303,13 @@ void testCandidateDoesNotEnterChainWithoutQuorum() {
   const crypto::Signer signer(proposerFixture(validators, runtime).keyPair,
                               provider);
 
-  consensus::ConsensusEventLoop loop(runtime, network.mesh, developmentPolicy(),
+  consensus::ConsensusEventLoop loop(runtime, network.mesh,
+                                     network.validatedInbox, developmentPolicy(),
                                      provider);
   configureProducer(loop, signer);
   injectProposal(runtime, network.mesh, signer, kTimestamp + 2);
 
+  network.routeMessages();
   const consensus::ConsensusTickResult result = loop.tick(kTimestamp + 3);
 
   require(!result.blockFinalized,
@@ -312,7 +330,8 @@ void testSingleValidatorCandidateAppendsOnlyDuringFinalization() {
   const crypto::Bls12381SignatureProvider provider;
   const crypto::Signer signer(validators.front().keyPair, provider);
 
-  consensus::ConsensusEventLoop loop(runtime, network.mesh, developmentPolicy(),
+  consensus::ConsensusEventLoop loop(runtime, network.mesh,
+                                     network.validatedInbox, developmentPolicy(),
                                      provider);
   configureProducer(loop, signer);
 
@@ -320,6 +339,7 @@ void testSingleValidatorCandidateAppendsOnlyDuringFinalization() {
           "The test must begin with genesis only.");
 
   injectProposal(runtime, network.mesh, signer, kTimestamp + 2);
+  network.routeMessages();
   const consensus::ConsensusTickResult result = loop.tick(kTimestamp + 3);
 
   require(result.blockFinalized,
@@ -338,11 +358,13 @@ void testMissingProposalStillAdvancesRound() {
   TestNetwork network(genesis);
   const crypto::Bls12381SignatureProvider provider;
 
-  consensus::ConsensusEventLoop loop(runtime, network.mesh, developmentPolicy(),
+  consensus::ConsensusEventLoop loop(runtime, network.mesh,
+                                     network.validatedInbox, developmentPolicy(),
                                      provider);
 
   const auto timeout =
       runtime.consensusRoundManager().roundTimeout().expiresAt();
+  network.routeMessages();
   const consensus::ConsensusTickResult result = loop.tick(timeout);
 
   require(result.roundAdvanced,
@@ -370,12 +392,14 @@ void testConsensusLoopPersistsSignedPrevoteBeforeBroadcast() {
   std::error_code cleanupError;
   std::filesystem::remove(recoveryPath, cleanupError);
 
-  consensus::ConsensusEventLoop loop(runtime, network.mesh, developmentPolicy(),
+  consensus::ConsensusEventLoop loop(runtime, network.mesh,
+                                     network.validatedInbox, developmentPolicy(),
                                      provider);
   loop.setRecoveryPath(recoveryPath);
   configureProducer(loop, signer);
 
   injectProposal(runtime, network.mesh, signer, kTimestamp + 2);
+  network.routeMessages();
   const consensus::ConsensusTickResult result = loop.tick(kTimestamp + 3);
 
   require(!result.blockFinalized,

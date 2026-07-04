@@ -45,10 +45,10 @@ std::int64_t effectiveMinimumFee(const node::NodeRuntime &runtime) {
 
 ConsensusEventLoop::ConsensusEventLoop(
     node::NodeRuntime &runtime, p2p::GossipMesh &gossip,
-    const crypto::CryptoPolicy &policy,
+    p2p::GossipInbox &validatedInbox, const crypto::CryptoPolicy &policy,
     const crypto::SignatureProvider &provider)
-    : m_runtime(runtime), m_gossip(gossip), m_policy(policy),
-      m_provider(provider) {}
+    : m_runtime(runtime), m_gossip(gossip), m_validatedInbox(validatedInbox),
+      m_policy(policy), m_provider(provider) {}
 
 ConsensusEventLoop::~ConsensusEventLoop() {}
 
@@ -423,7 +423,7 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
       p2p::NetworkMessageType::VALIDATOR_VOTE};
 
   for (const auto voteType : voteTypes) {
-    const auto voteMessages = m_gossip.drainInbox(voteType);
+    const auto voteMessages = m_validatedInbox.drain(voteType);
 
     for (const auto &envelope : voteMessages) {
       if (envelope.payload().empty())
@@ -468,8 +468,8 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
 
 void ConsensusEventLoop::drainSlashingEvidence(std::int64_t now,
                                                ConsensusTickResult &result) {
-  const auto messages =
-      m_gossip.drainInbox(p2p::NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE);
+  const auto messages = m_validatedInbox.drain(
+      p2p::NetworkMessageType::SLASHING_EVIDENCE_ANNOUNCE);
   if (messages.empty())
     return;
 
@@ -566,7 +566,7 @@ void ConsensusEventLoop::admitAndBroadcastProposerEquivocationEvidence(
 
 void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
   auto messages =
-      m_gossip.drainInbox(p2p::NetworkMessageType::BLOCK_PROPOSAL);
+      m_validatedInbox.drain(p2p::NetworkMessageType::BLOCK_PROPOSAL);
 
   if (m_runtime.blockchain().empty())
     return;
@@ -578,8 +578,7 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
   if (!m_bufferedNextRoundProposals.empty()) {
     if (m_bufferedProposalHeight == state.height() &&
         m_bufferedProposalRound == state.round()) {
-      messages.insert(messages.begin(),
-                      m_bufferedNextRoundProposals.begin(),
+      messages.insert(messages.begin(), m_bufferedNextRoundProposals.begin(),
                       m_bufferedNextRoundProposals.end());
       m_bufferedNextRoundProposals.clear();
       m_bufferedProposalHeight = 0;

@@ -147,8 +147,15 @@ public:
   node::NodeRuntime runtime;
   p2p::LoopbackTransport transport;
   p2p::GossipMesh mesh;
+  p2p::GossipInbox validatedInbox;
   std::optional<crypto::Signer> validatorSigner;
   std::unique_ptr<consensus::ConsensusEventLoop> consensusLoop;
+
+  void routeMessages() {
+    for (const auto &msg : mesh.drainAllInbox()) {
+      validatedInbox.add(msg);
+    }
+  }
 };
 
 p2p::PeerMetadata peerMetadata(const TestNode &node, std::size_t index) {
@@ -235,7 +242,7 @@ void configureConsensus(TestNode &node,
                         const crypto::Bls12381SignatureProvider &provider) {
   node.validatorSigner.emplace(node.spec.validatorKey, provider);
   node.consensusLoop = std::make_unique<consensus::ConsensusEventLoop>(
-      node.runtime, node.mesh, developmentPolicy(), provider);
+      node.runtime, node.mesh, node.validatedInbox, developmentPolicy(), provider);
   node.consensusLoop->setLocalValidatorAddress(node.validatorSigner->address());
   node.consensusLoop->setLocalSigner(&node.validatorSigner.value());
   node.consensusLoop->setRecoveryPath(node.directory.consensusRecoveryPath());
@@ -246,6 +253,8 @@ void finalizeWithTwoOfThreeValidators(TestNode &first, TestNode &second) {
   for (std::int64_t step = 0; step < 40; ++step) {
     const std::int64_t now = kGenesisTimestamp + 1 + step;
     pumpNetwork(first, second, now);
+    first.routeMessages();
+    second.routeMessages();
 
     const consensus::ConsensusTickResult firstResult =
         first.consensusLoop->tick(now);

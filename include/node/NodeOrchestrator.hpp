@@ -15,9 +15,11 @@
 #include "node/SyncHealth.hpp"
 #include "node/TcpTestnetNodeRuntime.hpp"
 #include "p2p/GossipMesh.hpp"
+#include "p2p/InboundMessageValidator.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 #include "p2p/Peer.hpp"
 #include "p2p/PeerReconnectionPolicy.hpp"
+#include "p2p/PeerReputation.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -249,6 +251,9 @@ private:
   consensus::EvidencePool m_evidencePool;
   std::unique_ptr<p2p::DiscoveryService> m_discoveryService;
   p2p::PeerReconnectionPolicy m_reconnectionPolicy;
+  p2p::PeerReputation m_peerReputation;
+  p2p::InboundMessageValidator m_inboundValidator;
+  p2p::GossipInbox m_validatedInbox;
   std::map<std::string, p2p::PeerEndpoint> m_reconnectEndpoints;
   std::set<std::string> m_discoverySeededPeers;
   std::int64_t m_lastPeerExchangeBroadcastAt = 0;

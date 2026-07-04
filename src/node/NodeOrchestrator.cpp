@@ -286,7 +286,31 @@ NodeOrchestrator::NodeOrchestrator(NodeOrchestratorConfig config,
                                    const crypto::CryptoPolicy &policy,
                                    const crypto::SignatureProvider &provider)
     : m_config(std::move(config)), m_policy(policy), m_provider(provider),
-      m_running(false) {}
+      m_peerReputation(), m_running(false) {
+  p2p::InboundMessagePolicy validatorPolicy;
+  validatorPolicy.setMaxPayloadBytes(p2p::NetworkMessageType::PING, 1024);
+  validatorPolicy.setMaxPayloadBytes(p2p::NetworkMessageType::PONG, 1024);
+  validatorPolicy.setMaxPayloadBytes(p2p::NetworkMessageType::PEER_CHALLENGE,
+                                     1024);
+  validatorPolicy.setMaxPayloadBytes(p2p::NetworkMessageType::PEER_HELLO, 4096);
+  validatorPolicy.setMaxPayloadBytes(p2p::NetworkMessageType::CHAIN_STATUS,
+                                     8192);
+  validatorPolicy.setMaxPayloadBytes(p2p::NetworkMessageType::BLOCK_ANNOUNCE,
+                                     2 * 1024 * 1024);
+  validatorPolicy.setMaxPayloadBytes(
+      p2p::NetworkMessageType::BLOCK_SYNC_REQUEST, 4096);
+  validatorPolicy.setMaxPayloadBytes(
+      p2p::NetworkMessageType::BLOCK_SYNC_RESPONSE, 2 * 1024 * 1024);
+  validatorPolicy.setMaxPayloadBytes(
+      p2p::NetworkMessageType::TRANSACTION_ANNOUNCE, 4096);
+  validatorPolicy.setMaxPayloadBytes(
+      p2p::NetworkMessageType::TRANSACTION_REQUEST, 4096);
+  validatorPolicy.setMaxPayloadBytes(
+      p2p::NetworkMessageType::TRANSACTION_RESPONSE, 2 * 1024 * 1024);
+  validatorPolicy.setMaxPayloadBytes(
+      p2p::NetworkMessageType::TRANSACTION_GOSSIP, 2 * 1024 * 1024);
+  m_inboundValidator = p2p::InboundMessageValidator(validatorPolicy);
+}
 
 NodeOrchestrator::~NodeOrchestrator() { stop(); }
 
@@ -381,6 +405,31 @@ void NodeOrchestrator::tick(std::int64_t now) {
 
   auto &gossip = m_tcpRuntime->gossipMesh();
 
+  // Inbound message validation path
+  const auto allMessages = gossip.drainAllInbox();
+  for (const auto &envelope : allMessages) {
+    const p2p::InboundMessageResult validation = m_inboundValidator.validate(
+        envelope, m_config.genesisConfig().networkParameters().networkName(),
+        m_config.genesisConfig().networkParameters().chainId(),
+        m_config.localPeer().protocolVersion(), now);
+    if (!validation.accepted()) {
+      if (validation.status() == p2p::InboundMessageStatus::DUPLICATE_MESSAGE) {
+        // Normal consequence of gossip graph cycles and rebroadcasts.
+        continue;
+      }
+      m_peerReputation.reportBehavior(envelope.senderNodeId(), "", -10, now,
+                                      validation.reason());
+      std::cout << "[NodeOrchestrator] inbound message rejected: "
+                << p2p::inboundMessageStatusToString(validation.status())
+                << " type="
+                << p2p::networkMessageTypeToString(envelope.messageType())
+                << " from=" << envelope.senderNodeId()
+                << " reason=" << validation.reason() << std::endl;
+      continue;
+    }
+    m_validatedInbox.add(envelope);
+  }
+
   // Snapshot our chain height once. Used throughout this tick.
   const std::uint64_t localHeight =
       m_runtime->blockchain().empty()
@@ -392,7 +441,9 @@ void NodeOrchestrator::tick(std::int64_t now) {
     const auto localPeer = localHandshakePeer(now);
     if (localPeer.has_value()) {
       PeerHandshakeAutoRegistrar::processInbox(
-          gossip, *localPeer, currentChainStatus(), *m_localNodeIdentity, now);
+          gossip, m_validatedInbox.drain(p2p::NetworkMessageType::PEER_HELLO),
+          m_validatedInbox.drain(p2p::NetworkMessageType::PEER_CHALLENGE),
+          *localPeer, currentChainStatus(), *m_localNodeIdentity, now);
     }
   }
 
@@ -408,7 +459,7 @@ void NodeOrchestrator::tick(std::int64_t now) {
   // persistent sync when a peer is materially ahead of us.
   {
     const auto chainStatusMsgs =
-        gossip.drainInbox(p2p::NetworkMessageType::CHAIN_STATUS);
+        m_validatedInbox.drain(p2p::NetworkMessageType::CHAIN_STATUS);
     for (const auto &envelope : chainStatusMsgs) {
       const std::optional<ChainStatusMessage> statusMessage =
           ChainStatusGossipCodec::decode(envelope.payload());
@@ -449,17 +500,17 @@ void NodeOrchestrator::tick(std::int64_t now) {
   // Announcements are hints, not finality proofs. Consensus proposals use
   // SIGNED_BLOCK_PROPOSAL; finalized catch-up uses BLOCK_SYNC_RESPONSE.
   // Never append an announced block directly to the canonical chain.
-  gossip.drainInbox(p2p::NetworkMessageType::BLOCK_ANNOUNCE);
+  m_validatedInbox.drain(p2p::NetworkMessageType::BLOCK_ANNOUNCE);
 
   // The legacy block-only protocol cannot reproduce full runtime state.
-  gossip.drainInbox(p2p::NetworkMessageType::BLOCK_REQUEST);
+  m_validatedInbox.drain(p2p::NetworkMessageType::BLOCK_REQUEST);
 
   // Serve incoming BLOCK_SYNC_REQUEST messages (persistent sync path).
   // Decode each request, build a PersistentBlockSyncBatch from local blocks,
   // and broadcast a BLOCK_SYNC_RESPONSE so the requester can apply the batch.
   {
     const auto syncRequests =
-        gossip.drainInbox(p2p::NetworkMessageType::BLOCK_SYNC_REQUEST);
+        m_validatedInbox.drain(p2p::NetworkMessageType::BLOCK_SYNC_REQUEST);
     for (const auto &envelope : syncRequests) {
       const auto optBytes = tryUnwrapCanonical(envelope.payload());
       if (!optBytes.has_value())
@@ -506,11 +557,14 @@ void NodeOrchestrator::tick(std::int64_t now) {
             req.requesterNodeId(), p2p::NetworkMessageType::BLOCK_SYNC_RESPONSE,
             kOrchestratorCanonicalPrefix + crypto::hexEncode(encoded), now);
       } catch (const std::exception &e) {
-        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST serve error: " << e.what() << std::endl;
+        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST serve error: "
+                  << e.what() << std::endl;
         m_syncHealth.recordServeFailure(
             std::string("BLOCK_SYNC_REQUEST serve error: ") + e.what(), now);
       } catch (...) {
-        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST unknown serve error." << std::endl;
+        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST unknown "
+                     "serve error."
+                  << std::endl;
         m_syncHealth.recordServeFailure(
             "BLOCK_SYNC_REQUEST unknown serve error.", now);
       }
@@ -520,14 +574,14 @@ void NodeOrchestrator::tick(std::int64_t now) {
   // Legacy BLOCK_RESPONSE messages do not carry the complete finalized
   // artifact needed to replay supply, governance and historical validator
   // state. Drain them; canonical synchronization uses BLOCK_SYNC_RESPONSE.
-  gossip.drainInbox(p2p::NetworkMessageType::BLOCK_RESPONSE);
+  m_validatedInbox.drain(p2p::NetworkMessageType::BLOCK_RESPONSE);
 
   // Apply any received BLOCK_SYNC_RESPONSE batches (persistent sync path).
   // Each batch is validated block-by-block with ProtocolCommitment mode before
   // being added to the chain. Applied blocks are persisted immediately.
   {
     const auto syncResponses =
-        gossip.drainInbox(p2p::NetworkMessageType::BLOCK_SYNC_RESPONSE);
+        m_validatedInbox.drain(p2p::NetworkMessageType::BLOCK_SYNC_RESPONSE);
 
     PersistentSyncCheckpointStore cpStore(m_config.dataDirectory().rootPath());
     const PersistentSyncCheckpointReadResult readCp = cpStore.read();
@@ -574,15 +628,20 @@ void NodeOrchestrator::tick(std::int64_t now) {
           currentCheckpoint = applyResult.checkpoint().value();
           m_syncHealth.recordSuccess(now);
         } else {
-          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE import failed: " << applyResult.reason() << std::endl;
+          std::cout
+              << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE import failed: "
+              << applyResult.reason() << std::endl;
           m_syncHealth.recordBatchFailure(applyResult.reason(), now);
         }
       } catch (const std::exception &e) {
-        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE exception: " << e.what() << std::endl;
+        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE exception: "
+                  << e.what() << std::endl;
         m_syncHealth.recordBatchFailure(
             std::string("BLOCK_SYNC_RESPONSE import error: ") + e.what(), now);
       } catch (...) {
-        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE unknown exception." << std::endl;
+        std::cout
+            << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE unknown exception."
+            << std::endl;
         m_syncHealth.recordBatchFailure(
             "BLOCK_SYNC_RESPONSE unknown import error.", now);
       }
@@ -650,7 +709,7 @@ std::vector<p2p::NetworkEnvelope>
 NodeOrchestrator::drainGossipInbox(p2p::NetworkMessageType type) {
   if (!m_tcpRuntime)
     return {};
-  return m_tcpRuntime->gossipMesh().drainInbox(type);
+  return m_validatedInbox.drain(type);
 }
 
 p2p::GossipDeliveryReport
@@ -904,7 +963,8 @@ bool NodeOrchestrator::startTransport() {
 
 bool NodeOrchestrator::startConsensus() {
   m_consensusLoop = std::make_unique<consensus::ConsensusEventLoop>(
-      *m_runtime, m_tcpRuntime->gossipMesh(), m_policy, m_provider);
+      *m_runtime, m_tcpRuntime->gossipMesh(), m_validatedInbox, m_policy,
+      m_provider);
 
   // Wire the local validator address so the loop knows when to propose.
   m_consensusLoop->setLocalValidatorAddress(m_config.localValidatorAddress());
@@ -1268,7 +1328,7 @@ void NodeOrchestrator::processPeerExchangeMessages(std::int64_t now) {
 
   auto &gossip = m_tcpRuntime->gossipMesh();
   const auto envelopes =
-      gossip.drainInbox(p2p::NetworkMessageType::PEER_EXCHANGE);
+      m_validatedInbox.drain(p2p::NetworkMessageType::PEER_EXCHANGE);
   for (const p2p::NetworkEnvelope &envelope : envelopes) {
     if (!m_tcpRuntime->hasAuthenticatedSession(envelope.senderNodeId())) {
       gossip.reportPeerMisbehavior(

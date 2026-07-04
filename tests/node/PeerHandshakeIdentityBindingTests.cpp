@@ -25,6 +25,15 @@ node::ChainStatusMessage chainStatus() {
                                   "block-10", 10, "block-10");
 }
 
+std::vector<node::HandshakeRegistrationResult>
+processHandshakes(p2p::GossipMesh &mesh, const p2p::PeerMetadata &localPeer,
+                  const crypto::KeyPair &identity, std::int64_t now) {
+  return node::PeerHandshakeAutoRegistrar::processInbox(
+      mesh, mesh.drainInbox(p2p::NetworkMessageType::PEER_HELLO),
+      mesh.drainInbox(p2p::NetworkMessageType::PEER_CHALLENGE), localPeer,
+      chainStatus(), identity, now);
+}
+
 p2p::NetworkEnvelope deliverHello(p2p::LoopbackTransport &remoteTransport,
                                   p2p::GossipMesh &localMesh,
                                   const p2p::GossipMeshConfig &remoteConfig,
@@ -86,8 +95,8 @@ int main() {
   const p2p::NetworkEnvelope originalHello =
       deliverHello(remoteTransport, localMesh, originalConfig, original,
                    originalIdentity, 1000);
-  const auto registered = node::PeerHandshakeAutoRegistrar::processInbox(
-      localMesh, localPeer, chainStatus(), localIdentity, 1000);
+  const auto registered =
+      processHandshakes(localMesh, localPeer, localIdentity, 1000);
   assert(registered.size() == 1);
   assert(registered[0].registered);
 
@@ -101,8 +110,8 @@ int main() {
                                          replayWrappedHello, 1000))
              .success());
   assert(localMesh.receiveAvailable(1000).acceptedCount() == 1);
-  const auto replayed = node::PeerHandshakeAutoRegistrar::processInbox(
-      localMesh, localPeer, chainStatus(), localIdentity, 1000);
+  const auto replayed =
+      processHandshakes(localMesh, localPeer, localIdentity, 1000);
   assert(replayed.size() == 1);
   assert(!replayed[0].registered);
   assert(replayed[0].reason.find("already consumed") != std::string::npos);
@@ -115,8 +124,8 @@ int main() {
       peer("node-remote", originalIdentity, 1001);
   deliverHello(remoteTransport, localMesh, originalConfig, refreshed,
                originalIdentity, 1001);
-  const auto refreshedResult = node::PeerHandshakeAutoRegistrar::processInbox(
-      localMesh, localPeer, chainStatus(), localIdentity, 1001);
+  const auto refreshedResult =
+      processHandshakes(localMesh, localPeer, localIdentity, 1001);
   assert(refreshedResult.size() == 1);
   assert(!refreshedResult[0].registered);
   assert(refreshedResult[0].alreadyKnown);
@@ -125,8 +134,8 @@ int main() {
       peer("node-remote", attackerIdentity, 1002);
   deliverHello(remoteTransport, localMesh, originalConfig, takeover,
                attackerIdentity, 1002);
-  const auto takeoverResult = node::PeerHandshakeAutoRegistrar::processInbox(
-      localMesh, localPeer, chainStatus(), localIdentity, 1002);
+  const auto takeoverResult =
+      processHandshakes(localMesh, localPeer, localIdentity, 1002);
   assert(takeoverResult.size() == 1);
   assert(!takeoverResult[0].registered);
   assert(!takeoverResult[0].alreadyKnown);
@@ -141,8 +150,8 @@ int main() {
       peer("node-remote-rotated", originalIdentity, 1003);
   deliverHello(remoteTransport, localMesh, aliasConfig, alias, originalIdentity,
                1003);
-  const auto aliasResult = node::PeerHandshakeAutoRegistrar::processInbox(
-      localMesh, localPeer, chainStatus(), localIdentity, 1003);
+  const auto aliasResult =
+      processHandshakes(localMesh, localPeer, localIdentity, 1003);
   assert(aliasResult.size() == 1);
   assert(!aliasResult[0].registered);
   assert(!localMesh.peerRegistry().contains("node-remote-rotated"));
@@ -204,8 +213,8 @@ int main() {
                                          tamperedHello, 1005))
              .success());
   assert(localMesh.receiveAvailable(1005).acceptedCount() == 1);
-  const auto forgedResult = node::PeerHandshakeAutoRegistrar::processInbox(
-      localMesh, localPeer, chainStatus(), localIdentity, 1005);
+  const auto forgedResult =
+      processHandshakes(localMesh, localPeer, localIdentity, 1005);
   assert(forgedResult.size() == 1);
   assert(!forgedResult[0].registered);
   assert(forgedResult[0].reason.find("Handshake validation rejected") !=

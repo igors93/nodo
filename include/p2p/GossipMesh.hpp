@@ -3,7 +3,6 @@
 
 #include "node/EvidenceCaptureHealth.hpp"
 #include "p2p/EclipseGuard.hpp"
-#include "p2p/InboundMessageValidator.hpp"
 #include "p2p/OutboundMessageQueue.hpp"
 #include "p2p/PeerHandshakeReplayGuard.hpp"
 #include "p2p/PeerRateLimiter.hpp"
@@ -194,6 +193,9 @@ public:
   // Use instead of inbox().messagesForType() to avoid replay on each tick.
   std::vector<NetworkEnvelope> drainInbox(NetworkMessageType type);
 
+  // Drains all messages from the inbox.
+  std::vector<NetworkEnvelope> drainAllInbox();
+
   // Returns a snapshot of the current evidence capture health.
   // Use this to surface persistence failures through operator diagnostics.
   const node::EvidenceCaptureHealth &evidenceCaptureHealth() const;
@@ -205,7 +207,6 @@ private:
   PeerRegistry m_peerRegistry;
   PeerHandshakeReplayGuard m_handshakeReplayGuard;
   OutboundMessageQueue m_outboundQueue;
-  InboundMessageValidator m_inboundValidator;
   PeerRateLimiter m_rateLimiter;
   EclipseGuard m_eclipseGuard;
   GossipInbox m_inbox;

@@ -29,6 +29,15 @@ node::ChainStatusMessage status() {
                                   "block-10", 10, "block-10");
 }
 
+std::vector<node::HandshakeRegistrationResult>
+processHandshakes(p2p::GossipMesh &mesh, const p2p::PeerMetadata &localPeer,
+                  const crypto::KeyPair &identity, std::int64_t now) {
+  return node::PeerHandshakeAutoRegistrar::processInbox(
+      mesh, mesh.drainInbox(p2p::NetworkMessageType::PEER_HELLO),
+      mesh.drainInbox(p2p::NetworkMessageType::PEER_CHALLENGE), localPeer,
+      status(), identity, now);
+}
+
 } // namespace
 
 int main() {
@@ -66,8 +75,7 @@ int main() {
   assert(meshB.receiveAvailable(1000).acceptedCount() == 1);
   assert(meshB.inbox().countForType(p2p::NetworkMessageType::PEER_CHALLENGE) ==
          1);
-  const auto firstStep = node::PeerHandshakeAutoRegistrar::processInbox(
-      meshB, peerB, status(), identityB, 1000);
+  const auto firstStep = processHandshakes(meshB, peerB, identityB, 1000);
   assert(firstStep.empty());
 
   assert(meshA.receiveAvailable(1001).acceptedCount() == 2);
@@ -75,15 +83,13 @@ int main() {
       meshA.inbox()
           .messagesForType(p2p::NetworkMessageType::PEER_HELLO)
           .front();
-  const auto secondStep = node::PeerHandshakeAutoRegistrar::processInbox(
-      meshA, peerA, status(), identityA, 1001);
+  const auto secondStep = processHandshakes(meshA, peerA, identityA, 1001);
   assert(secondStep.size() == 1);
   assert(secondStep.front().registered);
   assert(meshA.peerRegistry().contains("node-b"));
 
   assert(meshB.receiveAvailable(1002).acceptedCount() == 1);
-  const auto thirdStep = node::PeerHandshakeAutoRegistrar::processInbox(
-      meshB, peerB, status(), identityB, 1002);
+  const auto thirdStep = processHandshakes(meshB, peerB, identityB, 1002);
   assert(thirdStep.size() == 1);
   assert(thirdStep.front().registered);
   assert(meshB.peerRegistry().contains("node-a"));
@@ -112,8 +118,7 @@ int main() {
                                          1003))
              .success());
   assert(meshA.receiveAvailable(1003).acceptedCount() == 1);
-  const auto replayedHello = node::PeerHandshakeAutoRegistrar::processInbox(
-      meshA, peerA, status(), identityA, 1003);
+  const auto replayedHello = processHandshakes(meshA, peerA, identityA, 1003);
   assert(replayedHello.size() == 1);
   assert(!replayedHello.front().registered);
   assert(replayedHello.front().reason.find("already consumed") !=

@@ -112,10 +112,18 @@ int main() {
         const std::int64_t now = 1000 + attempt;
         (void)nodeB.tick(now);
         (void)node::PeerHandshakeAutoRegistrar::processInbox(
-            nodeB.gossipMesh(), peerB, status, identityB, now);
+            nodeB.gossipMesh(),
+            nodeB.gossipMesh().drainInbox(p2p::NetworkMessageType::PEER_HELLO),
+            nodeB.gossipMesh().drainInbox(
+                p2p::NetworkMessageType::PEER_CHALLENGE),
+            peerB, status, identityB, now);
         (void)nodeA.tick(now);
         (void)node::PeerHandshakeAutoRegistrar::processInbox(
-            nodeA.gossipMesh(), peerA, status, identityA, now);
+            nodeA.gossipMesh(),
+            nodeA.gossipMesh().drainInbox(p2p::NetworkMessageType::PEER_HELLO),
+            nodeA.gossipMesh().drainInbox(
+                p2p::NetworkMessageType::PEER_CHALLENGE),
+            peerA, status, identityA, now);
     }
 
     assert(nodeA.gossipMesh().peerRegistry().contains("node-b"));

@@ -226,7 +226,7 @@ std::string GossipInbox::serialize() const {
 GossipMesh::GossipMesh(GossipMeshConfig config, Transport &transport)
     : m_config(std::move(config)), m_transport(transport),
       m_evidenceStore(nullptr), m_peerRegistry(), m_handshakeReplayGuard(),
-      m_outboundQueue(1024), m_inboundValidator(), m_rateLimiter(),
+      m_outboundQueue(1024), m_rateLimiter(),
       m_eclipseGuard(m_config.eclipseGuardConfig()), m_inbox(),
       m_connectionByMessageId(), m_invalidMessagesByIdentity(),
       m_lastEvidenceAt(), m_evidenceCaptureHealth(),
@@ -238,8 +238,8 @@ GossipMesh::GossipMesh(GossipMeshConfig config, Transport &transport,
                        storage::ProtocolEvidenceStore *evidenceStore)
     : m_config(std::move(config)), m_transport(transport),
       m_evidenceStore(evidenceStore), m_peerRegistry(),
-      m_handshakeReplayGuard(), m_outboundQueue(1024), m_inboundValidator(),
-      m_rateLimiter(), m_eclipseGuard(m_config.eclipseGuardConfig()), m_inbox(),
+      m_handshakeReplayGuard(), m_outboundQueue(1024), m_rateLimiter(),
+      m_eclipseGuard(m_config.eclipseGuardConfig()), m_inbox(),
       m_connectionByMessageId(), m_invalidMessagesByIdentity(),
       m_lastEvidenceAt(), m_evidenceCaptureHealth(),
       m_peerPenaltyPersistenceHandler(), m_lastPeerPenaltyPersistenceError() {
@@ -263,6 +263,10 @@ const GossipInbox &GossipMesh::inbox() const { return m_inbox; }
 
 std::vector<NetworkEnvelope> GossipMesh::drainInbox(NetworkMessageType type) {
   return m_inbox.drain(type);
+}
+
+std::vector<NetworkEnvelope> GossipMesh::drainAllInbox() {
+  return m_inbox.drainAll();
 }
 
 const node::EvidenceCaptureHealth &GossipMesh::evidenceCaptureHealth() const {
@@ -644,17 +648,27 @@ GossipDeliveryReport GossipMesh::receiveAvailable(std::int64_t now) {
       }
     }
 
-    const InboundMessageResult validation = m_inboundValidator.validate(
-        message->envelope(), m_config.networkId(), m_config.chainId(),
-        m_config.protocolVersion(), now);
-
-    if (!validation.accepted()) {
-      const PeerMisbehaviorType misbehavior =
-          validation.status() == InboundMessageStatus::RATE_LIMITED
-              ? PeerMisbehaviorType::RATE_LIMIT_EXCEEDED
-              : PeerMisbehaviorType::INVALID_MESSAGE;
-      recordInvalidMessage(message->fromNodeId(), validation.reason(), now,
-                           misbehavior, &message->envelope());
+    // Stateless envelope identity checks stay at the mesh so a peer speaking
+    // for the wrong network/chain/protocol feeds quarantine and evidence
+    // capture even when no orchestrator drives this mesh. Stateful policy
+    // (dedup, per-type payload limits, per-peer windows) lives in the
+    // NodeOrchestrator inbound validation path.
+    const NetworkEnvelope &envelope = message->envelope();
+    std::string identityMismatchReason;
+    if (!envelope.isStructurallyValid(
+            core::ProtocolLimits::MAX_NETWORK_PAYLOAD_BYTES)) {
+      identityMismatchReason = "Network envelope failed structural validation.";
+    } else if (envelope.networkId() != m_config.networkId()) {
+      identityMismatchReason = "Network id mismatch.";
+    } else if (envelope.chainId() != m_config.chainId()) {
+      identityMismatchReason = "Chain id mismatch.";
+    } else if (envelope.protocolVersion() != m_config.protocolVersion()) {
+      identityMismatchReason = "Protocol version mismatch.";
+    }
+    if (!identityMismatchReason.empty()) {
+      recordInvalidMessage(message->fromNodeId(), identityMismatchReason, now,
+                           PeerMisbehaviorType::INVALID_MESSAGE,
+                           &message->envelope());
       ++rejected;
       continue;
     }

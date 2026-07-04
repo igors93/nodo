@@ -28,7 +28,9 @@ std::string encodedChainStatus(const ChainStatusMessage &status) {
 
 std::vector<HandshakeRegistrationResult>
 PeerHandshakeAutoRegistrar::processInbox(
-    p2p::GossipMesh &gossip, const p2p::PeerMetadata &localPeer,
+    p2p::GossipMesh &gossip, const std::vector<p2p::NetworkEnvelope> &hellos,
+    const std::vector<p2p::NetworkEnvelope> &challengesMsgs,
+    const p2p::PeerMetadata &localPeer,
     const ChainStatusMessage &localChainStatus,
     const crypto::KeyPair &nodeIdentityKey, std::int64_t now) {
   std::vector<HandshakeRegistrationResult> results;
@@ -45,9 +47,7 @@ PeerHandshakeAutoRegistrar::processInbox(
   auto &replayGuard = gossip.handshakeReplayGuard();
   replayGuard.prune(now);
 
-  const auto messages = gossip.drainInbox(p2p::NetworkMessageType::PEER_HELLO);
-
-  for (const auto &envelope : messages) {
+  for (const auto &envelope : hellos) {
     (void)gossip.takeConnectionIdForEnvelope(envelope);
     HandshakeRegistrationResult result;
     result.peerId = envelope.senderNodeId();
@@ -180,9 +180,7 @@ PeerHandshakeAutoRegistrar::processInbox(
     results.push_back(result);
   }
 
-  const auto challenges =
-      gossip.drainInbox(p2p::NetworkMessageType::PEER_CHALLENGE);
-  for (const auto &envelope : challenges) {
+  for (const auto &envelope : challengesMsgs) {
     const p2p::TransportConnectionId connectionId =
         gossip.takeConnectionIdForEnvelope(envelope);
     const std::optional<p2p::PeerChallengeMessage> challenge =
