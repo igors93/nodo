@@ -889,6 +889,10 @@ bool NodeOrchestrator::startTransport() {
 
   m_tcpRuntime = std::make_unique<TcpTestnetNodeRuntime>(transportConfig);
 
+  m_tcpRuntime->transport().setIpQuarantineCheck([this](const std::string &ip) {
+    return m_tcpRuntime->gossipMesh().isIpQuarantined(ip);
+  });
+
   const auto transportResult = m_tcpRuntime->start();
   if (!transportResult.success())
     return false;

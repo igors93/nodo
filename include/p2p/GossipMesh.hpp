@@ -166,16 +166,20 @@ public:
   std::uint32_t rateLimitedMessageCountForPeer(const std::string &nodeId,
                                                std::int64_t now) const;
 
+  std::size_t quarantineEscalationForPeer(const std::string &nodeId) const;
+
   void reportPeerMisbehavior(const NetworkEnvelope &envelope,
                              PeerMisbehaviorType type,
                              const std::string &reason, std::int64_t now);
 
   bool restorePeerPenaltyState(const std::string &nodeId,
                                std::size_t invalidMessageCount,
+                               std::size_t escalationCount,
                                std::int32_t score = 100);
 
   bool restorePeerPenaltyState(const std::string &nodeId,
                                std::size_t invalidMessageCount,
+                               std::size_t escalationCount,
                                std::int64_t bannedUntil,
                                const std::string &banReason, std::int64_t now,
                                std::int32_t score = 100);
@@ -183,6 +187,8 @@ public:
   std::size_t liftExpiredPeerPenalties(std::int64_t now);
 
   bool peerBannedAt(const std::string &nodeId, std::int64_t now) const;
+
+  bool isIpQuarantined(const std::string &ip) const;
 
   void setPeerPenaltyPersistenceHandler(std::function<void()> handler);
 
@@ -212,6 +218,7 @@ private:
   GossipInbox m_inbox;
   std::map<std::string, TransportConnectionId> m_connectionByMessageId;
   std::map<std::string, std::size_t> m_invalidMessagesByIdentity;
+  std::map<std::string, std::size_t> m_quarantineEscalationByIdentity;
   // Coalescing: tracks (identityKey, ruleId) -> last evidence timestamp.
   std::map<std::pair<std::string, std::string>, std::int64_t> m_lastEvidenceAt;
   node::EvidenceCaptureHealth m_evidenceCaptureHealth;

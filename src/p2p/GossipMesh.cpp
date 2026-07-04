@@ -705,6 +705,13 @@ GossipMesh::rateLimitedMessageCountForPeer(const std::string &nodeId,
   return m_rateLimiter.messageCount(nodeId, now);
 }
 
+std::size_t
+GossipMesh::quarantineEscalationForPeer(const std::string &nodeId) const {
+  const std::string identityKey = identityKeyForNodeId(nodeId);
+  auto it = m_quarantineEscalationByIdentity.find(identityKey);
+  return it != m_quarantineEscalationByIdentity.end() ? it->second : 0;
+}
+
 void GossipMesh::reportPeerMisbehavior(const NetworkEnvelope &envelope,
                                        PeerMisbehaviorType type,
                                        const std::string &reason,
@@ -714,12 +721,15 @@ void GossipMesh::reportPeerMisbehavior(const NetworkEnvelope &envelope,
 
 bool GossipMesh::restorePeerPenaltyState(const std::string &nodeId,
                                          std::size_t invalidMessageCount,
+                                         std::size_t escalationCount,
                                          std::int32_t score) {
-  return restorePeerPenaltyState(nodeId, invalidMessageCount, 0, "", 0, score);
+  return restorePeerPenaltyState(nodeId, invalidMessageCount, escalationCount,
+                                 0, "", 0, score);
 }
 
 bool GossipMesh::restorePeerPenaltyState(const std::string &nodeId,
                                          std::size_t invalidMessageCount,
+                                         std::size_t escalationCount,
                                          std::int64_t bannedUntil,
                                          const std::string &banReason,
                                          std::int64_t now, std::int32_t score) {
@@ -737,6 +747,7 @@ bool GossipMesh::restorePeerPenaltyState(const std::string &nodeId,
 
   m_invalidMessagesByIdentity[identityKey] = std::min(
       invalidMessageCount, m_config.invalidMessageQuarantineThreshold());
+  m_quarantineEscalationByIdentity[identityKey] = escalationCount;
 
   while (m_lruInvalidMessages.size() > MAX_INVALID_TRACKING) {
     const std::string evicted = m_lruInvalidMessages.back();
@@ -792,6 +803,18 @@ bool GossipMesh::peerBannedAt(const std::string &nodeId,
                               std::int64_t now) const {
   const PeerMetadata *peer = m_peerRegistry.peer(nodeId);
   return peer != nullptr && peer->bannedAt(now);
+}
+
+bool GossipMesh::isIpQuarantined(const std::string &ip) const {
+  if (ip.empty()) {
+    return false;
+  }
+  for (const PeerMetadata &peer : m_peerRegistry.allPeers()) {
+    if (peer.quarantined() && peer.endpoint().host() == ip) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void GossipMesh::setPeerPenaltyPersistenceHandler(
@@ -877,7 +900,19 @@ void GossipMesh::recordInvalidMessage(const std::string &nodeId,
        scoredPeer->score() <= kTemporaryBanScoreThreshold);
   if (crossedBanBoundary && !wasBannedBefore &&
       m_peerRegistry.contains(nodeId)) {
-    const std::int64_t bannedUntil = now + m_config.temporaryBanSeconds();
+    m_quarantineEscalationByIdentity[identityKey]++;
+    const std::size_t escalation =
+        m_quarantineEscalationByIdentity[identityKey];
+    std::int64_t durationSeconds = 60; // 1 min
+    if (escalation == 2) {
+      durationSeconds = 300; // 5 min
+    } else if (escalation == 3) {
+      durationSeconds = 1800; // 30 min
+    } else if (escalation >= 4) {
+      durationSeconds = 30 * 86400; // 30 days (session ban)
+    }
+
+    const std::int64_t bannedUntil = now + durationSeconds;
     peerStateChanged =
         m_peerRegistry.banPeer(nodeId, bannedUntil, reason).success() ||
         peerStateChanged;
