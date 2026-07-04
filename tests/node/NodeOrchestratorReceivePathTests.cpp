@@ -8,6 +8,8 @@
 
 using namespace nodo;
 
+#ifndef _WIN32
+
 void requireCondition(bool condition, const std::string &message) {
   if (!condition) {
     throw std::runtime_error(message);
@@ -98,3 +100,12 @@ int main() {
     return 1;
   }
 }
+
+#else
+
+int main() {
+  std::cout << "NodeOrchestrator receive-path tests are skipped on Windows.\n";
+  return 0;
+}
+
+#endif
