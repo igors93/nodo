@@ -53,7 +53,10 @@ void testTwoHopTransactionPropagation() {
                                authenticatedPeerCount(nodeC) == 1;
                       }),
             "Nodes did not form the expected line topology (A-B-C, no "
-            "direct A-C edge).");
+            "direct A-C edge). A: " +
+                std::to_string(authenticatedPeerCount(nodeA)) +
+                " B: " + std::to_string(authenticatedPeerCount(nodeB)) +
+                " C: " + std::to_string(authenticatedPeerCount(nodeC)));
 
     const core::Transaction transaction =
         signedTransfer(genesis, "txprop", "txprop-recipient", 1, unixTime());
