@@ -39,26 +39,27 @@ class NetworkParameters {
 public:
   NetworkParameters();
 
-  NetworkParameters(std::string chainId, std::string networkName,
-                    std::string protocolVersion,
-                    std::uint64_t epochDurationSeconds,
-                    std::uint64_t minimumValidatorCount,
-                    std::uint64_t quorumThresholdNumerator,
-                    std::uint64_t quorumThresholdDenominator,
-                    std::uint64_t maxTransactionsPerBlock,
-                    std::uint64_t maxPeerCount,
-                    std::uint64_t maxMempoolTransactions = 10000,
-                    std::uint64_t minimumFeeRawUnits = 0,
-                    std::uint64_t targetBlockTimeSeconds = 60,
-                    std::uint64_t finalityDepth = 1,
-                    std::string signatureAlgorithm = "NODO_CRYPTO_SUITE_V1",
-                    std::string storageFormatVersion = "NODO_STORAGE_V2",
-                    std::uint64_t proposalTimeoutMs = 3000,
-                    std::uint64_t prevoteTimeoutMs = 3000,
-                    std::uint64_t precommitTimeoutMs = 3000,
-                    std::uint32_t maxGossipMessagesPerPeerWindow = 100,
-                    std::uint32_t maxTransactionGossipPerPeerWindow = 50,
-                    std::uint32_t maxTransactionRelayPerSecond = 20);
+  NetworkParameters(
+      std::string chainId, std::string networkName, std::string protocolVersion,
+      std::uint64_t epochDurationSeconds, std::uint64_t minimumValidatorCount,
+      std::uint64_t quorumThresholdNumerator,
+      std::uint64_t quorumThresholdDenominator,
+      std::uint64_t maxTransactionsPerBlock, std::uint64_t maxPeerCount,
+      std::uint64_t maxMempoolTransactions = 10000,
+      std::uint64_t minimumFeeRawUnits = 0,
+      std::uint64_t targetBlockTimeSeconds = 60,
+      std::uint64_t finalityDepth = 1,
+      std::string signatureAlgorithm = "NODO_CRYPTO_SUITE_V1",
+      std::string storageFormatVersion = "NODO_STORAGE_V2",
+      std::uint64_t proposalTimeoutMs = 3000,
+      std::uint64_t prevoteTimeoutMs = 3000,
+      std::uint64_t precommitTimeoutMs = 3000,
+      std::uint32_t maxGossipMessagesPerPeerWindow = 100,
+      std::uint32_t maxTransactionGossipPerPeerWindow = 50,
+      std::uint32_t maxTransactionRelayPerSecond = 20,
+      std::uint32_t doubleVoteSlashFractionBasisPoints = 500,
+      std::uint32_t proposerEquivocationSlashFractionBasisPoints = 1000,
+      std::uint32_t epochSlashCapBasisPoints = 5000);
 
   const std::string &chainId() const;
   const std::string &networkName() const;
@@ -81,6 +82,9 @@ public:
   std::uint32_t maxGossipMessagesPerPeerWindow() const;
   std::uint32_t maxTransactionGossipPerPeerWindow() const;
   std::uint32_t maxTransactionRelayPerSecond() const;
+  std::uint32_t doubleVoteSlashFractionBasisPoints() const;
+  std::uint32_t proposerEquivocationSlashFractionBasisPoints() const;
+  std::uint32_t epochSlashCapBasisPoints() const;
 
   bool isValid() const;
 
@@ -116,6 +120,9 @@ private:
   std::uint32_t m_maxGossipMessagesPerPeerWindow;
   std::uint32_t m_maxTransactionGossipPerPeerWindow;
   std::uint32_t m_maxTransactionRelayPerSecond;
+  std::uint32_t m_doubleVoteSlashFractionBasisPoints;
+  std::uint32_t m_proposerEquivocationSlashFractionBasisPoints;
+  std::uint32_t m_epochSlashCapBasisPoints;
 };
 
 /*

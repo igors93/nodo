@@ -1,3 +1,4 @@
+#include "config/NetworkParameters.hpp"
 #include "core/TransactionExecutionRouter.hpp"
 #include "core/TransactionPayload.hpp"
 #include "crypto/AddressDerivation.hpp"
@@ -101,8 +102,8 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
   const Fixture base = fixture();
   auto run = [&](std::shared_ptr<node::ProtocolExecutionState> tracker) {
     auto factory = node::makeProtocolDomainExecutorFactory(
-        base.state, core::ValidatorSetHistory(), "localnet", "localnet",
-        tracker);
+        base.state, core::ValidatorSetHistory(),
+        config::NetworkParameters::developmentLocal(), tracker);
     auto executor = factory();
     core::AccountStateView view = accounts();
 
@@ -196,7 +197,8 @@ void testValidatorRegistrationExitAndUnjail() {
   Fixture base = fixture();
   auto tracker = std::make_shared<node::ProtocolExecutionState>(base.state);
   auto factory = node::makeProtocolDomainExecutorFactory(
-      base.state, core::ValidatorSetHistory(), "localnet", "localnet", tracker);
+      base.state, core::ValidatorSetHistory(),
+      config::NetworkParameters::developmentLocal(), tracker);
   auto executor = factory();
   core::AccountStateView view = accounts();
 
@@ -241,8 +243,8 @@ void testValidatorRegistrationExitAndUnjail() {
   auto jailedTracker =
       std::make_shared<node::ProtocolExecutionState>(jailed.state);
   auto jailedFactory = node::makeProtocolDomainExecutorFactory(
-      jailed.state, core::ValidatorSetHistory(), "localnet", "localnet",
-      jailedTracker);
+      jailed.state, core::ValidatorSetHistory(),
+      config::NetworkParameters::developmentLocal(), jailedTracker);
   auto jailedExecutor = jailedFactory();
   const auto unjailed =
       execute(tx(core::TransactionType::VALIDATOR_UNJAIL_REQUEST,

@@ -164,9 +164,7 @@ void testEvidenceIsFinalizedByTheNextBlock() {
   const economics::StakeAccount *offenderStake =
       runtime.stakingRegistry().accountFor(offender);
   require(offenderStake != nullptr && offenderStake->jailed() &&
-              offenderStake->slashedAmount().rawUnits() ==
-                  static_cast<std::int64_t>(
-                      core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS),
+              offenderStake->slashedAmount().rawUnits() == 50000,
           "The offending validator stake must be slashed and jailed "
           "deterministically.");
   require(runtime.stakingRegistry().activeStakeFor(offender).rawUnits() <

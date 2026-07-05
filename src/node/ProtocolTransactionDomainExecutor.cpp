@@ -28,11 +28,12 @@ class ProtocolTransactionDomainExecutor final
 public:
   ProtocolTransactionDomainExecutor(
       ProtocolExecutionState state,
-      core::ValidatorSetHistory validatorSetHistory, std::string chainId,
-      std::string networkName, std::shared_ptr<ProtocolExecutionState> tracker)
+      core::ValidatorSetHistory validatorSetHistory,
+      config::NetworkParameters networkParameters,
+      std::shared_ptr<ProtocolExecutionState> tracker)
       : m_state(std::move(state)),
         m_validatorSetHistory(std::move(validatorSetHistory)),
-        m_chainId(std::move(chainId)), m_networkName(std::move(networkName)),
+        m_networkParameters(std::move(networkParameters)),
         m_tracker(std::move(tracker)), m_blockSupplyBefore(m_state.supply),
         m_burnRecords(m_state.burns) {
     refreshDomains();
@@ -260,14 +261,15 @@ public:
           m_state.governance.advanceToHeight(blockHeight + 1, blockTimestamp,
                                              &settledAccounts);
           const crypto::ProtocolCryptoContext cryptoContext =
-              crypto::ProtocolCryptoContext::fromNetworkName(m_networkName);
+              crypto::ProtocolCryptoContext::fromNetworkName(
+                  m_networkParameters.networkName());
           if (!cryptoContext.isValid())
             throw std::invalid_argument("Invalid protocol crypto context.");
           CanonicalSlashingTransition::applyEvidenceRecords(
               protocolRecords, blockHeight, blockTimestamp,
-              m_validatorSetHistory, cryptoContext.policy(),
-              cryptoContext.signatureProvider(), m_state.penaltyLedger,
-              m_state.validators, m_state.staking, m_chainId);
+              m_validatorSetHistory, m_networkParameters,
+              cryptoContext.policy(), cryptoContext.signatureProvider(),
+              m_state.penaltyLedger, m_state.validators, m_state.staking);
           synchronizePenaltyState(blockHeight);
           m_state.staking.activatePending(blockHeight + 1);
           ValidatorStakeWeightUpdater::synchronizeAtEpochBoundary(
@@ -285,8 +287,7 @@ public:
 private:
   ProtocolExecutionState m_state;
   core::ValidatorSetHistory m_validatorSetHistory;
-  std::string m_chainId;
-  std::string m_networkName;
+  config::NetworkParameters m_networkParameters;
   std::shared_ptr<ProtocolExecutionState> m_tracker;
   utils::Amount m_blockSupplyBefore;
   std::vector<economics::BurnRecord> m_burnRecords;
@@ -421,15 +422,15 @@ protocolExecutionDomains(const ProtocolExecutionState &state) {
 
 core::TransactionDomainExecutorFactory makeProtocolDomainExecutorFactory(
     ProtocolExecutionState initialState,
-    core::ValidatorSetHistory validatorSetHistory, std::string chainId,
-    std::string networkName,
+    core::ValidatorSetHistory validatorSetHistory,
+    config::NetworkParameters networkParameters,
     std::shared_ptr<ProtocolExecutionState> resultTracker) {
   return [state = std::move(initialState),
-          history = std::move(validatorSetHistory), chain = std::move(chainId),
-          network = std::move(networkName),
+          history = std::move(validatorSetHistory),
+          params = std::move(networkParameters),
           tracker = std::move(resultTracker)]() mutable {
-    return std::make_unique<ProtocolTransactionDomainExecutor>(
-        state, history, chain, network, tracker);
+    return std::make_unique<ProtocolTransactionDomainExecutor>(state, history,
+                                                               params, tracker);
   };
 }
 

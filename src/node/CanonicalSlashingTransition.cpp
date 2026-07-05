@@ -385,12 +385,12 @@ CanonicalSlashingTransition::proposerEquivocationEvidenceFromBlock(const core::B
 void CanonicalSlashingTransition::applyBlockEvidence(
     const core::Block& block,
     const core::ValidatorSetHistory& validatorSetHistory,
+    const config::NetworkParameters& networkParameters,
     const crypto::CryptoPolicy& policy,
     const crypto::SignatureProvider& provider,
     consensus::ValidatorPenaltyLedger& penaltyLedger,
     core::ValidatorRegistry& validators,
-    StakingRegistry& staking,
-    const std::string& chainId
+    StakingRegistry& staking
 ) {
     std::vector<core::LedgerRecord> records;
     for (const core::LedgerRecord& record : block.records()) {
@@ -403,12 +403,12 @@ void CanonicalSlashingTransition::applyBlockEvidence(
         block.index(),
         block.timestamp(),
         validatorSetHistory,
+        networkParameters,
         policy,
         provider,
         penaltyLedger,
         validators,
-        staking,
-        chainId
+        staking
     );
 }
 
@@ -417,14 +417,14 @@ void CanonicalSlashingTransition::applyEvidenceRecords(
     std::uint64_t blockHeight,
     std::int64_t blockTimestamp,
     const core::ValidatorSetHistory& validatorSetHistory,
+    const config::NetworkParameters& networkParameters,
     const crypto::CryptoPolicy& policy,
     const crypto::SignatureProvider& provider,
     consensus::ValidatorPenaltyLedger& penaltyLedger,
     core::ValidatorRegistry& validators,
-    StakingRegistry& staking,
-    const std::string& chainId
+    StakingRegistry& staking
 ) {
-    if (blockHeight == 0 || blockTimestamp <= 0 || chainId.empty()) {
+    if (blockHeight == 0 || blockTimestamp <= 0 || networkParameters.chainId().empty()) {
         throw std::invalid_argument(
             "Canonical slashing transition requires block height, timestamp and chain id."
         );
@@ -473,7 +473,7 @@ void CanonicalSlashingTransition::applyEvidenceRecords(
                 evidence,
                 blockHeight - 1,
                 validatorSetHistory,
-                chainId,
+                networkParameters.chainId(),
                 policy,
                 provider
             );
@@ -483,10 +483,25 @@ void CanonicalSlashingTransition::applyEvidenceRecords(
             );
         }
 
+        const economics::StakeAccount* stakeAccount = staking.accountFor(record.validatorAddress());
+        const std::uint64_t bondedStake = stakeAccount ? stakeAccount->bondedAmount().rawUnits() : 0;
+        
+        const std::int64_t doubleVoteSlash = 
+            (static_cast<std::uint64_t>(networkParameters.doubleVoteSlashFractionBasisPoints()) * bondedStake) / 10000ULL;
+        const std::int64_t equivocationSlash = 
+            (static_cast<std::uint64_t>(networkParameters.proposerEquivocationSlashFractionBasisPoints()) * bondedStake) / 10000ULL;
+
+        consensus::ValidatorPenaltyPolicy validatorPolicy(
+            doubleVoteSlash,
+            equivocationSlash,
+            64,
+            true
+        );
+
         const consensus::ValidatorPenaltyApplicationResult applied =
             penaltyLedger.applyEvidence(
                 record,
-                consensus::ValidatorPenaltyPolicy::conservativeTestnetPolicy(),
+                validatorPolicy,
                 blockTimestamp
             );
         if (!applied.applied() || !applied.decision().has_value()) {

@@ -267,6 +267,7 @@ int runDaemonChild(std::size_t nodeIndex, const NodeSpecs &specs,
 
   node::NodeDaemonConfig daemonConfig;
   daemonConfig.orchestratorConfig = orchestratorConfig;
+  daemonConfig.maxFractionPerSubnet = 1.0;
   for (const std::size_t peerIndex : topology.at(nodeIndex)) {
     daemonConfig.staticPeers.push_back(node::NodeDaemonPeerEntry{
         specs[peerIndex].nodeId, "127.0.0.1", specs[peerIndex].p2pPort});
