@@ -11,6 +11,7 @@
 #include "node/ProtocolStateTransition.hpp"
 #include "node/ValidatorLifecycle.hpp"
 #include "node/ValidatorStakeWeightUpdater.hpp"
+#include "core/StateRootCalculator.hpp"
 
 #include <limits>
 #include <algorithm>
@@ -409,7 +410,8 @@ std::map<std::string, std::string> protocolExecutionDomains(
         {"slashing", state.penaltyLedger.serialize()},
         {"staking", state.staking.serialize()},
         {"supply", "RuntimeSupply{latestRawUnits=" + std::to_string(state.supply.rawUnits()) + "}"},
-        {"validators", state.validators.serialize()}
+        {"validators", state.validators.serialize()},
+        {"validator_weights", core::StateRootCalculator::calculateValidatorStateRoot(state.validators)}
     };
 }
 
