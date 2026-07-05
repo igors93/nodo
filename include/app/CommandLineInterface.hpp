@@ -46,6 +46,7 @@ public:
   bool showHelp;
   bool keyIdProvided;
   bool validatorKeyIdProvided;
+  bool outputJson;
 };
 
 enum class CommandLineStatus { SUCCESS, INVALID_ARGUMENTS, COMMAND_FAILED };

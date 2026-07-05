@@ -488,7 +488,8 @@ CommandLineOptions::CommandLineOptions()
       governanceValue(""), governanceVoteChoice("YES"), amountRaw(1000),
       feeRaw(100), nonce(0), timestamp(nowUnixSeconds()),
       governanceEffectiveHeight(0), governanceVotingPeriodBlocks(3),
-      showHelp(false), keyIdProvided(false), validatorKeyIdProvided(false) {}
+      showHelp(false), keyIdProvided(false), validatorKeyIdProvided(false),
+      outputJson(false) {}
 
 std::string commandLineStatusToString(CommandLineStatus status) {
   switch (status) {
@@ -1073,6 +1074,12 @@ CommandLineInterface::parse(const std::vector<std::string> &args) {
         throw std::invalid_argument("--stake must be non-negative.");
       }
       index += 2;
+      continue;
+    }
+
+    if (option == "--json") {
+      options.outputJson = true;
+      index++;
       continue;
     }
 
@@ -3205,11 +3212,22 @@ CommandLineInterface::executeStakeLock(const CommandLineOptions &options) {
                                 ? "Stake withdraw"
                             : options.command == "stake lock" ? "Stake lock"
                                                               : "Stake deposit";
-  out << label << " submitted.\n"
-      << "Validator: " << validatorAddr << "\n"
-      << "Amount: " << options.amountRaw << " raw units\n"
-      << "Type: " << core::transactionTypeToString(tx.type()) << "\n"
-      << "Transaction id: " << persisted.transactionId() << "\n";
+  if (options.outputJson) {
+    out << "{\n"
+        << "  \"command\": \"" << label << "\",\n"
+        << "  \"validator\": \"" << validatorAddr << "\",\n"
+        << "  \"amount\": " << options.amountRaw << ",\n"
+        << "  \"type\": \"" << core::transactionTypeToString(tx.type())
+        << "\",\n"
+        << "  \"transactionId\": \"" << persisted.transactionId() << "\"\n"
+        << "}\n";
+  } else {
+    out << label << " submitted.\n"
+        << "Validator: " << validatorAddr << "\n"
+        << "Amount: " << options.amountRaw << " raw units\n"
+        << "Type: " << core::transactionTypeToString(tx.type()) << "\n"
+        << "Transaction id: " << persisted.transactionId() << "\n";
+  }
   return CommandLineResult::success(out.str());
 }
 
@@ -3268,6 +3286,37 @@ CommandLineInterface::executeStakeStatus(const CommandLineOptions &options) {
       load.runtime().validatorRegistry().entryForAddress(addr);
 
   std::ostringstream out;
+  if (options.outputJson) {
+    out << "{\n"
+        << "  \"validator\": \"" << addr << "\",\n";
+    if (!entry) {
+      out << "  \"found\": false\n"
+          << "}\n";
+    } else {
+      const auto stakeAccount =
+          load.runtime().stakingRegistry().accountOrDefault(addr);
+      out << "  \"found\": true,\n"
+          << "  \"registryStatus\": \""
+          << core::validatorRegistrationStatusToString(entry->status())
+          << "\",\n"
+          << "  \"registryStake\": " << entry->stakeAmount() << ",\n"
+          << "  \"consensusWeight\": " << entry->consensusWeight() << ",\n"
+          << "  \"bondedStake\": " << stakeAccount.bondedAmount().rawUnits()
+          << ",\n"
+          << "  \"activeStake\": "
+          << load.runtime().stakingRegistry().activeStakeFor(addr).rawUnits()
+          << ",\n"
+          << "  \"slashedStake\": " << stakeAccount.slashedAmount().rawUnits()
+          << ",\n"
+          << "  \"jailed\": " << (stakeAccount.jailed() ? "true" : "false")
+          << ",\n"
+          << "  \"tombstoned\": "
+          << (stakeAccount.tombstoned() ? "true" : "false") << "\n"
+          << "}\n";
+    }
+    return CommandLineResult::success(out.str());
+  }
+
   out << "Stake status\n"
       << "------------\n"
       << "Validator: " << addr << "\n";
@@ -3337,6 +3386,40 @@ CommandLineInterface::executeStakePositions(const CommandLineOptions &options) {
                     : load.runtime().stakingRegistry().positionsForOwner(owner);
 
   std::ostringstream out;
+  if (options.outputJson) {
+    out << "{\n"
+        << "  \"positions\": [\n";
+    bool first = true;
+    for (const auto &position : positions) {
+      if (!validator.empty() && position.validatorAddress != validator)
+        continue;
+      if (!first)
+        out << ",\n";
+      out << "    {\n"
+          << "      \"positionId\": \"" << position.positionId << "\",\n"
+          << "      \"owner\": \"" << position.ownerAddress << "\",\n"
+          << "      \"validator\": \"" << position.validatorAddress << "\",\n"
+          << "      \"status\": \""
+          << node::stakePositionStatusToString(position.status) << "\",\n"
+          << "      \"active\": " << position.activeAmount.rawUnits() << ",\n"
+          << "      \"pendingActivation\": "
+          << position.pendingActivationAmount.rawUnits() << ",\n"
+          << "      \"pendingUnbonding\": "
+          << position.pendingUnbondingAmount.rawUnits() << ",\n"
+          << "      \"withdrawn\": " << position.withdrawnAmount.rawUnits()
+          << ",\n"
+          << "      \"slashed\": " << position.slashedAmount.rawUnits() << ",\n"
+          << "      \"activationHeight\": " << position.activationHeight
+          << ",\n"
+          << "      \"withdrawableHeight\": " << position.withdrawableHeight
+          << "\n"
+          << "    }";
+      first = false;
+    }
+    out << "\n  ]\n}\n";
+    return CommandLineResult::success(out.str());
+  }
+
   out << "Stake positions\n"
       << "---------------\n";
   std::size_t count = 0;
