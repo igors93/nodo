@@ -77,6 +77,7 @@ void NodeDaemon::setLocalNodeIdentity(crypto::KeyPair nodeIdentityKey) {
 
 void NodeDaemon::tick(std::int64_t now) {
   m_orchestrator.tick(now);
+  maintainPeerConnections(now);
   processTransactionGossip(now);
   processFinalizedArtifacts(now);
   maybeProposeBlock(now);
@@ -318,8 +319,13 @@ void NodeDaemon::maybeProposeBlock(std::int64_t now) {
 }
 
 void NodeDaemon::maintainPeerConnections(std::int64_t now) {
-  if (now < m_lastConnectionMaintenanceAt + 5000) {
-    return; // Check every 5 seconds
+  static constexpr std::int64_t CONNECTION_MAINTENANCE_INTERVAL_SECONDS = 5;
+
+  const bool firstMaintenanceRun = m_lastConnectionMaintenanceAt == 0;
+  if (!firstMaintenanceRun &&
+      now < m_lastConnectionMaintenanceAt +
+                CONNECTION_MAINTENANCE_INTERVAL_SECONDS) {
+    return;
   }
   m_lastConnectionMaintenanceAt = now;
 
@@ -351,25 +357,43 @@ void NodeDaemon::maintainPeerConnections(std::int64_t now) {
         m_config.orchestratorConfig.localPeer().peerId(), evictedNodeId);
   }
 
-  std::size_t outboundConnections =
+  /*
+   * Dynamic peer expansion must respect the operator/test topology.
+   *
+   * When peer exchange is disabled, the node should maintain the peers it was
+   * explicitly given, but it must not discover and register additional peers.
+   * This preserves controlled topologies such as A-B-C propagation tests while
+   * still keeping EclipseGuard maintenance active.
+   */
+  if (!m_config.orchestratorConfig.enablePeerExchange()) {
+    return;
+  }
+
+  const std::size_t outboundConnections =
       m_orchestrator.mutableTcpRuntime().transport().connectedOutboundCount();
   if (outboundConnections < m_config.minOutboundConnections) {
     p2p::DiscoveryService *discovery = m_orchestrator.discoveryService();
     if (discovery != nullptr) {
-      std::size_t needed =
+      const std::size_t needed =
           m_config.minOutboundConnections - outboundConnections;
-      std::vector<p2p::DiscoveryPeerInfo> candidates =
+      const std::vector<p2p::DiscoveryPeerInfo> candidates =
           discovery->findClosestPeers(
               m_config.orchestratorConfig.localPeer().peerId(), needed * 2);
+
       std::size_t added = 0;
       for (const auto &candidate : candidates) {
-        if (added >= needed)
+        if (added >= needed) {
           break;
+        }
+
         if (candidate.peerId ==
-            m_config.orchestratorConfig.localPeer().peerId())
+            m_config.orchestratorConfig.localPeer().peerId()) {
           continue;
+        }
+
         std::cout << "[NodeDaemon] Discovered candidate " << candidate.host
                   << ":" << candidate.tcpPort << ", registering." << std::endl;
+
         p2p::PeerEndpoint ep(candidate.host, candidate.tcpPort);
         p2p::PeerMetadata meta(candidate.peerId, ep, "", now, now, 0, false);
         m_orchestrator.addAndConnectPeer(meta, now);
