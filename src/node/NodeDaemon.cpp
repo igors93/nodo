@@ -1,6 +1,7 @@
 #include "node/NodeDaemon.hpp"
 
 #include <iostream>
+#include <set>
 
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/BlockProductionPhase.hpp"
@@ -337,10 +338,18 @@ void NodeDaemon::maintainPeerConnections(std::int64_t now) {
   }
   m_lastConnectionMaintenanceAt = now;
 
-  auto &gossipMesh = m_orchestrator.mutableTcpRuntime().gossipMesh();
+  auto &tcpRuntime = m_orchestrator.mutableTcpRuntime();
+  auto &gossipMesh = tcpRuntime.gossipMesh();
+  auto &transport = tcpRuntime.transport();
+
+  const std::string &localNodeId =
+      m_config.orchestratorConfig.localPeer().peerId();
+
   const auto activePeers = gossipMesh.peerRegistry().activePeersAt(now);
 
   std::vector<p2p::PeerSubnetInfo> subnets;
+  std::set<std::string> knownCandidatePeerIds;
+
   for (const auto &peer : activePeers) {
     p2p::PeerSubnetInfo info;
     info.peerId = peer.nodeId();
@@ -349,6 +358,8 @@ void NodeDaemon::maintainPeerConnections(std::int64_t now) {
     info.subnetPrefix =
         p2p::PeerSubnetInfo::extractSubnetPrefix(info.ipAddress);
     subnets.push_back(info);
+
+    knownCandidatePeerIds.insert(peer.nodeId());
   }
 
   p2p::EclipseGuardConfig eclipseConfig =
@@ -358,11 +369,11 @@ void NodeDaemon::maintainPeerConnections(std::int64_t now) {
 
   std::vector<std::string> evictions =
       guard.recommendEvictions(subnets, activePeers.size());
+
   for (const std::string &evictedNodeId : evictions) {
     std::cout << "[NodeDaemon] Evicting peer " << evictedNodeId
               << " to maintain EclipseGuard subnet limits." << std::endl;
-    m_orchestrator.mutableTcpRuntime().transport().disconnect(
-        m_config.orchestratorConfig.localPeer().peerId(), evictedNodeId);
+    transport.disconnect(localNodeId, evictedNodeId);
   }
 
   /*
@@ -377,37 +388,71 @@ void NodeDaemon::maintainPeerConnections(std::int64_t now) {
     return;
   }
 
-  const std::size_t outboundConnections =
-      m_orchestrator.mutableTcpRuntime().transport().connectedOutboundCount();
-  if (outboundConnections < m_config.minOutboundConnections) {
-    p2p::DiscoveryService *discovery = m_orchestrator.discoveryService();
-    if (discovery != nullptr) {
-      const std::size_t needed =
-          m_config.minOutboundConnections - outboundConnections;
-      const std::vector<p2p::DiscoveryPeerInfo> candidates =
-          discovery->findClosestPeers(
-              m_config.orchestratorConfig.localPeer().peerId(), needed * 2);
+  const std::size_t outboundConnections = transport.connectedOutboundCount();
+  if (outboundConnections >= m_config.minOutboundConnections) {
+    return;
+  }
 
-      std::size_t added = 0;
-      for (const auto &candidate : candidates) {
-        if (added >= needed) {
-          break;
-        }
+  p2p::DiscoveryService *discovery = m_orchestrator.discoveryService();
+  if (discovery == nullptr) {
+    return;
+  }
 
-        if (candidate.peerId ==
-            m_config.orchestratorConfig.localPeer().peerId()) {
-          continue;
-        }
+  const std::size_t needed =
+      m_config.minOutboundConnections - outboundConnections;
 
-        std::cout << "[NodeDaemon] Discovered candidate " << candidate.host
-                  << ":" << candidate.tcpPort << ", registering." << std::endl;
+  const std::vector<p2p::DiscoveryPeerInfo> candidates =
+      discovery->findClosestPeers(localNodeId, needed * 2);
 
-        p2p::PeerEndpoint ep(candidate.host, candidate.tcpPort);
-        p2p::PeerMetadata meta(candidate.peerId, ep, "", now, now, 0, false);
-        m_orchestrator.addAndConnectPeer(meta, now);
-        added++;
-      }
+  std::size_t added = 0;
+  for (const auto &candidate : candidates) {
+    if (added >= needed) {
+      break;
     }
+
+    if (!candidate.isValid()) {
+      continue;
+    }
+
+    if (candidate.peerId == localNodeId) {
+      continue;
+    }
+
+    /*
+     * Do not repeatedly register the same peer.
+     *
+     * This filters:
+     * - peers already active in the registry;
+     * - duplicate entries returned in the same discovery batch;
+     * - peers already connected at the TCP layer;
+     * - peers already authenticated;
+     * - peers already tracked by the reconnection policy.
+     */
+    if (!knownCandidatePeerIds.insert(candidate.peerId).second) {
+      continue;
+    }
+
+    if (tcpRuntime.hasAuthenticatedSession(candidate.peerId)) {
+      continue;
+    }
+
+    if (transport.connected(localNodeId, candidate.peerId)) {
+      continue;
+    }
+
+    if (m_orchestrator.reconnectionPolicy().isTracked(candidate.peerId)) {
+      continue;
+    }
+
+    std::cout << "[NodeDaemon] Discovered candidate " << candidate.host << ":"
+              << candidate.tcpPort << ", registering." << std::endl;
+
+    p2p::PeerEndpoint endpoint(candidate.host, candidate.tcpPort);
+    p2p::PeerMetadata metadata(candidate.peerId, endpoint, "", now, now, 0,
+                               false);
+
+    m_orchestrator.addAndConnectPeer(metadata, now);
+    added++;
   }
 }
 
