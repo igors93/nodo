@@ -136,13 +136,16 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
           runtime.config().genesisConfig().networkParameters();
       const crypto::ProtocolCryptoContext cryptoContext =
           crypto::ProtocolCryptoContext::fromNetworkName(network.networkName());
+
       if (cryptoContext.isValid()) {
         const core::AccountStateView accounts = runtime.cachedAccountStateAtTip(
             static_cast<std::int64_t>(runtime.effectiveMinimumFeeRawUnits()));
+
         const TransactionAdmissionContext admissionContext(
             accounts, runtime.mempool(), runtime.stakingRegistry(),
             runtime.validatorRegistry(), runtime.governanceExecutor(),
             runtime.blockchain().size());
+
         const TransactionAdmissionResult validation =
             TransactionAdmissionValidator::validateNetworkSubmission(
                 decoded->transaction, network, accounts, runtime.mempool(),
@@ -150,11 +153,14 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
                 crypto::SecurityContext::USER_TRANSACTION,
                 cryptoContext.userSignatureProvider(),
                 runtime.effectiveMinimumFeeRawUnits(), &admissionContext);
+
         if (validation.accepted()) {
           auto result = runtime.mutableMempool().admitTransaction(
               decoded->transaction, m_policy,
               crypto::SecurityContext::USER_TRANSACTION, decoded->acceptedAt);
+
           admitted = result.success();
+
           if (!admitted) {
             std::cout << "[DEBUG] NodeDaemon processTransactionGossip "
                          "admitTransaction failed: "
@@ -173,7 +179,8 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
     }
 
     if (admitted) {
-      const std::int64_t currentSecond = now / 1000;
+      const std::int64_t currentSecond = now;
+
       if (m_txRelayBudgetSecond != currentSecond) {
         m_txRelayBudgetSecond = currentSecond;
         m_txRelayBudgetCounter = 0;
@@ -183,6 +190,7 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
           m_config.orchestratorConfig.genesisConfig()
               .networkParameters()
               .maxTransactionRelayPerSecond();
+
       if (m_txRelayBudgetCounter < relayLimit) {
         m_txRelayBudgetCounter++;
         m_orchestrator.gossipBroadcast(
