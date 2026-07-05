@@ -225,6 +225,8 @@ public:
   // bootstrap and discovery obey the same backoff/quarantine rules.
   void registerBootstrapPeer(const p2p::PeerMetadata &peer, std::int64_t now);
 
+  p2p::DiscoveryService *discoveryService();
+
   // Compatibility entry point for tests and daemon helpers. It now feeds the
   // real reconnection policy instead of bypassing discovery/backoff.
   void addAndConnectPeer(const p2p::PeerMetadata &peer, std::int64_t now);

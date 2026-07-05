@@ -13,6 +13,9 @@ void testReportFieldsPopulated() {
       "test-genesis-id", // registeredGenesisId
       "test-genesis-id", // manifestGenesisId
       "DEVELOPMENT_LOCAL", 100, "block-hash-100", 4, 3,
+      0,          // inboundPeers
+      0,          // outboundPeers
+      false,      // discoveryActive
       true,       // genesisVerified
       true,       // genesisCompatible
       true,       // keyPolicyPassed
@@ -39,24 +42,24 @@ void testReportFieldsPopulated() {
 void testReadinessStatusReady() {
   const auto params = nodo::config::NetworkParameters::developmentLocal();
   const auto report = nodo::node::OperatorDiagnostics::collect(
-      params, "g", "g", "DEVELOPMENT_LOCAL", 1, "h", 1, 1, true, true, true,
-      "ACCEPTED", "", false, {});
+      params, "g", "g", "DEVELOPMENT_LOCAL", 1, "h", 1, 1, 0, 0, false, true,
+      true, true, "ACCEPTED", "", false, {});
   assert(report.readinessStatus() == "READY");
 }
 
 void testReadinessStatusNotReadyWhenGenesisNotVerified() {
   const auto params = nodo::config::NetworkParameters::developmentLocal();
   const auto report = nodo::node::OperatorDiagnostics::collect(
-      params, "g", "g", "DEVELOPMENT_LOCAL", 1, "h", 1, 1, false, true, true,
-      "ACCEPTED", "", false, {});
+      params, "g", "g", "DEVELOPMENT_LOCAL", 1, "h", 1, 1, 0, 0, false, false,
+      true, true, "ACCEPTED", "", false, {});
   assert(report.readinessStatus() == "NOT_READY");
 }
 
 void testReadinessStatusNotReadyWhenNoPeers() {
   const auto params = nodo::config::NetworkParameters::developmentLocal();
   const auto report = nodo::node::OperatorDiagnostics::collect(
-      params, "g", "g", "DEVELOPMENT_LOCAL", 1, "h", 1, 0, true, true, true,
-      "ACCEPTED", "", false, {});
+      params, "g", "g", "DEVELOPMENT_LOCAL", 1, "h", 1, 0, 0, 0, false, true,
+      true, true, "ACCEPTED", "", false, {});
   assert(report.readinessStatus() == "NOT_READY");
 }
 
@@ -64,7 +67,7 @@ void testReadinessStatusNotReadyWhenGenesisIncompatible() {
   const auto params = nodo::config::NetworkParameters::developmentLocal();
   const auto report = nodo::node::OperatorDiagnostics::collect(
       params, "registered-genesis", "different-genesis", "DEVELOPMENT_LOCAL", 1,
-      "h", 1, 1, true, false, true, "ACCEPTED", "", false, {});
+      "h", 1, 1, 0, 0, false, true, false, true, "ACCEPTED", "", false, {});
   assert(report.readinessStatus() == "NOT_READY");
   assert(report.registeredGenesisId() == "registered-genesis");
   assert(report.manifestGenesisId() == "different-genesis");
@@ -76,8 +79,8 @@ void testWarningsIncluded() {
   const std::vector<std::string> warnings = {"peer count is low",
                                              "genesis not fully verified"};
   const auto report = nodo::node::OperatorDiagnostics::collect(
-      params, "g", "g", "DEVELOPMENT_LOCAL", 0, "", 0, 0, false, false, false,
-      "", "", false, warnings);
+      params, "g", "g", "DEVELOPMENT_LOCAL", 0, "", 0, 0, 0, 0, false, false,
+      false, false, "", "", false, warnings);
   assert(report.warnings().size() == 2);
 }
 
@@ -85,7 +88,7 @@ void testSerializeContainsKeyFields() {
   const auto params = nodo::config::NetworkParameters::developmentLocal();
   const auto report = nodo::node::OperatorDiagnostics::collect(
       params, "my-genesis-id", "my-genesis-id", "DEVELOPMENT_LOCAL", 42,
-      "hash-42", 2, 1, true, true, true, "ACCEPTED", "", false,
+      "hash-42", 2, 1, 0, 0, false, true, true, true, "ACCEPTED", "", false,
       {"test-warning"});
   const std::string s = report.serialize();
   assert(!s.empty());
@@ -99,8 +102,8 @@ void testSerializeContainsKeyFields() {
 void testLatestImportStatusExposed() {
   const auto params = nodo::config::NetworkParameters::developmentLocal();
   const auto report = nodo::node::OperatorDiagnostics::collect(
-      params, "g", "g", "DEVELOPMENT_LOCAL", 5, "hash-5", 1, 1, true, true,
-      true, "REJECTED", "HEIGHT_CONTINUITY_MISMATCH", false, {});
+      params, "g", "g", "DEVELOPMENT_LOCAL", 5, "hash-5", 1, 1, 0, 0, false,
+      true, true, true, "REJECTED", "HEIGHT_CONTINUITY_MISMATCH", false, {});
   assert(report.latestImportStatus() == "REJECTED");
   assert(report.latestImportRejectionReason() == "HEIGHT_CONTINUITY_MISMATCH");
 }
@@ -108,8 +111,8 @@ void testLatestImportStatusExposed() {
 void testDefenseRestrictionsExposed() {
   const auto params = nodo::config::NetworkParameters::developmentLocal();
   const auto report = nodo::node::OperatorDiagnostics::collect(
-      params, "g", "g", "DEVELOPMENT_LOCAL", 1, "h", 1, 1, true, true, true,
-      "ACCEPTED", "", true, {});
+      params, "g", "g", "DEVELOPMENT_LOCAL", 1, "h", 1, 1, 0, 0, false, true,
+      true, true, "ACCEPTED", "", true, {});
   assert(report.defenseRestrictionsActive());
   const std::string s = report.serialize();
   assert(s.find("defenseRestrictionsActive=yes") != std::string::npos);

@@ -1650,7 +1650,10 @@ CommandLineInterface::executeDiagnostics(const CommandLineOptions &options) {
           manifest.loaded() ? manifest.manifest().validatorCount()
                             : genesisConfig.bootstrapValidators().size(),
           manifest.loaded() ? manifest.manifest().peerCount() : 0,
-          true, // resolveAndVerify() already verified genesis
+          0,     // inboundPeers not tracked at CLI level
+          0,     // outboundPeers not tracked at CLI level
+          false, // discoveryActive not tracked at CLI level
+          true,  // resolveAndVerify() already verified genesis
           genesisCompatible, keyPolicyPassed,
           "",    // latestImportStatus not tracked at CLI level
           "",    // latestImportRejectionReason

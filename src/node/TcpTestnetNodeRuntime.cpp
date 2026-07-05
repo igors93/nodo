@@ -369,6 +369,9 @@ TcpTestnetNodeRuntime::TcpTestnetNodeRuntime(TcpTestnetNodeRuntimeConfig config)
       m_running(false) {
   m_gossipMesh.setPeerPenaltyPersistenceHandler(
       [this]() { savePeersToDisk(); });
+  m_transport.setIpQuarantineCheck([this](const std::string &ip) {
+    return m_gossipMesh.isIpQuarantined(ip);
+  });
 }
 
 const TcpTestnetNodeRuntimeConfig &TcpTestnetNodeRuntime::config() const {

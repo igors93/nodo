@@ -12,77 +12,73 @@ namespace nodo::node {
 
 class OperatorDiagnosticsReport {
 public:
-    OperatorDiagnosticsReport();
+  OperatorDiagnosticsReport();
 
-    OperatorDiagnosticsReport(
-        std::string networkName,
-        std::string chainId,
-        std::string protocolVersion,
-        std::string registeredGenesisId,
-        std::string manifestGenesisId,
-        std::string networkClass,
-        std::uint64_t finalizedHeight,
-        std::string latestFinalizedHash,
-        std::size_t validatorCount,
-        std::size_t connectedPeers,
-        bool genesisVerified,
-        bool genesisCompatible,
-        bool keyPolicyPassed,
-        std::string readinessStatus,
-        std::string latestImportStatus,
-        std::string latestImportRejectionReason,
-        bool defenseRestrictionsActive,
-        std::vector<std::string> warnings,
-        EvidenceCaptureHealth evidenceHealth
-    );
+  OperatorDiagnosticsReport(
+      std::string networkName, std::string chainId, std::string protocolVersion,
+      std::string registeredGenesisId, std::string manifestGenesisId,
+      std::string networkClass, std::uint64_t finalizedHeight,
+      std::string latestFinalizedHash, std::size_t validatorCount,
+      std::size_t connectedPeers, std::size_t inboundPeers,
+      std::size_t outboundPeers, bool discoveryActive, bool genesisVerified,
+      bool genesisCompatible, bool keyPolicyPassed, std::string readinessStatus,
+      std::string latestImportStatus, std::string latestImportRejectionReason,
+      bool defenseRestrictionsActive, std::vector<std::string> warnings,
+      EvidenceCaptureHealth evidenceHealth);
 
-    const std::string& networkName() const;
-    const std::string& chainId() const;
-    const std::string& protocolVersion() const;
-    // Registered genesis id from GenesisRegistry for the selected network.
-    const std::string& registeredGenesisId() const;
-    // Genesis id stored in the data directory manifest.
-    const std::string& manifestGenesisId() const;
-    const std::string& networkClass() const;
-    std::uint64_t finalizedHeight() const;
-    const std::string& latestFinalizedHash() const;
-    std::size_t validatorCount() const;
-    std::size_t connectedPeers() const;
-    bool genesisVerified() const;
-    bool genesisCompatible() const;
-    bool keyPolicyPassed() const;
-    const std::string& readinessStatus() const;
-    const std::string& latestImportStatus() const;
-    const std::string& latestImportRejectionReason() const;
-    bool defenseRestrictionsActive() const;
-    const std::vector<std::string>& warnings() const;
-    const EvidenceCaptureHealth& evidenceHealth() const;
+  const std::string &networkName() const;
+  const std::string &chainId() const;
+  const std::string &protocolVersion() const;
+  // Registered genesis id from GenesisRegistry for the selected network.
+  const std::string &registeredGenesisId() const;
+  // Genesis id stored in the data directory manifest.
+  const std::string &manifestGenesisId() const;
+  const std::string &networkClass() const;
+  std::uint64_t finalizedHeight() const;
+  const std::string &latestFinalizedHash() const;
+  std::size_t validatorCount() const;
+  std::size_t connectedPeers() const;
+  std::size_t inboundPeers() const;
+  std::size_t outboundPeers() const;
+  bool discoveryActive() const;
+  bool genesisVerified() const;
+  bool genesisCompatible() const;
+  bool keyPolicyPassed() const;
+  const std::string &readinessStatus() const;
+  const std::string &latestImportStatus() const;
+  const std::string &latestImportRejectionReason() const;
+  bool defenseRestrictionsActive() const;
+  const std::vector<std::string> &warnings() const;
+  const EvidenceCaptureHealth &evidenceHealth() const;
 
-    // genesisId() returns registeredGenesisId() for backward compatibility.
-    const std::string& genesisId() const;
+  // genesisId() returns registeredGenesisId() for backward compatibility.
+  const std::string &genesisId() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    std::string m_networkName;
-    std::string m_chainId;
-    std::string m_protocolVersion;
-    std::string m_registeredGenesisId;
-    std::string m_manifestGenesisId;
-    std::string m_networkClass;
-    std::uint64_t m_finalizedHeight;
-    std::string m_latestFinalizedHash;
-    std::size_t m_validatorCount;
-    std::size_t m_connectedPeers;
-    bool m_genesisVerified;
-    bool m_genesisCompatible;
-    bool m_keyPolicyPassed;
-    std::string m_readinessStatus;
-    std::string m_latestImportStatus;
-    std::string m_latestImportRejectionReason;
-    bool m_defenseRestrictionsActive;
-    std::vector<std::string> m_warnings;
-    EvidenceCaptureHealth m_evidenceHealth;
+  std::string m_networkName;
+  std::string m_chainId;
+  std::string m_protocolVersion;
+  std::string m_registeredGenesisId;
+  std::string m_manifestGenesisId;
+  std::string m_networkClass;
+  std::uint64_t m_finalizedHeight;
+  std::string m_latestFinalizedHash;
+  std::size_t m_validatorCount;
+  std::size_t m_connectedPeers;
+  std::size_t m_inboundPeers;
+  std::size_t m_outboundPeers;
+  bool m_discoveryActive;
+  bool m_genesisVerified;
+  bool m_genesisCompatible;
+  bool m_keyPolicyPassed;
+  std::string m_readinessStatus;
+  std::string m_latestImportStatus;
+  std::string m_latestImportRejectionReason;
+  bool m_defenseRestrictionsActive;
+  std::vector<std::string> m_warnings;
+  EvidenceCaptureHealth m_evidenceHealth;
 };
 
 /*
@@ -91,24 +87,19 @@ private:
  */
 class OperatorDiagnostics {
 public:
-    static OperatorDiagnosticsReport collect(
-        const config::NetworkParameters& params,
-        const std::string& registeredGenesisId,
-        const std::string& manifestGenesisId,
-        const std::string& networkClass,
-        std::uint64_t finalizedHeight,
-        const std::string& latestFinalizedHash,
-        std::size_t validatorCount,
-        std::size_t connectedPeers,
-        bool genesisVerified,
-        bool genesisCompatible,
-        bool keyPolicyPassed,
-        const std::string& latestImportStatus,
-        const std::string& latestImportRejectionReason,
-        bool defenseRestrictionsActive,
-        const std::vector<std::string>& warnings,
-        EvidenceCaptureHealth evidenceHealth = EvidenceCaptureHealth()
-    );
+  static OperatorDiagnosticsReport
+  collect(const config::NetworkParameters &params,
+          const std::string &registeredGenesisId,
+          const std::string &manifestGenesisId, const std::string &networkClass,
+          std::uint64_t finalizedHeight, const std::string &latestFinalizedHash,
+          std::size_t validatorCount, std::size_t connectedPeers,
+          std::size_t inboundPeers, std::size_t outboundPeers,
+          bool discoveryActive, bool genesisVerified, bool genesisCompatible,
+          bool keyPolicyPassed, const std::string &latestImportStatus,
+          const std::string &latestImportRejectionReason,
+          bool defenseRestrictionsActive,
+          const std::vector<std::string> &warnings,
+          EvidenceCaptureHealth evidenceHealth = EvidenceCaptureHealth());
 };
 
 } // namespace nodo::node

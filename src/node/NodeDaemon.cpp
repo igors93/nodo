@@ -7,13 +7,18 @@
 #include "consensus/BlockProposalPhase.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
+#include "crypto/Signer.hpp"
 #include "node/ChainSyncMessages.hpp"
 #include "node/FinalizedArtifactGossipAdmission.hpp"
 #include "node/FinalizedBlockRecordStore.hpp"
+#include "node/NodeDaemon.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/SignedBlockProposalMessage.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
+#include "p2p/DiscoveryService.hpp"
+#include "p2p/EclipseGuard.hpp"
+#include "p2p/NetworkEnvelope.hpp"
 #include "p2p/Peer.hpp"
 
 namespace nodo::node {
@@ -307,6 +312,68 @@ void NodeDaemon::maybeProposeBlock(std::int64_t now) {
               p2p::NetworkMessageType::BLOCK_PROPOSAL,
               proposal.serializedProposal(), now);
         }
+      }
+    }
+  }
+}
+
+void NodeDaemon::maintainPeerConnections(std::int64_t now) {
+  if (now < m_lastConnectionMaintenanceAt + 5000) {
+    return; // Check every 5 seconds
+  }
+  m_lastConnectionMaintenanceAt = now;
+
+  auto &gossipMesh = m_orchestrator.mutableTcpRuntime().gossipMesh();
+  const auto activePeers = gossipMesh.peerRegistry().activePeersAt(now);
+
+  std::vector<p2p::PeerSubnetInfo> subnets;
+  for (const auto &peer : activePeers) {
+    p2p::PeerSubnetInfo info;
+    info.peerId = peer.nodeId();
+    info.ipAddress = peer.endpoint().host();
+    info.port = peer.endpoint().port();
+    info.subnetPrefix =
+        p2p::PeerSubnetInfo::extractSubnetPrefix(info.ipAddress);
+    subnets.push_back(info);
+  }
+
+  p2p::EclipseGuardConfig eclipseConfig =
+      gossipMesh.config().eclipseGuardConfig();
+  eclipseConfig.maxSingleSubnetFraction = m_config.maxFractionPerSubnet;
+  const p2p::EclipseGuard guard(eclipseConfig);
+
+  std::vector<std::string> evictions =
+      guard.recommendEvictions(subnets, activePeers.size());
+  for (const std::string &evictedNodeId : evictions) {
+    std::cout << "[NodeDaemon] Evicting peer " << evictedNodeId
+              << " to maintain EclipseGuard subnet limits." << std::endl;
+    m_orchestrator.mutableTcpRuntime().transport().disconnect(
+        m_config.orchestratorConfig.localPeer().peerId(), evictedNodeId);
+  }
+
+  std::size_t outboundConnections =
+      m_orchestrator.mutableTcpRuntime().transport().connectedOutboundCount();
+  if (outboundConnections < m_config.minOutboundConnections) {
+    p2p::DiscoveryService *discovery = m_orchestrator.discoveryService();
+    if (discovery != nullptr) {
+      std::size_t needed =
+          m_config.minOutboundConnections - outboundConnections;
+      std::vector<p2p::DiscoveryPeerInfo> candidates =
+          discovery->findClosestPeers(
+              m_config.orchestratorConfig.localPeer().peerId(), needed * 2);
+      std::size_t added = 0;
+      for (const auto &candidate : candidates) {
+        if (added >= needed)
+          break;
+        if (candidate.peerId ==
+            m_config.orchestratorConfig.localPeer().peerId())
+          continue;
+        std::cout << "[NodeDaemon] Discovered candidate " << candidate.host
+                  << ":" << candidate.tcpPort << ", registering." << std::endl;
+        p2p::PeerEndpoint ep(candidate.host, candidate.tcpPort);
+        p2p::PeerMetadata meta(candidate.peerId, ep, "", now, now, 0, false);
+        m_orchestrator.addAndConnectPeer(meta, now);
+        added++;
       }
     }
   }

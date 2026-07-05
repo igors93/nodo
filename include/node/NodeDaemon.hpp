@@ -31,6 +31,8 @@ struct NodeDaemonConfig {
   std::vector<NodeDaemonPeerEntry> staticPeers;
   std::size_t seenCacheMaxEntries = SeenTransactionCache::DEFAULT_MAX_ENTRIES;
   std::int64_t seenCacheTtlSeconds = SeenTransactionCache::DEFAULT_TTL_SECONDS;
+  std::size_t minOutboundConnections = 4;
+  double maxFractionPerSubnet = 0.30;
 };
 
 /*
@@ -86,6 +88,7 @@ public:
   const NodeOrchestrator &orchestrator() const;
 
 private:
+  void maintainPeerConnections(std::int64_t now);
   NodeDaemonConfig m_config;
   const crypto::CryptoPolicy &m_policy;
   const crypto::SignatureProvider &m_provider;
@@ -96,10 +99,12 @@ private:
   std::pair<std::uint64_t, std::uint64_t> m_lastProposalAttemptRound = {0, 0};
   std::int64_t m_lastProposalAttemptAt = 0;
   std::optional<crypto::Signer> m_localSigner;
-  
+
   std::uint32_t m_txRelayBudgetCounter = 0;
   std::int64_t m_txRelayBudgetSecond = 0;
-  std::uint64_t m_txRelayDroppedCount = 0;
+  std::uint32_t m_txRelayDroppedCount = 0;
+
+  std::int64_t m_lastConnectionMaintenanceAt = 0;
 
   // Register static peers into the transport and gossip mesh.
   void registerStaticPeers(std::int64_t now);

@@ -732,6 +732,10 @@ void NodeOrchestrator::registerBootstrapPeer(const p2p::PeerMetadata &peer,
   driveNetworkPeerPolicy(now);
 }
 
+p2p::DiscoveryService* NodeOrchestrator::discoveryService() {
+  return m_discoveryService.get();
+}
+
 void NodeOrchestrator::addAndConnectPeer(const p2p::PeerMetadata &peer,
                                          std::int64_t now) {
   registerBootstrapPeer(peer, now);
@@ -1538,6 +1542,14 @@ void NodeOrchestrator::driveNetworkPeerPolicy(std::int64_t now) {
     if (attemptsThisTick >= MAX_RECONNECT_ATTEMPTS_PER_TICK) {
       break;
     }
+
+    const p2p::PeerMetadata *meta =
+        m_tcpRuntime->gossipMesh().peerRegistry().peer(candidate.nodeId);
+    if (meta != nullptr && (meta->quarantined() || meta->bannedAt(now))) {
+      m_reconnectionPolicy.quarantine(candidate.nodeId, meta->banReason(), now);
+      continue;
+    }
+
     if (m_tcpRuntime->hasAuthenticatedSession(candidate.nodeId)) {
       m_reconnectionPolicy.recordSuccess(candidate.nodeId);
       continue;
