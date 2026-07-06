@@ -195,15 +195,16 @@ foreach(NODO_REAL_TCP_TEST ${NODO_REAL_TCP_MULTI_NODE_TESTS})
                 PROPERTIES DISABLED TRUE
             )
         else()
-            # 450s, not 300s: some of these tests (e.g. proposer failover,
-            # equivocation slashing) sum multiple sequential waitUntil()
-            # budgets that can total close to 300s in the worst case, and a
-            # ctest-level TIMEOUT firing first would mask the test's own,
-            # more specific failure message.
+            # 600s, not 300s: some of these tests (e.g. proposer failover,
+            # equivocation slashing, governance gossip's filler-block loop)
+            # sum multiple sequential waitUntil() budgets that can total
+            # close to 500s in the worst case on slow/loaded runners (Clang
+            # Debug, ASan+UBSan), and a ctest-level TIMEOUT firing first
+            # would mask the test's own, more specific failure message.
             set_tests_properties(${NODO_REAL_TCP_TEST}
                 PROPERTIES
                 RUN_SERIAL TRUE
-                TIMEOUT 450
+                TIMEOUT 600
             )
         endif()
     endif()

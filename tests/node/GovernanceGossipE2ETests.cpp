@@ -289,7 +289,7 @@ void testGovernanceProposalAndVoteGossip() {
     std::uint64_t fillerNonce = 5;
     bool executed = false;
     driveChainUntil(nodeA, genesis, seedPrefix, fillerNonce,
-                    /*maxFillerBlocks=*/30, [&] {
+                    /*maxFillerBlocks=*/60, [&] {
                       const auto response =
                           httpRequest(nodeA.rpcPort, "GET",
                                       "/governance/proposal/" + proposalId);
