@@ -116,7 +116,8 @@ struct NodeOrchestratorStartResult {
  *   2. Load NodeRuntime from disk (blocks + mempool + manifest).
  *   3. Start TcpTestnetNodeRuntime (bind TCP port, start gossip).
  *   4. Start ConsensusEventLoop (background thread with block producer wired).
- *   5. Start NodeRpcServer (HTTP server for operator queries).
+ *   5. Start NodeRpcServer, which hosts the official JSON-RPC API at POST /rpc
+ * and keeps REST routes for operator diagnostics.
  *
  * Tick loop (call from your main loop or run via runBlocking()):
  *   - Drives gossip transport (receive/send)
@@ -129,7 +130,8 @@ struct NodeOrchestratorStartResult {
  *
  * Thread model:
  *   - ConsensusEventLoop runs on its own thread.
- *   - NodeRpcServer runs on its own thread.
+ *   - NodeRpcServer runs on its own thread and serves JSON-RPC plus operational
+ * REST routes.
  *   - The gossip/network tick is driven by the caller's thread or
  * runBlocking().
  */
@@ -207,7 +209,7 @@ public:
   const std::string &rpcStartError() const;
 
   // Shared with NodeRpcServer: guards all access to m_runtime/m_tcpRuntime so
-  // RPC handling never runs concurrently with tick()/consensus/block
+  // JSON-RPC/REST handling never runs concurrently with tick()/consensus/block
   // production. Callers that touch runtime state outside of tick() (e.g.
   // NodeDaemon's gossip/proposal processing, which runs on the same thread
   // but after tick() has already released the lock) must acquire this too.

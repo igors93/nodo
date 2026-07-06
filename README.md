@@ -74,7 +74,7 @@ Implemented foundations include:
 - BFT consensus with Quorum Certificate (QC) requiring 2/3+ validator weight from PRECOMMIT votes only;
 - durable QC persistence: `FinalizedBlockRecordStore` writes each QC proof atomically to `{dataDir}/sync/qc/{height}.qc`, reloads all records at startup, and restores the in-memory `BlockFinalizationRegistry` — making the fast-path `QC_REQUIRED` sync mode functional across restarts;
 - P2P message, gossip, loopback, TCP, encrypted peer-channel, sync, and peer-rate-limiter foundations;
-- distributed node daemon with transaction gossip relay, block proposal relay with proposer authentication, PREVOTE/PRECOMMIT voting, and finalized artifact QC verification;
+- distributed node daemon with transaction gossip relay, block proposal relay with proposer authentication, PREVOTE/PRECOMMIT voting, finalized artifact QC verification, and a real JSON-RPC public API at `POST /rpc`;
 - treasury policy, spend validation, execution evidence, and finalized treasury audit;
 - governance vote proof, vote evidence, vote-set audit, tally, decision audit, lifecycle persistence, and lifecycle-backed treasury approval;
 - slashing evidence for conflicting votes and proposer equivocation with deterministic penalty effects across ValidatorPenaltyLedger, ValidatorRegistry and StakingRegistry;
@@ -187,6 +187,8 @@ Network profiles:
 - `mainnet`: intentionally blocked.
 
 More commands are documented in [CLI](docs/getting-started/cli.md).
+
+The official public protocol API is JSON-RPC 2.0 over HTTP at `POST /rpc`; REST routes remain available for local operational diagnostics and backward-compatible tooling. See [JSON-RPC public API](docs/development/json-rpc-public-api.md).
 
 ## Project Structure
 

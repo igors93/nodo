@@ -191,6 +191,54 @@ void testGovernanceMethodsAreRegisteredAndDispatch() {
     );
 }
 
+
+void testEscapedJsonStringParameterIsDecoded() {
+    const std::string raw =
+        R"({"jsonrpc":"2.0","method":"nodo_sendTransaction","params":{"tx":"line1\nline2\"quoted\""},"id":"11"})";
+
+    const JsonRpcRequest req = JsonRpcRequest::parse(raw);
+    const std::string tx = JsonRpcDispatcher::extractParam(req.params, "tx");
+
+    requireCondition(
+        tx == "line1\nline2\"quoted\"",
+        "JSON-RPC string parameters should decode common JSON escapes."
+    );
+}
+
+void testStandardMethodsRegisterOfficialChainCalls() {
+    JsonRpcDispatcher dispatcher;
+
+    dispatcher.registerStandardMethods(
+        [](std::uint64_t height) { return "{\"height\":" + std::to_string(height) + "}"; },
+        [](const std::string& hash) { return "{\"hash\":\"" + hash + "\"}"; },
+        [](const std::string& id) { return "{\"tx\":\"" + id + "\"}"; },
+        [](const std::string& address) { return "{\"address\":\"" + address + "\"}"; },
+        [](const std::string& tx) { return "{\"submitted\":\"" + tx + "\"}"; },
+        []() { return R"({"size":0})"; },
+        [](const std::string& urgency) { return "{\"urgency\":\"" + urgency + "\"}"; },
+        []() { return R"({"chainId":"localnet"})"; },
+        []() { return R"({"validators":[]})"; }
+    );
+
+    const auto chainInfo = dispatcher.dispatch(
+        R"({"jsonrpc":"2.0","method":"nodo_getChainInfo","params":{},"id":"12"})"
+    );
+
+    requireCondition(
+        chainInfo.isSuccess() && chainInfo.result.find("localnet") != std::string::npos,
+        "nodo_getChainInfo should be part of the standard JSON-RPC method set."
+    );
+
+    const auto block = dispatcher.dispatch(
+        R"({"jsonrpc":"2.0","method":"nodo_getBlockByHeight","params":{"height":7},"id":"13"})"
+    );
+
+    requireCondition(
+        block.isSuccess() && block.result.find("\"height\":7") != std::string::npos,
+        "nodo_getBlockByHeight should parse numeric height and dispatch."
+    );
+}
+
 } // namespace
 
 int main() {
@@ -201,6 +249,8 @@ int main() {
         testSuccessResponseHasCorrectFields();
         testErrorResponseHasCorrectCode();
         testGovernanceMethodsAreRegisteredAndDispatch();
+        testEscapedJsonStringParameterIsDecoded();
+        testStandardMethodsRegisterOfficialChainCalls();
 
         std::cout << "Nodo JsonRpcServer tests passed.\n";
         return 0;

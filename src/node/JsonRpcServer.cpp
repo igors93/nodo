@@ -24,9 +24,27 @@ std::string trim(const std::string& s) {
     return s.substr(start, end - start + 1);
 }
 
+void appendJsonStringEscape(std::string& out, char escaped) {
+    switch (escaped) {
+        case '"': out += '"'; break;
+        case '\\': out += '\\'; break;
+        case '/': out += '/'; break;
+        case 'b': out += '\b'; break;
+        case 'f': out += '\f'; break;
+        case 'n': out += '\n'; break;
+        case 'r': out += '\r'; break;
+        case 't': out += '\t'; break;
+        // Minimal parser: keep unicode escapes in canonical escaped form instead
+        // of silently corrupting them. Nodo RPC parameters currently use ASCII
+        // protocol material (ids, hashes, addresses, envelopes).
+        case 'u': out += "\\u"; break;
+        default: out += escaped; break;
+    }
+}
+
 // Extract the raw string value for a JSON key from a flat JSON object string.
-// Handles both quoted string values and numeric/boolean values.
-// Returns empty string if not found.
+// Handles quoted string values with escapes plus numeric/boolean values.
+// Returns empty string if not found or malformed.
 std::string jsonGetValue(const std::string& json, const std::string& key) {
     const std::string quotedKey = "\"" + key + "\"";
     std::size_t pos = json.find(quotedKey);
@@ -36,7 +54,9 @@ std::string jsonGetValue(const std::string& json, const std::string& key) {
 
     // Advance past the key and the colon
     pos += quotedKey.size();
-    while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':' || json[pos] == '\t')) {
+    while (pos < json.size() &&
+           (json[pos] == ' ' || json[pos] == ':' || json[pos] == '\t' ||
+            json[pos] == '\r' || json[pos] == '\n')) {
         ++pos;
     }
 
@@ -45,13 +65,32 @@ std::string jsonGetValue(const std::string& json, const std::string& key) {
     }
 
     if (json[pos] == '"') {
-        // Quoted string value — find closing quote (no escape handling needed for our use)
         ++pos;
-        const std::size_t endPos = json.find('"', pos);
-        if (endPos == std::string::npos) {
-            return "";
+        std::string value;
+        for (; pos < json.size(); ++pos) {
+            const char c = json[pos];
+            if (c == '"') {
+                return value;
+            }
+            if (c == '\\') {
+                ++pos;
+                if (pos >= json.size()) {
+                    return "";
+                }
+                const char escaped = json[pos];
+                appendJsonStringEscape(value, escaped);
+                if (escaped == 'u') {
+                    // Preserve the four hex digits when present.
+                    for (int i = 0; i < 4 && pos + 1 < json.size(); ++i) {
+                        ++pos;
+                        value += json[pos];
+                    }
+                }
+                continue;
+            }
+            value += c;
         }
-        return json.substr(pos, endPos - pos);
+        return "";
     }
 
     // Numeric or boolean value — read until delimiter
@@ -149,25 +188,42 @@ JsonRpcRequest JsonRpcRequest::parse(const std::string& rawJson) {
             }
 
             if (valueStart < trimmed.size()) {
-                if (trimmed[valueStart] == '{') {
-                    // Object params — find matching closing brace
+                if (trimmed[valueStart] == '{' || trimmed[valueStart] == '[') {
+                    // Object/array params — find the matching closing delimiter
+                    // while respecting quoted strings and escaped characters.
+                    const char open = trimmed[valueStart];
+                    const char close = open == '{' ? '}' : ']';
                     int depth = 0;
+                    bool inString = false;
+                    bool escaped = false;
                     std::size_t end = valueStart;
                     for (; end < trimmed.size(); ++end) {
-                        if (trimmed[end] == '{') {
+                        const char c = trimmed[end];
+                        if (escaped) {
+                            escaped = false;
+                            continue;
+                        }
+                        if (c == '\\' && inString) {
+                            escaped = true;
+                            continue;
+                        }
+                        if (c == '"') {
+                            inString = !inString;
+                            continue;
+                        }
+                        if (inString) {
+                            continue;
+                        }
+                        if (c == open) {
                             ++depth;
-                        } else if (trimmed[end] == '}') {
+                        } else if (c == close) {
                             --depth;
                             if (depth == 0) {
                                 break;
                             }
                         }
                     }
-                    req.params = trimmed.substr(valueStart, end - valueStart + 1);
-                } else if (trimmed[valueStart] == '[') {
-                    // Array params — find matching closing bracket
-                    std::size_t end = trimmed.find(']', valueStart);
-                    if (end != std::string::npos) {
+                    if (end < trimmed.size() && depth == 0) {
                         req.params = trimmed.substr(valueStart, end - valueStart + 1);
                     }
                 } else {

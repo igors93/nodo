@@ -489,21 +489,22 @@ minute on a local testnet; a pruned node can still pass chain audit.
 running node over a documented API; light clients can verify block headers
 without downloading full artifacts.
 
-### 7.1 JSON-RPC Server
-- There are two distinct classes here: `JsonRpcServer`/`JsonRpcDispatcher`
-  (JSON-RPC 2.0 envelope, e.g. `nodo_getBlockByHeight`, `nodo_getAccountState`,
-  `nodo_sendTransaction`, `governance_*`, `stake_*`) is tested
-  (`tests/node/JsonRpcServerTests.cpp`) but still **not wired to any socket** —
-  it is never instantiated by `NodeOrchestrator`/`NodeDaemon`. The class that
-  is actually live on the network is `NodeRpcServer`, a plain REST-style
-  router (`GET /status`, `/block/:height`, `/account/:addr`, `POST /submit`,
-  etc.), bound to `127.0.0.1` by default.
-- Rate-limit the RPC endpoint. ✅ `NodeRpcServer` now enforces a per-source-IP
+### 7.1 JSON-RPC Server ✅
+- JSON-RPC 2.0 is now the official public protocol API. `NodeRpcServer` hosts
+  it at `POST /rpc`, using `JsonRpcDispatcher` for envelope parsing,
+  canonical JSON-RPC error responses, method routing and method discovery
+  (`rpc_methods`).
+- REST routes remain live for local operational diagnostics and
+  backward-compatible integration tests, but wallets, explorers, staking tools
+  and governance clients should use JSON-RPC methods (`nodo_*`,
+  `governance_*`, `stake_*`).
+- JSON-RPC and REST share the same runtime mutex and handler implementations,
+  so API exposure cannot diverge from canonical runtime behavior.
+- Rate-limit the RPC endpoint. ✅ `NodeRpcServer` enforces a per-source-IP
   request cap (`MAX_REQUESTS_PER_WINDOW` / `RATE_LIMIT_WINDOW_SECONDS`, via
   `p2p::PeerRateLimiter`), returning HTTP 429 once exceeded.
-- Remaining gap: either wire the real `JsonRpcServer` to a socket, or accept
-  `NodeRpcServer`'s REST shape as the documented API and update this item's
-  method-name list to match its actual routes.
+- Remaining gap: publish a versioned external API compatibility policy once
+  wallet/explorer clients exist.
 
 ### 7.2 Light Client Protocol
 - `LightClientMessages` exists as serialization structs only; the full

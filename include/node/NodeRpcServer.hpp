@@ -1,6 +1,7 @@
 #ifndef NODO_NODE_NODE_RPC_SERVER_HPP
 #define NODO_NODE_NODE_RPC_SERVER_HPP
 
+#include "node/JsonRpcServer.hpp"
 #include "node/NodeRuntime.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/PeerRateLimiter.hpp"
@@ -14,8 +15,10 @@
 namespace nodo::node {
 
 /*
- * NodeRpcServer is a minimal HTTP/JSON server that exposes node state for
- * operators, dashboards and integration tests.
+ * NodeRpcServer is the node HTTP surface. JSON-RPC is the official public
+ * protocol API and is exposed through POST /rpc. The older REST routes remain
+ * available as operational/development endpoints for status, health, metrics,
+ * diagnostics and backward-compatible integration tests.
  *
  * Transport: POSIX TCP sockets, single-threaded accept loop.
  * Protocol:  Plain HTTP/1.0 with JSON response bodies.
@@ -27,9 +30,12 @@ namespace nodo::node {
  *   leaves legitimate pollers (dashboards, integration test harnesses)
  *   locked out for the rest of the window once tripped.
  *
- * Endpoints (all read-only except /submit):
- *   GET  /status               — node height, round, peer count, mempool size
- *   GET  /block/{height}       — serialized block at given height
+ * JSON-RPC endpoint:
+ *   POST /rpc                  — JSON-RPC 2.0 public protocol API
+ *
+ * REST endpoints (operational/backward-compatible; all read-only except
+ * /submit): GET  /status               — node height, round, peer count,
+ * mempool size GET  /block/{height}       — serialized block at given height
  *   GET  /tx/{txId}            — ledger record with matching id or sourceId
  *   GET  /account/{address}    — balance and nonce for address
  *   GET  /account/{address}/proof — Merkle inclusion proof of the address's
@@ -57,100 +63,98 @@ namespace nodo::node {
  */
 class NodeRpcServer {
 public:
-    static constexpr std::uint16_t DEFAULT_PORT    = 8545;
-    static constexpr std::size_t   MAX_REQUEST_LEN = 65536;
-    static constexpr std::uint32_t MAX_REQUESTS_PER_WINDOW  = 3000;
-    static constexpr std::uint64_t RATE_LIMIT_WINDOW_SECONDS = 60;
+  static constexpr std::uint16_t DEFAULT_PORT = 8545;
+  static constexpr std::size_t MAX_REQUEST_LEN = 65536;
+  static constexpr std::uint32_t MAX_REQUESTS_PER_WINDOW = 3000;
+  static constexpr std::uint64_t RATE_LIMIT_WINDOW_SECONDS = 60;
 
-    // `runtimeMutex` must be the same mutex the owning NodeOrchestrator holds
-    // while ticking, so RPC request handling and block production/consensus
-    // never touch NodeRuntime (blockchain, mempool, ...) at the same time.
-    NodeRpcServer(
-        NodeRuntime&       runtime,
-        std::mutex&        runtimeMutex,
-        std::uint16_t      port    = DEFAULT_PORT,
-        const std::string& bindAddr = "127.0.0.1"
-    );
+  // `runtimeMutex` must be the same mutex the owning NodeOrchestrator holds
+  // while ticking, so RPC request handling and block production/consensus
+  // never touch NodeRuntime (blockchain, mempool, ...) at the same time.
+  NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
+                std::uint16_t port = DEFAULT_PORT,
+                const std::string &bindAddr = "127.0.0.1");
 
-    // Overload that also wires a GossipMesh for broadcasting submitted transactions.
-    NodeRpcServer(
-        NodeRuntime&       runtime,
-        std::mutex&        runtimeMutex,
-        p2p::GossipMesh&   gossip,
-        std::uint16_t      port    = DEFAULT_PORT,
-        const std::string& bindAddr = "127.0.0.1"
-    );
+  // Overload that also wires a GossipMesh for broadcasting submitted
+  // transactions.
+  NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
+                p2p::GossipMesh &gossip, std::uint16_t port = DEFAULT_PORT,
+                const std::string &bindAddr = "127.0.0.1");
 
-    ~NodeRpcServer();
+  ~NodeRpcServer();
 
-    void start();
-    void stop();
-    bool isRunning() const;
+  void start();
+  void stop();
+  bool isRunning() const;
 
-    std::uint16_t port() const;
+  std::uint16_t port() const;
 
 private:
-    NodeRuntime&       m_runtime;
-    std::mutex&        m_runtimeMutex; // shared with the owning NodeOrchestrator
-    p2p::GossipMesh*   m_gossip;   // optional; nullptr means no gossip broadcast
-    std::uint16_t      m_port;
-    std::string        m_bindAddr;
-    std::atomic<bool>  m_running;
-    std::thread        m_thread;
-    std::atomic<int>   m_serverFd;
-    p2p::PeerRateLimiter m_rateLimiter;
+  NodeRuntime &m_runtime;
+  std::mutex &m_runtimeMutex; // shared with the owning NodeOrchestrator
+  p2p::GossipMesh *m_gossip;  // optional; nullptr means no gossip broadcast
+  std::uint16_t m_port;
+  std::string m_bindAddr;
+  std::atomic<bool> m_running;
+  std::thread m_thread;
+  std::atomic<int> m_serverFd;
+  p2p::PeerRateLimiter m_rateLimiter;
+  JsonRpcDispatcher m_jsonRpcDispatcher;
 
-    void runLoop();
-    void handleClient(int clientFd);
+  void runLoop();
+  void handleClient(int clientFd);
 
-    // Returns (statusCode, responseBody).
-    std::pair<int, std::string> dispatch(
-        const std::string& method,
-        const std::string& path,
-        const std::string& body
-    );
+  // Returns (statusCode, responseBody).
+  std::pair<int, std::string> dispatch(const std::string &method,
+                                       const std::string &path,
+                                       const std::string &body);
 
-    // --- route handlers ---
-    std::string handleStatus() const;
-    std::string handleBlock(const std::string& heightStr) const;
-    std::string handleTx(const std::string& txId) const;
-    std::string handleAccount(const std::string& address) const;
-    std::string handleAccountProof(const std::string& address) const;
-    std::string handleValidators() const;
-    std::string handleStakeStatus(const std::string& validatorAddress) const;
-    std::string handleStakePositions(const std::string& ownerAddress) const;
-    std::string handleStakePosition(const std::string& positionId) const;
-    std::string handleStakePendingUnbonding(const std::string& validatorAddress) const;
-    std::string handleStakeValidator(const std::string& validatorAddress) const;
-    std::string handleStakeAudit() const;
-    std::string handleStakeMutationInfo(const std::string& operation) const;
-    std::string handlePeers() const;
-    std::string handleMempool() const;
-    std::string handleGovernanceStatus() const;
-    std::string handleGovernanceProposals() const;
-    std::string handleGovernanceProposal(const std::string& proposalId) const;
-    std::string handleGovernanceVotes(const std::string& proposalId) const;
-    std::string handleGovernanceTally(const std::string& proposalId) const;
-    std::string handleGovernanceDecision(const std::string& proposalId) const;
-    std::string handleGovernanceExecution(const std::string& proposalId) const;
-    std::string handleSubmit(const std::string& body);
+  // Wires JSON-RPC methods to the same runtime-safe handlers used by the
+  // operational REST surface. Called once during construction.
+  void registerJsonRpcMethods();
 
-    // --- HTTP helpers ---
-    static std::string httpResponse(
-        int statusCode,
-        const std::string& body
-    );
+  std::string handleJsonRpc(const std::string &body);
 
-    static std::string jsonError(const std::string& message);
+  // --- route handlers ---
+  std::string handleStatus() const;
+  std::string handleBlock(const std::string &heightStr) const;
+  std::string handleBlockByHash(const std::string &blockHash) const;
+  std::string handleTx(const std::string &txId) const;
+  std::string handleAccount(const std::string &address) const;
+  std::string handleAccountProof(const std::string &address) const;
+  std::string handleValidators() const;
+  std::string handleStakeStatus(const std::string &validatorAddress) const;
+  std::string handleStakePositions(const std::string &ownerAddress) const;
+  std::string handleStakePosition(const std::string &positionId) const;
+  std::string
+  handleStakePendingUnbonding(const std::string &validatorAddress) const;
+  std::string handleStakeValidator(const std::string &validatorAddress) const;
+  std::string handleStakeAudit() const;
+  std::string handleStakeMutationInfo(const std::string &operation) const;
+  std::string handlePeers() const;
+  std::string handleMempool() const;
+  std::string handleEstimateFee(const std::string &urgency) const;
+  std::string handleChainInfo() const;
+  std::string handleJsonRpcMethods() const;
+  std::string handleGovernanceStatus() const;
+  std::string handleGovernanceProposals() const;
+  std::string handleGovernanceProposal(const std::string &proposalId) const;
+  std::string handleGovernanceVotes(const std::string &proposalId) const;
+  std::string handleGovernanceTally(const std::string &proposalId) const;
+  std::string handleGovernanceDecision(const std::string &proposalId) const;
+  std::string handleGovernanceExecution(const std::string &proposalId) const;
+  std::string handleSubmit(const std::string &body);
 
-    static bool parseRequestLine(
-        const std::string& request,
-        std::string& outMethod,
-        std::string& outPath,
-        std::string& outBody
-    );
+  // --- HTTP helpers ---
+  static std::string httpResponse(int statusCode, const std::string &body);
 
-    static std::string pathSegment(const std::string& path, int index);
+  static std::string jsonError(const std::string &message);
+
+  static bool parseRequestLine(const std::string &request,
+                               std::string &outMethod, std::string &outPath,
+                               std::string &outBody);
+
+  static std::string pathSegment(const std::string &path, int index);
 };
 
 } // namespace nodo::node

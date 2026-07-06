@@ -304,14 +304,18 @@ NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
                              std::uint16_t port, const std::string &bindAddr)
     : m_runtime(runtime), m_runtimeMutex(runtimeMutex), m_gossip(nullptr),
       m_port(port), m_bindAddr(bindAddr), m_running(false), m_serverFd(-1),
-      m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS) {}
+      m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS) {
+  registerJsonRpcMethods();
+}
 
 NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
                              p2p::GossipMesh &gossip, std::uint16_t port,
                              const std::string &bindAddr)
     : m_runtime(runtime), m_runtimeMutex(runtimeMutex), m_gossip(&gossip),
       m_port(port), m_bindAddr(bindAddr), m_running(false), m_serverFd(-1),
-      m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS) {}
+      m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS) {
+  registerJsonRpcMethods();
+}
 
 NodeRpcServer::~NodeRpcServer() { stop(); }
 
@@ -513,6 +517,9 @@ std::string NodeRpcServer::httpResponse(int statusCode,
   case 405:
     statusText = "Method Not Allowed";
     break;
+  case 429:
+    statusText = "Too Many Requests";
+    break;
   case 500:
     statusText = "Internal Server Error";
     break;
@@ -556,6 +563,130 @@ std::string NodeRpcServer::pathSegment(const std::string &path, int index) {
   return "";
 }
 
+
+// ---------------------------------------------------------------------------
+// JSON-RPC runtime binding
+// ---------------------------------------------------------------------------
+
+void NodeRpcServer::registerJsonRpcMethods() {
+  m_jsonRpcDispatcher.registerStandardMethods(
+      [this](std::uint64_t height) {
+        return handleBlock(std::to_string(height));
+      },
+      [this](const std::string &hash) { return handleBlockByHash(hash); },
+      [this](const std::string &txId) { return handleTx(txId); },
+      [this](const std::string &address) { return handleAccount(address); },
+      [this](const std::string &txEnvelope) { return handleSubmit(txEnvelope); },
+      [this]() { return handleMempool(); },
+      [this](const std::string &urgency) { return handleEstimateFee(urgency); },
+      [this]() { return handleChainInfo(); },
+      [this]() { return handleValidators(); });
+
+  m_jsonRpcDispatcher.registerGovernanceMethods(
+      [this]() { return handleGovernanceProposals(); },
+      [this](const std::string &proposalId) {
+        return handleGovernanceProposal(proposalId);
+      },
+      [this](const std::string &proposalId) {
+        return handleGovernanceVotes(proposalId);
+      },
+      [this](const std::string &proposalId) {
+        return handleGovernanceTally(proposalId);
+      },
+      [this](const std::string &proposalId) {
+        return handleGovernanceDecision(proposalId);
+      },
+      [this](const std::string &proposalId) {
+        return handleGovernanceExecution(proposalId);
+      },
+      [this](const std::string &txEnvelope) {
+        return handleSubmit(txEnvelope);
+      },
+      [this](const std::string &txEnvelope) {
+        return handleSubmit(txEnvelope);
+      },
+      [this]() { return handleGovernanceStatus(); });
+
+  m_jsonRpcDispatcher.registerStakingMethods(
+      [this](const std::string &validator) {
+        return handleStakeStatus(validator);
+      },
+      [this](const std::string &owner) { return handleStakePositions(owner); },
+      [this](const std::string &positionId) {
+        return handleStakePosition(positionId);
+      },
+      [this](const std::string &txEnvelope) {
+        return handleSubmit(txEnvelope);
+      },
+      [this](const std::string &validator) {
+        return handleStakePendingUnbonding(validator);
+      },
+      [this](const std::string &validator) {
+        return handleStakeValidator(validator);
+      },
+      [this]() { return handleStakeAudit(); });
+
+  // Official aliases and discovery helpers. These methods keep the public API
+  // protocol-shaped while avoiding a second, divergent implementation path.
+  m_jsonRpcDispatcher.registerHandler(
+      "rpc_methods", [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(req.id, handleJsonRpcMethods());
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getStatus", [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(req.id, handleStatus());
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getPeers", [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(req.id, handlePeers());
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getAccountProof",
+      [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        const std::string address =
+            JsonRpcDispatcher::extractParam(req.params, "address");
+        if (address.empty()) {
+          return JsonRpcResponse::makeError(req.id, JsonRpcError::INVALID_PARAMS,
+                                            "Missing param: address");
+        }
+        return JsonRpcResponse::success(req.id, handleAccountProof(address));
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_sendRawTransaction",
+      [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        const std::string tx = JsonRpcDispatcher::extractParam(req.params, "tx");
+        if (tx.empty()) {
+          return JsonRpcResponse::makeError(req.id, JsonRpcError::INVALID_PARAMS,
+                                            "Missing param: tx");
+        }
+        return JsonRpcResponse::success(req.id, handleSubmit(tx));
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "governance_submitExecution",
+      [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        const std::string tx = JsonRpcDispatcher::extractParam(req.params, "tx");
+        if (tx.empty()) {
+          return JsonRpcResponse::makeError(req.id, JsonRpcError::INVALID_PARAMS,
+                                            "Missing param: tx");
+        }
+        return JsonRpcResponse::success(req.id, handleSubmit(tx));
+      });
+}
+
+std::string NodeRpcServer::handleJsonRpc(const std::string &body) {
+  if (body.empty()) {
+    return JsonRpcResponse::makeError("", JsonRpcError::INVALID_REQUEST,
+                                      "Empty JSON-RPC request body")
+        .serialize();
+  }
+  return m_jsonRpcDispatcher.dispatch(body).serialize();
+}
+
 // ---------------------------------------------------------------------------
 // Routing
 // ---------------------------------------------------------------------------
@@ -572,6 +703,13 @@ std::pair<int, std::string> NodeRpcServer::dispatch(const std::string &method,
 
   // Normalize path: strip query string.
   const std::string cleanPath = path.substr(0, path.find('?'));
+
+  if (cleanPath == "/rpc" || cleanPath == "/jsonrpc") {
+    if (method != "POST") {
+      return {405, jsonError("Method not allowed. Use POST for JSON-RPC.")};
+    }
+    return {200, handleJsonRpc(body)};
+  }
 
   // Segment 0 is empty (before first '/'), segment 1 is the route.
   const std::string route = pathSegment(cleanPath, 1);
@@ -738,6 +876,28 @@ std::string NodeRpcServer::handleBlock(const std::string &heightStr) const {
       << ",\"timestamp\":" << block.timestamp()
       << ",\"recordCount\":" << block.records().size() << "}";
   return oss.str();
+}
+
+
+std::string
+NodeRpcServer::handleBlockByHash(const std::string &blockHash) const {
+  if (blockHash.empty()) {
+    return jsonError("Missing block hash");
+  }
+
+  for (const auto &block : m_runtime.blockchain().blocks()) {
+    if (block.hash() == blockHash) {
+      std::ostringstream oss;
+      oss << "{"
+          << "\"height\":" << block.index()
+          << ",\"hash\":" << jsonString(block.hash())
+          << ",\"previousHash\":" << jsonString(block.previousHash())
+          << ",\"timestamp\":" << block.timestamp()
+          << ",\"recordCount\":" << block.records().size() << "}";
+      return oss.str();
+    }
+  }
+  return jsonError("Block not found for hash " + blockHash);
 }
 
 std::string NodeRpcServer::handleTx(const std::string &txId) const {
@@ -1012,6 +1172,68 @@ std::string NodeRpcServer::handleMempool() const {
         << ",\"fee\":" << tx.fee().rawUnits() << "}";
   }
   oss << "]}";
+  return oss.str();
+}
+
+
+std::string NodeRpcServer::handleEstimateFee(const std::string &urgency) const {
+  const std::uint64_t minimum = m_runtime.effectiveMinimumFeeRawUnits();
+  std::uint64_t multiplier = 1;
+  if (urgency == "MEDIUM" || urgency == "medium") {
+    multiplier = 2;
+  } else if (urgency == "HIGH" || urgency == "high") {
+    multiplier = 4;
+  } else if (!urgency.empty() && urgency != "LOW" && urgency != "low") {
+    return jsonError("Invalid fee urgency: " + urgency);
+  }
+
+  const std::uint64_t estimated =
+      minimum > (std::numeric_limits<std::uint64_t>::max() / multiplier)
+          ? std::numeric_limits<std::uint64_t>::max()
+          : minimum * multiplier;
+
+  std::ostringstream oss;
+  oss << "{"
+      << "\"urgency\":" << jsonString(urgency.empty() ? "LOW" : urgency)
+      << ",\"minimumFeeRawUnits\":" << minimum
+      << ",\"estimatedFeeRawUnits\":" << estimated << "}";
+  return oss.str();
+}
+
+std::string NodeRpcServer::handleChainInfo() const {
+  const config::GenesisConfig &genesis = m_runtime.config().genesisConfig();
+  const config::NetworkParameters &network = genesis.networkParameters();
+  const auto &chain = m_runtime.blockchain();
+  const std::uint64_t height = chain.empty() ? 0 : chain.latestBlock().index();
+  const std::string latestHash = chain.empty() ? "" : chain.latestBlock().hash();
+
+  std::ostringstream oss;
+  oss << "{"
+      << "\"networkName\":" << jsonString(network.networkName())
+      << ",\"chainId\":" << jsonString(network.chainId())
+      << ",\"genesisConfigId\":" << jsonString(genesis.deterministicId())
+      << ",\"height\":" << height
+      << ",\"finalizedHeight\":"
+      << m_runtime.finalizationRegistry().highestFinalizedHeight()
+      << ",\"latestHash\":" << jsonString(latestHash)
+      << ",\"minimumFeeRawUnits\":"
+      << m_runtime.effectiveMinimumFeeRawUnits()
+      << ",\"validatorCount\":"
+      << m_runtime.validatorRegistry().activeCount() << "}";
+  return oss.str();
+}
+
+std::string NodeRpcServer::handleJsonRpcMethods() const {
+  const std::vector<std::string> methods = m_jsonRpcDispatcher.registeredMethods();
+  std::ostringstream oss;
+  oss << "{\"methods\":[";
+  for (std::size_t i = 0; i < methods.size(); ++i) {
+    if (i > 0) {
+      oss << ",";
+    }
+    oss << jsonString(methods[i]);
+  }
+  oss << "],\"count\":" << methods.size() << "}";
   return oss.str();
 }
 
