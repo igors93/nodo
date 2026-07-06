@@ -7,23 +7,24 @@
 #include "core/MempoolBlockProducer.hpp"
 #include "crypto/Signer.hpp"
 #include "economics/SupplyDelta.hpp"
+#include "economics/TreasuryExecutionEvidence.hpp"
+#include "node/ControlledIssuance.hpp"
+#include "node/CryptographicSlashing.hpp"
+#include "node/FeeEconomics.hpp"
+#include "node/Governance.hpp"
 #include "node/LockedStakePosition.hpp"
 #include "node/MonetaryFirewall.hpp"
-#include "node/ProtectionTreasury.hpp"
-#include "node/ControlledIssuance.hpp"
-#include "node/FeeEconomics.hpp"
-#include "node/ProtectionRewards.hpp"
-#include "node/SlashingEvidence.hpp"
-#include "node/CryptographicSlashing.hpp"
-#include "node/Governance.hpp"
-#include "node/ValidatorLifecycle.hpp"
 #include "node/NodeRuntime.hpp"
+#include "node/ProtectionRewards.hpp"
+#include "node/ProtectionTreasury.hpp"
 #include "node/RewardDistribution.hpp"
-#include "node/SecurityScore.hpp"
 #include "node/SecurityCheckpoint.hpp"
-#include "node/ValidatorRiskAssessment.hpp"
+#include "node/SecurityScore.hpp"
+#include "node/SlashingEvidence.hpp"
 #include "node/ValidatorContainmentDecision.hpp"
+#include "node/ValidatorLifecycle.hpp"
 #include "node/ValidatorNetworkPolicy.hpp"
+#include "node/ValidatorRiskAssessment.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstddef>
@@ -47,506 +48,502 @@ class NodeDataDirectoryConfig;
  */
 class RuntimeBlockPipelineConfig {
 public:
-    RuntimeBlockPipelineConfig();
+  RuntimeBlockPipelineConfig();
 
-    RuntimeBlockPipelineConfig(
-        std::size_t maxTransactionsPerBlock,
-        std::size_t minTransactionsPerBlock,
-        std::uint64_t consensusRound,
-        std::int64_t timestamp
-    );
+  RuntimeBlockPipelineConfig(std::size_t maxTransactionsPerBlock,
+                             std::size_t minTransactionsPerBlock,
+                             std::uint64_t consensusRound,
+                             std::int64_t timestamp);
 
-    std::size_t maxTransactionsPerBlock() const;
-    std::size_t minTransactionsPerBlock() const;
-    std::uint64_t consensusRound() const;
-    std::int64_t timestamp() const;
+  std::size_t maxTransactionsPerBlock() const;
+  std::size_t minTransactionsPerBlock() const;
+  std::uint64_t consensusRound() const;
+  std::int64_t timestamp() const;
 
-    bool isValid() const;
-    std::string serialize() const;
+  bool isValid() const;
+  std::string serialize() const;
 
 private:
-    std::size_t m_maxTransactionsPerBlock;
-    std::size_t m_minTransactionsPerBlock;
-    std::uint64_t m_consensusRound;
-    std::int64_t m_timestamp;
+  std::size_t m_maxTransactionsPerBlock;
+  std::size_t m_minTransactionsPerBlock;
+  std::uint64_t m_consensusRound;
+  std::int64_t m_timestamp;
 };
 
 enum class RuntimeBlockPipelineStatus {
-    FINALIZED,
-    INVALID_CONFIG,
-    INVALID_RUNTIME,
-    BLOCK_PRODUCTION_FAILED,
-    STATE_TRANSITION_FAILED,
-    MONETARY_VALIDATION_FAILED,
-    NOT_ENOUGH_VALIDATORS,
-    VOTE_BUILD_FAILED,
-    QUORUM_BUILD_FAILED,
-    FINALIZATION_FAILED,
-    PERSISTENCE_FAILED
+  FINALIZED,
+  INVALID_CONFIG,
+  INVALID_RUNTIME,
+  BLOCK_PRODUCTION_FAILED,
+  STATE_TRANSITION_FAILED,
+  MONETARY_VALIDATION_FAILED,
+  NOT_ENOUGH_VALIDATORS,
+  VOTE_BUILD_FAILED,
+  QUORUM_BUILD_FAILED,
+  FINALIZATION_FAILED,
+  PERSISTENCE_FAILED
 };
 
-std::string runtimeBlockPipelineStatusToString(
-    RuntimeBlockPipelineStatus status
-);
+std::string
+runtimeBlockPipelineStatusToString(RuntimeBlockPipelineStatus status);
 
 class RuntimeBlockPipelineResult {
 public:
-    RuntimeBlockPipelineResult();
+  RuntimeBlockPipelineResult();
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot
-    );
+  static RuntimeBlockPipelineResult
+  finalized(core::Block block, consensus::QuorumCertificate certificate,
+            consensus::FinalizedBlockRecord finalizedRecord,
+            std::vector<std::string> finalizedTransactionIds,
+            std::string postStateRoot);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee
-    );
+  static RuntimeBlockPipelineResult
+  finalized(core::Block block, consensus::QuorumCertificate certificate,
+            consensus::FinalizedBlockRecord finalizedRecord,
+            std::vector<std::string> finalizedTransactionIds,
+            std::string postStateRoot, utils::Amount totalFee);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions
-    );
+  static RuntimeBlockPipelineResult
+  finalized(core::Block block, consensus::QuorumCertificate certificate,
+            consensus::FinalizedBlockRecord finalizedRecord,
+            std::vector<std::string> finalizedTransactionIds,
+            std::string postStateRoot, utils::Amount totalFee,
+            std::vector<RewardDistribution> rewardDistributions);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions
-    );
+  static RuntimeBlockPipelineResult
+  finalized(core::Block block, consensus::QuorumCertificate certificate,
+            consensus::FinalizedBlockRecord finalizedRecord,
+            std::vector<std::string> finalizedTransactionIds,
+            std::string postStateRoot, utils::Amount totalFee,
+            std::vector<RewardDistribution> rewardDistributions,
+            std::vector<LockedStakePosition> lockedStakePositions);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords
-    );
+  static RuntimeBlockPipelineResult
+  finalized(core::Block block, consensus::QuorumCertificate certificate,
+            consensus::FinalizedBlockRecord finalizedRecord,
+            std::vector<std::string> finalizedTransactionIds,
+            std::string postStateRoot, utils::Amount totalFee,
+            std::vector<RewardDistribution> rewardDistributions,
+            std::vector<LockedStakePosition> lockedStakePositions,
+            std::vector<SecurityScoreRecord> securityScoreRecords);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints
-    );
+  static RuntimeBlockPipelineResult
+  finalized(core::Block block, consensus::QuorumCertificate certificate,
+            consensus::FinalizedBlockRecord finalizedRecord,
+            std::vector<std::string> finalizedTransactionIds,
+            std::string postStateRoot, utils::Amount totalFee,
+            std::vector<RewardDistribution> rewardDistributions,
+            std::vector<LockedStakePosition> lockedStakePositions,
+            std::vector<SecurityScoreRecord> securityScoreRecords,
+            std::vector<ValidatorSecurityCheckpoint> securityCheckpoints);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
-        std::vector<ValidatorRiskAssessment> validatorRiskAssessments
-    );
+  static RuntimeBlockPipelineResult
+  finalized(core::Block block, consensus::QuorumCertificate certificate,
+            consensus::FinalizedBlockRecord finalizedRecord,
+            std::vector<std::string> finalizedTransactionIds,
+            std::string postStateRoot, utils::Amount totalFee,
+            std::vector<RewardDistribution> rewardDistributions,
+            std::vector<LockedStakePosition> lockedStakePositions,
+            std::vector<SecurityScoreRecord> securityScoreRecords,
+            std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+            std::vector<ValidatorRiskAssessment> validatorRiskAssessments);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
-        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
-        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions
-    );
+  static RuntimeBlockPipelineResult finalized(
+      core::Block block, consensus::QuorumCertificate certificate,
+      consensus::FinalizedBlockRecord finalizedRecord,
+      std::vector<std::string> finalizedTransactionIds,
+      std::string postStateRoot, utils::Amount totalFee,
+      std::vector<RewardDistribution> rewardDistributions,
+      std::vector<LockedStakePosition> lockedStakePositions,
+      std::vector<SecurityScoreRecord> securityScoreRecords,
+      std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+      std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+      std::vector<ValidatorContainmentDecision> validatorContainmentDecisions);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
-        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
-        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
-        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies
-    );
+  static RuntimeBlockPipelineResult finalized(
+      core::Block block, consensus::QuorumCertificate certificate,
+      consensus::FinalizedBlockRecord finalizedRecord,
+      std::vector<std::string> finalizedTransactionIds,
+      std::string postStateRoot, utils::Amount totalFee,
+      std::vector<RewardDistribution> rewardDistributions,
+      std::vector<LockedStakePosition> lockedStakePositions,
+      std::vector<SecurityScoreRecord> securityScoreRecords,
+      std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+      std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+      std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+      std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
-        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
-        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
-        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
-        MonetaryFirewallAudit monetaryFirewallAudit
-    );
+  static RuntimeBlockPipelineResult finalized(
+      core::Block block, consensus::QuorumCertificate certificate,
+      consensus::FinalizedBlockRecord finalizedRecord,
+      std::vector<std::string> finalizedTransactionIds,
+      std::string postStateRoot, utils::Amount totalFee,
+      std::vector<RewardDistribution> rewardDistributions,
+      std::vector<LockedStakePosition> lockedStakePositions,
+      std::vector<SecurityScoreRecord> securityScoreRecords,
+      std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+      std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+      std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+      std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+      MonetaryFirewallAudit monetaryFirewallAudit);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
-        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
-        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
-        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
-        MonetaryFirewallAudit monetaryFirewallAudit,
-        GenesisTreasurySnapshot genesisTreasurySnapshot,
-        ProtectionRewardBudget protectionRewardBudget,
-        std::vector<ProtectionRewardGrant> protectionRewardGrants
-    );
+  static RuntimeBlockPipelineResult finalized(
+      core::Block block, consensus::QuorumCertificate certificate,
+      consensus::FinalizedBlockRecord finalizedRecord,
+      std::vector<std::string> finalizedTransactionIds,
+      std::string postStateRoot, utils::Amount totalFee,
+      std::vector<RewardDistribution> rewardDistributions,
+      std::vector<LockedStakePosition> lockedStakePositions,
+      std::vector<SecurityScoreRecord> securityScoreRecords,
+      std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+      std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+      std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+      std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+      MonetaryFirewallAudit monetaryFirewallAudit,
+      GenesisTreasurySnapshot genesisTreasurySnapshot,
+      ProtectionRewardBudget protectionRewardBudget,
+      std::vector<ProtectionRewardGrant> protectionRewardGrants);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
-        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
-        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
-        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
-        MonetaryFirewallAudit monetaryFirewallAudit,
-        GenesisTreasurySnapshot genesisTreasurySnapshot,
-        ProtectionRewardBudget protectionRewardBudget,
-        std::vector<ProtectionRewardGrant> protectionRewardGrants,
-        InflationEpochSnapshot inflationEpochSnapshot,
-        MintAuthorizationRecord mintAuthorizationRecord,
-        SupplyExpansionRecord supplyExpansionRecord
-    );
+  static RuntimeBlockPipelineResult finalized(
+      core::Block block, consensus::QuorumCertificate certificate,
+      consensus::FinalizedBlockRecord finalizedRecord,
+      std::vector<std::string> finalizedTransactionIds,
+      std::string postStateRoot, utils::Amount totalFee,
+      std::vector<RewardDistribution> rewardDistributions,
+      std::vector<LockedStakePosition> lockedStakePositions,
+      std::vector<SecurityScoreRecord> securityScoreRecords,
+      std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+      std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+      std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+      std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+      MonetaryFirewallAudit monetaryFirewallAudit,
+      GenesisTreasurySnapshot genesisTreasurySnapshot,
+      ProtectionRewardBudget protectionRewardBudget,
+      std::vector<ProtectionRewardGrant> protectionRewardGrants,
+      InflationEpochSnapshot inflationEpochSnapshot,
+      MintAuthorizationRecord mintAuthorizationRecord,
+      SupplyExpansionRecord supplyExpansionRecord);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
-        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
-        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
-        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
-        MonetaryFirewallAudit monetaryFirewallAudit,
-        GenesisTreasurySnapshot genesisTreasurySnapshot,
-        ProtectionRewardBudget protectionRewardBudget,
-        std::vector<ProtectionRewardGrant> protectionRewardGrants,
-        std::vector<ProtectionWorkRecord> protectionWorkRecords,
-        ProtectionRewardSummary protectionRewardSummary,
-        std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
-        InflationEpochSnapshot inflationEpochSnapshot,
-        MintAuthorizationRecord mintAuthorizationRecord,
-        SupplyExpansionRecord supplyExpansionRecord,
-        FeeEconomicBalance feeEconomicBalance,
-        FeeBurnRecord feeBurnRecord,
-        TreasuryFeeRecord treasuryFeeRecord
-    );
+  static RuntimeBlockPipelineResult finalized(
+      core::Block block, consensus::QuorumCertificate certificate,
+      consensus::FinalizedBlockRecord finalizedRecord,
+      std::vector<std::string> finalizedTransactionIds,
+      std::string postStateRoot, utils::Amount totalFee,
+      std::vector<RewardDistribution> rewardDistributions,
+      std::vector<LockedStakePosition> lockedStakePositions,
+      std::vector<SecurityScoreRecord> securityScoreRecords,
+      std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+      std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+      std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+      std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+      MonetaryFirewallAudit monetaryFirewallAudit,
+      GenesisTreasurySnapshot genesisTreasurySnapshot,
+      ProtectionRewardBudget protectionRewardBudget,
+      std::vector<ProtectionRewardGrant> protectionRewardGrants,
+      std::vector<ProtectionWorkRecord> protectionWorkRecords,
+      ProtectionRewardSummary protectionRewardSummary,
+      std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+      InflationEpochSnapshot inflationEpochSnapshot,
+      MintAuthorizationRecord mintAuthorizationRecord,
+      SupplyExpansionRecord supplyExpansionRecord,
+      FeeEconomicBalance feeEconomicBalance, FeeBurnRecord feeBurnRecord,
+      TreasuryFeeRecord treasuryFeeRecord);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
-        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
-        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
-        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
-        MonetaryFirewallAudit monetaryFirewallAudit,
-        GenesisTreasurySnapshot genesisTreasurySnapshot,
-        ProtectionRewardBudget protectionRewardBudget,
-        std::vector<ProtectionRewardGrant> protectionRewardGrants,
-        std::vector<ProtectionWorkRecord> protectionWorkRecords,
-        ProtectionRewardSummary protectionRewardSummary,
-        std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
-        InflationEpochSnapshot inflationEpochSnapshot,
-        MintAuthorizationRecord mintAuthorizationRecord,
-        SupplyExpansionRecord supplyExpansionRecord,
-        FeeEconomicBalance feeEconomicBalance,
-        FeeBurnRecord feeBurnRecord,
-        TreasuryFeeRecord treasuryFeeRecord,
-        std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
-        std::vector<SlashingPreparationRecord> slashingPreparationRecords,
-        SlashingEvidenceSummary slashingEvidenceSummary
-    );
+  static RuntimeBlockPipelineResult finalized(
+      core::Block block, consensus::QuorumCertificate certificate,
+      consensus::FinalizedBlockRecord finalizedRecord,
+      std::vector<std::string> finalizedTransactionIds,
+      std::string postStateRoot, utils::Amount totalFee,
+      std::vector<RewardDistribution> rewardDistributions,
+      std::vector<LockedStakePosition> lockedStakePositions,
+      std::vector<SecurityScoreRecord> securityScoreRecords,
+      std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+      std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+      std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+      std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+      MonetaryFirewallAudit monetaryFirewallAudit,
+      GenesisTreasurySnapshot genesisTreasurySnapshot,
+      ProtectionRewardBudget protectionRewardBudget,
+      std::vector<ProtectionRewardGrant> protectionRewardGrants,
+      std::vector<ProtectionWorkRecord> protectionWorkRecords,
+      ProtectionRewardSummary protectionRewardSummary,
+      std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+      InflationEpochSnapshot inflationEpochSnapshot,
+      MintAuthorizationRecord mintAuthorizationRecord,
+      SupplyExpansionRecord supplyExpansionRecord,
+      FeeEconomicBalance feeEconomicBalance, FeeBurnRecord feeBurnRecord,
+      TreasuryFeeRecord treasuryFeeRecord,
+      std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+      std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+      SlashingEvidenceSummary slashingEvidenceSummary);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
-        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
-        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
-        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
-        MonetaryFirewallAudit monetaryFirewallAudit,
-        GenesisTreasurySnapshot genesisTreasurySnapshot,
-        ProtectionRewardBudget protectionRewardBudget,
-        std::vector<ProtectionRewardGrant> protectionRewardGrants,
-        std::vector<ProtectionWorkRecord> protectionWorkRecords,
-        ProtectionRewardSummary protectionRewardSummary,
-        std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
-        InflationEpochSnapshot inflationEpochSnapshot,
-        MintAuthorizationRecord mintAuthorizationRecord,
-        SupplyExpansionRecord supplyExpansionRecord,
-        FeeEconomicBalance feeEconomicBalance,
-        FeeBurnRecord feeBurnRecord,
-        TreasuryFeeRecord treasuryFeeRecord,
-        std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
-        std::vector<SlashingPreparationRecord> slashingPreparationRecords,
-        SlashingEvidenceSummary slashingEvidenceSummary,
-        std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
-        std::vector<StakePenaltyRecord> stakePenaltyRecords,
-        CryptographicSlashingSummary cryptographicSlashingSummary
-    );
+  static RuntimeBlockPipelineResult finalized(
+      core::Block block, consensus::QuorumCertificate certificate,
+      consensus::FinalizedBlockRecord finalizedRecord,
+      std::vector<std::string> finalizedTransactionIds,
+      std::string postStateRoot, utils::Amount totalFee,
+      std::vector<RewardDistribution> rewardDistributions,
+      std::vector<LockedStakePosition> lockedStakePositions,
+      std::vector<SecurityScoreRecord> securityScoreRecords,
+      std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+      std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+      std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+      std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+      MonetaryFirewallAudit monetaryFirewallAudit,
+      GenesisTreasurySnapshot genesisTreasurySnapshot,
+      ProtectionRewardBudget protectionRewardBudget,
+      std::vector<ProtectionRewardGrant> protectionRewardGrants,
+      std::vector<ProtectionWorkRecord> protectionWorkRecords,
+      ProtectionRewardSummary protectionRewardSummary,
+      std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+      InflationEpochSnapshot inflationEpochSnapshot,
+      MintAuthorizationRecord mintAuthorizationRecord,
+      SupplyExpansionRecord supplyExpansionRecord,
+      FeeEconomicBalance feeEconomicBalance, FeeBurnRecord feeBurnRecord,
+      TreasuryFeeRecord treasuryFeeRecord,
+      std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+      std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+      SlashingEvidenceSummary slashingEvidenceSummary,
+      std::vector<CryptographicSlashingEvidenceRecord>
+          cryptographicSlashingEvidenceRecords,
+      std::vector<StakePenaltyRecord> stakePenaltyRecords,
+      CryptographicSlashingSummary cryptographicSlashingSummary);
 
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
-        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
-        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
-        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
-        MonetaryFirewallAudit monetaryFirewallAudit,
-        GenesisTreasurySnapshot genesisTreasurySnapshot,
-        ProtectionRewardBudget protectionRewardBudget,
-        std::vector<ProtectionRewardGrant> protectionRewardGrants,
-        std::vector<ProtectionWorkRecord> protectionWorkRecords,
-        ProtectionRewardSummary protectionRewardSummary,
-        std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
-        InflationEpochSnapshot inflationEpochSnapshot,
-        MintAuthorizationRecord mintAuthorizationRecord,
-        SupplyExpansionRecord supplyExpansionRecord,
-        FeeEconomicBalance feeEconomicBalance,
-        FeeBurnRecord feeBurnRecord,
-        TreasuryFeeRecord treasuryFeeRecord,
-        std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
-        std::vector<SlashingPreparationRecord> slashingPreparationRecords,
-        SlashingEvidenceSummary slashingEvidenceSummary,
-        std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
-        std::vector<StakePenaltyRecord> stakePenaltyRecords,
-        CryptographicSlashingSummary cryptographicSlashingSummary,
-        GovernancePolicySnapshot governancePolicySnapshot,
-        std::vector<GovernanceActionGuard> governanceActionGuards,
-        GovernanceSummary governanceSummary
-    );
+  static RuntimeBlockPipelineResult finalized(
+      core::Block block, consensus::QuorumCertificate certificate,
+      consensus::FinalizedBlockRecord finalizedRecord,
+      std::vector<std::string> finalizedTransactionIds,
+      std::string postStateRoot, utils::Amount totalFee,
+      std::vector<RewardDistribution> rewardDistributions,
+      std::vector<LockedStakePosition> lockedStakePositions,
+      std::vector<SecurityScoreRecord> securityScoreRecords,
+      std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+      std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+      std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+      std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+      MonetaryFirewallAudit monetaryFirewallAudit,
+      GenesisTreasurySnapshot genesisTreasurySnapshot,
+      ProtectionRewardBudget protectionRewardBudget,
+      std::vector<ProtectionRewardGrant> protectionRewardGrants,
+      std::vector<ProtectionWorkRecord> protectionWorkRecords,
+      ProtectionRewardSummary protectionRewardSummary,
+      std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+      InflationEpochSnapshot inflationEpochSnapshot,
+      MintAuthorizationRecord mintAuthorizationRecord,
+      SupplyExpansionRecord supplyExpansionRecord,
+      FeeEconomicBalance feeEconomicBalance, FeeBurnRecord feeBurnRecord,
+      TreasuryFeeRecord treasuryFeeRecord,
+      std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+      std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+      SlashingEvidenceSummary slashingEvidenceSummary,
+      std::vector<CryptographicSlashingEvidenceRecord>
+          cryptographicSlashingEvidenceRecords,
+      std::vector<StakePenaltyRecord> stakePenaltyRecords,
+      CryptographicSlashingSummary cryptographicSlashingSummary,
+      GovernancePolicySnapshot governancePolicySnapshot,
+      std::vector<GovernanceActionGuard> governanceActionGuards,
+      GovernanceSummary governanceSummary);
 
-    /*
-     * Full finalized result including the validated SupplyDelta.
-     *
-     * This is the canonical factory for the normal runtime path.
-     * SupplyDelta must be valid and match the finalized block identity.
-     * All shorter overloads produce a result with a default (invalid) SupplyDelta
-     * and are only valid for tests that do not assert result.finalized().
-     */
-    static RuntimeBlockPipelineResult finalized(
-        core::Block block,
-        consensus::QuorumCertificate certificate,
-        consensus::FinalizedBlockRecord finalizedRecord,
-        std::vector<std::string> finalizedTransactionIds,
-        std::string postStateRoot,
-        utils::Amount totalFee,
-        std::vector<RewardDistribution> rewardDistributions,
-        std::vector<LockedStakePosition> lockedStakePositions,
-        std::vector<SecurityScoreRecord> securityScoreRecords,
-        std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
-        std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
-        std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
-        std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
-        MonetaryFirewallAudit monetaryFirewallAudit,
-        GenesisTreasurySnapshot genesisTreasurySnapshot,
-        ProtectionRewardBudget protectionRewardBudget,
-        std::vector<ProtectionRewardGrant> protectionRewardGrants,
-        std::vector<ProtectionWorkRecord> protectionWorkRecords,
-        ProtectionRewardSummary protectionRewardSummary,
-        std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
-        InflationEpochSnapshot inflationEpochSnapshot,
-        MintAuthorizationRecord mintAuthorizationRecord,
-        SupplyExpansionRecord supplyExpansionRecord,
-        FeeEconomicBalance feeEconomicBalance,
-        FeeBurnRecord feeBurnRecord,
-        TreasuryFeeRecord treasuryFeeRecord,
-        std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
-        std::vector<SlashingPreparationRecord> slashingPreparationRecords,
-        SlashingEvidenceSummary slashingEvidenceSummary,
-        std::vector<CryptographicSlashingEvidenceRecord> cryptographicSlashingEvidenceRecords,
-        std::vector<StakePenaltyRecord> stakePenaltyRecords,
-        CryptographicSlashingSummary cryptographicSlashingSummary,
-        GovernancePolicySnapshot governancePolicySnapshot,
-        std::vector<GovernanceActionGuard> governanceActionGuards,
-        GovernanceSummary governanceSummary,
-        economics::SupplyDelta supplyDelta
-    );
+  /*
+   * Full finalized result including the validated SupplyDelta.
+   *
+   * This is the canonical factory for the normal runtime path.
+   * SupplyDelta must be valid and match the finalized block identity.
+   * All shorter overloads produce a result with a default (invalid) SupplyDelta
+   * and are only valid for tests that do not assert result.finalized().
+   */
+  static RuntimeBlockPipelineResult finalized(
+      core::Block block, consensus::QuorumCertificate certificate,
+      consensus::FinalizedBlockRecord finalizedRecord,
+      std::vector<std::string> finalizedTransactionIds,
+      std::string postStateRoot, utils::Amount totalFee,
+      std::vector<RewardDistribution> rewardDistributions,
+      std::vector<LockedStakePosition> lockedStakePositions,
+      std::vector<SecurityScoreRecord> securityScoreRecords,
+      std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+      std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+      std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+      std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+      MonetaryFirewallAudit monetaryFirewallAudit,
+      GenesisTreasurySnapshot genesisTreasurySnapshot,
+      ProtectionRewardBudget protectionRewardBudget,
+      std::vector<ProtectionRewardGrant> protectionRewardGrants,
+      std::vector<ProtectionWorkRecord> protectionWorkRecords,
+      ProtectionRewardSummary protectionRewardSummary,
+      std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+      InflationEpochSnapshot inflationEpochSnapshot,
+      MintAuthorizationRecord mintAuthorizationRecord,
+      SupplyExpansionRecord supplyExpansionRecord,
+      FeeEconomicBalance feeEconomicBalance, FeeBurnRecord feeBurnRecord,
+      TreasuryFeeRecord treasuryFeeRecord,
+      std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+      std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+      SlashingEvidenceSummary slashingEvidenceSummary,
+      std::vector<CryptographicSlashingEvidenceRecord>
+          cryptographicSlashingEvidenceRecords,
+      std::vector<StakePenaltyRecord> stakePenaltyRecords,
+      CryptographicSlashingSummary cryptographicSlashingSummary,
+      GovernancePolicySnapshot governancePolicySnapshot,
+      std::vector<GovernanceActionGuard> governanceActionGuards,
+      GovernanceSummary governanceSummary, economics::SupplyDelta supplyDelta);
 
-    static RuntimeBlockPipelineResult rejected(
-        RuntimeBlockPipelineStatus status,
-        std::string reason
-    );
+  /*
+   * Full finalized result including treasury execution evidence for any
+   * treasury-spend proposal that transitioned to EXECUTED while applying
+   * this block (see TreasuryExecutionEvidenceBuilder). The shorter overload
+   * above defaults this to empty, which is correct for any block that did
+   * not execute a treasury spend.
+   */
+  static RuntimeBlockPipelineResult finalized(
+      core::Block block, consensus::QuorumCertificate certificate,
+      consensus::FinalizedBlockRecord finalizedRecord,
+      std::vector<std::string> finalizedTransactionIds,
+      std::string postStateRoot, utils::Amount totalFee,
+      std::vector<RewardDistribution> rewardDistributions,
+      std::vector<LockedStakePosition> lockedStakePositions,
+      std::vector<SecurityScoreRecord> securityScoreRecords,
+      std::vector<ValidatorSecurityCheckpoint> securityCheckpoints,
+      std::vector<ValidatorRiskAssessment> validatorRiskAssessments,
+      std::vector<ValidatorContainmentDecision> validatorContainmentDecisions,
+      std::vector<ValidatorNetworkPolicy> validatorNetworkPolicies,
+      MonetaryFirewallAudit monetaryFirewallAudit,
+      GenesisTreasurySnapshot genesisTreasurySnapshot,
+      ProtectionRewardBudget protectionRewardBudget,
+      std::vector<ProtectionRewardGrant> protectionRewardGrants,
+      std::vector<ProtectionWorkRecord> protectionWorkRecords,
+      ProtectionRewardSummary protectionRewardSummary,
+      std::vector<ProtectionRewardSettlement> protectionRewardSettlements,
+      InflationEpochSnapshot inflationEpochSnapshot,
+      MintAuthorizationRecord mintAuthorizationRecord,
+      SupplyExpansionRecord supplyExpansionRecord,
+      FeeEconomicBalance feeEconomicBalance, FeeBurnRecord feeBurnRecord,
+      TreasuryFeeRecord treasuryFeeRecord,
+      std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+      std::vector<SlashingPreparationRecord> slashingPreparationRecords,
+      SlashingEvidenceSummary slashingEvidenceSummary,
+      std::vector<CryptographicSlashingEvidenceRecord>
+          cryptographicSlashingEvidenceRecords,
+      std::vector<StakePenaltyRecord> stakePenaltyRecords,
+      CryptographicSlashingSummary cryptographicSlashingSummary,
+      GovernancePolicySnapshot governancePolicySnapshot,
+      std::vector<GovernanceActionGuard> governanceActionGuards,
+      GovernanceSummary governanceSummary, economics::SupplyDelta supplyDelta,
+      std::vector<economics::TreasuryExecutionEvidence>
+          treasuryExecutionEvidence);
 
-    RuntimeBlockPipelineStatus status() const;
-    const std::string& reason() const;
-    bool finalized() const;
+  static RuntimeBlockPipelineResult rejected(RuntimeBlockPipelineStatus status,
+                                             std::string reason);
 
-    const core::Block& block() const;
-    const consensus::QuorumCertificate& certificate() const;
-    const consensus::FinalizedBlockRecord& finalizedRecord() const;
-    const std::vector<std::string>& finalizedTransactionIds() const;
-    const std::string& postStateRoot() const;
-    utils::Amount totalFee() const;
-    const std::vector<RewardDistribution>& rewardDistributions() const;
-    const std::vector<LockedStakePosition>& lockedStakePositions() const;
-    const std::vector<SecurityScoreRecord>& securityScoreRecords() const;
-    const std::vector<ValidatorSecurityCheckpoint>& securityCheckpoints() const;
-    const std::vector<ValidatorRiskAssessment>& validatorRiskAssessments() const;
-    const std::vector<ValidatorContainmentDecision>& validatorContainmentDecisions() const;
-    const std::vector<ValidatorNetworkPolicy>& validatorNetworkPolicies() const;
-    const MonetaryFirewallAudit& monetaryFirewallAudit() const;
-    const GenesisTreasurySnapshot& genesisTreasurySnapshot() const;
-    const ProtectionRewardBudget& protectionRewardBudget() const;
-    const std::vector<ProtectionRewardGrant>& protectionRewardGrants() const;
-    const std::vector<ProtectionWorkRecord>& protectionWorkRecords() const;
-    const ProtectionRewardSummary& protectionRewardSummary() const;
-    const std::vector<ProtectionRewardSettlement>& protectionRewardSettlements() const;
-    const InflationEpochSnapshot& inflationEpochSnapshot() const;
-    const MintAuthorizationRecord& mintAuthorizationRecord() const;
-    const SupplyExpansionRecord& supplyExpansionRecord() const;
-    const FeeEconomicBalance& feeEconomicBalance() const;
-    const FeeBurnRecord& feeBurnRecord() const;
-    const TreasuryFeeRecord& treasuryFeeRecord() const;
-    const std::vector<SlashingEvidenceRecord>& slashingEvidenceRecords() const;
-    const std::vector<SlashingPreparationRecord>& slashingPreparationRecords() const;
-    const SlashingEvidenceSummary& slashingEvidenceSummary() const;
-    const std::vector<CryptographicSlashingEvidenceRecord>& cryptographicSlashingEvidenceRecords() const;
-    const std::vector<StakePenaltyRecord>& stakePenaltyRecords() const;
-    const CryptographicSlashingSummary& cryptographicSlashingSummary() const;
-    const GovernancePolicySnapshot& governancePolicySnapshot() const;
-    const std::vector<GovernanceActionGuard>& governanceActionGuards() const;
-    const GovernanceSummary& governanceSummary() const;
-    const std::vector<ValidatorLifecycleRecord>& validatorLifecycleRecords() const;
-    const EpochAccountingRecord& epochAccountingRecord() const;
-    const ValidatorLifecycleSummary& validatorLifecycleSummary() const;
-    const economics::SupplyDelta& supplyDelta() const;
-    const std::string& snapshotDigest() const;
-    const std::string& receiptsRoot() const;
+  RuntimeBlockPipelineStatus status() const;
+  const std::string &reason() const;
+  bool finalized() const;
 
-    std::string serialize() const;
+  const core::Block &block() const;
+  const consensus::QuorumCertificate &certificate() const;
+  const consensus::FinalizedBlockRecord &finalizedRecord() const;
+  const std::vector<std::string> &finalizedTransactionIds() const;
+  const std::string &postStateRoot() const;
+  utils::Amount totalFee() const;
+  const std::vector<RewardDistribution> &rewardDistributions() const;
+  const std::vector<LockedStakePosition> &lockedStakePositions() const;
+  const std::vector<SecurityScoreRecord> &securityScoreRecords() const;
+  const std::vector<ValidatorSecurityCheckpoint> &securityCheckpoints() const;
+  const std::vector<ValidatorRiskAssessment> &validatorRiskAssessments() const;
+  const std::vector<ValidatorContainmentDecision> &
+  validatorContainmentDecisions() const;
+  const std::vector<ValidatorNetworkPolicy> &validatorNetworkPolicies() const;
+  const MonetaryFirewallAudit &monetaryFirewallAudit() const;
+  const GenesisTreasurySnapshot &genesisTreasurySnapshot() const;
+  const ProtectionRewardBudget &protectionRewardBudget() const;
+  const std::vector<ProtectionRewardGrant> &protectionRewardGrants() const;
+  const std::vector<ProtectionWorkRecord> &protectionWorkRecords() const;
+  const ProtectionRewardSummary &protectionRewardSummary() const;
+  const std::vector<ProtectionRewardSettlement> &
+  protectionRewardSettlements() const;
+  const InflationEpochSnapshot &inflationEpochSnapshot() const;
+  const MintAuthorizationRecord &mintAuthorizationRecord() const;
+  const SupplyExpansionRecord &supplyExpansionRecord() const;
+  const FeeEconomicBalance &feeEconomicBalance() const;
+  const FeeBurnRecord &feeBurnRecord() const;
+  const TreasuryFeeRecord &treasuryFeeRecord() const;
+  const std::vector<SlashingEvidenceRecord> &slashingEvidenceRecords() const;
+  const std::vector<SlashingPreparationRecord> &
+  slashingPreparationRecords() const;
+  const SlashingEvidenceSummary &slashingEvidenceSummary() const;
+  const std::vector<CryptographicSlashingEvidenceRecord> &
+  cryptographicSlashingEvidenceRecords() const;
+  const std::vector<StakePenaltyRecord> &stakePenaltyRecords() const;
+  const CryptographicSlashingSummary &cryptographicSlashingSummary() const;
+  const GovernancePolicySnapshot &governancePolicySnapshot() const;
+  const std::vector<GovernanceActionGuard> &governanceActionGuards() const;
+  const GovernanceSummary &governanceSummary() const;
+  const std::vector<ValidatorLifecycleRecord> &
+  validatorLifecycleRecords() const;
+  const EpochAccountingRecord &epochAccountingRecord() const;
+  const ValidatorLifecycleSummary &validatorLifecycleSummary() const;
+  const economics::SupplyDelta &supplyDelta() const;
+  const std::vector<economics::TreasuryExecutionEvidence> &
+  treasuryExecutionEvidence() const;
+  const std::string &snapshotDigest() const;
+  const std::string &receiptsRoot() const;
+
+  std::string serialize() const;
 
 private:
-    friend class RuntimeBlockPipeline;
+  friend class RuntimeBlockPipeline;
 
-    RuntimeBlockPipelineStatus m_status;
-    std::string m_reason;
+  RuntimeBlockPipelineStatus m_status;
+  std::string m_reason;
 
-    /*
-     * Block has no default constructor in the current core model.
-     * Optional keeps rejected results representable without creating a fake block.
-     */
-    std::optional<core::Block> m_block;
+  /*
+   * Block has no default constructor in the current core model.
+   * Optional keeps rejected results representable without creating a fake
+   * block.
+   */
+  std::optional<core::Block> m_block;
 
-    consensus::QuorumCertificate m_certificate;
-    consensus::FinalizedBlockRecord m_finalizedRecord;
-    std::vector<std::string> m_finalizedTransactionIds;
-    std::string m_postStateRoot;
-    utils::Amount m_totalFee;
-    std::vector<RewardDistribution> m_rewardDistributions;
-    std::vector<LockedStakePosition> m_lockedStakePositions;
-    std::vector<SecurityScoreRecord> m_securityScoreRecords;
-    std::vector<ValidatorSecurityCheckpoint> m_securityCheckpoints;
-    std::vector<ValidatorRiskAssessment> m_validatorRiskAssessments;
-    std::vector<ValidatorContainmentDecision> m_validatorContainmentDecisions;
-    std::vector<ValidatorNetworkPolicy> m_validatorNetworkPolicies;
-    MonetaryFirewallAudit m_monetaryFirewallAudit;
-    GenesisTreasurySnapshot m_genesisTreasurySnapshot;
-    ProtectionRewardBudget m_protectionRewardBudget;
-    std::vector<ProtectionRewardGrant> m_protectionRewardGrants;
-    std::vector<ProtectionWorkRecord> m_protectionWorkRecords;
-    ProtectionRewardSummary m_protectionRewardSummary;
-    std::vector<ProtectionRewardSettlement> m_protectionRewardSettlements;
-    InflationEpochSnapshot m_inflationEpochSnapshot;
-    MintAuthorizationRecord m_mintAuthorizationRecord;
-    SupplyExpansionRecord m_supplyExpansionRecord;
-    FeeEconomicBalance m_feeEconomicBalance;
-    FeeBurnRecord m_feeBurnRecord;
-    TreasuryFeeRecord m_treasuryFeeRecord;
-    std::vector<SlashingEvidenceRecord> m_slashingEvidenceRecords;
-    std::vector<SlashingPreparationRecord> m_slashingPreparationRecords;
-    SlashingEvidenceSummary m_slashingEvidenceSummary;
-    std::vector<CryptographicSlashingEvidenceRecord> m_cryptographicSlashingEvidenceRecords;
-    std::vector<StakePenaltyRecord> m_stakePenaltyRecords;
-    CryptographicSlashingSummary m_cryptographicSlashingSummary;
-    GovernancePolicySnapshot m_governancePolicySnapshot;
-    std::vector<GovernanceActionGuard> m_governanceActionGuards;
-    GovernanceSummary m_governanceSummary;
-    std::vector<ValidatorLifecycleRecord> m_validatorLifecycleRecords;
-    EpochAccountingRecord m_epochAccountingRecord;
-    ValidatorLifecycleSummary m_validatorLifecycleSummary;
-    economics::SupplyDelta m_supplyDelta;
-    std::string m_snapshotDigest;
-    std::string m_receiptsRoot;
+  consensus::QuorumCertificate m_certificate;
+  consensus::FinalizedBlockRecord m_finalizedRecord;
+  std::vector<std::string> m_finalizedTransactionIds;
+  std::string m_postStateRoot;
+  utils::Amount m_totalFee;
+  std::vector<RewardDistribution> m_rewardDistributions;
+  std::vector<LockedStakePosition> m_lockedStakePositions;
+  std::vector<SecurityScoreRecord> m_securityScoreRecords;
+  std::vector<ValidatorSecurityCheckpoint> m_securityCheckpoints;
+  std::vector<ValidatorRiskAssessment> m_validatorRiskAssessments;
+  std::vector<ValidatorContainmentDecision> m_validatorContainmentDecisions;
+  std::vector<ValidatorNetworkPolicy> m_validatorNetworkPolicies;
+  MonetaryFirewallAudit m_monetaryFirewallAudit;
+  GenesisTreasurySnapshot m_genesisTreasurySnapshot;
+  ProtectionRewardBudget m_protectionRewardBudget;
+  std::vector<ProtectionRewardGrant> m_protectionRewardGrants;
+  std::vector<ProtectionWorkRecord> m_protectionWorkRecords;
+  ProtectionRewardSummary m_protectionRewardSummary;
+  std::vector<ProtectionRewardSettlement> m_protectionRewardSettlements;
+  InflationEpochSnapshot m_inflationEpochSnapshot;
+  MintAuthorizationRecord m_mintAuthorizationRecord;
+  SupplyExpansionRecord m_supplyExpansionRecord;
+  FeeEconomicBalance m_feeEconomicBalance;
+  FeeBurnRecord m_feeBurnRecord;
+  TreasuryFeeRecord m_treasuryFeeRecord;
+  std::vector<SlashingEvidenceRecord> m_slashingEvidenceRecords;
+  std::vector<SlashingPreparationRecord> m_slashingPreparationRecords;
+  SlashingEvidenceSummary m_slashingEvidenceSummary;
+  std::vector<CryptographicSlashingEvidenceRecord>
+      m_cryptographicSlashingEvidenceRecords;
+  std::vector<StakePenaltyRecord> m_stakePenaltyRecords;
+  CryptographicSlashingSummary m_cryptographicSlashingSummary;
+  GovernancePolicySnapshot m_governancePolicySnapshot;
+  std::vector<GovernanceActionGuard> m_governanceActionGuards;
+  GovernanceSummary m_governanceSummary;
+  std::vector<ValidatorLifecycleRecord> m_validatorLifecycleRecords;
+  EpochAccountingRecord m_epochAccountingRecord;
+  ValidatorLifecycleSummary m_validatorLifecycleSummary;
+  economics::SupplyDelta m_supplyDelta;
+  std::vector<economics::TreasuryExecutionEvidence> m_treasuryExecutionEvidence;
+  std::string m_snapshotDigest;
+  std::string m_receiptsRoot;
 };
 
 /*
@@ -559,52 +556,42 @@ private:
  */
 class RuntimeBlockPipeline {
 public:
-    /*
-     * Apply every deterministic post-quorum effect as one transaction.
-     * The live runtime is replaced only after state validation and optional
-     * durable persistence both succeed.
-     */
-    static RuntimeBlockPipelineResult commitCertifiedBlock(
-        NodeRuntime& runtime,
-        const core::Block& block,
-        const consensus::QuorumCertificate& certificate,
-        std::int64_t finalizedAt,
-        const NodeDataDirectoryConfig* directoryConfig = nullptr
-    );
+  /*
+   * Apply every deterministic post-quorum effect as one transaction.
+   * The live runtime is replaced only after state validation and optional
+   * durable persistence both succeed.
+   */
+  static RuntimeBlockPipelineResult commitCertifiedBlock(
+      NodeRuntime &runtime, const core::Block &block,
+      const consensus::QuorumCertificate &certificate, std::int64_t finalizedAt,
+      const NodeDataDirectoryConfig *directoryConfig = nullptr);
 
-    /*
-     * Development-only convenience path for localnet CLI/tests. It may produce
-     * a block and build one local PRECOMMIT-backed QC in-process, but it rejects
-     * every non-DEVELOPMENT_LOCAL network. Real networks must use distributed
-     * PREVOTE/PRECOMMIT consensus and then call commitCertifiedBlock.
-     */
-    static RuntimeBlockPipelineResult produceAndFinalizeLocalnetBlock(
-        NodeRuntime& runtime,
-        const RuntimeBlockPipelineConfig& config,
-        const crypto::Signer& localValidatorSigner,
-        const NodeDataDirectoryConfig* directoryConfig = nullptr
-    );
+  /*
+   * Development-only convenience path for localnet CLI/tests. It may produce
+   * a block and build one local PRECOMMIT-backed QC in-process, but it rejects
+   * every non-DEVELOPMENT_LOCAL network. Real networks must use distributed
+   * PREVOTE/PRECOMMIT consensus and then call commitCertifiedBlock.
+   */
+  static RuntimeBlockPipelineResult produceAndFinalizeLocalnetBlock(
+      NodeRuntime &runtime, const RuntimeBlockPipelineConfig &config,
+      const crypto::Signer &localValidatorSigner,
+      const NodeDataDirectoryConfig *directoryConfig = nullptr);
 
 private:
-    static std::vector<consensus::ValidatorVoteRecord> buildLocalnetPrecommitVotes(
-        const NodeRuntime& runtime,
-        const core::Block& block,
-        std::uint64_t consensusRound,
-        std::int64_t timestamp,
-        const crypto::Signer& localValidatorSigner
-    );
+  static std::vector<consensus::ValidatorVoteRecord>
+  buildLocalnetPrecommitVotes(const NodeRuntime &runtime,
+                              const core::Block &block,
+                              std::uint64_t consensusRound,
+                              std::int64_t timestamp,
+                              const crypto::Signer &localValidatorSigner);
 
-    static void removeFinalizedTransactionsFromMempool(
-        NodeRuntime& runtime,
-        const std::vector<std::string>& transactionIds
-    );
+  static void removeFinalizedTransactionsFromMempool(
+      NodeRuntime &runtime, const std::vector<std::string> &transactionIds);
 
-    static RuntimeBlockPipelineResult applyCertifiedBlock(
-        NodeRuntime& runtime,
-        const core::Block& block,
-        const consensus::QuorumCertificate& certificate,
-        std::int64_t finalizedAt
-    );
+  static RuntimeBlockPipelineResult
+  applyCertifiedBlock(NodeRuntime &runtime, const core::Block &block,
+                      const consensus::QuorumCertificate &certificate,
+                      std::int64_t finalizedAt);
 };
 
 } // namespace nodo::node

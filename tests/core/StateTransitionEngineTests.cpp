@@ -26,260 +26,240 @@ namespace {
 using namespace nodo;
 
 constexpr std::int64_t kTimestamp = 1900000000;
-constexpr const char* kChainId = "engine-test-chain";
-constexpr const char* kNetworkName = "localnet";
+constexpr const char *kChainId = "engine-test-chain";
+constexpr const char *kNetworkName = "localnet";
 
-void requireCondition(bool condition, const std::string& message) {
-    if (!condition) throw std::runtime_error(message);
+void requireCondition(bool condition, const std::string &message) {
+  if (!condition)
+    throw std::runtime_error(message);
 }
 
-class NoopProtocolDomainExecutor final : public core::TransactionDomainExecutor {
+class NoopProtocolDomainExecutor final
+    : public core::TransactionDomainExecutor {
 public:
-    core::TransactionDomainExecutionResult applyBurn(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyBurn(const core::Transaction &, const core::AccountStateView &accounts,
+            std::uint64_t, std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyStakeDeposit(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyStakeDeposit(const core::Transaction &,
+                    const core::AccountStateView &accounts, std::uint64_t,
+                    std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyStakeUnlock(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyStakeUnlock(const core::Transaction &,
+                   const core::AccountStateView &accounts, std::uint64_t,
+                   std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyStakeWithdraw(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyStakeWithdraw(const core::Transaction &,
+                     const core::AccountStateView &accounts, std::uint64_t,
+                     std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyStakeTopUp(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyStakeTopUp(const core::Transaction &,
+                  const core::AccountStateView &accounts, std::uint64_t,
+                  std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyValidatorRegister(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyValidatorRegister(const core::Transaction &,
+                         const core::AccountStateView &accounts, std::uint64_t,
+                         std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyValidatorExitRequest(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyValidatorExitRequest(const core::Transaction &,
+                            const core::AccountStateView &accounts,
+                            std::uint64_t, std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyValidatorUnjailRequest(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyValidatorUnjailRequest(const core::Transaction &,
+                              const core::AccountStateView &accounts,
+                              std::uint64_t, std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyGovernanceProposal(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyGovernanceProposal(const core::Transaction &,
+                          const core::AccountStateView &accounts, std::uint64_t,
+                          std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyGovernanceVote(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyGovernanceVote(const core::Transaction &,
+                      const core::AccountStateView &accounts, std::uint64_t,
+                      std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult finalizeBlock(
-        const core::AccountStateView& accounts,
-        utils::Amount,
-        const std::vector<core::LedgerRecord>&,
-        std::uint64_t,
-        std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyGovernanceExecute(const core::Transaction &,
+                         const core::AccountStateView &accounts, std::uint64_t,
+                         std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    const std::map<std::string, std::string>& domains() const override {
-        return m_domains;
-    }
+  core::TransactionDomainExecutionResult
+  finalizeBlock(const core::AccountStateView &accounts, utils::Amount,
+                const std::vector<core::LedgerRecord> &, std::uint64_t,
+                std::int64_t) override {
+    return accepted(accounts);
+  }
+
+  const std::map<std::string, std::string> &domains() const override {
+    return m_domains;
+  }
 
 private:
-    std::map<std::string, std::string> m_domains{{"engine_test_domain", "v1"}};
+  std::map<std::string, std::string> m_domains{{"engine_test_domain", "v1"}};
 
-    core::TransactionDomainExecutionResult accepted(
-        const core::AccountStateView& accounts
-    ) {
-        return core::TransactionDomainExecutionResult::accepted(accounts, m_domains);
-    }
+  core::TransactionDomainExecutionResult
+  accepted(const core::AccountStateView &accounts) {
+    return core::TransactionDomainExecutionResult::accepted(accounts,
+                                                            m_domains);
+  }
 };
 
 crypto::KeyPair protocolKeyPair() {
-    return crypto::KeyPair::createDeterministicEd25519KeyPair(
-        "state-transition-engine-key"
-    );
+  return crypto::KeyPair::createDeterministicEd25519KeyPair(
+      "state-transition-engine-key");
 }
 
 std::string senderAddress() {
-    return crypto::AddressDerivation::deriveFromPublicKey(
-        protocolKeyPair().publicKey()
-    ).value();
+  return crypto::AddressDerivation::deriveFromPublicKey(
+             protocolKeyPair().publicKey())
+      .value();
 }
 
 core::Transaction signedProtocolTransaction() {
-    const crypto::KeyPair keyPair = protocolKeyPair();
-    const crypto::Ed25519SignatureProvider provider;
+  const crypto::KeyPair keyPair = protocolKeyPair();
+  const crypto::Ed25519SignatureProvider provider;
 
-    core::Transaction tx(
-        core::TransactionType::TRANSFER,
-        senderAddress(),
-        "engine-recipient",
-        utils::Amount::fromRawUnits(100),
-        utils::Amount::fromRawUnits(1),
-        1,
-        kTimestamp
-    );
-    tx.withChainId(kChainId);
-    tx.attachSignatureBundle(
-        crypto::SignatureBundle::createSignature(
-            tx.signingPayload(),
-            keyPair.publicKey(),
-            keyPair.privateKeyForSigningOnly(),
-            kTimestamp,
-            provider,
-            crypto::SigningDomain::USER_TRANSACTION
-        )
-    );
-    return tx;
+  core::Transaction tx(core::TransactionType::TRANSFER, senderAddress(),
+                       "engine-recipient", utils::Amount::fromRawUnits(100),
+                       utils::Amount::fromRawUnits(1), 1, kTimestamp);
+  tx.withChainId(kChainId);
+  tx.attachSignatureBundle(crypto::SignatureBundle::createSignature(
+      tx.signingPayload(), keyPair.publicKey(),
+      keyPair.privateKeyForSigningOnly(), kTimestamp, provider,
+      crypto::SigningDomain::USER_TRANSACTION));
+  return tx;
 }
 
 core::LedgerRecord ledgerRecord() {
-    return core::LedgerRecord::fromTransaction(
-        signedProtocolTransaction(),
-        crypto::CryptoPolicy::developmentPolicy(),
-        crypto::SecurityContext::USER_TRANSACTION,
-        kTimestamp
-    );
+  return core::LedgerRecord::fromTransaction(
+      signedProtocolTransaction(), crypto::CryptoPolicy::developmentPolicy(),
+      crypto::SecurityContext::USER_TRANSACTION, kTimestamp);
 }
 
 core::AccountStateView accountView() {
-    core::AccountStateView view;
-    if (!view.putAccount(core::AccountState(
-            senderAddress(),
-            utils::Amount::fromRawUnits(1000),
-            0
-        ))) {
-        throw std::runtime_error("Failed to create engine test account.");
-    }
-    return view;
+  core::AccountStateView view;
+  if (!view.putAccount(core::AccountState(
+          senderAddress(), utils::Amount::fromRawUnits(1000), 0))) {
+    throw std::runtime_error("Failed to create engine test account.");
+  }
+  return view;
 }
 
 core::StateTransitionPreviewContext authoritativeContext() {
-    return core::StateTransitionPreviewContext(
-        1,
-        accountView(),
-        false,
-        true,
-        "",
-        0,
-        kChainId,
-        kNetworkName,
-        {},
-        {},
-        []() {
-            return std::make_unique<NoopProtocolDomainExecutor>();
-        },
-        true
-    );
+  return core::StateTransitionPreviewContext(
+      1, accountView(), false, true, "", 0, kChainId, kNetworkName, {}, {},
+      []() { return std::make_unique<NoopProtocolDomainExecutor>(); }, true);
 }
 
 core::Block testBlock() {
-    return core::Block(1, "previous-hash", {ledgerRecord()}, kTimestamp + 1, "", "");
+  return core::Block(1, "previous-hash", {ledgerRecord()}, kTimestamp + 1, "",
+                     "");
 }
 
 void testEngineRejectsStructuralContext() {
-    const core::StateTransitionPreviewContext context =
-        core::StateTransitionPreviewContext::structuralOnly(1);
+  const core::StateTransitionPreviewContext context =
+      core::StateTransitionPreviewContext::structuralOnly(1);
 
-    const core::StateTransitionPreviewResult result =
-        core::StateTransitionEngine::executeBlock(testBlock(), context);
+  const core::StateTransitionPreviewResult result =
+      core::StateTransitionEngine::executeBlock(testBlock(), context);
 
-    requireCondition(
-        !result.accepted() &&
-        result.status() == core::StateTransitionPreviewStatus::INVALID_CONTEXT &&
-        result.reason().find("Authoritative protocol execution") != std::string::npos,
-        "StateTransitionEngine must reject structural-only contexts."
-    );
+  requireCondition(
+      !result.accepted() &&
+          result.status() ==
+              core::StateTransitionPreviewStatus::INVALID_CONTEXT &&
+          result.reason().find("Authoritative protocol execution") !=
+              std::string::npos,
+      "StateTransitionEngine must reject structural-only contexts.");
 }
 
 void testEngineRejectsLegacyDomainTransitionFallback() {
-    const core::StateTransitionPreviewContext context(
-        1,
-        accountView(),
-        false,
-        true,
-        "",
-        0,
-        kChainId,
-        kNetworkName,
-        {},
-        [](const core::AccountStateView& accounts,
-           utils::Amount,
-           const std::vector<core::Transaction>&,
-           const std::vector<core::LedgerRecord>&,
-           std::int64_t) {
-            return core::DeterministicStateTransitionResult::accepted(
-                accounts,
-                {{"legacy_domain", "fallback"}}
-            );
-        }
-    );
+  const core::StateTransitionPreviewContext context(
+      1, accountView(), false, true, "", 0, kChainId, kNetworkName, {},
+      [](const core::AccountStateView &accounts, utils::Amount,
+         const std::vector<core::Transaction> &,
+         const std::vector<core::LedgerRecord> &, std::int64_t) {
+        return core::DeterministicStateTransitionResult::accepted(
+            accounts, {{"legacy_domain", "fallback"}});
+      });
 
-    const core::StateTransitionPreviewResult result =
-        core::StateTransitionEngine::executeBlock(testBlock(), context);
+  const core::StateTransitionPreviewResult result =
+      core::StateTransitionEngine::executeBlock(testBlock(), context);
 
-    requireCondition(
-        !result.accepted() &&
-        result.status() == core::StateTransitionPreviewStatus::INVALID_CONTEXT &&
-        result.reason().find("protocol-domain executor") != std::string::npos,
-        "StateTransitionEngine must reject legacy state-domain transition fallback contexts."
-    );
+  requireCondition(
+      !result.accepted() &&
+          result.status() ==
+              core::StateTransitionPreviewStatus::INVALID_CONTEXT &&
+          result.reason().find("protocol-domain executor") != std::string::npos,
+      "StateTransitionEngine must reject legacy state-domain transition "
+      "fallback contexts.");
 }
 
 void testPreviewStillSupportsNonAuthoritativeSimulation() {
-    const core::StateTransitionPreviewContext context =
-        core::StateTransitionPreviewContext::structuralOnly(1);
+  const core::StateTransitionPreviewContext context =
+      core::StateTransitionPreviewContext::structuralOnly(1);
 
-    const core::StateTransitionPreviewResult result =
-        core::StateTransitionPreview::previewBlock(testBlock(), context);
+  const core::StateTransitionPreviewResult result =
+      core::StateTransitionPreview::previewBlock(testBlock(), context);
 
-    requireCondition(
-        result.accepted(),
-        "StateTransitionPreview should remain available for non-authoritative simulation."
-    );
+  requireCondition(result.accepted(),
+                   "StateTransitionPreview should remain available for "
+                   "non-authoritative simulation.");
 }
 
 void testEngineAcceptsAuthoritativeContext() {
-    const core::StateTransitionPreviewResult result =
-        core::StateTransitionEngine::executeBlock(
-            testBlock(),
-            authoritativeContext()
-        );
+  const core::StateTransitionPreviewResult result =
+      core::StateTransitionEngine::executeBlock(testBlock(),
+                                                authoritativeContext());
 
-    requireCondition(
-        result.accepted() &&
-        !result.stateRoot().empty() &&
-        !result.receiptsRoot().empty(),
-        "StateTransitionEngine must accept a complete authoritative protocol context."
-    );
+  requireCondition(result.accepted() && !result.stateRoot().empty() &&
+                       !result.receiptsRoot().empty(),
+                   "StateTransitionEngine must accept a complete authoritative "
+                   "protocol context.");
 }
 
 } // namespace
 
 int main() {
-    try {
-        testEngineRejectsStructuralContext();
-        testEngineRejectsLegacyDomainTransitionFallback();
-        testPreviewStillSupportsNonAuthoritativeSimulation();
-        testEngineAcceptsAuthoritativeContext();
-        std::cout << "Nodo state transition engine tests passed.\n";
-        return 0;
-    } catch (const std::exception& error) {
-        std::cerr << "Nodo state transition engine tests failed: "
-                  << error.what() << "\n";
-        return 1;
-    }
+  try {
+    testEngineRejectsStructuralContext();
+    testEngineRejectsLegacyDomainTransitionFallback();
+    testPreviewStillSupportsNonAuthoritativeSimulation();
+    testEngineAcceptsAuthoritativeContext();
+    std::cout << "Nodo state transition engine tests passed.\n";
+    return 0;
+  } catch (const std::exception &error) {
+    std::cerr << "Nodo state transition engine tests failed: " << error.what()
+              << "\n";
+    return 1;
+  }
 }

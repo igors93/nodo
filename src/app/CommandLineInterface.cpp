@@ -17,6 +17,7 @@
 #include "crypto/SignatureBundle.hpp"
 #include "crypto/Signer.hpp"
 #include "economics/EpochTreasuryReport.hpp"
+#include "economics/GovernanceLifecycleVerifier.hpp"
 #include "economics/MonetaryPolicy.hpp"
 #include "node/ChainAuditResult.hpp"
 #include "node/ChainAuditor.hpp"
@@ -24,6 +25,7 @@
 #include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/FinalizedTreasuryAudit.hpp"
+#include "node/GovernanceLifecycleRecordBuilder.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
@@ -623,6 +625,10 @@ CommandLineInterface::execute(const std::vector<std::string> &args) {
       return executeGovernanceVote(options);
     }
 
+    if (options.command == "governance execute") {
+      return executeGovernanceExecute(options);
+    }
+
     if (options.command == "governance status") {
       return executeGovernanceStatus(options);
     }
@@ -1119,6 +1125,8 @@ std::string CommandLineInterface::helpText() {
          "  nodo governance vote [--data-dir PATH] [--owner KEY_ID] "
          "--proposal-id ID --validator ADDRESS [--vote YES|NO|ABSTAIN] [--fee "
          "RAW_UNITS]\n"
+         "  nodo governance execute [--data-dir PATH] [--from KEY_ID] "
+         "--proposal-id ID [--fee RAW_UNITS]\n"
          "  nodo governance status|list|show|audit [--data-dir PATH] "
          "[--proposal-id ID]\n"
          "  nodo stake lock|deposit|top-up|unlock|withdraw [--data-dir PATH] "
@@ -2175,6 +2183,30 @@ CommandLineInterface::executeGovernanceVote(const CommandLineOptions &options) {
       });
 }
 
+CommandLineResult CommandLineInterface::executeGovernanceExecute(
+    const CommandLineOptions &options) {
+  if (options.governanceProposalId.empty()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Governance execute requires --proposal-id.\n");
+  }
+
+  // Permissionless by design: execution is a timelock-gated action anyone can
+  // trigger once a treasury spend has been approved, mirroring propose (see
+  // GovernanceExecutor::proposalReadyForExplicitExecution). It is not a
+  // validator-only action like vote, so it defaults to the local user key.
+  return submitSignedTransactionToPersistentMempool(
+      options, "Governance execute", defaultLocalnetUserKeyId(),
+      [proposalId = options.governanceProposalId, feeRaw = options.feeRaw,
+       timestamp = options.timestamp](const crypto::Signer &signer,
+                                      const std::string &chainId,
+                                      std::uint64_t nonce) {
+        return core::TransactionBuilder::buildSignedGovernanceExecute(
+            proposalId, utils::Amount::fromRawUnits(feeRaw), nonce,
+            timestamp + 10, signer, chainId);
+      });
+}
+
 CommandLineResult CommandLineInterface::executeGovernanceStatus(
     const CommandLineOptions &options) {
   const config::GenesisLookupResult genesisLookup =
@@ -2328,6 +2360,7 @@ CommandLineResult CommandLineInterface::executeGovernanceAudit(
   const node::GovernanceExecutor &governance =
       load.runtime().governanceExecutor();
   const std::vector<std::string> ids = governance.proposalIds();
+  std::size_t lifecycleRecordsVerified = 0;
 
   for (const std::string &id : ids) {
     if (governance.proposalDetail(id).empty() ||
@@ -2336,6 +2369,37 @@ CommandLineResult CommandLineInterface::executeGovernanceAudit(
           CommandLineStatus::COMMAND_FAILED,
           "Governance audit failed for proposal: " + id + "\n");
     }
+
+    // Treasury-spend proposals that reached a decision carry a lifecycle
+    // record in the economics:: evidence model. It is not persisted
+    // separately: it is deterministically rebuilt here from
+    // GovernanceExecutor's own replayed state (identical on a node that
+    // synced from scratch as on one that decided it live) and independently
+    // re-verified with GovernanceLifecycleVerifier, the same verification
+    // FinalizedTreasurySectionValidator relies on when a spend executes.
+    const node::GovernanceExecutor::GovernanceProposalSnapshot snapshot =
+        governance.proposalSnapshot(id);
+    const std::optional<economics::GovernanceLifecycleRecord> decided =
+        node::GovernanceLifecycleRecordBuilder::buildDecided(snapshot);
+    if (!decided.has_value()) {
+      continue;
+    }
+
+    const economics::GovernanceLifecycleRecord lifecycle =
+        snapshot.status == node::GovernanceProposalStatus::EXECUTED
+            ? node::GovernanceLifecycleRecordBuilder::buildExecuted(
+                  *decided, snapshot.executedAtHeight)
+            : *decided;
+
+    const economics::GovernanceLifecycleVerificationResult verification =
+        economics::GovernanceLifecycleVerifier::verify(lifecycle);
+    if (!verification.verified()) {
+      return CommandLineResult::failure(
+          CommandLineStatus::COMMAND_FAILED,
+          "Governance audit failed to verify lifecycle for proposal " + id +
+              ": " + verification.reason() + "\n");
+    }
+    ++lifecycleRecordsVerified;
   }
 
   std::ostringstream output;
@@ -2343,6 +2407,8 @@ CommandLineResult CommandLineInterface::executeGovernanceAudit(
          << "Data directory: " << directoryConfig.rootPath().string() << "\n"
          << "Latest height: " << load.manifest().latestBlockHeight() << "\n"
          << "Proposal count: " << ids.size() << "\n"
+         << "Treasury lifecycle records verified: " << lifecycleRecordsVerified
+         << "\n"
          << "Governance state bytes: " << governance.serialize().size() << "\n";
 
   return CommandLineResult::success(output.str());

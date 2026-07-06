@@ -9,6 +9,7 @@
 #include "core/StateTransitionPreview.hpp"
 #include "core/StateTransitionPreviewContext.hpp"
 #include "core/Transaction.hpp"
+#include "core/TransactionExecutionContext.hpp"
 #include "core/TransactionType.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "crypto/AddressDerivation.hpp"
@@ -19,7 +20,6 @@
 #include "crypto/SignatureBundle.hpp"
 #include "crypto/SigningDomain.hpp"
 #include "utils/Amount.hpp"
-#include "core/TransactionExecutionContext.hpp"
 
 #include <iostream>
 #include <stdexcept>
@@ -32,80 +32,104 @@ using namespace nodo::node;
 
 constexpr std::int64_t kTimestamp = 1900000000;
 
-class TestProtocolDomainExecutor final : public core::TransactionDomainExecutor {
+class TestProtocolDomainExecutor final
+    : public core::TransactionDomainExecutor {
 public:
-    core::TransactionDomainExecutionResult applyBurn(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyBurn(const core::Transaction &, const core::AccountStateView &accounts,
+            std::uint64_t, std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyStakeDeposit(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyStakeDeposit(const core::Transaction &,
+                    const core::AccountStateView &accounts, std::uint64_t,
+                    std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyStakeUnlock(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyStakeUnlock(const core::Transaction &,
+                   const core::AccountStateView &accounts, std::uint64_t,
+                   std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyStakeWithdraw(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyStakeWithdraw(const core::Transaction &,
+                     const core::AccountStateView &accounts, std::uint64_t,
+                     std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyStakeTopUp(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyStakeTopUp(const core::Transaction &,
+                  const core::AccountStateView &accounts, std::uint64_t,
+                  std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyValidatorRegister(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyValidatorRegister(const core::Transaction &,
+                         const core::AccountStateView &accounts, std::uint64_t,
+                         std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyValidatorExitRequest(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyValidatorExitRequest(const core::Transaction &,
+                            const core::AccountStateView &accounts,
+                            std::uint64_t, std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyValidatorUnjailRequest(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyValidatorUnjailRequest(const core::Transaction &,
+                              const core::AccountStateView &accounts,
+                              std::uint64_t, std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyGovernanceProposal(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyGovernanceProposal(const core::Transaction &,
+                          const core::AccountStateView &accounts, std::uint64_t,
+                          std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult applyGovernanceVote(
-        const core::Transaction&, const core::AccountStateView& accounts,
-        std::uint64_t, std::int64_t
-    ) override { return accepted(accounts); }
+  core::TransactionDomainExecutionResult
+  applyGovernanceVote(const core::Transaction &,
+                      const core::AccountStateView &accounts, std::uint64_t,
+                      std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    core::TransactionDomainExecutionResult finalizeBlock(
-        const core::AccountStateView& accounts,
-        utils::Amount,
-        const std::vector<core::LedgerRecord>&,
-        std::uint64_t,
-        std::int64_t
-    ) override {
-        return accepted(accounts);
-    }
+  core::TransactionDomainExecutionResult
+  applyGovernanceExecute(const core::Transaction &,
+                         const core::AccountStateView &accounts, std::uint64_t,
+                         std::int64_t) override {
+    return accepted(accounts);
+  }
 
-    const std::map<std::string, std::string>& domains() const override {
-        return m_domains;
-    }
+  core::TransactionDomainExecutionResult
+  finalizeBlock(const core::AccountStateView &accounts, utils::Amount,
+                const std::vector<core::LedgerRecord> &, std::uint64_t,
+                std::int64_t) override {
+    return accepted(accounts);
+  }
+
+  const std::map<std::string, std::string> &domains() const override {
+    return m_domains;
+  }
 
 private:
-    std::map<std::string, std::string> m_domains{{"test_domain", "stable"}};
+  std::map<std::string, std::string> m_domains{{"test_domain", "stable"}};
 
-    core::TransactionDomainExecutionResult accepted(
-        const core::AccountStateView& accounts
-    ) {
-        return core::TransactionDomainExecutionResult::accepted(accounts, m_domains);
-    }
+  core::TransactionDomainExecutionResult
+  accepted(const core::AccountStateView &accounts) {
+    return core::TransactionDomainExecutionResult::accepted(accounts,
+                                                            m_domains);
+  }
 };
 
 // Canonical 64-char hex strings with wrong economic values.
@@ -114,211 +138,142 @@ static const std::string kWrongStateRoot =
 static const std::string kWrongReceiptsRoot =
     "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe";
 
-void requireCondition(bool condition, const std::string& message) {
-    if (!condition) {
-        throw std::runtime_error(message);
-    }
+void requireCondition(bool condition, const std::string &message) {
+  if (!condition) {
+    throw std::runtime_error(message);
+  }
 }
 
 static std::string getPsyncSenderAddress() {
-    const crypto::KeyPair kp = crypto::KeyPair::createDeterministicEd25519KeyPair("psync-key");
-    return crypto::AddressDerivation::deriveFromPublicKey(kp.publicKey()).value();
+  const crypto::KeyPair kp =
+      crypto::KeyPair::createDeterministicEd25519KeyPair("psync-key");
+  return crypto::AddressDerivation::deriveFromPublicKey(kp.publicKey()).value();
 }
 
 core::Transaction testTx(std::uint64_t nonce) {
-    const std::string senderAddress = getPsyncSenderAddress();
-    core::Transaction tx(
-        core::TransactionType::TRANSFER,
-        senderAddress,
-        "psync-recipient",
-        utils::Amount::fromRawUnits(100),
-        utils::Amount::fromRawUnits(10),
-        nonce,
-        kTimestamp
-    );
-    tx.withChainId("test-chain");
-    const crypto::KeyPair kp = crypto::KeyPair::createDeterministicEd25519KeyPair("psync-key");
-    const crypto::Ed25519SignatureProvider provider;
-    tx.attachSignatureBundle(
-        crypto::SignatureBundle::createSignature(
-            tx.signingPayload(),
-            kp.publicKey(),
-            kp.privateKeyForSigningOnly(),
-            kTimestamp,
-            provider,
-            crypto::SigningDomain::USER_TRANSACTION
-        )
-    );
-    return tx;
+  const std::string senderAddress = getPsyncSenderAddress();
+  core::Transaction tx(core::TransactionType::TRANSFER, senderAddress,
+                       "psync-recipient", utils::Amount::fromRawUnits(100),
+                       utils::Amount::fromRawUnits(10), nonce, kTimestamp);
+  tx.withChainId("test-chain");
+  const crypto::KeyPair kp =
+      crypto::KeyPair::createDeterministicEd25519KeyPair("psync-key");
+  const crypto::Ed25519SignatureProvider provider;
+  tx.attachSignatureBundle(crypto::SignatureBundle::createSignature(
+      tx.signingPayload(), kp.publicKey(), kp.privateKeyForSigningOnly(),
+      kTimestamp, provider, crypto::SigningDomain::USER_TRANSACTION));
+  return tx;
 }
 
-core::LedgerRecord record(const core::Transaction& tx) {
-    return core::LedgerRecord::fromTransaction(
-        tx,
-        crypto::CryptoPolicy::developmentPolicy(),
-        crypto::SecurityContext::USER_TRANSACTION,
-        kTimestamp
-    );
+core::LedgerRecord record(const core::Transaction &tx) {
+  return core::LedgerRecord::fromTransaction(
+      tx, crypto::CryptoPolicy::developmentPolicy(),
+      crypto::SecurityContext::USER_TRANSACTION, kTimestamp);
 }
 
 core::Blockchain chainWithGenesis() {
-    core::Blockchain blockchain;
-    blockchain.addGenesisBlock(
-        core::Block::createGenesisBlock({record(testTx(1))}, kTimestamp)
-    );
-    return blockchain;
+  core::Blockchain blockchain;
+  blockchain.addGenesisBlock(
+      core::Block::createGenesisBlock({record(testTx(1))}, kTimestamp));
+  return blockchain;
 }
 
 core::StateTransitionPreviewContext senderContext() {
-    core::AccountStateView view;
-    view.putAccount(core::AccountState(
-        getPsyncSenderAddress(),
-        utils::Amount::fromRawUnits(1000),
-        0
-    ));
-    return core::StateTransitionPreviewContext(
-        10,
-        view,
-        false,
-        true,
-        "",
-        0,
-        "test-chain",
-        "localnet",
-        {},
-        {},
-        []() {
-            return std::make_unique<TestProtocolDomainExecutor>();
-        },
-        true
-    );
+  core::AccountStateView view;
+  view.putAccount(core::AccountState(getPsyncSenderAddress(),
+                                     utils::Amount::fromRawUnits(1000), 0));
+  return core::StateTransitionPreviewContext(
+      10, view, false, true, "", 0, "test-chain", "localnet", {}, {},
+      []() { return std::make_unique<TestProtocolDomainExecutor>(); }, true);
 }
 
 // Context builder for use with applyValidatedBatch.
-core::StateTransitionPreviewContext buildContext(const core::Blockchain& /*chain*/) {
-    return senderContext();
+core::StateTransitionPreviewContext
+buildContext(const core::Blockchain & /*chain*/) {
+  return senderContext();
 }
 
-core::Block buildBlockWithRealRoots(const core::Blockchain& blockchain, std::uint64_t nonce) {
-    const core::Transaction tx = testTx(nonce);
-    const core::Block draft(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(tx)},
-        kTimestamp + 1,
-        "",
-        ""
-    );
-    const core::StateTransitionPreviewResult preview =
-        core::StateTransitionPreview::previewBlock(draft, senderContext());
-    if (!preview.accepted()) {
-        throw std::runtime_error("buildBlockWithRealRoots: preview failed: " + preview.reason());
-    }
-    return core::Block(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(tx)},
-        kTimestamp + 1,
-        preview.stateRoot(),
-        preview.receiptsRoot()
-    );
+core::Block buildBlockWithRealRoots(const core::Blockchain &blockchain,
+                                    std::uint64_t nonce) {
+  const core::Transaction tx = testTx(nonce);
+  const core::Block draft(1, blockchain.latestBlock().hash(), {record(tx)},
+                          kTimestamp + 1, "", "");
+  const core::StateTransitionPreviewResult preview =
+      core::StateTransitionPreview::previewBlock(draft, senderContext());
+  if (!preview.accepted()) {
+    throw std::runtime_error("buildBlockWithRealRoots: preview failed: " +
+                             preview.reason());
+  }
+  return core::Block(1, blockchain.latestBlock().hash(), {record(tx)},
+                     kTimestamp + 1, preview.stateRoot(),
+                     preview.receiptsRoot());
 }
 
-// ── QC helpers ────────────────────────────────────────────────────────────────
+// ── QC helpers
+// ────────────────────────────────────────────────────────────────
 
-std::string registerValidator(
-    core::ValidatorRegistry& registry,
-    const crypto::KeyPair& kp,
-    const std::string& seed
-) {
-    const std::string address =
-        crypto::AddressDerivation::deriveFromPublicKey(kp.publicKey()).value();
-    core::ValidatorRegistrationRecord rec(
-        address, kp.publicKey(), 1, "meta-" + seed, kTimestamp
-    );
-    requireCondition(
-        registry.registerValidator(rec).accepted(),
-        "registerValidator failed: " + seed
-    );
-    return address;
+std::string registerValidator(core::ValidatorRegistry &registry,
+                              const crypto::KeyPair &kp,
+                              const std::string &seed) {
+  const std::string address =
+      crypto::AddressDerivation::deriveFromPublicKey(kp.publicKey()).value();
+  core::ValidatorRegistrationRecord rec(address, kp.publicKey(), 1,
+                                        "meta-" + seed, kTimestamp);
+  requireCondition(registry.registerValidator(rec).accepted(),
+                   "registerValidator failed: " + seed);
+  return address;
 }
 
-consensus::FinalizedBlockRecord buildFinalizedRecord(
-    const core::Block& block,
-    const crypto::KeyPair& validatorKp,
-    const core::ValidatorRegistry& registry
-) {
-    constexpr std::uint64_t kRound = 1;
-    const crypto::Bls12381SignatureProvider blsProvider;
-    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
-    const std::string address =
-        crypto::AddressDerivation::deriveFromPublicKey(validatorKp.publicKey()).value();
+consensus::FinalizedBlockRecord
+buildFinalizedRecord(const core::Block &block,
+                     const crypto::KeyPair &validatorKp,
+                     const core::ValidatorRegistry &registry) {
+  constexpr std::uint64_t kRound = 1;
+  const crypto::Bls12381SignatureProvider blsProvider;
+  const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+  const std::string address =
+      crypto::AddressDerivation::deriveFromPublicKey(validatorKp.publicKey())
+          .value();
 
-    const consensus::ValidatorVoteRecord vote =
-        consensus::ValidatorVoteRecord::createVote(
-            address,
-            validatorKp.publicKey(),
-            validatorKp.privateKeyForSigningOnly(),
-            block.index(),
-            block.hash(),
-            block.previousHash(),
-            kRound,
-            consensus::ValidatorVoteDecision::PRECOMMIT,
-            "reason-" + block.hash(),
-            kTimestamp,
-            blsProvider
-        );
+  const consensus::ValidatorVoteRecord vote =
+      consensus::ValidatorVoteRecord::createVote(
+          address, validatorKp.publicKey(),
+          validatorKp.privateKeyForSigningOnly(), block.index(), block.hash(),
+          block.previousHash(), kRound,
+          consensus::ValidatorVoteDecision::PRECOMMIT, "reason-" + block.hash(),
+          kTimestamp, blsProvider);
 
-    const consensus::QuorumCertificateBuildResult qcResult =
-        consensus::QuorumCertificateBuilder::buildFromVotes(
-            block.index(),
-            block.hash(),
-            block.previousHash(),
-            kRound,
-            {vote},
-            registry,
-            policy,
-            blsProvider
-        );
+  const consensus::QuorumCertificateBuildResult qcResult =
+      consensus::QuorumCertificateBuilder::buildFromVotes(
+          block.index(), block.hash(), block.previousHash(), kRound, {vote},
+          registry, policy, blsProvider);
 
-    requireCondition(qcResult.certified(), "QC build failed: " + qcResult.reason());
+  requireCondition(qcResult.certified(),
+                   "QC build failed: " + qcResult.reason());
 
-    return consensus::FinalizedBlockRecord(
-        block.index(),
-        block.hash(),
-        block.previousHash(),
-        kRound,
-        kTimestamp,
-        qcResult.certificate()
-    );
+  return consensus::FinalizedBlockRecord(block.index(), block.hash(),
+                                         block.previousHash(), kRound,
+                                         kTimestamp, qcResult.certificate());
 }
 
 // Build a PersistentSyncCheckpoint anchored at the genesis block.
-PersistentSyncCheckpoint genesisCheckpoint(const core::Blockchain& blockchain) {
-    // finalizedStateRoot must be a non-empty safe scalar; use a placeholder
-    // since genesis blocks carry no state root.
-    return PersistentSyncCheckpoint::genesis(
-        blockchain.latestBlock().hash(),
-        "genesis-state-root-placeholder",
-        kTimestamp
-    );
+PersistentSyncCheckpoint genesisCheckpoint(const core::Blockchain &blockchain) {
+  // finalizedStateRoot must be a non-empty safe scalar; use a placeholder
+  // since genesis blocks carry no state root.
+  return PersistentSyncCheckpoint::genesis(blockchain.latestBlock().hash(),
+                                           "genesis-state-root-placeholder",
+                                           kTimestamp);
 }
 
 // Build a one-item batch containing the given (serialized) block at height 1.
-PersistentBlockSyncBatch singleBlockBatch(
-    const core::Block& block,
-    const std::string& genesisHash,
-    const std::string& finalizedStateRoot = ""
-) {
-    const PersistentBlockSyncItem item(
-        1,
-        block.hash(),
-        genesisHash,
-        block.serialize(),
-        finalizedStateRoot.empty() ? block.stateRoot() : finalizedStateRoot,
-        kTimestamp + 1
-    );
-    return PersistentBlockSyncBatch("peer-a", 1, 1, {item}, kTimestamp + 2);
+PersistentBlockSyncBatch
+singleBlockBatch(const core::Block &block, const std::string &genesisHash,
+                 const std::string &finalizedStateRoot = "") {
+  const PersistentBlockSyncItem item(
+      1, block.hash(), genesisHash, block.serialize(),
+      finalizedStateRoot.empty() ? block.stateRoot() : finalizedStateRoot,
+      kTimestamp + 1);
+  return PersistentBlockSyncBatch("peer-a", 1, 1, {item}, kTimestamp + 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -326,248 +281,186 @@ PersistentBlockSyncBatch singleBlockBatch(
 // ---------------------------------------------------------------------------
 
 void testApplyValidatedBatchRejectsBlockWithWrongStateRoot() {
-    core::Blockchain blockchain = chainWithGenesis();
-    const core::ValidatorRegistry registry;
-    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
-    const crypto::Bls12381SignatureProvider provider;
+  core::Blockchain blockchain = chainWithGenesis();
+  const core::ValidatorRegistry registry;
+  const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+  const crypto::Bls12381SignatureProvider provider;
 
-    const core::Block badBlock(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(testTx(2))},
-        kTimestamp + 1,
-        kWrongStateRoot,
-        kWrongReceiptsRoot
-    );
+  const core::Block badBlock(1, blockchain.latestBlock().hash(),
+                             {record(testTx(2))}, kTimestamp + 1,
+                             kWrongStateRoot, kWrongReceiptsRoot);
 
-    const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
-    const PersistentBlockSyncBatch batch =
-        singleBlockBatch(badBlock, blockchain.latestBlock().hash());
+  const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
+  const PersistentBlockSyncBatch batch =
+      singleBlockBatch(badBlock, blockchain.latestBlock().hash());
 
-    const PersistentSyncApplyResult result =
-        PersistentBlockStateSyncApplier::applyValidatedBatch(
-            checkpoint, batch, blockchain, registry, policy, provider, buildContext, kTimestamp + 3
-        );
+  const PersistentSyncApplyResult result =
+      PersistentBlockStateSyncApplier::applyValidatedBatch(
+          checkpoint, batch, blockchain, registry, policy, provider,
+          buildContext, kTimestamp + 3);
 
-    requireCondition(
-        !result.applied(),
-        "Batch with wrong state root must be rejected."
-    );
-    requireCondition(
-        result.status() == PersistentSyncApplyStatus::REJECTED,
-        "Rejected batch must have REJECTED status."
-    );
+  requireCondition(!result.applied(),
+                   "Batch with wrong state root must be rejected.");
+  requireCondition(result.status() == PersistentSyncApplyStatus::REJECTED,
+                   "Rejected batch must have REJECTED status.");
 }
 
 void testApplyValidatedBatchRejectionReasonMentionsHeight() {
-    core::Blockchain blockchain = chainWithGenesis();
-    const core::ValidatorRegistry registry;
-    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
-    const crypto::Bls12381SignatureProvider provider;
+  core::Blockchain blockchain = chainWithGenesis();
+  const core::ValidatorRegistry registry;
+  const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+  const crypto::Bls12381SignatureProvider provider;
 
-    const core::Block badBlock(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(testTx(2))},
-        kTimestamp + 1,
-        kWrongStateRoot,
-        kWrongReceiptsRoot
-    );
+  const core::Block badBlock(1, blockchain.latestBlock().hash(),
+                             {record(testTx(2))}, kTimestamp + 1,
+                             kWrongStateRoot, kWrongReceiptsRoot);
 
-    const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
-    const PersistentBlockSyncBatch batch =
-        singleBlockBatch(badBlock, blockchain.latestBlock().hash());
+  const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
+  const PersistentBlockSyncBatch batch =
+      singleBlockBatch(badBlock, blockchain.latestBlock().hash());
 
-    const PersistentSyncApplyResult result =
-        PersistentBlockStateSyncApplier::applyValidatedBatch(
-            checkpoint, batch, blockchain, registry, policy, provider, buildContext, kTimestamp + 3
-        );
+  const PersistentSyncApplyResult result =
+      PersistentBlockStateSyncApplier::applyValidatedBatch(
+          checkpoint, batch, blockchain, registry, policy, provider,
+          buildContext, kTimestamp + 3);
 
-    requireCondition(
-        result.reason().find("1") != std::string::npos,
-        "Rejection reason must mention the failing block height (1)."
-    );
+  requireCondition(
+      result.reason().find("1") != std::string::npos,
+      "Rejection reason must mention the failing block height (1).");
 }
 
 void testNoCheckpointAdvanceOnProtocolFailure() {
-    core::Blockchain blockchain = chainWithGenesis();
-    const core::ValidatorRegistry registry;
-    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
-    const crypto::Bls12381SignatureProvider provider;
+  core::Blockchain blockchain = chainWithGenesis();
+  const core::ValidatorRegistry registry;
+  const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+  const crypto::Bls12381SignatureProvider provider;
 
-    const core::Block badBlock(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(testTx(2))},
-        kTimestamp + 1,
-        kWrongStateRoot,
-        kWrongReceiptsRoot
-    );
+  const core::Block badBlock(1, blockchain.latestBlock().hash(),
+                             {record(testTx(2))}, kTimestamp + 1,
+                             kWrongStateRoot, kWrongReceiptsRoot);
 
-    const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
-    const PersistentBlockSyncBatch batch =
-        singleBlockBatch(badBlock, blockchain.latestBlock().hash());
+  const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
+  const PersistentBlockSyncBatch batch =
+      singleBlockBatch(badBlock, blockchain.latestBlock().hash());
 
-    const PersistentSyncApplyResult result =
-        PersistentBlockStateSyncApplier::applyValidatedBatch(
-            checkpoint, batch, blockchain, registry, policy, provider, buildContext, kTimestamp + 3
-        );
+  const PersistentSyncApplyResult result =
+      PersistentBlockStateSyncApplier::applyValidatedBatch(
+          checkpoint, batch, blockchain, registry, policy, provider,
+          buildContext, kTimestamp + 3);
 
-    requireCondition(
-        !result.checkpoint().has_value(),
-        "Rejected batch must not return an advanced checkpoint."
-    );
-    requireCondition(
-        blockchain.size() == 1U,
-        "Blockchain must not grow after persistent sync protocol failure."
-    );
+  requireCondition(!result.checkpoint().has_value(),
+                   "Rejected batch must not return an advanced checkpoint.");
+  requireCondition(
+      blockchain.size() == 1U,
+      "Blockchain must not grow after persistent sync protocol failure.");
 }
 
 void testApplyValidatedBatchRejectsNonCanonicalRoots() {
-    core::Blockchain blockchain = chainWithGenesis();
-    const core::ValidatorRegistry registry;
-    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
-    const crypto::Bls12381SignatureProvider provider;
+  core::Blockchain blockchain = chainWithGenesis();
+  const core::ValidatorRegistry registry;
+  const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+  const crypto::Bls12381SignatureProvider provider;
 
-    // Block whose roots fail the canonical format check entirely.
-    const core::Block badBlock(
-        1,
-        blockchain.latestBlock().hash(),
-        {record(testTx(2))},
-        kTimestamp + 1,
-        "DRAFT_STATE_ROOT",
-        "DRAFT_RECEIPTS_ROOT"
-    );
+  // Block whose roots fail the canonical format check entirely.
+  const core::Block badBlock(1, blockchain.latestBlock().hash(),
+                             {record(testTx(2))}, kTimestamp + 1,
+                             "DRAFT_STATE_ROOT", "DRAFT_RECEIPTS_ROOT");
 
-    const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
-    const PersistentBlockSyncBatch batch =
-        singleBlockBatch(badBlock, blockchain.latestBlock().hash());
+  const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
+  const PersistentBlockSyncBatch batch =
+      singleBlockBatch(badBlock, blockchain.latestBlock().hash());
 
-    const PersistentSyncApplyResult result =
-        PersistentBlockStateSyncApplier::applyValidatedBatch(
-            checkpoint, batch, blockchain, registry, policy, provider, buildContext, kTimestamp + 3
-        );
+  const PersistentSyncApplyResult result =
+      PersistentBlockStateSyncApplier::applyValidatedBatch(
+          checkpoint, batch, blockchain, registry, policy, provider,
+          buildContext, kTimestamp + 3);
 
-    requireCondition(
-        !result.applied(),
-        "Batch with non-canonical roots must be rejected."
-    );
+  requireCondition(!result.applied(),
+                   "Batch with non-canonical roots must be rejected.");
 }
 
 void testApplyValidatedBatchAcceptsBlockWithCorrectRoots() {
-    core::Blockchain blockchain = chainWithGenesis();
+  core::Blockchain blockchain = chainWithGenesis();
 
-    const crypto::KeyPair validatorKey =
-        crypto::KeyPair::createDeterministicBls12381KeyPair(
-            "protocol-valid-qc"
-        );
+  const crypto::KeyPair validatorKey =
+      crypto::KeyPair::createDeterministicBls12381KeyPair("protocol-valid-qc");
 
-    core::ValidatorRegistry registry;
-    registerValidator(registry, validatorKey, "protocol-valid-qc");
+  core::ValidatorRegistry registry;
+  registerValidator(registry, validatorKey, "protocol-valid-qc");
 
-    const crypto::CryptoPolicy policy =
-        crypto::CryptoPolicy::developmentPolicy();
-    const crypto::Bls12381SignatureProvider provider;
+  const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+  const crypto::Bls12381SignatureProvider provider;
 
-    const core::Block goodBlock =
-        buildBlockWithRealRoots(blockchain, 1);
+  const core::Block goodBlock = buildBlockWithRealRoots(blockchain, 1);
 
-    const consensus::FinalizedBlockRecord finalizedRecord =
-        buildFinalizedRecord(goodBlock, validatorKey, registry);
+  const consensus::FinalizedBlockRecord finalizedRecord =
+      buildFinalizedRecord(goodBlock, validatorKey, registry);
 
-    const PersistentSyncCheckpoint checkpoint =
-        genesisCheckpoint(blockchain);
+  const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
 
-    const PersistentBlockSyncItem item(
-        goodBlock.index(),
-        goodBlock.hash(),
-        goodBlock.previousHash(),
-        goodBlock.serialize(),
-        goodBlock.stateRoot(),
-        kTimestamp + 1,
-        finalizedRecord.serialize()
-    );
+  const PersistentBlockSyncItem item(
+      goodBlock.index(), goodBlock.hash(), goodBlock.previousHash(),
+      goodBlock.serialize(), goodBlock.stateRoot(), kTimestamp + 1,
+      finalizedRecord.serialize());
 
-    const PersistentBlockSyncBatch batch(
-        "peer-a",
-        goodBlock.index(),
-        goodBlock.index(),
-        {item},
-        kTimestamp + 2
-    );
+  const PersistentBlockSyncBatch batch(
+      "peer-a", goodBlock.index(), goodBlock.index(), {item}, kTimestamp + 2);
 
-    const PersistentSyncApplyResult result =
-        PersistentBlockStateSyncApplier::applyValidatedBatch(
-            checkpoint,
-            batch,
-            blockchain,
-            registry,
-            policy,
-            provider,
-            buildContext,
-            kTimestamp + 3
-        );
+  const PersistentSyncApplyResult result =
+      PersistentBlockStateSyncApplier::applyValidatedBatch(
+          checkpoint, batch, blockchain, registry, policy, provider,
+          buildContext, kTimestamp + 3);
 
-    requireCondition(
-        result.applied(),
-        "Batch with correct roots and valid QC must be accepted."
-    );
-    requireCondition(
-        result.checkpoint().has_value(),
-        "Accepted batch must return an advanced checkpoint."
-    );
-    requireCondition(
-        result.checkpoint()->finalizedHeight() == 1,
-        "Advanced checkpoint must be at height 1."
-    );
-    requireCondition(
-        blockchain.size() == 2U,
-        "Blockchain must grow by one after successful persistent sync."
-    );
+  requireCondition(result.applied(),
+                   "Batch with correct roots and valid QC must be accepted.");
+  requireCondition(result.checkpoint().has_value(),
+                   "Accepted batch must return an advanced checkpoint.");
+  requireCondition(result.checkpoint()->finalizedHeight() == 1,
+                   "Advanced checkpoint must be at height 1.");
+  requireCondition(
+      blockchain.size() == 2U,
+      "Blockchain must grow by one after successful persistent sync.");
 }
 
 void testProtocolCommitmentRejectsItemsWithoutFinalizedRecord() {
-    core::Blockchain blockchain = chainWithGenesis();
-    const core::ValidatorRegistry registry;
-    const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
-    const crypto::Bls12381SignatureProvider provider;
+  core::Blockchain blockchain = chainWithGenesis();
+  const core::ValidatorRegistry registry;
+  const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+  const crypto::Bls12381SignatureProvider provider;
 
-    // Use nonce 1 — matches the senderContext() account nonce of 0 (next = 1).
-    const core::Block goodBlock = buildBlockWithRealRoots(blockchain, 1);
-    const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
-    const PersistentBlockSyncBatch batch =
-        singleBlockBatch(goodBlock, blockchain.latestBlock().hash());
+  // Use nonce 1 — matches the senderContext() account nonce of 0 (next = 1).
+  const core::Block goodBlock = buildBlockWithRealRoots(blockchain, 1);
+  const PersistentSyncCheckpoint checkpoint = genesisCheckpoint(blockchain);
+  const PersistentBlockSyncBatch batch =
+      singleBlockBatch(goodBlock, blockchain.latestBlock().hash());
 
-    const PersistentSyncApplyResult result =
-        PersistentBlockStateSyncApplier::applyValidatedBatch(
-            checkpoint, batch, blockchain, registry, policy, provider, buildContext, kTimestamp + 3
-        );
+  const PersistentSyncApplyResult result =
+      PersistentBlockStateSyncApplier::applyValidatedBatch(
+          checkpoint, batch, blockchain, registry, policy, provider,
+          buildContext, kTimestamp + 3);
 
-    requireCondition(
-        !result.applied(),
-        "Protocol-commitment sync must reject a block without finality proof."
-    );
-    requireCondition(
-        blockchain.size() == 1U,
-        "Blockchain must remain unchanged when the QC is missing."
-    );
+  requireCondition(
+      !result.applied(),
+      "Protocol-commitment sync must reject a block without finality proof.");
+  requireCondition(blockchain.size() == 1U,
+                   "Blockchain must remain unchanged when the QC is missing.");
 }
 
 } // namespace
 
 int main() {
-    try {
-        testApplyValidatedBatchRejectsBlockWithWrongStateRoot();
-        testApplyValidatedBatchRejectionReasonMentionsHeight();
-        testNoCheckpointAdvanceOnProtocolFailure();
-        testApplyValidatedBatchRejectsNonCanonicalRoots();
-        testApplyValidatedBatchAcceptsBlockWithCorrectRoots();
-        testProtocolCommitmentRejectsItemsWithoutFinalizedRecord();
+  try {
+    testApplyValidatedBatchRejectsBlockWithWrongStateRoot();
+    testApplyValidatedBatchRejectionReasonMentionsHeight();
+    testNoCheckpointAdvanceOnProtocolFailure();
+    testApplyValidatedBatchRejectsNonCanonicalRoots();
+    testApplyValidatedBatchAcceptsBlockWithCorrectRoots();
+    testProtocolCommitmentRejectsItemsWithoutFinalizedRecord();
 
-        std::cout << "PersistentSync protocol validation tests passed.\n";
-        return 0;
-    } catch (const std::exception& e) {
-        std::cerr << "FAILED: " << e.what() << '\n';
-        return 1;
-    }
+    std::cout << "PersistentSync protocol validation tests passed.\n";
+    return 0;
+  } catch (const std::exception &e) {
+    std::cerr << "FAILED: " << e.what() << '\n';
+    return 1;
+  }
 }

@@ -114,6 +114,13 @@ public:
   }
 
   core::TransactionDomainExecutionResult
+  applyGovernanceExecute(const core::Transaction &,
+                         const core::AccountStateView &accounts, std::uint64_t,
+                         std::int64_t) override {
+    return accepted(accounts);
+  }
+
+  core::TransactionDomainExecutionResult
   finalizeBlock(const core::AccountStateView &accounts, utils::Amount,
                 const std::vector<core::LedgerRecord> &, std::uint64_t,
                 std::int64_t) override {

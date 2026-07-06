@@ -52,6 +52,7 @@ public:
   HANDLER(applyValidatorUnjailRequest, "VALIDATOR_UNJAIL_REQUEST")
   HANDLER(applyGovernanceProposal, "GOVERNANCE_PROPOSE")
   HANDLER(applyGovernanceVote, "GOVERNANCE_VOTE")
+  HANDLER(applyGovernanceExecute, "GOVERNANCE_EXECUTE")
 #undef HANDLER
 
   core::TransactionDomainExecutionResult

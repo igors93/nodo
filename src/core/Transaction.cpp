@@ -1,10 +1,10 @@
 #include "core/Transaction.hpp"
 
+#include "core/TransactionTypePolicy.hpp"
 #include "crypto/Address.hpp"
 #include "crypto/AddressDerivation.hpp"
 #include "crypto/Hex.hpp"
 #include "crypto/hash.h"
-#include "core/TransactionTypePolicy.hpp"
 
 #include <set>
 #include <sstream>
@@ -21,776 +21,694 @@ constexpr std::size_t MAX_TRANSACTION_DATA_BYTES = 4096;
 constexpr std::size_t MIN_ADDRESS_LENGTH = 1;
 constexpr std::size_t MAX_ADDRESS_LENGTH = 256;
 
-bool isSafeTransactionAddress(const std::string& address) {
-    if (address.size() < MIN_ADDRESS_LENGTH ||
-        address.size() > MAX_ADDRESS_LENGTH) {
-        return false;
-    }
+bool isSafeTransactionAddress(const std::string &address) {
+  if (address.size() < MIN_ADDRESS_LENGTH ||
+      address.size() > MAX_ADDRESS_LENGTH) {
+    return false;
+  }
 
-    for (const char c : address) {
-        if (c == ';' || c == '=' || c == '{' || c == '}' ||
-            c == '[' || c == ']' || c == ',' ||
-            c == '\n' || c == '\r' || c == '\t' || c == ' ') {
-            return false;
-        }
+  for (const char c : address) {
+    if (c == ';' || c == '=' || c == '{' || c == '}' || c == '[' || c == ']' ||
+        c == ',' || c == '\n' || c == '\r' || c == '\t' || c == ' ') {
+      return false;
     }
+  }
 
-    return true;
+  return true;
 }
 
-std::string extractField(
-    const std::string& serialized,
-    const std::string& key
-) {
-    const std::string prefix = key + "=";
-    const std::size_t start = serialized.find(prefix);
+std::string extractField(const std::string &serialized,
+                         const std::string &key) {
+  const std::string prefix = key + "=";
+  const std::size_t start = serialized.find(prefix);
 
-    if (start == std::string::npos) {
-        throw std::invalid_argument("Missing serialized Transaction field: " + key);
-    }
+  if (start == std::string::npos) {
+    throw std::invalid_argument("Missing serialized Transaction field: " + key);
+  }
 
-    const std::size_t valueStart = start + prefix.size();
-    std::size_t valueEnd = serialized.find(';', valueStart);
+  const std::size_t valueStart = start + prefix.size();
+  std::size_t valueEnd = serialized.find(';', valueStart);
 
-    if (valueEnd == std::string::npos) {
-        valueEnd = serialized.find('}', valueStart);
-    }
+  if (valueEnd == std::string::npos) {
+    valueEnd = serialized.find('}', valueStart);
+  }
 
-    if (valueEnd == std::string::npos || valueEnd <= valueStart) {
-        throw std::invalid_argument("Invalid serialized Transaction field: " + key);
-    }
+  if (valueEnd == std::string::npos || valueEnd <= valueStart) {
+    throw std::invalid_argument("Invalid serialized Transaction field: " + key);
+  }
 
-    return serialized.substr(valueStart, valueEnd - valueStart);
+  return serialized.substr(valueStart, valueEnd - valueStart);
 }
 
-bool hasField(
-    const std::string& serialized,
-    const std::string& key
-) {
-    return serialized.find(key + "=") != std::string::npos;
+bool hasField(const std::string &serialized, const std::string &key) {
+  return serialized.find(key + "=") != std::string::npos;
 }
 
-std::string extractTransactionPayload(
-    const std::string& serialized
-) {
-    const std::string prefix = "payload=TransactionPayload{";
-    const std::string suffix = ";signatureBundle=";
+std::string extractTransactionPayload(const std::string &serialized) {
+  const std::string prefix = "payload=TransactionPayload{";
+  const std::string suffix = ";signatureBundle=";
 
-    const std::size_t payloadPrefixStart = serialized.find(prefix);
+  const std::size_t payloadPrefixStart = serialized.find(prefix);
 
-    if (payloadPrefixStart == std::string::npos) {
-        throw std::invalid_argument("Serialized Transaction payload not found.");
-    }
+  if (payloadPrefixStart == std::string::npos) {
+    throw std::invalid_argument("Serialized Transaction payload not found.");
+  }
 
-    const std::size_t payloadStart = payloadPrefixStart + std::string("payload=").size();
-    const std::size_t payloadEnd = serialized.find(suffix, payloadStart);
+  const std::size_t payloadStart =
+      payloadPrefixStart + std::string("payload=").size();
+  const std::size_t payloadEnd = serialized.find(suffix, payloadStart);
 
-    if (payloadEnd == std::string::npos || payloadEnd <= payloadStart) {
-        throw std::invalid_argument("Serialized Transaction payload is malformed.");
-    }
+  if (payloadEnd == std::string::npos || payloadEnd <= payloadStart) {
+    throw std::invalid_argument("Serialized Transaction payload is malformed.");
+  }
 
-    return serialized.substr(payloadStart, payloadEnd - payloadStart);
+  return serialized.substr(payloadStart, payloadEnd - payloadStart);
 }
 
-std::string extractSignatureBundle(const std::string& serialized) {
-    const std::string marker = ";signatureBundle=";
-    const std::size_t markerPosition = serialized.find(marker);
-    if (markerPosition == std::string::npos ||
-        serialized.empty() || serialized.back() != '}') {
-        throw std::invalid_argument("Serialized Transaction signature bundle is malformed.");
-    }
+std::string extractSignatureBundle(const std::string &serialized) {
+  const std::string marker = ";signatureBundle=";
+  const std::size_t markerPosition = serialized.find(marker);
+  if (markerPosition == std::string::npos || serialized.empty() ||
+      serialized.back() != '}') {
+    throw std::invalid_argument(
+        "Serialized Transaction signature bundle is malformed.");
+  }
 
-    const std::size_t valueStart = markerPosition + marker.size();
-    if (valueStart >= serialized.size() - 1) {
-        throw std::invalid_argument("Serialized Transaction signature bundle is empty.");
-    }
-    return serialized.substr(valueStart, serialized.size() - valueStart - 1);
+  const std::size_t valueStart = markerPosition + marker.size();
+  if (valueStart >= serialized.size() - 1) {
+    throw std::invalid_argument(
+        "Serialized Transaction signature bundle is empty.");
+  }
+  return serialized.substr(valueStart, serialized.size() - valueStart - 1);
 }
 
-bool isSafeCoinLotInputId(
-    const std::string& value
-) {
-    if (value.empty() || value.size() > MAX_COIN_LOT_ID_LENGTH) {
-        return false;
-    }
+bool isSafeCoinLotInputId(const std::string &value) {
+  if (value.empty() || value.size() > MAX_COIN_LOT_ID_LENGTH) {
+    return false;
+  }
 
-    /*
-     * Keep transaction payload parsing unambiguous.
-     * CoinLot ids generated by Nodo use letters, digits, underscores and hashes,
-     * so rejecting structural delimiters is safe and prevents parser confusion.
-     */
-    for (char character : value) {
-        if (character == ';' ||
-            character == ',' ||
-            character == '[' ||
-            character == ']' ||
-            character == '{' ||
-            character == '}' ||
-            character == ' ' ||
-            character == '\t' ||
-            character == '\n' ||
-            character == '\r') {
-            return false;
-        }
+  /*
+   * Keep transaction payload parsing unambiguous.
+   * CoinLot ids generated by Nodo use letters, digits, underscores and hashes,
+   * so rejecting structural delimiters is safe and prevents parser confusion.
+   */
+  for (char character : value) {
+    if (character == ';' || character == ',' || character == '[' ||
+        character == ']' || character == '{' || character == '}' ||
+        character == ' ' || character == '\t' || character == '\n' ||
+        character == '\r') {
+      return false;
     }
+  }
 
-    return true;
+  return true;
 }
 
 bool hasDuplicateInputCoinLotIds(
-    const std::vector<std::string>& inputCoinLotIds
-) {
-    std::set<std::string> seen;
+    const std::vector<std::string> &inputCoinLotIds) {
+  std::set<std::string> seen;
 
-    for (const auto& inputCoinLotId : inputCoinLotIds) {
-        if (!seen.insert(inputCoinLotId).second) {
-            return true;
-        }
+  for (const auto &inputCoinLotId : inputCoinLotIds) {
+    if (!seen.insert(inputCoinLotId).second) {
+      return true;
     }
+  }
 
-    return false;
+  return false;
 }
 
 bool areInputCoinLotIdsStructurallyValid(
-    const std::vector<std::string>& inputCoinLotIds
-) {
-    if (inputCoinLotIds.size() > MAX_EXPLICIT_INPUT_COIN_LOTS) {
-        return false;
-    }
+    const std::vector<std::string> &inputCoinLotIds) {
+  if (inputCoinLotIds.size() > MAX_EXPLICIT_INPUT_COIN_LOTS) {
+    return false;
+  }
 
-    if (hasDuplicateInputCoinLotIds(inputCoinLotIds)) {
-        return false;
-    }
+  if (hasDuplicateInputCoinLotIds(inputCoinLotIds)) {
+    return false;
+  }
 
-    for (const auto& inputCoinLotId : inputCoinLotIds) {
-        if (!isSafeCoinLotInputId(inputCoinLotId)) {
-            return false;
-        }
+  for (const auto &inputCoinLotId : inputCoinLotIds) {
+    if (!isSafeCoinLotInputId(inputCoinLotId)) {
+      return false;
     }
+  }
 
-    return true;
+  return true;
 }
 
-std::string serializeInputCoinLotIds(
-    const std::vector<std::string>& inputCoinLotIds
-) {
-    std::ostringstream oss;
+std::string
+serializeInputCoinLotIds(const std::vector<std::string> &inputCoinLotIds) {
+  std::ostringstream oss;
 
-    oss << "[";
+  oss << "[";
 
-    for (std::size_t index = 0; index < inputCoinLotIds.size(); ++index) {
-        if (index != 0) {
-            oss << ",";
-        }
-
-        oss << inputCoinLotIds[index];
+  for (std::size_t index = 0; index < inputCoinLotIds.size(); ++index) {
+    if (index != 0) {
+      oss << ",";
     }
 
-    oss << "]";
+    oss << inputCoinLotIds[index];
+  }
 
-    return oss.str();
+  oss << "]";
+
+  return oss.str();
 }
 
-std::vector<std::string> parseInputCoinLotIds(
-    const std::string& serializedInputCoinLotIds
-) {
-    if (serializedInputCoinLotIds.size() < 2 ||
-        serializedInputCoinLotIds.front() != '[' ||
-        serializedInputCoinLotIds.back() != ']') {
-        throw std::invalid_argument("Serialized input CoinLot id list is malformed.");
-    }
+std::vector<std::string>
+parseInputCoinLotIds(const std::string &serializedInputCoinLotIds) {
+  if (serializedInputCoinLotIds.size() < 2 ||
+      serializedInputCoinLotIds.front() != '[' ||
+      serializedInputCoinLotIds.back() != ']') {
+    throw std::invalid_argument(
+        "Serialized input CoinLot id list is malformed.");
+  }
 
-    std::vector<std::string> inputCoinLotIds;
+  std::vector<std::string> inputCoinLotIds;
 
-    const std::string content =
-        serializedInputCoinLotIds.substr(
-            1,
-            serializedInputCoinLotIds.size() - 2
-        );
+  const std::string content =
+      serializedInputCoinLotIds.substr(1, serializedInputCoinLotIds.size() - 2);
 
-    if (content.empty()) {
-        return inputCoinLotIds;
-    }
-
-    std::size_t start = 0;
-
-    while (start <= content.size()) {
-        const std::size_t commaPosition =
-            content.find(',', start);
-
-        const std::size_t end =
-            commaPosition == std::string::npos
-                ? content.size()
-                : commaPosition;
-
-        const std::string value =
-            content.substr(start, end - start);
-
-        if (!isSafeCoinLotInputId(value)) {
-            throw std::invalid_argument("Serialized input CoinLot id is unsafe.");
-        }
-
-        inputCoinLotIds.push_back(value);
-
-        if (commaPosition == std::string::npos) {
-            break;
-        }
-
-        start = commaPosition + 1;
-    }
-
-    if (!areInputCoinLotIdsStructurallyValid(inputCoinLotIds)) {
-        throw std::invalid_argument("Serialized input CoinLot id list is invalid.");
-    }
-
+  if (content.empty()) {
     return inputCoinLotIds;
-}
+  }
 
-std::vector<std::string> extractInputCoinLotIdsFromPayload(
-    const std::string& payload
-) {
-    if (!hasField(payload, "inputLots")) {
-        return {};
+  std::size_t start = 0;
+
+  while (start <= content.size()) {
+    const std::size_t commaPosition = content.find(',', start);
+
+    const std::size_t end =
+        commaPosition == std::string::npos ? content.size() : commaPosition;
+
+    const std::string value = content.substr(start, end - start);
+
+    if (!isSafeCoinLotInputId(value)) {
+      throw std::invalid_argument("Serialized input CoinLot id is unsafe.");
     }
 
-    return parseInputCoinLotIds(
-        extractField(
-            payload,
-            "inputLots"
-        )
-    );
+    inputCoinLotIds.push_back(value);
+
+    if (commaPosition == std::string::npos) {
+      break;
+    }
+
+    start = commaPosition + 1;
+  }
+
+  if (!areInputCoinLotIdsStructurallyValid(inputCoinLotIds)) {
+    throw std::invalid_argument("Serialized input CoinLot id list is invalid.");
+  }
+
+  return inputCoinLotIds;
 }
 
-std::string encodeTransactionData(const std::string& data) {
-    if (data.empty()) return "";
-    return crypto::hexEncode(
-        reinterpret_cast<const unsigned char*>(data.data()), data.size()
-    );
+std::vector<std::string>
+extractInputCoinLotIdsFromPayload(const std::string &payload) {
+  if (!hasField(payload, "inputLots")) {
+    return {};
+  }
+
+  return parseInputCoinLotIds(extractField(payload, "inputLots"));
 }
 
-std::string decodeTransactionData(const std::string& hex) {
-    if (hex.empty() || !crypto::isHexString(hex)) {
-        throw std::invalid_argument("Serialized transaction data is not canonical hex.");
-    }
-    const std::vector<unsigned char> bytes = crypto::hexDecode(hex);
-    if (bytes.size() > MAX_TRANSACTION_DATA_BYTES) {
-        throw std::invalid_argument("Serialized transaction data exceeds protocol limit.");
-    }
-    return std::string(bytes.begin(), bytes.end());
+std::string encodeTransactionData(const std::string &data) {
+  if (data.empty())
+    return "";
+  return crypto::hexEncode(reinterpret_cast<const unsigned char *>(data.data()),
+                           data.size());
+}
+
+std::string decodeTransactionData(const std::string &hex) {
+  if (hex.empty() || !crypto::isHexString(hex)) {
+    throw std::invalid_argument(
+        "Serialized transaction data is not canonical hex.");
+  }
+  const std::vector<unsigned char> bytes = crypto::hexDecode(hex);
+  if (bytes.size() > MAX_TRANSACTION_DATA_BYTES) {
+    throw std::invalid_argument(
+        "Serialized transaction data exceeds protocol limit.");
+  }
+  return std::string(bytes.begin(), bytes.end());
 }
 
 } // namespace
 
 std::string transactionTypeToString(TransactionType type) {
-    switch (type) {
-        case TransactionType::TRANSFER:
-            return "TRANSFER";
+  switch (type) {
+  case TransactionType::TRANSFER:
+    return "TRANSFER";
 
-        case TransactionType::VALIDATOR_REGISTER:
-            return "VALIDATOR_REGISTER";
+  case TransactionType::VALIDATOR_REGISTER:
+    return "VALIDATOR_REGISTER";
 
-        case TransactionType::BURN:
-            return "BURN";
+  case TransactionType::BURN:
+    return "BURN";
 
-        case TransactionType::STAKE_DEPOSIT:
-            return "STAKE_DEPOSIT";
+  case TransactionType::STAKE_DEPOSIT:
+    return "STAKE_DEPOSIT";
 
-        case TransactionType::STAKE_UNLOCK:
-            return "STAKE_UNLOCK";
+  case TransactionType::STAKE_UNLOCK:
+    return "STAKE_UNLOCK";
 
-        case TransactionType::STAKE_WITHDRAW:
-            return "STAKE_WITHDRAW";
+  case TransactionType::STAKE_WITHDRAW:
+    return "STAKE_WITHDRAW";
 
-        case TransactionType::STAKE_TOP_UP:
-            return "STAKE_TOP_UP";
+  case TransactionType::STAKE_TOP_UP:
+    return "STAKE_TOP_UP";
 
-        case TransactionType::VALIDATOR_EXIT_REQUEST:
-            return "VALIDATOR_EXIT_REQUEST";
+  case TransactionType::VALIDATOR_EXIT_REQUEST:
+    return "VALIDATOR_EXIT_REQUEST";
 
-        case TransactionType::VALIDATOR_UNJAIL_REQUEST:
-            return "VALIDATOR_UNJAIL_REQUEST";
+  case TransactionType::VALIDATOR_UNJAIL_REQUEST:
+    return "VALIDATOR_UNJAIL_REQUEST";
 
-        case TransactionType::GOVERNANCE_PROPOSE:
-            return "GOVERNANCE_PROPOSE";
+  case TransactionType::GOVERNANCE_PROPOSE:
+    return "GOVERNANCE_PROPOSE";
 
-        case TransactionType::GOVERNANCE_VOTE:
-            return "GOVERNANCE_VOTE";
+  case TransactionType::GOVERNANCE_VOTE:
+    return "GOVERNANCE_VOTE";
 
-        default:
-            return "UNKNOWN";
-    }
+  case TransactionType::GOVERNANCE_EXECUTE:
+    return "GOVERNANCE_EXECUTE";
+
+  default:
+    return "UNKNOWN";
+  }
 }
 
-TransactionType transactionTypeFromString(const std::string& value) {
-    if (value == "TRANSFER") {
-        return TransactionType::TRANSFER;
-    }
+TransactionType transactionTypeFromString(const std::string &value) {
+  if (value == "TRANSFER") {
+    return TransactionType::TRANSFER;
+  }
 
-    if (value == "VALIDATOR_REGISTER") {
-        return TransactionType::VALIDATOR_REGISTER;
-    }
+  if (value == "VALIDATOR_REGISTER") {
+    return TransactionType::VALIDATOR_REGISTER;
+  }
 
-    if (value == "BURN") {
-        return TransactionType::BURN;
-    }
+  if (value == "BURN") {
+    return TransactionType::BURN;
+  }
 
-    if (value == "STAKE_DEPOSIT") {
-        return TransactionType::STAKE_DEPOSIT;
-    }
+  if (value == "STAKE_DEPOSIT") {
+    return TransactionType::STAKE_DEPOSIT;
+  }
 
-    if (value == "STAKE_UNLOCK") {
-        return TransactionType::STAKE_UNLOCK;
-    }
+  if (value == "STAKE_UNLOCK") {
+    return TransactionType::STAKE_UNLOCK;
+  }
 
-    if (value == "STAKE_WITHDRAW") {
-        return TransactionType::STAKE_WITHDRAW;
-    }
+  if (value == "STAKE_WITHDRAW") {
+    return TransactionType::STAKE_WITHDRAW;
+  }
 
-    if (value == "STAKE_TOP_UP") {
-        return TransactionType::STAKE_TOP_UP;
-    }
+  if (value == "STAKE_TOP_UP") {
+    return TransactionType::STAKE_TOP_UP;
+  }
 
-    if (value == "VALIDATOR_EXIT_REQUEST") {
-        return TransactionType::VALIDATOR_EXIT_REQUEST;
-    }
+  if (value == "VALIDATOR_EXIT_REQUEST") {
+    return TransactionType::VALIDATOR_EXIT_REQUEST;
+  }
 
-    if (value == "VALIDATOR_UNJAIL_REQUEST") {
-        return TransactionType::VALIDATOR_UNJAIL_REQUEST;
-    }
+  if (value == "VALIDATOR_UNJAIL_REQUEST") {
+    return TransactionType::VALIDATOR_UNJAIL_REQUEST;
+  }
 
-    if (value == "GOVERNANCE_PROPOSE") {
-        return TransactionType::GOVERNANCE_PROPOSE;
-    }
+  if (value == "GOVERNANCE_PROPOSE") {
+    return TransactionType::GOVERNANCE_PROPOSE;
+  }
 
-    if (value == "GOVERNANCE_VOTE") {
-        return TransactionType::GOVERNANCE_VOTE;
-    }
+  if (value == "GOVERNANCE_VOTE") {
+    return TransactionType::GOVERNANCE_VOTE;
+  }
 
-    throw std::invalid_argument("Unknown TransactionType: " + value);
+  if (value == "GOVERNANCE_EXECUTE") {
+    return TransactionType::GOVERNANCE_EXECUTE;
+  }
+
+  throw std::invalid_argument("Unknown TransactionType: " + value);
 }
 
 bool requiresUserSignature(TransactionType type) {
-    return TransactionTypePolicyRegistry::isMempoolType(type);
+  return TransactionTypePolicyRegistry::isMempoolType(type);
 }
 
 bool isStakingTransaction(TransactionType type) {
-    return type == TransactionType::STAKE_DEPOSIT ||
-           type == TransactionType::STAKE_UNLOCK ||
-           type == TransactionType::STAKE_WITHDRAW ||
-           type == TransactionType::STAKE_TOP_UP;
+  return type == TransactionType::STAKE_DEPOSIT ||
+         type == TransactionType::STAKE_UNLOCK ||
+         type == TransactionType::STAKE_WITHDRAW ||
+         type == TransactionType::STAKE_TOP_UP;
 }
 
 bool isValidatorLifecycleTransaction(TransactionType type) {
-    return type == TransactionType::VALIDATOR_REGISTER ||
-           type == TransactionType::VALIDATOR_EXIT_REQUEST ||
-           type == TransactionType::VALIDATOR_UNJAIL_REQUEST;
+  return type == TransactionType::VALIDATOR_REGISTER ||
+         type == TransactionType::VALIDATOR_EXIT_REQUEST ||
+         type == TransactionType::VALIDATOR_UNJAIL_REQUEST;
 }
 
 bool isGovernanceTransaction(TransactionType type) {
-    return type == TransactionType::GOVERNANCE_PROPOSE ||
-           type == TransactionType::GOVERNANCE_VOTE;
+  return type == TransactionType::GOVERNANCE_PROPOSE ||
+         type == TransactionType::GOVERNANCE_VOTE ||
+         type == TransactionType::GOVERNANCE_EXECUTE;
 }
 
-Transaction::Transaction(
-    TransactionType type,
-    std::string fromAddress,
-    std::string toAddress,
-    utils::Amount amount,
-    utils::Amount fee,
-    std::uint64_t nonce,
-    std::int64_t timestamp
-)
-    : Transaction(
-          type,
-          std::move(fromAddress),
-          std::move(toAddress),
-          amount,
-          fee,
-          nonce,
-          timestamp,
-          std::vector<std::string>{}
-      ) {}
+Transaction::Transaction(TransactionType type, std::string fromAddress,
+                         std::string toAddress, utils::Amount amount,
+                         utils::Amount fee, std::uint64_t nonce,
+                         std::int64_t timestamp)
+    : Transaction(type, std::move(fromAddress), std::move(toAddress), amount,
+                  fee, nonce, timestamp, std::vector<std::string>{}) {}
 
-Transaction::Transaction(
-    TransactionType type,
-    std::string fromAddress,
-    std::string toAddress,
-    utils::Amount amount,
-    utils::Amount fee,
-    std::uint64_t nonce,
-    std::int64_t timestamp,
-    std::vector<std::string> inputCoinLotIds
-)
-    : m_id(""),
-      m_type(type),
-      m_fromAddress(std::move(fromAddress)),
-      m_toAddress(std::move(toAddress)),
-      m_amount(amount),
-      m_fee(fee),
-      m_nonce(nonce),
-      m_timestamp(timestamp),
-      m_inputCoinLotIds(std::move(inputCoinLotIds)),
-      m_data(),
-      m_signatureBundle(),
+Transaction::Transaction(TransactionType type, std::string fromAddress,
+                         std::string toAddress, utils::Amount amount,
+                         utils::Amount fee, std::uint64_t nonce,
+                         std::int64_t timestamp,
+                         std::vector<std::string> inputCoinLotIds)
+    : m_id(""), m_type(type), m_fromAddress(std::move(fromAddress)),
+      m_toAddress(std::move(toAddress)), m_amount(amount), m_fee(fee),
+      m_nonce(nonce), m_timestamp(timestamp),
+      m_inputCoinLotIds(std::move(inputCoinLotIds)), m_data(),
+      m_signatureBundle(), m_hasSignatureBundle(false) {
+  if (!areInputCoinLotIdsStructurallyValid(m_inputCoinLotIds)) {
+    throw std::invalid_argument("Invalid explicit input CoinLot id list.");
+  }
+
+  if (m_type != TransactionType::TRANSFER && !m_inputCoinLotIds.empty()) {
+    throw std::invalid_argument(
+        "Only TRANSFER transactions can declare input CoinLot ids.");
+  }
+
+  m_id = computeTransactionIdFromPayload(signingPayload());
+}
+
+Transaction::Transaction(TransactionType type, std::string fromAddress,
+                         std::string toAddress, utils::Amount amount,
+                         utils::Amount fee, std::uint64_t nonce,
+                         std::int64_t timestamp, std::string data)
+    : m_id(""), m_type(type), m_fromAddress(std::move(fromAddress)),
+      m_toAddress(std::move(toAddress)), m_amount(amount), m_fee(fee),
+      m_nonce(nonce), m_timestamp(timestamp), m_inputCoinLotIds(),
+      m_data(std::move(data)), m_signatureBundle(),
       m_hasSignatureBundle(false) {
-    if (!areInputCoinLotIdsStructurallyValid(m_inputCoinLotIds)) {
-        throw std::invalid_argument("Invalid explicit input CoinLot id list.");
-    }
-
-    if (m_type != TransactionType::TRANSFER && !m_inputCoinLotIds.empty()) {
-        throw std::invalid_argument("Only TRANSFER transactions can declare input CoinLot ids.");
-    }
-
-    m_id = computeTransactionIdFromPayload(signingPayload());
+  if (m_data.size() > MAX_TRANSACTION_DATA_BYTES) {
+    throw std::invalid_argument("Transaction data exceeds protocol limit.");
+  }
+  m_id = computeTransactionIdFromPayload(signingPayload());
 }
 
-Transaction::Transaction(
-    TransactionType type,
-    std::string fromAddress,
-    std::string toAddress,
-    utils::Amount amount,
-    utils::Amount fee,
-    std::uint64_t nonce,
-    std::int64_t timestamp,
-    std::string data
-)
-    : m_id(""),
-      m_type(type),
-      m_fromAddress(std::move(fromAddress)),
-      m_toAddress(std::move(toAddress)),
-      m_amount(amount),
-      m_fee(fee),
-      m_nonce(nonce),
-      m_timestamp(timestamp),
-      m_inputCoinLotIds(),
-      m_data(std::move(data)),
-      m_signatureBundle(),
-      m_hasSignatureBundle(false) {
-    if (m_data.size() > MAX_TRANSACTION_DATA_BYTES) {
-        throw std::invalid_argument("Transaction data exceeds protocol limit.");
-    }
-    m_id = computeTransactionIdFromPayload(signingPayload());
-}
+const std::string &Transaction::id() const { return m_id; }
 
-const std::string& Transaction::id() const {
-    return m_id;
-}
+TransactionType Transaction::type() const { return m_type; }
 
-TransactionType Transaction::type() const {
-    return m_type;
-}
+const std::string &Transaction::fromAddress() const { return m_fromAddress; }
 
-const std::string& Transaction::fromAddress() const {
-    return m_fromAddress;
-}
+const std::string &Transaction::toAddress() const { return m_toAddress; }
 
-const std::string& Transaction::toAddress() const {
-    return m_toAddress;
-}
+utils::Amount Transaction::amount() const { return m_amount; }
 
-utils::Amount Transaction::amount() const {
-    return m_amount;
-}
+utils::Amount Transaction::fee() const { return m_fee; }
 
-utils::Amount Transaction::fee() const {
-    return m_fee;
-}
+std::uint64_t Transaction::nonce() const { return m_nonce; }
 
-std::uint64_t Transaction::nonce() const {
-    return m_nonce;
-}
+std::int64_t Transaction::timestamp() const { return m_timestamp; }
 
-std::int64_t Transaction::timestamp() const {
-    return m_timestamp;
-}
+const std::string &Transaction::data() const { return m_data; }
 
-const std::string& Transaction::data() const { return m_data; }
-
-const std::vector<std::string>& Transaction::inputCoinLotIds() const {
-    return m_inputCoinLotIds;
+const std::vector<std::string> &Transaction::inputCoinLotIds() const {
+  return m_inputCoinLotIds;
 }
 
 bool Transaction::hasExplicitInputCoinLotIds() const {
-    return !m_inputCoinLotIds.empty();
+  return !m_inputCoinLotIds.empty();
 }
 
-bool Transaction::hasSignatureBundle() const {
-    return m_hasSignatureBundle;
-}
+bool Transaction::hasSignatureBundle() const { return m_hasSignatureBundle; }
 
-const crypto::SignatureBundle& Transaction::signatureBundle() const {
-    if (!m_hasSignatureBundle) {
-        throw std::logic_error("Transaction has no SignatureBundle attached.");
-    }
+const crypto::SignatureBundle &Transaction::signatureBundle() const {
+  if (!m_hasSignatureBundle) {
+    throw std::logic_error("Transaction has no SignatureBundle attached.");
+  }
 
-    return m_signatureBundle;
+  return m_signatureBundle;
 }
 
 void Transaction::attachSignatureBundle(
-    const crypto::SignatureBundle& signatureBundle
-) {
-    if (signatureBundle.empty()) {
-        throw std::invalid_argument("Empty SignatureBundle rejected by Transaction.");
-    }
-    if (m_hasSignatureBundle) {
-        throw std::logic_error(
-            "Transaction SignatureBundle is immutable once attached."
-        );
-    }
+    const crypto::SignatureBundle &signatureBundle) {
+  if (signatureBundle.empty()) {
+    throw std::invalid_argument(
+        "Empty SignatureBundle rejected by Transaction.");
+  }
+  if (m_hasSignatureBundle) {
+    throw std::logic_error(
+        "Transaction SignatureBundle is immutable once attached.");
+  }
 
-    m_signatureBundle = signatureBundle;
-    m_hasSignatureBundle = true;
+  m_signatureBundle = signatureBundle;
+  m_hasSignatureBundle = true;
 }
 
 std::string Transaction::signingPayload() const {
-    std::ostringstream oss;
+  std::ostringstream oss;
 
-    /*
-     * Deterministic ordering is critical.
-     *
-     * If two nodes serialize the same transaction differently,
-     * signatures and transaction IDs will not match.
-     */
-    oss << "TransactionPayload{"
-        << "type=" << transactionTypeToString(m_type)
-        << ";from=" << m_fromAddress
-        << ";to=" << m_toAddress
-        << ";amountRaw=" << m_amount.rawUnits()
-        << ";feeRaw=" << m_fee.rawUnits();
+  /*
+   * Deterministic ordering is critical.
+   *
+   * If two nodes serialize the same transaction differently,
+   * signatures and transaction IDs will not match.
+   */
+  oss << "TransactionPayload{"
+      << "type=" << transactionTypeToString(m_type) << ";from=" << m_fromAddress
+      << ";to=" << m_toAddress << ";amountRaw=" << m_amount.rawUnits()
+      << ";feeRaw=" << m_fee.rawUnits();
 
-    if (!m_inputCoinLotIds.empty()) {
-        oss << ";inputLots=" << serializeInputCoinLotIds(m_inputCoinLotIds);
-    }
+  if (!m_inputCoinLotIds.empty()) {
+    oss << ";inputLots=" << serializeInputCoinLotIds(m_inputCoinLotIds);
+  }
 
-    if (!m_data.empty()) {
-        oss << ";dataHex=" << encodeTransactionData(m_data);
-    }
+  if (!m_data.empty()) {
+    oss << ";dataHex=" << encodeTransactionData(m_data);
+  }
 
-    oss << ";nonce=" << m_nonce
-        << ";timestamp=" << m_timestamp;
+  oss << ";nonce=" << m_nonce << ";timestamp=" << m_timestamp;
 
-    // Chain ID binds the transaction to a specific network, preventing
-    // cross-chain replay attacks. Production transactions MUST set this via
-    // withChainId() before signing.
-    if (!m_chainId.empty()) {
-        oss << ";chainId=" << m_chainId;
-    }
+  // Chain ID binds the transaction to a specific network, preventing
+  // cross-chain replay attacks. Production transactions MUST set this via
+  // withChainId() before signing.
+  if (!m_chainId.empty()) {
+    oss << ";chainId=" << m_chainId;
+  }
 
-    oss << "}";
+  oss << "}";
 
-    return oss.str();
+  return oss.str();
 }
 
-const std::string& Transaction::chainId() const {
-    return m_chainId;
-}
+const std::string &Transaction::chainId() const { return m_chainId; }
 
-Transaction& Transaction::withChainId(std::string chainId) {
-    if (m_hasSignatureBundle) {
-        throw std::logic_error("Cannot change chainId after transaction signing.");
-    }
-    if (!isSafeTransactionAddress(chainId)) {
-        throw std::invalid_argument("Transaction chainId is empty or unsafe.");
-    }
-    m_chainId = std::move(chainId);
-    // Recompute the deterministic id to reflect the new chain binding.
-    m_id = computeTransactionIdFromPayload(signingPayload());
-    return *this;
+Transaction &Transaction::withChainId(std::string chainId) {
+  if (m_hasSignatureBundle) {
+    throw std::logic_error("Cannot change chainId after transaction signing.");
+  }
+  if (!isSafeTransactionAddress(chainId)) {
+    throw std::invalid_argument("Transaction chainId is empty or unsafe.");
+  }
+  m_chainId = std::move(chainId);
+  // Recompute the deterministic id to reflect the new chain binding.
+  m_id = computeTransactionIdFromPayload(signingPayload());
+  return *this;
 }
 
 std::string Transaction::serialize() const {
-    std::ostringstream oss;
+  std::ostringstream oss;
 
-    oss << "Transaction{"
-        << "id=" << m_id
-        << ";payload=" << signingPayload();
+  oss << "Transaction{"
+      << "id=" << m_id << ";payload=" << signingPayload();
 
-    if (m_hasSignatureBundle) {
-        oss << ";signatureBundle=" << m_signatureBundle.serialize();
-    } else {
-        oss << ";signatureBundle=NONE";
-    }
+  if (m_hasSignatureBundle) {
+    oss << ";signatureBundle=" << m_signatureBundle.serialize();
+  } else {
+    oss << ";signatureBundle=NONE";
+  }
 
-    oss << "}";
+  oss << "}";
 
-    return oss.str();
+  return oss.str();
 }
 
-bool Transaction::isStructurallyValid(
-    const crypto::CryptoPolicy& policy,
-    crypto::SecurityContext context
-) const {
-    if (m_id.empty()) {
-        return false;
+bool Transaction::isStructurallyValid(const crypto::CryptoPolicy &policy,
+                                      crypto::SecurityContext context) const {
+  if (m_id.empty()) {
+    return false;
+  }
+
+  if (m_timestamp <= 0) {
+    return false;
+  }
+
+  if (m_nonce == 0) {
+    return false;
+  }
+
+  std::string shapeReason;
+  if (!TransactionTypePolicyRegistry::validateShape(*this, shapeReason)) {
+    return false;
+  }
+
+  if (m_fee.isNegative()) {
+    return false;
+  }
+
+  if (!areInputCoinLotIdsStructurallyValid(m_inputCoinLotIds)) {
+    return false;
+  }
+
+  if (m_type != TransactionType::TRANSFER && !m_inputCoinLotIds.empty()) {
+    return false;
+  }
+
+  if (m_id != computeTransactionIdFromPayload(signingPayload())) {
+    return false;
+  }
+
+  if (requiresUserSignature(m_type) &&
+      !isSafeTransactionAddress(m_fromAddress)) {
+    return false;
+  }
+
+  if (!isSafeTransactionAddress(m_fromAddress) ||
+      !isSafeTransactionAddress(m_toAddress) ||
+      m_data.size() > MAX_TRANSACTION_DATA_BYTES) {
+    return false;
+  }
+
+  if (requiresUserSignature(m_type)) {
+    if (!m_hasSignatureBundle) {
+      return false;
     }
 
-    if (m_timestamp <= 0) {
-        return false;
+    if (!m_signatureBundle.isValidForPolicy(policy, context)) {
+      return false;
     }
+  }
 
-    if (m_nonce == 0) {
-        return false;
-    }
+  // Require a chain id for all non-development contexts to prevent
+  // cross-chain replay attacks. A transaction without a chain id can be
+  // replayed on any network instance that shares the same account addresses.
+  // Dev-mode policy (localnet) is exempt to keep test transactions simple.
+  if (context != crypto::SecurityContext::DEVELOPMENT_ONLY &&
+      !policy.developmentMode() && m_chainId.empty()) {
+    return false;
+  }
 
-    std::string shapeReason;
-    if (!TransactionTypePolicyRegistry::validateShape(*this, shapeReason)) {
-        return false;
-    }
-
-    if (m_fee.isNegative()) {
-        return false;
-    }
-
-    if (!areInputCoinLotIdsStructurallyValid(m_inputCoinLotIds)) {
-        return false;
-    }
-
-    if (m_type != TransactionType::TRANSFER && !m_inputCoinLotIds.empty()) {
-        return false;
-    }
-
-    if (m_id != computeTransactionIdFromPayload(signingPayload())) {
-        return false;
-    }
-
-    if (requiresUserSignature(m_type) &&
-        !isSafeTransactionAddress(m_fromAddress)) {
-        return false;
-    }
-
-    if (!isSafeTransactionAddress(m_fromAddress) ||
-        !isSafeTransactionAddress(m_toAddress) ||
-        m_data.size() > MAX_TRANSACTION_DATA_BYTES) {
-        return false;
-    }
-
-    if (requiresUserSignature(m_type)) {
-        if (!m_hasSignatureBundle) {
-            return false;
-        }
-
-        if (!m_signatureBundle.isValidForPolicy(policy, context)) {
-            return false;
-        }
-    }
-
-    // Require a chain id for all non-development contexts to prevent
-    // cross-chain replay attacks. A transaction without a chain id can be
-    // replayed on any network instance that shares the same account addresses.
-    // Dev-mode policy (localnet) is exempt to keep test transactions simple.
-    if (context != crypto::SecurityContext::DEVELOPMENT_ONLY &&
-        !policy.developmentMode() &&
-        m_chainId.empty()) {
-        return false;
-    }
-
-    return true;
+  return true;
 }
 
 std::string Transaction::computeTransactionIdFromPayload(
-    const std::string& signingPayload
-) {
-    char output[65] = {0};
-    nodo_hash_string(signingPayload.c_str(), output, sizeof(output));
+    const std::string &signingPayload) {
+  char output[65] = {0};
+  nodo_hash_string(signingPayload.c_str(), output, sizeof(output));
 
-    return std::string(output);
+  return std::string(output);
 }
 
-Transaction Transaction::deserialize(
-    const std::string& serialized
-) {
-    if (serialized.rfind("Transaction{", 0) != 0 ||
-        serialized.empty() || serialized.back() != '}') {
-        throw std::invalid_argument("Serialized data is not a Transaction.");
-    }
+Transaction Transaction::deserialize(const std::string &serialized) {
+  if (serialized.rfind("Transaction{", 0) != 0 || serialized.empty() ||
+      serialized.back() != '}') {
+    throw std::invalid_argument("Serialized data is not a Transaction.");
+  }
 
-    const std::string serializedId = extractField(serialized, "id");
-    const std::string payload = extractTransactionPayload(serialized);
+  const std::string serializedId = extractField(serialized, "id");
+  const std::string payload = extractTransactionPayload(serialized);
 
-    if (payload.rfind("TransactionPayload{", 0) != 0) {
-        throw std::invalid_argument("Serialized Transaction payload is invalid.");
-    }
+  if (payload.rfind("TransactionPayload{", 0) != 0) {
+    throw std::invalid_argument("Serialized Transaction payload is invalid.");
+  }
 
-    const TransactionType type = transactionTypeFromString(extractField(payload, "type"));
-    const std::string from = extractField(payload, "from");
-    const std::string to = extractField(payload, "to");
-    const utils::Amount amount = utils::Amount::fromRawUnits(std::stoll(extractField(payload, "amountRaw")));
-    const utils::Amount fee = utils::Amount::fromRawUnits(std::stoll(extractField(payload, "feeRaw")));
-    const std::uint64_t nonce = static_cast<std::uint64_t>(std::stoull(extractField(payload, "nonce")));
-    const std::int64_t timestamp = std::stoll(extractField(payload, "timestamp"));
-    const std::vector<std::string> inputLots = extractInputCoinLotIdsFromPayload(payload);
+  const TransactionType type =
+      transactionTypeFromString(extractField(payload, "type"));
+  const std::string from = extractField(payload, "from");
+  const std::string to = extractField(payload, "to");
+  const utils::Amount amount = utils::Amount::fromRawUnits(
+      std::stoll(extractField(payload, "amountRaw")));
+  const utils::Amount fee =
+      utils::Amount::fromRawUnits(std::stoll(extractField(payload, "feeRaw")));
+  const std::uint64_t nonce =
+      static_cast<std::uint64_t>(std::stoull(extractField(payload, "nonce")));
+  const std::int64_t timestamp = std::stoll(extractField(payload, "timestamp"));
+  const std::vector<std::string> inputLots =
+      extractInputCoinLotIdsFromPayload(payload);
 
-    Transaction transaction = hasField(payload, "dataHex")
-        ? Transaction(type, from, to, amount, fee, nonce, timestamp,
-              decodeTransactionData(extractField(payload, "dataHex")))
-        : Transaction(type, from, to, amount, fee, nonce, timestamp, inputLots);
+  Transaction transaction =
+      hasField(payload, "dataHex")
+          ? Transaction(type, from, to, amount, fee, nonce, timestamp,
+                        decodeTransactionData(extractField(payload, "dataHex")))
+          : Transaction(type, from, to, amount, fee, nonce, timestamp,
+                        inputLots);
 
-    if (hasField(payload, "chainId")) {
-        transaction.withChainId(extractField(payload, "chainId"));
-    }
+  if (hasField(payload, "chainId")) {
+    transaction.withChainId(extractField(payload, "chainId"));
+  }
 
-    const std::string serializedBundle = extractSignatureBundle(serialized);
-    if (serializedBundle != "NONE") {
-        transaction.attachSignatureBundle(
-            crypto::SignatureBundle::deserialize(serializedBundle)
-        );
-    }
+  const std::string serializedBundle = extractSignatureBundle(serialized);
+  if (serializedBundle != "NONE") {
+    transaction.attachSignatureBundle(
+        crypto::SignatureBundle::deserialize(serializedBundle));
+  }
 
-    if (transaction.id() != serializedId) {
-        throw std::invalid_argument("Serialized Transaction id does not match payload.");
-    }
+  if (transaction.id() != serializedId) {
+    throw std::invalid_argument(
+        "Serialized Transaction id does not match payload.");
+  }
 
-    if (transaction.signingPayload() != payload) {
-        throw std::invalid_argument("Transaction serialization round-trip failed.");
-    }
+  if (transaction.signingPayload() != payload) {
+    throw std::invalid_argument("Transaction serialization round-trip failed.");
+  }
 
-    if (transaction.serialize() != serialized) {
-        throw std::invalid_argument("Transaction serialization is non-canonical.");
-    }
+  if (transaction.serialize() != serialized) {
+    throw std::invalid_argument("Transaction serialization is non-canonical.");
+  }
 
-    return transaction;
+  return transaction;
 }
 
 bool Transaction::verifyAuthorization(
-    const std::string& expectedChainId,
-    const crypto::CryptoPolicy& policy,
+    const std::string &expectedChainId, const crypto::CryptoPolicy &policy,
     crypto::SecurityContext context,
-    const crypto::SignatureProvider& provider
-) const {
-    if (expectedChainId.empty() || m_chainId != expectedChainId ||
-        !isStructurallyValid(policy, context)) {
-        return false;
-    }
+    const crypto::SignatureProvider &provider) const {
+  if (expectedChainId.empty() || m_chainId != expectedChainId ||
+      !isStructurallyValid(policy, context)) {
+    return false;
+  }
 
-    if (!requiresUserSignature(m_type)) {
-        return true;
-    }
+  if (!requiresUserSignature(m_type)) {
+    return true;
+  }
 
-    if (!m_hasSignatureBundle || m_signatureBundle.signatures().empty()) {
-        return false;
-    }
+  if (!m_hasSignatureBundle || m_signatureBundle.signatures().empty()) {
+    return false;
+  }
 
-    const crypto::PublicKey& signingKey =
-        m_signatureBundle.signatures().front().publicKey();
-    if (signingKey.algorithm() != provider.algorithm()) {
-        return false;
-    }
+  const crypto::PublicKey &signingKey =
+      m_signatureBundle.signatures().front().publicKey();
+  if (signingKey.algorithm() != provider.algorithm()) {
+    return false;
+  }
 
-    for (const crypto::Signature& signature : m_signatureBundle.signatures()) {
-        if (signature.publicKey().serialize() != signingKey.serialize()) {
-            return false;
-        }
+  for (const crypto::Signature &signature : m_signatureBundle.signatures()) {
+    if (signature.publicKey().serialize() != signingKey.serialize()) {
+      return false;
     }
+  }
 
-    const crypto::Address sender = crypto::Address::fromString(m_fromAddress);
-    if (!sender.isValid() ||
-        !crypto::AddressDerivation::verifyAddressForPublicKey(sender, signingKey)) {
-        return false;
-    }
+  const crypto::Address sender = crypto::Address::fromString(m_fromAddress);
+  if (!sender.isValid() ||
+      !crypto::AddressDerivation::verifyAddressForPublicKey(sender,
+                                                            signingKey)) {
+    return false;
+  }
 
-    return m_signatureBundle.verifyForPolicy(
-        signingPayload(), policy, context, provider
-    );
+  return m_signatureBundle.verifyForPolicy(signingPayload(), policy, context,
+                                           provider);
 }
 
 } // namespace nodo::core

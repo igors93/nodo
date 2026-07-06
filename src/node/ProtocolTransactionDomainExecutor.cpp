@@ -6,9 +6,11 @@
 #include "crypto/AddressDerivation.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "economics/BurnRecord.hpp"
+#include "economics/GovernanceApprovalBridge.hpp"
 #include "node/CanonicalSlashingTransition.hpp"
 #include "node/EpochRewardSettlementService.hpp"
 #include "node/FeeEconomics.hpp"
+#include "node/GovernanceLifecycleRecordBuilder.hpp"
 #include "node/ProtocolStateTransition.hpp"
 #include "node/ValidatorLifecycle.hpp"
 #include "node/ValidatorStakeWeightUpdater.hpp"
@@ -223,6 +225,49 @@ public:
   }
 
   core::TransactionDomainExecutionResult
+  applyGovernanceExecute(const core::Transaction &tx,
+                         const core::AccountStateView &accounts,
+                         std::uint64_t height, std::int64_t now) override {
+    core::AccountStateView mutatedAccounts = accounts;
+    return atomically(
+        accounts,
+        [&] {
+          const std::string &proposalId = tx.toAddress();
+          const GovernanceExecutor::GovernanceProposalSnapshot snapshot =
+              m_state.governance.proposalSnapshot(proposalId);
+          if (snapshot.proposalId.empty()) {
+            throw std::invalid_argument("Governance proposal does not exist.");
+          }
+
+          const auto lifecycle =
+              GovernanceLifecycleRecordBuilder::buildDecided(snapshot);
+          if (!lifecycle.has_value()) {
+            throw std::invalid_argument(
+                "Governance proposal is not an approved treasury spend "
+                "eligible for execution.");
+          }
+
+          const economics::GovernanceApprovalBridgeResult bridgeResult =
+              economics::GovernanceApprovalBridge::
+                  produceTreasuryApprovalFromVerifiedLifecycle(*lifecycle);
+          if (!bridgeResult.isAccepted()) {
+            throw std::invalid_argument(
+                "Governance approval bridge rejected treasury execution: " +
+                bridgeResult.reason());
+          }
+
+          const GovernanceExecutor::TreasuryExecutionOutcome outcome =
+              m_state.governance.executeQueuedTreasuryProposal(
+                  proposalId, height, now, treasuryPolicy(),
+                  bridgeResult.treasuryApproval(), mutatedAccounts);
+          if (!outcome.applied) {
+            throw std::invalid_argument(outcome.reason);
+          }
+        },
+        mutatedAccounts);
+  }
+
+  core::TransactionDomainExecutionResult
   finalizeBlock(const core::AccountStateView &accounts, utils::Amount totalFee,
                 const std::vector<core::LedgerRecord> &protocolRecords,
                 std::uint64_t blockHeight,
@@ -258,8 +303,9 @@ public:
                 "nodo_fee_pool", fees.burnAmount(), "fee burn",
                 economics::BurnType::FEE_BURN);
           }
-          m_state.governance.advanceToHeight(blockHeight + 1, blockTimestamp,
-                                             &settledAccounts);
+          m_state.governance.advanceToHeight(
+              blockHeight + 1, blockTimestamp, &settledAccounts,
+              m_networkParameters.treasuryTimelockBlocks());
           const crypto::ProtocolCryptoContext cryptoContext =
               crypto::ProtocolCryptoContext::fromNetworkName(
                   m_networkParameters.networkName());
@@ -370,6 +416,16 @@ private:
       total += candidate;
     }
     return total;
+  }
+
+  economics::TreasuryPolicy treasuryPolicy() const {
+    return economics::TreasuryPolicy(
+        "nodo-treasury-policy-v1",
+        utils::Amount::fromRawUnits(static_cast<std::int64_t>(
+            m_networkParameters.treasuryMaxSpendPerEpochRawUnits())),
+        utils::Amount::fromRawUnits(static_cast<std::int64_t>(
+            m_networkParameters.treasuryMaxSpendPerProposalRawUnits())),
+        m_networkParameters.treasuryTimelockBlocks(), true, false);
   }
 
   void synchronizePenaltyState(std::uint64_t blockHeight) {

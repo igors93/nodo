@@ -147,6 +147,9 @@ private:
   executeGovernanceVote(const CommandLineOptions &options);
 
   static CommandLineResult
+  executeGovernanceExecute(const CommandLineOptions &options);
+
+  static CommandLineResult
   executeGovernanceStatus(const CommandLineOptions &options);
 
   static CommandLineResult

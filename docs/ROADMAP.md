@@ -370,29 +370,66 @@ entirely through the CLI, with every decision backed by verifiable evidence.
   `tests/node/GovernanceGossipE2ETests.cpp` (duplicate rejected across a real
   multi-node network, not just in-process).
 
-### 5.3 Decision and Execution
-- When tally passes threshold and voting period ends:
-  `GovernanceExecutor::finalizeProposal` transitions the proposal to APPROVED
-  or REJECTED and, for APPROVED treasury proposals, calls
-  `GovernanceApprovalBridge` → treasury spend automatically during
-  `GovernanceExecutor::advanceToHeight` (called every block advance) —
-  execution is on-chain and automatic, it does not require a manual trigger.
-- Tests: `tests/economics/GovernanceApprovalBridgeTests.cpp`,
-  `tests/node/GovernanceExecutorTests.cpp`.
-- Because execution is automatic, a `nodo governance execute` CLI command is
-  not needed as a trigger; if an inspection command is still wanted, it should
-  read `GovernanceExecutor::proposalExecutionDetail` rather than force
-  execution.
+### 5.3 Decision and Execution ✅
+- When the voting period ends, `GovernanceExecutor::finalizeProposal`
+  transitions the proposal to APPROVED or REJECTED deterministically as part
+  of ordinary block finalization (`advanceToHeight`, called on every block) —
+  no manual action required. TEXT and PARAMETER_CHANGE proposals apply
+  immediately, as before.
+- Treasury spends are **not** auto-executed. An APPROVED treasury proposal is
+  instead moved to `QUEUED_FOR_EXECUTION` with a timelock
+  (`NetworkParameters::treasuryTimelockBlocks()`); once elapsed, execution
+  requires a separate, permissionless `GOVERNANCE_EXECUTE` transaction
+  (any funded account can submit it — mirroring real governance-timelock
+  designs). This closes the gap where `GovernanceExecutor` used to mutate
+  account balances directly with zero policy/evidence checks: execution now
+  routes through `GovernanceApprovalBridge` (rebuilding and independently
+  verifying the decision via `GovernanceLifecycleRecordBuilder` +
+  `GovernanceLifecycleVerifier`) → `TreasuryPolicy`/`TreasurySpendValidator`
+  (limits, timelock, balance) → `GovernanceExecutor::executeQueuedTreasuryProposal`,
+  which is the sole authority that moves treasury funds.
+  `TreasuryExecutionEvidenceBuilder` deterministically rebuilds the resulting
+  `TreasuryExecutionEvidence` inside `RuntimeBlockPipeline::applyCertifiedBlock`
+  and it is embedded in that block's finalized artifact treasury section
+  (`FinalizedTreasurySectionCodec`, evidence-based embedded encoding — the
+  embedded codec previously only supported a legacy spend-record-only format
+  that could never carry real evidence; fixed to mirror the standalone codec).
+- `nodo governance execute --data-dir PATH --proposal-id ID` builds, signs,
+  and submits the `GOVERNANCE_EXECUTE` transaction
+  (`CommandLineInterface::executeGovernanceExecute`).
+- Tests: `tests/node/GovernanceExecutorTests.cpp`
+  (`testTreasurySpendIsQueuedTimelockedAndVerifiable`),
+  `tests/node/TreasuryGovernanceExecutionE2ETests.cpp` (real
+  `RuntimeBlockPipeline` chain: proposal approved by the required majority →
+  queued → explicit `GOVERNANCE_EXECUTE` → treasury balance decremented →
+  evidence embedded in the finalized artifact → `chain audit` and
+  `governance audit` both pass after a completely fresh reload).
 
 ### 5.4 Audit ✅
-- `nodo governance audit --data-dir PATH` (`executeGovernanceAudit`) checks
-  governance-related evidence.
-- Execution without a valid lifecycle decision is rejected at the
-  finalization layer (`FinalizedTreasuryExecutionAudit::auditEvidence`).
-- Tests: `tests/node/FinalizedTreasuryExecutionAuditTests.cpp`.
+- `nodo governance audit --data-dir PATH` (`executeGovernanceAudit`) runs
+  `ChainAuditor::auditLoadedRuntime` (which includes `FinalizedTreasuryAudit`
+  over every loaded artifact's treasury section), then, for every treasury
+  proposal that reached a decision, **deterministically rebuilds** its
+  `GovernanceLifecycleRecord` from the replayed `GovernanceExecutor` state
+  (`GovernanceLifecycleRecordBuilder::buildDecided`/`buildExecuted`) and
+  independently re-verifies it with `GovernanceLifecycleVerifier`. Nothing is
+  loaded from a separately persisted lifecycle store — the audit is a pure
+  replay of canonical chain state, so it produces identical results whether
+  the node decided the proposal live or synced the finalized artifacts from
+  scratch.
+- Execution without a valid, independently-verifiable lifecycle decision is
+  rejected at the finalization/artifact-validation layer
+  (`FinalizedTreasurySectionValidator` → `TreasuryGovernanceEvidenceValidator`
+  → `GovernanceApprovalBridge`), which a synced node hits automatically on
+  reload. Negative end-to-end coverage:
+  `tests/node/TreasuryGovernanceExecutionE2ETests.cpp`
+  (`testTamperedExecutionEvidenceRejectedAtReload` — a finalized artifact
+  whose embedded lifecycle decision is tampered with is rejected at reload).
 
-**Exit criteria:** a three-validator testnet can vote to spend treasury funds;
-the execution is finalized, persisted, and survives reload audit.
+**Exit criteria:** a validator set can vote to approve a treasury spend; the
+decision is automatic, the funds move only through an explicit permissionless
+execution transaction, and both the execution and the decision that
+authorized it survive fresh-reload audit.
 
 ---
 

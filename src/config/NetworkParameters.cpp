@@ -85,11 +85,12 @@ NetworkParameters::NetworkParameters()
       m_targetBlockTimeSeconds(0), m_finalityDepth(0), m_signatureAlgorithm(""),
       m_storageFormatVersion(""), m_proposalTimeoutMs(0), m_prevoteTimeoutMs(0),
       m_precommitTimeoutMs(0), m_maxGossipMessagesPerPeerWindow(0),
-      m_maxTransactionGossipPerPeerWindow(0),
-      m_maxTransactionRelayPerSecond(0),
+      m_maxTransactionGossipPerPeerWindow(0), m_maxTransactionRelayPerSecond(0),
       m_doubleVoteSlashFractionBasisPoints(0),
       m_proposerEquivocationSlashFractionBasisPoints(0),
-      m_epochSlashCapBasisPoints(0) {}
+      m_epochSlashCapBasisPoints(0), m_treasuryTimelockBlocks(0),
+      m_treasuryMaxSpendPerProposalRawUnits(0),
+      m_treasuryMaxSpendPerEpochRawUnits(0) {}
 
 NetworkParameters::NetworkParameters(
     std::string chainId, std::string networkName, std::string protocolVersion,
@@ -107,7 +108,10 @@ NetworkParameters::NetworkParameters(
     std::uint32_t maxTransactionRelayPerSecond,
     std::uint32_t doubleVoteSlashFractionBasisPoints,
     std::uint32_t proposerEquivocationSlashFractionBasisPoints,
-    std::uint32_t epochSlashCapBasisPoints)
+    std::uint32_t epochSlashCapBasisPoints,
+    std::uint64_t treasuryTimelockBlocks,
+    std::uint64_t treasuryMaxSpendPerProposalRawUnits,
+    std::uint64_t treasuryMaxSpendPerEpochRawUnits)
     : m_chainId(std::move(chainId)), m_networkName(std::move(networkName)),
       m_protocolVersion(std::move(protocolVersion)),
       m_epochDurationSeconds(epochDurationSeconds),
@@ -129,8 +133,13 @@ NetworkParameters::NetworkParameters(
       m_maxTransactionGossipPerPeerWindow(maxTransactionGossipPerPeerWindow),
       m_maxTransactionRelayPerSecond(maxTransactionRelayPerSecond),
       m_doubleVoteSlashFractionBasisPoints(doubleVoteSlashFractionBasisPoints),
-      m_proposerEquivocationSlashFractionBasisPoints(proposerEquivocationSlashFractionBasisPoints),
-      m_epochSlashCapBasisPoints(epochSlashCapBasisPoints) {}
+      m_proposerEquivocationSlashFractionBasisPoints(
+          proposerEquivocationSlashFractionBasisPoints),
+      m_epochSlashCapBasisPoints(epochSlashCapBasisPoints),
+      m_treasuryTimelockBlocks(treasuryTimelockBlocks),
+      m_treasuryMaxSpendPerProposalRawUnits(
+          treasuryMaxSpendPerProposalRawUnits),
+      m_treasuryMaxSpendPerEpochRawUnits(treasuryMaxSpendPerEpochRawUnits) {}
 
 const std::string &NetworkParameters::chainId() const { return m_chainId; }
 
@@ -216,12 +225,25 @@ std::uint32_t NetworkParameters::doubleVoteSlashFractionBasisPoints() const {
   return m_doubleVoteSlashFractionBasisPoints;
 }
 
-std::uint32_t NetworkParameters::proposerEquivocationSlashFractionBasisPoints() const {
+std::uint32_t
+NetworkParameters::proposerEquivocationSlashFractionBasisPoints() const {
   return m_proposerEquivocationSlashFractionBasisPoints;
 }
 
 std::uint32_t NetworkParameters::epochSlashCapBasisPoints() const {
   return m_epochSlashCapBasisPoints;
+}
+
+std::uint64_t NetworkParameters::treasuryTimelockBlocks() const {
+  return m_treasuryTimelockBlocks;
+}
+
+std::uint64_t NetworkParameters::treasuryMaxSpendPerProposalRawUnits() const {
+  return m_treasuryMaxSpendPerProposalRawUnits;
+}
+
+std::uint64_t NetworkParameters::treasuryMaxSpendPerEpochRawUnits() const {
+  return m_treasuryMaxSpendPerEpochRawUnits;
 }
 
 NetworkClass NetworkParameters::networkClass() const {
@@ -294,10 +316,16 @@ std::string NetworkParameters::serialize() const {
       << ";maxTransactionGossipPerPeerWindow="
       << m_maxTransactionGossipPerPeerWindow
       << ";maxTransactionRelayPerSecond=" << m_maxTransactionRelayPerSecond
-      << ";doubleVoteSlashFractionBasisPoints=" << m_doubleVoteSlashFractionBasisPoints
-      << ";proposerEquivocationSlashFractionBasisPoints=" << m_proposerEquivocationSlashFractionBasisPoints
+      << ";doubleVoteSlashFractionBasisPoints="
+      << m_doubleVoteSlashFractionBasisPoints
+      << ";proposerEquivocationSlashFractionBasisPoints="
+      << m_proposerEquivocationSlashFractionBasisPoints
       << ";epochSlashCapBasisPoints=" << m_epochSlashCapBasisPoints
-      << "}";
+      << ";treasuryTimelockBlocks=" << m_treasuryTimelockBlocks
+      << ";treasuryMaxSpendPerProposalRawUnits="
+      << m_treasuryMaxSpendPerProposalRawUnits
+      << ";treasuryMaxSpendPerEpochRawUnits="
+      << m_treasuryMaxSpendPerEpochRawUnits << "}";
 
   return oss.str();
 }

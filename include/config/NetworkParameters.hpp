@@ -7,6 +7,7 @@
 #include "utils/Amount.hpp"
 
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -59,7 +60,19 @@ public:
       std::uint32_t maxTransactionRelayPerSecond = 20,
       std::uint32_t doubleVoteSlashFractionBasisPoints = 500,
       std::uint32_t proposerEquivocationSlashFractionBasisPoints = 1000,
-      std::uint32_t epochSlashCapBasisPoints = 5000);
+      std::uint32_t epochSlashCapBasisPoints = 5000,
+      std::uint64_t treasuryTimelockBlocks = 0,
+      std::uint64_t treasuryMaxSpendPerProposalRawUnits =
+          kUnlimitedTreasurySpendRawUnits,
+      std::uint64_t treasuryMaxSpendPerEpochRawUnits =
+          kUnlimitedTreasurySpendRawUnits);
+
+  // A TreasuryPolicy limit of zero means "no spending permitted" (see
+  // economics::TreasuryPolicy), so networks that do not configure explicit
+  // per-proposal/per-epoch treasury limits default to this practical ceiling
+  // instead — the largest amount utils::Amount can represent.
+  static constexpr std::uint64_t kUnlimitedTreasurySpendRawUnits =
+      static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
 
   const std::string &chainId() const;
   const std::string &networkName() const;
@@ -85,6 +98,9 @@ public:
   std::uint32_t doubleVoteSlashFractionBasisPoints() const;
   std::uint32_t proposerEquivocationSlashFractionBasisPoints() const;
   std::uint32_t epochSlashCapBasisPoints() const;
+  std::uint64_t treasuryTimelockBlocks() const;
+  std::uint64_t treasuryMaxSpendPerProposalRawUnits() const;
+  std::uint64_t treasuryMaxSpendPerEpochRawUnits() const;
 
   bool isValid() const;
 
@@ -123,6 +139,9 @@ private:
   std::uint32_t m_doubleVoteSlashFractionBasisPoints;
   std::uint32_t m_proposerEquivocationSlashFractionBasisPoints;
   std::uint32_t m_epochSlashCapBasisPoints;
+  std::uint64_t m_treasuryTimelockBlocks;
+  std::uint64_t m_treasuryMaxSpendPerProposalRawUnits;
+  std::uint64_t m_treasuryMaxSpendPerEpochRawUnits;
 };
 
 /*
