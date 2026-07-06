@@ -1,6 +1,7 @@
 #include "node/NodeDaemon.hpp"
 
 #include <iostream>
+#include <mutex>
 #include <set>
 
 #include "consensus/BlockFinalizer.hpp"
@@ -103,6 +104,10 @@ void NodeDaemon::registerStaticPeers(std::int64_t now) {
 }
 
 void NodeDaemon::processTransactionGossip(std::int64_t now) {
+  // Guards every read/write of m_orchestrator's NodeRuntime below against
+  // NodeRpcServer's request thread (see NodeOrchestrator::runtimeMutex()).
+  std::lock_guard<std::mutex> lock(m_orchestrator.runtimeMutex());
+
   const auto messages = m_orchestrator.drainGossipInbox(
       p2p::NetworkMessageType::TRANSACTION_GOSSIP);
 
@@ -220,6 +225,7 @@ void NodeDaemon::processLocalMempoolSubmissions(std::int64_t now) {
   }
   m_lastLocalMempoolScanAt = now;
 
+  std::lock_guard<std::mutex> lock(m_orchestrator.runtimeMutex());
   NodeRuntime &runtime = m_orchestrator.mutableRuntime();
   const auto pending = PersistentMempoolStore::collectTransactionsPendingGossip(
       m_config.orchestratorConfig.dataDirectory(), runtime.mempool());
@@ -269,6 +275,8 @@ void NodeDaemon::processLocalMempoolSubmissions(std::int64_t now) {
 }
 
 void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
+  std::lock_guard<std::mutex> lock(m_orchestrator.runtimeMutex());
+
   const auto messages = m_orchestrator.drainGossipInbox(
       p2p::NetworkMessageType::FINALIZED_BLOCK_ARTIFACT);
 
@@ -328,6 +336,7 @@ void NodeDaemon::maybeProposeBlock(std::int64_t now) {
   if (!m_orchestrator.isRunning())
     return;
 
+  std::lock_guard<std::mutex> lock(m_orchestrator.runtimeMutex());
   auto &runtime = m_orchestrator.mutableRuntime();
   if (!runtime.isRunning())
     return;

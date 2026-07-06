@@ -26,6 +26,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
@@ -205,6 +206,13 @@ public:
   bool rpcRunning() const;
   const std::string &rpcStartError() const;
 
+  // Shared with NodeRpcServer: guards all access to m_runtime/m_tcpRuntime so
+  // RPC handling never runs concurrently with tick()/consensus/block
+  // production. Callers that touch runtime state outside of tick() (e.g.
+  // NodeDaemon's gossip/proposal processing, which runs on the same thread
+  // but after tick() has already released the lock) must acquire this too.
+  std::mutex &runtimeMutex();
+
   // ---- Gossip helpers for NodeDaemon ------------------------------------
 
   // Drain all messages of `type` from the gossip inbox and return them.
@@ -264,6 +272,7 @@ private:
   std::optional<crypto::Signer> m_localSigner;
   std::optional<crypto::KeyPair> m_localNodeIdentity;
   SyncHealth m_syncHealth;
+  std::mutex m_runtimeMutex;
 
   // ---- Internal startup helpers ----------------------------------------
 

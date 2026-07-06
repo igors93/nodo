@@ -24,6 +24,7 @@
 #include <chrono>
 #include <cstring>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -299,16 +300,17 @@ core::Transaction parseSignedTransactionSubmission(const std::string &body) {
 // Construction
 // ---------------------------------------------------------------------------
 
-NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::uint16_t port,
-                             const std::string &bindAddr)
-    : m_runtime(runtime), m_gossip(nullptr), m_port(port), m_bindAddr(bindAddr),
-      m_running(false), m_serverFd(-1),
+NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
+                             std::uint16_t port, const std::string &bindAddr)
+    : m_runtime(runtime), m_runtimeMutex(runtimeMutex), m_gossip(nullptr),
+      m_port(port), m_bindAddr(bindAddr), m_running(false), m_serverFd(-1),
       m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS) {}
 
-NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, p2p::GossipMesh &gossip,
-                             std::uint16_t port, const std::string &bindAddr)
-    : m_runtime(runtime), m_gossip(&gossip), m_port(port), m_bindAddr(bindAddr),
-      m_running(false), m_serverFd(-1),
+NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
+                             p2p::GossipMesh &gossip, std::uint16_t port,
+                             const std::string &bindAddr)
+    : m_runtime(runtime), m_runtimeMutex(runtimeMutex), m_gossip(&gossip),
+      m_port(port), m_bindAddr(bindAddr), m_running(false), m_serverFd(-1),
       m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS) {}
 
 NodeRpcServer::~NodeRpcServer() { stop(); }
@@ -561,6 +563,13 @@ std::string NodeRpcServer::pathSegment(const std::string &path, int index) {
 std::pair<int, std::string> NodeRpcServer::dispatch(const std::string &method,
                                                     const std::string &path,
                                                     const std::string &body) {
+  // Every handler reads or writes NodeRuntime (blockchain, mempool, ...),
+  // which is also touched by the daemon's tick/consensus/block-production
+  // thread. Hold the shared mutex for the whole request so no handler ever
+  // observes a torn read (e.g. mid-reallocation Blockchain::m_blocks) or
+  // races admitTransaction against a concurrent block commit.
+  std::lock_guard<std::mutex> lock(m_runtimeMutex);
+
   // Normalize path: strip query string.
   const std::string cleanPath = path.substr(0, path.find('?'));
 

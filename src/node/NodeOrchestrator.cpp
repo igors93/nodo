@@ -383,6 +383,12 @@ void NodeOrchestrator::tick(std::int64_t now) {
   if (!m_tcpRuntime || !m_runtime)
     return;
 
+  // Serialize against NodeRpcServer's request thread for the whole tick:
+  // gossip/block-sync processing and consensus below all read and mutate
+  // m_runtime (blockchain, mempool, ...), which RPC handlers also touch
+  // concurrently on their own thread.
+  std::lock_guard<std::mutex> lock(m_runtimeMutex);
+
   m_tcpRuntime->gossipMesh().liftExpiredPeerPenalties(now);
 
   // Maintain static/discovered peer connectivity through the same policy used
@@ -697,6 +703,8 @@ bool NodeOrchestrator::rpcRunning() const {
 const std::string &NodeOrchestrator::rpcStartError() const {
   return m_rpcStartError;
 }
+
+std::mutex &NodeOrchestrator::runtimeMutex() { return m_runtimeMutex; }
 
 std::vector<p2p::NetworkEnvelope>
 NodeOrchestrator::drainGossipInbox(p2p::NetworkMessageType type) {
@@ -1113,8 +1121,8 @@ bool NodeOrchestrator::startRpc() {
   m_rpcStartError.clear();
   try {
     m_rpcServer = std::make_unique<NodeRpcServer>(
-        *m_runtime, m_tcpRuntime->gossipMesh(), m_config.rpcPort(),
-        m_config.rpcBindAddr());
+        *m_runtime, m_runtimeMutex, m_tcpRuntime->gossipMesh(),
+        m_config.rpcPort(), m_config.rpcBindAddr());
     m_rpcServer->start();
     return true;
   } catch (const std::exception &error) {

@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -61,8 +62,12 @@ public:
     static constexpr std::uint32_t MAX_REQUESTS_PER_WINDOW  = 3000;
     static constexpr std::uint64_t RATE_LIMIT_WINDOW_SECONDS = 60;
 
+    // `runtimeMutex` must be the same mutex the owning NodeOrchestrator holds
+    // while ticking, so RPC request handling and block production/consensus
+    // never touch NodeRuntime (blockchain, mempool, ...) at the same time.
     NodeRpcServer(
         NodeRuntime&       runtime,
+        std::mutex&        runtimeMutex,
         std::uint16_t      port    = DEFAULT_PORT,
         const std::string& bindAddr = "127.0.0.1"
     );
@@ -70,6 +75,7 @@ public:
     // Overload that also wires a GossipMesh for broadcasting submitted transactions.
     NodeRpcServer(
         NodeRuntime&       runtime,
+        std::mutex&        runtimeMutex,
         p2p::GossipMesh&   gossip,
         std::uint16_t      port    = DEFAULT_PORT,
         const std::string& bindAddr = "127.0.0.1"
@@ -85,6 +91,7 @@ public:
 
 private:
     NodeRuntime&       m_runtime;
+    std::mutex&        m_runtimeMutex; // shared with the owning NodeOrchestrator
     p2p::GossipMesh*   m_gossip;   // optional; nullptr means no gossip broadcast
     std::uint16_t      m_port;
     std::string        m_bindAddr;
