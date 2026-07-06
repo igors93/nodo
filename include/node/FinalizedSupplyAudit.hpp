@@ -14,51 +14,45 @@ namespace nodo::node {
 
 class FinalizedSupplyAuditResult {
 public:
-    FinalizedSupplyAuditResult();
+  FinalizedSupplyAuditResult();
 
-    static FinalizedSupplyAuditResult passed(
-        utils::Amount finalSupply,
-        std::size_t deltaCount
-    );
+  static FinalizedSupplyAuditResult passed(utils::Amount finalSupply,
+                                           std::size_t deltaCount);
 
-    static FinalizedSupplyAuditResult failed(
-        std::string reason,
-        std::uint64_t failedBlockHeight,
-        utils::Amount expectedSupply = utils::Amount::fromRawUnits(0),
-        utils::Amount actualSupply   = utils::Amount::fromRawUnits(0)
-    );
+  static FinalizedSupplyAuditResult
+  failed(std::string reason, std::uint64_t failedBlockHeight,
+         utils::Amount expectedSupply = utils::Amount::fromRawUnits(0),
+         utils::Amount actualSupply = utils::Amount::fromRawUnits(0));
 
-    bool passed() const;
-    const std::string& reason() const;
-    utils::Amount finalSupply() const;
-    std::size_t deltaCount() const;
-    std::uint64_t failedBlockHeight() const;
-    utils::Amount expectedSupply() const;
-    utils::Amount actualSupply() const;
+  bool passed() const;
+  const std::string &reason() const;
+  utils::Amount finalSupply() const;
+  std::size_t deltaCount() const;
+  std::uint64_t failedBlockHeight() const;
+  utils::Amount expectedSupply() const;
+  utils::Amount actualSupply() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    bool m_passed;
-    std::string m_reason;
-    utils::Amount m_finalSupply;
-    std::size_t m_deltaCount;
-    std::uint64_t m_failedBlockHeight;
-    utils::Amount m_expectedSupply;
-    utils::Amount m_actualSupply;
+  bool m_passed;
+  std::string m_reason;
+  utils::Amount m_finalSupply;
+  std::size_t m_deltaCount;
+  std::uint64_t m_failedBlockHeight;
+  utils::Amount m_expectedSupply;
+  utils::Amount m_actualSupply;
 };
 
 class FinalizedSupplyAudit {
 public:
-    static FinalizedSupplyAuditResult auditArtifacts(
-        const economics::MonetaryPolicy& policy,
-        const std::vector<FinalizedBlockArtifact>& artifacts
-    );
+  static FinalizedSupplyAuditResult
+  auditArtifacts(const economics::MonetaryPolicy &policy,
+                 const std::vector<FinalizedBlockArtifact> &artifacts);
 
-    static FinalizedSupplyAuditResult auditDeltas(
-        const economics::MonetaryPolicy& policy,
-        const std::vector<economics::SupplyDelta>& deltas
-    );
+  static FinalizedSupplyAuditResult
+  auditDeltas(const economics::MonetaryPolicy &policy,
+              const std::vector<economics::SupplyDelta> &deltas);
 };
 
 } // namespace nodo::node

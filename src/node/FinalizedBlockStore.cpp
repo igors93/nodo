@@ -9,6 +9,7 @@
 #include "node/FinalizedTreasurySectionCodec.hpp"
 #include "node/PersistentBlockStateSync.hpp"
 #include "node/PersistentMempoolStore.hpp"
+#include "node/NodePruningService.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
@@ -378,6 +379,17 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
           directoryConfig, pipelineResult.finalizedTransactionIds());
       removeJournalFile(commitJournalPath(directoryConfig));
 
+      const NodePruningResult pruning =
+          NodePruningService::applyConfiguredPolicy(directoryConfig,
+                                                    snapshot.manifest(),
+                                                    updatedAt);
+      if (!pruning.success()) {
+        return FinalizedBlockStoreResult::rejected(
+            FinalizedBlockStoreStatus::IO_ERROR,
+            "Configured pruning policy failed after idempotent block store: " +
+                pruning.reason());
+      }
+
       return FinalizedBlockStoreResult::alreadyStored(snapshot.manifest(),
                                                       path);
     }
@@ -420,6 +432,17 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
     }
 
     removeJournalFile(commitJournalPath(directoryConfig));
+
+    const NodePruningResult pruning =
+        NodePruningService::applyConfiguredPolicy(directoryConfig,
+                                                  snapshot.manifest(),
+                                                  updatedAt);
+    if (!pruning.success()) {
+      return FinalizedBlockStoreResult::rejected(
+          FinalizedBlockStoreStatus::IO_ERROR,
+          "Configured pruning policy failed after finalized block store: " +
+              pruning.reason());
+    }
 
     return FinalizedBlockStoreResult::stored(snapshot.manifest(), path);
   } catch (const std::exception &error) {
@@ -508,6 +531,18 @@ FinalizedBlockStoreResult FinalizedBlockStore::persistBatch(
     PersistentMempoolStore::removeTransactions(directoryConfig,
                                                finalizedTransactionIds);
     removeJournalFile(commitJournalPath(directoryConfig));
+
+    const NodePruningResult pruning =
+        NodePruningService::applyConfiguredPolicy(directoryConfig,
+                                                  snapshot.manifest(),
+                                                  updatedAt);
+    if (!pruning.success()) {
+      return FinalizedBlockStoreResult::rejected(
+          FinalizedBlockStoreStatus::IO_ERROR,
+          "Configured pruning policy failed after finalized batch store: " +
+              pruning.reason());
+    }
+
     return FinalizedBlockStoreResult::stored(
         snapshot.manifest(),
         blockFilePath(directoryConfig, results.back().block().index()));

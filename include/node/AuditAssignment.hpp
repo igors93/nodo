@@ -12,10 +12,10 @@ namespace nodo::node {
  * for audit.
  */
 enum class AuditAssignmentTargetType {
-    BLOCK_ARTIFACT,
-    TREASURY_SECTION,
-    GOVERNANCE_LIFECYCLE,
-    VALIDATOR_STATE
+  BLOCK_ARTIFACT,
+  TREASURY_SECTION,
+  GOVERNANCE_LIFECYCLE,
+  VALIDATOR_STATE
 };
 
 std::string auditAssignmentTargetTypeToString(AuditAssignmentTargetType type);
@@ -32,44 +32,38 @@ std::string auditAssignmentTargetTypeToString(AuditAssignmentTargetType type);
  */
 class AuditAssignment {
 public:
-    AuditAssignment();
+  AuditAssignment();
 
-    AuditAssignment(
-        std::string assignmentId,
-        std::uint64_t blockHeight,
-        std::uint64_t epoch,
-        AuditAssignmentTargetType targetType,
-        std::string targetId,
-        std::string validatorAddress,
-        std::string sourceSeedDigest,
-        std::string assignmentProof
-    );
+  AuditAssignment(std::string assignmentId, std::uint64_t blockHeight,
+                  std::uint64_t epoch, AuditAssignmentTargetType targetType,
+                  std::string targetId, std::string validatorAddress,
+                  std::string sourceSeedDigest, std::string assignmentProof);
 
-    const std::string& assignmentId() const;
-    std::uint64_t blockHeight() const;
-    std::uint64_t epoch() const;
-    AuditAssignmentTargetType targetType() const;
-    const std::string& targetId() const;
-    const std::string& validatorAddress() const;
-    const std::string& sourceSeedDigest() const;
-    const std::string& assignmentProof() const;
+  const std::string &assignmentId() const;
+  std::uint64_t blockHeight() const;
+  std::uint64_t epoch() const;
+  AuditAssignmentTargetType targetType() const;
+  const std::string &targetId() const;
+  const std::string &validatorAddress() const;
+  const std::string &sourceSeedDigest() const;
+  const std::string &assignmentProof() const;
 
-    bool isValid() const;
-    const std::string& rejectionReason() const;
+  bool isValid() const;
+  const std::string &rejectionReason() const;
 
-    std::string serialize() const;
+  std::string serialize() const;
 
 private:
-    std::string m_assignmentId;
-    std::uint64_t m_blockHeight;
-    std::uint64_t m_epoch;
-    AuditAssignmentTargetType m_targetType;
-    std::string m_targetId;
-    std::string m_validatorAddress;
-    std::string m_sourceSeedDigest;
-    std::string m_assignmentProof;
-    bool m_valid;
-    std::string m_rejectionReason;
+  std::string m_assignmentId;
+  std::uint64_t m_blockHeight;
+  std::uint64_t m_epoch;
+  AuditAssignmentTargetType m_targetType;
+  std::string m_targetId;
+  std::string m_validatorAddress;
+  std::string m_sourceSeedDigest;
+  std::string m_assignmentProof;
+  bool m_valid;
+  std::string m_rejectionReason;
 };
 
 /*
@@ -83,32 +77,26 @@ private:
  */
 class AuditAssignmentCalculator {
 public:
-    static std::string buildAssignmentProof(
-        const std::string& sourceSeedDigest,
-        std::uint64_t blockHeight,
-        std::uint64_t epoch,
-        AuditAssignmentTargetType targetType,
-        const std::string& targetId,
-        const std::string& validatorAddress
-    );
+  static std::string buildAssignmentProof(const std::string &sourceSeedDigest,
+                                          std::uint64_t blockHeight,
+                                          std::uint64_t epoch,
+                                          AuditAssignmentTargetType targetType,
+                                          const std::string &targetId,
+                                          const std::string &validatorAddress);
 
-    // Select one validator from the list deterministically based on the seed.
-    // Returns empty string if validatorAddresses is empty.
-    static std::string selectValidator(
-        const std::string& sourceSeedDigest,
-        const std::string& targetId,
-        const std::vector<std::string>& validatorAddresses
-    );
+  // Select one validator from the list deterministically based on the seed.
+  // Returns empty string if validatorAddresses is empty.
+  static std::string
+  selectValidator(const std::string &sourceSeedDigest,
+                  const std::string &targetId,
+                  const std::vector<std::string> &validatorAddresses);
 
-    static AuditAssignment buildAssignment(
-        const std::string& assignmentId,
-        std::uint64_t blockHeight,
-        std::uint64_t epoch,
-        AuditAssignmentTargetType targetType,
-        const std::string& targetId,
-        const std::string& sourceSeedDigest,
-        const std::vector<std::string>& validatorAddresses
-    );
+  static AuditAssignment
+  buildAssignment(const std::string &assignmentId, std::uint64_t blockHeight,
+                  std::uint64_t epoch, AuditAssignmentTargetType targetType,
+                  const std::string &targetId,
+                  const std::string &sourceSeedDigest,
+                  const std::vector<std::string> &validatorAddresses);
 };
 
 } // namespace nodo::node

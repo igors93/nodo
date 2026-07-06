@@ -21,20 +21,17 @@ namespace nodo::node {
  */
 class EpochTreasuryReportStore {
 public:
-    static const std::string& schemaId();
+  static const std::string &schemaId();
 
-    static void write(
-        const std::filesystem::path& filePath,
-        const economics::EpochTreasuryReport& report
-    );
+  static void write(const std::filesystem::path &filePath,
+                    const economics::EpochTreasuryReport &report);
 
-    static economics::EpochTreasuryReport read(
-        const std::filesystem::path& filePath
-    );
+  static economics::EpochTreasuryReport
+  read(const std::filesystem::path &filePath);
 
-    static std::string encode(const economics::EpochTreasuryReport& report);
+  static std::string encode(const economics::EpochTreasuryReport &report);
 
-    static economics::EpochTreasuryReport decode(const std::string& contents);
+  static economics::EpochTreasuryReport decode(const std::string &contents);
 };
 
 } // namespace nodo::node

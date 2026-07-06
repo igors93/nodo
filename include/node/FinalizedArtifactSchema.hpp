@@ -7,9 +7,9 @@ namespace nodo::node {
 
 class FinalizedArtifactSchema {
 public:
-    static const std::string& currentSchemaId();
-    static bool isCurrentSchema(const std::string& schemaId);
-    static bool hasVersionSuffix(const std::string& schemaId);
+  static const std::string &currentSchemaId();
+  static bool isCurrentSchema(const std::string &schemaId);
+  static bool hasVersionSuffix(const std::string &schemaId);
 };
 
 } // namespace nodo::node

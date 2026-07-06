@@ -28,27 +28,28 @@ namespace nodo::node {
  */
 class FinalizedBlockRecordStore {
 public:
-    explicit FinalizedBlockRecordStore(std::filesystem::path dataDirectory);
+  explicit FinalizedBlockRecordStore(std::filesystem::path dataDirectory);
 
-    const std::filesystem::path& dataDirectory() const;
+  const std::filesystem::path &dataDirectory() const;
 
-    // Returns the path for the record file at the given height.
-    std::filesystem::path recordFilePath(std::uint64_t height) const;
+  // Returns the path for the record file at the given height.
+  std::filesystem::path recordFilePath(std::uint64_t height) const;
 
-    // Persists record atomically. Returns true on success or if the identical
-    // record is already stored. Returns false for a divergent record or on
-    // I/O failure.
-    bool save(const consensus::FinalizedBlockRecord& record) const;
+  // Persists record atomically. Returns true on success or if the identical
+  // record is already stored. Returns false for a divergent record or on
+  // I/O failure.
+  bool save(const consensus::FinalizedBlockRecord &record) const;
 
-    // Returns the record for height, or nullopt if absent or unreadable.
-    std::optional<consensus::FinalizedBlockRecord> load(std::uint64_t height) const;
+  // Returns the record for height, or nullopt if absent or unreadable.
+  std::optional<consensus::FinalizedBlockRecord>
+  load(std::uint64_t height) const;
 
-    // Returns all loadable records sorted by ascending block height.
-    // Corrupted or missing files are silently skipped.
-    std::vector<consensus::FinalizedBlockRecord> loadAll() const;
+  // Returns all loadable records sorted by ascending block height.
+  // Corrupted or missing files are silently skipped.
+  std::vector<consensus::FinalizedBlockRecord> loadAll() const;
 
 private:
-    std::filesystem::path m_dataDirectory;
+  std::filesystem::path m_dataDirectory;
 };
 
 } // namespace nodo::node

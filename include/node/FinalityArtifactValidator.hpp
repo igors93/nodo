@@ -9,15 +9,13 @@ namespace nodo::node {
 
 class FinalityArtifactValidator {
 public:
-    static ArtifactValidationResult validate(
-        FinalizedArtifactValidationContext& context,
-        const FinalizedBlockArtifact& artifact
-    );
+  static ArtifactValidationResult
+  validate(FinalizedArtifactValidationContext &context,
+           const FinalizedBlockArtifact &artifact);
 
-    static ArtifactValidationResult applyFinalization(
-        FinalizedArtifactValidationContext& context,
-        const FinalizedBlockArtifact& artifact
-    );
+  static ArtifactValidationResult
+  applyFinalization(FinalizedArtifactValidationContext &context,
+                    const FinalizedBlockArtifact &artifact);
 };
 
 } // namespace nodo::node

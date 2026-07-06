@@ -3,6 +3,7 @@
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "core/GenesisVerifier.hpp"
 #include "node/ProtocolStateTransition.hpp"
+#include "node/FastSyncSnapshotService.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 #include "storage/StorageSchemaVersion.hpp"
@@ -262,6 +263,18 @@ std::filesystem::path NodeDataDirectoryConfig::runtimeSnapshotPath() const {
 
 std::filesystem::path NodeDataDirectoryConfig::epochSnapshotManifestPath() const {
     return m_rootPath / "runtime" / "epoch_snapshot_manifest.nodo";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::fastSyncSnapshotsDirectoryPath() const {
+    return m_rootPath / "runtime" / "fast_sync_snapshots";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::pruningManifestPath() const {
+    return m_rootPath / "runtime" / "pruning_manifest.nodo";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::prunedBlocksDirectoryPath() const {
+    return m_rootPath / "runtime" / "pruned_blocks";
 }
 
 std::filesystem::path NodeDataDirectoryConfig::consensusRecoveryPath() const {
@@ -970,6 +983,24 @@ NodeDataDirectoryReadResult NodeDataDirectory::writeRuntimeSnapshot(
             runtime.serialize() + "\n"
         );
 
+        if (runtime.blockchain().latestBlock().index() > 0) {
+            try {
+                const FastSyncSnapshot snapshot =
+                    FastSyncSnapshotService::buildSnapshot(runtime, updatedAt);
+                if (!FastSyncSnapshotService::persistSnapshot(directoryConfig, snapshot)) {
+                    return NodeDataDirectoryReadResult::rejected(
+                        NodeDataDirectoryReadStatus::IO_ERROR,
+                        "Failed to persist fast-sync snapshot."
+                    );
+                }
+            } catch (const std::exception& error) {
+                return NodeDataDirectoryReadResult::rejected(
+                    NodeDataDirectoryReadStatus::IO_ERROR,
+                    std::string("Failed to build fast-sync snapshot: ") + error.what()
+                );
+            }
+        }
+
         if (!consensus::ConsensusRecoveryStore::save(
                 directoryConfig.consensusRecoveryPath(),
                 runtime.consensusRoundManager().currentState())) {
@@ -1045,6 +1076,12 @@ void NodeDataDirectory::ensureDirectoryTree(
     );
     std::filesystem::create_directories(
         directoryConfig.governanceLifecycleDirectoryPath()
+    );
+    std::filesystem::create_directories(
+        directoryConfig.fastSyncSnapshotsDirectoryPath()
+    );
+    std::filesystem::create_directories(
+        directoryConfig.prunedBlocksDirectoryPath()
     );
 }
 

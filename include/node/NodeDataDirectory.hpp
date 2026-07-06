@@ -35,6 +35,9 @@ public:
   std::filesystem::path localPeerPath() const;
   std::filesystem::path runtimeSnapshotPath() const;
   std::filesystem::path epochSnapshotManifestPath() const;
+  std::filesystem::path fastSyncSnapshotsDirectoryPath() const;
+  std::filesystem::path pruningManifestPath() const;
+  std::filesystem::path prunedBlocksDirectoryPath() const;
   std::filesystem::path consensusRecoveryPath() const;
   std::filesystem::path pendingSlashingEvidenceDirectoryPath() const;
   std::filesystem::path blocksDirectoryPath() const;

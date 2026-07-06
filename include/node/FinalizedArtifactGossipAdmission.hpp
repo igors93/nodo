@@ -6,7 +6,7 @@
 namespace nodo::crypto {
 class CryptoPolicy;
 class SignatureProvider;
-}
+} // namespace nodo::crypto
 
 namespace nodo::p2p {
 class NetworkEnvelope;
@@ -18,42 +18,40 @@ class FinalizedBlockRecordStore;
 class NodeRuntime;
 
 enum class FinalizedArtifactGossipAdmissionStatus {
-    ACCEPTED,
-    DUPLICATE,
-    WRONG_MESSAGE_TYPE,
-    NETWORK_CONTEXT_MISMATCH,
-    EMPTY_PAYLOAD,
-    MALFORMED_PAYLOAD,
-    INVALID_RECORD,
-    BLOCK_UNAVAILABLE,
-    BLOCK_MISMATCH,
-    VALIDATOR_SET_UNAVAILABLE,
-    INVALID_QUORUM_CERTIFICATE,
-    CONFLICTING_FINALIZATION,
-    PERSISTENCE_FAILED,
-    REGISTRATION_FAILED
+  ACCEPTED,
+  DUPLICATE,
+  WRONG_MESSAGE_TYPE,
+  NETWORK_CONTEXT_MISMATCH,
+  EMPTY_PAYLOAD,
+  MALFORMED_PAYLOAD,
+  INVALID_RECORD,
+  BLOCK_UNAVAILABLE,
+  BLOCK_MISMATCH,
+  VALIDATOR_SET_UNAVAILABLE,
+  INVALID_QUORUM_CERTIFICATE,
+  CONFLICTING_FINALIZATION,
+  PERSISTENCE_FAILED,
+  REGISTRATION_FAILED
 };
 
 class FinalizedArtifactGossipAdmissionResult {
 public:
-    static FinalizedArtifactGossipAdmissionResult accepted();
-    static FinalizedArtifactGossipAdmissionResult duplicate();
-    static FinalizedArtifactGossipAdmissionResult rejected(
-        FinalizedArtifactGossipAdmissionStatus status,
-        std::string reason
-    );
+  static FinalizedArtifactGossipAdmissionResult accepted();
+  static FinalizedArtifactGossipAdmissionResult duplicate();
+  static FinalizedArtifactGossipAdmissionResult
+  rejected(FinalizedArtifactGossipAdmissionStatus status, std::string reason);
 
-    FinalizedArtifactGossipAdmissionStatus status() const;
-    const std::string& reason() const;
+  FinalizedArtifactGossipAdmissionStatus status() const;
+  const std::string &reason() const;
 
-    bool acceptedRecord() const;
-    bool duplicateRecord() const;
-    bool fatalConsistencyError() const;
+  bool acceptedRecord() const;
+  bool duplicateRecord() const;
+  bool fatalConsistencyError() const;
 
 private:
-    FinalizedArtifactGossipAdmissionStatus m_status =
-        FinalizedArtifactGossipAdmissionStatus::INVALID_RECORD;
-    std::string m_reason;
+  FinalizedArtifactGossipAdmissionStatus m_status =
+      FinalizedArtifactGossipAdmissionStatus::INVALID_RECORD;
+  std::string m_reason;
 };
 
 /*
@@ -65,13 +63,11 @@ private:
  */
 class FinalizedArtifactGossipAdmission {
 public:
-    static FinalizedArtifactGossipAdmissionResult admit(
-        const p2p::NetworkEnvelope& envelope,
-        NodeRuntime& runtime,
-        const crypto::CryptoPolicy& policy,
-        const crypto::SignatureProvider& provider,
-        const FinalizedBlockRecordStore& store
-    );
+  static FinalizedArtifactGossipAdmissionResult
+  admit(const p2p::NetworkEnvelope &envelope, NodeRuntime &runtime,
+        const crypto::CryptoPolicy &policy,
+        const crypto::SignatureProvider &provider,
+        const FinalizedBlockRecordStore &store);
 };
 
 } // namespace nodo::node

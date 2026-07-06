@@ -13,17 +13,17 @@ namespace nodo::node {
 
 class FinalizedSlashingEvidenceAuditResult {
 public:
-    static FinalizedSlashingEvidenceAuditResult passed(std::size_t evidenceCount);
-    static FinalizedSlashingEvidenceAuditResult failed(std::string reason);
+  static FinalizedSlashingEvidenceAuditResult passed(std::size_t evidenceCount);
+  static FinalizedSlashingEvidenceAuditResult failed(std::string reason);
 
-    bool passed() const;
-    const std::string& reason() const;
-    std::size_t evidenceCount() const;
+  bool passed() const;
+  const std::string &reason() const;
+  std::size_t evidenceCount() const;
 
 private:
-    bool m_passed = false;
-    std::string m_reason;
-    std::size_t m_evidenceCount = 0;
+  bool m_passed = false;
+  std::string m_reason;
+  std::size_t m_evidenceCount = 0;
 };
 
 /*
@@ -35,12 +35,11 @@ private:
  */
 class FinalizedSlashingEvidenceAudit {
 public:
-    static FinalizedSlashingEvidenceAuditResult auditBlockEffects(
-        const core::Block& block,
-        const consensus::ValidatorPenaltyLedger& penaltyLedger,
-        const core::ValidatorRegistry& validators,
-        const StakingRegistry& staking
-    );
+  static FinalizedSlashingEvidenceAuditResult
+  auditBlockEffects(const core::Block &block,
+                    const consensus::ValidatorPenaltyLedger &penaltyLedger,
+                    const core::ValidatorRegistry &validators,
+                    const StakingRegistry &staking);
 };
 
 } // namespace nodo::node

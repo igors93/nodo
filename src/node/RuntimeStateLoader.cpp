@@ -9,6 +9,7 @@
 #include "node/FinalityArtifactValidator.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
+#include "node/NodePruningService.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 #include "node/ProtocolStateTransition.hpp"
 #include "node/RuntimeStateVerifier.hpp"
@@ -213,6 +214,15 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
     if (manifest.genesisConfigId() != genesisConfig.deterministicId()) {
         return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::GENESIS_MISMATCH, "Data directory genesis does not match loader genesis config.");
+    }
+
+    std::string pruningReason;
+    if (!NodePruningService::validateManifestAgainstRuntime(
+            directoryConfig, manifest, pruningReason)) {
+        return RuntimeStateLoadResult::rejected(
+            RuntimeStateLoadStatus::MANIFEST_MISMATCH,
+            "Pruning manifest validation failed: " + pruningReason
+        );
     }
 
     const NodeRuntimeConfig runtimeConfig(genesisConfig, localPeer, genesisConfig.networkParameters().maxPeerCount());

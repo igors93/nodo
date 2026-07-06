@@ -1,4 +1,6 @@
 #include "node/PersistentBlockStateSync.hpp"
+#include "node/FastSyncSnapshotService.hpp"
+#include "node/FastSyncSnapshotStore.hpp"
 
 #include "consensus/BlockFinalizer.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
@@ -1400,24 +1402,94 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importSnapshot(
     PersistentSyncCheckpointStore* checkpointStore,
     std::int64_t now
 ) {
-    // Snapshot sync is not yet implemented: accepting a snapshot manifest without
-    // hydrating the runtime (blockchain, validator set, coin lots, staking state)
-    // would leave the node with a checkpoint that claims a high finalized height
-    // while the runtime still holds only genesis state. Subsequent block-by-block
-    // sync would request from the wrong height, corrupting the node permanently.
-    // All large gaps must fall back to incremental block batches until snapshot
-    // hydration is implemented end-to-end.
-    (void)checkpoint;
-    (void)manifest;
-    (void)runtime;
-    (void)directoryConfig;
-    (void)checkpointStore;
-    (void)now;
+    if (!checkpoint.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Cannot import snapshot from an invalid local checkpoint.",
+            std::nullopt
+        );
+    }
+    if (!manifest.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Cannot import snapshot from an invalid snapshot manifest.",
+            std::nullopt
+        );
+    }
+    if (!runtime.isValid() || !directoryConfig.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Cannot import snapshot into an invalid runtime or data directory.",
+            std::nullopt
+        );
+    }
+    if (manifest.snapshotHeight() <= checkpoint.finalizedHeight()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Snapshot height is not ahead of the local checkpoint.",
+            std::nullopt
+        );
+    }
+
+    const FastSyncSnapshotStore snapshotStore(
+        directoryConfig.runtimeDirectoryPath() / "fast_sync_snapshots"
+    );
+    const std::optional<FastSyncSnapshot> snapshot =
+        snapshotStore.load(manifest.snapshotHeight());
+    if (!snapshot.has_value()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Snapshot payload is not available locally for the advertised manifest.",
+            std::nullopt
+        );
+    }
+
+    const FastSyncSnapshotImportResult verification =
+        FastSyncSnapshotService::verifyAndCheckpoint(
+            *snapshot,
+            runtime.config().genesisConfig(),
+            manifest,
+            nullptr,
+            now
+        );
+    if (!verification.imported()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            verification.reason(),
+            std::nullopt
+        );
+    }
+
+    // Safety boundary: this implementation verifies the portable snapshot and
+    // can publish a checkpoint only when the live runtime is already hydrated
+    // to the same finalized boundary.  It must never advance a checkpoint ahead
+    // of an in-memory runtime that still holds genesis or an older block.
+    if (runtime.blockchain().latestBlock().index() != snapshot->blockHeight() ||
+        runtime.blockchain().latestBlock().hash() != snapshot->blockHash()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Snapshot payload verified, but runtime domain hydration is not yet "
+            "available for this node state. Refusing unsafe checkpoint-only import.",
+            std::nullopt
+        );
+    }
+
+    if (checkpointStore != nullptr) {
+        const PersistentSyncCheckpointWriteResult write =
+            checkpointStore->save(*verification.checkpoint());
+        if (!write.isSaved()) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Checkpoint persistence failed after snapshot verification: " + write.reason(),
+                std::nullopt
+            );
+        }
+    }
 
     return PersistentSyncApplyResult(
-        PersistentSyncApplyStatus::REJECTED,
-        "Snapshot sync is not supported: runtime hydration from snapshot is not implemented.",
-        std::nullopt
+        PersistentSyncApplyStatus::APPLIED,
+        "Fast-sync snapshot was verified against its manifest and checkpointed.",
+        verification.checkpoint()
     );
 }
 

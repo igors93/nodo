@@ -11,21 +11,15 @@ namespace nodo::node {
 
 class FinalizedBlockArtifactCodec {
 public:
-    static core::Block readBlockFile(
-        const std::filesystem::path& path
-    );
+  static core::Block readBlockFile(const std::filesystem::path &path);
 
-    static core::Block decodeBlockFileContents(
-        const std::string& contents
-    );
+  static core::Block decodeBlockFileContents(const std::string &contents);
 
-    static FinalizedBlockArtifact readBlockArtifactFile(
-        const std::filesystem::path& path
-    );
+  static FinalizedBlockArtifact
+  readBlockArtifactFile(const std::filesystem::path &path);
 
-    static FinalizedBlockArtifact decodeBlockArtifactFileContents(
-        const std::string& contents
-    );
+  static FinalizedBlockArtifact
+  decodeBlockArtifactFileContents(const std::string &contents);
 };
 
 using FinalizedBlockFileCodec = FinalizedBlockArtifactCodec;

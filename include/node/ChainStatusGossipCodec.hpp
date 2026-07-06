@@ -10,11 +10,9 @@ namespace nodo::node {
 
 class ChainStatusGossipCodec {
 public:
-    static std::string encode(const ChainStatusMessage& status);
+  static std::string encode(const ChainStatusMessage &status);
 
-    static std::optional<ChainStatusMessage> decode(
-        const std::string& payload
-    );
+  static std::optional<ChainStatusMessage> decode(const std::string &payload);
 };
 
 } // namespace nodo::node

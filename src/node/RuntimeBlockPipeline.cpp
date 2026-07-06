@@ -8,6 +8,7 @@
 #include "node/RuntimeMonetaryValidation.hpp"
 #include "node/StakingRegistry.hpp"
 #include "node/StateSnapshot.hpp"
+#include "node/FastSyncSnapshot.hpp"
 #include "node/TreasuryExecutionEvidenceBuilder.hpp"
 #include "node/ValidatorLifecycle.hpp"
 
@@ -1882,12 +1883,9 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
     if (block.index() > 0 && block.index() % NODO_VALIDATOR_EPOCH_BLOCKS == 0) {
       const std::int64_t boundaryTimestamp = block.timestamp();
       try {
-        const core::StateTransitionPreviewContext snapshotContext =
-            previewContextForRuntime(runtime);
-        const StateSnapshot epochSnapshot = StateSnapshot::create(
-            block.index(), block.hash(), snapshotContext.accountStateView(),
-            runtime.validatorRegistry(), block.records(), boundaryTimestamp);
-        finalResult.m_snapshotDigest = epochSnapshot.canonicalDigest();
+        const FastSyncSnapshot epochSnapshot = FastSyncSnapshot::fromRuntime(
+            runtime, boundaryTimestamp);
+        finalResult.m_snapshotDigest = epochSnapshot.digest();
       } catch (...) {
         // The canonical state remains valid without this derived cache.
       }

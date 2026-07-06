@@ -9,10 +9,9 @@ namespace nodo::node {
 
 class FinalizedArtifactValidator {
 public:
-    static ArtifactValidationResult validate(
-        FinalizedArtifactValidationContext& context,
-        const FinalizedBlockArtifact& artifact
-    );
+  static ArtifactValidationResult
+  validate(FinalizedArtifactValidationContext &context,
+           const FinalizedBlockArtifact &artifact);
 };
 
 } // namespace nodo::node

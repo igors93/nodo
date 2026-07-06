@@ -47,6 +47,8 @@ public:
   bool keyIdProvided;
   bool validatorKeyIdProvided;
   bool outputJson;
+  std::string pruningMode;
+  std::uint64_t pruningRetainEpochs;
 };
 
 enum class CommandLineStatus { SUCCESS, INVALID_ARGUMENTS, COMMAND_FAILED };
@@ -162,6 +164,11 @@ private:
   executeGovernanceAudit(const CommandLineOptions &options);
 
   static CommandLineResult executeNodeRun(const CommandLineOptions &options);
+
+  static CommandLineResult executeNodePrune(const CommandLineOptions &options);
+
+  static CommandLineResult
+  executeNodePruningStatus(const CommandLineOptions &options);
 };
 
 } // namespace nodo::app

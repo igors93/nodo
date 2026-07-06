@@ -543,7 +543,7 @@ GovernanceExecutor::computeTally(const std::string &proposalId,
 GovernanceExecutionResult GovernanceExecutor::executeApprovedProposal(
     const std::string &proposalId, ProposalState &proposal,
     std::uint64_t currentHeight, std::int64_t now,
-    core::AccountStateView *accounts) {
+    [[maybe_unused]] core::AccountStateView *accounts) {
   if (proposal.status == GovernanceProposalStatus::EXECUTED) {
     return GovernanceExecutionResult::rejected(
         GovernanceExecutionStatus::REJECTED_INVALID_VALUE,

@@ -4,6 +4,67 @@ Nodo does not yet publish versioned production releases. This changelog starts a
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.1.1 — 2026-07-06
+
+### Fixed
+
+- **Data race on `NodeRuntime` between the RPC thread and the daemon tick/consensus
+  thread**: `NodeOrchestrator` now owns a `std::mutex` shared with `NodeRpcServer`
+  (acquired for the whole `dispatch()` call, covering every request handler) and
+  with `NodeDaemon`'s `processTransactionGossip`, `processLocalMempoolSubmissions`,
+  `processFinalizedArtifacts`, and `maybeProposeBlock` (acquired around each,
+  alongside `NodeOrchestrator::tick()`'s own internal lock). Without it, a
+  concurrent block commit could be observed mid-mutation by an RPC request —
+  reproduced as a corrupted block index during canonical protocol replay under
+  sustained concurrent load.
+- **Duplicate peer-maintenance registration** in the P2P peer-connection loop.
+- **Transaction relay budget used the wrong time unit**, under- or over-counting
+  the per-second relay allowance.
+- **Periodic P2P peer maintenance was not being invoked**; re-enabled.
+
+### Added
+
+- **Governance-executed treasury spends**: a governance proposal can carry a
+  `treasurySpend` payload that, once approved, is automatically queued for
+  execution at block finalization and later moved only by an explicit,
+  permissionless `GOVERNANCE_EXECUTE` transaction. The finalized artifact for the
+  execution block embeds real treasury execution evidence, independently
+  re-verifiable by `chain audit` and `governance audit` after a fresh reload.
+- **`GovernanceGossipE2ETests`**: a real multi-node (3 validators, real TCP)
+  end-to-end test proving a governance proposal submitted at one node becomes
+  votable on the other two through gossip alone, that each validator's owner can
+  vote through a different node's RPC, and that the resulting tally and executed
+  decision are byte-identical across all three nodes.
+- Deterministic validator owner key seeds for reproducible multi-node test setups.
+- Deterministic validator weight calculation, integrated into the protocol state
+  root.
+- **`--json` flag** across CLI commands for structured, script-friendly output.
+- End-to-end test coverage for the validator stake lifecycle and slashing
+  mechanics.
+
+### Changed
+
+- Replaced hardcoded network string parameters with a proper `NetworkParameters`
+  configuration object.
+- Reorganized includes and reimplemented `ProtocolTransactionDomainExecutor` for
+  clearer structure.
+- Removed ad hoc debugging patch scripts in favor of targeted diagnostic output
+  in transaction propagation tests.
+- Increased the CTest timeout and filler-block retry budget for the real
+  multi-node governance gossip test.
+
+## v0.1.0 — 2026-07-05
+
+First tagged snapshot of the Nodo protocol: chain state transition and
+validation, BFT-style consensus with slashing for equivocation and double
+voting, a full validator staking lifecycle, on-chain governance, an encrypted
+P2P networking stack (authenticated peer sessions, EclipseGuard subnet limits,
+peer reputation with time-bounded bans, exponential-backoff reconnection,
+authenticated peer exchange), a mempool with fee-based eviction, and CLI/RPC
+tooling. The entries below cover the hardening pass immediately before tagging.
+
 ### Core — State Transition
 
 - **CoinLot validation wired into `StateTransitionPreview`**: when a

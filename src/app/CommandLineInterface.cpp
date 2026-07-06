@@ -28,6 +28,7 @@
 #include "node/GovernanceLifecycleRecordBuilder.hpp"
 #include "node/MonetaryFirewall.hpp"
 #include "node/NodeDataDirectory.hpp"
+#include "node/NodePruningService.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/OperatorDiagnostics.hpp"
 #include "node/PersistentMempoolStore.hpp"
@@ -491,7 +492,7 @@ CommandLineOptions::CommandLineOptions()
       feeRaw(100), nonce(0), timestamp(nowUnixSeconds()),
       governanceEffectiveHeight(0), governanceVotingPeriodBlocks(3),
       showHelp(false), keyIdProvided(false), validatorKeyIdProvided(false),
-      outputJson(false) {}
+      outputJson(false), pruningMode("archive"), pruningRetainEpochs(1) {}
 
 std::string commandLineStatusToString(CommandLineStatus status) {
   switch (status) {
@@ -595,6 +596,14 @@ CommandLineInterface::execute(const std::vector<std::string> &args) {
 
     if (options.command == "node run") {
       return executeNodeRun(options);
+    }
+
+    if (options.command == "node prune") {
+      return executeNodePrune(options);
+    }
+
+    if (options.command == "node pruning-status") {
+      return executeNodePruningStatus(options);
     }
 
     if (options.command == "chain audit") {
@@ -1078,6 +1087,33 @@ CommandLineInterface::parse(const std::vector<std::string> &args) {
       options.amountRaw = parseSignedInt64("--stake", args[index + 1]);
       if (options.amountRaw < 0) {
         throw std::invalid_argument("--stake must be non-negative.");
+      }
+      index += 2;
+      continue;
+    }
+
+    if (option == "--pruning-mode" || option == "--mode") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument(option + " requires archive, full, or light.");
+      }
+      options.pruningMode = args[index + 1];
+      if (options.pruningMode != "archive" && options.pruningMode != "full" &&
+          options.pruningMode != "light" && options.pruningMode != "ARCHIVE" &&
+          options.pruningMode != "FULL" && options.pruningMode != "LIGHT") {
+        throw std::invalid_argument(option + " must be archive, full, or light.");
+      }
+      index += 2;
+      continue;
+    }
+
+    if (option == "--retain-epochs") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--retain-epochs requires a positive integer.");
+      }
+      options.pruningRetainEpochs =
+          parseUnsignedInt64("--retain-epochs", args[index + 1]);
+      if (options.pruningRetainEpochs == 0) {
+        throw std::invalid_argument("--retain-epochs must be positive.");
       }
       index += 2;
       continue;
@@ -2629,6 +2665,97 @@ node::NodeDaemonPeerEntry parsePeerEntry(const std::string &raw) {
 }
 
 } // namespace
+
+
+namespace {
+
+node::NodePruningConfig pruningConfigFromOptions(
+    const CommandLineOptions& options
+) {
+  std::string mode = options.pruningMode;
+  for (char& c : mode) {
+    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+  }
+
+  if (mode == "archive") {
+    return node::NodePruningConfig::archiveMode();
+  }
+  if (mode == "full") {
+    return node::NodePruningConfig::fullMode(
+        static_cast<std::size_t>(options.pruningRetainEpochs));
+  }
+  if (mode == "light") {
+    return node::NodePruningConfig::lightMode();
+  }
+  throw std::invalid_argument("unsupported pruning mode: " + options.pruningMode);
+}
+
+} // namespace
+
+CommandLineResult CommandLineInterface::executeNodePrune(
+    const CommandLineOptions &options) {
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+  const node::NodeDataDirectoryReadResult manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig);
+
+  if (!manifest.loaded()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      manifest.reason() + "\n");
+  }
+
+  const node::NodePruningConfig pruningConfig = pruningConfigFromOptions(options);
+  const node::NodePruningResult result = node::NodePruningService::apply(
+      directoryConfig, manifest.manifest(), pruningConfig, nowUnixSeconds());
+
+  if (!result.success()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      result.reason() + "\n");
+  }
+
+  std::ostringstream output;
+  output << "Pruning: " << node::nodePruningStatusToString(result.status()) << "\n"
+         << "Message: " << result.reason() << "\n";
+  if (result.manifest().has_value()) {
+    output << "Manifest: " << result.manifest()->serialize() << "\n";
+  }
+  if (result.plan().has_value()) {
+    output << "Plan: " << result.plan()->serialize() << "\n";
+  }
+  return CommandLineResult::success(output.str());
+}
+
+CommandLineResult CommandLineInterface::executeNodePruningStatus(
+    const CommandLineOptions &options) {
+  const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
+  const node::NodeDataDirectoryReadResult manifest =
+      node::NodeDataDirectory::loadManifest(directoryConfig);
+
+  if (!manifest.loaded()) {
+    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                      manifest.reason() + "\n");
+  }
+
+  const std::optional<node::NodePruningManifest> pruningManifest =
+      node::NodePruningService::loadManifest(directoryConfig);
+
+  std::ostringstream output;
+  output << "Data directory: " << directoryConfig.rootPath().string() << "\n"
+         << "Chain height: " << manifest.manifest().latestBlockHeight() << "\n";
+
+  if (!pruningManifest.has_value()) {
+    const node::NodePruningPlan plan = node::NodePruningService::buildPlan(
+        directoryConfig, manifest.manifest(), node::NodePruningConfig::archiveMode());
+    output << "Pruning mode: ARCHIVE (implicit)\n"
+           << "Plan: " << plan.serialize() << "\n";
+    return CommandLineResult::success(output.str());
+  }
+
+  output << "Pruning manifest: " << pruningManifest->serialize() << "\n";
+  const node::NodePruningPlan plan = node::NodePruningService::buildPlan(
+      directoryConfig, manifest.manifest(), pruningManifest->config());
+  output << "Current plan: " << plan.serialize() << "\n";
+  return CommandLineResult::success(output.str());
+}
 
 CommandLineResult
 CommandLineInterface::executeNodeRun(const CommandLineOptions &options) {

@@ -13,32 +13,25 @@ namespace nodo::node {
 
 class FinalizedMonetarySectionCodec {
 public:
-    using FieldList = std::vector<std::pair<std::string, std::string>>;
+  using FieldList = std::vector<std::pair<std::string, std::string>>;
 
-    static std::size_t mintRecordCount(
-        const serialization::KeyValueFileDocument& document
-    );
+  static std::size_t
+  mintRecordCount(const serialization::KeyValueFileDocument &document);
 
-    static std::size_t burnRecordCount(
-        const serialization::KeyValueFileDocument& document
-    );
+  static std::size_t
+  burnRecordCount(const serialization::KeyValueFileDocument &document);
 
-    static void addAllowedFields(
-        std::set<std::string>& allowedFields,
-        std::size_t mintRecordCount,
-        std::size_t burnRecordCount
-    );
+  static void addAllowedFields(std::set<std::string> &allowedFields,
+                               std::size_t mintRecordCount,
+                               std::size_t burnRecordCount);
 
-    static economics::SupplyDelta decodeSupplyDelta(
-        const serialization::KeyValueFileDocument& document,
-        std::uint64_t expectedBlockHeight,
-        const std::string& expectedBlockHash
-    );
+  static economics::SupplyDelta
+  decodeSupplyDelta(const serialization::KeyValueFileDocument &document,
+                    std::uint64_t expectedBlockHeight,
+                    const std::string &expectedBlockHash);
 
-    static void appendSupplyDeltaFields(
-        const economics::SupplyDelta& supplyDelta,
-        FieldList& fields
-    );
+  static void appendSupplyDeltaFields(const economics::SupplyDelta &supplyDelta,
+                                      FieldList &fields);
 };
 
 } // namespace nodo::node
