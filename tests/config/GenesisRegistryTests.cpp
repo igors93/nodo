@@ -1,5 +1,8 @@
 #include "config/GenesisRegistry.hpp"
 
+#include "crypto/AddressDerivation.hpp"
+#include "crypto/KeyPair.hpp"
+
 #include <cassert>
 #include <string>
 
@@ -7,6 +10,8 @@ namespace {
 
 using nodo::config::GenesisLookupResult;
 using nodo::config::GenesisRegistry;
+using nodo::crypto::AddressDerivation;
+using nodo::crypto::KeyPair;
 
 void testLocalnetGenesisFound() {
   const GenesisLookupResult result = GenesisRegistry::get("localnet");
@@ -29,8 +34,7 @@ void testTestnetCandidateFound() {
 void testSoakGenesisFound() {
   const GenesisLookupResult result = GenesisRegistry::get("localnet-soak");
   assert(result.found());
-  assert(result.genesis().networkParameters().networkName() ==
-         "localnet-soak");
+  assert(result.genesis().networkParameters().networkName() == "localnet-soak");
   assert(result.genesis().bootstrapValidators().size() == 3);
   assert(result.genesis().genesisAccounts().size() == 1);
 }
@@ -90,6 +94,50 @@ void testLocalnetAndTestnetGenesisAreDifferent() {
   assert(localnetId != testnetId);
 }
 
+// A bootstrap validator's own address is BLS-derived (its consensus key),
+// but governance votes and exit/unjail requests are mempool transactions,
+// verified under an Ed25519-only security context. Without a distinct
+// Ed25519 owner, the validator could never cast an authorized vote.
+void testLocalnetValidatorHasDistinctVotingOwner() {
+  const GenesisLookupResult result = GenesisRegistry::get("localnet");
+  assert(result.found());
+  assert(result.genesis().bootstrapValidators().size() == 1);
+
+  const auto &bootstrapValidator =
+      result.genesis().bootstrapValidators().front();
+  const std::string expectedOwner =
+      AddressDerivation::deriveFromPublicKey(
+          KeyPair::createDeterministicEd25519KeyPair(
+              GenesisRegistry::localnetValidatorOwnerKeySeed())
+              .publicKey())
+          .value();
+
+  assert(bootstrapValidator.effectiveOwnerAddress() == expectedOwner);
+  assert(bootstrapValidator.effectiveOwnerAddress() !=
+         bootstrapValidator.validatorAddress());
+}
+
+void testSoakValidatorsHaveDistinctVotingOwners() {
+  const GenesisLookupResult result = GenesisRegistry::get("localnet-soak");
+  assert(result.found());
+  assert(result.genesis().bootstrapValidators().size() == 3);
+
+  for (std::size_t index = 0; index < 3; ++index) {
+    const auto &bootstrapValidator =
+        result.genesis().bootstrapValidators()[index];
+    const std::string expectedOwner =
+        AddressDerivation::deriveFromPublicKey(
+            KeyPair::createDeterministicEd25519KeyPair(
+                GenesisRegistry::soakValidatorOwnerKeySeed(index))
+                .publicKey())
+            .value();
+
+    assert(bootstrapValidator.effectiveOwnerAddress() == expectedOwner);
+    assert(bootstrapValidator.effectiveOwnerAddress() !=
+           bootstrapValidator.validatorAddress());
+  }
+}
+
 } // namespace
 
 int main() {
@@ -102,5 +150,7 @@ int main() {
   testRegisteredGenesisId();
   testGenesisIsDeterministic();
   testLocalnetAndTestnetGenesisAreDifferent();
+  testLocalnetValidatorHasDistinctVotingOwner();
+  testSoakValidatorsHaveDistinctVotingOwners();
   return 0;
 }

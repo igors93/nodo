@@ -186,6 +186,7 @@ set(NODO_REAL_TCP_MULTI_NODE_TESTS
     node_WrongGenesisRejectionTests
     node_ProposerFailoverTests
     node_EquivocationSlashingE2ETests
+    node_GovernanceGossipE2ETests
 )
 foreach(NODO_REAL_TCP_TEST ${NODO_REAL_TCP_MULTI_NODE_TESTS})
     if(TARGET ${NODO_REAL_TCP_TEST})

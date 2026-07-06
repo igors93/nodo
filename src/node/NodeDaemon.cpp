@@ -80,6 +80,7 @@ void NodeDaemon::tick(std::int64_t now) {
   m_orchestrator.tick(now);
   maintainPeerConnections(now);
   processTransactionGossip(now);
+  processLocalMempoolSubmissions(now);
   processFinalizedArtifacts(now);
   maybeProposeBlock(now);
 }
@@ -202,6 +203,67 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
                      "amplification (budget exceeded)."
                   << std::endl;
       }
+    }
+  }
+}
+
+void NodeDaemon::processLocalMempoolSubmissions(std::int64_t now) {
+  // A CLI command (e.g. "governance propose", "governance vote", "tx submit")
+  // writes straight to disk and does not talk to this process, so it cannot
+  // be picked up more than once a second: scanning the mempool directory on
+  // every 20-50ms tick would be pure overhead for what is always an
+  // operator-paced, low-frequency event.
+  static constexpr std::int64_t LOCAL_MEMPOOL_SCAN_INTERVAL_SECONDS = 1;
+  if (m_lastLocalMempoolScanAt != 0 &&
+      now < m_lastLocalMempoolScanAt + LOCAL_MEMPOOL_SCAN_INTERVAL_SECONDS) {
+    return;
+  }
+  m_lastLocalMempoolScanAt = now;
+
+  NodeRuntime &runtime = m_orchestrator.mutableRuntime();
+  const auto pending = PersistentMempoolStore::collectTransactionsPendingGossip(
+      m_config.orchestratorConfig.dataDirectory(), runtime.mempool());
+
+  if (pending.empty()) {
+    return;
+  }
+
+  const auto &network = runtime.config().genesisConfig().networkParameters();
+  const crypto::ProtocolCryptoContext cryptoContext =
+      crypto::ProtocolCryptoContext::fromNetworkName(network.networkName());
+  if (!cryptoContext.isValid()) {
+    return;
+  }
+
+  for (const auto &candidate : pending) {
+    const core::AccountStateView accounts = runtime.cachedAccountStateAtTip(
+        static_cast<std::int64_t>(runtime.effectiveMinimumFeeRawUnits()));
+
+    const TransactionAdmissionContext admissionContext(
+        accounts, runtime.mempool(), runtime.stakingRegistry(),
+        runtime.validatorRegistry(), runtime.governanceExecutor(),
+        runtime.blockchain().size());
+
+    const TransactionAdmissionResult validation =
+        TransactionAdmissionValidator::validateNetworkSubmission(
+            candidate.transaction, network, accounts, runtime.mempool(),
+            cryptoContext.policy(), crypto::SecurityContext::USER_TRANSACTION,
+            cryptoContext.userSignatureProvider(),
+            runtime.effectiveMinimumFeeRawUnits(), &admissionContext);
+
+    if (!validation.accepted()) {
+      // Not yet admissible (e.g. a future nonce still waiting on an earlier
+      // pending transaction) — leave it on disk and retry on a later scan.
+      continue;
+    }
+
+    const auto admission = runtime.mutableMempool().admitTransaction(
+        candidate.transaction, m_policy, crypto::SecurityContext::USER_TRANSACTION,
+        now);
+
+    if (admission.success()) {
+      m_orchestrator.gossipBroadcast(p2p::NetworkMessageType::TRANSACTION_GOSSIP,
+                                     candidate.gossipPayload, now);
     }
   }
 }

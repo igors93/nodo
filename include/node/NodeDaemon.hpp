@@ -105,12 +105,21 @@ private:
   std::uint32_t m_txRelayDroppedCount = 0;
 
   std::int64_t m_lastConnectionMaintenanceAt = 0;
+  std::int64_t m_lastLocalMempoolScanAt = 0;
 
   // Register static peers into the transport and gossip mesh.
   void registerStaticPeers(std::int64_t now);
 
   // Handle incoming TRANSACTION_GOSSIP messages.
   void processTransactionGossip(std::int64_t now);
+
+  // Pick up transactions written directly to this node's persistent mempool
+  // directory (e.g. by a CLI command run against this data directory) that
+  // this daemon has not yet admitted into its live mempool, and broadcast
+  // each newly-admitted one as TRANSACTION_GOSSIP. Without this, a CLI
+  // submission only becomes visible to the rest of the network the next time
+  // the daemon process restarts and reloads its persistent mempool from disk.
+  void processLocalMempoolSubmissions(std::int64_t now);
 
   // Handle incoming FINALIZED_BLOCK_ARTIFACT messages. When an artifact
   // references a height this node does not yet have, this triggers a

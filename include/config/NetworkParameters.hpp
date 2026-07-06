@@ -130,6 +130,16 @@ private:
  *
  * It does not mint coins. It only provides the first validator identities that
  * can protect the chain during local/bootstrap operation.
+ *
+ * ownerAddress is a separate Ed25519 identity authorized to sign owner-gated
+ * operations on the validator's behalf (governance votes, exit/unjail
+ * requests) — the same owner/validator split already used for validators
+ * registered through a VALIDATOR_REGISTER transaction. Mempool transactions
+ * are only ever verified under an Ed25519-only security context, so a
+ * validator can never sign those operations with its own BLS consensus key.
+ * When left empty, the validator has no distinct owner and cannot cast an
+ * authorized owner-gated transaction — this is the pre-existing default and
+ * remains valid for validator sets that never touch governance.
  */
 class BootstrapValidatorConfig {
 public:
@@ -138,14 +148,20 @@ public:
   BootstrapValidatorConfig(crypto::PublicKey validatorPublicKey,
                            std::uint64_t activationEpoch,
                            std::uint32_t bootstrapWeight,
-                           std::string metadataHash);
+                           std::string metadataHash,
+                           std::string ownerAddress = "");
 
   const crypto::PublicKey &validatorPublicKey() const;
   std::uint64_t activationEpoch() const;
   std::uint32_t bootstrapWeight() const;
   const std::string &metadataHash() const;
+  const std::string &ownerAddress() const;
 
   std::string validatorAddress() const;
+
+  // ownerAddress() if explicitly configured, otherwise validatorAddress().
+  // This is the address genesis registration actually grants ownership to.
+  std::string effectiveOwnerAddress() const;
 
   bool isValid() const;
   std::string serialize() const;
@@ -155,6 +171,7 @@ private:
   std::uint64_t m_activationEpoch;
   std::uint32_t m_bootstrapWeight;
   std::string m_metadataHash;
+  std::string m_ownerAddress;
 };
 
 class GenesisAccountConfig {

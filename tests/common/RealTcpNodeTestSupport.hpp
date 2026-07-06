@@ -144,6 +144,12 @@ struct NodeSpec {
   std::uint16_t rpcPort;
   crypto::KeyPair validatorKey;
   crypto::KeyPair identityKey;
+
+  // Ed25519 identity authorized to sign owner-gated transactions (governance
+  // votes, exit/unjail requests) on validatorKey's behalf. Mempool
+  // transactions only ever verify under an Ed25519-only security context, so
+  // the validator's own BLS consensus key can never sign them directly.
+  crypto::KeyPair ownerKey;
 };
 
 using NodeSpecs = std::array<NodeSpec, kTestNodeCount>;
@@ -210,7 +216,9 @@ NodeSpecs makeNodeSpecs(const std::filesystem::path &root,
                             crypto::KeyPair::createDeterministicBls12381KeyPair(
                                 seedPrefix + "-validator-" + suffix),
                             crypto::KeyPair::createDeterministicEd25519KeyPair(
-                                seedPrefix + "-identity-" + suffix)};
+                                seedPrefix + "-identity-" + suffix),
+                            crypto::KeyPair::createDeterministicEd25519KeyPair(
+                                seedPrefix + "-owner-" + suffix)};
   }
   return specs;
 }
@@ -227,7 +235,8 @@ config::GenesisConfig makeGenesis(const NodeSpecs &specs,
   validators.reserve(specs.size());
   for (const NodeSpec &spec : specs) {
     validators.emplace_back(spec.validatorKey.publicKey(), 1, 1,
-                            seedPrefix + "-" + spec.nodeId);
+                            seedPrefix + "-" + spec.nodeId,
+                            spec.ownerKey.address().value());
   }
 
   return config::GenesisConfig(
@@ -695,6 +704,24 @@ std::string blockHashAt(const NodeSpec &spec, std::uint64_t height) {
   return hash.value();
 }
 
+bool governanceProposalVisible(const NodeSpec &spec,
+                               const std::string &proposalId) {
+  // The governance RPC routes always answer with HTTP 200, including for an
+  // unknown proposal id (the body carries a {"error":...} payload instead of
+  // a 4xx status), so the body must be inspected — a bare status check would
+  // report "visible" the instant the RPC server itself is reachable.
+  const auto response =
+      httpRequest(spec.rpcPort, "GET", "/governance/proposal/" + proposalId);
+  return response.has_value() && response->statusCode == 200 &&
+         response->body.find("\"error\"") == std::string::npos &&
+         response->body.find("\"proposalId\"") != std::string::npos;
+}
+
+std::optional<HttpResponse> governanceTally(const NodeSpec &spec,
+                                            const std::string &proposalId) {
+  return httpRequest(spec.rpcPort, "GET", "/governance/tally/" + proposalId);
+}
+
 // Looks up the scheduled proposer for (height, round) without starting a
 // networked node: builds an ephemeral in-memory runtime purely to read its
 // derived validator registry, matching the same deterministic schedule real
@@ -737,6 +764,48 @@ core::Transaction signedTransfer(const config::GenesisConfig &genesis,
           recipientAddress, utils::Amount::fromRawUnits(1'000),
           utils::Amount::fromRawUnits(100), nonce, timestamp),
       crypto::Signer(testUserKey(seedPrefix), provider),
+      genesis.networkParameters().chainId());
+}
+
+// A TEXT proposal (no parameter/treasury side effects) with an explicit
+// voting period, so callers can size the voting window to comfortably fit
+// however many votes the scenario needs before it closes.
+core::Transaction signedGovernanceProposal(
+    const config::GenesisConfig &genesis, const std::string &seedPrefix,
+    std::uint64_t nonce, std::int64_t timestamp,
+    std::uint64_t votingPeriodBlocks, std::uint64_t quorumNumerator,
+    std::uint64_t quorumDenominator, std::uint64_t approvalNumerator,
+    std::uint64_t approvalDenominator) {
+  const crypto::Ed25519SignatureProvider provider;
+  const core::GovernanceProposalPayload payload =
+      core::GovernanceProposalPayload::text(
+          "E2E governance proposal",
+          "Submitted by the governance gossip E2E test.", 1, votingPeriodBlocks,
+          quorumNumerator, quorumDenominator, approvalNumerator,
+          approvalDenominator);
+  return core::TransactionBuilder::buildSignedGovernanceProposal(
+      payload.serialize(), utils::Amount::fromRawUnits(100), nonce, timestamp,
+      crypto::Signer(testUserKey(seedPrefix), provider),
+      genesis.networkParameters().chainId());
+}
+
+// Cast by validatorOwnerKey (see NodeSpec::ownerKey) on behalf of
+// validatorAddress. The transaction sender must be the validator's owner:
+// governance votes are mempool transactions, verified under an Ed25519-only
+// security context, so the validator's own BLS consensus key could never
+// sign one directly.
+core::Transaction signedGovernanceVote(const config::GenesisConfig &genesis,
+                                       const std::string &proposalId,
+                                       const crypto::KeyPair &validatorOwnerKey,
+                                       const std::string &validatorAddress,
+                                       core::GovernanceVoteChoice choice,
+                                       std::uint64_t nonce,
+                                       std::int64_t timestamp) {
+  const crypto::Ed25519SignatureProvider provider;
+  const core::GovernanceVotePayload vote(proposalId, validatorAddress, choice);
+  return core::TransactionBuilder::buildSignedGovernanceVote(
+      proposalId, vote, utils::Amount::fromRawUnits(100), nonce, timestamp,
+      crypto::Signer(validatorOwnerKey, provider),
       genesis.networkParameters().chainId());
 }
 

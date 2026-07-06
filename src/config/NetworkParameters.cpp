@@ -325,14 +325,16 @@ NetworkParameters NetworkParameters::testnetCandidate() {
 
 BootstrapValidatorConfig::BootstrapValidatorConfig()
     : m_validatorPublicKey(), m_activationEpoch(0), m_bootstrapWeight(0),
-      m_metadataHash("") {}
+      m_metadataHash(""), m_ownerAddress("") {}
 
 BootstrapValidatorConfig::BootstrapValidatorConfig(
     crypto::PublicKey validatorPublicKey, std::uint64_t activationEpoch,
-    std::uint32_t bootstrapWeight, std::string metadataHash)
+    std::uint32_t bootstrapWeight, std::string metadataHash,
+    std::string ownerAddress)
     : m_validatorPublicKey(std::move(validatorPublicKey)),
       m_activationEpoch(activationEpoch), m_bootstrapWeight(bootstrapWeight),
-      m_metadataHash(std::move(metadataHash)) {}
+      m_metadataHash(std::move(metadataHash)),
+      m_ownerAddress(std::move(ownerAddress)) {}
 
 const crypto::PublicKey &BootstrapValidatorConfig::validatorPublicKey() const {
   return m_validatorPublicKey;
@@ -350,6 +352,10 @@ const std::string &BootstrapValidatorConfig::metadataHash() const {
   return m_metadataHash;
 }
 
+const std::string &BootstrapValidatorConfig::ownerAddress() const {
+  return m_ownerAddress;
+}
+
 std::string BootstrapValidatorConfig::validatorAddress() const {
   if (!m_validatorPublicKey.isValid()) {
     return "";
@@ -359,9 +365,14 @@ std::string BootstrapValidatorConfig::validatorAddress() const {
       .value();
 }
 
+std::string BootstrapValidatorConfig::effectiveOwnerAddress() const {
+  return m_ownerAddress.empty() ? validatorAddress() : m_ownerAddress;
+}
+
 bool BootstrapValidatorConfig::isValid() const {
   return m_validatorPublicKey.isValid() && m_activationEpoch > 0 &&
          m_bootstrapWeight > 0 && isSafeScalar(m_metadataHash) &&
+         (m_ownerAddress.empty() || isSafeScalar(m_ownerAddress)) &&
          !validatorAddress().empty();
 }
 
@@ -374,7 +385,8 @@ std::string BootstrapValidatorConfig::serialize() const {
       << ";publicKeyFingerprint=" << m_validatorPublicKey.fingerprint()
       << ";activationEpoch=" << m_activationEpoch
       << ";bootstrapWeight=" << m_bootstrapWeight
-      << ";metadataHash=" << m_metadataHash << "}";
+      << ";metadataHash=" << m_metadataHash
+      << ";ownerAddress=" << m_ownerAddress << "}";
 
   return oss.str();
 }
@@ -613,7 +625,7 @@ GenesisBuildResult GenesisBuilder::build(const GenesisConfig &genesisConfig) {
                  core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS);
 
     const auto result = validatorRegistry.registerValidator(
-        registration, bootstrapStake, validator.validatorAddress());
+        registration, bootstrapStake, validator.effectiveOwnerAddress());
 
     if (!result.accepted()) {
       return GenesisBuildResult::rejected(

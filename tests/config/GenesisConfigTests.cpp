@@ -1,4 +1,5 @@
 #include "config/NetworkParameters.hpp"
+#include "crypto/AddressDerivation.hpp"
 #include "crypto/KeyPair.hpp"
 #include "crypto/PublicKey.hpp"
 #include "utils/Amount.hpp"
@@ -17,6 +18,7 @@ using nodo::config::GenesisBuilder;
 using nodo::config::GenesisBuildStatus;
 using nodo::config::GenesisConfig;
 using nodo::config::NetworkParameters;
+using nodo::crypto::AddressDerivation;
 using nodo::crypto::KeyPair;
 using nodo::crypto::PublicKey;
 using nodo::utils::Amount;
@@ -134,6 +136,51 @@ void testGenesisRejectsDuplicateAccountAllocation() {
       "Genesis config should reject duplicate account allocations.");
 }
 
+void testBootstrapValidatorOwnerDefaultsToSelf() {
+  const BootstrapValidatorConfig withoutOwner = validator("no-owner");
+
+  requireCondition(withoutOwner.ownerAddress().empty(),
+                   "Owner address should default to empty when not "
+                   "explicitly configured.");
+  requireCondition(withoutOwner.effectiveOwnerAddress() ==
+                       withoutOwner.validatorAddress(),
+                   "Effective owner should fall back to the validator's own "
+                   "address when none is configured.");
+}
+
+void testBootstrapValidatorOwnerRegistersDistinctOwner() {
+  const std::string ownerAddress =
+      AddressDerivation::deriveFromPublicKey(
+          KeyPair::createDeterministicEd25519KeyPair("genesis-config-owner-a")
+              .publicKey())
+          .value();
+  const BootstrapValidatorConfig withOwner(
+      publicKey("owner-a"), 1, 1, "genesis-validator-owner-a", ownerAddress);
+
+  requireCondition(withOwner.effectiveOwnerAddress() == ownerAddress,
+                   "Effective owner should be the explicitly configured "
+                   "owner address.");
+  requireCondition(withOwner.effectiveOwnerAddress() !=
+                       withOwner.validatorAddress(),
+                   "An explicitly configured owner must differ from the "
+                   "validator's own BLS-derived address to be usable — a "
+                   "governance vote can only ever be signed as an Ed25519 "
+                   "identity.");
+
+  const GenesisConfig config(NetworkParameters::developmentLocal(), kTimestamp,
+                             {withOwner, validator("b")},
+                             "nodo-devnet-genesis");
+  const auto result = GenesisBuilder::build(config);
+  requireCondition(result.built(),
+                   "Genesis with an explicitly-owned validator should build.");
+
+  const auto *entry =
+      result.validatorRegistry().entryForAddress(withOwner.validatorAddress());
+  requireCondition(entry != nullptr && entry->ownerAddress() == ownerAddress,
+                   "Validator registry should record the explicitly "
+                   "configured owner, not the validator's own address.");
+}
+
 } // namespace
 
 int main() {
@@ -144,6 +191,8 @@ int main() {
     testGenesisRejectsDuplicateBootstrapValidator();
     testGenesisAccountAllocationChangesDeterministicId();
     testGenesisRejectsDuplicateAccountAllocation();
+    testBootstrapValidatorOwnerDefaultsToSelf();
+    testBootstrapValidatorOwnerRegistersDistinctOwner();
 
     std::cout << "Nodo genesis config tests passed.\n";
     return 0;

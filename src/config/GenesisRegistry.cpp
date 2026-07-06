@@ -27,6 +27,16 @@ std::string testnetCandidateValidatorKeySeed(std::size_t index) {
   return "nodo-testnet-candidate-validator-seed-" + std::to_string(index);
 }
 
+std::string testnetCandidateValidatorOwnerKeySeed(std::size_t index) {
+  return "nodo-testnet-candidate-validator-owner-seed-" + std::to_string(index);
+}
+
+std::string ownerAddressForSeed(const std::string &seed) {
+  return crypto::AddressDerivation::deriveFromPublicKey(
+             deterministicUserKey(seed))
+      .value();
+}
+
 GenesisConfig buildSoakGenesis() {
   const NetworkParameters params = NetworkParameters::developmentSoak();
   std::vector<BootstrapValidatorConfig> validators;
@@ -34,7 +44,9 @@ GenesisConfig buildSoakGenesis() {
   for (std::size_t index = 0; index < params.minimumValidatorCount(); ++index) {
     validators.emplace_back(
         deterministicValidatorKey(GenesisRegistry::soakValidatorKeySeed(index)),
-        1, 1, "localnet-soak-validator-" + std::to_string(index));
+        1, 1, "localnet-soak-validator-" + std::to_string(index),
+        ownerAddressForSeed(
+            GenesisRegistry::soakValidatorOwnerKeySeed(index)));
   }
 
   const std::string userAddress =
@@ -61,7 +73,8 @@ GenesisConfig buildLocalnetGenesis() {
       params, 1900000000,
       {BootstrapValidatorConfig(
           deterministicValidatorKey("nodo-localnet-validator-seed"), 1, 1,
-          "localnet-genesis-validator")},
+          "localnet-genesis-validator",
+          ownerAddressForSeed(GenesisRegistry::localnetValidatorOwnerKeySeed()))},
       {GenesisAccountConfig(userAddress,
                             utils::Amount::fromRawUnits(1000000000000), 0)},
       "nodo-localnet-genesis");
@@ -76,7 +89,8 @@ GenesisConfig buildTestnetCandidateGenesis() {
   for (std::size_t i = 0; i < params.minimumValidatorCount(); ++i) {
     validators.emplace_back(
         deterministicValidatorKey(testnetCandidateValidatorKeySeed(i)), 1, 1,
-        "testnet-candidate-genesis-validator-" + std::to_string(i));
+        "testnet-candidate-genesis-validator-" + std::to_string(i),
+        ownerAddressForSeed(testnetCandidateValidatorOwnerKeySeed(i)));
   }
 
   const std::string userAddress =
@@ -189,6 +203,18 @@ std::string GenesisRegistry::soakValidatorKeySeed(std::size_t index) {
     throw std::out_of_range("Soak validator index is out of range.");
   }
   return "soak-validator-" + std::string(1, static_cast<char>('a' + index));
+}
+
+std::string GenesisRegistry::localnetValidatorOwnerKeySeed() {
+  return "nodo-localnet-validator-owner-seed";
+}
+
+std::string GenesisRegistry::soakValidatorOwnerKeySeed(std::size_t index) {
+  if (index >= 3) {
+    throw std::out_of_range("Soak validator index is out of range.");
+  }
+  return "soak-validator-owner-" +
+         std::string(1, static_cast<char>('a' + index));
 }
 
 } // namespace nodo::config

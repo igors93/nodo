@@ -844,6 +844,38 @@ PersistentMempoolStore::deserializeGossip(
     }
 }
 
+std::vector<PersistentMempoolStore::PendingLocalTransaction>
+PersistentMempoolStore::collectTransactionsPendingGossip(
+    const NodeDataDirectoryConfig& directoryConfig,
+    const mempool::Mempool& mempool
+) {
+    std::vector<PendingLocalTransaction> pending;
+
+    if (!directoryConfig.isValid() ||
+        !std::filesystem::exists(directoryConfig.mempoolDirectoryPath())) {
+        return pending;
+    }
+
+    for (const std::filesystem::path& path :
+         canonicalMempoolFiles(directoryConfig.mempoolDirectoryPath())) {
+        try {
+            const std::string contents = readTextFile(path);
+            core::Transaction transaction = decodeTransactionFile(contents);
+
+            if (mempool.contains(transaction.id())) {
+                continue;
+            }
+
+            pending.push_back(PendingLocalTransaction{
+                std::move(transaction), contents});
+        } catch (const std::exception&) {
+            continue;
+        }
+    }
+
+    return pending;
+}
+
 void PersistentMempoolStore::writeTextFile(
     const std::filesystem::path& path,
     const std::string& contents

@@ -64,6 +64,13 @@ public:
   static std::string localnetUserKeySeed();
   static std::string soakUserKeySeed();
   static std::string soakValidatorKeySeed(std::size_t index);
+
+  // Deterministic seeds for each bootstrap validator's owner keypair (an
+  // Ed25519 identity, separate from the validator's BLS consensus key,
+  // authorized to sign governance votes and exit/unjail requests on the
+  // validator's behalf).
+  static std::string localnetValidatorOwnerKeySeed();
+  static std::string soakValidatorOwnerKeySeed(std::size_t index);
 };
 
 } // namespace nodo::config

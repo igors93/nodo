@@ -325,23 +325,50 @@ to participation, and be slashed for double-voting; all flows are auditable via
 **Goal:** operators can submit, vote on, and execute governance proposals
 entirely through the CLI, with every decision backed by verifiable evidence.
 
-### 5.1 Proposal Submission
+### 5.1 Proposal Submission ✅
 - `nodo governance propose --data-dir PATH ...` already exists
   (`CommandLineInterface::executeGovernancePropose`) and is signed by a
   registered validator key (`GovernanceExecutor::validateProposalPayload`).
 - Proposal is persisted through runtime/governance state.
-- Remaining gap: proposals are not gossipped as a `GOVERNANCE_PROPOSAL`
-  network message type — submission today is local to the node that receives
-  the CLI/RPC call, not broadcast to peers.
+- Closed gap: proposals and votes travel as ordinary `GOVERNANCE_PROPOSE` /
+  `GOVERNANCE_VOTE` transactions over the existing `TRANSACTION_GOSSIP`
+  channel — no dedicated network message type was introduced.
+  `TransactionTypePolicyRegistry` already listed both types as regular
+  mempool transactions, and `TransactionAdmissionPolicy`/
+  `TransactionAdmissionValidator` already admitted them identically on every
+  node; what was missing was origination: `nodo governance propose`/`vote`
+  write straight to the local persistent mempool directory, and a running
+  `NodeDaemon` only ever reloaded that directory once at startup. Fixed by
+  `NodeDaemon::processLocalMempoolSubmissions`
+  (`PersistentMempoolStore::collectTransactionsPendingGossip`), which picks up
+  anything written to disk since the daemon started, admits it, and broadcasts
+  it — the same treatment any other CLI-submitted transaction type now gets.
+- Also fixed a related bug this surfaced: bootstrap/genesis validators had no
+  distinct owner (`ownerAddress` defaulted to the validator's own BLS-derived
+  address), so they could never cast an authorized governance vote — mempool
+  transactions are only ever verified under an Ed25519-only security context.
+  `BootstrapValidatorConfig` now carries a separate Ed25519 `ownerAddress`
+  (mirroring the owner/validator split already used for validators registered
+  through `VALIDATOR_REGISTER`); `localnet`, `localnet-soak`, and
+  `testnet-candidate` genesis presets in `GenesisRegistry` were updated to use
+  deterministic owner keys so their bootstrap validators can actually vote.
+- Tests: `tests/node/GovernanceGossipE2ETests.cpp` (real 3-process TCP E2E:
+  proposal submitted at node A becomes votable at node B/C through gossip
+  alone; tally is byte-identical on all 3 nodes after finalization; a
+  duplicate vote is rejected), `tests/node/PersistentMempoolStoreTests.cpp`,
+  `tests/config/GenesisConfigTests.cpp`, `tests/config/GenesisRegistryTests.cpp`.
 
 ### 5.2 Voting ✅
 - `nodo governance vote --data-dir PATH --proposal-id ID --vote yes|no|abstain --validator-key ID`
   dispatches to `executeGovernanceVote`.
 - Vote produces a `GovernanceVoteRecord` signed by the validator.
 - Duplicate votes from the same validator on the same proposal are rejected
-  (`GovernanceExecutor::castVote`).
+  both at admission (`TransactionAdmissionPolicy::validateDomain`) and at
+  execution (`GovernanceExecutor::castVote`) — defense in depth.
 - Tests: `tests/node/GovernanceExecutorTests.cpp`
-  (`testDuplicateVoteAndInvalidPayloadAreRejected`).
+  (`testDuplicateVoteAndInvalidPayloadAreRejected`),
+  `tests/node/GovernanceGossipE2ETests.cpp` (duplicate rejected across a real
+  multi-node network, not just in-process).
 
 ### 5.3 Decision and Execution
 - When tally passes threshold and voting period ends:
