@@ -41,6 +41,9 @@ public:
   bool empty() const;
 
 private:
+  static bool isPriorityType(NetworkMessageType type);
+  static bool isPriorityEnvelope(const NetworkEnvelope &envelope);
+
   std::size_t m_maxMessagesPerPeer;
   std::map<std::string, std::deque<NetworkEnvelope>> m_messagesByPeer;
 };
