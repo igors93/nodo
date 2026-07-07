@@ -77,8 +77,18 @@ void driveChainUntil(const NodeSpec &driverNode,
           httpRequest(driverNode.rpcPort, "GET",
                       "/account/" + testUserKey(seedPrefix).address().value());
       if (response.has_value()) {
-        const std::uint64_t currentNonce = jsonUnsigned(response->body, "nonce").value_or(0);
-        if (currentNonce >= fillerNonce) {
+        const std::uint64_t currentNonce =
+            jsonUnsigned(response->body, "nonce").value_or(0);
+
+        // A transaction with nonce N is finalized only after the sender account
+        // nonce advances to N + 1. Checking currentNonce >= N is not enough:
+        // immediately after the proposal transaction finalizes, the account
+        // nonce is already equal to the first filler nonce. Under slower
+        // sanitizer builds that caused the test to submit many filler
+        // transactions back-to-back before any of them finalized, creating
+        // mempool divergence and occasional same-height block disagreement.
+        const std::uint64_t expectedNonceAfterFinalization = fillerNonce + 1;
+        if (currentNonce >= expectedNonceAfterFinalization) {
           nextNonce = std::max(nextNonce, currentNonce + 1);
           return true;
         }
