@@ -28,7 +28,6 @@ This phase adds:
 ```text
 AuditedSignatureProvider
 AuditedSignatureProviderProfile
-SignatureProviderRegistry
 ```
 
 ## What This Enables
@@ -39,8 +38,6 @@ A future provider can now be connected through:
 AuditedSignatureProvider
         ↓
 providerProfile()
-        ↓
-SignatureProviderRegistry
         ↓
 production readiness gate
 ```

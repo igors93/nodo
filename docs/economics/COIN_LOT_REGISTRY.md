@@ -24,7 +24,6 @@ This phase adds:
 ```text
 CoinLotVerificationResult
 CoinLotRegistry
-CoinLotRegistryRebuilder
 ```
 
 ## Why This Matters

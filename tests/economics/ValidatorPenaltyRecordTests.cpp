@@ -3,7 +3,6 @@
 #include "core/ChainStateRebuilder.hpp"
 #include "core/LedgerRecord.hpp"
 #include "core/ValidatorProposalRegistry.hpp"
-#include "economics/ValidatorPenaltyLedgerBuilder.hpp"
 #include "economics/ValidatorPenaltyRecord.hpp"
 #include "serialization/LedgerRecordCodec.hpp"
 
@@ -24,8 +23,6 @@ using nodo::core::StateRebuildReport;
 using nodo::core::ValidatorDoubleSignEvidence;
 using nodo::core::ValidatorProposalRegistryEntry;
 using nodo::economics::ValidatorPenaltyAction;
-using nodo::economics::ValidatorPenaltyLedgerBuildResult;
-using nodo::economics::ValidatorPenaltyLedgerBuilder;
 using nodo::economics::ValidatorPenaltyPolicy;
 using nodo::economics::ValidatorPenaltyReason;
 using nodo::economics::ValidatorPenaltyRecord;
@@ -173,48 +170,36 @@ void testPenaltyCreatesScoreRecord() {
     );
 }
 
-void testPenaltyLedgerBuilderCreatesCanonicalRecords() {
-    const ValidatorPenaltyLedgerBuildResult result =
-        ValidatorPenaltyLedgerBuilder::buildDoubleSignPenaltyRecords(
-            doubleSignEvidence(),
-            ValidatorPenaltyPolicy::conservativeDefaultPolicy(),
-            3,
-            75,
-            kTimestamp + 4
-        );
+void testPenaltyLedgerRecordRoundTripsThroughCodec() {
+    const ValidatorPenaltyRecord penalty =
+        ValidatorPenaltyPolicy::conservativeDefaultPolicy()
+            .createDoubleSignPenaltyRecord(
+                doubleSignEvidence(),
+                3,
+                75,
+                kTimestamp + 4
+            );
+
+    const LedgerRecord record =
+        LedgerRecord::fromValidatorPenaltyRecord(penalty, kTimestamp + 4);
 
     requireCondition(
-        result.isValid(),
-        "Penalty ledger build result should be valid."
+        record.type() == LedgerRecordType::VALIDATOR_PENALTY,
+        "Penalty ledger record should be VALIDATOR_PENALTY."
     );
 
     requireCondition(
-        result.records().size() == 2U,
-        "Penalty ledger result should contain penalty and score records."
-    );
-
-    requireCondition(
-        result.records()[0].type() == LedgerRecordType::VALIDATOR_PENALTY,
-        "First penalty ledger record should be VALIDATOR_PENALTY."
-    );
-
-    requireCondition(
-        result.records()[1].type() == LedgerRecordType::VALIDATOR_SCORE,
-        "Second penalty ledger record should be VALIDATOR_SCORE."
-    );
-
-    requireCondition(
-        result.records()[0].sourceId() == result.penaltyRecord().deterministicId(),
+        record.sourceId() == penalty.deterministicId(),
         "Penalty ledger source id should match penalty id."
     );
 
     const LedgerRecord loaded =
         LedgerRecordCodec::deserialize(
-            result.records()[0].serialize()
+            record.serialize()
         );
 
     requireCondition(
-        loaded.serialize() == result.records()[0].serialize(),
+        loaded.serialize() == record.serialize(),
         "Validator penalty LedgerRecord should round-trip through codec."
     );
 }
@@ -312,18 +297,26 @@ void testInvalidPenaltyInputsAreRejected() {
 }
 
 void testPenaltyLedgerRecordsAreAuditedByChainStateRebuilder() {
-    const ValidatorPenaltyLedgerBuildResult result =
-        ValidatorPenaltyLedgerBuilder::buildDoubleSignPenaltyRecords(
-            doubleSignEvidence(),
-            ValidatorPenaltyPolicy::conservativeDefaultPolicy(),
-            3,
-            80,
+    const ValidatorPenaltyRecord penalty =
+        ValidatorPenaltyPolicy::conservativeDefaultPolicy()
+            .createDoubleSignPenaltyRecord(
+                doubleSignEvidence(),
+                3,
+                80,
+                kTimestamp + 7
+            );
+
+    const std::vector<LedgerRecord> records = {
+        LedgerRecord::fromValidatorPenaltyRecord(penalty, kTimestamp + 7),
+        LedgerRecord::fromValidatorScoreRecord(
+            penalty.createScoreRecord(),
             kTimestamp + 7
-        );
+        )
+    };
 
     const Block genesis =
         Block::createGenesisBlock(
-            result.records(),
+            records,
             kTimestamp + 8
         );
 
@@ -360,7 +353,7 @@ int main() {
     try {
         testPenaltyPolicyCreatesDoubleSignPenalty();
         testPenaltyCreatesScoreRecord();
-        testPenaltyLedgerBuilderCreatesCanonicalRecords();
+        testPenaltyLedgerRecordRoundTripsThroughCodec();
         testPenaltyRecordDeserializesRoundTrip();
         testInvalidPenaltyInputsAreRejected();
         testPenaltyLedgerRecordsAreAuditedByChainStateRebuilder();

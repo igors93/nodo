@@ -21,6 +21,7 @@
 #include "node/RuntimeBlockPipeline.hpp"
 #include "node/RuntimeStateLoader.hpp"
 #include "node/SyncHealth.hpp"
+#include "node/SyncRecoveryPolicy.hpp"
 #include "p2p/DiscoveryService.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
 #include "storage/AccountStateSnapshotStore.hpp"
@@ -535,56 +536,74 @@ void NodeOrchestrator::tick(std::int64_t now) {
   m_validatedInbox.drain(p2p::NetworkMessageType::BLOCK_REQUEST);
 
   // Serve incoming BLOCK_SYNC_REQUEST messages (persistent sync path).
-  // Decode each request, build a PersistentBlockSyncBatch from local blocks,
-  // and broadcast a BLOCK_SYNC_RESPONSE so the requester can apply the batch.
+  // Decode each request, validate it through SyncRecoveryPolicy, build a
+  // PersistentBlockSyncBatch from local blocks, and send a targeted
+  // BLOCK_SYNC_RESPONSE so the requester can apply the batch. Invalid and
+  // conflicting requests are recorded in SyncHealth instead of disappearing
+  // through silent continues; stale requests are ignored without being counted
+  // as failures.
   {
     const auto syncRequests =
         m_validatedInbox.drain(p2p::NetworkMessageType::BLOCK_SYNC_REQUEST);
     for (const auto &envelope : syncRequests) {
       const auto optBytes = tryUnwrapCanonical(envelope.payload());
-      if (!optBytes.has_value())
+      if (!optBytes.has_value()) {
+        m_syncHealth.recordServeFailure(
+            "BLOCK_SYNC_REQUEST payload is not canonical hex encoded.", now);
         continue;
+      }
       try {
         const NetworkBlockSyncRequest req =
             serialization::ProtocolMessageCodec::decodeNetworkBlockSyncRequest(
                 optBytes.value());
-        if (!req.isValid())
-          continue;
 
-        if (req.requesterNodeId() != envelope.senderNodeId()) {
+        const SyncServeDecision decision =
+            SyncRecoveryPolicy::evaluateServeRequest(
+                req, envelope.senderNodeId(), m_runtime->blockchain(),
+                NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH);
+
+        if (decision.stale()) {
+          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST stale: "
+                    << decision.reason() << std::endl;
           continue;
         }
 
-        if (req.locator().fromHeight() == 0 ||
-            req.locator().fromHeight() > m_runtime->blockchain().size()) {
-          continue;
-        }
-        const std::string &expectedAncestor =
-            m_runtime->blockchain()
-                .blocks()[static_cast<std::size_t>(req.locator().fromHeight() -
-                                                   1)]
-                .hash();
-        if (std::find(req.locator().knownAncestorHashes().begin(),
-                      req.locator().knownAncestorHashes().end(),
-                      expectedAncestor) ==
-            req.locator().knownAncestorHashes().end()) {
+        if (!decision.accepted()) {
+          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST rejected: "
+                    << decision.reason() << std::endl;
+          m_syncHealth.recordServeFailure(decision.reason(), now);
           continue;
         }
 
-        const std::uint64_t maxItems = std::min(
-            req.locator().maxBlocks(), NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH);
         const PersistentBlockSyncBatch batch = buildSyncResponseBatch(
             m_runtime->blockchain(), m_config.dataDirectory(),
-            m_config.localPeer().peerId(), req.locator().fromHeight(), maxItems,
-            now);
-        if (!batch.isValid())
+            m_config.localPeer().peerId(), decision.fromHeight(),
+            decision.maxItems(), now);
+        if (!batch.isValid()) {
+          m_syncHealth.recordServeFailure(
+              "BLOCK_SYNC_REQUEST produced an invalid response batch.", now);
           continue;
+        }
 
         const std::vector<unsigned char> encoded =
             PersistentBlockStateSyncCodec::encodeBlockSyncBatch(batch);
-        gossip.sendTo(
+        const p2p::GossipDeliveryReport report = gossip.sendTo(
             req.requesterNodeId(), p2p::NetworkMessageType::BLOCK_SYNC_RESPONSE,
             kOrchestratorCanonicalPrefix + crypto::hexEncode(encoded), now);
+        if (report.acceptedCount() == 0) {
+          const std::string reason =
+              "BLOCK_SYNC_RESPONSE could not be queued for requester " +
+              req.requesterNodeId() +
+              "; requester may be disconnected, unauthenticated, quarantined, "
+              "or its outbound queue may be full.";
+          std::cout << "[DEBUG] NodeOrchestrator " << reason << std::endl;
+          m_syncHealth.recordServeFailure(reason, now);
+          continue;
+        }
+        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST served "
+                  << batch.blockCount() << " block(s) from height "
+                  << batch.fromHeight() << " to " << batch.toHeight()
+                  << " for peer " << req.requesterNodeId() << std::endl;
       } catch (const std::exception &e) {
         std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST serve error: "
                   << e.what() << std::endl;
@@ -639,10 +658,21 @@ void NodeOrchestrator::tick(std::int64_t now) {
             PersistentBlockStateSyncCodec::decodeBlockSyncBatch(
                 optBytes.value());
 
-        if (!batch.isValid())
-          continue;
+        const SyncBatchDecision decision =
+            SyncRecoveryPolicy::evaluateResponseBatch(
+                batch, envelope.senderNodeId(), currentCheckpoint,
+                m_runtime->blockchain());
 
-        if (batch.sourcePeerId() != envelope.senderNodeId()) {
+        if (decision.stale()) {
+          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE stale: "
+                    << decision.reason() << std::endl;
+          continue;
+        }
+
+        if (!decision.accepted()) {
+          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE rejected: "
+                    << decision.reason() << std::endl;
+          m_syncHealth.recordBatchFailure(decision.reason(), now);
           continue;
         }
 
@@ -853,8 +883,15 @@ void NodeOrchestrator::triggerSyncIfBehind(
       crypto::hexEncode(
           serialization::ProtocolMessageCodec::encodeNetworkBlockSyncRequest(
               req));
-  m_tcpRuntime->gossipMesh().sendTo(
+  const p2p::GossipDeliveryReport report = m_tcpRuntime->gossipMesh().sendTo(
       remotePeerId, p2p::NetworkMessageType::BLOCK_SYNC_REQUEST, payload, now);
+  if (report.acceptedCount() == 0) {
+    m_syncHealth.recordRequestFailure(
+        "BLOCK_SYNC_REQUEST could not be queued for peer " + remotePeerId +
+            "; peer may be disconnected, unauthenticated, quarantined, or "
+            "its outbound queue may be full.",
+        now);
+  }
 }
 
 void NodeOrchestrator::noteFinalityAhead(std::uint64_t height,
@@ -896,9 +933,13 @@ void NodeOrchestrator::driveSyncWatchdog(std::int64_t now) {
     return;
   }
 
-  if (m_runtime->blockchain().latestBlock().index() >=
-      m_syncWatchdogTargetHeight) {
-    // Caught up: the watchdog has done its job.
+  if (SyncRecoveryPolicy::targetReached(m_runtime->blockchain(),
+                                        m_syncWatchdogTargetHeight,
+                                        m_syncWatchdogTargetBlockHash)) {
+    // Caught up to the exact peer-proven finality target: the watchdog has
+    // done its job. If the local height passed the target but the hash does not
+    // match, targetReached() stays false and the watchdog keeps diagnostics
+    // alive instead of silently clearing a fork-like condition.
     m_syncWatchdogTargetHeight = 0;
     m_syncWatchdogTargetBlockHash.clear();
     m_syncWatchdogSourcePeerId.clear();
@@ -1274,6 +1315,7 @@ bool NodeOrchestrator::startRpc() {
     m_rpcServer = std::make_unique<NodeRpcServer>(
         *m_runtime, m_runtimeMutex, m_tcpRuntime->gossipMesh(), &m_eventBus,
         m_config.rpcPort(), m_config.rpcBindAddr());
+    m_rpcServer->attachSyncHealth(&m_syncHealth);
     m_rpcServer->start();
     return true;
   } catch (const std::exception &error) {

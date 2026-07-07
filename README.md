@@ -188,7 +188,7 @@ Network profiles:
 
 More commands are documented in [CLI](docs/getting-started/cli.md).
 
-The official public protocol API is JSON-RPC 2.0 over HTTP at `POST /rpc`; REST routes remain available for local operational diagnostics and backward-compatible tooling. See [JSON-RPC public API](docs/development/json-rpc-public-api.md).
+The official public protocol API is JSON-RPC 2.0 over HTTP at `POST /rpc`; REST routes remain available for local operational diagnostics and backward-compatible tooling. Operational health and metrics are exposed at `GET /health`, `GET /metrics`, `GET /metrics/prometheus`, and JSON-RPC methods `nodo_getHealth` / `nodo_getMetrics`. See [JSON-RPC public API](docs/development/json-rpc-public-api.md) and [metrics/health observability](docs/development/metrics-health-observability.md).
 
 ## Project Structure
 
@@ -248,24 +248,19 @@ Read [Architecture Overview](docs/architecture/architecture-overview.md) and [Mo
 
 ### QC Persistence Flow
 
-`FinalizedBlockRecord` (containing the BLS12-381 Quorum Certificate) is persisted from four entry points and reloaded on startup:
+`FinalizedBlockRecord` (containing the BLS12-381 Quorum Certificate) is persisted from three entry points and reloaded on startup:
 
 ```text
 1. Consensus-driven finalization
    ConsensusEventLoop → setFinalizedCallback
      └── persistFinalizedRecord()    → sync/qc/{height}.qc
 
-2. Fast-path block sync (QC_REQUIRED)
-   BlockSyncHandler::applyResponses
-     └── finalizationRegistry.recordForHeight()
-     └── persistFinalizedRecord()    → sync/qc/{height}.qc
-
-3. Persistent-path batch sync
+2. Persistent-path batch sync
    PersistentBlockStateSyncApplier::applyValidatedBatch
      └── deserialize serializedFinalizedRecord from batch item
      └── persistFinalizedRecord()    → sync/qc/{height}.qc
 
-4. Gossip-received finalized artifact
+3. Gossip-received finalized artifact
    NodeDaemon::processFinalizedArtifacts
      └── FinalizedBlockRecord::deserialize + verify QC
      └── FinalizedBlockRecordStore::save()  → sync/qc/{height}.qc

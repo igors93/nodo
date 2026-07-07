@@ -12,7 +12,7 @@
 | Node | `include/node`, `src/node` | Node runtime, finalized artifacts, data directory, reload, diagnostics, readiness, and chain audit. |
 | P2P | `include/p2p`, `src/p2p` | Protocol messages, gossip mesh, loopback/TCP transport, encrypted channels, sync, and peer limiting. |
 | Serialization | `include/serialization`, `src/serialization` | Canonical binary and strict key-value codecs. |
-| Staking | `include/staking`, `src/staking` | Staking manager and security-weight primitives. |
+| Staking | `include/staking`, `src/staking` | Security-weight primitives (staking registry lives in `node`). |
 | Storage | `include/storage`, `src/storage` | Atomic file operations and persistent stores. |
 | Utils | `include/utils`, `src/utils` | Shared primitives such as `Amount` and time helpers. |
 | Tests | `tests` | Module tests discovered by CMake and run by CTest. |

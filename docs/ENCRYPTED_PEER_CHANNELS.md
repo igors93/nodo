@@ -10,9 +10,8 @@ It does not claim Nodo is ready for public mainnet networking. It gives the proj
 - `p2p::EncryptedPeerSession`
 - `p2p::EncryptedPeerChannelCodec`
 - `p2p::EncryptedPeerTransport`
-- `p2p::EncryptedPeerHandshakeHello`
-- `p2p::EncryptedPeerHandshakeAccept`
-- `p2p::EncryptedPeerHandshakeManager`
+- `p2p::PeerHandshakeManager`
+- `p2p::PeerSessionKeyAgreement`
 
 ## What works now
 

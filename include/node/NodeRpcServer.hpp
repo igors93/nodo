@@ -1,10 +1,14 @@
 #ifndef NODO_NODE_NODE_RPC_SERVER_HPP
 #define NODO_NODE_NODE_RPC_SERVER_HPP
 
+#include "node/HealthCheckService.hpp"
 #include "node/JsonRpcServer.hpp"
 #include "node/LightClientService.hpp"
 #include "node/NodeEventBus.hpp"
+#include "node/NodeMetrics.hpp"
 #include "node/NodeRuntime.hpp"
+#include "node/PrometheusExporter.hpp"
+#include "node/SyncHealth.hpp"
 #include "node/WebSocketFrameCodec.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/PeerRateLimiter.hpp"
@@ -39,7 +43,10 @@ namespace nodo::node {
  *
  * REST endpoints (operational/backward-compatible; all read-only except
  * /submit): GET  /status               — node height, round, peer count,
- * mempool size GET  /block/{height}       — serialized block at given height
+ * mempool size GET  /health               — structured health report
+ *   GET  /metrics              — JSON metrics snapshot
+ *   GET  /metrics/prometheus   — Prometheus text exposition
+ *   GET  /block/{height}       — serialized block at given height
  *   GET  /tx/{txId}            — ledger record with matching id or sourceId
  *   GET  /account/{address}    — balance and nonce for address
  *   GET  /account/{address}/proof — Merkle inclusion proof of the address's
@@ -93,6 +100,10 @@ public:
   void stop();
   bool isRunning() const;
 
+  // Optional operational health source owned by NodeOrchestrator. When absent,
+  // metrics still expose runtime/RPC/event data and report sync as UNKNOWN.
+  void attachSyncHealth(const SyncHealth *syncHealth);
+
   std::uint16_t port() const;
 
 private:
@@ -110,6 +121,16 @@ private:
   NodeEventBus *m_eventBus;
   p2p::PeerRateLimiter m_rateLimiter;
   JsonRpcDispatcher m_jsonRpcDispatcher;
+  const SyncHealth *m_syncHealth;
+
+  struct HttpDispatchResponse {
+    int statusCode;
+    std::string body;
+    std::string contentType;
+
+    HttpDispatchResponse(int code, std::string responseBody,
+                         std::string responseContentType = "application/json");
+  };
 
   void runLoop();
   void handleClient(int clientFd);
@@ -119,10 +140,9 @@ private:
   void handleWebSocket(int clientFd, const std::string &request,
                        const std::string &path);
 
-  // Returns (statusCode, responseBody).
-  std::pair<int, std::string> dispatch(const std::string &method,
-                                       const std::string &path,
-                                       const std::string &body);
+  HttpDispatchResponse dispatch(const std::string &method,
+                                const std::string &path,
+                                const std::string &body);
 
   // Wires JSON-RPC methods to the same runtime-safe handlers used by the
   // operational REST surface. Called once during construction.
@@ -159,6 +179,9 @@ private:
   std::string handleEvents(const std::string &afterSequence,
                            const std::string &type,
                            const std::string &limit) const;
+  std::string handleHealth() const;
+  std::string handleMetrics() const;
+  std::string handlePrometheusMetrics() const;
   std::string handleGovernanceStatus() const;
   std::string handleGovernanceProposals() const;
   std::string handleGovernanceProposal(const std::string &proposalId) const;
@@ -169,7 +192,9 @@ private:
   std::string handleSubmit(const std::string &body);
 
   // --- HTTP helpers ---
-  static std::string httpResponse(int statusCode, const std::string &body);
+  static std::string
+  httpResponse(int statusCode, const std::string &body,
+               const std::string &contentType = "application/json");
 
   static std::string jsonError(const std::string &message);
 

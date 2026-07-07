@@ -15,7 +15,6 @@ registry.
 - `consensus::SlashingEvidenceRecord`
 - `consensus::SlashingEvidenceVerifier`
 - `consensus::EvidencePool`
-- `consensus::ValidatorAccountabilityTracker`
 - `storage::SlashingEvidenceStore`
 - `node::SlashingEvidenceAnnouncement`
 - `node::SlashingEvidenceRequest`

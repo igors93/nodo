@@ -6,14 +6,12 @@
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "crypto/Signature.hpp"
-#include "crypto/SignatureProviderRegistry.hpp"
 #include "crypto/SignatureVerificationResult.hpp"
 #include "crypto/SigningDomain.hpp"
 #include "crypto/hash.h"
 
 #include <cstdint>
 #include <iostream>
-#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -27,7 +25,6 @@ using nodo::crypto::KeyPair;
 using nodo::crypto::PrivateKey;
 using nodo::crypto::PublicKey;
 using nodo::crypto::Signature;
-using nodo::crypto::SignatureProviderRegistry;
 using nodo::crypto::SignatureVerificationResult;
 using nodo::crypto::SigningDomain;
 
@@ -247,52 +244,6 @@ void testUnverifiedProfileIsNotProductionReady() {
     );
 }
 
-void testRegistryAcceptsAuditedProvider() {
-    SignatureProviderRegistry registry;
-
-    registry.registerAuditedProvider(
-        std::make_shared<TestOnlyAuditedEd25519Provider>(true)
-    );
-
-    requireCondition(
-        registry.size() == 1U,
-        "Audited provider registry size is wrong."
-    );
-
-    requireCondition(
-        registry.hasAuditedProvider(CryptoAlgorithm::CLASSIC_ED25519),
-        "Audited provider registry did not find Ed25519 provider."
-    );
-
-    requireCondition(
-        registry.hasProductionReadyProvider(CryptoAlgorithm::CLASSIC_ED25519),
-        "Audited provider registry did not mark provider production ready."
-    );
-}
-
-void testRegistryRejectsDuplicateProvider() {
-    SignatureProviderRegistry registry;
-
-    registry.registerAuditedProvider(
-        std::make_shared<TestOnlyAuditedEd25519Provider>(true)
-    );
-
-    bool rejected = false;
-
-    try {
-        registry.registerAuditedProvider(
-            std::make_shared<TestOnlyAuditedEd25519Provider>(true)
-        );
-    } catch (const std::exception&) {
-        rejected = true;
-    }
-
-    requireCondition(
-        rejected,
-        "Audited provider registry accepted duplicate algorithm."
-    );
-}
-
 void testProviderSignsAndVerifies() {
     const TestOnlyAuditedEd25519Provider provider(true);
 
@@ -349,8 +300,6 @@ int main() {
         testAuditedProfileValidation();
         testDevelopmentAlgorithmIsRejected();
         testUnverifiedProfileIsNotProductionReady();
-        testRegistryAcceptsAuditedProvider();
-        testRegistryRejectsDuplicateProvider();
         testProviderSignsAndVerifies();
         testProviderReadinessGate();
 

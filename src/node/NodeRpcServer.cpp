@@ -1,5 +1,9 @@
 #include "node/NodeRpcServer.hpp"
 
+#include "node/HealthCheckService.hpp"
+#include "node/NodeMetrics.hpp"
+#include "node/PrometheusExporter.hpp"
+
 #include "core/LedgerRecord.hpp"
 #include "core/StateRootCalculator.hpp"
 #include "core/Transaction.hpp"
@@ -36,6 +40,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -363,6 +368,11 @@ core::Transaction parseSignedTransactionSubmission(const std::string &body) {
 // Construction
 // ---------------------------------------------------------------------------
 
+NodeRpcServer::HttpDispatchResponse::HttpDispatchResponse(
+    int code, std::string responseBody, std::string responseContentType)
+    : statusCode(code), body(std::move(responseBody)),
+      contentType(std::move(responseContentType)) {}
+
 NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
                              NodeEventBus *eventBus, std::uint16_t port,
                              const std::string &bindAddr)
@@ -370,7 +380,8 @@ NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
       m_port(port), m_bindAddr(bindAddr), m_running(false), m_serverFd(-1),
       m_ownedEventBus(),
       m_eventBus(eventBus == nullptr ? &m_ownedEventBus : eventBus),
-      m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS) {
+      m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS),
+      m_syncHealth(nullptr) {
   registerJsonRpcMethods();
 }
 
@@ -381,7 +392,8 @@ NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
       m_port(port), m_bindAddr(bindAddr), m_running(false), m_serverFd(-1),
       m_ownedEventBus(),
       m_eventBus(eventBus == nullptr ? &m_ownedEventBus : eventBus),
-      m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS) {
+      m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS),
+      m_syncHealth(nullptr) {
   registerJsonRpcMethods();
 }
 
@@ -390,6 +402,10 @@ NodeRpcServer::~NodeRpcServer() { stop(); }
 std::uint16_t NodeRpcServer::port() const { return m_port; }
 
 bool NodeRpcServer::isRunning() const { return m_running.load(); }
+
+void NodeRpcServer::attachSyncHealth(const SyncHealth *syncHealth) {
+  m_syncHealth = syncHealth;
+}
 
 // ---------------------------------------------------------------------------
 // Start / Stop
@@ -559,15 +575,16 @@ void NodeRpcServer::handleClient(int clientFd) {
     return;
   }
 
-  std::pair<int, std::string> response;
+  HttpDispatchResponse response(200, "{}");
   try {
     response = dispatch(method, path, body);
   } catch (const std::exception &e) {
-    response = {500, jsonError(std::string("Internal RPC error: ") + e.what())};
+    response = HttpDispatchResponse(
+        500, jsonError(std::string("Internal RPC error: ") + e.what()));
   }
 
-  const auto [statusCode, responseBody] = response;
-  const std::string resp = httpResponse(statusCode, responseBody);
+  const std::string resp =
+      httpResponse(response.statusCode, response.body, response.contentType);
   (void)sendAll(clientFd, resp);
 }
 
@@ -685,8 +702,8 @@ void NodeRpcServer::handleWebSocket(int clientFd, const std::string &request,
   }
 }
 
-std::string NodeRpcServer::httpResponse(int statusCode,
-                                        const std::string &body) {
+std::string NodeRpcServer::httpResponse(int statusCode, const std::string &body,
+                                        const std::string &contentType) {
   std::string statusText;
   switch (statusCode) {
   case 200:
@@ -714,7 +731,7 @@ std::string NodeRpcServer::httpResponse(int statusCode,
 
   std::ostringstream oss;
   oss << "HTTP/1.0 " << statusCode << " " << statusText << "\r\n"
-      << "Content-Type: application/json\r\n"
+      << "Content-Type: " << contentType << "\r\n"
       << "Content-Length: " << body.size() << "\r\n"
       << "Connection: close\r\n"
       << "\r\n"
@@ -821,6 +838,23 @@ void NodeRpcServer::registerJsonRpcMethods() {
   m_jsonRpcDispatcher.registerHandler(
       "nodo_getStatus", [this](const JsonRpcRequest &req) -> JsonRpcResponse {
         return JsonRpcResponse::success(req.id, handleStatus());
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getHealth", [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(req.id, handleHealth());
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getMetrics", [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(req.id, handleMetrics());
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getPrometheusMetrics",
+      [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(req.id,
+                                        jsonString(handlePrometheusMetrics()));
       });
 
   m_jsonRpcDispatcher.registerHandler(
@@ -931,9 +965,9 @@ std::string NodeRpcServer::handleJsonRpc(const std::string &body) {
 // Routing
 // ---------------------------------------------------------------------------
 
-std::pair<int, std::string> NodeRpcServer::dispatch(const std::string &method,
-                                                    const std::string &path,
-                                                    const std::string &body) {
+NodeRpcServer::HttpDispatchResponse
+NodeRpcServer::dispatch(const std::string &method, const std::string &path,
+                        const std::string &body) {
   // Every handler reads or writes NodeRuntime (blockchain, mempool, ...),
   // which is also touched by the daemon's tick/consensus/block-production
   // thread. Hold the shared mutex for the whole request so no handler ever
@@ -957,6 +991,15 @@ std::pair<int, std::string> NodeRpcServer::dispatch(const std::string &method,
 
   if (route == "status" && method == "GET") {
     return {200, handleStatus()};
+  }
+  if (route == "health" && method == "GET") {
+    return {200, handleHealth()};
+  }
+  if (route == "metrics" && method == "GET") {
+    if (param == "prometheus") {
+      return {200, handlePrometheusMetrics(), "text/plain; version=0.0.4"};
+    }
+    return {200, handleMetrics()};
   }
   if (route == "block" && method == "GET") {
     if (param.empty())
@@ -1793,6 +1836,43 @@ std::string NodeRpcServer::handleEvents(const std::string &afterSequence,
                                   eventType);
   }
   return jsonError("Event bus is not configured on this node.");
+}
+
+std::string NodeRpcServer::handleHealth() const {
+  const std::int64_t now =
+      std::chrono::duration_cast<std::chrono::seconds>(
+          std::chrono::system_clock::now().time_since_epoch())
+          .count();
+  const NodeMetricsSnapshot metrics = NodeMetricsCollector::collect(
+      m_runtime, m_syncHealth, m_eventBus, m_running.load(), "", now);
+  return HealthCheckService::evaluate(metrics).serializeJson();
+}
+
+std::string NodeRpcServer::handleMetrics() const {
+  const std::int64_t now =
+      std::chrono::duration_cast<std::chrono::seconds>(
+          std::chrono::system_clock::now().time_since_epoch())
+          .count();
+  const NodeMetricsSnapshot metrics = NodeMetricsCollector::collect(
+      m_runtime, m_syncHealth, m_eventBus, m_running.load(), "", now);
+  const NodeHealthReport health = HealthCheckService::evaluate(metrics);
+  std::ostringstream oss;
+  oss << "{"
+      << "\"healthStatus\":"
+      << jsonString(nodeHealthStatusToString(health.status()))
+      << ",\"metrics\":" << metrics.serializeJson() << "}";
+  return oss.str();
+}
+
+std::string NodeRpcServer::handlePrometheusMetrics() const {
+  const std::int64_t now =
+      std::chrono::duration_cast<std::chrono::seconds>(
+          std::chrono::system_clock::now().time_since_epoch())
+          .count();
+  const NodeMetricsSnapshot metrics = NodeMetricsCollector::collect(
+      m_runtime, m_syncHealth, m_eventBus, m_running.load(), "", now);
+  const NodeHealthReport health = HealthCheckService::evaluate(metrics);
+  return PrometheusExporter::exportMetrics(metrics, health.status());
 }
 
 } // namespace nodo::node

@@ -15,9 +15,9 @@ It intentionally does not mutate balances directly inside consensus helpers. Ins
 - `consensus::ValidatorPenaltyPolicy`
 - `consensus::ValidatorPenaltyDecision`
 - `consensus::ValidatorPenaltyLedger`
-- `storage::ValidatorPenaltyStore`
-- `node::ValidatorPenaltyAnnouncement`
-- `node::ValidatorPenaltyRequest`
+
+Penalty evidence is persisted through `storage::SlashingEvidenceStore` and
+exchanged between peers through `node::SlashingEvidenceMessages`.
 
 ## Current conservative testnet policy
 

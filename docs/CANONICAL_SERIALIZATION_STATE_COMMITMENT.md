@@ -11,10 +11,8 @@ hashed with explicit domains, and audited through explicit state commitments.
 - `serialization::CanonicalReader`
 - `serialization::CanonicalHash`
 - `serialization::ProtocolMessageCodec`
-- `serialization::ConsensusCanonicalCodec`
 - `core::StateCommitment`
 - `node::StateSnapshot`
-- `node::StateReplayAuditor`
 
 ## Security rules
 

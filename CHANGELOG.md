@@ -4,7 +4,57 @@ Nodo does not yet publish versioned production releases. This changelog starts a
 
 ## Unreleased
 
-Nothing yet.
+### Removed
+
+- **Protocol uniformization pass — dead and parallel code paths deleted.** A
+  full reference audit of the include graph (the GLOB-based build compiles
+  every `src/*.cpp`, so unused modules never fail the build) found ~38 modules
+  with no production references, each superseded by the live official path.
+  Removed, with their dedicated tests:
+  - node: `SlashingExecutor` (→ `CanonicalSlashingTransition`),
+    `GovernanceTallyService` (→ `economics` governance tally/audit path),
+    `TestnetReadiness` legacy monolith (→ `TestnetReadinessChecker`,
+    `BlockAnnounceHandler`, `ChainSyncMessages`, `HealthCheckService`),
+    `BlockSyncHandler` (→ `PersistentBlockStateSync`), `StateReplayAuditor`
+    (→ `ChainAuditor`), `ValidatorPenaltyMessages`
+    (→ `SlashingEvidenceMessages`), `ValidatorSecurityPosture`,
+    `TreasuryReportDeriver`, `LocalNetworkStateInspector`,
+    `ProtocolCompletenessGate`, `ProtocolSafetyGate`;
+  - core: `CoinLotRegistryRebuilder`, `ValidatorProposalAdmission`,
+    `BloomFilter`, `LightClientProof` (documented-incorrect sibling-position
+    assumption; never wired);
+  - storage (legacy pre-`RuntimeStateLoader` pipeline): `BlockchainLoader`,
+    `BlockchainStorageReader`, `BlockStorageIndex`, `ChainManifest`,
+    `BlockFileStore`, `StorageRecovery`, `StorageMigration`,
+    `ValidatorPenaltyStore`;
+  - serialization: `ChainManifestCodec`, `BlockStorageIndexCodec`,
+    `ConsensusCanonicalCodec`;
+  - consensus: `ChainReorgGuard` (→ `ForkChoice`), `ValidatorAccountability`;
+  - crypto: `SignatureProviderRegistry` (→ `ProtocolCryptoContext`),
+    `NodeIdentity` (identity proof lives in `PeerHandshakeManager`);
+  - economics: `StakeSlashApplication`, `ValidatorPenaltyLedgerBuilder`
+    (→ `consensus::ValidatorPenaltyApplication` via
+    `CanonicalSlashingTransition`);
+  - mempool: `FeeMarket` (→ `node::FeeEconomics` + admission policy);
+  - staking: `StakingManager` (→ `node::StakingRegistry`);
+  - p2p: `LightClientMessages` (→ `node/LightClientProtocol`),
+    `BootstrapPeerList` (→ `node run --peer` + `registerBootstrapPeer`),
+    `EncryptedPeerHandshake` (→ `PeerHandshakeManager` +
+    `PeerSessionKeyAgreement`), `PeerAbuseEvidence` (→ peer-store quarantine
+    in `TcpTestnetNodeRuntime`).
+
+  Roadmap-planned but not-yet-wired modules were deliberately kept
+  (`ParallelBlockSync`, `StateSnapshotStore`, `FinalizedArtifactSyncService`,
+  `GovernanceLifecycleStore`, `DefenseModeGuard`/`DefenseModeTransitionApplier`,
+  `core/ChainStateRebuilder` as test scaffolding).
+
+### Fixed
+
+- **Documentation drift**: `docs/ROADMAP.md` claimed `BootstrapPeerList` and
+  `PeerAbuseEvidence` were "wired ✅" — they never were; the entries now
+  describe the actual live mechanisms. README's QC persistence flow no longer
+  lists the removed `BlockSyncHandler` entry point. Eight technical docs no
+  longer reference deleted classes.
 
 ## v0.1.1 — 2026-07-06
 

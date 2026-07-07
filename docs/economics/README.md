@@ -22,5 +22,4 @@ ValidatorBlockProposalSigner
 ValidatorProposalRegistry
 ValidatorDoubleSignEvidence
 ValidatorPenaltyRecord
-ValidatorPenaltyLedgerBuilder
 ```

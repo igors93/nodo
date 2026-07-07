@@ -304,8 +304,6 @@ The following object families should be parsed through codec boundaries:
 - `PrivateAccountingRecordCodec`;
 - `LedgerRecordCodec`;
 - `BlockCodec`;
-- `ChainManifestCodec`;
-- `BlockStorageIndexCodec`;
 - `BlockSnapshotHeaderCodec`.
 
 Legacy ad-hoc parsing should not be added back into domain classes or tests.
@@ -396,24 +394,6 @@ LedgerRecord{id=<id>;type=<type>;sourceId=<id>;payloadHash=<hash>;timestamp=<tim
 
 ```text
 Block{index=<index>;previousHash=<hash-or-GENESIS>;hash=<hash>;timestamp=<timestamp>;recordCount=<count>;payload=BlockHeader{index=<index>;previousHash=<hash-or-GENESIS>;timestamp=<timestamp>;records=[...]}}
-```
-
-### ChainManifest
-
-```text
-ChainManifest{chainVersion=<version>;blockCount=<count>;genesisHash=<hash>;latestHash=<hash>;createdAt=<timestamp>;manifestHash=<hash>}
-```
-
-### BlockStorageIndex
-
-```text
-BlockStorageIndex{indexVersion=<version>;chainManifestHash=<hash>;blockCount=<count>;createdAt=<timestamp>;indexHash=<hash>;entries=[...]}
-```
-
-### BlockIndexEntry
-
-```text
-BlockIndexEntry{blockIndex=<index>;blockHash=<hash>;fileName=block_<index>_<hash>.nodo}
 ```
 
 ### BlockSnapshotHeader

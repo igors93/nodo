@@ -1,13 +1,5 @@
-#include "core/Block.hpp"
-#include "core/Blockchain.hpp"
 #include "core/CoinLot.hpp"
 #include "core/CoinLotRegistry.hpp"
-#include "core/CoinLotRegistryRebuilder.hpp"
-#include "core/LedgerRecord.hpp"
-#include "economics/GenesisRewardRecord.hpp"
-#include "economics/ProtectionEpoch.hpp"
-#include "economics/ValidationWorkRecord.hpp"
-#include "economics/ValidatorScoreRecord.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
@@ -18,21 +10,9 @@
 
 namespace {
 
-using nodo::core::Block;
-using nodo::core::Blockchain;
 using nodo::core::CoinLot;
 using nodo::core::CoinLotRegistry;
-using nodo::core::CoinLotRegistryRebuilder;
 using nodo::core::CoinLotStatus;
-using nodo::core::LedgerRecord;
-using nodo::economics::GenesisRewardReason;
-using nodo::economics::GenesisRewardRecord;
-using nodo::economics::ProtectionEpoch;
-using nodo::economics::ValidationWorkRecord;
-using nodo::economics::ValidationWorkResult;
-using nodo::economics::ValidationWorkType;
-using nodo::economics::ValidatorScoreReason;
-using nodo::economics::ValidatorScoreRecord;
 using nodo::utils::Amount;
 
 constexpr std::int64_t kTimestamp = 1900000000;
@@ -63,90 +43,6 @@ CoinLot makeLot(
         0,
         kTimestamp
     );
-}
-
-GenesisRewardRecord genesisReward(
-    const std::string& validator,
-    std::int64_t wholeNodo
-) {
-    return GenesisRewardRecord(
-        1,
-        validator,
-        Amount::fromNodo(wholeNodo),
-        GenesisRewardReason::NETWORK_PROTECTION,
-        "work-summary-hash-" + validator,
-        "NODO_EPOCH_EMISSION_POLICY_V1",
-        "accepted-block-hash-" + validator,
-        kTimestamp
-    );
-}
-
-Blockchain sampleBlockchainWithRewards() {
-    const ValidationWorkRecord work(
-        "nodo1validator",
-        1,
-        ValidationWorkType::VERIFY_COIN_EXISTENCE,
-        ValidationWorkResult::ACCEPTED,
-        "target-hash",
-        "evidence-hash",
-        10,
-        kTimestamp
-    );
-
-    const ValidatorScoreRecord correctedScore(
-        "nodo1validator",
-        1,
-        50,
-        55,
-        ValidatorScoreReason::CONSISTENT_VALIDATION,
-        "score-evidence",
-        kTimestamp + 1
-    );
-
-    const ProtectionEpoch epoch(
-        1,
-        0,
-        10,
-        Amount::fromNodo(5),
-        Amount::fromNodo(100),
-        7500
-    );
-
-    const GenesisRewardRecord rewardA =
-        genesisReward(
-            "nodo1validator",
-            30
-        );
-
-    const GenesisRewardRecord rewardB(
-        1,
-        "nodo1validator2",
-        Amount::fromNodo(20),
-        GenesisRewardReason::NETWORK_PROTECTION,
-        "work-summary-hash-validator2",
-        "NODO_EPOCH_EMISSION_POLICY_V1",
-        "accepted-block-hash-validator2",
-        kTimestamp + 2
-    );
-
-    const std::vector<LedgerRecord> records = {
-        LedgerRecord::fromValidationWorkRecord(work, kTimestamp),
-        LedgerRecord::fromValidatorScoreRecord(correctedScore, kTimestamp + 1),
-        LedgerRecord::fromProtectionEpoch(epoch, kTimestamp + 2),
-        LedgerRecord::fromGenesisRewardRecord(rewardA, kTimestamp + 3),
-        LedgerRecord::fromGenesisRewardRecord(rewardB, kTimestamp + 4)
-    };
-
-    const Block genesis =
-        Block::createGenesisBlock(
-            records,
-            kTimestamp + 5
-        );
-
-    Blockchain blockchain;
-    blockchain.addGenesisBlock(genesis);
-
-    return blockchain;
 }
 
 void testRegistryAddsAndVerifiesLots() {
@@ -431,46 +327,6 @@ void testLockedAndSlashedLotsAreNotSpendable() {
     );
 }
 
-void testRegistryRebuildsRewardLotsFromBlockchain() {
-    const Blockchain blockchain =
-        sampleBlockchainWithRewards();
-
-    requireCondition(
-        blockchain.isValid(),
-        "Sample reward blockchain should be valid."
-    );
-
-    const CoinLotRegistry registry =
-        CoinLotRegistryRebuilder::rebuildRewardLotsFromBlockchain(
-            blockchain
-        );
-
-    requireCondition(
-        registry.isValid(),
-        "Rebuilt reward CoinLot registry should be valid."
-    );
-
-    requireCondition(
-        registry.size() == 2U,
-        "Rebuilt reward CoinLot registry should have two lots."
-    );
-
-    requireCondition(
-        registry.availableBalanceForOwner("nodo1validator") == Amount::fromNodo(30),
-        "Validator reward balance is wrong."
-    );
-
-    requireCondition(
-        registry.availableBalanceForOwner("nodo1validator2") == Amount::fromNodo(20),
-        "Second validator reward balance is wrong."
-    );
-
-    requireCondition(
-        registry.totalAvailableAmount() == Amount::fromNodo(50),
-        "Total reward lots available amount is wrong."
-    );
-}
-
 } // namespace
 
 int main() {
@@ -480,7 +336,6 @@ int main() {
         testConsumeLotAndCreateOutputs();
         testInvalidSplitIsRejected();
         testLockedAndSlashedLotsAreNotSpendable();
-        testRegistryRebuildsRewardLotsFromBlockchain();
 
         std::cout << "Nodo coin lot registry tests passed.\n";
         return 0;

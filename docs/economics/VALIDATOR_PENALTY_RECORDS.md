@@ -26,8 +26,6 @@ LedgerRecord
 ```text
 ValidatorPenaltyRecord
 ValidatorPenaltyPolicy
-ValidatorPenaltyLedgerBuildResult
-ValidatorPenaltyLedgerBuilder
 ```
 
 ## Why This Matters

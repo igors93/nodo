@@ -38,7 +38,7 @@ reading the source.
 - P2P: `GossipMesh`, `LoopbackTransport`, `TcpTransport`, TCP frame codec,
   `NetworkEnvelope`, peer registry, rate limiter, reputation, abuse evidence,
   handshake manager, encrypted peer channel foundations, finalized artifact sync,
-  `BlockSyncHandler`, `EclipseGuard` foundation, `DiscoveryService` foundation,
+  `BlockAnnounceHandler`, `EclipseGuard` foundation, `DiscoveryService` foundation,
   `InboundMessageValidator` foundation, `PeerReconnectionPolicy`.
 - Testnet-candidate network profile, `TestnetReadinessChecker`,
   `ProductionKeySafetyGate`, operator diagnostics foundations.
@@ -171,14 +171,14 @@ ready for a semi-public testnet with untrusted peers.
 
 ### 3.1 Peer Authentication ✅
 - During `PEER_HELLO` handshake, the remote node proves ownership of its
-  advertised node identity (`NodeIdentity`) by signing a challenge with its
+  advertised node identity by signing a challenge with its
   Ed25519 node key (`src/p2p/PeerHandshakeManager.cpp`).
 - `PeerHandshakeManager` refuses peers that fail the challenge, wired via
   `PeerHandshakeAutoRegistrar` in `NodeOrchestrator` and
   `TcpTestnetNodeRuntime`.
-- `EncryptedPeerHandshake` → `EncryptedPeerChannel` is wired into the active
-  transport path via `EncryptedPeerTransport` (gates dispatch in
-  `TcpTestnetNodeRuntime`), not foundations-only.
+- `PeerHandshakeManager` + `PeerSessionKeyAgreement` → `EncryptedPeerChannel`
+  is wired into the active transport path via `EncryptedPeerTransport` (gates
+  dispatch in `TcpTestnetNodeRuntime`), not foundations-only.
 - Tests: `tests/p2p/PeerHandshakeManagerTests.cpp`,
   `tests/node/PeerHandshakeChallengeFlowTests.cpp`,
   `tests/p2p/EncryptedPeerChannelTests.cpp`,
@@ -190,14 +190,19 @@ ready for a semi-public testnet with untrusted peers.
   `NodeOrchestrator::startTransport()` — not a stub.
 - Implement authenticated `PEER_EXCHANGE` messages carrying canonical, capped peer lists. ✅
 - Integrate accepted exchange candidates with `EclipseGuard`, persistent candidate storage and `PeerReconnectionPolicy`. ✅
-- Bootstrap peer list (`BootstrapPeerList`) wired to `NodeDaemon` startup. ✅
+- Static bootstrap peers (`node run --peer NAME@HOST:PORT`) are wired to
+  `NodeDaemon` startup via `NodeOrchestrator::registerBootstrapPeer`. ✅
+  (The earlier standalone `BootstrapPeerList` class was never adopted by the
+  runtime and has been removed.)
 - Tests: `tests/p2p/DiscoveryServiceTests.cpp`.
 
 ### 3.3 Peer Banning and Quarantine ✅
-- `PeerAbuseEvidence` and `PeerReputation` are wired to actual banning: peers
-  that send invalid messages, flood, or fail authentication are placed in a
-  time-limited quarantine before reconnection is allowed
-  (`TcpTestnetNodeRuntime.cpp`, `GossipMesh.cpp`).
+- `PeerReputation` and the persistent peer-store quarantine are wired to
+  actual banning: peers that send invalid messages, flood, or fail
+  authentication are placed in a time-limited quarantine before reconnection
+  is allowed (`TcpTestnetNodeRuntime.cpp`, `GossipMesh.cpp`). (The earlier
+  standalone `PeerAbuseEvidence` class was never adopted by the runtime and
+  has been removed.)
 - `InboundMessageValidator` is active in the receive path (`GossipMesh`);
   messages that exceed size limits, have bad checksums, or carry unknown
   types are dropped before reaching any handler.
@@ -289,7 +294,8 @@ slashed.
 - `CanonicalSlashingTransition` produces an auditable `StakePenaltyRecord`
   included in the finalized artifact. (Note: the roadmap previously named a
   `SlashingExecutor` class; the live implementation is
-  `CanonicalSlashingTransition`.)
+  `CanonicalSlashingTransition`, and the unwired `SlashingExecutor` scaffold
+  has been removed.)
 - Idempotent replay: `ValidatorPenaltyApplicationStatus::DUPLICATE` and
   `FinalizedSlashingEvidenceAudit` reject already-applied evidence; replaying
   the same evidence does not slash twice.
@@ -507,20 +513,22 @@ without downloading full artifacts.
   wallet/explorer clients exist.
 
 ### 7.2 Light Client Protocol
-- `LightClientMessages` exists as serialization structs only; the full
-  header+QC range-request/response protocol and QC-weight verification
-  against a validator-set root are not implemented — still pending.
+- The full header+QC range-request/response protocol and QC-weight
+  verification against a validator-set root are not implemented — still
+  pending. The live starting point is `node/LightClientProtocol` +
+  `node/LightClientService` (header/QC structures served over RPC). (The
+  earlier `p2p/LightClientMessages` serialization structs were a parallel,
+  never-wired draft and have been removed.)
 - `MerkleProof`/`SparseMerkleTree` are now wired to the live RPC: ✅
   `GET /account/{address}/proof` (`NodeRpcServer::handleAccountProof` →
   `StateRootCalculator::accountInclusionProof`) returns a Merkle inclusion
   proof of an address's balance/nonce against the account-state root (the
   `accounts` domain root, not the full multi-domain protocol state root).
-  Note: this uses `core::MerkleProof` (per-step `siblingIsLeft`), not the
-  separate `AccountStateProof`/`LightClientVerifier` pair in
-  `LightClientProof.hpp` — that pair assumes sibling position simply
-  alternates level-to-level, which does not hold for an arbitrary
-  256-bit-key sparse Merkle path, so it was intentionally left unwired
-  rather than connected incorrectly.
+  Note: this uses `core::MerkleProof` (per-step `siblingIsLeft`). A separate
+  `AccountStateProof`/`LightClientVerifier` pair (formerly
+  `core/LightClientProof.hpp`) assumed sibling position simply alternates
+  level-to-level, which does not hold for an arbitrary 256-bit-key sparse
+  Merkle path; it was never wired and has been removed.
 
 ### 7.3 Event Subscriptions (WebSocket)
 - Add WebSocket support to `JsonRpcServer` for streaming:
@@ -605,11 +613,16 @@ five independent validators and a documented operator runbook.
 - Fuzz the `NetworkEnvelope` and `FinalizedBlockArtifactCodec` parsers with
   libFuzzer or AFL.
 
-### 9.5 Monitoring Foundations
-- `nodo node metrics --data-dir PATH` command that prints JSON:
-  current height, last finalized hash, connected peer count, mempool size,
-  round number, last block time, validator participation rate in last epoch.
-- Prometheus-compatible output optional but desirable.
+### 9.5 Monitoring Foundations ✅
+- Live node metrics and health checks are exposed through the official RPC
+  surface: `GET /health`, `GET /metrics`, `GET /metrics/prometheus`,
+  JSON-RPC `nodo_getHealth`, `nodo_getMetrics`, and
+  `nodo_getPrometheusMetrics`.
+- Metrics include canonical/finalized height, finality lag, peers, validators,
+  mempool size, governance counters, event-bus retention and persistent sync
+  health/failure counters.
+- Prometheus text exposition is available at `/metrics/prometheus` for local
+  dashboards and testnet runbooks.
 
 **Exit criteria:** five validators run continuously for 72 hours without
 manual intervention; no block is finalized without quorum; `chain audit` passes
