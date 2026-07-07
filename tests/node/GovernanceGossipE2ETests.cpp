@@ -76,8 +76,14 @@ void driveChainUntil(const NodeSpec &driverNode,
       const auto response =
           httpRequest(driverNode.rpcPort, "GET",
                       "/account/" + testUserKey(seedPrefix).address().value());
-      return response.has_value() &&
-             jsonUnsigned(response->body, "nonce").value_or(0) >= fillerNonce;
+      if (response.has_value()) {
+        const std::uint64_t currentNonce = jsonUnsigned(response->body, "nonce").value_or(0);
+        if (currentNonce >= fillerNonce) {
+          nextNonce = std::max(nextNonce, currentNonce + 1);
+          return true;
+        }
+      }
+      return false;
     });
   }
 }
