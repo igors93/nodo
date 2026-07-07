@@ -918,6 +918,8 @@ std::string persistentSyncApplyStatusToString(PersistentSyncApplyStatus status) 
     switch (status) {
         case PersistentSyncApplyStatus::APPLIED:
             return "APPLIED";
+        case PersistentSyncApplyStatus::STALE:
+            return "STALE";
         case PersistentSyncApplyStatus::REJECTED:
         default:
             return "REJECTED";
@@ -941,6 +943,7 @@ PersistentSyncApplyStatus PersistentSyncApplyResult::status() const { return m_s
 const std::string& PersistentSyncApplyResult::reason() const { return m_reason; }
 const std::optional<PersistentSyncCheckpoint>& PersistentSyncApplyResult::checkpoint() const { return m_checkpoint; }
 bool PersistentSyncApplyResult::applied() const { return m_status == PersistentSyncApplyStatus::APPLIED && m_checkpoint.has_value(); }
+bool PersistentSyncApplyResult::stale() const { return m_status == PersistentSyncApplyStatus::STALE; }
 
 std::string PersistentSyncApplyResult::serialize() const {
     std::ostringstream output;
@@ -1202,15 +1205,94 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importFinalizedBatch(
     consensus::EvidencePool* pendingEvidencePool,
     storage::SlashingEvidenceStore* pendingEvidenceStore
 ) {
-    if (!checkpoint.isValid() || !batch.isValid() || !runtime.isValid() ||
-        !directoryConfig.isValid() || now <= 0 ||
-        batch.createdAt() > now + 300 ||
-        batch.fromHeight() != checkpoint.finalizedHeight() + 1 ||
-        runtime.blockchain().latestBlock().index() != checkpoint.finalizedHeight() ||
+    if (!checkpoint.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Sync checkpoint is invalid for finalized sync import.",
+            std::nullopt
+        );
+    }
+    if (!batch.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Finalized sync batch is structurally invalid.",
+            std::nullopt
+        );
+    }
+    if (!runtime.isValid()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Runtime is invalid for finalized sync import.",
+            std::nullopt
+        );
+    }
+    if (!directoryConfig.isValid() || now <= 0) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Data directory or import timestamp is invalid for finalized "
+            "sync import.",
+            std::nullopt
+        );
+    }
+    if (batch.createdAt() > now + 300) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Finalized sync batch timestamp is too far in the future.",
+            std::nullopt
+        );
+    }
+    if (runtime.blockchain().latestBlock().index() != checkpoint.finalizedHeight() ||
         runtime.blockchain().latestBlock().hash() != checkpoint.finalizedBlockHash()) {
         return PersistentSyncApplyResult(
             PersistentSyncApplyStatus::REJECTED,
-            "Runtime, checkpoint, data directory, or finalized batch boundary is invalid.",
+            "Sync checkpoint does not match the local canonical tip.",
+            std::nullopt
+        );
+    }
+
+    const std::uint64_t localFinalizedHeight = checkpoint.finalizedHeight();
+    if (batch.fromHeight() > localFinalizedHeight + 1) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::REJECTED,
+            "Finalized sync batch starts at height " +
+                std::to_string(batch.fromHeight()) +
+                " but the local finalized tip is at height " +
+                std::to_string(localFinalizedHeight) + ".",
+            std::nullopt
+        );
+    }
+
+    // A batch may legitimately overlap blocks this node already finalized:
+    // the tip advances between the sync request and this response whenever
+    // local consensus keeps running or two peers answered the same request.
+    // Every overlapping item must describe the exact block already on the
+    // local chain (batch item heights are contiguous, so the overlap is a
+    // prefix); only the remainder is imported.
+    const auto& localBlocks = runtime.blockchain().blocks();
+    std::size_t firstNewItemIndex = 0;
+    for (; firstNewItemIndex < batch.items().size(); ++firstNewItemIndex) {
+        const PersistentBlockSyncItem& overlapping =
+            batch.items()[firstNewItemIndex];
+        if (overlapping.height() > localFinalizedHeight) {
+            break;
+        }
+        const core::Block& localBlock =
+            localBlocks[static_cast<std::size_t>(overlapping.height())];
+        if (localBlock.hash() != overlapping.blockHash()) {
+            return PersistentSyncApplyResult(
+                PersistentSyncApplyStatus::REJECTED,
+                "Finalized sync batch disagrees with the local chain at "
+                "already-finalized height " +
+                    std::to_string(overlapping.height()) + ".",
+                std::nullopt
+            );
+        }
+    }
+    if (firstNewItemIndex == batch.items().size()) {
+        return PersistentSyncApplyResult(
+            PersistentSyncApplyStatus::STALE,
+            "Finalized sync batch is entirely behind the local tip; the "
+            "local chain already contains every batch block.",
             std::nullopt
         );
     }
@@ -1230,10 +1312,12 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importFinalizedBatch(
     NodeRuntime stagedRuntime = runtime;
     std::vector<RuntimeBlockPipelineResult> stagedResults;
     std::vector<core::Block> stagedImportedBlocks;
-    stagedResults.reserve(batch.items().size());
-    stagedImportedBlocks.reserve(batch.items().size());
+    stagedResults.reserve(batch.items().size() - firstNewItemIndex);
+    stagedImportedBlocks.reserve(batch.items().size() - firstNewItemIndex);
 
-    for (const PersistentBlockSyncItem& item : batch.items()) {
+    for (std::size_t itemIndex = firstNewItemIndex;
+         itemIndex < batch.items().size(); ++itemIndex) {
+        const PersistentBlockSyncItem& item = batch.items()[itemIndex];
         try {
             const core::Block block =
                 serialization::BlockCodec::deserialize(item.serializedBlock());

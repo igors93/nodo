@@ -9,6 +9,7 @@
 #include "crypto/SignatureProvider.hpp"
 #include "crypto/Signer.hpp"
 #include "node/NodeDataDirectory.hpp"
+#include "node/NodeEventBus.hpp"
 #include "node/NodeRpcServer.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
@@ -214,6 +215,8 @@ public:
   // NodeDaemon's gossip/proposal processing, which runs on the same thread
   // but after tick() has already released the lock) must acquire this too.
   std::mutex &runtimeMutex();
+  NodeEventBus &eventBus();
+  const NodeEventBus &eventBus() const;
 
   // ---- Gossip helpers for NodeDaemon ------------------------------------
 
@@ -248,6 +251,14 @@ public:
   void triggerSyncIfBehind(const ChainStatusMessage &remotePeerStatus,
                            const std::string &remotePeerId, std::int64_t now);
 
+  // Record proof that a peer finalized `height` (ahead of the local chain)
+  // and immediately request block sync. tick() keeps re-requesting through
+  // the sync watchdog until the local tip reaches the target, so a single
+  // lost request or a rejected response can never leave the node behind
+  // permanently.
+  void noteFinalityAhead(std::uint64_t height, const std::string &blockHash,
+                         const std::string &sourcePeerId, std::int64_t now);
+
 private:
   NodeOrchestratorConfig m_config;
   const crypto::CryptoPolicy &m_policy;
@@ -274,6 +285,17 @@ private:
   std::optional<crypto::Signer> m_localSigner;
   std::optional<crypto::KeyPair> m_localNodeIdentity;
   SyncHealth m_syncHealth;
+
+  // ---- Sync watchdog (self-healing catch-up) ----------------------------
+  // Highest peer-proven finalized height observed ahead of the local chain,
+  // with the peer that proved it. While the local tip is below this target,
+  // tick() re-sends a BLOCK_SYNC_REQUEST every few seconds instead of
+  // waiting for the next artifact or status gossip to arrive.
+  std::uint64_t m_syncWatchdogTargetHeight = 0;
+  std::string m_syncWatchdogTargetBlockHash;
+  std::string m_syncWatchdogSourcePeerId;
+  std::int64_t m_syncWatchdogLastRequestAt = 0;
+  NodeEventBus m_eventBus;
   std::mutex m_runtimeMutex;
 
   // ---- Internal startup helpers ----------------------------------------
@@ -313,6 +335,10 @@ private:
       const std::vector<p2p::PeerExchangeEntry> &acceptedEntries) const;
 
   void driveNetworkPeerPolicy(std::int64_t now);
+
+  // Re-request block sync while the local tip is below the watchdog target;
+  // clears the target once the node has caught up.
+  void driveSyncWatchdog(std::int64_t now);
 
   std::optional<p2p::PeerEndpoint>
   endpointForReconnectCandidate(const p2p::PeerReconnectionState &state) const;

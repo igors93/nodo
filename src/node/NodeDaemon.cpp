@@ -186,6 +186,19 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
     }
 
     if (admitted) {
+      if (decoded.has_value()) {
+        m_orchestrator.eventBus().publish(
+            NodeEventType::TX_ADMITTED,
+            m_orchestrator.runtime().blockchain().empty()
+                ? 0
+                : m_orchestrator.runtime().blockchain().latestBlock().index(),
+            m_orchestrator.runtime().blockchain().empty()
+                ? std::string()
+                : m_orchestrator.runtime().blockchain().latestBlock().hash(),
+            std::string("{\"txId\":\"") + decoded->transaction.id() +
+                "\",\"source\":\"transaction_gossip\"}",
+            now);
+      }
       const std::int64_t currentSecond = now;
 
       if (m_txRelayBudgetSecond != currentSecond) {
@@ -264,12 +277,24 @@ void NodeDaemon::processLocalMempoolSubmissions(std::int64_t now) {
     }
 
     const auto admission = runtime.mutableMempool().admitTransaction(
-        candidate.transaction, m_policy, crypto::SecurityContext::USER_TRANSACTION,
-        now);
+        candidate.transaction, m_policy,
+        crypto::SecurityContext::USER_TRANSACTION, now);
 
     if (admission.success()) {
-      m_orchestrator.gossipBroadcast(p2p::NetworkMessageType::TRANSACTION_GOSSIP,
-                                     candidate.gossipPayload, now);
+      m_orchestrator.eventBus().publish(
+          NodeEventType::TX_ADMITTED,
+          runtime.blockchain().empty()
+              ? 0
+              : runtime.blockchain().latestBlock().index(),
+          runtime.blockchain().empty()
+              ? std::string()
+              : runtime.blockchain().latestBlock().hash(),
+          std::string("{\"txId\":\"") + admission.transactionId() +
+              "\",\"source\":\"local_mempool\"}",
+          now);
+      m_orchestrator.gossipBroadcast(
+          p2p::NetworkMessageType::TRANSACTION_GOSSIP, candidate.gossipPayload,
+          now);
     }
   }
 }
@@ -303,20 +328,15 @@ void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
         const consensus::FinalizedBlockRecord record =
             consensus::FinalizedBlockRecord::deserialize(envelope.payload());
         if (record.isStructurallyValid()) {
-          const auto &network = m_orchestrator.runtime()
-                                    .config()
-                                    .genesisConfig()
-                                    .networkParameters();
-          const ChainStatusMessage syntheticStatus(
-              network.networkName(), network.chainId(),
-              m_orchestrator.runtime().config().localPeer().protocolVersion(),
-              record.blockIndex(), record.blockHash(), record.blockIndex(),
-              record.blockHash());
-
           std::cout << "[DEBUG] Triggering sync for height "
                     << record.blockIndex() << std::endl;
-          m_orchestrator.triggerSyncIfBehind(syntheticStatus,
-                                             envelope.senderNodeId(), now);
+          // Registers the proven-ahead height with the orchestrator's sync
+          // watchdog (which requests immediately and keeps retrying every
+          // tick until the local tip reaches it), so a single lost request
+          // or rejected batch cannot leave this node behind permanently.
+          m_orchestrator.noteFinalityAhead(record.blockIndex(),
+                                           record.blockHash(),
+                                           envelope.senderNodeId(), now);
         } else {
           std::cout
               << "[DEBUG] BLOCK_UNAVAILABLE but record structurally invalid."

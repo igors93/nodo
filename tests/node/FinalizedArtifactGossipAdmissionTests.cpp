@@ -236,11 +236,77 @@ void testMalformedAndTamperedArtifactsAreRejectedThroughGossipInbox() {
       duplicate, runtime, policy, provider, store);
   assert(duplicateResult.duplicateRecord());
   assert(runtime.finalizationRegistry().size() == 1);
+
+  // A proof for the SAME block that differs only in metadata (each honest
+  // node stamps its own finalizedAt and its own collected vote set) is how
+  // finality naturally gossips between peers. It must be a duplicate, never
+  // a conflicting finalization, and the first recorded proof must be kept.
+  const consensus::FinalizedBlockRecord peerRecord(
+      canonicalBlock.index(), canonicalBlock.hash(),
+      canonicalBlock.previousHash(), 1, kFinalizedAt + 7,
+      validRecord.quorumCertificate());
+  assert(peerRecord.serialize() != validRecord.serialize());
+  const p2p::NetworkEnvelope peerProof = deliverThroughGossip(
+      sender, receiver, peerRecord.serialize(), kFinalizedAt + 8);
+  const auto peerProofResult = node::FinalizedArtifactGossipAdmission::admit(
+      peerProof, runtime, policy, provider, store);
+  assert(peerProofResult.duplicateRecord());
+  assert(runtime.finalizationRegistry().size() == 1);
+  const auto keptRecord = store.load(canonicalBlock.index());
+  assert(keptRecord.has_value());
+  assert(keptRecord->serialize() == validRecord.serialize());
+}
+
+// A registry that already finalized a DIFFERENT block hash at the artifact's
+// height is a real conflict (safety, not metadata) and must stay rejected.
+void testArtifactConflictingWithRecordedFinalityIsRejected() {
+  cleanup();
+  CleanupGuard cleanupGuard;
+
+  const config::GenesisConfig genesis = genesisConfig();
+  RuntimeFixture fixture = runtimeWithCanonicalBlock(genesis);
+  node::NodeRuntime &runtime = fixture.runtime;
+  const core::Block &canonicalBlock = fixture.canonicalBlock;
+  const consensus::FinalizedBlockRecord validRecord =
+      finalizedRecordFor(canonicalBlock, runtime.validatorRegistry());
+  const crypto::Bls12381SignatureProvider provider;
+  const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+  const node::FinalizedBlockRecordStore store(kTestRoot);
+
+  const core::Block differentBlock(
+      canonicalBlock.index(), canonicalBlock.previousHash(),
+      canonicalBlock.records(), canonicalBlock.timestamp() + 1);
+  const consensus::FinalizedBlockRecord differentRecord =
+      finalizedRecordFor(differentBlock, runtime.validatorRegistry());
+  assert(runtime.mutableFinalizationRegistry()
+             .registerFinalizedBlock(differentRecord)
+             .registered());
+
+  auto bus = std::make_shared<p2p::LoopbackTransportBus>();
+  p2p::LoopbackTransport senderTransport(bus);
+  p2p::LoopbackTransport receiverTransport(bus);
+  p2p::GossipMesh sender(meshConfig("artifact-sender", genesis),
+                         senderTransport);
+  p2p::GossipMesh receiver(meshConfig("artifact-receiver", genesis),
+                           receiverTransport);
+  assert(sender.registerPeer(peer("artifact-receiver", 39101)).success());
+  assert(receiver.registerPeer(peer("artifact-sender", 39102)).success());
+  assert(sender.connectPeer("artifact-receiver").success());
+  assert(receiver.connectPeer("artifact-sender").success());
+
+  const p2p::NetworkEnvelope conflicting = deliverThroughGossip(
+      sender, receiver, validRecord.serialize(), kFinalizedAt + 3);
+  const auto conflictResult = node::FinalizedArtifactGossipAdmission::admit(
+      conflicting, runtime, policy, provider, store);
+  assert(conflictResult.status() ==
+         node::FinalizedArtifactGossipAdmissionStatus::CONFLICTING_FINALIZATION);
+  assert(!store.load(canonicalBlock.index()).has_value());
 }
 
 } // namespace
 
 int main() {
   testMalformedAndTamperedArtifactsAreRejectedThroughGossipInbox();
+  testArtifactConflictingWithRecordedFinalityIsRejected();
   return 0;
 }

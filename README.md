@@ -400,3 +400,12 @@ The TCP testnet transport now treats connection capacity as a protocol admission
 ### P2P reputation and temporary bans
 
 Peer abuse handling is now persistent and time-bounded. Repeated invalid or rate-limited traffic lowers the peer score, creates audit evidence, applies a temporary ban with `bannedUntil` and canonical reason, disconnects the peer, suppresses reconnect attempts while the ban is active, and lifts the ban deterministically after expiry. Peer penalty state is stored in `peers.conf` together with score, quarantine flag and invalid-message count.
+
+### Light client and event stream
+
+Nodo now exposes light-client primitives through JSON-RPC (`light_getCheckpoint`,
+`light_getHeaders`, `light_getAccountProof`, `light_getTransactionProof`) and a
+WebSocket-compatible event stream at `GET /events`. This is intended for wallets,
+explorers and monitoring tools that need finalized headers, account proofs,
+transaction proofs and live finalization/submission notifications without running
+a full archival node.

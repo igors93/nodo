@@ -11,15 +11,20 @@
 #include "crypto/PublicKey.hpp"
 #include "crypto/SignatureBundle.hpp"
 #include "mempool/Mempool.hpp"
+#include "node/LightClientService.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
+#include "node/WebSocketFrameCodec.hpp"
 #include "p2p/EncryptedPeerTransport.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "utils/Amount.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <iostream>
+#include <openssl/evp.h>
+#include <openssl/sha.h>
 
 #include <chrono>
 #include <cstring>
@@ -31,6 +36,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -167,6 +173,63 @@ bool asciiCaseEqual(const std::string &value, const std::string &expected) {
   return true;
 }
 
+std::string httpHeaderValue(const std::string &request,
+                            const std::string &name) {
+  const std::string wanted = name + ":";
+  std::size_t lineStart = 0;
+  while (lineStart < request.size()) {
+    const std::size_t lineEnd = request.find("\r\n", lineStart);
+    if (lineEnd == std::string::npos) {
+      break;
+    }
+    const std::string line = request.substr(lineStart, lineEnd - lineStart);
+    if (line.size() >= wanted.size()) {
+      bool matches = true;
+      for (std::size_t i = 0; i < wanted.size(); ++i) {
+        char a = line[i];
+        char b = wanted[i];
+        if (a >= 'A' && a <= 'Z')
+          a = static_cast<char>(a + ('a' - 'A'));
+        if (b >= 'A' && b <= 'Z')
+          b = static_cast<char>(b + ('a' - 'A'));
+        if (a != b) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
+        std::string value = line.substr(wanted.size());
+        std::size_t begin = 0;
+        while (begin < value.size() &&
+               (value[begin] == ' ' || value[begin] == '\t'))
+          ++begin;
+        std::size_t end = value.size();
+        while (end > begin && (value[end - 1] == ' ' || value[end - 1] == '\t'))
+          --end;
+        return value.substr(begin, end - begin);
+      }
+    }
+    lineStart = lineEnd + 2;
+  }
+  return "";
+}
+
+std::string websocketAcceptKey(const std::string &clientKey) {
+  static constexpr const char *kGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+  const std::string material = clientKey + kGuid;
+  unsigned char digest[SHA_DIGEST_LENGTH] = {0};
+  SHA1(reinterpret_cast<const unsigned char *>(material.data()),
+       material.size(), digest);
+
+  std::string encoded;
+  encoded.resize(4 * ((SHA_DIGEST_LENGTH + 2) / 3));
+  const int written =
+      EVP_EncodeBlock(reinterpret_cast<unsigned char *>(&encoded[0]), digest,
+                      SHA_DIGEST_LENGTH);
+  encoded.resize(static_cast<std::size_t>(written));
+  return encoded;
+}
+
 std::string jsonStakePosition(const StakePositionView &position) {
   std::ostringstream oss;
   oss << "{"
@@ -301,18 +364,23 @@ core::Transaction parseSignedTransactionSubmission(const std::string &body) {
 // ---------------------------------------------------------------------------
 
 NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
-                             std::uint16_t port, const std::string &bindAddr)
+                             NodeEventBus *eventBus, std::uint16_t port,
+                             const std::string &bindAddr)
     : m_runtime(runtime), m_runtimeMutex(runtimeMutex), m_gossip(nullptr),
       m_port(port), m_bindAddr(bindAddr), m_running(false), m_serverFd(-1),
+      m_ownedEventBus(),
+      m_eventBus(eventBus == nullptr ? &m_ownedEventBus : eventBus),
       m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS) {
   registerJsonRpcMethods();
 }
 
 NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
-                             p2p::GossipMesh &gossip, std::uint16_t port,
-                             const std::string &bindAddr)
+                             p2p::GossipMesh &gossip, NodeEventBus *eventBus,
+                             std::uint16_t port, const std::string &bindAddr)
     : m_runtime(runtime), m_runtimeMutex(runtimeMutex), m_gossip(&gossip),
       m_port(port), m_bindAddr(bindAddr), m_running(false), m_serverFd(-1),
+      m_ownedEventBus(),
+      m_eventBus(eventBus == nullptr ? &m_ownedEventBus : eventBus),
       m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS) {
   registerJsonRpcMethods();
 }
@@ -389,6 +457,20 @@ void NodeRpcServer::stop() {
   if (m_thread.joinable()) {
     m_thread.join();
   }
+  joinClientThreads();
+}
+
+void NodeRpcServer::joinClientThreads() {
+  std::vector<std::thread> threads;
+  {
+    std::lock_guard<std::mutex> lock(m_clientThreadsMutex);
+    threads.swap(m_clientThreads);
+  }
+  for (std::thread &thread : threads) {
+    if (thread.joinable()) {
+      thread.join();
+    }
+  }
 }
 
 void NodeRpcServer::runLoop() {
@@ -442,12 +524,17 @@ void NodeRpcServer::runLoop() {
                        sizeof(timeout));
 #endif
 
-    try {
-      handleClient(clientFd);
-    } catch (...) {
-      // A malformed or aborted client must not terminate the RPC loop.
+    {
+      std::lock_guard<std::mutex> lock(m_clientThreadsMutex);
+      m_clientThreads.emplace_back([this, clientFd] {
+        try {
+          handleClient(clientFd);
+        } catch (...) {
+          // A malformed or aborted client must not terminate the RPC loop.
+        }
+        close_socket(clientFd);
+      });
     }
-    close_socket(clientFd);
   }
 }
 
@@ -464,6 +551,11 @@ void NodeRpcServer::handleClient(int clientFd) {
   if (!parseRequestLine(request, method, path, body)) {
     const std::string resp = httpResponse(400, jsonError("Bad request"));
     (void)sendAll(clientFd, resp);
+    return;
+  }
+
+  if (isWebSocketUpgrade(request, path)) {
+    handleWebSocket(clientFd, request, path);
     return;
   }
 
@@ -499,6 +591,98 @@ bool NodeRpcServer::parseRequestLine(const std::string &request,
     outBody = request.substr(bodyPos + 4);
   }
   return true;
+}
+
+bool NodeRpcServer::isWebSocketUpgrade(const std::string &request,
+                                       const std::string &path) const {
+  const std::string cleanPath = path.substr(0, path.find('?'));
+  if (cleanPath != "/events" && cleanPath != "/events/ws") {
+    return false;
+  }
+  return asciiCaseEqual(httpHeaderValue(request, "Upgrade"), "websocket") &&
+         httpHeaderValue(request, "Sec-WebSocket-Key").size() >= 16;
+}
+
+void NodeRpcServer::handleWebSocket(int clientFd, const std::string &request,
+                                    const std::string &path) {
+  const std::string key = httpHeaderValue(request, "Sec-WebSocket-Key");
+  if (key.empty()) {
+    (void)sendAll(clientFd,
+                  httpResponse(400, jsonError("Missing WebSocket key")));
+    return;
+  }
+
+  const std::string response = "HTTP/1.1 101 Switching Protocols\r\n"
+                               "Upgrade: websocket\r\n"
+                               "Connection: Upgrade\r\n"
+                               "Sec-WebSocket-Accept: " +
+                               websocketAcceptKey(key) +
+                               "\r\n"
+                               "\r\n";
+  if (!sendAll(clientFd, response)) {
+    return;
+  }
+
+  std::uint64_t afterSequence = 0;
+  const std::size_t query = path.find('?');
+  if (query != std::string::npos) {
+    const std::string q = path.substr(query + 1);
+    const std::string marker = "after=";
+    const std::size_t pos = q.find(marker);
+    if (pos != std::string::npos) {
+      std::size_t end = q.find('&', pos + marker.size());
+      if (end == std::string::npos)
+        end = q.size();
+      (void)parseUint64Strict(
+          q.substr(pos + marker.size(), end - (pos + marker.size())),
+          afterSequence);
+    }
+  }
+
+  const auto hello = m_eventBus->publish(
+      NodeEventType::RPC_SUBSCRIPTION, 0, "",
+      "{\"transport\":\"websocket\",\"endpoint\":\"/events\"}",
+      std::chrono::duration_cast<std::chrono::seconds>(
+          std::chrono::system_clock::now().time_since_epoch())
+          .count());
+  (void)sendAll(clientFd,
+                WebSocketFrameCodec::textFrame(hello.serializeJson()));
+  afterSequence = std::max(afterSequence, hello.sequence());
+
+  while (m_running.load()) {
+    const std::vector<ChainEvent> events =
+        m_eventBus->recent(afterSequence, 100);
+    for (const ChainEvent &event : events) {
+      if (!sendAll(clientFd,
+                   WebSocketFrameCodec::textFrame(event.serializeJson()))) {
+        return;
+      }
+      afterSequence = std::max(afterSequence, event.sequence());
+    }
+
+    char buffer[512];
+    const platform_ssize_t received =
+        ::recv(clientFd, buffer, sizeof(buffer), 0);
+    if (received == 0) {
+      return;
+    }
+    if (received > 0) {
+      const auto frame = WebSocketFrameCodec::decodeClientFrame(
+          std::string(buffer, buffer + received));
+      if (frame.has_value()) {
+        if (frame->opcode == WebSocketOpcode::CLOSE) {
+          (void)sendAll(clientFd, WebSocketFrameCodec::closeFrame());
+          return;
+        }
+        if (frame->opcode == WebSocketOpcode::PING) {
+          (void)sendAll(clientFd,
+                        WebSocketFrameCodec::pongFrame(frame->payload));
+        }
+      }
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  }
 }
 
 std::string NodeRpcServer::httpResponse(int statusCode,
@@ -563,7 +747,6 @@ std::string NodeRpcServer::pathSegment(const std::string &path, int index) {
   return "";
 }
 
-
 // ---------------------------------------------------------------------------
 // JSON-RPC runtime binding
 // ---------------------------------------------------------------------------
@@ -576,7 +759,9 @@ void NodeRpcServer::registerJsonRpcMethods() {
       [this](const std::string &hash) { return handleBlockByHash(hash); },
       [this](const std::string &txId) { return handleTx(txId); },
       [this](const std::string &address) { return handleAccount(address); },
-      [this](const std::string &txEnvelope) { return handleSubmit(txEnvelope); },
+      [this](const std::string &txEnvelope) {
+        return handleSubmit(txEnvelope);
+      },
       [this]() { return handleMempool(); },
       [this](const std::string &urgency) { return handleEstimateFee(urgency); },
       [this]() { return handleChainInfo(); },
@@ -649,8 +834,8 @@ void NodeRpcServer::registerJsonRpcMethods() {
         const std::string address =
             JsonRpcDispatcher::extractParam(req.params, "address");
         if (address.empty()) {
-          return JsonRpcResponse::makeError(req.id, JsonRpcError::INVALID_PARAMS,
-                                            "Missing param: address");
+          return JsonRpcResponse::makeError(
+              req.id, JsonRpcError::INVALID_PARAMS, "Missing param: address");
         }
         return JsonRpcResponse::success(req.id, handleAccountProof(address));
       });
@@ -658,10 +843,11 @@ void NodeRpcServer::registerJsonRpcMethods() {
   m_jsonRpcDispatcher.registerHandler(
       "nodo_sendRawTransaction",
       [this](const JsonRpcRequest &req) -> JsonRpcResponse {
-        const std::string tx = JsonRpcDispatcher::extractParam(req.params, "tx");
+        const std::string tx =
+            JsonRpcDispatcher::extractParam(req.params, "tx");
         if (tx.empty()) {
-          return JsonRpcResponse::makeError(req.id, JsonRpcError::INVALID_PARAMS,
-                                            "Missing param: tx");
+          return JsonRpcResponse::makeError(
+              req.id, JsonRpcError::INVALID_PARAMS, "Missing param: tx");
         }
         return JsonRpcResponse::success(req.id, handleSubmit(tx));
       });
@@ -669,12 +855,66 @@ void NodeRpcServer::registerJsonRpcMethods() {
   m_jsonRpcDispatcher.registerHandler(
       "governance_submitExecution",
       [this](const JsonRpcRequest &req) -> JsonRpcResponse {
-        const std::string tx = JsonRpcDispatcher::extractParam(req.params, "tx");
+        const std::string tx =
+            JsonRpcDispatcher::extractParam(req.params, "tx");
         if (tx.empty()) {
-          return JsonRpcResponse::makeError(req.id, JsonRpcError::INVALID_PARAMS,
-                                            "Missing param: tx");
+          return JsonRpcResponse::makeError(
+              req.id, JsonRpcError::INVALID_PARAMS, "Missing param: tx");
         }
         return JsonRpcResponse::success(req.id, handleSubmit(tx));
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "light_getCheckpoint",
+      [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(req.id, handleLightCheckpoint());
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "light_getHeaders", [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        const std::string fromHeight =
+            JsonRpcDispatcher::extractParam(req.params, "fromHeight");
+        const std::string maxHeaders =
+            JsonRpcDispatcher::extractParam(req.params, "maxHeaders");
+        return JsonRpcResponse::success(
+            req.id, handleLightHeaders(fromHeight, maxHeaders));
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "light_getAccountProof",
+      [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        const std::string address =
+            JsonRpcDispatcher::extractParam(req.params, "address");
+        if (address.empty()) {
+          return JsonRpcResponse::makeError(
+              req.id, JsonRpcError::INVALID_PARAMS, "Missing param: address");
+        }
+        return JsonRpcResponse::success(req.id,
+                                        handleLightAccountProof(address));
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "light_getTransactionProof",
+      [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        const std::string txId =
+            JsonRpcDispatcher::extractParam(req.params, "transactionId");
+        if (txId.empty()) {
+          return JsonRpcResponse::makeError(req.id,
+                                            JsonRpcError::INVALID_PARAMS,
+                                            "Missing param: transactionId");
+        }
+        return JsonRpcResponse::success(req.id,
+                                        handleLightTransactionProof(txId));
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getEvents", [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(
+            req.id,
+            handleEvents(
+                JsonRpcDispatcher::extractParam(req.params, "afterSequence"),
+                JsonRpcDispatcher::extractParam(req.params, "type"),
+                JsonRpcDispatcher::extractParam(req.params, "limit")));
       });
 }
 
@@ -782,6 +1022,33 @@ std::pair<int, std::string> NodeRpcServer::dispatch(const std::string &method,
   if (route == "mempool" && method == "GET") {
     return {200, handleMempool()};
   }
+  if (route == "light" && method == "GET") {
+    if (param == "checkpoint" || param.empty()) {
+      return {200, handleLightCheckpoint()};
+    }
+    if (param == "headers") {
+      return {200, handleLightHeaders(pathSegment(cleanPath, 3),
+                                      pathSegment(cleanPath, 4))};
+    }
+    if (param == "account") {
+      const std::string address = pathSegment(cleanPath, 3);
+      if (address.empty()) {
+        return {400, jsonError("Missing light-client account address")};
+      }
+      return {200, handleLightAccountProof(address)};
+    }
+    if (param == "tx") {
+      const std::string txId = pathSegment(cleanPath, 3);
+      if (txId.empty()) {
+        return {400, jsonError("Missing light-client transaction id")};
+      }
+      return {200, handleLightTransactionProof(txId)};
+    }
+    return {404, jsonError("Unknown light route: " + param)};
+  }
+  if (route == "events" && method == "GET") {
+    return {200, handleEvents("0", "", "100")};
+  }
   if (route == "governance" && method == "GET") {
     if (param == "status" || param.empty()) {
       return {200, handleGovernanceStatus()};
@@ -877,7 +1144,6 @@ std::string NodeRpcServer::handleBlock(const std::string &heightStr) const {
       << ",\"recordCount\":" << block.records().size() << "}";
   return oss.str();
 }
-
 
 std::string
 NodeRpcServer::handleBlockByHash(const std::string &blockHash) const {
@@ -1175,7 +1441,6 @@ std::string NodeRpcServer::handleMempool() const {
   return oss.str();
 }
 
-
 std::string NodeRpcServer::handleEstimateFee(const std::string &urgency) const {
   const std::uint64_t minimum = m_runtime.effectiveMinimumFeeRawUnits();
   std::uint64_t multiplier = 1;
@@ -1205,26 +1470,26 @@ std::string NodeRpcServer::handleChainInfo() const {
   const config::NetworkParameters &network = genesis.networkParameters();
   const auto &chain = m_runtime.blockchain();
   const std::uint64_t height = chain.empty() ? 0 : chain.latestBlock().index();
-  const std::string latestHash = chain.empty() ? "" : chain.latestBlock().hash();
+  const std::string latestHash =
+      chain.empty() ? "" : chain.latestBlock().hash();
 
   std::ostringstream oss;
   oss << "{"
       << "\"networkName\":" << jsonString(network.networkName())
       << ",\"chainId\":" << jsonString(network.chainId())
       << ",\"genesisConfigId\":" << jsonString(genesis.deterministicId())
-      << ",\"height\":" << height
-      << ",\"finalizedHeight\":"
+      << ",\"height\":" << height << ",\"finalizedHeight\":"
       << m_runtime.finalizationRegistry().highestFinalizedHeight()
       << ",\"latestHash\":" << jsonString(latestHash)
-      << ",\"minimumFeeRawUnits\":"
-      << m_runtime.effectiveMinimumFeeRawUnits()
-      << ",\"validatorCount\":"
-      << m_runtime.validatorRegistry().activeCount() << "}";
+      << ",\"minimumFeeRawUnits\":" << m_runtime.effectiveMinimumFeeRawUnits()
+      << ",\"validatorCount\":" << m_runtime.validatorRegistry().activeCount()
+      << "}";
   return oss.str();
 }
 
 std::string NodeRpcServer::handleJsonRpcMethods() const {
-  const std::vector<std::string> methods = m_jsonRpcDispatcher.registeredMethods();
+  const std::vector<std::string> methods =
+      m_jsonRpcDispatcher.registeredMethods();
   std::ostringstream oss;
   oss << "{\"methods\":[";
   for (std::size_t i = 0; i < methods.size(); ++i) {
@@ -1449,6 +1714,20 @@ std::string NodeRpcServer::handleSubmit(const std::string &body) {
   if (m_gossip != nullptr && result.success()) {
     m_gossip->broadcast(p2p::NetworkMessageType::TRANSACTION_GOSSIP,
                         gossipPayload, now);
+  }
+
+  if (result.success()) {
+    m_eventBus->publish(NodeEventType::TX_ADMITTED,
+                        m_runtime.blockchain().empty()
+                            ? 0
+                            : m_runtime.blockchain().latestBlock().index(),
+                        m_runtime.blockchain().empty()
+                            ? std::string()
+                            : m_runtime.blockchain().latestBlock().hash(),
+                        std::string("{\"txId\":") +
+                            jsonString(result.transactionId()) +
+                            ",\"source\":\"json_rpc\"}",
+                        now);
   } else if (!result.success()) {
     std::cout << "[DEBUG] NodeRpcServer handleSubmit admitTransaction failed: "
               << result.reason() << std::endl;
@@ -1461,6 +1740,59 @@ std::string NodeRpcServer::handleSubmit(const std::string &body) {
       << ",\"txId\":" << jsonString(result.transactionId())
       << ",\"reason\":" << jsonString(result.reason()) << "}";
   return oss.str();
+}
+
+std::string NodeRpcServer::handleLightCheckpoint() const {
+  return LightClientService::checkpointJson(m_runtime);
+}
+
+std::string
+NodeRpcServer::handleLightHeaders(const std::string &fromHeight,
+                                  const std::string &maxHeaders) const {
+  std::uint64_t from = 0;
+  if (!parseUint64Strict(fromHeight, from)) {
+    return jsonError("Invalid fromHeight parameter.");
+  }
+  std::uint64_t maxH = 0;
+  if (!parseUint64Strict(maxHeaders, maxH)) {
+    return jsonError("Invalid maxHeaders parameter.");
+  }
+  return LightClientService::headerRangeJson(m_runtime, from, maxH);
+}
+
+std::string
+NodeRpcServer::handleLightAccountProof(const std::string &address) const {
+  return LightClientService::accountProofJson(m_runtime, address);
+}
+
+std::string
+NodeRpcServer::handleLightTransactionProof(const std::string &txId) const {
+  return LightClientService::transactionProofJson(m_runtime, txId);
+}
+
+std::string NodeRpcServer::handleEvents(const std::string &afterSequence,
+                                        const std::string &type,
+                                        const std::string &limit) const {
+  std::uint64_t seq = 0;
+  if (!afterSequence.empty() && !parseUint64Strict(afterSequence, seq)) {
+    return jsonError("Invalid afterSequence parameter.");
+  }
+  std::uint64_t maxL = 100;
+  if (!limit.empty() && !parseUint64Strict(limit, maxL)) {
+    return jsonError("Invalid limit parameter.");
+  }
+  std::optional<NodeEventType> eventType;
+  if (!type.empty()) {
+    eventType = nodeEventTypeFromString(type);
+    if (!eventType.has_value()) {
+      return jsonError("Invalid event type parameter.");
+    }
+  }
+  if (m_eventBus != nullptr) {
+    return m_eventBus->recentJson(seq, static_cast<std::size_t>(maxL),
+                                  eventType);
+  }
+  return jsonError("Event bus is not configured on this node.");
 }
 
 } // namespace nodo::node

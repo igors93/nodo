@@ -144,12 +144,20 @@ FinalizedArtifactGossipAdmissionResult FinalizedArtifactGossipAdmission::admit(
   const consensus::FinalizedBlockRecord *existing =
       registry.recordForHeight(blockIndex);
   if (existing != nullptr) {
-    if (existing->serialize() != record.serialize()) {
+    // Finality identity is the block, not the proof bytes: two honest nodes
+    // finalizing the same block legitimately produce records that differ in
+    // finalizedAt and in which quorum votes they collected. Only a different
+    // block hash at an already-finalized height is a real conflict (same
+    // semantics as BlockFinalizationRegistry::canRegister).
+    if (existing->blockHash() != record.blockHash() ||
+        existing->previousHash() != record.previousHash()) {
       return FinalizedArtifactGossipAdmissionResult::rejected(
           FinalizedArtifactGossipAdmissionStatus::CONFLICTING_FINALIZATION,
           "Finalized artifact conflicts with the recorded finality proof.");
     }
-    if (!store.save(record)) {
+    // Keep the first proof we recorded; re-persist it so a crash between
+    // registration and persistence can never leave finality volatile-only.
+    if (!store.save(*existing)) {
       return FinalizedArtifactGossipAdmissionResult::rejected(
           FinalizedArtifactGossipAdmissionStatus::PERSISTENCE_FAILED,
           "Existing finality proof could not be persisted.");

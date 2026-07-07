@@ -1,5 +1,6 @@
 #include "node/PersistentBlockStateSync.hpp"
 
+#include "config/NetworkParameters.hpp"
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/QuorumCertificate.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
@@ -19,8 +20,12 @@
 #include "crypto/KeyPair.hpp"
 #include "crypto/SignatureBundle.hpp"
 #include "crypto/SigningDomain.hpp"
+#include "economics/ValidationWorkRecord.hpp"
+#include "node/NodeDataDirectory.hpp"
+#include "node/NodeRuntime.hpp"
 #include "utils/Amount.hpp"
 
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -422,6 +427,154 @@ void testApplyValidatedBatchAcceptsBlockWithCorrectRoots() {
       "Blockchain must grow by one after successful persistent sync.");
 }
 
+// ── importFinalizedBatch boundary semantics ─────────────────────────────────
+//
+// These tests pin the self-healing behavior of the runtime-level import: a
+// batch that raced against local consensus (the tip advanced between the
+// sync request and its response) must be recognized as STALE rather than
+// rejected as a failure, an overlapping batch must agree with the local
+// chain block-for-block, and a batch that leaves a gap must be rejected
+// with a reason that names the heights involved.
+
+constexpr std::int64_t kImportGenesisTimestamp = 1900800000;
+constexpr const char *kImportProtocolVersion = "nodo/test";
+
+crypto::KeyPair importValidatorKey() {
+  return crypto::KeyPair::createDeterministicBls12381KeyPair(
+      "psync-import-validator");
+}
+
+config::GenesisConfig importGenesisConfig() {
+  return config::GenesisConfig(
+      config::NetworkParameters::developmentLocal(), kImportGenesisTimestamp,
+      {config::BootstrapValidatorConfig(importValidatorKey().publicKey(), 1, 1,
+                                        "psync-import-validator")},
+      {}, "psync-import-genesis");
+}
+
+struct ImportRuntimeFixture {
+  NodeRuntime runtime;
+  core::Block canonicalBlock;
+};
+
+// Runtime whose canonical chain already contains a block at height 1 — the
+// position of a node whose tip advanced while a sync response was in flight.
+ImportRuntimeFixture importRuntimeWithCanonicalBlock() {
+  const config::GenesisConfig genesis = importGenesisConfig();
+  const p2p::PeerInfo peer("psync-import-node", "127.0.0.1:39111",
+                           kImportProtocolVersion, 0, kImportGenesisTimestamp);
+  const NodeRuntimeStartResult started =
+      NodeRuntimeFactory::startFromGenesis(NodeRuntimeConfig(genesis, peer, 8));
+  requireCondition(started.started(),
+                   "Import fixture runtime failed to start: " +
+                       started.reason());
+
+  NodeRuntime runtime = started.runtime();
+  const economics::ValidationWorkRecord work(
+      importValidatorKey().address().value(), 1,
+      economics::ValidationWorkType::VALIDATE_BLOCK,
+      economics::ValidationWorkResult::ACCEPTED, "psync-import-target",
+      "psync-import-evidence", 1, kImportGenesisTimestamp + 19);
+  core::Block canonicalBlock(1, runtime.blockchain().latestBlock().hash(),
+                             {core::LedgerRecord::fromValidationWorkRecord(
+                                 work, kImportGenesisTimestamp + 19)},
+                             kImportGenesisTimestamp + 20);
+  runtime.mutableBlockchain().addBlock(canonicalBlock);
+  return ImportRuntimeFixture{std::move(runtime), std::move(canonicalBlock)};
+}
+
+PersistentSyncCheckpoint checkpointAtTip(const NodeRuntime &runtime) {
+  const core::Block &tip = runtime.blockchain().latestBlock();
+  return PersistentSyncCheckpoint(
+      PersistentSyncCheckpoint::SCHEMA_VERSION, tip.index(), tip.hash(),
+      tip.hasCanonicalStateRoot() ? tip.stateRoot() : kWrongStateRoot,
+      PersistentSyncStatus::IDLE, "psync-import-node",
+      kImportGenesisTimestamp + 30);
+}
+
+void testImportFinalizedBatchReportsStaleBatchInsteadOfFailure() {
+  ImportRuntimeFixture fixture = importRuntimeWithCanonicalBlock();
+  const PersistentSyncCheckpoint checkpoint = checkpointAtTip(fixture.runtime);
+
+  // The batch re-delivers exactly the block the node already finalized.
+  const PersistentBlockSyncItem item(
+      1, fixture.canonicalBlock.hash(), fixture.canonicalBlock.previousHash(),
+      fixture.canonicalBlock.serialize(), kWrongStateRoot,
+      kImportGenesisTimestamp + 21);
+  const PersistentBlockSyncBatch batch("peer-a", 1, 1, {item},
+                                       kImportGenesisTimestamp + 22);
+  const NodeDataDirectoryConfig directory(
+      std::filesystem::temp_directory_path() / "nodo-psync-import-stale");
+
+  const PersistentSyncApplyResult result =
+      PersistentBlockStateSyncApplier::importFinalizedBatch(
+          checkpoint, batch, fixture.runtime, directory, nullptr,
+          kImportGenesisTimestamp + 40);
+
+  requireCondition(result.status() == PersistentSyncApplyStatus::STALE,
+                   "A batch entirely behind the local tip must be STALE, "
+                   "got: " +
+                       result.serialize());
+  requireCondition(!result.checkpoint().has_value(),
+                   "A stale batch must not advance the checkpoint.");
+  requireCondition(fixture.runtime.blockchain().size() == 2U,
+                   "A stale batch must not mutate the local chain.");
+}
+
+void testImportFinalizedBatchRejectsOverlapDisagreeingWithLocalChain() {
+  ImportRuntimeFixture fixture = importRuntimeWithCanonicalBlock();
+  const PersistentSyncCheckpoint checkpoint = checkpointAtTip(fixture.runtime);
+
+  // Same height as the local block, different block hash: the peer is on a
+  // different chain, so the batch must be rejected — never treated as stale.
+  const PersistentBlockSyncItem item(
+      1, kWrongReceiptsRoot, fixture.canonicalBlock.previousHash(),
+      fixture.canonicalBlock.serialize(), kWrongStateRoot,
+      kImportGenesisTimestamp + 21);
+  const PersistentBlockSyncBatch batch("peer-a", 1, 1, {item},
+                                       kImportGenesisTimestamp + 22);
+  const NodeDataDirectoryConfig directory(
+      std::filesystem::temp_directory_path() / "nodo-psync-import-disagree");
+
+  const PersistentSyncApplyResult result =
+      PersistentBlockStateSyncApplier::importFinalizedBatch(
+          checkpoint, batch, fixture.runtime, directory, nullptr,
+          kImportGenesisTimestamp + 40);
+
+  requireCondition(result.status() == PersistentSyncApplyStatus::REJECTED,
+                   "An overlapping batch that disagrees with the local chain "
+                   "must be rejected.");
+  requireCondition(result.reason().find("disagrees") != std::string::npos,
+                   "Rejection reason must name the chain disagreement, got: " +
+                       result.reason());
+}
+
+void testImportFinalizedBatchRejectsBatchStartingPastLocalTip() {
+  ImportRuntimeFixture fixture = importRuntimeWithCanonicalBlock();
+  const PersistentSyncCheckpoint checkpoint = checkpointAtTip(fixture.runtime);
+
+  // fromHeight 3 with a local tip at height 1 leaves a gap at height 2.
+  const PersistentBlockSyncItem item(
+      3, fixture.canonicalBlock.hash(), fixture.canonicalBlock.previousHash(),
+      fixture.canonicalBlock.serialize(), kWrongStateRoot,
+      kImportGenesisTimestamp + 21);
+  const PersistentBlockSyncBatch batch("peer-a", 3, 3, {item},
+                                       kImportGenesisTimestamp + 22);
+  const NodeDataDirectoryConfig directory(
+      std::filesystem::temp_directory_path() / "nodo-psync-import-gap");
+
+  const PersistentSyncApplyResult result =
+      PersistentBlockStateSyncApplier::importFinalizedBatch(
+          checkpoint, batch, fixture.runtime, directory, nullptr,
+          kImportGenesisTimestamp + 40);
+
+  requireCondition(result.status() == PersistentSyncApplyStatus::REJECTED,
+                   "A batch starting past the local tip must be rejected.");
+  requireCondition(
+      result.reason().find("starts at height 3") != std::string::npos,
+      "Rejection reason must name the gap boundary, got: " + result.reason());
+}
+
 void testProtocolCommitmentRejectsItemsWithoutFinalizedRecord() {
   core::Blockchain blockchain = chainWithGenesis();
   const core::ValidatorRegistry registry;
@@ -456,6 +609,9 @@ int main() {
     testApplyValidatedBatchRejectsNonCanonicalRoots();
     testApplyValidatedBatchAcceptsBlockWithCorrectRoots();
     testProtocolCommitmentRejectsItemsWithoutFinalizedRecord();
+    testImportFinalizedBatchReportsStaleBatchInsteadOfFailure();
+    testImportFinalizedBatchRejectsOverlapDisagreeingWithLocalChain();
+    testImportFinalizedBatchRejectsBatchStartingPastLocalTip();
 
     std::cout << "PersistentSync protocol validation tests passed.\n";
     return 0;

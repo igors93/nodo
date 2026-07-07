@@ -2,7 +2,10 @@
 #define NODO_NODE_NODE_RPC_SERVER_HPP
 
 #include "node/JsonRpcServer.hpp"
+#include "node/LightClientService.hpp"
+#include "node/NodeEventBus.hpp"
 #include "node/NodeRuntime.hpp"
+#include "node/WebSocketFrameCodec.hpp"
 #include "p2p/GossipMesh.hpp"
 #include "p2p/PeerRateLimiter.hpp"
 
@@ -11,6 +14,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace nodo::node {
 
@@ -72,13 +76,15 @@ public:
   // while ticking, so RPC request handling and block production/consensus
   // never touch NodeRuntime (blockchain, mempool, ...) at the same time.
   NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
+                NodeEventBus *eventBus = nullptr,
                 std::uint16_t port = DEFAULT_PORT,
                 const std::string &bindAddr = "127.0.0.1");
 
   // Overload that also wires a GossipMesh for broadcasting submitted
   // transactions.
   NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
-                p2p::GossipMesh &gossip, std::uint16_t port = DEFAULT_PORT,
+                p2p::GossipMesh &gossip, NodeEventBus *eventBus,
+                std::uint16_t port = DEFAULT_PORT,
                 const std::string &bindAddr = "127.0.0.1");
 
   ~NodeRpcServer();
@@ -98,11 +104,20 @@ private:
   std::atomic<bool> m_running;
   std::thread m_thread;
   std::atomic<int> m_serverFd;
+  mutable std::mutex m_clientThreadsMutex;
+  std::vector<std::thread> m_clientThreads;
+  NodeEventBus m_ownedEventBus;
+  NodeEventBus *m_eventBus;
   p2p::PeerRateLimiter m_rateLimiter;
   JsonRpcDispatcher m_jsonRpcDispatcher;
 
   void runLoop();
   void handleClient(int clientFd);
+  void joinClientThreads();
+  bool isWebSocketUpgrade(const std::string &request,
+                          const std::string &path) const;
+  void handleWebSocket(int clientFd, const std::string &request,
+                       const std::string &path);
 
   // Returns (statusCode, responseBody).
   std::pair<int, std::string> dispatch(const std::string &method,
@@ -136,6 +151,14 @@ private:
   std::string handleEstimateFee(const std::string &urgency) const;
   std::string handleChainInfo() const;
   std::string handleJsonRpcMethods() const;
+  std::string handleLightCheckpoint() const;
+  std::string handleLightHeaders(const std::string &fromHeight,
+                                 const std::string &maxHeaders) const;
+  std::string handleLightAccountProof(const std::string &address) const;
+  std::string handleLightTransactionProof(const std::string &txId) const;
+  std::string handleEvents(const std::string &afterSequence,
+                           const std::string &type,
+                           const std::string &limit) const;
   std::string handleGovernanceStatus() const;
   std::string handleGovernanceProposals() const;
   std::string handleGovernanceProposal(const std::string &proposalId) const;

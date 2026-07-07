@@ -96,6 +96,25 @@ namespace {
 static const std::string kOrchestratorCanonicalPrefix =
     "NODO_CANONICAL_PROTOCOL_HEX_V1:";
 
+
+std::string jsonString(const std::string &value) {
+  std::string out;
+  out.reserve(value.size() + 2);
+  out.push_back('"');
+  for (const char c : value) {
+    switch (c) {
+    case '"': out += "\\\""; break;
+    case '\\': out += "\\\\"; break;
+    case '\n': out += "\\n"; break;
+    case '\r': out += "\\r"; break;
+    case '\t': out += "\\t"; break;
+    default: out.push_back(c); break;
+    }
+  }
+  out.push_back('"');
+  return out;
+}
+
 // Decode a canonical-hex gossip payload; returns std::nullopt if not in
 // canonical format or if hex decoding fails.
 std::optional<std::vector<unsigned char>>
@@ -626,6 +645,17 @@ void NodeOrchestrator::tick(std::int64_t now) {
         if (applyResult.applied()) {
           currentCheckpoint = applyResult.checkpoint().value();
           m_syncHealth.recordSuccess(now);
+          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE imported "
+                       "blocks up to height "
+                    << currentCheckpoint.finalizedHeight() << " from peer "
+                    << batch.sourcePeerId() << std::endl;
+        } else if (applyResult.stale()) {
+          // The tip advanced past this batch between request and response
+          // (local consensus kept finalizing, or another peer answered
+          // first). The peer agrees with our chain; nothing to record.
+          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE batch "
+                       "is stale (already imported); ignoring."
+                    << std::endl;
         } else {
           std::cout
               << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE import failed: "
@@ -646,6 +676,10 @@ void NodeOrchestrator::tick(std::int64_t now) {
       }
     }
   }
+
+  // Self-healing catch-up: while a peer has proven finality ahead of the
+  // local tip, keep re-requesting block sync until the gap is closed.
+  driveSyncWatchdog(now);
 
   // Reconcile policy state after this tick may have completed handshakes,
   // quarantined peers, or observed disconnects.
@@ -705,6 +739,10 @@ const std::string &NodeOrchestrator::rpcStartError() const {
 }
 
 std::mutex &NodeOrchestrator::runtimeMutex() { return m_runtimeMutex; }
+
+NodeEventBus &NodeOrchestrator::eventBus() { return m_eventBus; }
+
+const NodeEventBus &NodeOrchestrator::eventBus() const { return m_eventBus; }
 
 std::vector<p2p::NetworkEnvelope>
 NodeOrchestrator::drainGossipInbox(p2p::NetworkMessageType type) {
@@ -806,6 +844,94 @@ void NodeOrchestrator::triggerSyncIfBehind(
               req));
   m_tcpRuntime->gossipMesh().sendTo(
       remotePeerId, p2p::NetworkMessageType::BLOCK_SYNC_REQUEST, payload, now);
+}
+
+void NodeOrchestrator::noteFinalityAhead(std::uint64_t height,
+                                         const std::string &blockHash,
+                                         const std::string &sourcePeerId,
+                                         std::int64_t now) {
+  if (!m_runtime || !m_tcpRuntime || height == 0 || blockHash.empty() ||
+      sourcePeerId.empty()) {
+    return;
+  }
+  if (height <= m_runtime->blockchain().latestBlock().index()) {
+    return;
+  }
+
+  if (height > m_syncWatchdogTargetHeight) {
+    m_syncWatchdogTargetHeight = height;
+    m_syncWatchdogTargetBlockHash = blockHash;
+  }
+  // Always refresh the source peer: the most recent prover is the most
+  // likely to still be reachable and to have the blocks.
+  m_syncWatchdogSourcePeerId = sourcePeerId;
+
+  const auto &network = m_config.genesisConfig().networkParameters();
+  const ChainStatusMessage syntheticStatus(
+      network.networkName(), network.chainId(),
+      m_config.localPeer().protocolVersion(), height, blockHash, height,
+      blockHash);
+  triggerSyncIfBehind(syntheticStatus, sourcePeerId, now);
+  m_syncWatchdogLastRequestAt = now;
+}
+
+void NodeOrchestrator::driveSyncWatchdog(std::int64_t now) {
+  // Re-request cadence. Long enough not to spam peers between a request and
+  // its response on a healthy link, short enough that a lost request or a
+  // rejected batch only delays catch-up by seconds.
+  constexpr std::int64_t kSyncWatchdogRetrySeconds = 5;
+
+  if (m_syncWatchdogTargetHeight == 0 || !m_runtime || !m_tcpRuntime) {
+    return;
+  }
+
+  if (m_runtime->blockchain().latestBlock().index() >=
+      m_syncWatchdogTargetHeight) {
+    // Caught up: the watchdog has done its job.
+    m_syncWatchdogTargetHeight = 0;
+    m_syncWatchdogTargetBlockHash.clear();
+    m_syncWatchdogSourcePeerId.clear();
+    return;
+  }
+
+  if (now - m_syncWatchdogLastRequestAt < kSyncWatchdogRetrySeconds) {
+    return;
+  }
+
+  // Prefer the peer that proved the target; if it is gone, rotate through
+  // any currently active peer so one dead peer cannot stall recovery.
+  std::string peerId = m_syncWatchdogSourcePeerId;
+  const auto activePeers =
+      m_tcpRuntime->gossipMesh().peerRegistry().activePeersAt(now);
+  bool sourceStillActive = false;
+  for (const auto &peer : activePeers) {
+    if (peer.nodeId() == peerId) {
+      sourceStillActive = true;
+      break;
+    }
+  }
+  if (!sourceStillActive) {
+    if (activePeers.empty()) {
+      return;
+    }
+    peerId = activePeers[static_cast<std::size_t>(now) % activePeers.size()]
+                 .nodeId();
+  }
+
+  std::cout << "[DEBUG] NodeOrchestrator sync watchdog re-requesting blocks: "
+            << "local height "
+            << m_runtime->blockchain().latestBlock().index()
+            << ", target height " << m_syncWatchdogTargetHeight << ", peer "
+            << peerId << std::endl;
+
+  const auto &network = m_config.genesisConfig().networkParameters();
+  const ChainStatusMessage syntheticStatus(
+      network.networkName(), network.chainId(),
+      m_config.localPeer().protocolVersion(), m_syncWatchdogTargetHeight,
+      m_syncWatchdogTargetBlockHash, m_syncWatchdogTargetHeight,
+      m_syncWatchdogTargetBlockHash);
+  triggerSyncIfBehind(syntheticStatus, peerId, now);
+  m_syncWatchdogLastRequestAt = now;
 }
 
 // ---- Internal startup helpers ---------------------------------------------
@@ -1081,6 +1207,19 @@ bool NodeOrchestrator::startConsensus() {
       return;
     }
 
+    m_eventBus.publish(
+        NodeEventType::BLOCK_FINALIZED, block.index(), block.hash(),
+        std::string("{\"height\":") + std::to_string(block.index()) +
+            ",\"hash\":" + jsonString(block.hash()) +
+            ",\"recordCount\":" + std::to_string(block.records().size()) + "}",
+        static_cast<std::int64_t>(now));
+
+    m_eventBus.publish(
+        NodeEventType::LIGHT_CLIENT_CHECKPOINT, block.index(), block.hash(),
+        std::string("{\"height\":") + std::to_string(block.index()) +
+            ",\"stateRoot\":" + jsonString(block.stateRoot()) + "}",
+        static_cast<std::int64_t>(now));
+
     BlockAnnounceHandler::broadcastBlock(block, m_tcpRuntime->gossipMesh(),
                                          now);
 
@@ -1121,7 +1260,7 @@ bool NodeOrchestrator::startRpc() {
   m_rpcStartError.clear();
   try {
     m_rpcServer = std::make_unique<NodeRpcServer>(
-        *m_runtime, m_runtimeMutex, m_tcpRuntime->gossipMesh(),
+        *m_runtime, m_runtimeMutex, m_tcpRuntime->gossipMesh(), &m_eventBus,
         m_config.rpcPort(), m_config.rpcBindAddr());
     m_rpcServer->start();
     return true;
