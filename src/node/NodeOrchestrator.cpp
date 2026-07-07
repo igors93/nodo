@@ -96,19 +96,30 @@ namespace {
 static const std::string kOrchestratorCanonicalPrefix =
     "NODO_CANONICAL_PROTOCOL_HEX_V1:";
 
-
 std::string jsonString(const std::string &value) {
   std::string out;
   out.reserve(value.size() + 2);
   out.push_back('"');
   for (const char c : value) {
     switch (c) {
-    case '"': out += "\\\""; break;
-    case '\\': out += "\\\\"; break;
-    case '\n': out += "\\n"; break;
-    case '\r': out += "\\r"; break;
-    case '\t': out += "\\t"; break;
-    default: out.push_back(c); break;
+    case '"':
+      out += "\\\"";
+      break;
+    case '\\':
+      out += "\\\\";
+      break;
+    case '\n':
+      out += "\\n";
+      break;
+    case '\r':
+      out += "\\r";
+      break;
+    case '\t':
+      out += "\\t";
+      break;
+    default:
+      out.push_back(c);
+      break;
     }
   }
   out.push_back('"');
@@ -778,7 +789,7 @@ void NodeOrchestrator::registerBootstrapPeer(const p2p::PeerMetadata &peer,
   driveNetworkPeerPolicy(now);
 }
 
-p2p::DiscoveryService* NodeOrchestrator::discoveryService() {
+p2p::DiscoveryService *NodeOrchestrator::discoveryService() {
   return m_discoveryService.get();
 }
 
@@ -919,8 +930,7 @@ void NodeOrchestrator::driveSyncWatchdog(std::int64_t now) {
   }
 
   std::cout << "[DEBUG] NodeOrchestrator sync watchdog re-requesting blocks: "
-            << "local height "
-            << m_runtime->blockchain().latestBlock().index()
+            << "local height " << m_runtime->blockchain().latestBlock().index()
             << ", target height " << m_syncWatchdogTargetHeight << ", peer "
             << peerId << std::endl;
 
@@ -1033,21 +1043,23 @@ bool NodeOrchestrator::startTransport() {
   const std::uint16_t tcpPort = transportConfig.port();
   const std::uint16_t udpPort = static_cast<std::uint16_t>(tcpPort + 1);
 
-  m_discoveryService =
-      std::make_unique<p2p::DiscoveryService>(peer.peerId(), udpPort, tcpPort);
+  if (m_config.enablePeerExchange()) {
+    m_discoveryService = std::make_unique<p2p::DiscoveryService>(
+        peer.peerId(), udpPort, tcpPort);
 
-  m_discoveryService->registerPeerDiscoveredCallback(
-      [this](const std::string &peerId, const std::string &host,
-             std::uint16_t port) {
-        const auto nowSec =
-            std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::system_clock::now().time_since_epoch())
-                .count();
-        handleDiscoveredPeer(peerId, host, port,
-                             static_cast<std::int64_t>(nowSec));
-      });
+    m_discoveryService->registerPeerDiscoveredCallback(
+        [this](const std::string &peerId, const std::string &host,
+               std::uint16_t port) {
+          const auto nowSec =
+              std::chrono::duration_cast<std::chrono::seconds>(
+                  std::chrono::system_clock::now().time_since_epoch())
+                  .count();
+          handleDiscoveredPeer(peerId, host, port,
+                               static_cast<std::int64_t>(nowSec));
+        });
 
-  m_discoveryService->start();
+    m_discoveryService->start();
+  }
 
   // Load known peers from disk, seed them into the discovery service, and
   // connect.
