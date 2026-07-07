@@ -62,6 +62,8 @@ bool TransactionAdmissionPolicy::validateTypeAndPayload(
   try {
     if (transaction.type() == core::TransactionType::VALIDATOR_REGISTER) {
       (void)core::ValidatorRegistrationPayload::deserialize(transaction.data());
+    } else if (transaction.type() == core::TransactionType::VALIDATOR_KEY_ROTATE) {
+      (void)core::ValidatorKeyRotationPayload::deserialize(transaction.data());
     } else if (transaction.type() == core::TransactionType::GOVERNANCE_VOTE) {
       (void)core::GovernanceVotePayload::deserialize(transaction.data());
     } else if (transaction.type() ==
@@ -244,6 +246,34 @@ bool TransactionAdmissionPolicy::validateDomain(
             queued.nonce() != transaction.nonce()) {
           reason =
               "Validator lifecycle operation already has a pending conflict.";
+          return false;
+        }
+      }
+      break;
+    }
+
+    case core::TransactionType::VALIDATOR_KEY_ROTATE: {
+      const core::ValidatorKeyRotationPayload payload =
+          core::ValidatorKeyRotationPayload::deserialize(transaction.data());
+      const auto *entry =
+          context.validators().entryForAddress(transaction.toAddress());
+      const std::string newValidatorAddress = payload.newValidatorAddress();
+      if (payload.oldValidatorAddress() != transaction.toAddress() ||
+          entry == nullptr || entry->ownerAddress() != transaction.fromAddress() ||
+          entry->exited() ||
+          entry->status() == core::ValidatorRegistrationStatus::EXIT_REQUESTED ||
+          newValidatorAddress.empty() ||
+          context.validators().hasValidator(newValidatorAddress) ||
+          context.staking().hasAccount(newValidatorAddress)) {
+        reason = "Validator key rotation ownership, state, or uniqueness is invalid.";
+        return false;
+      }
+      for (const auto &queued : pending) {
+        if (queued.type() == core::TransactionType::VALIDATOR_KEY_ROTATE &&
+            (queued.toAddress() == transaction.toAddress() ||
+             core::ValidatorKeyRotationPayload::deserialize(queued.data()).newValidatorAddress() == newValidatorAddress) &&
+            queued.nonce() != transaction.nonce()) {
+          reason = "Validator already has a pending key rotation conflict.";
           return false;
         }
       }

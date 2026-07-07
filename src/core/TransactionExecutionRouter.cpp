@@ -54,6 +54,9 @@ dispatchDomain(const Transaction &tx, const AccountStateView &accounts,
   case TransactionHandler::VALIDATOR_UNJAIL_REQUEST:
     return domain->applyValidatorUnjailRequest(
         tx, accounts, context.blockHeight(), context.blockTimestamp());
+  case TransactionHandler::VALIDATOR_KEY_ROTATE:
+    return domain->applyValidatorKeyRotate(tx, accounts, context.blockHeight(),
+                                           context.blockTimestamp());
   case TransactionHandler::GOVERNANCE_PROPOSE:
     return domain->applyGovernanceProposal(tx, accounts, context.blockHeight(),
                                            context.blockTimestamp());

@@ -179,6 +179,51 @@ public:
   }
 
   core::TransactionDomainExecutionResult
+  applyValidatorKeyRotate(const core::Transaction &tx,
+                          const core::AccountStateView &accounts,
+                          std::uint64_t height, std::int64_t now) override {
+    return atomically(accounts, [&] {
+      const core::ValidatorKeyRotationPayload payload =
+          core::ValidatorKeyRotationPayload::deserialize(tx.data());
+      if (payload.oldValidatorAddress() != tx.toAddress()) {
+        throw std::invalid_argument("Validator key rotation target does not "
+                                    "match payload old validator.");
+      }
+      const auto *entry = m_state.validators.entryForAddress(tx.toAddress());
+      if (entry == nullptr || entry->ownerAddress() != tx.fromAddress()) {
+        throw std::invalid_argument(
+            "Validator key rotation requester is not the registered owner.");
+      }
+      if (entry->exited() ||
+          entry->status() ==
+              core::ValidatorRegistrationStatus::EXIT_REQUESTED) {
+        throw std::invalid_argument(
+            "Exited, deactivated, or exiting validators cannot rotate keys.");
+      }
+      const std::string newValidatorAddress = payload.newValidatorAddress();
+      if (newValidatorAddress.empty() ||
+          newValidatorAddress == tx.toAddress() ||
+          m_state.validators.hasValidator(newValidatorAddress)) {
+        throw std::invalid_argument(
+            "Validator key rotation target public key is not unique.");
+      }
+
+      const core::ValidatorRegistrationRecord rotatedRecord(
+          newValidatorAddress, payload.newValidatorPublicKey(),
+          payload.activationEpoch(), payload.metadataHash(), now);
+      const auto rotated = m_state.validators.rotateValidatorKey(
+          tx.toAddress(), rotatedRecord, now);
+      if (!rotated.success()) {
+        throw std::invalid_argument(rotated.reason());
+      }
+
+      m_state.staking.rotateValidatorAddress(tx.toAddress(),
+                                             newValidatorAddress,
+                                             tx.fromAddress(), height, tx.id());
+    });
+  }
+
+  core::TransactionDomainExecutionResult
   applyGovernanceProposal(const core::Transaction &tx,
                           const core::AccountStateView &accounts,
                           std::uint64_t height, std::int64_t now) override {

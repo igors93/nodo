@@ -137,6 +137,21 @@ supportedTransaction(core::TransactionType type, const crypto::KeyPair &keyPair,
                                               "validator-metadata-hash")
                .serialize();
   }
+  if (type == core::TransactionType::VALIDATOR_KEY_ROTATE) {
+    const crypto::KeyPair oldValidator =
+        crypto::KeyPair::createDeterministicBls12381KeyPair(
+            "admission-validator-old");
+    const crypto::KeyPair newValidator =
+        crypto::KeyPair::createDeterministicBls12381KeyPair(
+            "admission-validator-new");
+    target = crypto::AddressDerivation::deriveFromPublicKey(
+                 oldValidator.publicKey())
+                 .value();
+    data = core::ValidatorKeyRotationPayload(
+               target, newValidator.publicKey(), "validator-rotation-metadata",
+               1, "validator-rotation-reason")
+               .serialize();
+  }
   core::Transaction tx =
       data.empty() ? core::Transaction(type, keyPair.address().value(), target,
                                        amount, utils::Amount::fromRawUnits(100),

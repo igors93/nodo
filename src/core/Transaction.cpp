@@ -283,6 +283,9 @@ std::string transactionTypeToString(TransactionType type) {
   case TransactionType::VALIDATOR_UNJAIL_REQUEST:
     return "VALIDATOR_UNJAIL_REQUEST";
 
+  case TransactionType::VALIDATOR_KEY_ROTATE:
+    return "VALIDATOR_KEY_ROTATE";
+
   case TransactionType::GOVERNANCE_PROPOSE:
     return "GOVERNANCE_PROPOSE";
 
@@ -334,6 +337,10 @@ TransactionType transactionTypeFromString(const std::string &value) {
     return TransactionType::VALIDATOR_UNJAIL_REQUEST;
   }
 
+  if (value == "VALIDATOR_KEY_ROTATE") {
+    return TransactionType::VALIDATOR_KEY_ROTATE;
+  }
+
   if (value == "GOVERNANCE_PROPOSE") {
     return TransactionType::GOVERNANCE_PROPOSE;
   }
@@ -363,7 +370,8 @@ bool isStakingTransaction(TransactionType type) {
 bool isValidatorLifecycleTransaction(TransactionType type) {
   return type == TransactionType::VALIDATOR_REGISTER ||
          type == TransactionType::VALIDATOR_EXIT_REQUEST ||
-         type == TransactionType::VALIDATOR_UNJAIL_REQUEST;
+         type == TransactionType::VALIDATOR_UNJAIL_REQUEST ||
+         type == TransactionType::VALIDATOR_KEY_ROTATE;
 }
 
 bool isGovernanceTransaction(TransactionType type) {

@@ -559,19 +559,26 @@ without relying on plaintext files.
 - Tests: `tests/crypto/KeyStoreTests.cpp`,
   `tests/node/ProductionKeySafetyGateTests.cpp`.
 
-### 8.2 Key Rotation
-- Add `nodo keys rotate --data-dir PATH --old-key ID --new-key ID` which
-  produces an on-chain key rotation transaction (signed by both old and new key)
-  so that the validator set can accept the new key without a governance proposal.
-- The rotation must be reversible only through governance if the old key is
-  compromised.
+### 8.2 Key Rotation ✅ foundation
+- `VALIDATOR_KEY_ROTATE` is now a first-class owner-signed protocol transaction.
+  It rotates the validator operation key by moving the validator registry entry
+  and staking state from the old validator address to the address derived from
+  the new BLS12-381 public key.
+- Rotation preserves owner, stake, jail status and consensus weight, and rejects
+  exited/deactivated/exiting validators or duplicate target keys.
+- Dedicated coverage lives in `tests/node/ValidatorKeyRotationTests.cpp`.
+- CLI ergonomics (`nodo keys rotate ...`) can now be layered on top of the
+  protocol transaction builder without adding a second execution path.
 
-### 8.3 Hardware Security Module Interface
-- Define a `HsmSignatureProvider` interface (implements `SignatureProvider`) that
-  delegates signing to a PKCS#11-compatible HSM.
-- The interface must be testable with a software HSM stub.
-- `ProductionKeySafetyGate` must prefer HSM-backed keys over file-backed keys on
-  `STAGING_CANDIDATE`.
+### 8.3 External signer / HSM boundary ✅ foundation
+- Validator proposal and vote signing now enters `Signer::signValidatorPayload()`
+  instead of reading private key material directly in consensus code.
+- The existing out-of-process signer path is wired for both
+  `VALIDATOR_BLOCK_PROPOSAL` and `VALIDATOR_VOTE`, preserving signer watermarks
+  against double-signing.
+- Remaining production work: add a concrete PKCS#11/HSM transport and make
+  `ProductionKeySafetyGate` require HSM-backed signing on locked production
+  networks.
 
 **Exit criteria:** a validator operator can run a node with all keys encrypted
 at rest; signing happens without the raw private key ever entering application

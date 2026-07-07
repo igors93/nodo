@@ -68,6 +68,9 @@ public:
   applyValidatorUnjailRequest(const Transaction &, const AccountStateView &,
                               std::uint64_t, std::int64_t) = 0;
   virtual TransactionDomainExecutionResult
+  applyValidatorKeyRotate(const Transaction &, const AccountStateView &,
+                          std::uint64_t, std::int64_t);
+  virtual TransactionDomainExecutionResult
   applyGovernanceProposal(const Transaction &, const AccountStateView &,
                           std::uint64_t, std::int64_t) = 0;
   virtual TransactionDomainExecutionResult

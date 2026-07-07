@@ -141,6 +141,29 @@ Transaction TransactionBuilder::buildSignedValidatorRegistration(
   return signer.signTransaction(tx, request.timestamp());
 }
 
+Transaction TransactionBuilder::buildSignedValidatorKeyRotation(
+    const TransactionBuildRequest &request,
+    const crypto::PublicKey &newValidatorPublicKey,
+    const std::string &metadataHash, std::uint64_t activationEpoch,
+    const std::string &reasonHash, const crypto::Signer &signer,
+    const std::string &chainId) {
+  const ValidatorKeyRotationPayload payload(request.toAddress(),
+                                            newValidatorPublicKey, metadataHash,
+                                            activationEpoch, reasonHash);
+  if (request.toAddress().empty() || request.amount().rawUnits() != 0 ||
+      request.fee().isNegative() || request.nonce() == 0 ||
+      request.timestamp() <= 0 || chainId.empty() || !payload.isValid()) {
+    throw std::invalid_argument(
+        "Validator key rotation build request is invalid.");
+  }
+
+  Transaction tx(TransactionType::VALIDATOR_KEY_ROTATE, signer.address(),
+                 request.toAddress(), utils::Amount(), request.fee(),
+                 request.nonce(), request.timestamp(), payload.serialize());
+  tx.withChainId(chainId);
+  return signer.signTransaction(tx, request.timestamp());
+}
+
 Transaction TransactionBuilder::buildSignedValidatorExitRequest(
     const TransactionBuildRequest &request, const crypto::Signer &signer,
     const std::string &chainId) {

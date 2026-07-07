@@ -303,6 +303,8 @@ validatorRegistryUpdateStatusToString(ValidatorRegistryUpdateStatus status) {
     return "EXIT_REQUESTED";
   case ValidatorRegistryUpdateStatus::ACTIVATED:
     return "ACTIVATED";
+  case ValidatorRegistryUpdateStatus::KEY_ROTATED:
+    return "KEY_ROTATED";
   case ValidatorRegistryUpdateStatus::CONFLICTING_PUBLIC_KEY:
     return "CONFLICTING_PUBLIC_KEY";
   case ValidatorRegistryUpdateStatus::INVALID_RECORD:
@@ -390,6 +392,15 @@ ValidatorRegistryUpdateResult::activated(ValidatorRegistryEntry entry) {
 }
 
 ValidatorRegistryUpdateResult
+ValidatorRegistryUpdateResult::keyRotated(ValidatorRegistryEntry entry) {
+  ValidatorRegistryUpdateResult result;
+  result.m_status = ValidatorRegistryUpdateStatus::KEY_ROTATED;
+  result.m_reason = "";
+  result.m_entry = std::move(entry);
+  return result;
+}
+
+ValidatorRegistryUpdateResult
 ValidatorRegistryUpdateResult::rejected(ValidatorRegistryUpdateStatus status,
                                         std::string reason) {
   ValidatorRegistryUpdateResult result;
@@ -429,7 +440,8 @@ bool ValidatorRegistryUpdateResult::success() const {
          m_status == ValidatorRegistryUpdateStatus::JAILED ||
          m_status == ValidatorRegistryUpdateStatus::UNJAILED ||
          m_status == ValidatorRegistryUpdateStatus::EXIT_REQUESTED ||
-         m_status == ValidatorRegistryUpdateStatus::ACTIVATED;
+         m_status == ValidatorRegistryUpdateStatus::ACTIVATED ||
+         m_status == ValidatorRegistryUpdateStatus::KEY_ROTATED;
 }
 
 std::string ValidatorRegistryUpdateResult::serialize() const {
@@ -944,6 +956,79 @@ ValidatorRegistry::updateStake(const std::string &validatorAddress,
 
   it->second = updated;
   return ValidatorRegistryUpdateResult::accepted(updated);
+}
+
+ValidatorRegistryUpdateResult ValidatorRegistry::rotateValidatorKey(
+    const std::string &oldValidatorAddress,
+    const ValidatorRegistrationRecord &newRegistrationRecord,
+    std::int64_t timestamp) {
+  if (!isSafeScalar(oldValidatorAddress) || timestamp <= 0 ||
+      !newRegistrationRecord.isValid()) {
+    return ValidatorRegistryUpdateResult::rejected(
+        ValidatorRegistryUpdateStatus::INVALID_RECORD,
+        "Validator key rotation request is invalid.");
+  }
+
+  const std::string &newValidatorAddress =
+      newRegistrationRecord.validatorAddress();
+  if (oldValidatorAddress == newValidatorAddress) {
+    return ValidatorRegistryUpdateResult::rejected(
+        ValidatorRegistryUpdateStatus::CONFLICTING_PUBLIC_KEY,
+        "Validator key rotation must bind to a new validator address.");
+  }
+
+  auto existing = m_entries.find(oldValidatorAddress);
+  if (existing == m_entries.end() || !existing->second.isValid()) {
+    return ValidatorRegistryUpdateResult::rejected(
+        ValidatorRegistryUpdateStatus::INVALID_RECORD,
+        "Existing validator is not registered or is invalid.");
+  }
+
+  if (m_entries.find(newValidatorAddress) != m_entries.end()) {
+    return ValidatorRegistryUpdateResult::rejected(
+        ValidatorRegistryUpdateStatus::DUPLICATE,
+        "New validator address is already registered.");
+  }
+
+  const ValidatorRegistryEntry previous = existing->second;
+  if (previous.status() == ValidatorRegistrationStatus::EXITED ||
+      previous.status() == ValidatorRegistrationStatus::DEACTIVATED ||
+      previous.status() == ValidatorRegistrationStatus::EXIT_REQUESTED) {
+    return ValidatorRegistryUpdateResult::rejected(
+        ValidatorRegistryUpdateStatus::INVALID_STATUS_TRANSITION,
+        "Exited, deactivated, or exiting validators cannot rotate keys.");
+  }
+
+  if (previous.ownerAddress().empty() ||
+      !isSafeScalar(previous.ownerAddress())) {
+    return ValidatorRegistryUpdateResult::rejected(
+        ValidatorRegistryUpdateStatus::INVALID_RECORD,
+        "Validator has no valid owner address for key rotation.");
+  }
+
+  ValidatorRegistryEntry rotated(
+      newRegistrationRecord, previous.status(), timestamp,
+      previous.stakeAmount(), previous.jailUntilEpoch(),
+      previous.exitRequestHeight(), previous.ownerAddress());
+
+  if (!rotated.isValid()) {
+    return ValidatorRegistryUpdateResult::rejected(
+        ValidatorRegistryUpdateStatus::INVALID_RECORD,
+        "Rotated validator registry entry would be invalid.");
+  }
+
+  m_entries.erase(existing);
+  m_entries.emplace(newValidatorAddress, rotated);
+
+  if (!isValid()) {
+    m_entries.erase(newValidatorAddress);
+    m_entries.emplace(oldValidatorAddress, previous);
+    return ValidatorRegistryUpdateResult::rejected(
+        ValidatorRegistryUpdateStatus::INVALID_REGISTRY,
+        "Validator registry failed post-rotation audit.");
+  }
+
+  return ValidatorRegistryUpdateResult::keyRotated(rotated);
 }
 
 std::uint64_t

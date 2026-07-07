@@ -70,6 +70,13 @@ public:
                                    const crypto::Signer &signer,
                                    const std::string &chainId);
 
+  static Transaction buildSignedValidatorKeyRotation(
+      const TransactionBuildRequest &request,
+      const crypto::PublicKey &newValidatorPublicKey,
+      const std::string &metadataHash, std::uint64_t activationEpoch,
+      const std::string &reasonHash, const crypto::Signer &signer,
+      const std::string &chainId);
+
   static Transaction
   buildSignedValidatorExitRequest(const TransactionBuildRequest &request,
                                   const crypto::Signer &signer,

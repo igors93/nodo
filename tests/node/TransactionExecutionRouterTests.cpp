@@ -50,6 +50,7 @@ public:
   HANDLER(applyValidatorRegister, "VALIDATOR_REGISTER")
   HANDLER(applyValidatorExitRequest, "VALIDATOR_EXIT_REQUEST")
   HANDLER(applyValidatorUnjailRequest, "VALIDATOR_UNJAIL_REQUEST")
+  HANDLER(applyValidatorKeyRotate, "VALIDATOR_KEY_ROTATE")
   HANDLER(applyGovernanceProposal, "GOVERNANCE_PROPOSE")
   HANDLER(applyGovernanceVote, "GOVERNANCE_VOTE")
   HANDLER(applyGovernanceExecute, "GOVERNANCE_EXECUTE")

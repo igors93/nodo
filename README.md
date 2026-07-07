@@ -404,3 +404,8 @@ WebSocket-compatible event stream at `GET /events`. This is intended for wallets
 explorers and monitoring tools that need finalized headers, account proofs,
 transaction proofs and live finalization/submission notifications without running
 a full archival node.
+
+
+### Production key-management foundation
+
+Nodo now includes a `VALIDATOR_KEY_ROTATE` protocol transaction and an external-signer-ready validator signing boundary. This is a pre-mainnet foundation for key rotation and future HSM-backed signing.
