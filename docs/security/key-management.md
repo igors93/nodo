@@ -1,32 +1,34 @@
 # Key Management
 
-Nodo currently supports local development keys and production-safety gates.
+Key management is one of the main blockers for production readiness.
 
-## Current Local Keys
+## Current local keys
 
-Localnet uses:
+Nodo supports local development keys and encrypted key-file foundations. These are useful for localnet and testnet-candidate development, but they are not enough for production custody.
 
-- Ed25519 user signatures through OpenSSL;
-- BLS12-381 validator signatures through blst;
-- strict local key metadata parsing;
-- atomic key file writes.
+## Key types
 
-Local development keys are not production custody. They should not be used to protect real funds or run a production validator.
+Common key roles include:
 
-## Official Network Safety
+- user/account key;
+- validator signing key;
+- peer identity key;
+- governance signing key;
+- treasury execution key or signer boundary.
 
-Official network profiles require stronger key policy. Testnet-candidate rejects insecure localnet-only key material. Mainnet remains blocked until audited custody and production key providers exist.
+## Safety requirements
 
-## Implemented
+Production-ready operation requires:
 
-- encrypted durable key storage: `KeyStore` encrypts private key material at
-  rest through `KeyEncryptionService` (PBKDF2-HMAC-SHA256 derived key), and
-  plaintext key files are refused on official networks by
-  `ProductionKeySafetyGate`.
+- encrypted key storage by default;
+- no unsafe default local keys on production networks;
+- external signer/HSM boundary;
+- key rotation;
+- revocation or validator exit workflow;
+- backup and recovery policy;
+- audit logs for signer use;
+- separation between validator, peer, governance, and treasury authority.
 
-## Required Future Work
+## Operator rule
 
-- audited production signing providers;
-- hardware or custody integration boundaries (HSM interface);
-- key rotation and revocation procedures;
-- operator documentation for testnet and mainnet.
+Do not use local development keys for any production-like network with real value.

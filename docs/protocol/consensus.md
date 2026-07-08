@@ -1,27 +1,53 @@
 # Consensus
 
-Nodo's consensus foundation separates vote and round logic from transport and economics.
+Nodo uses a weighted BFT-style consensus foundation with explicit voting phases and quorum certificates.
 
-## Implemented Foundations
+## Current model
 
-- validator vote records;
-- quorum-safe math;
-- consensus round manager;
-- proposer schedule;
-- network vote collector;
-- round timeout foundations;
-- block finalizer;
-- fork choice foundations;
-- slashing evidence for conflicting votes and proposer equivocation;
-- finalized slashing evidence applies deterministic validator penalties, registry jail/tombstone effects and bounded staking slash effects.
+The current design includes:
 
-## Design Boundaries
+- validator identities;
+- validator weights;
+- proposer selection;
+- block proposal validation;
+- PREVOTE and PRECOMMIT messages;
+- quorum certificate creation;
+- finalization from valid PRECOMMIT quorum;
+- timeout/view-change foundations;
+- persistent consensus recovery records;
+- slashing evidence for conflicting votes and proposer equivocation foundations.
 
-- Consensus should not depend directly on TCP transport.
-- Consensus should not implement treasury or governance economics.
-- Votes must be checked against height, round, validator identity, and block target.
-- Duplicate votes, conflicting votes and same-round proposer equivocation must be explicit and slashable.
+## Quorum rule
 
-## Status
+A finalized block requires a quorum certificate formed from valid PRECOMMIT votes representing the configured threshold of validator weight.
 
-The repository has strong local foundations, but it is not a complete production BFT network.
+The normal target is 2/3+ validator weight, but exact thresholds are network-parameter controlled and must be documented per network profile.
+
+## Validator weights
+
+Validator voting power should be derived from the active validator set snapshot for the relevant height/epoch. Stake changes must not unexpectedly rewrite historical voting power.
+
+The documented direction is:
+
+```text
+active locked stake → epoch projection → validator-set snapshot → consensus weight
+```
+
+Historical quorum verification must use the validator-set snapshot that was valid for the finalized height.
+
+## Safety assumptions to formalize
+
+Before public testnet, the protocol specification should explicitly document:
+
+- maximum Byzantine validator weight tolerated;
+- synchrony or partial-synchrony assumptions;
+- timeout behavior;
+- view-change behavior;
+- fork-choice behavior;
+- evidence requirements for equivocation;
+- how validator-set changes affect consensus safety;
+- how a node recovers after restart.
+
+## What Proof of Protection does not replace
+
+Proof of Protection is not the consensus algorithm. Consensus decides finality. Proof of Protection decides how measurable protection work affects rewards, penalties, and audit state.

@@ -1,25 +1,25 @@
 # Treasury Execution Evidence
 
-Treasury execution evidence binds a spend record to the context that authorized it.
+Treasury execution evidence proves that a treasury movement was authorized and applied correctly.
 
-## Evidence Includes
+## Evidence should include
 
-- evidence id;
-- treasury proposal;
-- treasury approval;
-- treasury policy;
-- treasury account state before spend;
-- current block height;
-- epoch spend so far;
-- computed spend record;
-- governance approval context.
+- proposal id;
+- governance decision id;
+- execution id;
+- recipient;
+- amount;
+- treasury balance before/after;
+- height/epoch context;
+- policy checks passed;
+- signer/executor context;
+- ledger record;
+- state commitment effect.
 
-## Governance Requirement
+## Governance requirement
 
-Production treasury evidence must carry a governance lifecycle. The validator rebuilds the lifecycle approval and compares it against the stored treasury approval.
+Treasury execution must be linked to governance lifecycle evidence unless the protocol explicitly defines a narrow emergency path. Any emergency path must be separately documented, bounded, and auditable.
 
-This prevents a direct or manually invented `TreasuryApproval` from being accepted as production evidence.
+## Audit rule
 
-## Finalized Treasury Audit
-
-Finalized treasury sections reject non-empty spend-only sections. Non-empty treasury activity must be evidence-backed so reload and chain audit can reproduce the authorization path.
+A finalized block containing treasury execution should be rejected if the treasury effect cannot be reproduced from policy, governance evidence, ledger records, and state transition.

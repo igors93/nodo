@@ -1,100 +1,95 @@
 # Nodo Documentation
 
-This directory is the documentation entry point for Nodo. The canonical docs are organized by topic and are written for operators, contributors, auditors, and protocol reviewers.
+Nodo is an experimental C++20 blockchain protocol foundation focused on verifiable protection, auditable economics, controlled treasury execution, governance evidence, and rebuildable state.
 
-Nodo is currently in development and pre-mainnet. Documentation should be read with that status in mind.
+This directory is the canonical documentation set for the project. It replaces the older mixed documentation layout that contained uppercase filenames, cycle notes, duplicated references, and partially overlapping guides.
 
-## Overview
+> **Status:** pre-mainnet development. Nodo is not ready for production custody, public mainnet operation, or real treasury value.
 
-- [Project Overview](overview/project-overview.md)
+## Reading path
+
+Start here if you are new to the project:
+
+1. [Project overview](overview/project-overview.md)
+2. [Proof of Protection](overview/proof-of-protection.md)
+3. [Current status](status.md)
+4. [Architecture overview](architecture/architecture-overview.md)
+5. [Protocol overview](protocol/protocol-overview.md)
+6. [Security model](security/security-model.md)
+7. [Roadmap](roadmap.md)
+
+## Documentation map
+
+### Overview
+
+- [Project overview](overview/project-overview.md)
 - [Proof of Protection](overview/proof-of-protection.md)
 - [Glossary](overview/glossary.md)
 
-## Getting Started
+### Getting started
 
-- [Quick Start](getting-started/quick-start.md)
+- [Quick start](getting-started/quick-start.md)
 - [Build](getting-started/build.md)
 - [Testing](getting-started/testing.md)
 - [CLI](getting-started/cli.md)
 
-## Architecture
+### Architecture
 
-- [Architecture Overview](architecture/architecture-overview.md)
-- [Module Map](architecture/module-map.md)
-- [Storage and Reload](architecture/storage-and-reload.md)
-- [Legacy Architecture Reference](ARCHITECTURE.md)
+- [Architecture overview](architecture/architecture-overview.md)
+- [Module map](architecture/module-map.md)
+- [Storage and reload](architecture/storage-and-reload.md)
 
-## Protocol
+### Protocol
 
-- [Blocks and Finalization](protocol/blocks-and-finalization.md)
-- [Transactions](protocol/transactions.md)
+- [Protocol overview](protocol/protocol-overview.md)
 - [Consensus](protocol/consensus.md)
-- [Protocol Reference](PROTOCOL.md)
-- [Consensus Rules Reference](CONSENSUS_RULES.md)
-- [State Transition Reference](STATE_TRANSITION.md)
-- [Slashing Evidence and Validator Accountability](SLASHING_EVIDENCE_VALIDATOR_ACCOUNTABILITY.md)
-- [Validator Penalty Application](VALIDATOR_PENALTY_APPLICATION.md)
-- [Canonical Serialization and State Commitment](CANONICAL_SERIALIZATION_STATE_COMMITMENT.md)
+- [Blocks and finalization](protocol/blocks-and-finalization.md)
+- [Transactions and state](protocol/transactions-and-state.md)
+- [Networking and sync](protocol/networking-and-sync.md)
 
-## Economics
+### Economics
 
-- [Monetary Policy](economics/monetary-policy.md)
-- [Supply and Reports](economics/supply-and-reports.md)
-- [Rewards](economics/rewards.md)
-- [Proof of Protection Economics Reference](economics/PROOF_OF_PROTECTION.md)
-- [Coin Lot Registry](economics/COIN_LOT_REGISTRY.md)
-- [Coin Lot Transaction Integration](economics/COIN_LOT_TRANSACTION_INTEGRATION.md)
+- [Economics overview](economics/economics-overview.md)
+- [Monetary policy](economics/monetary-policy.md)
+- [Coin lots and ledger](economics/coin-lots.md)
+- [Staking, rewards and penalties](economics/staking-rewards-and-penalties.md)
 
-## Treasury
+### Governance and treasury
 
-- [Treasury Policy](treasury/treasury-policy.md)
-- [Treasury Execution Evidence](treasury/treasury-execution-evidence.md)
+- [Governance overview](governance/governance-overview.md)
+- [Vote evidence](governance/vote-evidence.md)
+- [Lifecycle audit](governance/lifecycle-audit.md)
+- [Treasury policy](treasury/treasury-policy.md)
+- [Treasury execution evidence](treasury/treasury-execution-evidence.md)
 
-## Governance
+### Security and cryptography
 
-- [Governance Overview](governance/governance-overview.md)
-- [Vote Evidence](governance/vote-evidence.md)
-- [Lifecycle Audit](governance/lifecycle-audit.md)
+- [Security model](security/security-model.md)
+- [Threat model](security/threat-model.md)
+- [Key management](security/key-management.md)
+- [Cryptography](crypto/cryptography.md)
+- [Canonical serialization](serialization/canonical-serialization.md)
 
-## Security
+### Operations
 
-- [Security Model](security/security-model.md)
-- [Threat Model](security/threat-model.md)
-- [Key Management](security/key-management.md)
-- [Security Reference](SECURITY_MODEL.md)
+- [Networks and data directory](operations/networks-and-data-directory.md)
+- [Local testnet](operations/local-testnet.md)
+- [TCP node runtime](operations/tcp-node-runtime.md)
+- [Diagnostics and observability](operations/diagnostics-and-observability.md)
 
-## Node Operations
-
-- [Networks](NETWORKS.md)
-- [Node Data Directory](NODE_DATA_DIRECTORY.md)
-- [Development Mode](DEVELOPMENT_MODE.md)
-- [CLI Reference](CLI.md)
-- [Local Testnet](testnet-local.md)
-- [Testnet Node Runtime](TCP_TESTNET_NODE_RUNTIME.md)
-- [Persistent Block State Sync](PERSISTENT_BLOCK_STATE_SYNC.md)
-- [Networked Consensus Foundation](NETWORKED_CONSENSUS_FOUNDATION.md)
-- [Real Transport Gossip Mesh](REAL_TRANSPORT_GOSSIP_MESH.md)
-- [Encrypted Peer Channels](ENCRYPTED_PEER_CHANNELS.md)
-
-## Development
+### Development
 
 - [Contributing](development/contributing.md)
-- [Coding Style](development/coding-style.md)
-- [Testing Strategy](development/testing-strategy.md)
-- [Canonical Serialization](serialization/CANONICAL_SERIALIZATION.md)
+- [Coding style](development/coding-style.md)
+- [Testing strategy](development/testing-strategy.md)
+- [JSON-RPC public API](development/json-rpc-public-api.md)
+- [Metrics, health and observability](development/metrics-health-observability.md)
+- [Sync, pruning and snapshots](development/sync-pruning-snapshots.md)
 
-## Roadmap
+## Documentation conventions
 
-- [Roadmap](ROADMAP.md)
-
-## Archive
-
-- [Archive Overview](archive/README.md)
-- [Implementation Cycle Archive](archive/cycles/README.md)
-
-## Documentation Rules
-
-- Do not claim production readiness unless a release explicitly earns that status.
-- Keep protocol, economics, governance, treasury, and security claims tied to implemented code.
-- Archive historical notes instead of presenting them as current behavior.
-- Keep every internal link pointing to an existing file.
+- `README.md` is the only uppercase Markdown filename kept by convention.
+- All other Markdown files use lowercase kebab-case.
+- Historical implementation-cycle notes are not part of the canonical docs.
+- Concept documents must clearly distinguish implemented behavior from planned behavior.
+- Protocol rules should be deterministic, replayable, and auditable.

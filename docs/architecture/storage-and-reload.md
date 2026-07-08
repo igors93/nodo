@@ -1,10 +1,12 @@
 # Storage and Reload
 
-Nodo treats persisted state as untrusted until it has been parsed, rebuilt, and audited.
+Storage is part of the protocol safety model. Nodo should not trust a local database merely because files exist.
 
-## Node Data Directory
+## Data directory
 
-The local data directory includes:
+The default local data directory is `.nodo`.
+
+Typical layout:
 
 ```text
 .nodo/
@@ -12,34 +14,71 @@ The local data directory includes:
   manifest.nodo
   genesis.nodo
   blocks/
+    block_<height>.nodo
   mempool/
+    tx_<transaction-id>.nodo
   peers/
+    local_peer.nodo
   runtime/
-  keys/
+    runtime_snapshot.nodo
+  sync/
+    qc/<height>.qc
 ```
 
-The storage schema must be recognized before the manifest is trusted.
+## Storage schema
 
-## Reload Principle
+Before the manifest is trusted, the loader validates the storage schema. Unknown schema ids, missing schema files, future versions, unsafe downgrades, and malformed files must be rejected.
 
-Reload follows a rebuild-first model:
+Nodo should not perform implicit storage migration. Migration must be explicit, versioned, and test-covered.
+
+## Manifest
+
+`manifest.nodo` records chain identity and latest finalized state. It must be strict and canonical.
+
+Important fields include:
+
+- chain identity;
+- genesis id;
+- latest finalized height;
+- latest finalized hash;
+- latest state root;
+- validator count;
+- peer count;
+- timestamps.
+
+## Finalized block persistence
+
+Finalized blocks are written before the manifest is advanced. Reload must reject:
+
+- missing block files;
+- malformed block files;
+- non-canonical serialization;
+- header/payload mismatch;
+- quorum/finalized-record mismatch;
+- invalid append order;
+- post-state-root mismatch;
+- protocol-domain replay mismatch.
+
+## Mempool persistence
+
+Persistent mempool entries are stored separately from finalized history. Reload verifies:
+
+- transaction signature;
+- duplicate transaction id;
+- duplicate sender/nonce;
+- minimum fee;
+- nonce against rebuilt account state.
+
+Malformed mempool files should reject reload instead of being silently ignored.
+
+## Atomic writes
+
+Critical files should be written through temporary file plus rename. This protects against partial writes during crashes.
+
+## Reload principle
 
 ```text
-storage schema -> manifest -> genesis runtime -> finalized blocks -> mempool -> audit
+canonical genesis + finalized blocks + deterministic replay = accepted runtime state
 ```
 
-The runtime is accepted only when the rebuilt height, latest hash, state root, finalized artifacts, mempool, validator state, and protocol invariants match the persisted view.
-
-## Audited Persistence
-
-Important persistence paths include:
-
-- finalized block artifacts;
-- runtime snapshots;
-- persistent mempool records;
-- governance lifecycle records;
-- treasury execution evidence;
-- slashing evidence and validator penalty stores;
-- monetary and treasury reports.
-
-Unknown fields, missing required fields, unexpected schema versions, non-canonical files, and temporary write artifacts are rejected instead of being silently interpreted.
+If replay does not match persisted commitments, the node must fail safe.

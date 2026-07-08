@@ -85,6 +85,14 @@ std::string requireField(const std::map<std::string, std::string> &fields,
   return it->second;
 }
 
+std::string optionalField(const std::map<std::string, std::string> &fields,
+                          const std::string &key, const std::string &def = "") {
+  const auto it = fields.find(key);
+  if (it == fields.end())
+    return def;
+  return it->second;
+}
+
 std::uint64_t parseU64(const std::string &v) {
   if (v.empty())
     throw std::invalid_argument("Empty uint64 field.");
@@ -125,20 +133,21 @@ crypto::PublicKey parsePublicKey(const std::string &serialized) {
 
 SignedBlockProposalMessage::SignedBlockProposalMessage()
     : m_proposerAddress(), m_proposerPublicKey(), m_blockIndex(0), m_round(0),
-      m_blockHash(), m_serializedBlock(), m_proposedAt(0), m_signatureBundle() {
-}
+      m_blockHash(), m_serializedBlock(), m_proposedAt(0), m_signatureBundle(),
+      m_justification() {}
 
 SignedBlockProposalMessage::SignedBlockProposalMessage(
     std::string proposerAddress, crypto::PublicKey proposerPublicKey,
     std::uint64_t blockIndex, std::uint64_t round, std::string blockHash,
     std::string serializedBlock, std::int64_t proposedAt,
-    crypto::SignatureBundle signatureBundle)
+    crypto::SignatureBundle signatureBundle, std::string justification)
     : m_proposerAddress(std::move(proposerAddress)),
       m_proposerPublicKey(std::move(proposerPublicKey)),
       m_blockIndex(blockIndex), m_round(round),
       m_blockHash(std::move(blockHash)),
       m_serializedBlock(std::move(serializedBlock)), m_proposedAt(proposedAt),
-      m_signatureBundle(std::move(signatureBundle)) {}
+      m_signatureBundle(std::move(signatureBundle)),
+      m_justification(std::move(justification)) {}
 
 const std::string &SignedBlockProposalMessage::proposerAddress() const {
   return m_proposerAddress;
@@ -163,6 +172,9 @@ const crypto::SignatureBundle &
 SignedBlockProposalMessage::signatureBundle() const {
   return m_signatureBundle;
 }
+const std::string &SignedBlockProposalMessage::justification() const {
+  return m_justification;
+}
 
 bool SignedBlockProposalMessage::isValid() const {
   return isSafeScalar(m_proposerAddress) && m_proposerPublicKey.isValid() &&
@@ -176,14 +188,16 @@ bool SignedBlockProposalMessage::isValid() const {
 std::string SignedBlockProposalMessage::buildSigningPayload(
     const std::string &proposerAddress,
     const crypto::PublicKey &proposerPublicKey, const std::string &blockHash,
-    std::uint64_t blockIndex, std::uint64_t round, std::int64_t proposedAt) {
+    std::uint64_t blockIndex, std::uint64_t round, std::int64_t proposedAt,
+    const std::string &justification) {
   std::ostringstream oss;
   oss << "BlockProposalSigningPayload{"
       << "version=" << kPayloadVersion << ";proposerAddress=" << proposerAddress
       << ";proposerPublicKey=" << proposerPublicKey.serialize()
       << ";proposerPublicKeyFingerprint=" << proposerPublicKey.fingerprint()
       << ";blockHash=" << blockHash << ";blockIndex=" << blockIndex
-      << ";round=" << round << ";proposedAt=" << proposedAt << "}";
+      << ";round=" << round << ";proposedAt=" << proposedAt
+      << ";justification=" << justification << "}";
   return oss.str();
 }
 
@@ -218,7 +232,7 @@ bool SignedBlockProposalMessage::verify(
 
   const std::string payload =
       buildSigningPayload(m_proposerAddress, m_proposerPublicKey, m_blockHash,
-                          m_blockIndex, m_round, m_proposedAt);
+                          m_blockIndex, m_round, m_proposedAt, m_justification);
 
   return m_signatureBundle.verifyForPolicy(
       payload, policy, crypto::SecurityContext::VALIDATOR_OPERATION, provider);
@@ -232,6 +246,7 @@ std::string SignedBlockProposalMessage::serialize() const {
       << ";proposerPublicKeyFingerprint=" << m_proposerPublicKey.fingerprint()
       << ";blockIndex=" << m_blockIndex << ";round=" << m_round
       << ";blockHash=" << m_blockHash << ";proposedAt=" << m_proposedAt
+      << ";justification=" << m_justification
       << ";serializedBlockBytes=" << m_serializedBlock.size()
       << ";signatureBundle=" << m_signatureBundle.serialize() << "}\n"
       << m_serializedBlock;
@@ -296,14 +311,16 @@ SignedBlockProposalMessage::deserialize(const std::string &text) {
       parseU64(requireField(fields, "blockIndex")),
       parseU64(requireField(fields, "round")),
       requireField(fields, "blockHash"), blockPayload,
-      parseI64(requireField(fields, "proposedAt")), bundle);
+      parseI64(requireField(fields, "proposedAt")), bundle,
+      optionalField(fields, "justification"));
 }
 
 // static
 SignedBlockProposalMessage SignedBlockProposalMessage::fromSignatureBundle(
     const core::Block &block, const std::string &proposerAddress,
     const crypto::PublicKey &proposerPublicKey, std::uint64_t round,
-    std::int64_t proposedAt, crypto::SignatureBundle signatureBundle) {
+    std::int64_t proposedAt, crypto::SignatureBundle signatureBundle,
+    std::string justification) {
   if (!block.isValid() || proposerAddress.empty() ||
       !proposerPublicKey.isValid() || round == 0 || proposedAt <= 0 ||
       signatureBundle.empty()) {
@@ -313,7 +330,8 @@ SignedBlockProposalMessage SignedBlockProposalMessage::fromSignatureBundle(
 
   return SignedBlockProposalMessage(
       proposerAddress, proposerPublicKey, block.index(), round, block.hash(),
-      block.serialize(), proposedAt, std::move(signatureBundle));
+      block.serialize(), proposedAt, std::move(signatureBundle),
+      std::move(justification));
 }
 
 // static
@@ -321,7 +339,8 @@ SignedBlockProposalMessage SignedBlockProposalMessage::sign(
     const core::Block &block, const std::string &proposerAddress,
     const crypto::PublicKey &proposerPublicKey,
     const crypto::PrivateKey &proposerPrivateKey, std::uint64_t round,
-    std::int64_t proposedAt, const crypto::SignatureProvider &provider) {
+    std::int64_t proposedAt, const crypto::SignatureProvider &provider,
+    const std::string &justification) {
   if (!block.isValid() || proposerAddress.empty() ||
       !proposerPublicKey.isValid() || round == 0 || proposedAt <= 0) {
     throw std::invalid_argument(
@@ -333,7 +352,7 @@ SignedBlockProposalMessage SignedBlockProposalMessage::sign(
 
   const std::string payload =
       buildSigningPayload(proposerAddress, proposerPublicKey, blockHash,
-                          block.index(), round, proposedAt);
+                          block.index(), round, proposedAt, justification);
 
   const crypto::SignatureBundle bundle =
       crypto::SignatureBundle::createSignature(
@@ -342,7 +361,7 @@ SignedBlockProposalMessage SignedBlockProposalMessage::sign(
 
   return SignedBlockProposalMessage(
       proposerAddress, proposerPublicKey, block.index(), round, blockHash,
-      std::move(serializedBlock), proposedAt, std::move(bundle));
+      std::move(serializedBlock), proposedAt, std::move(bundle), justification);
 }
 
 } // namespace nodo::node

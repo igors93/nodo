@@ -1,38 +1,53 @@
 # Project Overview
 
-Nodo is a security-first blockchain protocol project implemented in C++20. It is designed around verifiable protection, auditable economics, controlled treasury execution, governance evidence, and rebuildable state.
+Nodo is a security-first blockchain protocol foundation written in C++20. Its core design goal is to make important protocol activity measurable, auditable, and rebuildable.
 
-The current codebase is a pre-mainnet foundation. It has a working localnet path and testnet-candidate foundations, but it is not a production network.
+## What Nodo is
 
-## What Nodo Is
+Nodo is an experimental blockchain foundation for:
 
-Nodo is a protocol and runtime foundation for a blockchain where safety checks are first-class protocol work:
+- deterministic state transition;
+- verifiable finality;
+- evidence-backed validator accountability;
+- auditable monetary changes;
+- treasury execution with policy and governance evidence;
+- rebuildable state from canonical history;
+- localnet and testnet-candidate operation.
 
-- blocks are finalized through explicit validation and quorum records;
-- runtime state can be reloaded and checked against persisted history;
-- monetary reports and supply audit records make economic changes traceable;
-- treasury execution requires policy validation and lifecycle-backed governance approval;
-- governance decisions require verifiable vote evidence;
-- penalties and slashing evidence are modeled as auditable, idempotent records.
+The project is currently best understood as a protocol and runtime foundation, not a finished production network.
 
-## What Nodo Is Not Yet
+## What Nodo is not yet
 
 Nodo is not yet:
 
 - a production mainnet;
-- a production wallet or custody system;
-- a complete public governance application;
-- a fully hardened production P2P network;
-- an externally audited monetary system.
+- a finished public blockchain economy;
+- a wallet/custody product;
+- a legally reviewed treasury system;
+- a permissionless production validator network;
+- a finalized Proof-of-Protection economic system.
 
-Mainnet remains blocked until those areas are reviewed and hardened.
+## Design goals
 
-## Design Goals
+Nodo is built around the following goals:
 
-Nodo aims to be:
+| Goal | Meaning |
+| --- | --- |
+| Rebuildable state | A node should be able to rebuild accepted state from genesis and finalized history. |
+| Verifiable finality | Finalized blocks must carry enough evidence to verify quorum and validity. |
+| Auditable economics | New coins, rewards, burns, fees, penalties, and treasury movements must leave canonical records. |
+| Evidence-backed governance | Governance decisions must be reproduced from proposal, vote, tally, decision, and execution records. |
+| Accountable validators | Validator rewards and penalties must be tied to deterministic records. |
+| Safe network evolution | Localnet, testnet, and mainnet must differ by configuration and safety policy, not hidden protocol shortcuts. |
 
-- simple: core rules should be understandable and reviewable;
-- modular: security, economics, storage, P2P, and runtime responsibilities stay separated;
-- verifiable: any honest node should be able to rebuild and audit state;
-- deterministic: protocol records and proofs should reproduce from canonical inputs;
-- secure before expansive: new features should strengthen protection or auditability before adding surface area.
+## The central rule
+
+Nodo should never accept important protocol state merely because it appears in a database. The state must be explainable by canonical history.
+
+In simple terms:
+
+```text
+history + deterministic rules = accepted state
+```
+
+If the state cannot be rebuilt, the node should reject it instead of silently trusting it.

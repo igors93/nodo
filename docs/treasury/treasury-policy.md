@@ -1,20 +1,25 @@
 # Treasury Policy
 
-Nodo's treasury foundation is policy-first. A spend must satisfy treasury policy before it can become accepted execution evidence.
+Treasury policy controls when protocol-owned funds may move.
 
-## Policy Checks
+## Policy checks
 
-Treasury validation covers:
+Treasury execution should verify:
 
-- proposal validity;
-- recipient and amount consistency;
-- maximum spend per proposal;
-- maximum spend per epoch;
-- timelock rules;
-- approval requirements;
-- treasury balance before spend;
-- lock rules.
+- governance approval exists;
+- approval is valid for the requested action;
+- proposal has not expired;
+- action has not already been executed;
+- recipient is valid;
+- amount is valid;
+- treasury has enough balance;
+- epoch/height/timelock rules are satisfied;
+- execution is serialized canonically.
 
-## Status
+## Safety rule
 
-The current implementation supports treasury policy and execution evidence foundations. Production operator procedures and public treasury workflows remain under development.
+No treasury spend should be possible through a direct shortcut. Execution must pass the same policy and evidence checks regardless of whether it is triggered by CLI, RPC, or internal runtime logic.
+
+## Current status
+
+Treasury policy and execution evidence foundations exist. Real-value treasury use remains blocked until governance, key custody, monitoring, and operator procedures are finalized.

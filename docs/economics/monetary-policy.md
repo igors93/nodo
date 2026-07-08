@@ -1,20 +1,51 @@
 # Monetary Policy
 
-Nodo's monetary model is still under development, but its foundations are built around traceability and supply audit.
+Nodo monetary policy should be explicit, bounded, and auditable.
 
-## Current Foundations
+## Required properties
 
-- monetary policy records;
-- mint and burn records;
-- supply delta builder;
-- supply audit;
-- epoch monetary reports;
-- controlled issuance checks;
-- monetary firewall tests;
-- runtime monetary report service foundations.
+A valid monetary policy must define:
 
-## Security Rule
+- genesis supply;
+- circulating supply calculation;
+- maximum emission per epoch;
+- fee treatment;
+- burn treatment;
+- reward pool calculation;
+- treasury funding rules;
+- emergency limits;
+- supply report format.
 
-No inflation without authorization.
+## Emission principle
 
-Any monetary expansion must be represented by canonical records that can be rebuilt and audited. The current implementation is a development foundation, not a final mainnet issuance policy.
+New emission must be authorized by policy and recorded in canonical ledger records.
+
+Recommended structure:
+
+```text
+reward_pool = collected_fees + allowed_security_emission
+allowed_security_emission <= epoch_emission_cap
+```
+
+## Supply audit
+
+A node should be able to compute supply from canonical records:
+
+```text
+genesis supply
++ minted/emitted coins
+- burned coins
+- slashed/burned amounts
+± treasury/account movements
+= current supply and balances
+```
+
+## Open work
+
+The final public-network policy still needs:
+
+- exact testnet parameters;
+- mainnet policy review;
+- economics simulation;
+- abuse analysis;
+- governance controls over parameter changes.

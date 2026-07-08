@@ -1,43 +1,35 @@
 # Governance Vote Evidence
 
-Governance vote evidence binds a vote to the context that makes it meaningful.
+A governance decision should not be accepted unless it can be rebuilt from vote evidence.
 
-## Required Context
+## Required vote context
 
-Each evidence record includes:
+A vote record should bind:
 
-- `evidenceId`;
-- `GovernanceProposalEnvelope`;
-- `GovernanceVotingPolicy`;
-- `GovernanceVoteRecord`.
-
-The vote record includes:
-
-- vote id;
-- governance proposal id;
-- voter id;
+- proposal id;
+- voter identity;
+- validator or voting weight context;
 - vote choice;
-- voting power;
-- cast block;
-- voting power source;
-- deterministic vote proof;
-- policy version.
+- signature/public key material;
+- height or epoch context;
+- fee/accounting effect when applicable.
 
 ## Verification
 
-Vote evidence is rejected when:
+Vote verification should check:
 
-- the evidence id is empty;
-- the proposal envelope is invalid;
-- the voting policy is invalid;
-- the vote record is invalid;
-- the vote targets a different proposal;
-- the vote uses a different policy version;
-- the vote was cast before proposal submission;
-- the vote is below minimum voting power;
-- abstain is disallowed by policy;
-- the deterministic vote proof does not match the record.
+- valid proposal id;
+- valid voter identity;
+- valid signature;
+- no duplicate vote unless replacement rules allow it;
+- valid voting period;
+- valid weight context;
+- canonical serialization.
 
-## Vote Set Audit
+## Tally
 
-The vote-set audit rejects duplicate evidence ids, duplicate vote ids, duplicate voters, wrong proposals, policy mismatches, and unimplemented vote replacement. Accepted votes are returned in deterministic canonical order for tally rebuilding.
+A tally should be deterministic. Given the same proposal and same canonical vote set, all nodes must compute the same result.
+
+## Audit rule
+
+Governance state should be rejected if the recorded decision cannot be reproduced from the proposal, vote evidence, tally rules, and execution record.

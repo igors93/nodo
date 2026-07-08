@@ -1,39 +1,53 @@
 # Security Model
 
-Nodo is defensive by design. It should reject invalid data, preserve evidence, reduce unsafe influence, and allow honest nodes to rebuild state.
+Nodo treats security as a protocol requirement, not an optional operational add-on.
 
-## Current Protections
+## Current protections
 
-- strict storage schema and key-value parsing;
-- atomic writes for important persisted files;
-- finalized artifact validation;
-- runtime reload and chain audit;
-- state-transition preview before finality;
-- governance lifecycle verification;
-- treasury execution evidence validation;
-- slashing evidence and idempotent penalty foundations;
-- peer rate limiting and inbound message validation foundations;
-- testnet readiness and diagnostics foundations;
-- gossip transaction deduplication via `SeenTransactionCache` (LRU + TTL) —
-  prevents amplification from peers replaying the same payload;
-- gossip payload signature verification before mempool admission — no unsigned
-  or wrongly-signed transaction is admitted from the network;
-- `ProductionKeySafetyGate` blocks localnet-only keys on official networks;
-- `LOCKED_PRODUCTION` (mainnet) startup is refused at the CLI level;
-- genesis compatibility check prevents mixing data directories across networks;
-- finalized artifact QC verification against the local validator registry before
-  recording — no finalized block is accepted on peer word alone;
-- no implicit trust in P2P messages: every consensus payload is verified
-  locally before acting on it.
+Implemented or foundation-level protections include:
 
-## Current Limits
+- canonical serialization checks;
+- strict storage schema validation;
+- deterministic state-transition replay;
+- signature verification;
+- BLS validator signatures and Ed25519 user/peer signatures;
+- quorum certificate validation;
+- finalized state-root verification;
+- atomic persistence;
+- peer authentication foundations;
+- rate limiting;
+- temporary peer bans and quarantine;
+- eclipse-resistance foundations;
+- governance vote evidence;
+- treasury execution evidence;
+- slashing evidence;
+- key safety diagnostics;
+- health and metrics endpoints.
 
-- local development keys are not production custody;
-- testnet-candidate is not a public production network;
-- mainnet is blocked;
-- P2P foundations are not yet a fully hardened production networking stack;
-- external audits have not been claimed.
+## Security assumptions
 
-## Operator Rule
+Nodo should assume:
 
-Treat all current builds as development or pre-testnet software unless a future signed release explicitly says otherwise.
+- peers may be malicious;
+- persisted files may be corrupted or tampered with;
+- RPC clients may send malformed or oversized requests;
+- validators may equivocate;
+- operators may misconfigure nodes;
+- old data may be replayed;
+- local development keys are unsafe for production.
+
+## Fail-safe preference
+
+If Nodo cannot prove that input is safe and canonical, it should reject that input or halt the unsafe path.
+
+## Current limits
+
+The following remain incomplete for production use:
+
+- external security audit;
+- production custody workflow;
+- public validator onboarding process;
+- formal consensus specification;
+- final economic abuse analysis;
+- public incident-response runbook;
+- mainnet release procedure.

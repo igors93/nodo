@@ -56,8 +56,10 @@ public:
    */
   static BlockProposalResult
   propose(const core::Block &block, const std::string &proposerAddress,
-          std::uint64_t round, std::int64_t now, const crypto::Signer &signer,
-          p2p::GossipMesh &gossip, const crypto::SignatureProvider &provider);
+          std::uint64_t round, std::int64_t proposedAt,
+          const crypto::Signer &signer, p2p::GossipMesh &gossip,
+          const crypto::SignatureProvider &provider,
+          const std::string &justification = "");
 };
 
 } // namespace nodo::consensus

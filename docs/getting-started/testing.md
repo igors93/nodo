@@ -1,8 +1,14 @@
 # Testing
 
-Nodo uses CTest. `CMakeLists.txt` discovers every `tests/**/*.cpp` file and builds one executable per test source.
+Nodo has a broad C++ test suite and Python diagnostic scenarios.
 
-## Run All Tests
+## Run all C++ tests
+
+Unix-like systems:
+
+```bash
+./scripts/cmake_test_all.sh
+```
 
 Windows:
 
@@ -10,40 +16,41 @@ Windows:
 .\scripts\cmake_test_all.bat
 ```
 
-Unix-like:
+## Direct CTest
 
 ```bash
-./scripts/cmake_test_all.sh
+ctest --test-dir build --output-on-failure
 ```
 
-Direct CTest:
+## Filtered test runs
 
 ```bash
-ctest --test-dir build/cmake --output-on-failure
+ctest --test-dir build -R consensus --output-on-failure
+ctest --test-dir build -R storage --output-on-failure
+ctest --test-dir build -R governance --output-on-failure
 ```
 
-## Filtered Test Runs
+## Diagnostic scenarios
 
-`scripts/test.sh` (Unix-like) and `scripts/test.bat` (Windows) build the
-project and run a subset of the suite:
+Python diagnostic tooling lives under `diagnostics/python`.
+
+Typical use:
 
 ```bash
-./scripts/test.sh                  # all tests
-./scripts/test.sh consensus        # one module (tests/ subdirectory prefix)
-./scripts/test.sh -R "p2p_Encrypted"   # any ctest name regex
+python diagnostics/python/run_scenarios.py
 ```
 
-Valid module names are the `tests/` subdirectories: `app`, `config`,
-`consensus`, `core`, `crypto`, `economics`, `mempool`, `node`, `p2p`,
-`serialization`, `staking`, `storage`, `utils`.
+## Testing rules
 
-Test executables are named `<subdir>_<FileName>` (for example
-`consensus_VotePoolTests`), so any grouping can be selected with `-R`.
+Tests should prove protocol safety, not only implementation convenience. Important test categories include:
 
-## Testing Rules
-
-- Do not disable tests to make a change pass.
-- Do not weaken protocol validation to satisfy a stale assertion.
-- Update tests only when the old expected behavior is genuinely wrong.
-- Keep security, storage, treasury, governance, and consensus tests deterministic.
-- Prefer small regression tests that prove one invariant clearly.
+- deterministic serialization;
+- state-transition rejection paths;
+- block finalization and quorum certificates;
+- storage/reload failure cases;
+- governance lifecycle audit;
+- treasury policy and execution evidence;
+- validator penalties and slashing evidence;
+- networking and sync hardening;
+- key safety gates;
+- readiness diagnostics.

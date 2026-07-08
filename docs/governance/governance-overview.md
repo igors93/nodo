@@ -1,25 +1,42 @@
 # Governance Overview
 
-Nodo governance is currently a protocol evidence foundation, not a public governance application.
+Nodo governance exists to make protocol decisions auditable.
 
-## Implemented Foundations
+## Governance goals
 
-- governance proposal envelope;
-- governance policy;
-- governance voting policy;
-- governance vote record;
-- governance vote proof;
-- governance vote evidence;
-- vote-set audit;
-- tally report;
-- governance decision builder;
-- governance decision audit;
-- lifecycle record;
-- lifecycle codec and store;
-- lifecycle-backed treasury approval bridge.
+- proposals are recorded canonically;
+- votes are signed and attributable;
+- tally rules are deterministic;
+- decisions can be rebuilt from evidence;
+- execution is linked to an approved decision;
+- treasury execution requires governance evidence when applicable.
 
-## Rule
+## Proposal types
 
-No governance decision without verifiable vote evidence.
+Current governance foundations support the following proposal categories:
 
-The verifier must rebuild votes, tally, and decision before accepting a lifecycle record or using it to authorize treasury execution.
+- parameter change;
+- treasury spend;
+- text proposal.
+
+## Lifecycle
+
+```text
+proposal
+   ↓
+vote evidence
+   ↓
+vote-set audit
+   ↓
+tally
+   ↓
+decision
+   ↓
+execution
+   ↓
+lifecycle audit
+```
+
+## Public governance status
+
+The implementation contains foundations for proposal, voting, decision, execution, and audit. Public governance is not final until quorum, timelocks, emergency powers, cancellation, veto, and operator procedures are fully specified.

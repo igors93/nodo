@@ -38,7 +38,8 @@ public:
                              std::uint64_t blockIndex, std::uint64_t round,
                              std::string blockHash, std::string serializedBlock,
                              std::int64_t proposedAt,
-                             crypto::SignatureBundle signatureBundle);
+                             crypto::SignatureBundle signatureBundle,
+                             std::string justification = "");
 
   const std::string &proposerAddress() const;
   const crypto::PublicKey &proposerPublicKey() const;
@@ -48,6 +49,7 @@ public:
   const std::string &serializedBlock() const;
   std::int64_t proposedAt() const;
   const crypto::SignatureBundle &signatureBundle() const;
+  const std::string &justification() const;
 
   bool isValid() const;
 
@@ -72,18 +74,21 @@ public:
   buildSigningPayload(const std::string &proposerAddress,
                       const crypto::PublicKey &proposerPublicKey,
                       const std::string &blockHash, std::uint64_t blockIndex,
-                      std::uint64_t round, std::int64_t proposedAt);
+                      std::uint64_t round, std::int64_t proposedAt,
+                      const std::string &justification = "");
 
   static SignedBlockProposalMessage fromSignatureBundle(
       const core::Block &block, const std::string &proposerAddress,
       const crypto::PublicKey &proposerPublicKey, std::uint64_t round,
-      std::int64_t proposedAt, crypto::SignatureBundle signatureBundle);
+      std::int64_t proposedAt, crypto::SignatureBundle signatureBundle,
+      std::string justification = "");
 
   static SignedBlockProposalMessage
   sign(const core::Block &block, const std::string &proposerAddress,
        const crypto::PublicKey &proposerPublicKey,
        const crypto::PrivateKey &proposerPrivateKey, std::uint64_t round,
-       std::int64_t proposedAt, const crypto::SignatureProvider &provider);
+       std::int64_t proposedAt, const crypto::SignatureProvider &provider,
+       const std::string &justification = "");
 
 private:
   std::string m_proposerAddress;
@@ -94,6 +99,7 @@ private:
   std::string m_serializedBlock;
   std::int64_t m_proposedAt;
   crypto::SignatureBundle m_signatureBundle;
+  std::string m_justification;
 };
 
 } // namespace nodo::node

@@ -1,22 +1,24 @@
 # JSON-RPC Public API
 
-Nodo exposes JSON-RPC 2.0 as the official public protocol API over the existing node HTTP socket. The endpoint is:
+Nodo exposes JSON-RPC 2.0 as the preferred public protocol API.
+
+## Endpoint
 
 ```text
 POST /rpc
 Content-Type: application/json
 ```
 
-The older REST routes are intentionally kept as operational and compatibility endpoints for local status, diagnostics, integration tests and dashboards. Wallets, explorers, staking tooling and governance clients should prefer JSON-RPC.
+REST routes may remain for operations, diagnostics, compatibility, and tests. Wallets, explorers, staking tools, and governance clients should prefer JSON-RPC.
 
 ## Design rules
 
-- JSON-RPC and REST share the same `NodeRpcServer` socket and runtime mutex.
-- Every JSON-RPC method is routed through the same canonical runtime handlers used by the existing operational routes, avoiding divergent business logic.
-- Requests are bounded by `NodeRpcServer::MAX_REQUEST_LEN`.
-- Per-source-IP rate limiting is applied before request dispatch.
-- Runtime access is serialized with the daemon/orchestrator tick so RPC cannot observe torn state.
-- `POST /rpc` is the public protocol path; `/status`, `/metrics`-style routes remain operational.
+- JSON-RPC and REST share the same node runtime where possible.
+- Public methods must not bypass canonical validation.
+- Requests must be size-bounded.
+- Rate limiting should apply before dispatch.
+- Runtime access should avoid observing torn state.
+- Protocol methods should return deterministic data shapes.
 
 ## Core methods
 
@@ -78,24 +80,6 @@ stake_auditStatus
 }
 ```
 
-Response:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "1",
-  "result": {
-    "networkName": "localnet",
-    "chainId": "...",
-    "height": 0
-  }
-}
-```
-
 ## Transaction submission
 
-`nodo_sendTransaction`, `nodo_sendRawTransaction`, governance submit methods and staking mutation methods expect a self-contained signed transaction submission envelope in the `tx` or `transaction` parameter, matching the schema accepted by the existing `/submit` route. The RPC server rejects raw `Transaction{...}` payloads that lack public key material.
-
-## Compatibility
-
-No REST file was deleted. REST remains available for local operations and existing tests, but new external integrations should treat JSON-RPC as the stable public protocol API.
+Transaction-submission methods should receive self-contained signed transaction envelopes. Raw payloads without required public-key/signature material must be rejected.

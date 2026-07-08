@@ -1,52 +1,85 @@
 # Quick Start
 
-This guide builds Nodo and runs a small localnet flow. Nodo is pre-mainnet software; use this only for development and review.
+This guide builds Nodo and runs the local development path.
 
-## Windows PowerShell
+## 1. Install dependencies
+
+Required tools:
+
+- CMake 3.20 or newer;
+- a C++20 compiler;
+- OpenSSL/libcrypto;
+- BLST;
+- Bash, PowerShell, or a compatible shell.
+
+On Unix-like systems, BLST can be installed through the helper script:
+
+```bash
+./scripts/install_blst.sh
+export BLST_ROOT="$HOME/.nodo/deps/blst"
+```
+
+## 2. Build
+
+Unix-like systems:
+
+```bash
+./scripts/cmake_build.sh
+```
+
+Windows PowerShell:
 
 ```powershell
 $env:BLST_ROOT="$env:USERPROFILE\.nodo\deps\blst"
 .\scripts\cmake_build.bat
-.\scripts\cmake_test_all.bat
-.\build\nodo.exe help
 ```
 
-Run a localnet flow:
+## 3. Run tests
 
-```powershell
-.\build\nodo.exe init --network localnet --data-dir .nodo
-.\build\nodo.exe keys create --network localnet --data-dir .nodo
-.\build\nodo.exe tx submit --data-dir .nodo
-.\build\nodo.exe block produce --data-dir .nodo
-.\build\nodo.exe node reload --network localnet --data-dir .nodo
-.\build\nodo.exe chain audit --data-dir .nodo
-.\build\nodo.exe diagnostics --network localnet --data-dir .nodo
-```
-
-## Linux, macOS, Git Bash, or MSYS2
+Unix-like systems:
 
 ```bash
-export BLST_ROOT="$HOME/.nodo/deps/blst"
-./scripts/cmake_build.sh
 ./scripts/cmake_test_all.sh
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\cmake_test_all.bat
+```
+
+## 4. Inspect the CLI
+
+```bash
 ./build/nodo help
 ```
 
-Run a localnet flow:
+On Windows, the executable may be available as:
 
-```bash
-./build/nodo init --network localnet --data-dir .nodo
-./build/nodo keys create --network localnet --data-dir .nodo
-./build/nodo tx submit --data-dir .nodo
-./build/nodo block produce --data-dir .nodo
-./build/nodo node reload --network localnet --data-dir .nodo
-./build/nodo chain audit --data-dir .nodo
-./build/nodo diagnostics --network localnet --data-dir .nodo
+```powershell
+.\build\nodo.exe help
 ```
 
-## Next Reading
+## 5. Initialize a local node
+
+```bash
+./build/nodo init --network localnet --data-dir .nodo --peer-id local-node --endpoint 127.0.0.1:9000
+./build/nodo keys create --data-dir .nodo --type both
+./build/nodo status --data-dir .nodo
+```
+
+## 6. Produce and audit local blocks
+
+```bash
+./build/nodo tx submit --data-dir .nodo
+./build/nodo block produce --data-dir .nodo
+./build/nodo node reload --data-dir .nodo
+./build/nodo chain audit --data-dir .nodo
+```
+
+## Next reading
 
 - [Build](build.md)
-- [Testing](testing.md)
 - [CLI](cli.md)
-- [Storage and Reload](../architecture/storage-and-reload.md)
+- [Local testnet](../operations/local-testnet.md)
+- [Architecture overview](../architecture/architecture-overview.md)

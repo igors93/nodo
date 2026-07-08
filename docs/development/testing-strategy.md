@@ -1,22 +1,39 @@
 # Testing Strategy
 
-Nodo's tests are organized by module and discovered automatically by CMake.
+Nodo tests should prove that the protocol rejects unsafe behavior and rebuilds valid behavior deterministically.
 
-## What Tests Should Prove
+## Required test categories
 
-- protocol records validate required fields;
-- canonical codecs reject missing and unexpected fields;
-- storage reload rejects corrupted data;
-- consensus rejects duplicate, stale, or conflicting votes;
-- governance lifecycle verification rebuilds votes, tally, and decision;
-- treasury evidence rejects direct approvals without lifecycle context;
-- monetary reports and supply audit match finalized history;
-- P2P validators reject wrong network or malformed messages.
+- canonical serialization round trips;
+- invalid serialization rejection;
+- transaction admission;
+- state-transition execution;
+- state-root mismatch rejection;
+- finalized block replay;
+- quorum certificate verification;
+- consensus recovery;
+- storage schema validation;
+- manifest corruption rejection;
+- persistent mempool reload;
+- governance vote evidence;
+- treasury policy;
+- slashing evidence;
+- reward settlement;
+- key safety gates;
+- peer policy and rate limiting;
+- sync and fast-sync behavior;
+- readiness diagnostics.
 
-## Running Tests
+## Regression rule
 
-See [Testing](../getting-started/testing.md).
+Every discovered bug should leave a regression test unless the failure is purely environmental.
 
-## Regression Tests
+## Integration rule
 
-Every security fix should add a regression test that fails against the old behavior and passes after the fix. Keep regression tests small enough to show the invariant directly.
+When two protocol domains interact, tests should verify the integration boundary. Examples:
+
+- governance decision → treasury execution;
+- staking registry → validator weight snapshot;
+- slashing evidence → penalty ledger;
+- transaction execution → coin-lot registry;
+- finalized block → manifest state root.

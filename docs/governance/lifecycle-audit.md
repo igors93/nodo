@@ -1,33 +1,45 @@
 # Governance Lifecycle Audit
 
-A governance lifecycle record stores the proposal, policy, votes, tally, decision, and lifecycle metadata needed to verify an official decision.
+Governance lifecycle audit verifies that each proposal moved through valid states.
 
-## Lifecycle Contents
+## Lifecycle contents
 
-- lifecycle id;
-- proposal envelope;
-- governance policy;
-- voting policy;
-- vote evidence list;
-- tally report;
+A complete lifecycle should contain:
+
+- proposal record;
+- vote records;
+- vote-set audit result;
+- tally record;
 - decision record;
-- created block;
-- finalized block.
+- execution record, if executed;
+- rejection or expiration record, if not executed.
 
-## Verification Flow
+## Verification flow
 
 ```text
-validate lifecycle structure
--> audit vote evidence set
--> rebuild tally from canonical votes
--> compare rebuilt tally with stored tally
--> rebuild expected decision
--> compare rebuilt decision with stored decision
--> accept or reject
+proposal exists
+   ↓
+votes are valid
+   ↓
+tally is reproducible
+   ↓
+decision matches tally
+   ↓
+execution matches decision and policy
 ```
 
-## Treasury Approval Bridge
+## Treasury bridge
 
-`GovernanceApprovalBridge::produceTreasuryApprovalFromVerifiedLifecycle` is the production path. It verifies the lifecycle, requires an approved decision, checks the governance review period, and produces a deterministic treasury approval.
+Treasury execution should be accepted only if the governance lifecycle proves that the spend was approved and not expired, cancelled, or already executed.
 
-Structural decision approval helpers are test-only and must not be used by production validators.
+## Open work
+
+Public governance still needs final rules for:
+
+- quorum;
+- approval thresholds;
+- timelocks;
+- emergency execution;
+- veto or cancellation;
+- parameter-change safety limits;
+- validator eligibility for voting.

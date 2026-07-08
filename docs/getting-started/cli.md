@@ -1,49 +1,78 @@
 # CLI
 
-The Nodo CLI is a local operator and development tool. It exposes the current localnet and testnet-candidate foundations.
+The `nodo` binary exposes development, node, governance, staking, validator, audit, and diagnostic commands.
 
 ## Help
 
 ```bash
-build/nodo help
+./build/nodo help
 ```
 
-On Windows:
-
-```powershell
-.\build\nodo.exe help
-```
-
-## Current Commands
+## Core commands
 
 ```text
-nodo init [--network localnet|testnet-candidate] [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
-nodo status [--network localnet|testnet-candidate] [--data-dir PATH]
-nodo inspect [--network localnet|testnet-candidate] [--data-dir PATH]
-nodo node run [--network localnet|localnet-soak|testnet-candidate] [--data-dir PATH] [--listen HOST:PORT] [--rpc-listen HOST:PORT] [--peer NAME@HOST:PORT]... [--validator-key ID] [--identity-key ID]
-nodo node reload [--network localnet|testnet-candidate] [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
-nodo keys create [--network localnet|testnet-candidate] [--data-dir PATH] [--type user|validator|both] [--key-id ID]
-nodo keys list [--data-dir PATH]
-nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] [--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]
-nodo governance propose [--data-dir PATH] [--from KEY_ID] [--proposal-type parameter-change|treasury-spend|text] [--title TEXT] [--body TEXT] ...
-nodo governance vote [--data-dir PATH] [--owner KEY_ID] --proposal-id ID --validator ADDRESS [--vote YES|NO|ABSTAIN] [--fee RAW_UNITS]
-nodo governance status|list|show|audit [--data-dir PATH] [--proposal-id ID]
-nodo stake lock|deposit|top-up|unlock|withdraw [--data-dir PATH] (--validator ADDRESS | --validator-key ID) --amount RAW_UNITS [--owner KEY_ID] [--fee RAW_UNITS]
-nodo stake status [--data-dir PATH] (--validator ADDRESS | --validator-key ID)
-nodo stake positions|audit [--data-dir PATH] [--validator ADDRESS] [--address ADDRESS]
-nodo block produce [--data-dir PATH]
-nodo chain audit [--data-dir PATH] [--peer-id ID] [--endpoint HOST:PORT]
-nodo validator list [--data-dir PATH]
-nodo testnet readiness [--network localnet|testnet-candidate] [--data-dir PATH] [--key-id ID]
-nodo diagnostics [--network localnet|testnet-candidate] [--data-dir PATH] [--key-id ID]
+nodo init
+nodo status
+nodo inspect
+nodo node run
+nodo node reload
+nodo node prune
+nodo node pruning-status
+nodo keys create
+nodo keys list
+nodo tx submit
+nodo block produce
+nodo chain audit
+nodo testnet readiness
+nodo diagnostics
 ```
 
-For per-command behavior details see the [CLI Reference](../CLI.md).
+## Governance commands
 
-## Network Profiles
+```text
+nodo governance propose
+nodo governance vote
+nodo governance execute
+nodo governance status
+nodo governance list
+nodo governance show
+nodo governance audit
+```
 
-- `localnet`: local development path.
-- `localnet-soak`: isolated three-validator development profile used only by
-  the explicit ten-minute soak gate.
-- `testnet-candidate`: official pre-testnet profile with safety gates.
-- `mainnet`: blocked until production readiness requirements are satisfied.
+## Validator and staking commands
+
+```text
+nodo validator list
+nodo validator status
+nodo validator exit
+nodo validator unjail
+nodo stake lock
+nodo stake deposit
+nodo stake top-up
+nodo stake unlock
+nodo stake withdraw
+nodo stake status
+nodo stake positions
+nodo stake audit
+nodo rewards status
+nodo slashing evidence
+```
+
+## Common options
+
+| Option | Meaning |
+| --- | --- |
+| `--data-dir PATH` | Node data directory. Default: `.nodo`. |
+| `--network NAME` | Network profile. Common values: `localnet`, `localnet-soak`, `testnet-candidate`. Mainnet is blocked. |
+| `--peer-id ID` | Local peer id for init/load. |
+| `--endpoint HOST:PORT` | Local endpoint for init/load. |
+| `--listen HOST:PORT` | Bind address for `node run`. |
+| `--rpc-listen HOST:PORT` | JSON-RPC/HTTP bind address for `node run`. Default: `127.0.0.1:8545`. |
+| `--peer NAME@HOST:PORT` | Static peer for `node run`. Repeatable. |
+| `--validator-key ID` | Validator identity key. |
+| `--identity-key ID` | Peer identity key. Default: `local-user`. |
+| `--key-id ID` | Key id for creation or signing. |
+
+## Development safety
+
+Legacy demo commands are intentionally treated as development-only and should not be part of public-network documentation. Prefer the canonical commands listed above.

@@ -1,36 +1,63 @@
 # Proof of Protection
 
-Proof of Protection is Nodo's security and economics positioning. It treats protection work as measurable protocol behavior rather than an informal validator duty.
+Proof of Protection is the guiding economic and audit model of Nodo. It is not a replacement name for the consensus engine.
 
-## Core Rules
+## Definition
 
-- No inflation without authorization.
-- No balance without origin.
-- No treasury spend without policy validation.
-- No treasury approval without governance evidence.
-- No governance decision without verifiable vote evidence.
-- No reward without measurable protection work.
-- No penalty without verifiable evidence.
-- No state accepted if it cannot be rebuilt from history.
+Proof of Protection means that validators and protocol participants should be rewarded only for protection work that is measurable, useful, and verifiable by the network.
 
-## What Protection Means
+Protection work may include:
 
-Protection work can include:
+- producing valid blocks;
+- voting correctly in consensus;
+- maintaining finality evidence;
+- relaying valid protocol data;
+- preserving auditable state;
+- participating in governance evidence;
+- helping the network remain available and recoverable.
 
-- validating state transitions before finality;
-- rejecting malformed or unsafe protocol messages;
-- preserving finalized artifacts needed for recovery;
-- detecting double votes or invalid validator behavior;
-- maintaining peer health and limiting abusive peers;
-- rebuilding state during reload and audit;
-- producing evidence that a future node can independently verify.
+## Separation from consensus
 
-## Why It Matters
+Nodo should be documented and reviewed as layered protocol design:
 
-A blockchain cannot be safer than the evidence it preserves. Nodo's architecture pushes important decisions through records that can be rebuilt:
+```text
+Consensus
+  Determines how blocks become finalized.
 
-- a treasury spend is checked against a proposal, policy, approval, treasury state, and governance lifecycle;
-- a governance decision is rebuilt from vote evidence, canonical vote ordering, tally arithmetic, and deterministic decision proof;
-- a finalized block is checked against quorum, state-transition preview, storage schema, and reload audit.
+State transition
+  Determines how transactions and protocol records change state.
 
-Proof of Protection is not a marketing claim that the current code is suitable for production use. It is the rule set guiding the implementation.
+Proof of Protection
+  Determines how measurable protection work affects rewards, score, penalties, and economics.
+
+Audit and rebuild
+  Determines whether another node can reproduce accepted state later.
+```
+
+This separation matters. A consensus protocol can finalize a block, while Proof of Protection determines whether the validators involved earned rewards, lost score, or produced penalty evidence.
+
+## Core principles
+
+| Principle | Meaning |
+| --- | --- |
+| No inflation without authorization | Monetary expansion must be explicit, bounded, and auditable. |
+| No balance without origin | Every balance must trace back to genesis, mint, transfer, reward, fee, burn, treasury, or penalty history. |
+| No reward without measurable protection work | Rewards should be tied to protocol work that can be verified later. |
+| No penalty without evidence | Slashing and penalties must require canonical evidence and must be idempotent. |
+| No treasury spend without policy validation | Treasury actions must satisfy policy limits, approval rules, balance checks, and execution rules. |
+| No governance decision without vote evidence | Proposal outcome must be rebuilt from recorded votes and tally rules. |
+| No accepted state without rebuild | Node state must be reproducible from canonical history. |
+
+## What must be avoided
+
+Proof of Protection should not become:
+
+- a vague reputation system;
+- a subjective validator ranking;
+- a reward mechanism based only on stake;
+- a way to pay validators for creating artificial work;
+- a hidden shortcut around consensus or state-transition rules.
+
+## Implementation direction
+
+The current implementation contains foundations for validator score, stake, reward records, coin lots, penalty evidence, governance audit, treasury evidence, and state rebuilding. The final Proof-of-Protection model still needs testnet parameters and formal specification before public value can depend on it.

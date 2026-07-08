@@ -1,39 +1,49 @@
 # Blocks and Finalization
 
-Nodo separates the real distributed finalization path from the localnet development helper.
+A block should become part of canonical history only after it passes validation and receives sufficient finality evidence.
 
-## Flow
+## Block lifecycle
 
-1. Pending transactions are loaded from the persistent mempool.
-2. A candidate block is built.
-3. The block is checked structurally.
-4. Transaction signatures and admission rules are checked.
-5. State transition is previewed without partial mutation.
-6. Distributed validators cast PREVOTE and then PRECOMMIT after prevote quorum.
-7. A quorum certificate is assembled from PRECOMMIT votes only.
-8. `RuntimeBlockPipeline::commitCertifiedBlock` applies the certified block,
-   writes the finalized record and persists the finalized artifact.
-9. Runtime reload verifies the artifact before accepting it.
+```text
+transaction admission
+      ↓
+mempool selection
+      ↓
+block proposal
+      ↓
+state-transition preview
+      ↓
+validator voting
+      ↓
+PRECOMMIT quorum certificate
+      ↓
+finalized block artifact
+      ↓
+persistence and manifest update
+      ↓
+reload/audit verification
+```
 
-`RuntimeBlockPipeline::produceAndFinalizeLocalnetBlock` is a DEVELOPMENT_LOCAL-only
-helper for CLI/tests. It may build one local PRECOMMIT-backed QC in-process, but
-it rejects staging and production network classes and is not the protocol path
-for distributed consensus.
+## Validation before voting
 
-## Finalized Artifacts
+Validators should not vote for a block unless the block passes deterministic checks, including:
 
-Finalized artifacts carry the block plus domain evidence sections, including monetary, treasury, governance, validator, and slashing-related records as the implementation evolves.
+- previous block reference;
+- transaction signature and nonce rules;
+- fee/minimum-fee policy;
+- state-transition execution;
+- coin-lot ownership validation;
+- protocol-domain record validation;
+- resulting state root and receipt root consistency.
 
-## Safety Notes
+## Finalized artifacts
 
-- Invalid blocks must not receive valid finality.
-- Duplicate or unknown validator votes are rejected.
-- QCs must contain only PRECOMMIT votes; legacy approval shortcuts are not valid finality.
-- State roots must match reload and audit.
-- Finalized history must remain rebuildable.
+A finalized artifact must be sufficient for replay and audit. It should include consensus evidence and all protocol-domain records that affect state.
 
+## QC persistence
 
-Recovery rule: the signed vote must be durable before it is visible to peers.
-Restarted validators resubmit/rebroadcast the persisted vote for the same
-height/round/block instead of signing a replacement vote or silently skipping the
-network broadcast.
+Quorum certificates should be persisted so that restart and fast sync can verify finality without relying on volatile memory.
+
+## Rejection principle
+
+A node should reject a finalized artifact if its state transition, consensus evidence, canonical serialization, or protocol-domain records cannot be verified.

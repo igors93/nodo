@@ -158,8 +158,8 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
       m_pendingCandidate->block.index() != height ||
       m_pendingCandidate->round != round) {
 
-    if (elapsedMs >= static_cast<std::int64_t>(params.proposalTimeoutMs()) && !m_votedPrevote &&
-        m_localSigner &&
+    if (elapsedMs >= static_cast<std::int64_t>(params.proposalTimeoutMs()) &&
+        !m_votedPrevote && m_localSigner &&
         validators.isEligibleForConsensus(m_localSigner->address())) {
       const auto nilVote = m_localSigner->signValidatorVote(
           height, "nil", "nil", round, ValidatorVoteDecision::REJECT, "nil",
@@ -171,7 +171,8 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     }
 
     if (m_votedPrevote && !m_votedPrecommit &&
-        elapsedMs >= static_cast<std::int64_t>(params.proposalTimeoutMs() + params.prevoteTimeoutMs())) {
+        elapsedMs >= static_cast<std::int64_t>(params.proposalTimeoutMs() +
+                                               params.prevoteTimeoutMs())) {
       if (m_localSigner &&
           validators.isEligibleForConsensus(m_localSigner->address())) {
         const auto nilPrecommit = m_localSigner->signValidatorVote(
@@ -243,8 +244,27 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
   if (!m_votedPrevote && m_localSigner &&
       validators.isEligibleForConsensus(m_localSigner->address())) {
 
-    if (m_lockedBlock.empty() || blockHash == m_lockedBlock ||
-        round > m_lockedRound) {
+    bool safeToVote = false;
+    if (m_lockedBlock.empty() || blockHash == m_lockedBlock) {
+      safeToVote = true;
+    } else if (round > m_lockedRound) {
+      if (!m_pendingCandidate->proposal.justification().empty()) {
+        try {
+          QuorumCertificate qc = QuorumCertificate::deserialize(
+              m_pendingCandidate->proposal.justification());
+          if (qc.isStructurallyValid() &&
+              qc.verify(validators, m_policy, m_provider)) {
+            if (qc.round() >= m_lockedRound && qc.blockHash() == blockHash) {
+              safeToVote = true;
+            }
+          }
+        } catch (const std::exception &) {
+          // Ignore invalid justifications, safeToVote remains false
+        }
+      }
+    }
+
+    if (safeToVote) {
       try {
         m_persistedPrevote = ValidatorVoteBuilder::buildPrevote(
             validators, candidate, round, now, *m_localSigner);
@@ -276,7 +296,8 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
       }
     }
   } else if (!m_votedPrevote && m_localSigner &&
-             elapsedMs >= static_cast<std::int64_t>(params.proposalTimeoutMs())) {
+             elapsedMs >=
+                 static_cast<std::int64_t>(params.proposalTimeoutMs())) {
     if (validators.isEligibleForConsensus(m_localSigner->address())) {
       const auto nilVote = m_localSigner->signValidatorVote(
           height, "nil", "nil", round, ValidatorVoteDecision::REJECT, "nil",
@@ -338,7 +359,8 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     }
   } else if (!m_votedPrecommit && m_localSigner &&
              elapsedMs >=
-                 static_cast<std::int64_t>(params.proposalTimeoutMs() + params.prevoteTimeoutMs())) {
+                 static_cast<std::int64_t>(params.proposalTimeoutMs() +
+                                           params.prevoteTimeoutMs())) {
     if (validators.isEligibleForConsensus(m_localSigner->address())) {
       const auto nilPrecommit = m_localSigner->signValidatorVote(
           height, "nil", "nil", round, ValidatorVoteDecision::REJECT, "nil",
@@ -426,14 +448,14 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
 
     for (const auto &envelope : voteMessages) {
       if (envelope.payload().empty())
-        continue;
+        continue; // debug loop
 
       try {
         ValidatorVoteRecord vote =
             ValidatorVoteRecord::deserialize(envelope.payload());
 
         if (!vote.isStructurallyValid(m_policy))
-          continue;
+          continue; // debug loop
 
         const VoteCollectResult collected = m_runtime.submitConsensusVote(vote);
 
@@ -441,7 +463,7 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
           result.votesCollected++;
         }
       } catch (const std::exception &) {
-        continue;
+        continue; // debug loop
       }
     }
   }
@@ -488,13 +510,13 @@ void ConsensusEventLoop::drainSlashingEvidence(std::int64_t now,
             *m_evidencePool, now);
     if (admitted.rateLimited()) {
       ++result.evidenceRateLimited;
-      continue;
+      continue; // debug loop
     }
     if (!admitted.accepted()) {
       if (!admitted.duplicate()) {
         ++result.evidenceRejected;
       }
-      continue;
+      continue; // debug loop
     }
 
     ++result.evidenceAccepted;
@@ -606,14 +628,14 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
       m_runtime.config().genesisConfig().networkParameters().chainId();
   for (const auto &envelope : messages) {
     if (envelope.payload().empty())
-      continue;
+      continue; // debug loop
 
     try {
       const node::SignedBlockProposalMessage proposal =
           node::SignedBlockProposalMessage::deserialize(envelope.payload());
 
       if (!proposal.isValid() || proposal.blockIndex() != state.height()) {
-        continue;
+        continue; // debug loop
       }
 
       const bool forCurrentRound = proposal.round() == state.round();
@@ -621,16 +643,16 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
           state.round() != std::numeric_limits<std::uint64_t>::max() &&
           proposal.round() == state.round() + 1;
       if (!forCurrentRound && !forNextRound)
-        continue;
+        continue; // debug loop
 
       const std::string expectedProposer = ProposerSchedule::selectProposer(
           validators, chainId, state.height(), proposal.round());
       if (expectedProposer.empty())
-        continue;
+        continue; // debug loop
 
       if (!proposal.verify(expectedProposer, validators, m_policy,
                            m_provider)) {
-        continue;
+        continue; // debug loop
       }
 
       const core::Block block =
@@ -666,10 +688,6 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
           node::RuntimeAccountStateBuilder::previewContextAtTip(
               m_runtime, effectiveMinimumFee(m_runtime));
 
-      // Votes are cast only through the authoritative protocol
-      // execution context. Signature verification alone is not enough:
-      // account-state enforcement and the canonical protocol-domain
-      // executor must also be present before the transition gate runs.
       if (!validationContext.isAuthoritativeProtocolContext()) {
         continue;
       }
@@ -678,13 +696,14 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
           core::BlockStateTransitionValidator::validateCandidateBlock(
               chain, block, validationContext);
 
-      if (!validation.accepted())
+      if (!validation.accepted()) {
         continue;
+      }
 
       std::string epochRewardRejection;
       if (!node::EpochRewardSettlementService::candidateRecordsMatch(
               m_runtime, block, epochRewardRejection)) {
-        continue;
+        continue; // debug loop
       }
 
       if (forNextRound) {
@@ -699,7 +718,7 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
             m_bufferedNextRoundProposals.push_back(envelope);
           }
         }
-        continue;
+        continue; // debug loop
       }
 
       m_pendingCandidate =
@@ -707,7 +726,7 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
     } catch (const std::exception &) {
       // Malformed or unverifiable peer input is ignored without changing
       // the active candidate or canonical chain.
-      continue;
+      continue; // debug loop
     }
   }
 }
