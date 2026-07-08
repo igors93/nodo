@@ -1,6 +1,7 @@
 #include "node/PersistentBlockStateSync.hpp"
 #include "node/FastSyncSnapshotService.hpp"
 #include "node/FastSyncSnapshotStore.hpp"
+#include "node/ProtocolExecutionStateParser.hpp"
 
 #include "consensus/BlockFinalizer.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
@@ -1468,19 +1469,22 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importSnapshot(
                                      verification.reason(), std::nullopt);
   }
 
-  // Safety boundary: this implementation verifies the portable snapshot and
-  // can publish a checkpoint only when the live runtime is already hydrated
-  // to the same finalized boundary.  It must never advance a checkpoint ahead
-  // of an in-memory runtime that still holds genesis or an older block.
-  if (runtime.blockchain().latestBlock().index() != snapshot->blockHeight() ||
-      runtime.blockchain().latestBlock().hash() != snapshot->blockHash()) {
-    return PersistentSyncApplyResult(
-        PersistentSyncApplyStatus::REJECTED,
-        "Snapshot payload verified, but runtime domain hydration is not yet "
-        "available for this node state. Refusing unsafe checkpoint-only "
-        "import.",
-        std::nullopt);
-  }
+  // Hydrate the protocol domains from the snapshot
+  auto executionState =
+      ProtocolExecutionStateParser::parse(snapshot->protocolDomains());
+
+  ProtocolReplayState tip;
+  tip.accounts = snapshot->accountStateView();
+  tip.execution = executionState;
+
+  core::ValidatorSetHistory validatorSetHistory;
+  validatorSetHistory.recordSet(snapshot->blockHeight(),
+                                executionState.validators);
+  tip.validatorSetHistory = validatorSetHistory;
+
+  ProtocolStateTransition::applyReplayDomainsToRuntime(runtime, tip);
+  runtime.mutableBlockchain().resetFromSnapshot(snapshot->blockHeight(),
+                                                snapshot->blockHash());
 
   if (checkpointStore != nullptr) {
     const PersistentSyncCheckpointWriteResult write =

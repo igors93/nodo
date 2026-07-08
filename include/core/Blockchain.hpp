@@ -4,10 +4,10 @@
 #include "core/Block.hpp"
 
 #include <cstdint>
-#include <string>
-#include <vector>
 #include <map>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace nodo::core {
 
@@ -20,50 +20,51 @@ namespace nodo::core {
  */
 class Blockchain {
 public:
-    Blockchain();
+  Blockchain();
 
-    void addGenesisBlock(const Block& block);
-    void addBlock(const Block& block);
+  void addGenesisBlock(const Block &block);
+  void addBlock(const Block &block);
 
-    bool empty() const;
-    std::size_t size() const;
+  // Jump the chain directly to a fast-sync boundary without historical blocks.
+  void resetFromSnapshot(std::uint64_t height, const std::string &hash);
 
-    const Block& genesisBlock() const;
-    const Block& latestBlock() const;
-    const std::vector<Block>& blocks() const;
+  bool empty() const;
+  std::size_t size() const;
 
-    std::optional<Block> blockByHash(const std::string& hash) const;
-    std::optional<Block> blockByHeight(std::uint64_t height) const;
+  const Block &genesisBlock() const;
+  const Block &latestBlock() const;
+  const std::vector<Block> &blocks() const;
 
-    bool isValid() const;
-    bool isValid(bool requireProtocolCommitments) const;
+  std::optional<Block> blockByHash(const std::string &hash) const;
+  std::optional<Block> blockByHeight(std::uint64_t height) const;
 
-    /*
-     * Returns true when the given block can be appended to the current chain.
-     */
-    bool canAppendBlock(const Block& block) const;
+  bool isValid() const;
+  bool isValid(bool requireProtocolCommitments) const;
 
-    /*
-     * Deterministic serialization of the full chain.
-     *
-     * This will later help storage and chain audit.
-     */
-    std::string serialize() const;
+  /*
+   * Returns true when the given block can be appended to the current chain.
+   */
+  bool canAppendBlock(const Block &block) const;
+
+  /*
+   * Deterministic serialization of the full chain.
+   *
+   * This will later help storage and chain audit.
+   */
+  std::string serialize() const;
 
 private:
-    std::vector<Block> m_blocks;
-    std::map<std::string, std::size_t> m_blockIndicesByHash;
+  std::vector<Block> m_blocks;
+  std::map<std::string, std::size_t> m_blockIndicesByHash;
 
-    bool isValidGenesisBlock(const Block& block) const;
+  bool isValidGenesisBlock(const Block &block) const;
 
-    // requireProtocolCommitmentsForCurrentBlock: when false, validates the
-    // current block structurally only (no canonical-root check). Used by
-    // canAppendBlock so that StructuralOnly candidates are not rejected.
-    bool isValidNextBlock(
-        const Block& previousBlock,
-        const Block& currentBlock,
-        bool requireProtocolCommitmentsForCurrentBlock = true
-    ) const;
+  // requireProtocolCommitmentsForCurrentBlock: when false, validates the
+  // current block structurally only (no canonical-root check). Used by
+  // canAppendBlock so that StructuralOnly candidates are not rejected.
+  bool
+  isValidNextBlock(const Block &previousBlock, const Block &currentBlock,
+                   bool requireProtocolCommitmentsForCurrentBlock = true) const;
 };
 
 } // namespace nodo::core

@@ -131,13 +131,15 @@ FastSyncSnapshot::FastSyncSnapshot(
     std::string genesisConfigId, std::string chainId, std::string networkName,
     std::uint64_t blockHeight, std::string blockHash, std::string stateRoot,
     std::string accountRoot, std::string protocolDomainDigest,
-    std::vector<core::AccountState> accounts, std::int64_t createdAt)
+    std::vector<core::AccountState> accounts, std::int64_t createdAt,
+    std::map<std::string, std::string> protocolDomains)
     : m_genesisConfigId(std::move(genesisConfigId)),
       m_chainId(std::move(chainId)), m_networkName(std::move(networkName)),
       m_blockHeight(blockHeight), m_blockHash(std::move(blockHash)),
       m_stateRoot(std::move(stateRoot)), m_accountRoot(std::move(accountRoot)),
       m_protocolDomainDigest(std::move(protocolDomainDigest)),
-      m_accounts(sortedAccounts(std::move(accounts))), m_createdAt(createdAt) {}
+      m_accounts(sortedAccounts(std::move(accounts))), m_createdAt(createdAt),
+      m_protocolDomains(std::move(protocolDomains)) {}
 
 const std::string &FastSyncSnapshot::genesisConfigId() const {
   return m_genesisConfigId;
@@ -159,6 +161,10 @@ const std::vector<core::AccountState> &FastSyncSnapshot::accounts() const {
   return m_accounts;
 }
 std::int64_t FastSyncSnapshot::createdAt() const { return m_createdAt; }
+const std::map<std::string, std::string> &
+FastSyncSnapshot::protocolDomains() const {
+  return m_protocolDomains;
+}
 
 core::AccountStateView FastSyncSnapshot::accountStateView() const {
   core::AccountStateView view;
@@ -209,6 +215,13 @@ std::string FastSyncSnapshot::digest() const {
   writer.writeString(m_stateRoot);
   writer.writeString(m_accountRoot);
   writer.writeString(m_protocolDomainDigest);
+
+  writer.writeUInt32(static_cast<std::uint32_t>(m_protocolDomains.size()));
+  for (const auto &[name, data] : m_protocolDomains) {
+    writer.writeString(name);
+    writer.writeString(data);
+  }
+
   writer.writeUInt32(static_cast<std::uint32_t>(m_accounts.size()));
   for (const core::AccountState &account : m_accounts) {
     writer.writeString(account.address());
@@ -241,6 +254,15 @@ std::string FastSyncSnapshot::serialize() const {
                         std::to_string(m_accounts[i].nonce()));
   }
 
+  fields.emplace_back("domainCount", std::to_string(m_protocolDomains.size()));
+  std::size_t domainIdx = 0;
+  for (const auto &[name, data] : m_protocolDomains) {
+    const std::string prefix = "domain." + std::to_string(domainIdx) + ".";
+    fields.emplace_back(prefix + "name", name);
+    fields.emplace_back(prefix + "data", data);
+    domainIdx++;
+  }
+
   fields.emplace_back("snapshotDigest", digest());
   return serialization::KeyValueFileCodec::serialize(SCHEMA_VERSION, fields);
 }
@@ -264,6 +286,18 @@ FastSyncSnapshot FastSyncSnapshot::deserialize(const std::string &serialized) {
     allowed.insert(prefix + "balanceRaw");
     allowed.insert(prefix + "nonce");
   }
+
+  std::uint64_t domainCount = 0;
+  allowed.insert("domainCount");
+  if (doc.hasField("domainCount")) {
+    domainCount = parseU64(doc.requireField("domainCount"), "domainCount");
+    for (std::uint64_t i = 0; i < domainCount; ++i) {
+      const std::string prefix = "domain." + std::to_string(i) + ".";
+      allowed.insert(prefix + "name");
+      allowed.insert(prefix + "data");
+    }
+  }
+
   doc.requireOnlyFields(allowed);
 
   std::vector<core::AccountState> accounts;
@@ -277,14 +311,21 @@ FastSyncSnapshot FastSyncSnapshot::deserialize(const std::string &serialized) {
         parseU64(doc.requireField(prefix + "nonce"), prefix + "nonce"));
   }
 
+  std::map<std::string, std::string> protocolDomains;
+  for (std::uint64_t i = 0; i < domainCount; ++i) {
+    const std::string prefix = "domain." + std::to_string(i) + ".";
+    protocolDomains.emplace(doc.requireField(prefix + "name"),
+                            doc.requireField(prefix + "data"));
+  }
+
   FastSyncSnapshot snapshot(
       doc.requireField("genesisConfigId"), doc.requireField("chainId"),
       doc.requireField("networkName"),
       parseU64(doc.requireField("blockHeight"), "blockHeight"),
       doc.requireField("blockHash"), doc.requireField("stateRoot"),
       doc.requireField("accountRoot"), doc.requireField("protocolDomainDigest"),
-      std::move(accounts),
-      parseI64(doc.requireField("createdAt"), "createdAt"));
+      std::move(accounts), parseI64(doc.requireField("createdAt"), "createdAt"),
+      std::move(protocolDomains));
 
   if (!snapshot.isValid()) {
     throw std::invalid_argument(
@@ -317,15 +358,15 @@ FastSyncSnapshot FastSyncSnapshot::fromReplayState(
   const std::string accountRoot =
       core::StateRootCalculator::calculateAccountStateRoot(
           replayState.accounts);
-  const std::string protocolDigest =
-      digestProtocolDomains(protocolExecutionDomains(replayState.execution));
+  auto domains = protocolExecutionDomains(replayState.execution);
+  const std::string protocolDigest = digestProtocolDomains(domains);
 
-  return FastSyncSnapshot(genesisConfig.deterministicId(),
-                          genesisConfig.networkParameters().chainId(),
-                          genesisConfig.networkParameters().networkName(),
-                          blockHeight, blockHash, replayState.stateRoot,
-                          accountRoot, protocolDigest,
-                          replayState.accounts.accounts(), createdAt);
+  return FastSyncSnapshot(
+      genesisConfig.deterministicId(),
+      genesisConfig.networkParameters().chainId(),
+      genesisConfig.networkParameters().networkName(), blockHeight, blockHash,
+      replayState.stateRoot, accountRoot, protocolDigest,
+      replayState.accounts.accounts(), createdAt, std::move(domains));
 }
 
 FastSyncSnapshot FastSyncSnapshot::fromRuntime(const NodeRuntime &runtime,

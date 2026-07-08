@@ -36,7 +36,8 @@ public:
                    std::string blockHash, std::string stateRoot,
                    std::string accountRoot, std::string protocolDomainDigest,
                    std::vector<core::AccountState> accounts,
-                   std::int64_t createdAt);
+                   std::int64_t createdAt,
+                   std::map<std::string, std::string> protocolDomains = {});
 
   const std::string &genesisConfigId() const;
   const std::string &chainId() const;
@@ -48,6 +49,7 @@ public:
   const std::string &protocolDomainDigest() const;
   const std::vector<core::AccountState> &accounts() const;
   std::int64_t createdAt() const;
+  const std::map<std::string, std::string> &protocolDomains() const;
 
   core::AccountStateView accountStateView() const;
 
@@ -77,6 +79,7 @@ private:
   std::string m_protocolDomainDigest;
   std::vector<core::AccountState> m_accounts;
   std::int64_t m_createdAt;
+  std::map<std::string, std::string> m_protocolDomains;
 };
 
 } // namespace nodo::node
