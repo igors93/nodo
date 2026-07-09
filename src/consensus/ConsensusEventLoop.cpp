@@ -1,6 +1,7 @@
 #include "consensus/ConsensusEventLoop.hpp"
 
 #include "consensus/ConsensusRecoveryStore.hpp"
+#include "consensus/ProposalJustification.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "consensus/ValidatorVoteBuilder.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
@@ -248,20 +249,15 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
     if (m_lockedBlock.empty() || blockHash == m_lockedBlock) {
       safeToVote = true;
     } else if (round > m_lockedRound) {
-      if (!m_pendingCandidate->proposal.justification().empty()) {
-        try {
-          QuorumCertificate qc = QuorumCertificate::deserialize(
-              m_pendingCandidate->proposal.justification());
-          if (qc.isStructurallyValid() &&
-              qc.verify(validators, m_policy, m_provider)) {
-            if (qc.round() >= m_lockedRound && qc.blockHash() == blockHash) {
-              safeToVote = true;
-            }
-          }
-        } catch (const std::exception &) {
-          // Ignore invalid justifications, safeToVote remains false
-        }
-      }
+      // A locked validator may only switch its vote to a different block if
+      // the proposal proves — via a real, cryptographically verified
+      // QuorumCertificate for a round at least as recent as the lock — that
+      // 2/3+ voting weight already precommitted to this exact block. See
+      // ProposalJustification::permitsUnlock for the full rule and its
+      // dedicated tests in tests/consensus/ConsensusLockUnlockTests.cpp.
+      safeToVote = ProposalJustification::permitsUnlock(
+          m_pendingCandidate->proposal.justification(), m_lockedRound,
+          blockHash, round, validators, m_policy, m_provider);
     }
 
     if (safeToVote) {

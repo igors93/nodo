@@ -9,7 +9,7 @@ BlockProposalResult BlockProposalPhase::propose(
     const core::Block &block, const std::string &proposerAddress,
     std::uint64_t round, std::int64_t now, const crypto::Signer &signer,
     p2p::GossipMesh &gossip, const crypto::SignatureProvider &provider,
-    const std::string &justification) {
+    const ProposalJustification &justification) {
   if (!block.isValid(false)) {
     return BlockProposalResult::skipped("Block is structurally invalid.");
   }

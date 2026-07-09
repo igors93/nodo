@@ -1,6 +1,7 @@
 #ifndef NODO_CONSENSUS_BLOCK_PROPOSAL_PHASE_HPP
 #define NODO_CONSENSUS_BLOCK_PROPOSAL_PHASE_HPP
 
+#include "consensus/ProposalJustification.hpp"
 #include "core/Block.hpp"
 #include "crypto/SignatureProvider.hpp"
 #include "crypto/Signer.hpp"
@@ -59,7 +60,8 @@ public:
           std::uint64_t round, std::int64_t proposedAt,
           const crypto::Signer &signer, p2p::GossipMesh &gossip,
           const crypto::SignatureProvider &provider,
-          const std::string &justification = "");
+          const ProposalJustification &justification =
+              ProposalJustification::none());
 };
 
 } // namespace nodo::consensus

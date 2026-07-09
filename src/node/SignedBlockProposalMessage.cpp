@@ -85,14 +85,6 @@ std::string requireField(const std::map<std::string, std::string> &fields,
   return it->second;
 }
 
-std::string optionalField(const std::map<std::string, std::string> &fields,
-                          const std::string &key, const std::string &def = "") {
-  const auto it = fields.find(key);
-  if (it == fields.end())
-    return def;
-  return it->second;
-}
-
 std::uint64_t parseU64(const std::string &v) {
   if (v.empty())
     throw std::invalid_argument("Empty uint64 field.");
@@ -140,7 +132,8 @@ SignedBlockProposalMessage::SignedBlockProposalMessage(
     std::string proposerAddress, crypto::PublicKey proposerPublicKey,
     std::uint64_t blockIndex, std::uint64_t round, std::string blockHash,
     std::string serializedBlock, std::int64_t proposedAt,
-    crypto::SignatureBundle signatureBundle, std::string justification)
+    crypto::SignatureBundle signatureBundle,
+    consensus::ProposalJustification justification)
     : m_proposerAddress(std::move(proposerAddress)),
       m_proposerPublicKey(std::move(proposerPublicKey)),
       m_blockIndex(blockIndex), m_round(round),
@@ -172,7 +165,8 @@ const crypto::SignatureBundle &
 SignedBlockProposalMessage::signatureBundle() const {
   return m_signatureBundle;
 }
-const std::string &SignedBlockProposalMessage::justification() const {
+const consensus::ProposalJustification &
+SignedBlockProposalMessage::justification() const {
   return m_justification;
 }
 
@@ -189,7 +183,7 @@ std::string SignedBlockProposalMessage::buildSigningPayload(
     const std::string &proposerAddress,
     const crypto::PublicKey &proposerPublicKey, const std::string &blockHash,
     std::uint64_t blockIndex, std::uint64_t round, std::int64_t proposedAt,
-    const std::string &justification) {
+    const consensus::ProposalJustification &justification) {
   std::ostringstream oss;
   oss << "BlockProposalSigningPayload{"
       << "version=" << kPayloadVersion << ";proposerAddress=" << proposerAddress
@@ -197,7 +191,7 @@ std::string SignedBlockProposalMessage::buildSigningPayload(
       << ";proposerPublicKeyFingerprint=" << proposerPublicKey.fingerprint()
       << ";blockHash=" << blockHash << ";blockIndex=" << blockIndex
       << ";round=" << round << ";proposedAt=" << proposedAt
-      << ";justification=" << justification << "}";
+      << ";justification=" << justification.serialize() << "}";
   return oss.str();
 }
 
@@ -246,7 +240,7 @@ std::string SignedBlockProposalMessage::serialize() const {
       << ";proposerPublicKeyFingerprint=" << m_proposerPublicKey.fingerprint()
       << ";blockIndex=" << m_blockIndex << ";round=" << m_round
       << ";blockHash=" << m_blockHash << ";proposedAt=" << m_proposedAt
-      << ";justification=" << m_justification
+      << ";justification=" << m_justification.serialize()
       << ";serializedBlockBytes=" << m_serializedBlock.size()
       << ";signatureBundle=" << m_signatureBundle.serialize() << "}\n"
       << m_serializedBlock;
@@ -312,7 +306,8 @@ SignedBlockProposalMessage::deserialize(const std::string &text) {
       parseU64(requireField(fields, "round")),
       requireField(fields, "blockHash"), blockPayload,
       parseI64(requireField(fields, "proposedAt")), bundle,
-      optionalField(fields, "justification"));
+      consensus::ProposalJustification::deserialize(
+          requireField(fields, "justification")));
 }
 
 // static
@@ -320,7 +315,7 @@ SignedBlockProposalMessage SignedBlockProposalMessage::fromSignatureBundle(
     const core::Block &block, const std::string &proposerAddress,
     const crypto::PublicKey &proposerPublicKey, std::uint64_t round,
     std::int64_t proposedAt, crypto::SignatureBundle signatureBundle,
-    std::string justification) {
+    consensus::ProposalJustification justification) {
   if (!block.isValid() || proposerAddress.empty() ||
       !proposerPublicKey.isValid() || round == 0 || proposedAt <= 0 ||
       signatureBundle.empty()) {
@@ -340,7 +335,7 @@ SignedBlockProposalMessage SignedBlockProposalMessage::sign(
     const crypto::PublicKey &proposerPublicKey,
     const crypto::PrivateKey &proposerPrivateKey, std::uint64_t round,
     std::int64_t proposedAt, const crypto::SignatureProvider &provider,
-    const std::string &justification) {
+    const consensus::ProposalJustification &justification) {
   if (!block.isValid() || proposerAddress.empty() ||
       !proposerPublicKey.isValid() || round == 0 || proposedAt <= 0) {
     throw std::invalid_argument(

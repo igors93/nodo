@@ -1,6 +1,7 @@
 #ifndef NODO_NODE_SIGNED_BLOCK_PROPOSAL_MESSAGE_HPP
 #define NODO_NODE_SIGNED_BLOCK_PROPOSAL_MESSAGE_HPP
 
+#include "consensus/ProposalJustification.hpp"
 #include "core/Block.hpp"
 #include "core/ValidatorRegistry.hpp"
 #include "crypto/CryptoPolicy.hpp"
@@ -33,13 +34,13 @@ public:
 
   SignedBlockProposalMessage();
 
-  SignedBlockProposalMessage(std::string proposerAddress,
-                             crypto::PublicKey proposerPublicKey,
-                             std::uint64_t blockIndex, std::uint64_t round,
-                             std::string blockHash, std::string serializedBlock,
-                             std::int64_t proposedAt,
-                             crypto::SignatureBundle signatureBundle,
-                             std::string justification = "");
+  SignedBlockProposalMessage(
+      std::string proposerAddress, crypto::PublicKey proposerPublicKey,
+      std::uint64_t blockIndex, std::uint64_t round, std::string blockHash,
+      std::string serializedBlock, std::int64_t proposedAt,
+      crypto::SignatureBundle signatureBundle,
+      consensus::ProposalJustification justification =
+          consensus::ProposalJustification::none());
 
   const std::string &proposerAddress() const;
   const crypto::PublicKey &proposerPublicKey() const;
@@ -49,7 +50,7 @@ public:
   const std::string &serializedBlock() const;
   std::int64_t proposedAt() const;
   const crypto::SignatureBundle &signatureBundle() const;
-  const std::string &justification() const;
+  const consensus::ProposalJustification &justification() const;
 
   bool isValid() const;
 
@@ -70,25 +71,27 @@ public:
 
   static SignedBlockProposalMessage deserialize(const std::string &text);
 
-  static std::string
-  buildSigningPayload(const std::string &proposerAddress,
-                      const crypto::PublicKey &proposerPublicKey,
-                      const std::string &blockHash, std::uint64_t blockIndex,
-                      std::uint64_t round, std::int64_t proposedAt,
-                      const std::string &justification = "");
+  static std::string buildSigningPayload(
+      const std::string &proposerAddress,
+      const crypto::PublicKey &proposerPublicKey, const std::string &blockHash,
+      std::uint64_t blockIndex, std::uint64_t round, std::int64_t proposedAt,
+      const consensus::ProposalJustification &justification =
+          consensus::ProposalJustification::none());
 
   static SignedBlockProposalMessage fromSignatureBundle(
       const core::Block &block, const std::string &proposerAddress,
       const crypto::PublicKey &proposerPublicKey, std::uint64_t round,
       std::int64_t proposedAt, crypto::SignatureBundle signatureBundle,
-      std::string justification = "");
+      consensus::ProposalJustification justification =
+          consensus::ProposalJustification::none());
 
   static SignedBlockProposalMessage
   sign(const core::Block &block, const std::string &proposerAddress,
        const crypto::PublicKey &proposerPublicKey,
        const crypto::PrivateKey &proposerPrivateKey, std::uint64_t round,
        std::int64_t proposedAt, const crypto::SignatureProvider &provider,
-       const std::string &justification = "");
+       const consensus::ProposalJustification &justification =
+           consensus::ProposalJustification::none());
 
 private:
   std::string m_proposerAddress;
@@ -99,7 +102,7 @@ private:
   std::string m_serializedBlock;
   std::int64_t m_proposedAt;
   crypto::SignatureBundle m_signatureBundle;
-  std::string m_justification;
+  consensus::ProposalJustification m_justification;
 };
 
 } // namespace nodo::node
