@@ -404,6 +404,14 @@ StakingRegistry &NodeRuntime::mutableStakingRegistry() {
   return m_stakingRegistry;
 }
 
+const std::vector<economics::BurnRecord> &NodeRuntime::burnRecords() const {
+  return m_burns;
+}
+
+std::vector<economics::BurnRecord> &NodeRuntime::mutableBurnRecords() {
+  return m_burns;
+}
+
 const core::AccountStateView &
 NodeRuntime::cachedAccountStateAtTip(std::int64_t minimumFeeRawUnits) const {
   (void)minimumFeeRawUnits;
@@ -432,6 +440,12 @@ NodeRuntime::cachedAccountStateAtTip(std::int64_t minimumFeeRawUnits) const {
 
 void NodeRuntime::invalidateAccountStateCache() {
   m_accountStateCache = std::nullopt;
+}
+
+void NodeRuntime::setCachedAccountStateAtTip(core::AccountStateView view) {
+  m_accountStateCache = std::move(view);
+  m_accountStateCacheHeight =
+      m_blockchain.empty() ? 0 : m_blockchain.latestBlock().index();
 }
 
 const GovernanceExecutor &NodeRuntime::governanceExecutor() const {

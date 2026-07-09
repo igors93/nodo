@@ -1139,7 +1139,7 @@ bool ValidatorSetHistory::recordSet(std::uint64_t height,
     return false;
   }
   const std::uint64_t expectedHeight =
-      m_setsByHeight.empty() ? 1 : m_setsByHeight.rbegin()->first + 1;
+      m_setsByHeight.empty() ? height : m_setsByHeight.rbegin()->first + 1;
   if (height != expectedHeight) {
     return false;
   }
@@ -1165,7 +1165,9 @@ std::uint64_t ValidatorSetHistory::highestRecordedHeight() const {
 }
 
 bool ValidatorSetHistory::isValid() const {
-  std::uint64_t expectedHeight = 1;
+  if (m_setsByHeight.empty())
+    return true;
+  std::uint64_t expectedHeight = m_setsByHeight.begin()->first;
   for (const auto &[height, registry] : m_setsByHeight) {
     if (height != expectedHeight || !registry.isValid()) {
       return false;

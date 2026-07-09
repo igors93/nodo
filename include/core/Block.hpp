@@ -20,84 +20,80 @@ namespace nodo::core {
  */
 class Block {
 public:
-    static constexpr std::size_t MAX_RECORDS =
-        ProtocolLimits::MAX_BLOCK_RECORDS;
-    static constexpr std::size_t MAX_SERIALIZED_BYTES =
-        ProtocolLimits::MAX_SERIALIZED_BLOCK_BYTES;
-    static constexpr std::size_t MAX_RECORD_PAYLOAD_BYTES =
-        ProtocolLimits::MAX_RECORD_PAYLOAD_BYTES;
+  static constexpr std::size_t MAX_RECORDS = ProtocolLimits::MAX_BLOCK_RECORDS;
+  static constexpr std::size_t MAX_SERIALIZED_BYTES =
+      ProtocolLimits::MAX_SERIALIZED_BLOCK_BYTES;
+  static constexpr std::size_t MAX_RECORD_PAYLOAD_BYTES =
+      ProtocolLimits::MAX_RECORD_PAYLOAD_BYTES;
 
-    Block(
-        std::uint64_t index,
-        std::string previousHash,
-        std::vector<LedgerRecord> records,
-        std::int64_t timestamp,
-        std::string stateRoot = "",
-        std::string receiptsRoot = ""
-    );
+  Block(std::uint64_t index, std::string previousHash,
+        std::vector<LedgerRecord> records, std::int64_t timestamp,
+        std::string stateRoot = "", std::string receiptsRoot = "");
 
-    static Block createGenesisBlock(
-        std::vector<LedgerRecord> records,
-        std::int64_t timestamp,
-        std::string stateRoot = ""
-    );
+  static Block createGenesisBlock(std::vector<LedgerRecord> records,
+                                  std::int64_t timestamp,
+                                  std::string stateRoot = "");
 
-    std::uint64_t index() const;
-    const std::string& previousHash() const;
-    const std::string& hash() const;
-    std::int64_t timestamp() const;
-    const std::vector<LedgerRecord>& records() const;
-    const std::string& stateRoot() const;
-    const std::string& receiptsRoot() const;
+  static Block createSnapshotDummy(std::uint64_t height,
+                                   const std::string &hash,
+                                   const std::string &stateRoot);
 
-    bool isGenesisBlock() const;
-    bool isValid(bool requireProtocolCommitments = true) const;
+  std::uint64_t index() const;
+  const std::string &previousHash() const;
+  const std::string &hash() const;
+  std::int64_t timestamp() const;
+  const std::vector<LedgerRecord> &records() const;
+  const std::string &stateRoot() const;
+  const std::string &receiptsRoot() const;
 
-    /*
-     * Returns true if `root` is a canonical commitment hash: exactly 64
-     * lowercase hex characters, as produced by the SHA-256 hasher used
-     * throughout the protocol.  Rejects empty strings, known placeholder
-     * labels, and any non-hex input.
-     */
-    static bool isCanonicalCommitmentRoot(const std::string& root);
+  bool isGenesisBlock() const;
+  bool isValid(bool requireProtocolCommitments = true) const;
 
-    bool hasCanonicalStateRoot() const;
-    bool hasCanonicalReceiptsRoot() const;
+  /*
+   * Returns true if `root` is a canonical commitment hash: exactly 64
+   * lowercase hex characters, as produced by the SHA-256 hasher used
+   * throughout the protocol.  Rejects empty strings, known placeholder
+   * labels, and any non-hex input.
+   */
+  static bool isCanonicalCommitmentRoot(const std::string &root);
 
-    /*
-     * Deterministic representation of the block header.
-     *
-     * This payload excludes the final hash field.
-     * The hash is calculated from this payload.
-     */
-    std::string headerPayload() const;
+  bool hasCanonicalStateRoot() const;
+  bool hasCanonicalReceiptsRoot() const;
 
-    /*
-     * Full deterministic serialization.
-     *
-     * This includes the final block hash.
-     */
-    std::string serialize() const;
+  /*
+   * Deterministic representation of the block header.
+   *
+   * This payload excludes the final hash field.
+   * The hash is calculated from this payload.
+   */
+  std::string headerPayload() const;
 
-    /*
-     * Reconstruct a Block from its serialized form produced by serialize().
-     * Returns nullopt if the payload is malformed or hash verification fails.
-     */
-    static std::optional<Block> deserialize(const std::string& text);
+  /*
+   * Full deterministic serialization.
+   *
+   * This includes the final block hash.
+   */
+  std::string serialize() const;
+
+  /*
+   * Reconstruct a Block from its serialized form produced by serialize().
+   * Returns nullopt if the payload is malformed or hash verification fails.
+   */
+  static std::optional<Block> deserialize(const std::string &text);
 
 private:
-    bool isWithinResourceLimits() const;
-    std::uint64_t m_index;
-    std::string m_previousHash;
-    std::string m_hash;
-    std::vector<LedgerRecord> m_records;
-    std::int64_t m_timestamp;
-    std::string m_stateRoot;
-    std::string m_receiptsRoot;
+  bool isWithinResourceLimits() const;
+  std::uint64_t m_index;
+  std::string m_previousHash;
+  std::string m_hash;
+  std::vector<LedgerRecord> m_records;
+  std::int64_t m_timestamp;
+  std::string m_stateRoot;
+  std::string m_receiptsRoot;
 
-    std::string calculateHash() const;
+  std::string calculateHash() const;
 
-    static std::string hashString(const std::string& value);
+  static std::string hashString(const std::string &value);
 };
 
 } // namespace nodo::core

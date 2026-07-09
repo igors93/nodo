@@ -349,13 +349,17 @@ ProtocolStateTransition::contextForNextBlockWithState(
         "Minimum fee cannot be negative in protocol transition.");
   }
 
-  const std::int64_t replayMinimumFee =
-      checkedMinimumFee(runtime.config()
-                            .genesisConfig()
-                            .networkParameters()
-                            .minimumFeeRawUnits());
-  const ProtocolReplayState tip = replayToTip(
-      runtime.config().genesisConfig(), runtime.blockchain(), replayMinimumFee);
+  ProtocolReplayState tip;
+  tip.stateRoot = runtime.blockchain().latestBlock().stateRoot();
+  tip.accounts = runtime.cachedAccountStateAtTip(minimumFeeRawUnits);
+  tip.execution.validators = runtime.validatorRegistry();
+  tip.execution.penaltyLedger = runtime.validatorPenaltyLedger();
+  tip.execution.staking = runtime.stakingRegistry();
+  tip.execution.governance = runtime.governanceExecutor();
+  tip.execution.supply = runtime.supplyState().latestSupply();
+  tip.execution.burns = runtime.burnRecords();
+  tip.validatorSetHistory = runtime.validatorSetHistory();
+
   auto tracker = std::make_shared<ProtocolExecutionState>(tip.execution);
   core::StateTransitionPreviewContext context =
       contextFromReplayState(runtime.config().genesisConfig(), tip,
@@ -371,12 +375,28 @@ ProtocolStateTransition::contextForNextBlock(const NodeRuntime &runtime,
       .first;
 }
 
+ProtocolReplayState ProtocolStateTransition::replayStateFromRuntime(
+    const NodeRuntime &runtime, std::int64_t minimumFeeRawUnits) {
+  ProtocolReplayState tip;
+  tip.stateRoot = runtime.blockchain().latestBlock().stateRoot();
+  tip.accounts = runtime.cachedAccountStateAtTip(minimumFeeRawUnits);
+  tip.execution.validators = runtime.validatorRegistry();
+  tip.execution.penaltyLedger = runtime.validatorPenaltyLedger();
+  tip.execution.staking = runtime.stakingRegistry();
+  tip.execution.governance = runtime.governanceExecutor();
+  tip.execution.supply = runtime.supplyState().latestSupply();
+  tip.execution.burns = runtime.burnRecords();
+  tip.validatorSetHistory = runtime.validatorSetHistory();
+  return tip;
+}
+
 void ProtocolStateTransition::applyReplayDomainsToRuntime(
     NodeRuntime &runtime, const ProtocolReplayState &state) {
   runtime.mutableGovernanceExecutor() = state.execution.governance;
   runtime.mutableValidatorRegistry() = state.execution.validators;
   runtime.mutableValidatorPenaltyLedger() = state.execution.penaltyLedger;
   runtime.mutableStakingRegistry() = state.execution.staking;
+  runtime.mutableBurnRecords() = state.execution.burns;
   runtime.invalidateAccountStateCache();
 }
 

@@ -30,12 +30,13 @@ void Blockchain::addBlock(const Block &block) {
 }
 
 void Blockchain::resetFromSnapshot(std::uint64_t height,
-                                   const std::string &hash) {
+                                   const std::string &hash,
+                                   const std::string &stateRoot) {
   m_blocks.clear();
   m_blockIndicesByHash.clear();
   // Insert a dummy block to represent the snapshot boundary
   // The previousHash is set to SNAPSHOT so it can be distinguished if needed.
-  Block dummy(height, "SNAPSHOT", {}, 0, "", "");
+  Block dummy = Block::createSnapshotDummy(height, hash, stateRoot);
   m_blocks.push_back(dummy);
   m_blockIndicesByHash[hash] = 0;
 }
@@ -84,8 +85,10 @@ bool Blockchain::isValid(bool requireProtocolCommitments) const {
     return false;
   }
 
-  if (!isValidGenesisBlock(m_blocks.front())) {
-    return false;
+  if (m_blocks.front().previousHash() != "SNAPSHOT") {
+    if (!isValidGenesisBlock(m_blocks.front())) {
+      return false;
+    }
   }
 
   for (std::size_t i = 1; i < m_blocks.size(); ++i) {

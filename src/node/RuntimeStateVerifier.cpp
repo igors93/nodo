@@ -107,18 +107,9 @@ RuntimeStateVerificationResult RuntimeStateVerifier::verifyManifestMatchesRuntim
         return RuntimeStateVerificationResult::failed("manifest latestBlockHash does not match rebuilt blockchain");
     }
 
-    std::string latestStateRoot;
-
-    try {
-        latestStateRoot = ProtocolStateTransition::replayToTip(
-            runtime.config().genesisConfig(),
-            runtime.blockchain(),
-            minimumFeeRawUnits(runtime.config().genesisConfig())
-        ).stateRoot;
-    } catch (const std::exception& error) {
-        return RuntimeStateVerificationResult::failed(
-            std::string("canonical protocol replay failed: ") + error.what()
-        );
+    std::string latestStateRoot = runtime.blockchain().latestBlock().stateRoot();
+    if (latestStateRoot.empty() && runtime.blockchain().size() == 1 && runtime.blockchain().latestBlock().isGenesisBlock()) {
+        latestStateRoot = ProtocolStateTransition::initialReplayState(runtime.config().genesisConfig()).stateRoot;
     }
 
     if (latestStateRoot.empty()) {

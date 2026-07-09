@@ -1,6 +1,7 @@
 #include "node/RuntimeBlockPipeline.hpp"
 
 #include "node/EpochRewardSettlementService.hpp"
+#include "node/FastSyncSnapshot.hpp"
 #include "node/FeeEconomics.hpp"
 #include "node/FinalizedBlockStore.hpp"
 #include "node/FinalizedSlashingEvidenceAudit.hpp"
@@ -8,7 +9,6 @@
 #include "node/RuntimeMonetaryValidation.hpp"
 #include "node/StakingRegistry.hpp"
 #include "node/StateSnapshot.hpp"
-#include "node/FastSyncSnapshot.hpp"
 #include "node/TreasuryExecutionEvidenceBuilder.hpp"
 #include "node/ValidatorLifecycle.hpp"
 
@@ -1568,8 +1568,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         core::BlockStateTransitionValidator::validateCandidateBlock(
             runtime.blockchain(), block,
             RuntimeAccountStateBuilder::previewContextAtTip(
-                runtime.config().genesisConfig(), runtime.blockchain(),
-                minimumFeeRawUnitsForRuntime(runtime)),
+                runtime, minimumFeeRawUnitsForRuntime(runtime)),
             core::BlockValidationMode::StructuralOnly);
   } catch (const std::exception &error) {
     return RuntimeBlockPipelineResult::rejected(
@@ -1859,6 +1858,7 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
     runtime.mutableValidatorRegistry() = executionTracker->validators;
     runtime.mutableValidatorPenaltyLedger() = executionTracker->penaltyLedger;
     runtime.mutableStakingRegistry() = executionTracker->staking;
+    runtime.mutableBurnRecords() = executionTracker->burns;
 
     const FinalizedSlashingEvidenceAuditResult slashingAudit =
         FinalizedSlashingEvidenceAudit::auditBlockEffects(
@@ -1870,7 +1870,11 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
     }
 
     removeFinalizedTransactionsFromMempool(runtime, finalizedTransactionIds);
-    runtime.invalidateAccountStateCache();
+    core::AccountStateView newAccounts;
+    for (const auto &account : transitionValidation.resultingAccounts()) {
+      newAccounts.putAccount(account);
+    }
+    runtime.setCachedAccountStateAtTip(std::move(newAccounts));
 
     finalResult.m_receiptsRoot = transitionValidation.receiptsRoot();
 
@@ -1883,8 +1887,8 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
     if (block.index() > 0 && block.index() % NODO_VALIDATOR_EPOCH_BLOCKS == 0) {
       const std::int64_t boundaryTimestamp = block.timestamp();
       try {
-        const FastSyncSnapshot epochSnapshot = FastSyncSnapshot::fromRuntime(
-            runtime, boundaryTimestamp);
+        const FastSyncSnapshot epochSnapshot =
+            FastSyncSnapshot::fromRuntime(runtime, boundaryTimestamp);
         finalResult.m_snapshotDigest = epochSnapshot.digest();
       } catch (...) {
         // The canonical state remains valid without this derived cache.

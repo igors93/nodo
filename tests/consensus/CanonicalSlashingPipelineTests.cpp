@@ -137,7 +137,7 @@ void testEvidenceIsFinalizedByTheNextBlock() {
       runtime, node::RuntimeBlockPipelineConfig(10, 0, 1, kTimestamp + 20),
       {evidence});
   require(evidenceCandidate.produced(),
-          "An evidence-only next block must be produced.");
+          "An evidence-only next block must be produced. Reason: " + evidenceCandidate.reason());
   require(evidenceCandidate.block().records().size() == 1 &&
               evidenceCandidate.block().records().front().type() ==
                   core::LedgerRecordType::SLASHING_EVIDENCE,

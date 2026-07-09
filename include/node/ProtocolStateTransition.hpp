@@ -104,6 +104,11 @@ public:
         const ProtocolReplayState& state
     );
 
+    static ProtocolReplayState replayStateFromRuntime(
+        const NodeRuntime& runtime,
+        std::int64_t minimumFeeRawUnits
+    );
+
     static core::DeterministicStateDomainTransition accountSettlementForReplay(
         std::uint64_t blockHeight
     );

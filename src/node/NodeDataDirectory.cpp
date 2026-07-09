@@ -214,11 +214,11 @@ std::int64_t minimumFeeRawUnits(
 std::string latestStateRootForRuntime(
     const NodeRuntime& runtime
 ) {
-    const std::string stateRoot = ProtocolStateTransition::replayToTip(
-        runtime.config().genesisConfig(),
-        runtime.blockchain(),
-        minimumFeeRawUnits(runtime.config().genesisConfig())
-    ).stateRoot;
+    std::string stateRoot = runtime.blockchain().latestBlock().stateRoot();
+
+    if (stateRoot.empty() && runtime.blockchain().size() == 1 && runtime.blockchain().latestBlock().isGenesisBlock()) {
+        stateRoot = ProtocolStateTransition::initialReplayState(runtime.config().genesisConfig()).stateRoot;
+    }
 
     if (stateRoot.empty()) {
         throw std::invalid_argument("Runtime protocol state root is empty.");

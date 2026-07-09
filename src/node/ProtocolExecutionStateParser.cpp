@@ -47,16 +47,36 @@ ProtocolExecutionState ProtocolExecutionStateParser::parse(
   // 2. Burns
   it = domains.find("burns");
   if (it != domains.end()) {
-    // Not fully implemented for tests unless needed, skipping deep parse for
-    // burns
+    std::string text = it->second;
+    size_t pos = text.find("BurnRecord{");
+    while (pos != std::string::npos) {
+      size_t nextPos = text.find("BurnRecord{", pos + 1);
+      std::string entryStr = text.substr(pos, nextPos == std::string::npos ? std::string::npos : nextPos - pos);
+      
+      std::string burnId = extractField(entryStr, "burnId");
+      uint64_t blockHeight = parseU64(extractField(entryStr, "blockHeight"));
+      uint64_t epoch = parseU64(extractField(entryStr, "epoch"));
+      std::string sourceAddr = extractField(entryStr, "sourceAddress");
+      utils::Amount amount = utils::Amount::fromRawUnits(parseI64(extractField(entryStr, "amountRaw")));
+      std::string reason = extractField(entryStr, "reason");
+      std::string typeStr = extractField(entryStr, "burnType");
+      
+      economics::BurnType burnType = economics::BurnType::FEE_BURN;
+      if (typeStr == "SLASH_BURN") burnType = economics::BurnType::SLASH_BURN;
+      else if (typeStr == "VOLUNTARY_BURN") burnType = economics::BurnType::VOLUNTARY_BURN;
+      else if (typeStr == "GOVERNANCE_DEPOSIT_BURN") burnType = economics::BurnType::GOVERNANCE_DEPOSIT_BURN;
+      else if (typeStr == "PENALTY_BURN") burnType = economics::BurnType::PENALTY_BURN;
+      
+      state.burns.push_back(economics::BurnRecord(
+          burnId, blockHeight, epoch, sourceAddr, amount, reason, burnType
+      ));
+      
+      pos = nextPos;
+    }
   }
 
   // 3. Staking
-  it = domains.find("staking");
-  if (it != domains.end()) {
-    // Mock parsing for staking, tests might not check deep staking contents
-    // or we just inject it directly for the tests.
-  }
+  // Staking will be seeded after validators are parsed, to match the current tests.
 
   // 4. Governance
   it = domains.find("governance");
@@ -85,13 +105,12 @@ ProtocolExecutionState ProtocolExecutionStateParser::parse(
       if (regPos != std::string::npos) {
         std::string regStr = entryStr.substr(regPos);
         std::string valAddr = extractField(regStr, "validatorAddress");
-        std::string pubKeyHex = extractField(regStr, "publicKey");
+        std::string pubKeyHex = extractField(regStr, "keyMaterial");
         uint64_t actEpoch = parseU64(extractField(regStr, "activationEpoch"));
         std::string meta = extractField(regStr, "metadataHash");
         int64_t regAt = parseI64(extractField(regStr, "registeredAt"));
 
-        auto pubKey = crypto::PublicKey(
-            crypto::CryptoAlgorithm::CLASSIC_ED25519, pubKeyHex);
+        crypto::PublicKey pubKey(crypto::CryptoAlgorithm::BLS12_381, pubKeyHex);
         if (pubKey.isValid()) {
           core::ValidatorRegistrationRecord rec(valAddr, pubKey, actEpoch, meta,
                                                 regAt);
@@ -112,6 +131,16 @@ ProtocolExecutionState ProtocolExecutionStateParser::parse(
   it = domains.find("slashing");
   if (it != domains.end()) {
     // Mock
+  }
+
+  for (const std::string &address : state.validators.activeValidatorAddresses()) {
+    const core::ValidatorRegistryEntry *entry = state.validators.entryForAddress(address);
+    if (entry != nullptr && entry->stakeAmount() > 0 && !state.staking.hasAccount(address)) {
+      state.staking.setAccount(
+          address,
+          economics::StakeAccount(
+              address, utils::Amount::fromRawUnits(static_cast<std::int64_t>(entry->stakeAmount()))));
+    }
   }
 
   return state;

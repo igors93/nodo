@@ -4,6 +4,7 @@
 #include "node/ProtocolExecutionStateParser.hpp"
 
 #include "consensus/BlockFinalizer.hpp"
+#include "consensus/ProposerSchedule.hpp"
 #include "core/BlockStateTransitionValidator.hpp"
 #include "core/ProtocolLimits.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
@@ -1478,13 +1479,36 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importSnapshot(
   tip.execution = executionState;
 
   core::ValidatorSetHistory validatorSetHistory;
-  validatorSetHistory.recordSet(snapshot->blockHeight(),
+  validatorSetHistory.recordSet(snapshot->blockHeight() + 1,
                                 executionState.validators);
   tip.validatorSetHistory = validatorSetHistory;
 
   ProtocolStateTransition::applyReplayDomainsToRuntime(runtime, tip);
-  runtime.mutableBlockchain().resetFromSnapshot(snapshot->blockHeight(),
-                                                snapshot->blockHash());
+  runtime.mutableSupplyState() = RuntimeSupplyState(tip.execution.supply);
+  runtime.mutableValidatorSetHistory() = validatorSetHistory;
+  runtime.mutableBlockchain().resetFromSnapshot(
+      snapshot->blockHeight(), snapshot->blockHash(), snapshot->stateRoot());
+  runtime.setCachedAccountStateAtTip(tip.accounts);
+
+  const std::string proposer = consensus::ProposerSchedule::selectProposer(
+      runtime.validatorRegistry(),
+      runtime.config().genesisConfig().networkParameters().chainId(),
+      snapshot->blockHeight() + 1, 1);
+  runtime.mutableConsensusRoundManager().advanceToHeight(
+      snapshot->blockHeight() + 1, 1, proposer, now,
+      runtime.config()
+          .genesisConfig()
+          .networkParameters()
+          .targetBlockTimeSeconds());
+
+  const NodeDataDirectoryReadResult manifestWrite =
+      NodeDataDirectory::writeRuntimeSnapshot(directoryConfig, runtime, now);
+  if (!manifestWrite.loaded()) {
+    return PersistentSyncApplyResult(
+        PersistentSyncApplyStatus::REJECTED,
+        "Failed to write snapshot manifest: " + manifestWrite.reason(),
+        std::nullopt);
+  }
 
   if (checkpointStore != nullptr) {
     const PersistentSyncCheckpointWriteResult write =

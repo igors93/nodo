@@ -13,6 +13,7 @@
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
+#include <algorithm>
 #include <limits>
 #include <set>
 #include <sstream>
@@ -475,9 +476,16 @@ FinalizedBlockStoreResult FinalizedBlockStore::persistBatch(
     std::uint64_t expectedHeight = current.manifest().latestBlockHeight() + 1;
     std::string expectedParent = current.manifest().latestBlockHash();
     std::vector<std::string> finalizedTransactionIds;
+    bool isSnapshotTip = false;
+    if (!finalRuntime.blockchain().empty() &&
+        finalRuntime.blockchain().latestBlock().previousHash() == "SNAPSHOT") {
+      isSnapshotTip = true;
+    }
     for (const auto &result : results) {
+      bool validParent = (result.block().previousHash() == expectedParent) ||
+                         (isSnapshotTip && result.block().index() == current.manifest().latestBlockHeight() + 1);
       if (!result.finalized() || result.block().index() != expectedHeight ||
-          result.block().previousHash() != expectedParent ||
+          !validParent ||
           result.block().stateRoot() != result.postStateRoot()) {
         return FinalizedBlockStoreResult::rejected(
             FinalizedBlockStoreStatus::INVALID_PIPELINE_RESULT,

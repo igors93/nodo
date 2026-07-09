@@ -26,7 +26,8 @@ public:
   void addBlock(const Block &block);
 
   // Jump the chain directly to a fast-sync boundary without historical blocks.
-  void resetFromSnapshot(std::uint64_t height, const std::string &hash);
+  void resetFromSnapshot(std::uint64_t height, const std::string &hash,
+                         const std::string &stateRoot);
 
   bool empty() const;
   std::size_t size() const;

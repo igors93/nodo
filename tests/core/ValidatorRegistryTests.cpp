@@ -313,15 +313,15 @@ void testValidatorSetHistoryRejectsHeightGaps() {
 
     ValidatorSetHistory history;
     requireCondition(
-        !history.recordSet(2, registry),
-        "Validator-set history must start at height one."
+        history.recordSet(2, registry),
+        "Validator-set history can start at any height (e.g., from snapshot)."
     );
     requireCondition(
-        history.recordSet(1, registry) && history.recordSet(2, registry),
+        history.recordSet(3, registry),
         "Validator-set history must accept contiguous heights."
     );
     requireCondition(
-        !history.recordSet(4, registry) && history.isValid(),
+        !history.recordSet(5, registry) && history.isValid(),
         "Validator-set history must reject gaps without corrupting prior history."
     );
 }

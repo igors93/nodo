@@ -375,8 +375,8 @@ FastSyncSnapshot FastSyncSnapshot::fromRuntime(const NodeRuntime &runtime,
     throw std::invalid_argument(
         "Cannot build fast-sync snapshot from invalid runtime.");
   }
-  const ProtocolReplayState replay = ProtocolStateTransition::replayToTip(
-      runtime.config().genesisConfig(), runtime.blockchain(),
+  const ProtocolReplayState replay = ProtocolStateTransition::replayStateFromRuntime(
+      runtime,
       checkedMinimumFee(runtime.config().genesisConfig()));
   return fromReplayState(runtime.config().genesisConfig(),
                          runtime.blockchain().latestBlock().index(),
