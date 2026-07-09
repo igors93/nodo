@@ -1,7 +1,11 @@
 #ifndef NODO_NODE_LIGHT_CLIENT_PROTOCOL_HPP
 #define NODO_NODE_LIGHT_CLIENT_PROTOCOL_HPP
 
+#include "consensus/BlockFinalizer.hpp"
 #include "core/MerkleTree.hpp"
+#include "core/ValidatorRegistry.hpp"
+#include "crypto/CryptoPolicy.hpp"
+#include "crypto/SignatureProvider.hpp"
 
 #include <cstdint>
 #include <string>
@@ -106,8 +110,46 @@ private:
 
 class LightClientProtocolVerifier {
 public:
+  // Structural verification only: field presence, header-payload hash,
+  // height contiguity, previousHash linkage, and network/genesis identity.
+  // Does not look inside quorumCertificate/finalizedRecord/validatorSetRoot
+  // at all — a header with a garbage or mismatched QC still passes this on
+  // its own. Kept for cheap pre-filtering and reused internally by
+  // verifyFinalizedHeaderChain below.
   static bool verifyHeaderChain(const std::vector<LightClientHeader> &headers,
                                 std::string *reason = nullptr);
+
+  // Full verification of one finalized header: deserializes its embedded
+  // FinalizedBlockRecord/QuorumCertificate (rejecting malformed data rather
+  // than throwing), cross-checks that the header's standalone
+  // quorumCertificate/validatorSetRoot fields agree with what is embedded in
+  // finalizedRecord, that the record identifies this exact header
+  // (height/blockHash/previousHash), and then cryptographically verifies
+  // validator signatures, voting weight and validator_set_root against
+  // validatorRegistryAtHeight — which must be the validator set that was
+  // actually active at header.height(), never a "current" or unrelated
+  // registry.
+  static bool verifyFinalizedHeader(const LightClientHeader &header,
+                                    const core::ValidatorRegistry
+                                        &validatorRegistryAtHeight,
+                                    const crypto::CryptoPolicy &policy,
+                                    const crypto::SignatureProvider &provider,
+                                    std::string *reason = nullptr);
+
+  // verifyHeaderChain (hash-chain) plus verifyFinalizedHeader for every
+  // header, each checked against the validator set recorded for ITS OWN
+  // height in validatorSetHistory. This is what makes a validator-set
+  // change partway through the range safe: every header is verified against
+  // the set that actually produced its quorum certificate, not one shared
+  // registry that would silently mis-verify headers on either side of a
+  // transition.
+  static bool
+  verifyFinalizedHeaderChain(const std::vector<LightClientHeader> &headers,
+                             const core::ValidatorSetHistory
+                                 &validatorSetHistory,
+                             const crypto::CryptoPolicy &policy,
+                             const crypto::SignatureProvider &provider,
+                             std::string *reason = nullptr);
 };
 
 } // namespace nodo::node

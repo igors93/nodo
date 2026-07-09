@@ -2,6 +2,7 @@
 
 #include "core/MerkleTree.hpp"
 #include "core/StateRootCalculator.hpp"
+#include "crypto/ProtocolCryptoContext.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 
 #include <algorithm>
@@ -96,12 +97,32 @@ LightClientHeader buildHeader(const NodeRuntime &runtime,
       record.quorumCertificate().serialize());
 }
 
-std::string headersJson(const std::vector<LightClientHeader> &headers,
-                        const std::string &verificationReason) {
+crypto::ProtocolCryptoContext cryptoContextFor(const NodeRuntime &runtime) {
+  return crypto::ProtocolCryptoContext::fromNetworkName(
+      runtime.config().genesisConfig().networkParameters().networkName());
+}
+
+// Cryptographically verifies the header range against the validator set
+// that was actually active at each header's height (see
+// LightClientProtocolVerifier::verifyFinalizedHeaderChain), falling back to
+// structural-only verification only if this node's crypto context itself is
+// unavailable — the caller can tell the difference from the reason string.
+std::string headersJson(const NodeRuntime &runtime,
+                        const std::vector<LightClientHeader> &headers) {
   std::ostringstream oss;
-  std::string reason = verificationReason;
-  const bool verified =
-      LightClientProtocolVerifier::verifyHeaderChain(headers, &reason);
+  std::string reason;
+  bool verified = false;
+  const crypto::ProtocolCryptoContext cryptoContext = cryptoContextFor(runtime);
+  if (cryptoContext.isValid()) {
+    verified = LightClientProtocolVerifier::verifyFinalizedHeaderChain(
+        headers, runtime.validatorSetHistory(), cryptoContext.policy(),
+        cryptoContext.validatorSignatureProvider(), &reason);
+  } else {
+    LightClientProtocolVerifier::verifyHeaderChain(headers, &reason);
+    reason = "cryptographic verification unavailable (" +
+             cryptoContext.rejectionReason() + "); structural check only: " +
+             reason;
+  }
   oss << "{\"headers\":[";
   for (std::size_t i = 0; i < headers.size(); ++i) {
     if (i > 0) {
@@ -110,8 +131,8 @@ std::string headersJson(const std::vector<LightClientHeader> &headers,
     oss << headers[i].serializeJson();
   }
   oss << "],\"count\":" << headers.size()
-      << ",\"verified\":" << (verified ? "true" : "false") << ",\"reason\":"
-      << jsonString(reason.empty() ? verificationReason : reason) << "}";
+      << ",\"verified\":" << (verified ? "true" : "false")
+      << ",\"reason\":" << jsonString(reason) << "}";
   return oss.str();
 }
 
@@ -224,7 +245,27 @@ std::string LightClientService::checkpointJson(const NodeRuntime &runtime) {
   if (!header.has_value()) {
     return jsonError("No finalized light-client checkpoint is available.");
   }
-  return "{\"checkpoint\":" + header->serializeJson() + "}";
+
+  std::string reason;
+  bool verified = false;
+  const crypto::ProtocolCryptoContext cryptoContext = cryptoContextFor(runtime);
+  if (cryptoContext.isValid() &&
+      runtime.validatorSetHistory().hasSet(header->height())) {
+    verified = LightClientProtocolVerifier::verifyFinalizedHeader(
+        *header, runtime.validatorSetHistory().setAt(header->height()),
+        cryptoContext.policy(), cryptoContext.validatorSignatureProvider(),
+        &reason);
+  } else if (!cryptoContext.isValid()) {
+    reason = "cryptographic verification unavailable (" +
+             cryptoContext.rejectionReason() + ")";
+  } else {
+    reason = "no recorded validator set for checkpoint height " +
+             std::to_string(header->height());
+  }
+
+  return "{\"checkpoint\":" + header->serializeJson() +
+         ",\"verified\":" + (verified ? "true" : "false") +
+         ",\"reason\":" + jsonString(reason) + "}";
 }
 
 std::string LightClientService::headerRangeJson(const NodeRuntime &runtime,
@@ -235,7 +276,7 @@ std::string LightClientService::headerRangeJson(const NodeRuntime &runtime,
     return jsonError(
         "No finalized light-client headers are available for requested range.");
   }
-  return headersJson(headers, "verified");
+  return headersJson(runtime, headers);
 }
 
 std::string LightClientService::accountProofJson(const NodeRuntime &runtime,

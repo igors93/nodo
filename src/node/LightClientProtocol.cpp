@@ -2,6 +2,7 @@
 
 #include "crypto/hash.h"
 
+#include <exception>
 #include <sstream>
 #include <utility>
 
@@ -282,6 +283,107 @@ bool LightClientProtocolVerifier::verifyHeaderChain(
       }
     }
   }
+  if (reason != nullptr)
+    *reason = "verified";
+  return true;
+}
+
+bool LightClientProtocolVerifier::verifyFinalizedHeader(
+    const LightClientHeader &header,
+    const core::ValidatorRegistry &validatorRegistryAtHeight,
+    const crypto::CryptoPolicy &policy, const crypto::SignatureProvider &provider,
+    std::string *reason) {
+  if (!header.isValid()) {
+    if (reason != nullptr)
+      *reason = "invalid light-client header";
+    return false;
+  }
+
+  consensus::FinalizedBlockRecord record;
+  try {
+    record = consensus::FinalizedBlockRecord::deserialize(header.finalizedRecord());
+  } catch (const std::exception &error) {
+    if (reason != nullptr)
+      *reason = std::string("malformed finalized record at height ") +
+                std::to_string(header.height()) + ": " + error.what();
+    return false;
+  }
+
+  consensus::QuorumCertificate certificate;
+  try {
+    certificate =
+        consensus::QuorumCertificate::deserialize(header.quorumCertificate());
+  } catch (const std::exception &error) {
+    if (reason != nullptr)
+      *reason = std::string("malformed quorum certificate at height ") +
+                std::to_string(header.height()) + ": " + error.what();
+    return false;
+  }
+
+  if (certificate.serialize() != record.quorumCertificate().serialize()) {
+    if (reason != nullptr)
+      *reason = "header quorum certificate does not match the certificate "
+                "embedded in its finalized record at height " +
+                std::to_string(header.height());
+    return false;
+  }
+
+  if (header.validatorSetRoot() != certificate.validatorSetRoot()) {
+    if (reason != nullptr)
+      *reason = "header validator_set_root does not match the quorum "
+                "certificate's validator_set_root at height " +
+                std::to_string(header.height());
+    return false;
+  }
+
+  if (record.blockIndex() != header.height() ||
+      record.blockHash() != header.blockHash() ||
+      record.previousHash() != header.previousHash()) {
+    if (reason != nullptr)
+      *reason = "finalized record does not identify this header at height " +
+                std::to_string(header.height());
+    return false;
+  }
+
+  if (!record.verify(validatorRegistryAtHeight, policy, provider)) {
+    if (reason != nullptr)
+      *reason = "quorum certificate failed cryptographic verification at "
+                "height " +
+                std::to_string(header.height());
+    return false;
+  }
+
+  if (reason != nullptr)
+    *reason = "verified";
+  return true;
+}
+
+bool LightClientProtocolVerifier::verifyFinalizedHeaderChain(
+    const std::vector<LightClientHeader> &headers,
+    const core::ValidatorSetHistory &validatorSetHistory,
+    const crypto::CryptoPolicy &policy, const crypto::SignatureProvider &provider,
+    std::string *reason) {
+  if (!verifyHeaderChain(headers, reason)) {
+    return false;
+  }
+
+  for (const LightClientHeader &header : headers) {
+    if (!validatorSetHistory.hasSet(header.height())) {
+      if (reason != nullptr)
+        *reason = "no recorded validator set for height " +
+                  std::to_string(header.height());
+      return false;
+    }
+
+    std::string headerReason;
+    if (!verifyFinalizedHeader(header, validatorSetHistory.setAt(header.height()),
+                               policy, provider, &headerReason)) {
+      if (reason != nullptr)
+        *reason = headerReason;
+      return false;
+    }
+  }
+
   if (reason != nullptr)
     *reason = "verified";
   return true;
