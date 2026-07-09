@@ -139,6 +139,41 @@ std::string StakeLifecycleRecord::serialize() const {
   return oss.str();
 }
 
+StakingRegistry StakingRegistry::restore(
+    std::map<std::string, economics::StakeAccount> accounts,
+    std::vector<StakePositionView> positions,
+    std::vector<StakeLifecycleRecord> lifecycleRecords) {
+  StakingRegistry registry;
+  registry.m_accounts = std::move(accounts);
+
+  for (const StakePositionView &view : positions) {
+    Position position;
+    position.positionId =
+        stakePositionId(view.ownerAddress, view.validatorAddress);
+    position.activeAmount = view.activeAmount;
+    position.pendingActivationAmount = view.pendingActivationAmount;
+    position.pendingUnbondingAmount = view.pendingUnbondingAmount;
+    position.withdrawnAmount = view.withdrawnAmount;
+    position.slashedAmount = view.slashedAmount;
+    position.rewardsPending = view.rewardsPending;
+    position.lockHeight = view.lockHeight;
+    position.activationHeight = view.activationHeight;
+    position.unbondingStartHeight = view.unbondingStartHeight;
+    position.withdrawableHeight = view.withdrawableHeight;
+    position.status = view.status;
+    registry.m_positionsByValidatorAndOwner[view.validatorAddress]
+                                            [view.ownerAddress] = position;
+  }
+
+  registry.m_lifecycleRecords = std::move(lifecycleRecords);
+
+  if (!registry.isValid()) {
+    throw std::invalid_argument(
+        "Restored StakingRegistry failed structural validation.");
+  }
+  return registry;
+}
+
 std::string
 StakingRegistry::stakePositionId(const std::string &ownerAddress,
                                  const std::string &validatorAddress) {

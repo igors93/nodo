@@ -63,17 +63,62 @@ GenesisConfig genesisConfig() {
       "fastsync-genesis");
 }
 
+std::string validatorAddress() { return validatorKey().address().value(); }
+
+void admitTransaction(NodeRuntime &runtime, const Transaction &tx,
+                      std::int64_t timestamp) {
+  auto result = runtime.mutableMempool().admitTransaction(
+      tx, CryptoPolicy::developmentPolicy(), SecurityContext::USER_TRANSACTION,
+      timestamp);
+  require(result.accepted(),
+          "Transaction must enter the mempool: " + result.reason());
+}
+
 void admit(NodeRuntime &runtime, std::uint64_t nonce, std::int64_t timestamp) {
   Transaction tx = TransactionBuilder::buildSignedTransfer(
       TransactionBuildRequest(
           "some-recipient", nodo::utils::Amount::fromRawUnits(1000),
           nodo::utils::Amount::fromRawUnits(100), nonce, timestamp),
       userSigner(), genesisConfig().networkParameters().chainId());
-  auto result = runtime.mutableMempool().admitTransaction(
-      tx, CryptoPolicy::developmentPolicy(), SecurityContext::USER_TRANSACTION,
-      timestamp);
-  require(result.accepted(),
-          "Transaction must enter the mempool: " + result.reason());
+  admitTransaction(runtime, tx, timestamp);
+}
+
+void admitStakeDeposit(NodeRuntime &runtime, std::uint64_t nonce,
+                       std::int64_t timestamp) {
+  Transaction tx = TransactionBuilder::buildSignedStakeDeposit(
+      TransactionBuildRequest(
+          validatorAddress(), nodo::utils::Amount::fromRawUnits(5000000),
+          nodo::utils::Amount::fromRawUnits(100), nonce, timestamp),
+      userSigner(), genesisConfig().networkParameters().chainId());
+  admitTransaction(runtime, tx, timestamp);
+}
+
+// A large votingPeriodBlocks keeps the proposal ACTIVE (rather than decided)
+// through the snapshot below: the fast-sync fidelity check only needs
+// non-trivial governance state to exist at snapshot time, not a completed
+// decision.
+std::string admitGovernanceProposal(NodeRuntime &runtime, std::uint64_t nonce,
+                                    std::int64_t timestamp) {
+  Transaction tx = TransactionBuilder::buildSignedGovernanceProposal(
+      GovernanceProposalPayload::parameterChange(
+          "Lower fee", "Reduce the minimum transaction fee",
+          "MINIMUM_FEE_RAW", "250", /*effectiveHeight=*/500,
+          /*votingStartDelayBlocks=*/0, /*votingPeriodBlocks=*/1000)
+          .serialize(),
+      nodo::utils::Amount::fromRawUnits(100), nonce, timestamp, userSigner(),
+      genesisConfig().networkParameters().chainId());
+  admitTransaction(runtime, tx, timestamp);
+  return tx.id();
+}
+
+void admitGovernanceVote(NodeRuntime &runtime, const std::string &proposalId,
+                         std::uint64_t nonce, std::int64_t timestamp) {
+  const GovernanceVotePayload votePayload(proposalId, validatorAddress(),
+                                          GovernanceVoteChoice::YES);
+  Transaction tx = TransactionBuilder::buildSignedGovernanceVote(
+      proposalId, votePayload, nodo::utils::Amount::fromRawUnits(100), nonce,
+      timestamp, userSigner(), genesisConfig().networkParameters().chainId());
+  admitTransaction(runtime, tx, timestamp);
 }
 
 NodeRuntime startRuntime() {
@@ -117,16 +162,36 @@ int main() {
     require(targetInit.success(),
             "Target node directory init failed: " + targetInit.reason());
 
-    // 1. Setup Source Node
+    // 1. Setup Source Node. Block 1 carries a stake deposit and a governance
+    // proposal, block 2 carries a vote on that proposal, so the snapshot
+    // below captures non-trivial governance and staking state — the exact
+    // state that the old ProtocolExecutionStateParser silently dropped
+    // (governance) or only crudely approximated (staking) on fast-sync
+    // import.
     NodeRuntime sourceNode = startRuntime();
-    admit(sourceNode, 1, kTimestamp + 1);
+    admitStakeDeposit(sourceNode, 1, kTimestamp + 1);
+    const std::string proposalId =
+        admitGovernanceProposal(sourceNode, 2, kTimestamp + 1);
     std::cout << "Producing block 1..." << std::endl;
     produceBlock(sourceNode, kTimestamp + 2, sourceConfig);
     std::cout << "Block 1 produced." << std::endl;
-    admit(sourceNode, 2, kTimestamp + 3);
+    admitGovernanceVote(sourceNode, proposalId, 3, kTimestamp + 3);
     std::cout << "Producing block 2..." << std::endl;
     produceBlock(sourceNode, kTimestamp + 4, sourceConfig);
     std::cout << "Block 2 produced." << std::endl;
+
+    require(sourceNode.governanceExecutor().proposalStatus(proposalId) ==
+                GovernanceProposalStatus::ACTIVE,
+            "Fixture proposal must still be open for voting at snapshot "
+            "time.");
+    const GovernanceExecutor::GovernanceProposalSnapshot
+        sourceProposalSnapshot =
+            sourceNode.governanceExecutor().proposalSnapshot(proposalId);
+    const nodo::utils::Amount sourceValidatorStake =
+        sourceNode.stakingRegistry().activeStakeFor(validatorAddress());
+    require(sourceValidatorStake.rawUnits() > 0,
+            "Fixture stake deposit must be reflected before the snapshot is "
+            "taken.");
 
     // 2. Export Snapshot from Source Node
     FastSyncSnapshot snapshot =
@@ -172,8 +237,44 @@ int main() {
     require(targetNode.blockchain().latestBlock().index() == 2,
             "Target node should jump to height 2");
 
+    // 5b. Governance and staking fidelity: the fast-synced target must
+    // reconstruct the exact same proposal/vote/stake state the source node
+    // had at snapshot time, not silently drop it (governance) or crudely
+    // approximate it (staking) as the old ProtocolExecutionStateParser did.
+    const GovernanceExecutor::GovernanceProposalSnapshot
+        targetProposalSnapshot =
+            targetNode.governanceExecutor().proposalSnapshot(proposalId);
+    require(targetProposalSnapshot.proposalId == sourceProposalSnapshot.proposalId &&
+                targetProposalSnapshot.status == sourceProposalSnapshot.status &&
+                targetProposalSnapshot.votingStartHeight ==
+                    sourceProposalSnapshot.votingStartHeight &&
+                targetProposalSnapshot.votingEndHeight ==
+                    sourceProposalSnapshot.votingEndHeight &&
+                targetProposalSnapshot.totalEligibleWeight ==
+                    sourceProposalSnapshot.totalEligibleWeight,
+            "Fast-synced governance proposal must match the source node's "
+            "proposal exactly.");
+    require(targetProposalSnapshot.votes.size() ==
+                sourceProposalSnapshot.votes.size() &&
+                !targetProposalSnapshot.votes.empty() &&
+                targetProposalSnapshot.votes.front().validatorAddress ==
+                    sourceProposalSnapshot.votes.front().validatorAddress &&
+                targetProposalSnapshot.votes.front().choice ==
+                    sourceProposalSnapshot.votes.front().choice &&
+                targetProposalSnapshot.votes.front().weight ==
+                    sourceProposalSnapshot.votes.front().weight &&
+                targetProposalSnapshot.votes.front().castAt ==
+                    sourceProposalSnapshot.votes.front().castAt,
+            "Fast-synced governance vote must survive with full fidelity "
+            "(the old parser dropped governance state entirely).");
+    require(targetNode.stakingRegistry().activeStakeFor(validatorAddress()) ==
+                sourceValidatorStake,
+            "Fast-synced staking state must match the source node's stake "
+            "exactly (the old parser only crudely re-derived it from "
+            "validator stake amounts).");
+
     // 6. Produce Next Block on Source Node
-    admit(sourceNode, 3, kTimestamp + 6);
+    admit(sourceNode, 4, kTimestamp + 6);
     produceBlock(sourceNode, kTimestamp + 7, sourceConfig);
     const Block nextBlock = sourceNode.blockchain().latestBlock();
     require(nextBlock.index() == 3, "Source node should be at height 3");

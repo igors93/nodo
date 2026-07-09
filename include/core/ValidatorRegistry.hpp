@@ -187,6 +187,17 @@ public:
 
   ValidatorRegistry();
 
+  /*
+   * Inserts a fully-formed entry directly into the registry, bypassing the
+   * normal transaction-driven lifecycle methods. Used exclusively by
+   * ValidatorsDomainCodec to rebuild a registry from a decoded canonical
+   * payload (e.g. fast-sync snapshot import), where every field is already
+   * known and does not need to be re-derived through registration/
+   * activation/jailing calls. Returns false (and leaves the registry
+   * unchanged) if the entry is invalid or its address is already present.
+   */
+  bool restoreEntry(const ValidatorRegistryEntry &entry);
+
   ValidatorRegistryUpdateResult
   registerValidator(const ValidatorRegistrationRecord &registrationRecord);
 

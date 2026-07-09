@@ -92,6 +92,21 @@ public:
 
   StakingRegistry() = default;
 
+  /*
+   * Rebuilds a registry directly from its flattened field data, bypassing the
+   * normal deposit/unlock/withdraw lifecycle methods. Used exclusively by
+   * StakingDomainCodec to reconstruct a registry from a decoded canonical
+   * payload (e.g. fast-sync snapshot import), where every account, position
+   * and lifecycle record is already fully known. Positions are regrouped by
+   * (validatorAddress, ownerAddress); positionId is recomputed from that pair
+   * rather than trusted from the input. Throws std::invalid_argument if the
+   * reconstructed registry fails isValid().
+   */
+  static StakingRegistry
+  restore(std::map<std::string, economics::StakeAccount> accounts,
+         std::vector<StakePositionView> positions,
+         std::vector<StakeLifecycleRecord> lifecycleRecords);
+
   static std::string stakePositionId(const std::string &ownerAddress,
                                      const std::string &validatorAddress);
 

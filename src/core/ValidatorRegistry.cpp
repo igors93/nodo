@@ -458,6 +458,26 @@ std::string ValidatorRegistryUpdateResult::serialize() const {
 
 ValidatorRegistry::ValidatorRegistry() : m_entries() {}
 
+bool ValidatorRegistry::restoreEntry(const ValidatorRegistryEntry &entry) {
+  if (!entry.isValid()) {
+    return false;
+  }
+
+  const std::string &address = entry.registrationRecord().validatorAddress();
+  if (!isSafeScalar(address) || m_entries.find(address) != m_entries.end()) {
+    return false;
+  }
+
+  m_entries.emplace(address, entry);
+
+  if (!isValid()) {
+    m_entries.erase(address);
+    return false;
+  }
+
+  return true;
+}
+
 ValidatorRegistryUpdateResult ValidatorRegistry::registerValidator(
     const ValidatorRegistrationRecord &registrationRecord) {
   return registerValidator(registrationRecord, MIN_VALIDATOR_STAKE_RAW_UNITS,

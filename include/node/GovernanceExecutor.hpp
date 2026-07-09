@@ -241,6 +241,54 @@ public:
   GovernanceProposalSnapshot
   proposalSnapshot(const std::string &proposalId) const;
 
+  /*
+   * ProposalRecord is the byte-faithful counterpart to
+   * GovernanceProposalSnapshot: it carries every field of the private
+   * ProposalState, including the two GovernanceProposalSnapshot does not
+   * expose (executionDetail, treasuryExecutableAtHeight). It exists solely so
+   * GovernanceDomainCodec can save and exactly restore governance state
+   * across encode/decode (e.g. fast-sync snapshot import), which
+   * proposalSnapshot()'s display-oriented, dynamically-recomputed tally is
+   * not suited for.
+   */
+  struct ProposalRecord {
+    std::string proposalId;
+    std::string proposerAddress;
+    core::GovernanceProposalPayload payload;
+    std::uint64_t createdHeight = 0;
+    std::int64_t createdAt = 0;
+    std::uint64_t votingStartHeight = 0;
+    std::uint64_t votingEndHeight = 0;
+    std::uint64_t totalEligibleWeight = 0;
+    GovernanceProposalStatus status = GovernanceProposalStatus::PENDING;
+    GovernanceTallySnapshot finalTally;
+    std::uint64_t decidedAtHeight = 0;
+    std::int64_t decidedAt = 0;
+    std::uint64_t executedAtHeight = 0;
+    std::int64_t executedAt = 0;
+    std::string executionDetail;
+    std::uint64_t treasuryExecutableAtHeight = 0;
+    utils::Amount treasuryBalanceBeforeExecution;
+    std::vector<GovernanceVoteInfo> votes;
+  };
+
+  // Returns every proposal's full internal state, in deterministic
+  // (proposalId-sorted) order.
+  std::vector<ProposalRecord> allProposalRecords() const;
+
+  /*
+   * Rebuilds a GovernanceExecutor directly from previously-captured field
+   * data (see ProposalRecord/appliedChanges/pendingChanges), bypassing the
+   * normal submitProposal/castVote/advanceToHeight transaction-driven
+   * lifecycle. Used exclusively by GovernanceDomainCodec to reconstruct
+   * governance state from a decoded canonical payload. Throws
+   * std::invalid_argument on a malformed or duplicate proposal id.
+   */
+  static GovernanceExecutor
+  restore(std::vector<GovernanceParameterChange> appliedChanges,
+         std::vector<GovernanceParameterChange> pendingChanges,
+         std::vector<ProposalRecord> proposals);
+
   static bool validateProposalPayload(const std::string &proposalPayload,
                                       std::string &reason);
 

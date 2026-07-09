@@ -1,7 +1,6 @@
 #include "node/ProtocolTransactionDomainExecutor.hpp"
 
 #include "core/State.hpp"
-#include "core/StateRootCalculator.hpp"
 #include "core/TransactionPayload.hpp"
 #include "crypto/AddressDerivation.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
@@ -11,6 +10,7 @@
 #include "node/EpochRewardSettlementService.hpp"
 #include "node/FeeEconomics.hpp"
 #include "node/GovernanceLifecycleRecordBuilder.hpp"
+#include "node/ProtocolDomainCodec.hpp"
 #include "node/ProtocolStateTransition.hpp"
 #include "node/ValidatorLifecycle.hpp"
 #include "node/ValidatorStakeWeightUpdater.hpp"
@@ -496,29 +496,7 @@ private:
 
 std::map<std::string, std::string>
 protocolExecutionDomains(const ProtocolExecutionState &state) {
-  std::vector<economics::BurnRecord> burns = state.burns;
-  std::sort(burns.begin(), burns.end(),
-            [](const auto &left, const auto &right) {
-              return left.burnId() < right.burnId();
-            });
-  std::ostringstream burnLedger;
-  burnLedger << "BurnLedger{count=" << burns.size() << ";records=[";
-  for (std::size_t i = 0; i < burns.size(); ++i) {
-    if (i != 0)
-      burnLedger << ',';
-    burnLedger << burns[i].serialize();
-  }
-  burnLedger << "]}";
-  return {{"burns", burnLedger.str()},
-          {"governance", state.governance.serialize()},
-          {"slashing", state.penaltyLedger.serialize()},
-          {"staking", state.staking.serialize()},
-          {"supply", "RuntimeSupply{latestRawUnits=" +
-                         std::to_string(state.supply.rawUnits()) + "}"},
-          {"validators", state.validators.serialize()},
-          {"validator_weights",
-           core::StateRootCalculator::calculateValidatorStateRoot(
-               state.validators)}};
+  return ProtocolDomainCodec::encodeState(state);
 }
 
 core::TransactionDomainExecutorFactory makeProtocolDomainExecutorFactory(

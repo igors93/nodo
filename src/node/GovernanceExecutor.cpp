@@ -1082,6 +1082,94 @@ GovernanceExecutor::proposalSnapshot(const std::string &proposalId) const {
   return snapshot;
 }
 
+std::vector<GovernanceExecutor::ProposalRecord>
+GovernanceExecutor::allProposalRecords() const {
+  std::vector<ProposalRecord> records;
+  records.reserve(m_proposals.size());
+  for (const auto &[proposalId, proposal] : m_proposals) {
+    ProposalRecord record;
+    record.proposalId = proposalId;
+    record.proposerAddress = proposal.proposerAddress;
+    record.payload = proposal.payload;
+    record.createdHeight = proposal.createdHeight;
+    record.createdAt = proposal.createdAt;
+    record.votingStartHeight = proposal.votingStartHeight;
+    record.votingEndHeight = proposal.votingEndHeight;
+    record.totalEligibleWeight = proposal.totalEligibleWeight;
+    record.status = proposal.status;
+    record.finalTally = proposal.finalTally;
+    record.decidedAtHeight = proposal.decidedAtHeight;
+    record.decidedAt = proposal.decidedAt;
+    record.executedAtHeight = proposal.executedAtHeight;
+    record.executedAt = proposal.executedAt;
+    record.executionDetail = proposal.executionDetail;
+    record.treasuryExecutableAtHeight = proposal.treasuryExecutableAtHeight;
+    record.treasuryBalanceBeforeExecution =
+        proposal.treasuryBalanceBeforeExecution;
+    for (const auto &[validator, vote] : proposal.votes) {
+      record.votes.push_back(
+          GovernanceVoteInfo{validator, vote.choice, vote.weight,
+                             vote.castHeight, vote.castAt, vote.transactionId});
+    }
+    records.push_back(std::move(record));
+  }
+  return records;
+}
+
+GovernanceExecutor GovernanceExecutor::restore(
+    std::vector<GovernanceParameterChange> appliedChanges,
+    std::vector<GovernanceParameterChange> pendingChanges,
+    std::vector<ProposalRecord> proposals) {
+  GovernanceExecutor executor;
+  executor.m_appliedChanges = std::move(appliedChanges);
+  executor.m_pendingChanges = std::move(pendingChanges);
+
+  for (const ProposalRecord &record : proposals) {
+    if (record.proposalId.empty()) {
+      throw std::invalid_argument(
+          "Restored governance proposal id is empty.");
+    }
+
+    ProposalState state;
+    state.proposerAddress = record.proposerAddress;
+    state.payload = record.payload;
+    state.createdHeight = record.createdHeight;
+    state.createdAt = record.createdAt;
+    state.votingStartHeight = record.votingStartHeight;
+    state.votingEndHeight = record.votingEndHeight;
+    state.totalEligibleWeight = record.totalEligibleWeight;
+    state.status = record.status;
+    state.finalTally = record.finalTally;
+    state.decidedAtHeight = record.decidedAtHeight;
+    state.decidedAt = record.decidedAt;
+    state.executedAtHeight = record.executedAtHeight;
+    state.executedAt = record.executedAt;
+    state.executionDetail = record.executionDetail;
+    state.treasuryExecutableAtHeight = record.treasuryExecutableAtHeight;
+    state.treasuryBalanceBeforeExecution =
+        record.treasuryBalanceBeforeExecution;
+
+    for (const GovernanceVoteInfo &vote : record.votes) {
+      VoteState voteState;
+      voteState.choice = vote.choice;
+      voteState.weight = vote.weight;
+      voteState.castHeight = vote.castHeight;
+      voteState.castAt = vote.castAt;
+      voteState.transactionId = vote.transactionId;
+      state.votes.emplace(vote.validatorAddress, std::move(voteState));
+    }
+
+    if (!executor.m_proposals.emplace(record.proposalId, std::move(state))
+             .second) {
+      throw std::invalid_argument(
+          "Duplicate governance proposal id during restore: " +
+          record.proposalId);
+    }
+  }
+
+  return executor;
+}
+
 const std::vector<GovernanceParameterChange> &
 GovernanceExecutor::appliedChanges() const {
   return m_appliedChanges;
