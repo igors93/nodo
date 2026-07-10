@@ -52,6 +52,27 @@ void clean(
     std::filesystem::remove_all(path, error);
 }
 
+void setTestEnvVar(
+    const char* name,
+    const char* value
+) {
+#ifdef _WIN32
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
+void unsetTestEnvVar(
+    const char* name
+) {
+#ifdef _WIN32
+    _putenv_s(name, "");
+#else
+    unsetenv(name);
+#endif
+}
+
 void initTestnetCandidate(
     const std::filesystem::path& path
 ) {
@@ -125,7 +146,7 @@ void testKeysCreateSucceedsOnTestnetCandidateWithPassword() {
     clean(path);
     initTestnetCandidate(path);
 
-    setenv("NODO_KEY_PASSWORD", "network-key-policy-tests-password", 1);
+    setTestEnvVar("NODO_KEY_PASSWORD", "network-key-policy-tests-password");
     const auto created = CommandLineInterface::execute({
         "keys", "create",
         "--network", "testnet-candidate",
@@ -133,7 +154,7 @@ void testKeysCreateSucceedsOnTestnetCandidateWithPassword() {
         "--type", "both",
         "--timestamp", std::to_string(kTimestamp + 1)
     });
-    unsetenv("NODO_KEY_PASSWORD");
+    unsetTestEnvVar("NODO_KEY_PASSWORD");
 
     requireCondition(
         created.success() &&

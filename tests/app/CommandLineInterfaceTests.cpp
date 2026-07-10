@@ -42,6 +42,27 @@ void clean(
     );
 }
 
+void setTestEnvVar(
+    const char* name,
+    const char* value
+) {
+#ifdef _WIN32
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
+void unsetTestEnvVar(
+    const char* name
+) {
+#ifdef _WIN32
+    _putenv_s(name, "");
+#else
+    unsetenv(name);
+#endif
+}
+
 void testHelpCommand() {
     const auto result =
         CommandLineInterface::execute(
@@ -339,7 +360,7 @@ void testOfficialNetworkKeySafetyAndDiagnostics() {
     // testnet-candidate key creation is only unblocked when the resulting
     // key is encrypted (TESTNET_SAFE); supply the password non-interactively
     // via NODO_KEY_PASSWORD so this test does not block on a TTY prompt.
-    setenv("NODO_KEY_PASSWORD", "cli-tests-official-key-password", 1);
+    setTestEnvVar("NODO_KEY_PASSWORD", "cli-tests-official-key-password");
     const auto createOfficialKey =
         CommandLineInterface::execute(
             {
@@ -357,7 +378,7 @@ void testOfficialNetworkKeySafetyAndDiagnostics() {
                 std::to_string(kTimestamp + 2)
             }
         );
-    unsetenv("NODO_KEY_PASSWORD");
+    unsetTestEnvVar("NODO_KEY_PASSWORD");
 
     requireCondition(
         createOfficialKey.success() &&
