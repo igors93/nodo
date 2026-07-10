@@ -1151,27 +1151,36 @@ std::string CommandLineInterface::helpText() {
          "  nodo keys create [--network localnet|testnet-candidate] "
          "[--data-dir PATH] [--type user|validator|both] [--key-id ID]\n"
          "  nodo keys list [--data-dir PATH]\n"
-         "  nodo tx submit [--data-dir PATH] [--from KEY_ID] [--to ADDRESS] "
+         "  nodo tx submit [--network localnet|testnet-candidate] [--data-dir "
+         "PATH] [--from KEY_ID] [--to ADDRESS] "
          "[--amount RAW_UNITS] [--fee RAW_UNITS] [--nonce VALUE]\n"
-         "  nodo governance propose [--data-dir PATH] [--from KEY_ID] "
+         "  nodo governance propose [--network localnet|testnet-candidate] "
+         "[--data-dir PATH] [--from KEY_ID] "
          "[--proposal-type parameter-change|treasury-spend|text] [--title "
          "TEXT] [--body TEXT] [--target PARAM] [--value VALUE] "
          "[--effective-height HEIGHT] [--to ADDRESS] [--amount RAW_UNITS] "
          "[--fee RAW_UNITS] [--voting-period BLOCKS]\n"
-         "  nodo governance vote [--data-dir PATH] [--owner KEY_ID] "
+         "  nodo governance vote [--network localnet|testnet-candidate] "
+         "[--data-dir PATH] [--owner KEY_ID] "
          "--proposal-id ID --validator ADDRESS [--vote YES|NO|ABSTAIN] [--fee "
          "RAW_UNITS]\n"
-         "  nodo governance execute [--data-dir PATH] [--from KEY_ID] "
+         "  nodo governance execute [--network localnet|testnet-candidate] "
+         "[--data-dir PATH] [--from KEY_ID] "
          "--proposal-id ID [--fee RAW_UNITS]\n"
          "  nodo governance status|list|show|audit [--data-dir PATH] "
          "[--proposal-id ID]\n"
-         "  nodo stake lock|deposit|top-up|unlock|withdraw [--data-dir PATH] "
+         "  nodo stake lock|deposit|top-up|unlock|withdraw [--network "
+         "localnet|testnet-candidate] [--data-dir PATH] "
          "(--validator ADDRESS | --validator-key ID) --amount RAW_UNITS "
          "[--owner KEY_ID] [--fee RAW_UNITS]\n"
          "  nodo stake status [--data-dir PATH] (--validator ADDRESS | "
          "--validator-key ID)\n"
          "  nodo stake positions|audit [--data-dir PATH] [--validator ADDRESS] "
          "[--address ADDRESS]\n"
+         "  nodo validator exit [--network localnet|testnet-candidate] "
+         "[--data-dir PATH] --validator ADDRESS [--key-id ID]\n"
+         "  nodo validator unjail [--network localnet|testnet-candidate] "
+         "[--data-dir PATH] --validator ADDRESS [--key-id ID]\n"
          "  nodo block produce [--data-dir PATH]\n"
          "  nodo chain audit [--data-dir PATH] [--peer-id ID] [--endpoint "
          "HOST:PORT]\n"
@@ -1735,15 +1744,13 @@ CommandLineInterface::executeKeysCreate(const CommandLineOptions &options) {
                                       *mismatch + "\n");
   }
 
-  if (config::NetworkProfileRegistry::isOfficialNetwork(
+  if (crypto::KeyEncryptionPolicy::isMainnetBlocked(
           manifest.manifest().networkName())) {
     return CommandLineResult::failure(
         CommandLineStatus::COMMAND_FAILED,
-        "Cannot create a local plaintext development key for official network "
-        "'" +
-            manifest.manifest().networkName() +
-            "'. Provide an audited network-appropriate key provider; no "
-            "development key fallback is allowed.\n");
+        "Cannot create a key for mainnet: no audited key provider is "
+        "available. This will remain blocked until a production HSM/KMS "
+        "integration is complete.\n");
   }
 
   if (options.keyType == "both" && options.keyIdProvided) {
@@ -1827,9 +1834,9 @@ CommandLineInterface::executeKeysCreate(const CommandLineOptions &options) {
   std::ostringstream output;
 
   output << "Nodo development key created.\n"
-         << "WARNING: this is a deterministic localnet-only development key. "
-         << "Do not use it for custody, production validators, treasury, or "
-            "mainnet.\n";
+         << "WARNING: this key is deterministically derived from the genesis "
+            "config id and key id, not real randomness. Do not use it for "
+            "custody, production validators, treasury, or mainnet.\n";
 
   for (const crypto::KeyStoreCreateResult &created : createdKeys) {
     output << "Key id: " << created.metadata().keyId() << "\n"
@@ -2799,9 +2806,24 @@ CommandLineInterface::executeNodeRun(const CommandLineOptions &options) {
     }
   }
 
-  // BLS provider must outlive the Signer and the daemon.
-  const crypto::Bls12381SignatureProvider blsProvider;
-  const crypto::CryptoPolicy policy = crypto::CryptoPolicy::developmentPolicy();
+  // Route through the same crypto policy gate every other signing command
+  // uses, instead of hardcoding providers/policy directly.
+  const crypto::ProtocolCryptoContext cryptoContext =
+      crypto::ProtocolCryptoContext::fromNetworkName(params.networkName());
+
+  if (!cryptoContext.isValid()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "node run: invalid crypto context for network " +
+            params.networkName() + ": " + cryptoContext.rejectionReason() +
+            "\n");
+  }
+
+  // cryptoContext (and therefore blsProvider) must outlive the Signer and
+  // the daemon.
+  const crypto::SignatureProvider &blsProvider =
+      cryptoContext.validatorSignatureProvider();
+  const crypto::CryptoPolicy policy = cryptoContext.policy();
 
   // Load optional validator key (for signing blocks / votes).
   std::optional<crypto::Signer> localSigner;

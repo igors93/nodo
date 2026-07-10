@@ -18,6 +18,8 @@ std::string keySafetyStatusToString(KeySafetyStatus status) {
             return "REJECTED_UNKNOWN_PROFILE";
         case KeySafetyStatus::REJECTED_NETWORK_MISMATCH:
             return "REJECTED_NETWORK_MISMATCH";
+        case KeySafetyStatus::REJECTED_INSUFFICIENT_ENCRYPTION_LEVEL:
+            return "REJECTED_INSUFFICIENT_ENCRYPTION_LEVEL";
         default:
             return "UNKNOWN";
     }
@@ -72,14 +74,19 @@ KeySafetyCheckResult ProductionKeySafetyGate::check(
         );
     }
 
-    // Explicitly reject plaintext keys on official networks.
-    if (metadata.encryptionLevel() == crypto::KeyEncryptionLevel::PLAINTEXT &&
-        crypto::KeyEncryptionPolicy::isOfficialNetwork(targetNetworkName)) {
+    // Reject any key whose encryption level does not meet the minimum bar
+    // required for the target network (e.g. DEV_ENCRYPTED is not sufficient
+    // for testnet, which requires TESTNET_SAFE).
+    if (crypto::KeyEncryptionPolicy::isOfficialNetwork(targetNetworkName) &&
+        !crypto::KeyEncryptionPolicy::isAcceptable(metadata.encryptionLevel(), targetNetworkName)) {
         return KeySafetyCheckResult::rejected(
-            KeySafetyStatus::REJECTED_PLAINTEXT_ON_OFFICIAL_NETWORK,
-            "Key '" + metadata.keyId() + "' is plaintext and "
-            "cannot be used on official network '" + targetNetworkName + "'. "
-            "Keys for official networks must be encrypted."
+            KeySafetyStatus::REJECTED_INSUFFICIENT_ENCRYPTION_LEVEL,
+            "Key '" + metadata.keyId() + "' is encrypted at level '" +
+            crypto::keyEncryptionLevelToString(metadata.encryptionLevel()) +
+            "', which does not meet the minimum required level '" +
+            crypto::keyEncryptionLevelToString(
+                crypto::KeyEncryptionPolicy::requiredLevelForNetwork(targetNetworkName)) +
+            "' for official network '" + targetNetworkName + "'."
         );
     }
 

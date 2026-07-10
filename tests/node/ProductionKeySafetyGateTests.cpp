@@ -10,7 +10,11 @@
 
 namespace {
 
-nodo::crypto::StoredKeyMetadata makeKey(const std::string& networkProfile) {
+nodo::crypto::StoredKeyMetadata makeKey(
+    const std::string& networkProfile,
+    nodo::crypto::KeyEncryptionLevel encryptionLevel =
+        nodo::crypto::KeyEncryptionLevel::PLAINTEXT
+) {
     const nodo::crypto::PublicKey pk(
         nodo::crypto::CryptoAlgorithm::BLS12_381,
         std::string(96, 'a')
@@ -24,7 +28,8 @@ nodo::crypto::StoredKeyMetadata makeKey(const std::string& networkProfile) {
         pk,
         "nodo1testaddress001",
         1900000000,
-        networkProfile
+        networkProfile,
+        encryptionLevel
     );
 }
 
@@ -72,6 +77,32 @@ void testNetworkMismatchRejected() {
     assert(result.status() == nodo::node::KeySafetyStatus::REJECTED_NETWORK_MISMATCH);
 }
 
+void testTestnetSafeKeyApprovedOnTestnetCandidate() {
+    const auto key = makeKey(
+        "testnet-candidate",
+        nodo::crypto::KeyEncryptionLevel::TESTNET_SAFE
+    );
+    const auto result =
+        nodo::node::ProductionKeySafetyGate::check(key, "testnet-candidate");
+    assert(result.isApproved());
+}
+
+void testDevEncryptedKeyRejectedOnTestnetCandidate() {
+    // DEV_ENCRYPTED is encrypted, but below the TESTNET_SAFE bar
+    // KeyEncryptionPolicy requires for official networks — this is the gap
+    // that used to pass silently before ProductionKeySafetyGate reused
+    // KeyEncryptionPolicy::isAcceptable.
+    const auto key = makeKey(
+        "testnet-candidate",
+        nodo::crypto::KeyEncryptionLevel::DEV_ENCRYPTED
+    );
+    const auto result =
+        nodo::node::ProductionKeySafetyGate::check(key, "testnet-candidate");
+    assert(!result.isApproved());
+    assert(result.status() ==
+           nodo::node::KeySafetyStatus::REJECTED_INSUFFICIENT_ENCRYPTION_LEVEL);
+}
+
 void testStatusToString() {
     assert(nodo::node::keySafetyStatusToString(nodo::node::KeySafetyStatus::APPROVED)
            == "APPROVED");
@@ -89,6 +120,8 @@ int main() {
     testMainnetAlwaysRejected();
     testMainnetRejectedWithLocalnetKey();
     testNetworkMismatchRejected();
+    testTestnetSafeKeyApprovedOnTestnetCandidate();
+    testDevEncryptedKeyRejectedOnTestnetCandidate();
     testStatusToString();
     return 0;
 }

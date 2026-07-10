@@ -32,3 +32,17 @@ Production-ready operation requires:
 ## Operator rule
 
 Do not use local development keys for any production-like network with real value.
+
+## Enforced policy today
+
+The CLI enforces one unified rule across every signing command, via `crypto::ProtocolCryptoContext` (crypto provider/policy validity) and `node::ProductionKeySafetyGate` + `crypto::KeyEncryptionPolicy` (key custody):
+
+| Network | Key requirement |
+| --- | --- |
+| `localnet` / `localnet-soak` | Plaintext local key (`KeyEncryptionLevel::PLAINTEXT`) is accepted. |
+| `testnet-candidate` / `testnet` | Local key must be password-encrypted to at least `TESTNET_SAFE`. Run `nodo keys create --network testnet-candidate` and supply a password (via the `NODO_KEY_PASSWORD` environment variable or the interactive prompt, minimum 8 characters). No external signer is required — an encrypted local key is sufficient. |
+| `mainnet` | Unconditionally blocked. No audited HSM/KMS provider exists yet; this is enforced independently at the network-profile, crypto-context, and key-safety layers. |
+
+Keys are still derived deterministically from `genesisConfigId#keyType#keyId` (`crypto::KeyStore::createLocalKey`), not from real randomness, on every network profile including `testnet-candidate`. This is a known limitation distinct from encryption-at-rest and is not solved by the `TESTNET_SAFE` bar above.
+
+`crypto::OutofProcessSigner` (an out-of-process/external-signer primitive) exists in the codebase but is not wired into any command; it is not part of the enforced policy.

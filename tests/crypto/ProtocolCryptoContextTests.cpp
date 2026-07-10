@@ -96,13 +96,18 @@ void testNetworkNameMappingAcceptsSoakLocalnet() {
     );
 }
 
-void testTestnetRefusesTemporaryProvider() {
+void testTestnetIsValidWithRealProviders() {
+    // Ed25519/BLS12-381 providers are real, non-development algorithms on
+    // every profile (there is no other provider ever constructed), so
+    // testnet must be usable by crypto-context-gated commands. Key custody
+    // (encrypted-vs-plaintext) is enforced separately by
+    // ProductionKeySafetyGate/KeyEncryptionPolicy, not by this class.
     const nodo::crypto::ProtocolCryptoContext context =
         nodo::crypto::ProtocolCryptoContext::testnet();
 
     requireCondition(
-        !context.isValid(),
-        "Testnet must refuse temporary cryptography until a production provider exists."
+        context.isValid(),
+        "Testnet crypto context should be valid: real signature providers exist."
     );
 
     requireCondition(
@@ -111,8 +116,8 @@ void testTestnetRefusesTemporaryProvider() {
     );
 
     requireCondition(
-        context.requiresProductionProvider(),
-        "Testnet should require a production provider."
+        !context.requiresProductionProvider(),
+        "Testnet should not require a stricter provider than what already exists."
     );
 
     requireCondition(
@@ -121,8 +126,36 @@ void testTestnetRefusesTemporaryProvider() {
     );
 
     requireCondition(
-        context.rejectionReason().find("production-safe") != std::string::npos,
-        "Testnet rejection reason should explain production provider requirement."
+        context.rejectionReason().empty(),
+        "Valid testnet crypto context should carry no rejection reason."
+    );
+
+    requireCondition(
+        context.signatureProvider().algorithm() ==
+            nodo::crypto::CryptoAlgorithm::BLS12_381,
+        "Testnet validator crypto context should expose BLS12-381."
+    );
+
+    requireCondition(
+        context.userSignatureProvider().algorithm() ==
+            nodo::crypto::CryptoAlgorithm::CLASSIC_ED25519,
+        "Testnet user crypto context should expose Ed25519."
+    );
+}
+
+void testTestnetCandidateNetworkNameMapsToValidContext() {
+    const nodo::crypto::ProtocolCryptoContext context =
+        nodo::crypto::ProtocolCryptoContext::fromNetworkName(
+            "testnet-candidate");
+
+    requireCondition(
+        context.isValid(),
+        "testnet-candidate should map to a valid testnet crypto context."
+    );
+
+    requireCondition(
+        context.profile() == nodo::crypto::ProtocolNetworkProfile::TESTNET,
+        "testnet-candidate should map to the testnet profile."
     );
 }
 
@@ -183,7 +216,8 @@ int main() {
         testLocalnetContextIsExplicitAndValid();
         testNetworkNameMappingAcceptsLocalnet();
         testNetworkNameMappingAcceptsSoakLocalnet();
-        testTestnetRefusesTemporaryProvider();
+        testTestnetIsValidWithRealProviders();
+        testTestnetCandidateNetworkNameMapsToValidContext();
         testMainnetRefusesTemporaryProvider();
         testUnknownNetworkIsRejected();
 

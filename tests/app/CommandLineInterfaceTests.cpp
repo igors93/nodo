@@ -2,6 +2,7 @@
 
 #include "crypto/KeyStore.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -335,6 +336,10 @@ void testOfficialNetworkKeySafetyAndDiagnostics() {
         "Testnet-candidate init should succeed before key safety test."
     );
 
+    // testnet-candidate key creation is only unblocked when the resulting
+    // key is encrypted (TESTNET_SAFE); supply the password non-interactively
+    // via NODO_KEY_PASSWORD so this test does not block on a TTY prompt.
+    setenv("NODO_KEY_PASSWORD", "cli-tests-official-key-password", 1);
     const auto createOfficialKey =
         CommandLineInterface::execute(
             {
@@ -347,17 +352,18 @@ void testOfficialNetworkKeySafetyAndDiagnostics() {
                 "--type",
                 "validator",
                 "--key-id",
-                "local-validator",
+                "official-validator-key",
                 "--timestamp",
                 std::to_string(kTimestamp + 2)
             }
         );
+    unsetenv("NODO_KEY_PASSWORD");
 
     requireCondition(
-        !createOfficialKey.success() &&
-        createOfficialKey.message().find("official network") != std::string::npos &&
-        createOfficialKey.message().find("no development key fallback") != std::string::npos,
-        "Official network key creation should reject plaintext development fallback."
+        createOfficialKey.success() &&
+        createOfficialKey.message().find(
+            "Network profile: testnet-candidate") != std::string::npos,
+        "Encrypted key creation should now be allowed for testnet-candidate."
     );
 
     const auto bypassCreated =

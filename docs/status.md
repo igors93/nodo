@@ -19,7 +19,7 @@ Nodo should still be treated as experimental software. Production custody, publi
 | Staking | Implemented foundation | Stake lifecycle and epoch weight projection exist. Final validator economics are still subject to testnet hardening. |
 | Rewards | Implemented foundation | Epoch settlement and reward evidence foundations exist. Final monetary parameters are not locked. |
 | Slashing and penalties | Implemented foundation | Evidence-backed penalty records and deterministic penalty application foundations exist. Production slashing policy requires audit. |
-| Keys and custody | Development only | Local encrypted key files exist, but production custody requires external signer/HSM workflow, operator policy, and audit. |
+| Keys and custody | Development only | Password-encrypted local keys (`TESTNET_SAFE`) are sufficient and enforced for `testnet-candidate`/`testnet`. Production (mainnet) custody requires an external signer/HSM workflow, operator policy, and audit, and remains blocked. See [Key management](security/key-management.md). |
 | Fast sync and pruning | Partial/foundation | Pruning, snapshots, and sync-hardening foundations exist but still need broader operational validation. |
 | Public testnet | Planned | Requires public genesis, onboarding process, monitoring, runbooks, validator instructions, and soak criteria. |
 | Mainnet | Blocked | Must remain blocked until external security audit, custody policy, economic finalization, governance readiness, and operational runbooks are complete. |

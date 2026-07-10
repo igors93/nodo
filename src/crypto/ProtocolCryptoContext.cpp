@@ -63,8 +63,8 @@ ProtocolCryptoContext ProtocolCryptoContext::testnet() {
         "testnet",
         CryptoPolicy::developmentPolicy(),
         false,
-        true,
-        "testnet requires a production-safe signature provider."
+        false,
+        ""
     );
 }
 
