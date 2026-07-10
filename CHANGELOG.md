@@ -2,7 +2,96 @@
 
 Nodo does not yet publish versioned production releases. This changelog starts as a project-level summary for documentation and pre-release development.
 
-## Unreleased
+## v0.1.3 — 2026-07-10
+
+### Added
+
+- **Protocol domain canonical codecs**: `ProtocolExecutionStateParser` no longer
+  reconstructs state via regex/string parsing. Replaced with one codec per
+  protocol domain (supply, burns, staking, governance, validators, slashing,
+  validator_weights), each with deterministic `encode`/`decode`/`calculateRoot`/
+  `validateRoot` built on `CanonicalWriter`/`CanonicalReader`/`CanonicalHash`. A
+  new cross-domain integrity check validates the shipped `validator_weights`
+  root against the freshly-decoded `validators` payload.
+- **Light client cryptographic verification**: `LightClientProtocolVerifier`
+  gained `verifyFinalizedHeader`/`verifyFinalizedHeaderChain`, which verify the
+  `QuorumCertificate` (per-vote BLS signatures, validator weight vs. threshold,
+  `validator_set_root`) and the finalized record for a header or header range,
+  reusing per-height validator-set history so a validator-set transition
+  mid-range is checked against the correct set on each side. Wired into the
+  RPC-serving `headerRangeJson`/`checkpointJson` paths; `checkpointJson`
+  previously did not verify anything at all.
+- **Typed `ProposalJustification`** (`NONE` / `UNLOCK_QUORUM_CERTIFICATE`)
+  replaces the ad hoc raw quorum-certificate string the BFT lock/unlock safety
+  rule used to carry, with `permitsUnlock()` as an independently testable
+  enforcement point.
+- **Validator key rotation transaction type** (`VALIDATOR_KEY_ROTATE`): payload
+  schema, validator-registry rotation (preserves owner, stake, and status),
+  staking-registry address rotation, and transaction-builder support.
+- **Unified testnet-candidate key policy**: a password-encrypted local key
+  (`TESTNET_SAFE`) is now sufficient and consistently enforced across every
+  signing CLI command (`tx submit`, `governance propose/vote/execute`,
+  `validator exit/unjail`, `stake lock` family, `node run`, `keys create`).
+
+### Fixed
+
+- **Real fast-sync data-loss bug**: nodes fast-syncing from a snapshot
+  previously lost all governance state (proposals, votes) and most staking
+  detail (positions, owner splits, lifecycle records), because the old
+  regex-based parser stubbed the governance domain outright and coarsely
+  re-derived staking from validator stake instead of parsing it. Closed by the
+  canonical domain codecs above; covered by an extended `FastSyncImportTests`
+  scenario that fails before the fix and passes after.
+- **Testnet-candidate was unconditionally blocked regardless of key quality**:
+  `ProtocolCryptoContext::testnet()` was permanently invalid by construction
+  (a hardcoded rejection reason plus a `productionSafe()` check that could
+  never pass), which blocked `tx submit`, `governance propose/vote/execute`,
+  `validator exit/unjail`, and `stake lock` on testnet-candidate outright.
+  `node run` was the sole command unaffected, only because it bypassed the
+  same crypto-context gate entirely — an accidental inconsistency, not a
+  deliberate exemption; it now goes through the same gate as every other
+  command.
+- **`keys create` blanket-blocked every official network**, not just mainnet,
+  leaving its own already-implemented testnet-appropriate password-prompt path
+  unreachable — there was previously no CLI path to create a testnet-candidate
+  key at all.
+- **`ProductionKeySafetyGate` accepted under-encrypted keys**: it special-cased
+  only `PLAINTEXT`, so a `DEV_ENCRYPTED` key — below the `TESTNET_SAFE` bar the
+  policy itself requires — silently passed on official networks. It now
+  reuses `KeyEncryptionPolicy::isAcceptable()`.
+- **Windows/MinGW CI build failure**: two CLI test files called POSIX-only
+  `setenv`/`unsetenv` directly; replaced with a portable helper
+  (`_putenv_s` on `_WIN32`, `setenv`/`unsetenv` elsewhere).
+
+### Changed
+
+- Modernized block state snapshot synchronization; removed the ad hoc scratch
+  scripts (`parse_gen.py`, `parse_test.py`, `run_build.sh`) used during
+  fast-sync development.
+
+### Documentation
+
+- Reorganized documentation structure: archived superseded files and
+  standardized path/naming conventions (`docs/ROADMAP.md` →
+  `docs/roadmap.md`, `docs/serialization/CANONICAL_SERIALIZATION.md` →
+  `canonical-serialization.md`, consolidated transaction docs, removed the
+  stale `docs/testnet-local.md`).
+- Updated `docs/operations/networks-and-data-directory.md`,
+  `docs/security/key-management.md`, and `docs/status.md` to describe the
+  enforced (not aspirational) testnet-candidate key policy.
+
+### Tests
+
+- New/expanded coverage: `ProtocolDomainCodecTests`, extended
+  `FastSyncImportTests`, `LightClientProtocolTests` (10 cases, including
+  forged-signature and stale-registry-across-a-transition negatives), new
+  `LightClientServiceTests`, fully rewritten `ConsensusLockUnlockTests`
+  (a locked validator rejects an unjustified or invalid-QC vote, accepts a
+  valid-QC unlock, and never finalizes two conflicting blocks at one height),
+  `ValidatorKeyRotationTests`, extended `ProtocolCryptoContextTests` and
+  `ProductionKeySafetyGateTests`, and a new `CommandLineNetworkKeyPolicyTests`.
+
+## v0.1.2 — 2026-07-07
 
 ### Removed
 

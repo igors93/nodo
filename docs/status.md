@@ -10,7 +10,7 @@ Nodo should still be treated as experimental software. Production custody, publi
 | --- | --- | --- |
 | Localnet runtime | Implemented | Init, key creation, transaction submission, block production, reload, audit, and status inspection exist for development. |
 | TCP node runtime | Implemented foundation | `node run` exposes peer networking and JSON-RPC. Public operation still requires runbooks and safety gates. |
-| Consensus | Implemented foundation | Weighted BFT-style PREVOTE/PRECOMMIT flow, quorum certificates, proposer selection, timeout/view-change foundations, and QC persistence exist. |
+| Consensus | Implemented foundation | Weighted BFT-style PREVOTE/PRECOMMIT flow, quorum certificates, proposer selection, timeout/view-change foundations, QC persistence, and a tested lock/unlock Proof-of-Lock safety rule (typed `ProposalJustification`) exist. |
 | Finalized storage | Implemented foundation | Finalized block artifacts, manifest updates, state-root validation, storage schema checks, and reload rejection paths exist. |
 | P2P networking | Implemented foundation | Gossip, TCP transport, peer authentication, peer exchange, rate limiting, banning/quarantine, reconnect policy, and eclipse-resistance foundations exist. |
 | JSON-RPC | Implemented foundation | Public protocol API exists at `POST /rpc`; REST remains operational/diagnostic. |
@@ -20,7 +20,7 @@ Nodo should still be treated as experimental software. Production custody, publi
 | Rewards | Implemented foundation | Epoch settlement and reward evidence foundations exist. Final monetary parameters are not locked. |
 | Slashing and penalties | Implemented foundation | Evidence-backed penalty records and deterministic penalty application foundations exist. Production slashing policy requires audit. |
 | Keys and custody | Development only | Password-encrypted local keys (`TESTNET_SAFE`) are sufficient and enforced for `testnet-candidate`/`testnet`. Production (mainnet) custody requires an external signer/HSM workflow, operator policy, and audit, and remains blocked. See [Key management](security/key-management.md). |
-| Fast sync and pruning | Partial/foundation | Pruning, snapshots, and sync-hardening foundations exist but still need broader operational validation. |
+| Fast sync and pruning | Partial/foundation | Pruning, snapshots, and sync-hardening foundations exist. Fast-sync state reconstruction uses deterministic canonical domain codecs (no regex/string parsing); broader operational validation is still needed. |
 | Public testnet | Planned | Requires public genesis, onboarding process, monitoring, runbooks, validator instructions, and soak criteria. |
 | Mainnet | Blocked | Must remain blocked until external security audit, custody policy, economic finalization, governance readiness, and operational runbooks are complete. |
 
