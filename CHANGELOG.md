@@ -2,6 +2,48 @@
 
 Nodo does not yet publish versioned production releases. This changelog starts as a project-level summary for documentation and pre-release development.
 
+## Unreleased
+
+### Security
+
+- **testnet-candidate genesis no longer embeds derivable keys.** Its
+  bootstrap validator keys, owner keys, and funded account were derived from
+  fixed seeds in `GenesisRegistry.cpp`, so anyone could recompute every
+  private key. The seeds are removed and `testnet-candidate` has no built-in
+  genesis: `GenesisRegistry::get("testnet-candidate")` now reports that an
+  operator genesis document is required.
+- **Official-network keys come from the OS CSPRNG.** `nodo keys create` on
+  `testnet-candidate` used `genesisConfigId#keyType#keyId` (or, for the
+  default key ids, the localnet seeds) as the key seed. It now uses
+  `KeyStore::createRandomKey`. `localnet` and `localnet-soak` keep
+  deterministic keys for reproducible development.
+
+### Added
+
+- **Operator genesis document** (`NODO_GENESIS_DOCUMENT_V1`,
+  `config::GenesisDocumentCodec`): carries the genesis timestamp, memo,
+  bootstrap validator BLS public keys with owner addresses, and funded
+  accounts. Network parameters always come from the code profile; the
+  document's chain id and protocol version must match it. Decoding rejects
+  unknown fields, non-canonical hex, bad address checksums, duplicates, and
+  too few validators.
+- **`nodo genesis create`** builds the document from public keys only and
+  never overwrites an existing file; **`nodo genesis inspect`** prints its
+  genesis id for operators to compare.
+- **`nodo init --genesis-file PATH`** initializes a `testnet-candidate` data
+  directory from the document. Later commands read the copy pinned in
+  `{dataDir}/genesis.nodo`, whose id the manifest must match.
+- `nodo keys create --network testnet-candidate` works before `init`, so
+  operators can generate keys before the genesis exists, and prints each
+  key's public key.
+
+### Changed
+
+- `init` writes `genesis.nodo` as a genesis document for every network
+  (previously a write-only debug serialization).
+- Existing `testnet-candidate` data directories were initialized from the
+  revoked built-in genesis and must be re-initialized from a ceremony genesis.
+
 ## v0.1.3 — 2026-07-10
 
 ### Added

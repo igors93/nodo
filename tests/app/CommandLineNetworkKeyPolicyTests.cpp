@@ -13,8 +13,9 @@
 
 #include "app/CommandLineInterface.hpp"
 
-#include "config/GenesisRegistry.hpp"
 #include "crypto/KeyStore.hpp"
+
+#include "../common/TestnetCandidateGenesisFixture.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -76,11 +77,17 @@ void unsetTestEnvVar(
 void initTestnetCandidate(
     const std::filesystem::path& path
 ) {
+    const std::filesystem::path genesisFile =
+        nodo::tests::writeTestnetCandidateTestGenesis(
+            path / "operator-genesis.nodo"
+        );
+
     requireCondition(
         CommandLineInterface::execute({
             "init",
             "--network", "testnet-candidate",
             "--data-dir", path.string(),
+            "--genesis-file", genesisFile.string(),
             "--timestamp", std::to_string(kTimestamp)
         }).success(),
         "testnet-candidate init should succeed."
@@ -108,9 +115,8 @@ void seedLocalnetOnlyKey(
 }
 
 std::string testnetCandidateBootstrapValidatorAddress() {
-    const auto genesis = nodo::config::GenesisRegistry::get("testnet-candidate");
-    requireCondition(genesis.found(), "testnet-candidate genesis must exist.");
-    return genesis.genesis().bootstrapValidators().front().validatorAddress();
+    return nodo::tests::testnetCandidateTestGenesis()
+        .bootstrapValidators().front().validatorAddress();
 }
 
 // A rejection that still names "crypto context" means the permanently

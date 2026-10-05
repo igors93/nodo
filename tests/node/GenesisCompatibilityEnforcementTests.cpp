@@ -15,6 +15,8 @@
 #include "p2p/PeerMessage.hpp"
 #include "utils/Amount.hpp"
 
+#include "../common/TestnetCandidateGenesisFixture.hpp"
+
 #include <cassert>
 #include <filesystem>
 #include <iostream>
@@ -137,14 +139,10 @@ void testNetworkMismatchRejected() {
     const auto manifest = node::NodeDataDirectory::loadManifest(dir);
     assert(manifest.loaded());
 
-    const config::GenesisLookupResult testnetLookup =
-        config::GenesisRegistry::get("testnet-candidate");
-    assert(testnetLookup.found());
-
-    // Validate compatibility with testnet-candidate genesis — must fail (network mismatch).
+    // Validate compatibility with a testnet-candidate genesis — must fail (network mismatch).
     const node::StartupValidationResult result =
         node::RuntimeStartupService::validateDataDirectoryCompatibility(
-            manifest.manifest(), testnetLookup.genesis()
+            manifest.manifest(), nodo::tests::testnetCandidateTestGenesis()
         );
     assert(!result.valid());
 

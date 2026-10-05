@@ -27,6 +27,16 @@ nodo testnet readiness
 nodo diagnostics
 ```
 
+## Genesis commands
+
+`testnet-candidate` has no built-in genesis. Its genesis is a document built from externally generated public keys; see [the genesis ceremony](../operations/networks-and-data-directory.md#testnet-candidate-genesis-ceremony).
+
+```text
+nodo genesis create --network testnet-candidate --output PATH --genesis-validator PUBKEY:OWNER... [--genesis-account ADDRESS:BALANCE_RAW]... [--memo TEXT]
+nodo genesis inspect --genesis-file PATH
+nodo init --network testnet-candidate --genesis-file PATH
+```
+
 ## Governance commands
 
 ```text
@@ -72,6 +82,10 @@ nodo slashing evidence
 | `--validator-key ID` | Validator identity key. |
 | `--identity-key ID` | Peer identity key. Default: `local-user`. |
 | `--key-id ID` | Key id for creation or signing. |
+| `--genesis-file PATH` | Operator genesis document. Required by `init` on `testnet-candidate`. |
+| `--genesis-validator PUBKEY:OWNER` | Bootstrap validator for `genesis create`: BLS public key hex and owner address. Repeatable. |
+| `--genesis-account ADDRESS:BALANCE_RAW` | Funded genesis account for `genesis create`. Repeatable. |
+| `--output PATH` | Output file for `genesis create`. Never overwritten. |
 
 ## Development safety
 

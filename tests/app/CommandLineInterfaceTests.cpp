@@ -2,6 +2,8 @@
 
 #include "crypto/KeyStore.hpp"
 
+#include "../common/TestnetCandidateGenesisFixture.hpp"
+
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -202,6 +204,11 @@ void testNetworkProfileSelectionAndMainnetLock() {
         "Status should accept matching localnet profile."
     );
 
+    const std::filesystem::path testnetGenesis =
+        nodo::tests::writeTestnetCandidateTestGenesis(
+            testnetPath / "operator-genesis.nodo"
+        );
+
     const auto testnetInit =
         CommandLineInterface::execute(
             {
@@ -210,6 +217,8 @@ void testNetworkProfileSelectionAndMainnetLock() {
                 "testnet-candidate",
                 "--data-dir",
                 testnetPath.string(),
+                "--genesis-file",
+                testnetGenesis.string(),
                 "--timestamp",
                 std::to_string(kTimestamp)
             }
@@ -342,6 +351,11 @@ void testOfficialNetworkKeySafetyAndDiagnostics() {
         "Localnet readiness path should accept a local key policy."
     );
 
+    const std::filesystem::path testnetGenesis =
+        nodo::tests::writeTestnetCandidateTestGenesis(
+            testnetPath / "operator-genesis.nodo"
+        );
+
     requireCondition(
         CommandLineInterface::execute(
             {
@@ -350,6 +364,8 @@ void testOfficialNetworkKeySafetyAndDiagnostics() {
                 "testnet-candidate",
                 "--data-dir",
                 testnetPath.string(),
+                "--genesis-file",
+                testnetGenesis.string(),
                 "--timestamp",
                 std::to_string(kTimestamp)
             }

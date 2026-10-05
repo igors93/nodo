@@ -25,6 +25,8 @@ Typical layout:
     qc/<height>.qc
 ```
 
+`genesis.nodo` is a `NODO_GENESIS_DOCUMENT_V1` genesis document (`config::GenesisDocumentCodec`) written by `init`. For networks without a built-in genesis (`testnet-candidate`), later commands load the genesis from this file, and the manifest's genesis id must match it.
+
 ## Storage schema
 
 Before the manifest is trusted, the loader validates the storage schema. Unknown schema ids, missing schema files, future versions, unsafe downgrades, and malformed files must be rejected.

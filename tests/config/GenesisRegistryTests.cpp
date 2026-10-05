@@ -22,13 +22,18 @@ void testLocalnetGenesisFound() {
   assert(!result.genesis().genesisAccounts().empty());
 }
 
-void testTestnetCandidateFound() {
+// testnet-candidate keys must be created outside the code, so the registry
+// must never build its genesis from embedded seeds.
+void testTestnetCandidateRequiresOperatorGenesis() {
+  assert(GenesisRegistry::requiresOperatorGenesis("testnet-candidate"));
+  assert(!GenesisRegistry::requiresOperatorGenesis("localnet"));
+  assert(!GenesisRegistry::requiresOperatorGenesis("localnet-soak"));
+  assert(!GenesisRegistry::requiresOperatorGenesis("mainnet"));
+
   const GenesisLookupResult result = GenesisRegistry::get("testnet-candidate");
-  assert(result.found());
-  assert(!result.genesis().deterministicId().empty());
-  assert(result.genesis().networkParameters().networkName() ==
-         "testnet-candidate");
-  assert(!result.genesis().bootstrapValidators().empty());
+  assert(!result.found());
+  assert(result.reason().find("genesis create") != std::string::npos);
+  assert(result.reason().find("--genesis-file") != std::string::npos);
 }
 
 void testSoakGenesisFound() {
@@ -55,7 +60,7 @@ void testUnknownNetworkMissing() {
 
 void testHasRegisteredGenesis() {
   assert(GenesisRegistry::hasRegisteredGenesis("localnet"));
-  assert(GenesisRegistry::hasRegisteredGenesis("testnet-candidate"));
+  assert(!GenesisRegistry::hasRegisteredGenesis("testnet-candidate"));
   assert(GenesisRegistry::hasRegisteredGenesis("localnet-soak"));
   assert(!GenesisRegistry::hasRegisteredGenesis("mainnet"));
   assert(!GenesisRegistry::hasRegisteredGenesis("unknown"));
@@ -66,10 +71,12 @@ void testRegisteredGenesisId() {
       GenesisRegistry::registeredGenesisId("localnet");
   assert(!localnetId.empty());
 
-  const std::string testnetId =
-      GenesisRegistry::registeredGenesisId("testnet-candidate");
-  assert(!testnetId.empty());
-  assert(localnetId != testnetId);
+  const std::string soakId =
+      GenesisRegistry::registeredGenesisId("localnet-soak");
+  assert(!soakId.empty());
+  assert(localnetId != soakId);
+
+  assert(GenesisRegistry::registeredGenesisId("testnet-candidate").empty());
 
   const std::string mainnetId = GenesisRegistry::registeredGenesisId("mainnet");
   assert(mainnetId.empty());
@@ -84,14 +91,6 @@ void testGenesisIsDeterministic() {
   assert(first.found() && second.found());
   assert(first.genesis().deterministicId() ==
          second.genesis().deterministicId());
-}
-
-void testLocalnetAndTestnetGenesisAreDifferent() {
-  const std::string localnetId =
-      GenesisRegistry::registeredGenesisId("localnet");
-  const std::string testnetId =
-      GenesisRegistry::registeredGenesisId("testnet-candidate");
-  assert(localnetId != testnetId);
 }
 
 // A bootstrap validator's own address is BLS-derived (its consensus key),
@@ -142,14 +141,13 @@ void testSoakValidatorsHaveDistinctVotingOwners() {
 
 int main() {
   testLocalnetGenesisFound();
-  testTestnetCandidateFound();
+  testTestnetCandidateRequiresOperatorGenesis();
   testSoakGenesisFound();
   testMainnetMissing();
   testUnknownNetworkMissing();
   testHasRegisteredGenesis();
   testRegisteredGenesisId();
   testGenesisIsDeterministic();
-  testLocalnetAndTestnetGenesisAreDifferent();
   testLocalnetValidatorHasDistinctVotingOwner();
   testSoakValidatorsHaveDistinctVotingOwners();
   return 0;

@@ -49,6 +49,11 @@ public:
   bool outputJson;
   std::string pruningMode;
   std::uint64_t pruningRetainEpochs;
+  std::filesystem::path genesisFile; // --genesis-file PATH (operator genesis)
+  std::vector<std::string> genesisValidators; // --genesis-validator (repeatable)
+  std::vector<std::string> genesisAccounts;   // --genesis-account (repeatable)
+  std::string genesisMemo;                    // --memo TEXT for genesis create
+  std::filesystem::path outputPath;           // --output PATH
 };
 
 enum class CommandLineStatus { SUCCESS, INVALID_ARGUMENTS, COMMAND_FAILED };
@@ -105,6 +110,12 @@ private:
   executeDiagnostics(const CommandLineOptions &options);
 
   static CommandLineResult executeKeysCreate(const CommandLineOptions &options);
+
+  static CommandLineResult
+  executeGenesisCreate(const CommandLineOptions &options);
+
+  static CommandLineResult
+  executeGenesisInspect(const CommandLineOptions &options);
 
   static CommandLineResult executeKeysList(const CommandLineOptions &options);
 

@@ -330,6 +330,69 @@ void testEncryptedKey() {
     clean(path);
 }
 
+// Official network keys must come from the CSPRNG: two keys created with
+// identical inputs must differ, and each must reload with its own material.
+void testRandomKeysAreUniqueAndReloadable() {
+    const std::filesystem::path first = tempPath() / "random-a";
+    const std::filesystem::path second = tempPath() / "random-b";
+    clean(tempPath());
+
+    const std::string password = "random-key-password-123";
+    const std::string network = "testnet-candidate";
+
+    for (const KeyStoreKeyType keyType :
+         {KeyStoreKeyType::VALIDATOR, KeyStoreKeyType::USER}) {
+        const std::string keyId =
+            keyType == KeyStoreKeyType::VALIDATOR ? "validator" : "owner";
+
+        const auto createdA = KeyStore::createRandomKey(
+            first, keyId, keyType, kTimestamp, password, network
+        );
+        const auto createdB = KeyStore::createRandomKey(
+            second, keyId, keyType, kTimestamp, password, network
+        );
+
+        requireCondition(
+            createdA.success() && createdB.success(),
+            "Random key creation should succeed. Reason: " +
+                createdA.reason() + createdB.reason()
+        );
+
+        requireCondition(
+            createdA.metadata().publicKey().keyMaterial() !=
+                createdB.metadata().publicKey().keyMaterial() &&
+            createdA.metadata().address() != createdB.metadata().address(),
+            "Random keys created from identical inputs must differ."
+        );
+
+        requireCondition(
+            createdA.metadata().networkProfile() == network &&
+            createdA.metadata().encryptionLevel() ==
+                nodo::crypto::KeyEncryptionLevel::TESTNET_SAFE,
+            "Random key should carry its network profile and encryption level."
+        );
+
+        const auto loaded = KeyStore::loadKey(first, keyId, password);
+        requireCondition(
+            loaded.loaded() &&
+            loaded.keyPair().publicKey().keyMaterial() ==
+                createdA.metadata().publicKey().keyMaterial(),
+            "Random key should reload with the material it was created with."
+        );
+
+        const auto duplicate = KeyStore::createRandomKey(
+            first, keyId, keyType, kTimestamp, password, network
+        );
+        requireCondition(
+            !duplicate.success() &&
+            duplicate.status() == nodo::crypto::KeyStoreStatus::ALREADY_EXISTS,
+            "Random key creation must never overwrite an existing key."
+        );
+    }
+
+    clean(tempPath());
+}
+
 } // namespace
 
 int main() {
@@ -339,6 +402,7 @@ int main() {
         testSoakProfileUsesDevelopmentKeyPolicy();
         testRejectsMalformedKeyFile();
         testEncryptedKey();
+        testRandomKeysAreUniqueAndReloadable();
 
         std::cout << "Nodo key store tests passed.\n";
         return 0;

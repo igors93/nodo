@@ -1,5 +1,6 @@
 #include "node/NodeDataDirectory.hpp"
 
+#include "config/GenesisDocumentCodec.hpp"
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "core/GenesisVerifier.hpp"
 #include "node/ProtocolStateTransition.hpp"
@@ -863,9 +864,11 @@ NodeDataDirectoryInitResult NodeDataDirectory::initialize(
             );
         }
 
+        // The genesis document is what later commands load for networks
+        // that require an operator genesis; the manifest's genesis id pins it.
         writeTextFile(
             directoryConfig.genesisConfigPath(),
-            genesisConfig.serialize() + "\n"
+            config::GenesisDocumentCodec::encode(genesisConfig)
         );
 
         writeTextFile(

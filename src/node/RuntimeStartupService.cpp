@@ -1,9 +1,12 @@
 #include "node/RuntimeStartupService.hpp"
 
+#include "config/GenesisDocumentCodec.hpp"
 #include "config/NetworkProfileRegistry.hpp"
 #include "core/GenesisVerifier.hpp"
 #include "storage/StorageSchemaVersion.hpp"
 
+#include <filesystem>
+#include <system_error>
 #include <utility>
 
 namespace nodo::node {
@@ -48,6 +51,80 @@ config::GenesisLookupResult RuntimeStartupService::resolveGenesis(
     }
 
     return config::GenesisRegistry::get(networkName);
+}
+
+config::GenesisLookupResult RuntimeStartupService::resolveGenesis(
+    const std::string& networkName,
+    const std::filesystem::path& dataDirectory,
+    const std::filesystem::path& genesisFile
+) {
+    if (!config::GenesisRegistry::requiresOperatorGenesis(networkName)) {
+        if (!genesisFile.empty()) {
+            return config::GenesisLookupResult::missing(
+                "Network '" + networkName + "' uses its built-in genesis; "
+                "--genesis-file applies only to networks that require an "
+                "operator genesis document."
+            );
+        }
+
+        return resolveGenesis(networkName);
+    }
+
+    // A data directory that belongs to another network must be reported as
+    // such, before its pinned genesis document is read for this network.
+    const NodeDataDirectoryReadResult existing =
+        NodeDataDirectory::loadManifest(NodeDataDirectoryConfig(dataDirectory));
+    if (existing.loaded()) {
+        const StartupValidationResult networkCheck =
+            validateDataDirectoryNetwork(
+                existing.manifest(),
+                config::NetworkProfileRegistry::get(networkName)
+            );
+        if (!networkCheck.valid()) {
+            return config::GenesisLookupResult::missing(networkCheck.reason());
+        }
+    }
+
+    const bool fromDataDirectory = genesisFile.empty();
+    const std::filesystem::path path = fromDataDirectory
+        ? NodeDataDirectoryConfig(dataDirectory).genesisConfigPath()
+        : genesisFile;
+
+    std::error_code existsError;
+    if (!std::filesystem::is_regular_file(path, existsError)) {
+        if (fromDataDirectory) {
+            return config::GenesisLookupResult::missing(
+                "Network '" + networkName + "' requires an operator genesis "
+                "document, but data directory '" + dataDirectory.string() +
+                "' has none. Initialize it with 'nodo init --network " +
+                networkName + " --genesis-file PATH'."
+            );
+        }
+
+        return config::GenesisLookupResult::missing(
+            "Genesis file '" + path.string() + "' does not exist."
+        );
+    }
+
+    try {
+        config::GenesisConfig genesis =
+            config::GenesisDocumentCodec::loadFile(path);
+
+        if (genesis.networkParameters().networkName() != networkName) {
+            return config::GenesisLookupResult::missing(
+                "Genesis document '" + path.string() + "' declares network '" +
+                genesis.networkParameters().networkName() +
+                "', but the command selected network '" + networkName + "'."
+            );
+        }
+
+        return config::GenesisLookupResult::found(std::move(genesis));
+    } catch (const std::exception& error) {
+        return config::GenesisLookupResult::missing(
+            "Genesis document '" + path.string() + "' is invalid: " +
+            error.what()
+        );
+    }
 }
 
 StartupValidationResult RuntimeStartupService::validateNetworkProfile(
@@ -127,23 +204,14 @@ StartupValidationResult RuntimeStartupService::validateDataDirectoryCompatibilit
     const NodeRuntimeManifest& manifest,
     const config::GenesisConfig& genesis
 ) {
+    const StartupValidationResult networkCheck =
+        validateDataDirectoryNetwork(manifest, genesis.networkParameters());
+    if (!networkCheck.valid()) {
+        return networkCheck;
+    }
+
     const config::NetworkParameters& params = genesis.networkParameters();
     const std::string registeredGenesisId = genesis.deterministicId();
-
-    if (manifest.networkName() != params.networkName() ||
-        manifest.chainId() != params.chainId() ||
-        manifest.protocolVersion() != params.protocolVersion()) {
-        return StartupValidationResult::failed(
-            "Data directory belongs to network '" +
-            manifest.networkName() +
-            "' (chain='" + manifest.chainId() +
-            "', protocol='" + manifest.protocolVersion() +
-            "'), but command selected network '" +
-            params.networkName() +
-            "' (chain='" + params.chainId() +
-            "', protocol='" + params.protocolVersion() + "')."
-        );
-    }
 
     // Genesis identity must match. A directory initialized from a different genesis
     // cannot be reused for a different genesis on the same network name and chain id.
@@ -175,26 +243,73 @@ StartupValidationResult RuntimeStartupService::validateDataDirectoryCompatibilit
     return StartupValidationResult::passed();
 }
 
-config::GenesisLookupResult RuntimeStartupService::resolveAndVerify(
-    const std::string& networkName
+StartupValidationResult RuntimeStartupService::validateDataDirectoryNetwork(
+    const NodeRuntimeManifest& manifest,
+    const config::NetworkParameters& params
 ) {
-    const config::GenesisLookupResult lookup = resolveGenesis(networkName);
+    if (manifest.networkName() != params.networkName() ||
+        manifest.chainId() != params.chainId() ||
+        manifest.protocolVersion() != params.protocolVersion()) {
+        return StartupValidationResult::failed(
+            "Data directory belongs to network '" +
+            manifest.networkName() +
+            "' (chain='" + manifest.chainId() +
+            "', protocol='" + manifest.protocolVersion() +
+            "'), but command selected network '" +
+            params.networkName() +
+            "' (chain='" + params.chainId() +
+            "', protocol='" + params.protocolVersion() + "')."
+        );
+    }
+
+    return StartupValidationResult::passed();
+}
+
+namespace {
+
+config::GenesisLookupResult verifyResolvedGenesis(
+    const config::GenesisLookupResult& lookup
+) {
     if (!lookup.found()) {
         return lookup;
     }
 
     const config::NetworkParameters& params = lookup.genesis().networkParameters();
-    const StartupValidationResult profileCheck = validateNetworkProfile(params);
+    const StartupValidationResult profileCheck =
+        RuntimeStartupService::validateNetworkProfile(params);
     if (!profileCheck.valid()) {
         return config::GenesisLookupResult::missing(profileCheck.reason());
     }
 
-    const StartupValidationResult genesisCheck = verifyGenesis(lookup.genesis());
+    const StartupValidationResult genesisCheck =
+        RuntimeStartupService::verifyGenesis(lookup.genesis());
     if (!genesisCheck.valid()) {
         return config::GenesisLookupResult::missing(genesisCheck.reason());
     }
 
     return lookup;
+}
+
+} // namespace
+
+config::GenesisLookupResult RuntimeStartupService::resolveAndVerify(
+    const std::string& networkName,
+    const std::filesystem::path& dataDirectory,
+    const std::filesystem::path& genesisFile
+) {
+    if (!config::NetworkProfileRegistry::isKnown(networkName)) {
+        return resolveGenesis(networkName);
+    }
+
+    return verifyResolvedGenesis(
+        resolveGenesis(networkName, dataDirectory, genesisFile)
+    );
+}
+
+config::GenesisLookupResult RuntimeStartupService::resolveAndVerify(
+    const std::string& networkName
+) {
+    return verifyResolvedGenesis(resolveGenesis(networkName));
 }
 
 } // namespace nodo::node

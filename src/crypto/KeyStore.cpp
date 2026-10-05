@@ -446,8 +446,61 @@ KeyStoreCreateResult KeyStore::createLocalKey(
     const std::string& password,
     const std::string& networkProfile
 ) {
+    if (seed.empty()) {
+        return KeyStoreCreateResult::rejected(
+            KeyStoreStatus::INVALID_INPUT,
+            "Key creation input is invalid."
+        );
+    }
+
+    return storeNewKey(
+        keysDirectory,
+        keyId,
+        keyType,
+        [&]() {
+            return keyType == KeyStoreKeyType::VALIDATOR
+                ? KeyPair::createDeterministicBls12381KeyPair(seed)
+                : KeyPair::createDeterministicEd25519KeyPair(seed);
+        },
+        createdAt,
+        password,
+        networkProfile
+    );
+}
+
+KeyStoreCreateResult KeyStore::createRandomKey(
+    const std::filesystem::path& keysDirectory,
+    const std::string& keyId,
+    KeyStoreKeyType keyType,
+    std::int64_t createdAt,
+    const std::string& password,
+    const std::string& networkProfile
+) {
+    return storeNewKey(
+        keysDirectory,
+        keyId,
+        keyType,
+        [&]() {
+            return keyType == KeyStoreKeyType::VALIDATOR
+                ? KeyPair::createBls12381KeyPair()
+                : KeyPair::createEd25519KeyPair();
+        },
+        createdAt,
+        password,
+        networkProfile
+    );
+}
+
+KeyStoreCreateResult KeyStore::storeNewKey(
+    const std::filesystem::path& keysDirectory,
+    const std::string& keyId,
+    KeyStoreKeyType keyType,
+    const std::function<KeyPair()>& generateKeyPair,
+    std::int64_t createdAt,
+    const std::string& password,
+    const std::string& networkProfile
+) {
     if (!isSafeKeyId(keyId) ||
-        seed.empty() ||
         createdAt <= 0) {
         return KeyStoreCreateResult::rejected(
             KeyStoreStatus::INVALID_INPUT,
@@ -468,10 +521,7 @@ KeyStoreCreateResult KeyStore::createLocalKey(
             );
         }
 
-        const KeyPair keyPair =
-            keyType == KeyStoreKeyType::VALIDATOR
-                ? KeyPair::createDeterministicBls12381KeyPair(seed)
-                : KeyPair::createDeterministicEd25519KeyPair(seed);
+        const KeyPair keyPair = generateKeyPair();
 
         const std::string provider =
             keyType == KeyStoreKeyType::VALIDATOR

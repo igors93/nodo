@@ -41,15 +41,25 @@ private:
  * Unknown networks and networks without a registered genesis fail immediately.
  * This registry must never silently substitute a placeholder genesis.
  *
- * Development keys embedded in localnet, localnet-soak and
- * testnet-candidate genesis are deterministic and clearly labeled. They must
- * not be used in production networks.
+ * Development keys embedded in localnet and localnet-soak genesis are
+ * deterministic and clearly labeled. They must not be used in production
+ * networks.
+ *
+ * testnet-candidate deliberately has no built-in genesis: a genesis derived
+ * from seeds in the source code would publish every validator's private key.
+ * Its genesis is an operator document built from externally generated
+ * public keys (see GenesisDocumentCodec and requiresOperatorGenesis).
  */
 class GenesisRegistry {
 public:
   // Returns the registered genesis for the given network name.
-  // Returns missing() if the network is unknown or has no registered genesis.
+  // Returns missing() if the network is unknown, has no registered genesis,
+  // or requires an operator genesis document.
   static GenesisLookupResult get(const std::string &networkName);
+
+  // Returns true for networks whose genesis must come from an operator
+  // genesis document instead of this registry.
+  static bool requiresOperatorGenesis(const std::string &networkName);
 
   // Returns true if a registered genesis exists for the given network.
   static bool hasRegisteredGenesis(const std::string &networkName);

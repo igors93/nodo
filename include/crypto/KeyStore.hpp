@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -194,6 +195,18 @@ public:
         const std::string& networkProfile = LOCAL_NETWORK_PROFILE
     );
 
+    // Creates a key from the operating system CSPRNG. Official networks must
+    // use this: a seed-derived key is only as secret as its seed, and the
+    // seeds createLocalKey() receives are derivable from public data.
+    static KeyStoreCreateResult createRandomKey(
+        const std::filesystem::path& keysDirectory,
+        const std::string& keyId,
+        KeyStoreKeyType keyType,
+        std::int64_t createdAt,
+        const std::string& password = "",
+        const std::string& networkProfile = LOCAL_NETWORK_PROFILE
+    );
+
     static KeyStoreLoadResult loadKey(
         const std::filesystem::path& keysDirectory,
         const std::string& keyId,
@@ -219,6 +232,16 @@ public:
     );
 
 private:
+    static KeyStoreCreateResult storeNewKey(
+        const std::filesystem::path& keysDirectory,
+        const std::string& keyId,
+        KeyStoreKeyType keyType,
+        const std::function<KeyPair()>& generateKeyPair,
+        std::int64_t createdAt,
+        const std::string& password,
+        const std::string& networkProfile
+    );
+
     static std::string keyFileContents(
         const std::string& keyId,
         KeyStoreKeyType keyType,

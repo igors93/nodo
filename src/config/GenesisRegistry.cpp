@@ -19,18 +19,6 @@ crypto::PublicKey deterministicUserKey(const std::string &seed) {
   return crypto::KeyPair::createDeterministicEd25519KeyPair(seed).publicKey();
 }
 
-std::string testnetCandidateUserKeySeed() {
-  return "nodo-testnet-candidate-user-seed";
-}
-
-std::string testnetCandidateValidatorKeySeed(std::size_t index) {
-  return "nodo-testnet-candidate-validator-seed-" + std::to_string(index);
-}
-
-std::string testnetCandidateValidatorOwnerKeySeed(std::size_t index) {
-  return "nodo-testnet-candidate-validator-owner-seed-" + std::to_string(index);
-}
-
 std::string ownerAddressForSeed(const std::string &seed) {
   return crypto::AddressDerivation::deriveFromPublicKey(
              deterministicUserKey(seed))
@@ -78,31 +66,6 @@ GenesisConfig buildLocalnetGenesis() {
       {GenesisAccountConfig(userAddress,
                             utils::Amount::fromRawUnits(1000000000000), 0)},
       "nodo-localnet-genesis");
-}
-
-GenesisConfig buildTestnetCandidateGenesis() {
-  const NetworkParameters params = NetworkParameters::testnetCandidate();
-
-  std::vector<BootstrapValidatorConfig> validators;
-  validators.reserve(params.minimumValidatorCount());
-
-  for (std::size_t i = 0; i < params.minimumValidatorCount(); ++i) {
-    validators.emplace_back(
-        deterministicValidatorKey(testnetCandidateValidatorKeySeed(i)), 1, 1,
-        "testnet-candidate-genesis-validator-" + std::to_string(i),
-        ownerAddressForSeed(testnetCandidateValidatorOwnerKeySeed(i)));
-  }
-
-  const std::string userAddress =
-      crypto::AddressDerivation::deriveFromPublicKey(
-          deterministicUserKey(testnetCandidateUserKeySeed()))
-          .value();
-
-  return GenesisConfig(
-      params, 1900000000, std::move(validators),
-      {GenesisAccountConfig(userAddress,
-                            utils::Amount::fromRawUnits(1000000000000), 0)},
-      "nodo-testnet-candidate-genesis");
 }
 
 bool isLocalnetName(const std::string &name) { return name == "localnet"; }
@@ -162,8 +125,13 @@ GenesisLookupResult GenesisRegistry::get(const std::string &networkName) {
     return GenesisLookupResult::found(buildSoakGenesis());
   }
 
-  if (isTestnetCandidateName(networkName)) {
-    return GenesisLookupResult::found(buildTestnetCandidateGenesis());
+  if (requiresOperatorGenesis(networkName)) {
+    return GenesisLookupResult::missing(
+        "Network '" + networkName +
+        "' has no built-in genesis: its validator and account keys must be "
+        "created outside the code. Build a genesis document with 'nodo "
+        "genesis create' and initialize with 'nodo init --genesis-file "
+        "PATH'.");
   }
 
   if (networkName == "mainnet") {
@@ -177,6 +145,10 @@ GenesisLookupResult GenesisRegistry::get(const std::string &networkName) {
       "No registered genesis for network '" + networkName +
       "'. "
       "Unknown network profiles cannot start a runtime.");
+}
+
+bool GenesisRegistry::requiresOperatorGenesis(const std::string &networkName) {
+  return isTestnetCandidateName(networkName);
 }
 
 bool GenesisRegistry::hasRegisteredGenesis(const std::string &networkName) {

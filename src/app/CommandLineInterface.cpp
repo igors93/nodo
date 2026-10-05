@@ -2,8 +2,10 @@
 #include "app/ProtocolCommandPolicy.hpp"
 #include "node/NodeDaemon.hpp"
 
+#include "config/GenesisDocumentCodec.hpp"
 #include "config/GenesisRegistry.hpp"
 #include "config/NetworkProfileRegistry.hpp"
+#include "core/GenesisVerifier.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "core/TransactionType.hpp"
@@ -41,6 +43,7 @@
 #include "node/RuntimeStateLoader.hpp"
 #include "node/TestnetReadinessChecker.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
+#include "storage/AtomicFile.hpp"
 #include "utils/Amount.hpp"
 
 #include <atomic>
@@ -51,6 +54,8 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
+#include <utility>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -229,7 +234,7 @@ bool isCommandGroup(const std::string &value) {
   return value == "tx" || value == "block" || value == "node" ||
          value == "chain" || value == "keys" || value == "validator" ||
          value == "stake" || value == "rewards" || value == "slashing" ||
-         value == "governance" || value == "testnet";
+         value == "governance" || value == "testnet" || value == "genesis";
 }
 
 bool isLegacyDevelopmentCommand(const std::string &command) {
@@ -263,11 +268,20 @@ CommandLineResult validateSelectedNetwork(const CommandLineOptions &options) {
   return CommandLineResult::success("");
 }
 
+// Every command resolves its genesis here, so networks that require an
+// operator genesis read it from --genesis-file or the data directory.
+config::GenesisLookupResult
+resolveGenesisForOptions(const CommandLineOptions &options) {
+  return node::RuntimeStartupService::resolveAndVerify(
+      options.networkName, options.dataDirectory, options.genesisFile);
+}
+
 std::optional<std::string>
 manifestNetworkMismatch(const node::NodeRuntimeManifest &manifest,
                         const CommandLineOptions &options) {
   const config::GenesisLookupResult lookup =
-      node::RuntimeStartupService::resolveGenesis(options.networkName);
+      node::RuntimeStartupService::resolveGenesis(
+          options.networkName, options.dataDirectory, options.genesisFile);
 
   if (!lookup.found()) {
     return "Cannot resolve genesis for network '" + options.networkName +
@@ -316,7 +330,7 @@ CommandLineResult submitSignedTransactionToPersistentMempool(
   const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
 
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
@@ -492,7 +506,9 @@ CommandLineOptions::CommandLineOptions()
       feeRaw(100), nonce(0), timestamp(nowUnixSeconds()),
       governanceEffectiveHeight(0), governanceVotingPeriodBlocks(3),
       showHelp(false), keyIdProvided(false), validatorKeyIdProvided(false),
-      outputJson(false), pruningMode("archive"), pruningRetainEpochs(1) {}
+      outputJson(false), pruningMode("archive"), pruningRetainEpochs(1),
+      genesisFile(), genesisValidators(), genesisAccounts(), genesisMemo(""),
+      outputPath() {}
 
 std::string commandLineStatusToString(CommandLineStatus status) {
   switch (status) {
@@ -660,6 +676,14 @@ CommandLineInterface::execute(const std::vector<std::string> &args) {
 
     if (options.command == "keys list") {
       return executeKeysList(options);
+    }
+
+    if (options.command == "genesis create") {
+      return executeGenesisCreate(options);
+    }
+
+    if (options.command == "genesis inspect") {
+      return executeGenesisInspect(options);
     }
 
     if (options.command == "validator list") {
@@ -1119,6 +1143,53 @@ CommandLineInterface::parse(const std::vector<std::string> &args) {
       continue;
     }
 
+    if (option == "--genesis-file") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--genesis-file requires a value.");
+      }
+      options.genesisFile = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--genesis-validator") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--genesis-validator requires a value "
+                                    "(BLS_PUBLIC_KEY_HEX:OWNER_ADDRESS).");
+      }
+      options.genesisValidators.push_back(args[index + 1]);
+      index += 2;
+      continue;
+    }
+
+    if (option == "--genesis-account") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument(
+            "--genesis-account requires a value (ADDRESS:BALANCE_RAW).");
+      }
+      options.genesisAccounts.push_back(args[index + 1]);
+      index += 2;
+      continue;
+    }
+
+    if (option == "--memo") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--memo requires a value.");
+      }
+      options.genesisMemo = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--output") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--output requires a value.");
+      }
+      options.outputPath = args[index + 1];
+      index += 2;
+      continue;
+    }
+
     if (option == "--json") {
       options.outputJson = true;
       index++;
@@ -1138,7 +1209,12 @@ std::string CommandLineInterface::helpText() {
          "Usage:\n"
          "  nodo help\n"
          "  nodo init [--network localnet|testnet-candidate] [--data-dir PATH] "
-         "[--peer-id ID] [--endpoint HOST:PORT]\n"
+         "[--genesis-file PATH] [--peer-id ID] [--endpoint HOST:PORT]\n"
+         "  nodo genesis create --network testnet-candidate --output PATH "
+         "--genesis-validator BLS_PUBLIC_KEY_HEX:OWNER_ADDRESS... "
+         "[--genesis-account ADDRESS:BALANCE_RAW]... [--memo TEXT] "
+         "[--timestamp SECONDS]\n"
+         "  nodo genesis inspect --genesis-file PATH\n"
          "  nodo status [--network localnet|testnet-candidate] [--data-dir "
          "PATH]\n"
          "  nodo inspect [--network localnet|testnet-candidate] [--data-dir "
@@ -1194,6 +1270,16 @@ std::string CommandLineInterface::helpText() {
          "  --data-dir PATH      Node data directory. Default: .nodo\n"
          "  --network NAME       Network profile: localnet, localnet-soak, or "
          "testnet-candidate. mainnet is blocked.\n"
+         "  --genesis-file PATH  Operator genesis document. Required by init "
+         "on testnet-candidate, which has no built-in genesis; later "
+         "commands read the copy pinned in the data directory.\n"
+         "  --genesis-validator PUBKEY:OWNER Bootstrap validator for genesis "
+         "create: BLS public key hex and owner address (repeatable).\n"
+         "  --genesis-account ADDRESS:BALANCE_RAW Funded account for genesis "
+         "create (repeatable).\n"
+         "  --memo TEXT          Genesis memo for genesis create.\n"
+         "  --output PATH        Output file for genesis create. Never "
+         "overwritten.\n"
          "  --peer-id ID         Local peer id for init/load. Default: "
          "local-node\n"
          "  --endpoint HOST:PORT Local endpoint for init/load. Default: "
@@ -1257,7 +1343,7 @@ CommandLineInterface::localPeerFromOptions(const CommandLineOptions &options) {
 CommandLineResult
 CommandLineInterface::executeInit(const CommandLineOptions &options) {
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
 
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
@@ -1365,7 +1451,7 @@ CommandLineInterface::executeInspect(const CommandLineOptions &options) {
 CommandLineResult
 CommandLineInterface::executeReload(const CommandLineOptions &options) {
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
 
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
@@ -1404,7 +1490,7 @@ CommandLineInterface::executeChainAudit(const CommandLineOptions &options) {
   const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
 
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
@@ -1437,10 +1523,18 @@ CommandLineInterface::executeChainAudit(const CommandLineOptions &options) {
 
 CommandLineResult CommandLineInterface::executeTestnetReadiness(
     const CommandLineOptions &options) {
+  if (config::NetworkProfileRegistry::isOfficialNetwork(options.networkName) &&
+      !options.keyIdProvided) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Official network readiness requires --key-id. "
+        "Do not default to localnet development keys.\n");
+  }
+
   const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
 
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
@@ -1462,14 +1556,6 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
       return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                         *mismatch + "\n");
     }
-  }
-
-  if (config::NetworkProfileRegistry::isOfficialNetwork(options.networkName) &&
-      !options.keyIdProvided) {
-    return CommandLineResult::failure(
-        CommandLineStatus::INVALID_ARGUMENTS,
-        "Official network readiness requires --key-id. "
-        "Do not default to localnet development keys.\n");
   }
 
   const std::string validatorKeyId =
@@ -1537,7 +1623,11 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
   ctxBuilder.withManifest(manifest)
       .withGenesisFacts(
           genesisVerified,
-          config::GenesisRegistry::hasRegisteredGenesis(options.networkName),
+          // The genesis is either built in or the operator document pinned
+          // at init; resolveGenesisForOptions() returned early otherwise.
+          config::GenesisRegistry::hasRegisteredGenesis(options.networkName) ||
+              config::GenesisRegistry::requiresOperatorGenesis(
+                  options.networkName),
           genesisConfig.deterministicId(),
           config::networkClassToString(params.networkClass()))
       .withChainAuditResult(chainAuditPassed, treasuryReportVerified)
@@ -1633,10 +1723,18 @@ CommandLineResult CommandLineInterface::executeTestnetReadiness(
 
 CommandLineResult
 CommandLineInterface::executeDiagnostics(const CommandLineOptions &options) {
+  if (config::NetworkProfileRegistry::isOfficialNetwork(options.networkName) &&
+      !options.keyIdProvided) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "Official network diagnostics requires --key-id. "
+        "Do not default to localnet development keys.\n");
+  }
+
   const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
 
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
@@ -1658,14 +1756,6 @@ CommandLineInterface::executeDiagnostics(const CommandLineOptions &options) {
       return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                         *mismatch + "\n");
     }
-  }
-
-  if (config::NetworkProfileRegistry::isOfficialNetwork(options.networkName) &&
-      !options.keyIdProvided) {
-    return CommandLineResult::failure(
-        CommandLineStatus::INVALID_ARGUMENTS,
-        "Official network diagnostics requires --key-id. "
-        "Do not default to localnet development keys.\n");
   }
 
   const std::string validatorKeyId =
@@ -1730,22 +1820,27 @@ CommandLineInterface::executeKeysCreate(const CommandLineOptions &options) {
   const node::NodeDataDirectoryReadResult manifest =
       node::NodeDataDirectory::loadManifest(directoryConfig);
 
-  if (!manifest.loaded()) {
+  // A genesis ceremony needs validator and owner public keys before the
+  // genesis exists, so networks that require an operator genesis may create
+  // keys in a data directory that has not been initialized yet.
+  if (!manifest.loaded() &&
+      !config::GenesisRegistry::requiresOperatorGenesis(options.networkName)) {
     return CommandLineResult::failure(
         CommandLineStatus::COMMAND_FAILED,
         "Cannot create key before init: " + manifest.reason() + "\n");
   }
 
-  const std::optional<std::string> mismatch =
-      manifestNetworkMismatch(manifest.manifest(), options);
+  if (manifest.loaded()) {
+    const std::optional<std::string> mismatch =
+        manifestNetworkMismatch(manifest.manifest(), options);
 
-  if (mismatch.has_value()) {
-    return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
-                                      *mismatch + "\n");
+    if (mismatch.has_value()) {
+      return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
+                                        *mismatch + "\n");
+    }
   }
 
-  if (crypto::KeyEncryptionPolicy::isMainnetBlocked(
-          manifest.manifest().networkName())) {
+  if (crypto::KeyEncryptionPolicy::isMainnetBlocked(options.networkName)) {
     return CommandLineResult::failure(
         CommandLineStatus::COMMAND_FAILED,
         "Cannot create a key for mainnet: no audited key provider is "
@@ -1795,8 +1890,20 @@ CommandLineInterface::executeKeysCreate(const CommandLineOptions &options) {
     }
   }
 
+  // Official network keys come from the OS CSPRNG. Seed-derived keys are
+  // reproducible from public data (the genesis id and key id, or the
+  // localnet seeds), so they stay confined to development networks.
+  const bool randomKeys =
+      crypto::KeyEncryptionPolicy::isOfficialNetwork(options.networkName);
+
   const auto createKey = [&](const std::string &keyId,
                              crypto::KeyStoreKeyType keyType) {
+    if (randomKeys) {
+      return crypto::KeyStore::createRandomKey(
+          directoryConfig.keysDirectoryPath(), keyId, keyType,
+          options.timestamp, password, options.networkName);
+    }
+
     return crypto::KeyStore::createLocalKey(
         directoryConfig.keysDirectoryPath(), keyId, keyType,
         seedFor(keyId, keyType), options.timestamp, password,
@@ -1833,15 +1940,23 @@ CommandLineInterface::executeKeysCreate(const CommandLineOptions &options) {
 
   std::ostringstream output;
 
-  output << "Nodo development key created.\n"
-         << "WARNING: this key is deterministically derived from the genesis "
-            "config id and key id, not real randomness. Do not use it for "
-            "custody, production validators, treasury, or mainnet.\n";
+  if (randomKeys) {
+    output << "Nodo key created from the operating system CSPRNG.\n"
+           << "Keep the key file and its password private; share only the "
+              "public key and address.\n";
+  } else {
+    output << "Nodo development key created.\n"
+           << "WARNING: this key is deterministically derived from the "
+              "genesis config id and key id, not real randomness. Do not use "
+              "it for custody, production validators, treasury, or mainnet.\n";
+  }
 
   for (const crypto::KeyStoreCreateResult &created : createdKeys) {
     output << "Key id: " << created.metadata().keyId() << "\n"
            << "Key type: "
            << crypto::keyStoreKeyTypeToString(created.metadata().keyType())
+           << "\n"
+           << "Public key: " << created.metadata().publicKey().keyMaterial()
            << "\n"
            << "Address: " << created.metadata().address() << "\n"
            << "Algorithm: "
@@ -1903,10 +2018,195 @@ CommandLineInterface::executeKeysList(const CommandLineOptions &options) {
   return CommandLineResult::success(output.str());
 }
 
+namespace {
+
+// Splits "LEFT:RIGHT" at the first ':'; both sides must be non-empty.
+std::pair<std::string, std::string> splitColonPair(const std::string &option,
+                                                   const std::string &value,
+                                                   const std::string &shape) {
+  const std::size_t separator = value.find(':');
+  if (separator == std::string::npos || separator == 0 ||
+      separator + 1 >= value.size()) {
+    throw std::invalid_argument(option + " must have the form " + shape +
+                                ": " + value);
+  }
+  return {value.substr(0, separator), value.substr(separator + 1)};
+}
+
+void describeGenesis(std::ostringstream &output,
+                     const config::GenesisConfig &genesis) {
+  const config::NetworkParameters &params = genesis.networkParameters();
+
+  output << "Network: " << params.networkName() << "\n"
+         << "Chain id: " << params.chainId() << "\n"
+         << "Genesis id: " << genesis.deterministicId() << "\n"
+         << "Genesis timestamp: " << genesis.genesisTimestamp() << "\n"
+         << "Genesis memo: " << genesis.genesisMemo() << "\n"
+         << "Bootstrap validators: " << genesis.bootstrapValidators().size()
+         << "\n";
+
+  for (std::size_t index = 0; index < genesis.bootstrapValidators().size();
+       ++index) {
+    const config::BootstrapValidatorConfig &validator =
+        genesis.bootstrapValidators()[index];
+    output << "  [" << index << "] validator="
+           << validator.validatorAddress()
+           << " owner=" << validator.effectiveOwnerAddress() << "\n";
+  }
+
+  output << "Genesis accounts: " << genesis.genesisAccounts().size() << "\n";
+
+  for (std::size_t index = 0; index < genesis.genesisAccounts().size();
+       ++index) {
+    const config::GenesisAccountConfig &account =
+        genesis.genesisAccounts()[index];
+    output << "  [" << index << "] address=" << account.address()
+           << " balanceRaw=" << account.balance().rawUnits() << "\n";
+  }
+}
+
+} // namespace
+
+CommandLineResult
+CommandLineInterface::executeGenesisCreate(const CommandLineOptions &options) {
+  if (!config::GenesisRegistry::requiresOperatorGenesis(options.networkName)) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "genesis create applies only to networks that require an operator "
+        "genesis. Network '" +
+            options.networkName + "' uses its built-in genesis.\n");
+  }
+
+  if (options.outputPath.empty()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "genesis create requires --output PATH.\n");
+  }
+
+  if (options.genesisValidators.empty()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "genesis create requires --genesis-validator "
+        "BLS_PUBLIC_KEY_HEX:OWNER_ADDRESS for each bootstrap validator.\n");
+  }
+
+  std::error_code existsError;
+  if (std::filesystem::exists(options.outputPath, existsError)) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Refusing to overwrite existing file '" + options.outputPath.string() +
+            "'.\n");
+  }
+
+  const config::NetworkParameters params = networkParametersForOptions(options);
+
+  std::vector<config::BootstrapValidatorConfig> validators;
+  for (std::size_t index = 0; index < options.genesisValidators.size();
+       ++index) {
+    const auto [publicKeyHex, ownerAddress] =
+        splitColonPair("--genesis-validator", options.genesisValidators[index],
+                       "BLS_PUBLIC_KEY_HEX:OWNER_ADDRESS");
+    validators.emplace_back(
+        crypto::PublicKey(crypto::CryptoAlgorithm::BLS12_381, publicKeyHex), 1,
+        1, params.networkName() + "-genesis-validator-" + std::to_string(index),
+        ownerAddress);
+  }
+
+  std::vector<config::GenesisAccountConfig> accounts;
+  for (const std::string &entry : options.genesisAccounts) {
+    const auto [address, balanceText] = splitColonPair(
+        "--genesis-account", entry, "ADDRESS:BALANCE_RAW");
+    const std::int64_t balanceRaw =
+        parseSignedInt64("--genesis-account balance", balanceText);
+    if (balanceRaw < 0) {
+      throw std::invalid_argument(
+          "--genesis-account balance must be non-negative.");
+    }
+    accounts.emplace_back(address, utils::Amount::fromRawUnits(balanceRaw), 0);
+  }
+
+  const std::string memo = options.genesisMemo.empty()
+                               ? "nodo-" + params.networkName() + "-genesis"
+                               : options.genesisMemo;
+
+  const std::string contents = config::GenesisDocumentCodec::encode(
+      config::GenesisConfig(params, options.timestamp, std::move(validators),
+                            std::move(accounts), memo));
+
+  // Decoding what we are about to write applies every rule a node enforces
+  // when it loads the document: canonical hex, address checksums,
+  // duplicates, and the network's minimum validator count.
+  config::GenesisConfig genesis;
+  try {
+    genesis = config::GenesisDocumentCodec::decode(contents);
+  } catch (const std::exception &error) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        std::string("Genesis is invalid: ") + error.what() + "\n");
+  }
+
+  const core::GenesisVerificationResult verified =
+      core::GenesisVerifier::verify(genesis);
+  if (!verified.isValid()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Genesis verification failed: " +
+            core::genesisVerificationStatusToString(verified.status()) + ": " +
+            verified.reason() + "\n");
+  }
+
+  storage::AtomicFile::writeTextFile(options.outputPath, contents);
+
+  std::ostringstream output;
+  output << "Genesis document written.\n"
+         << "File: " << options.outputPath.string() << "\n";
+  describeGenesis(output, genesis);
+  output << "Next: every operator checks the genesis id with 'nodo genesis "
+            "inspect --genesis-file PATH', then runs 'nodo init --network "
+         << params.networkName() << " --genesis-file PATH'.\n";
+
+  return CommandLineResult::success(output.str());
+}
+
+CommandLineResult
+CommandLineInterface::executeGenesisInspect(const CommandLineOptions &options) {
+  if (options.genesisFile.empty()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::INVALID_ARGUMENTS,
+        "genesis inspect requires --genesis-file PATH.\n");
+  }
+
+  config::GenesisConfig genesis;
+  try {
+    genesis = config::GenesisDocumentCodec::loadFile(options.genesisFile);
+  } catch (const std::exception &error) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Genesis document '" + options.genesisFile.string() +
+            "' is invalid: " + error.what() + "\n");
+  }
+
+  const core::GenesisVerificationResult verified =
+      core::GenesisVerifier::verify(genesis);
+  if (!verified.isValid()) {
+    return CommandLineResult::failure(
+        CommandLineStatus::COMMAND_FAILED,
+        "Genesis verification failed: " +
+            core::genesisVerificationStatusToString(verified.status()) + ": " +
+            verified.reason() + "\n");
+  }
+
+  std::ostringstream output;
+  output << "Genesis document: " << options.genesisFile.string() << "\n";
+  describeGenesis(output, genesis);
+
+  return CommandLineResult::success(output.str());
+}
+
 CommandLineResult
 CommandLineInterface::executeValidatorList(const CommandLineOptions &options) {
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
 
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
@@ -1960,7 +2260,7 @@ CommandLineResult CommandLineInterface::executeSubmitTransaction(
   const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
 
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
@@ -2253,7 +2553,7 @@ CommandLineResult CommandLineInterface::executeGovernanceExecute(
 CommandLineResult CommandLineInterface::executeGovernanceStatus(
     const CommandLineOptions &options) {
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -2292,7 +2592,7 @@ CommandLineResult CommandLineInterface::executeGovernanceStatus(
 CommandLineResult
 CommandLineInterface::executeGovernanceList(const CommandLineOptions &options) {
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -2338,7 +2638,7 @@ CommandLineInterface::executeGovernanceShow(const CommandLineOptions &options) {
   }
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -2380,7 +2680,7 @@ CommandLineResult CommandLineInterface::executeGovernanceAudit(
   const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -2462,7 +2762,7 @@ CommandLineInterface::executeProduceBlock(const CommandLineOptions &options) {
   const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
 
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
@@ -2777,7 +3077,7 @@ CommandLineInterface::executeNodeRun(const CommandLineOptions &options) {
 
   // Resolve and verify genesis — refuse to start with an unknown genesis.
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
 
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
@@ -2958,7 +3258,7 @@ CommandLineResult CommandLineInterface::executeValidatorStatus(
   }
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -3022,7 +3322,7 @@ CommandLineInterface::executeValidatorExit(const CommandLineOptions &options) {
   const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -3150,7 +3450,7 @@ CommandLineResult CommandLineInterface::executeValidatorUnjail(
   const node::NodeDataDirectoryConfig directoryConfig(options.dataDirectory);
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -3305,7 +3605,7 @@ CommandLineInterface::executeStakeLock(const CommandLineOptions &options) {
   }
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -3480,7 +3780,7 @@ CommandLineInterface::executeStakeStatus(const CommandLineOptions &options) {
   }
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -3577,7 +3877,7 @@ CommandLineInterface::executeStakeStatus(const CommandLineOptions &options) {
 CommandLineResult
 CommandLineInterface::executeStakePositions(const CommandLineOptions &options) {
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -3664,7 +3964,7 @@ CommandLineInterface::executeStakePositions(const CommandLineOptions &options) {
 CommandLineResult
 CommandLineInterface::executeStakeAudit(const CommandLineOptions &options) {
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -3701,7 +4001,7 @@ CommandLineInterface::executeRewardsStatus(const CommandLineOptions &options) {
                                         : options.validatorAddress;
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
@@ -3763,7 +4063,7 @@ CommandLineResult CommandLineInterface::executeSlashingEvidence(
                                         : options.validatorAddress;
 
   const config::GenesisLookupResult genesisLookup =
-      node::RuntimeStartupService::resolveAndVerify(options.networkName);
+      resolveGenesisForOptions(options);
   if (!genesisLookup.found()) {
     return CommandLineResult::failure(CommandLineStatus::COMMAND_FAILED,
                                       genesisLookup.reason() + "\n");
