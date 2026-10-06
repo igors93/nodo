@@ -13,6 +13,7 @@
 // pattern); it does not need a multi-validator split vote to exercise the
 // 2/3 approval bar, since a lone validator's YES vote already clears it.
 
+#include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
@@ -52,12 +53,7 @@ using namespace nodo;
 constexpr std::int64_t kTimestamp = 1900000000LL;
 const std::string kRecipient = "treasury-grant-recipient";
 const std::string kFillerRecipient = "treasury-e2e-filler-recipient";
-
-void require(bool condition, const std::string &message) {
-  if (!condition) {
-    throw std::runtime_error(message);
-  }
-}
+using nodo::test::require;
 
 std::filesystem::path tempPath(const std::string &suffix) {
   return std::filesystem::temp_directory_path() /

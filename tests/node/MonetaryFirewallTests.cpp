@@ -17,7 +17,7 @@ using nodo::config::NetworkParameters;
 using nodo::crypto::KeyPair;
 using nodo::node::MonetaryFirewall;
 using nodo::node::MonetaryFirewallAudit;
-using nodo::node::MonetaryPolicy;
+using nodo::node::MonetaryFirewallRule;
 using nodo::utils::Amount;
 
 void requireCondition(
@@ -71,8 +71,8 @@ void testGenesisSupply() {
 }
 
 void testAnnualMintLimit() {
-    const MonetaryPolicy policy =
-        MonetaryPolicy::protocolDefault();
+    const MonetaryFirewallRule policy =
+        MonetaryFirewallRule::protocolDefault();
 
     requireCondition(
         policy.isValid(),

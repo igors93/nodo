@@ -141,7 +141,7 @@ node::RuntimeStateLoadResult runtimeWithOneDelta(
 // default / empty state so that the earlier audit stages (reward evidence,
 // treasury section) pass without needing a full production artifact.
 node::FinalizedBlockArtifact makeArtifact(
-    std::vector<node::SlashingEvidenceRecord> slashingRecords = {},
+    std::vector<node::ValidatorRiskEvidenceRecord> slashingRecords = {},
     node::SlashingEvidenceSummary slashingSummary =
         node::SlashingEvidenceSummary::notEvaluated(),
     std::vector<node::ValidatorLifecycleRecord> lifecycleRecords = {},
@@ -176,10 +176,10 @@ node::FinalizedBlockArtifact makeArtifact(
         node::FeeEconomicBalance{},
         node::FeeBurnRecord{},
         node::TreasuryFeeRecord{},
-        std::move(slashingRecords),              // SlashingEvidenceRecord (check A/B target)
+        std::move(slashingRecords),              // ValidatorRiskEvidenceRecord (check A/B target)
         {},                                      // slashingPreparationRecords
         std::move(slashingSummary),              // SlashingEvidenceSummary (check B target)
-        {},                                      // cryptographicSlashingEvidenceRecords
+        {},                                      // cryptographicValidatorRiskEvidenceRecords
         {},                                      // stakePenaltyRecords
         node::CryptographicSlashingSummary{},
         node::GovernancePolicySnapshot{},
@@ -220,7 +220,7 @@ void testPerRecordChecksPassOnCleanArtifacts() {
 // more than one artifact — that would mean the same misbehaviour was slashed
 // twice.
 void testDuplicateSlashEvidenceAcrossArtifactsIsRejected() {
-    const node::SlashingEvidenceRecord duplicate(
+    const node::ValidatorRiskEvidenceRecord duplicate(
         "validator-slash",
         42,
         "double-vote",
@@ -252,7 +252,7 @@ void testDuplicateSlashEvidenceAcrossArtifactsIsRejected() {
 }
 
 // Check B: the summary's evidenceCount must equal the number of actual
-// SlashingEvidenceRecord entries in the same artifact.
+// ValidatorRiskEvidenceRecord entries in the same artifact.
 void testSlashEvidenceSummaryCountMismatchIsRejected() {
     // Summary claims 3 evidence records but the artifact contains only 1.
     const node::SlashingEvidenceSummary activeSummary(
@@ -266,7 +266,7 @@ void testSlashEvidenceSummaryCountMismatchIsRejected() {
         "prep-digest"   // non-empty required when evidenceCount > 0
     );
 
-    const node::SlashingEvidenceRecord oneRecord(
+    const node::ValidatorRiskEvidenceRecord oneRecord(
         "validator-b",
         10,
         "liveness-failure",

@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "core/LedgerRecord.hpp"
 #include "core/LedgerRecordDomainValidator.hpp"
 #include "consensus/SlashingEvidence.hpp"
@@ -21,12 +22,7 @@ using namespace nodo::economics;
 namespace {
 
 constexpr std::int64_t kTs = 1700000200;
-
-void require(bool condition, const char* msg) {
-    if (!condition) {
-        throw std::runtime_error(msg);
-    }
-}
+using nodo::test::require;
 
 // Builds a LedgerRecord by injecting a raw payload under an arbitrary type.
 // Used to test failure cases where the payload is syntactically wrong.

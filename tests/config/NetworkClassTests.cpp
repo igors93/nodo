@@ -28,9 +28,14 @@ void testTestnetCandidateIsStaging() {
 }
 
 void testMainnetIsLockedProduction() {
-  const NetworkParameters params("nodo-mainnet-1", "mainnet", "nodo/0.1", 600,
-                                 7, 2, 3, 250, 256, 10000, 10000, 15, 6,
-                                 "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2");
+  const NetworkParameters params(nodo::config::NetworkParameterValues{
+      .chainId = "nodo-mainnet-1", .networkName = "mainnet",
+      .protocolVersion = "nodo/0.1", .epochDurationSeconds = 600,
+      .minimumValidatorCount = 7, .quorumThresholdNumerator = 2,
+      .quorumThresholdDenominator = 3, .maxTransactionsPerBlock = 250,
+      .maxPeerCount = 256, .maxMempoolTransactions = 10000,
+      .minimumFeeRawUnits = 10000, .targetBlockTimeSeconds = 15,
+      .finalityDepth = 6});
   assert(params.networkClass() == NetworkClass::LOCKED_PRODUCTION);
   assert(networkClassToString(params.networkClass()) == "LOCKED_PRODUCTION");
 }
@@ -56,9 +61,12 @@ void testDevelopmentLocalNotSafeForProduction() {
 }
 
 void testUnsafeQuorumThresholdIsRejected() {
-  const NetworkParameters params("nodo-unsafe-1", "unsafe", "nodo/0.1", 60,
-                                 1, 1, 2, 1000, 128, 10000, 0, 60, 1,
-                                 "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2");
+  const NetworkParameters params(nodo::config::NetworkParameterValues{
+      .chainId = "nodo-unsafe-1", .networkName = "unsafe",
+      .protocolVersion = "nodo/0.1", .epochDurationSeconds = 60,
+      .minimumValidatorCount = 1, .quorumThresholdNumerator = 1,
+      .quorumThresholdDenominator = 2, .maxTransactionsPerBlock = 1000,
+      .maxPeerCount = 128});
   assert(!params.isValid());
 }
 

@@ -1,6 +1,9 @@
 # Testing
 
-Nodo has a broad C++ test suite and Python diagnostic scenarios.
+Nodo has a broad C++ test suite and Python diagnostic scenarios. By default,
+the C++ tests share one runner binary per module while retaining individual
+CTest names. Set `-DNODO_TESTS_GROUPED=OFF` for a dedicated binary per test
+when isolating sanitizer or coverage runs.
 
 ## Run all C++ tests
 
@@ -19,15 +22,15 @@ Windows:
 ## Direct CTest
 
 ```bash
-ctest --test-dir build --output-on-failure
+ctest --test-dir build/cmake --output-on-failure
 ```
 
 ## Filtered test runs
 
 ```bash
-ctest --test-dir build -R consensus --output-on-failure
-ctest --test-dir build -R storage --output-on-failure
-ctest --test-dir build -R governance --output-on-failure
+ctest --test-dir build/cmake -R consensus --output-on-failure
+ctest --test-dir build/cmake -R storage --output-on-failure
+ctest --test-dir build/cmake -R governance --output-on-failure
 ```
 
 ## Diagnostic scenarios

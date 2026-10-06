@@ -54,12 +54,12 @@ std::int64_t basisPointAmount(
 
 } // namespace
 
-MonetaryPolicy::MonetaryPolicy()
+MonetaryFirewallRule::MonetaryFirewallRule()
     : m_maxAnnualInflationBasisPoints(0),
       m_ruleId(""),
       m_reason("") {}
 
-MonetaryPolicy::MonetaryPolicy(
+MonetaryFirewallRule::MonetaryFirewallRule(
     std::uint32_t maxAnnualInflationBasisPoints,
     std::string ruleId,
     std::string reason
@@ -68,29 +68,29 @@ MonetaryPolicy::MonetaryPolicy(
       m_ruleId(std::move(ruleId)),
       m_reason(std::move(reason)) {}
 
-std::uint32_t MonetaryPolicy::maxAnnualInflationBasisPoints() const {
+std::uint32_t MonetaryFirewallRule::maxAnnualInflationBasisPoints() const {
     return m_maxAnnualInflationBasisPoints;
 }
 
-const std::string& MonetaryPolicy::ruleId() const {
+const std::string& MonetaryFirewallRule::ruleId() const {
     return m_ruleId;
 }
 
-const std::string& MonetaryPolicy::reason() const {
+const std::string& MonetaryFirewallRule::reason() const {
     return m_reason;
 }
 
-bool MonetaryPolicy::isValid() const {
+bool MonetaryFirewallRule::isValid() const {
     return !m_ruleId.empty() &&
            !m_reason.empty() &&
            m_maxAnnualInflationBasisPoints <= NODO_MAX_ANNUAL_INFLATION_BASIS_POINTS;
 }
 
-std::string MonetaryPolicy::deterministicId() const {
+std::string MonetaryFirewallRule::deterministicId() const {
     return serialize();
 }
 
-std::string MonetaryPolicy::serialize() const {
+std::string MonetaryFirewallRule::serialize() const {
     std::ostringstream oss;
 
     oss << "MonetaryPolicy{"
@@ -102,8 +102,8 @@ std::string MonetaryPolicy::serialize() const {
     return oss.str();
 }
 
-MonetaryPolicy MonetaryPolicy::protocolDefault() {
-    return MonetaryPolicy(
+MonetaryFirewallRule MonetaryFirewallRule::protocolDefault() {
+    return MonetaryFirewallRule(
         NODO_MAX_ANNUAL_INFLATION_BASIS_POINTS,
         "NODO_MONETARY_POLICY_V1",
         "MAX_4_PERCENT_ANNUAL_INFLATION"
@@ -260,7 +260,7 @@ bool MonetaryFirewallAudit::isValid() const {
         m_annualMintLimit.isNegative() ||
         m_annualMintUsedBefore.isNegative() ||
         m_annualMintUsedAfter.isNegative() ||
-        m_policyId != MonetaryPolicy::protocolDefault().deterministicId() ||
+        m_policyId != MonetaryFirewallRule::protocolDefault().deterministicId() ||
         (m_reason != MonetaryFirewall::ZERO_MINT_REASON &&
          m_reason != MonetaryFirewall::EPOCH_REWARD_MINT_REASON)) {
         return false;
@@ -315,7 +315,7 @@ utils::Amount MonetaryFirewall::genesisSupply(
 
 utils::Amount MonetaryFirewall::annualMintLimit(
     utils::Amount baseSupply,
-    const MonetaryPolicy& policy
+    const MonetaryFirewallRule& policy
 ) {
     if (baseSupply.isNegative() || !policy.isValid()) {
         throw std::invalid_argument("Cannot calculate annual mint limit from invalid monetary inputs.");
@@ -384,8 +384,8 @@ MonetaryFirewallAudit MonetaryFirewall::buildAuditWithSupplyBefore(
         throw std::invalid_argument("Monetary firewall rejected block: minting requires an explicit monetary authorization record.");
     }
 
-    const MonetaryPolicy policy =
-        MonetaryPolicy::protocolDefault();
+    const MonetaryFirewallRule policy =
+        MonetaryFirewallRule::protocolDefault();
 
     const utils::Amount supplyAfter =
         calculateSupplyAfter(
@@ -441,7 +441,7 @@ MonetaryFirewallAudit MonetaryFirewall::buildEpochRewardAuditWithSupplyBefore(
         burned.isNegative() || annualMintUsedBefore.isNegative()) {
         throw std::invalid_argument("Invalid canonical epoch reward audit inputs.");
     }
-    const MonetaryPolicy policy = MonetaryPolicy::protocolDefault();
+    const MonetaryFirewallRule policy = MonetaryFirewallRule::protocolDefault();
     const utils::Amount annualLimit = annualMintLimit(supplyBefore, policy);
     const utils::Amount annualMintUsedAfter = annualMintUsedBefore + minted;
     if (annualMintUsedAfter > annualLimit) {

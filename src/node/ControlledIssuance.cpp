@@ -448,8 +448,8 @@ InflationEpochSnapshot ControlledIssuance::buildInflationEpochSnapshot(
         throw std::invalid_argument("Cannot build controlled issuance epoch with negative minted amount.");
     }
 
-    const MonetaryPolicy policy =
-        MonetaryPolicy::protocolDefault();
+    const MonetaryFirewallRule policy =
+        MonetaryFirewallRule::protocolDefault();
 
     const utils::Amount baseSupply =
         MonetaryFirewall::genesisSupply(

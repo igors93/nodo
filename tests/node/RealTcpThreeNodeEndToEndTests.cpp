@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "core/TransactionBuilder.hpp"
@@ -50,12 +51,7 @@ constexpr std::chrono::seconds kRpcStartupTimeout = 60s;
 volatile std::sig_atomic_t gChildStopRequested = 0;
 
 void requestChildStop(int) { gChildStopRequested = 1; }
-
-void require(bool condition, const std::string &message) {
-  if (!condition) {
-    throw std::runtime_error(message);
-  }
-}
+using nodo::test::require;
 
 std::int64_t unixTime() {
   return std::chrono::duration_cast<std::chrono::seconds>(

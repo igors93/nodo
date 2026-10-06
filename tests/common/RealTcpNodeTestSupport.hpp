@@ -4,7 +4,7 @@
 /*
  * Shared harness for real multi-node TCP end-to-end tests.
  *
- * Each of the 3 nodes runs as a real, separate OS process (fork + exec of
+ * Each node runs as a real, separate OS process (fork of
  * the current test binary's own daemon-child routine), bound to real
  * loopback TCP ports, communicating exclusively over the same TcpTransport /
  * GossipMesh / NodeRpcServer stack a production node uses. Nothing here
@@ -71,7 +71,10 @@ using namespace std::chrono_literals;
 
 #ifndef _WIN32
 
-constexpr std::size_t kTestNodeCount = 3;
+#ifndef NODO_REAL_TCP_NODE_COUNT
+#define NODO_REAL_TCP_NODE_COUNT 3
+#endif
+constexpr std::size_t kTestNodeCount = NODO_REAL_TCP_NODE_COUNT;
 constexpr std::int64_t kConsensusTickMilliseconds = 1000;
 constexpr std::int64_t kDaemonTickMilliseconds = 20;
 constexpr std::chrono::seconds kRpcStartupTimeout = 120s;

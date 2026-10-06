@@ -54,11 +54,11 @@ These ten findings explain the phase order. Each one is detailed in its phase.
 
 **Goal:** a repository whose build, CI, documentation and module structure can be trusted, so every later protocol change is reviewed and tested on solid ground.
 
-- [ ] **0.1 · High · No license.**
+- [x] **0.1 · High · No license.**
   The repository has no `LICENSE` file, and the README says redistribution rights are undefined. Outside operators, auditors and contributors cannot legally rely on the code.
   *Fix:* choose and add a license and contributor terms.
 
-- [ ] **0.2 · Medium · Documentation contradicts the code.**
+- [x] **0.2 · Medium · Documentation contradicts the code.**
   - The README links to `docs/PERSISTENT_BLOCK_STATE_SYNC.md`, which does not exist.
   - The README storage layout (`manifest`, `schema`, `sync/checkpoint.conf`) contradicts [storage and reload](architecture/storage-and-reload.md) (`manifest.nodo`, `storage_schema.nodo`).
   - The README says `ConsensusEventLoop` runs on a background thread, but `NodeDaemon` ticks it synchronously.
@@ -69,45 +69,52 @@ These ten findings explain the phase order. Each one is detailed in its phase.
 
   *Fix:* do one pass to make the docs describe actual behavior, and add a Markdown link checker to CI.
 
-- [ ] **0.3 · Low · Build artifacts are committed.**
+- [x] **0.3 · Low · Build artifacts are committed.**
   `diagnostics/python/dist/*.whl`, `*.tar.gz` and `diagnostics/python/src/nodo_diag.egg-info/` are tracked.
   *Fix:* remove them and ignore them.
 
-- [ ] **0.4 · Low · Version sources disagree.**
+- [x] **0.4 · Low · Version sources disagree.**
   CMake declares `project(Nodo VERSION 0.1.0)`, the changelog is at `v0.1.3`, and the network profiles use protocol version `nodo/0.1`.
   *Fix:* use a single software-version source, and keep the protocol version separate and explicit.
 
-- [ ] **0.5 · Medium · Supply chain is partly unpinned.**
+- [x] **0.5 · Medium · Supply chain is partly unpinned.**
   Asio is fetched by git tag without a hash in [`cmake/NodoDependencies.cmake`](../cmake/NodoDependencies.cmake); only nlohmann/json is pinned by SHA-256. blst is discovered from `$HOME` with no version check (CI uses v0.3.11). The first configure needs network access.
   *Fix:* pin every dependency by hash, verify the blst version at configure time, and support offline or vendored builds.
 
-- [ ] **0.6 · Medium · No structured logging.**
+- [x] **0.6 · Medium · No structured logging.**
   `src/` outside `src/app` contains 30 writes to `std::cout`/`std::cerr`, including `[DEBUG]` prints in `NodeDaemon`, `NodeOrchestrator`, `NodeRpcServer`, `Mempool` and `MempoolBlockProducer`. `ConsensusEventLoop` still has `// debug loop` leftovers.
   *Fix:* add a leveled logger with component tags, and remove stdout writes from library code.
 
-- [ ] **0.7 · Medium · Protocol helpers and concepts are duplicated.**
+- [x] **0.7 · Medium · Protocol helpers and concepts are duplicated.**
   There are 24 local copies of `isSafeScalar` with diverging limits (for example, the one in `consensus/SlashingEvidence.cpp` takes a `maxSize`), and 16 local `hashString` helpers. Some concepts exist twice:
   - `node::MonetaryPolicy` and `economics::MonetaryPolicy`, whose inflation constant "must stay in sync";
   - `node::SlashingEvidenceRecord` and `consensus::SlashingEvidenceRecord`.
 
   *Fix:* one shared validation and hashing utility, and one type per concept.
+  *Implemented:* scalar and hash implementations are centralized; the two
+  differently shaped monetary and slashing records now have distinct names.
 
-- [ ] **0.8 · Medium · Layering violations and oversized files.**
+- [x] **0.8 · Medium · Layering violations and oversized files.**
   `src/consensus` and `include/consensus` include `node/` headers, which reverses the dependency direction in the module map. They include `NodeRuntime`, `RuntimeBlockPipeline`, `EpochRewardSettlementService`, slashing gossip and more, 23 includes in total. Some files are very large: `CommandLineInterface.cpp` (4.1k lines), `FinalizedBlockArtifactCodec.cpp` (3.7k), `RuntimeBlockPipeline.cpp` (2.1k), `NodeRpcServer.cpp` (2.0k).
   *Fix:* define the narrow interfaces consensus needs from the runtime, and split the files by responsibility. Phases 3 and 4 rewrite these paths.
+  *Implemented:* runtime orchestration moved into `node/consensus`, leaving
+  `consensus` independent of `node` headers. CLI parsing and stake commands,
+  artifact state and codec, RPC transport and handlers, and pipeline execution
+  and result validation are split into separate translation units. The large
+  codec and CLI methods will be redesigned in later phases.
 
-- [ ] **0.9 · Low · Non-English comments.**
+- [x] **0.9 · Low · Non-English comments.**
   Eight source and header files have Portuguese comments (for example `include/utils/Amount.hpp` and `include/crypto/PrivateKey.hpp`), which breaks the English-only rule in `CONTRIBUTING.md`.
 
-- [ ] **0.10 · Low · Swap-prone configuration constructor.**
+- [x] **0.10 · Low · Swap-prone configuration constructor.**
   `NetworkParameters` is built from 24 positional arguments (see `NetworkParameters::developmentLocal`). Two swapped integers compile silently.
   *Fix:* use a named-field struct or a builder.
 
-- [ ] **0.11 · Low · Non-portable arithmetic.**
+- [x] **0.11 · Low · Non-portable arithmetic.**
   `unsigned __int128` is used in consensus math (`ConsensusWeight`, `QuorumCertificateBuilder::requiredVotingWeight`), which builds on GCC and Clang only.
   *Fix:* use a portable checked 128-bit helper, or document the supported compilers.
 
-- [ ] **0.12 · High · CI does not catch whole classes of bugs.**
+- [x] **0.12 · High · CI does not catch whole classes of bugs.**
   - There is no ThreadSanitizer job, although the RPC server (4 Asio workers), the discovery thread and the transport share state.
   - There is no fuzzing, no static analysis (clang-tidy, cppcheck, CodeQL), and no coverage report.
   - Warnings are not errors.
@@ -115,20 +122,34 @@ These ten findings explain the phase order. Each one is detailed in its phase.
   - The real-TCP multi-node tests are disabled on Windows.
 
   *Fix:* add TSan, static analysis, coverage, `-Werror`, and Release test runs, plus fuzzing infrastructure (the fuzz targets come in 2.11).
+  *Implemented:* TSan, cppcheck, coverage, Release CTest, `-Werror`, and a
+  libFuzzer smoke target are configured. Windows now runs a real authenticated
+  two-daemon TCP handshake test; process-isolated scenarios remain POSIX-only.
+  The new CI jobs still require their first green run.
 
-- [ ] **0.13 · Low · No shared test framework.**
+- [x] **0.13 · Low · No shared test framework.**
   All 327 test files define their own `main` and ad-hoc assertion helpers, and each builds a separate executable.
   *Fix:* adopt one test framework with shared fixtures and fewer binaries.
+  *Implemented:* CMake groups tests into module runners with stable CTest
+  names; source-level `main` functions become named runner entries. Shared
+  integration fixtures and the common `require` helper live in `tests/common`.
+  Release tests keep assertions enabled.
 
-- [ ] **0.14 · Medium · The "local testnet" is not a network.**
+- [x] **0.14 · Medium · The "local testnet" is not a network.**
   `scripts/testnet_local_multi_node.sh` runs `block produce` independently on each node. The result is N isolated chains with no consensus between them.
   *Fix:* build a real multi-validator devnet (`node run` with `--peer`, for example with docker compose) and run it in CI.
+  *Implemented:* `node_FourValidatorDevnetTests` launches four processes over authenticated TCP and checks common finality and persisted chain audit. Linux and macOS CTest jobs include it. Its first CI run is pending; the Windows fork-based harness does not run it.
 
 **Exit gate:**
 - CI is green on Linux (GCC, Clang, ASan/UBSan, TSan), macOS and Windows, with `-Werror` and static analysis.
 - The docs link check passes, and the docs describe actual behavior.
 - A license is present, dependencies are pinned, and logging is in place.
 - A devnet with at least 4 validators runs real networked consensus in CI.
+
+**Gate status:** awaiting the first green multi-platform CI run, including
+Linux's four-validator devnet and sanitizer/static-analysis jobs. The local
+Windows build, documentation check, targeted protocol tests and authenticated
+real-TCP handshake pass.
 
 ---
 
@@ -352,7 +373,7 @@ These ten findings explain the phase order. Each one is detailed in its phase.
   *Fix:* Tendermint-style `validValue`/`validRound`. Proposers re-propose the valid block with its proof-of-lock round, and validators unlock on a later-round proof-of-lock (2/3+ PREVOTEs).
 
 - [ ] **4.2 · Critical · Votes are exposed before they are persisted.**
-  In `ConsensusEventLoop::tick` ([`ConsensusEventLoop.cpp`](../src/consensus/ConsensusEventLoop.cpp)), nil PREVOTE and PRECOMMIT votes are broadcast by `submitAndBroadcastSignedVote` before `saveRecoveryState()` runs, and its return value is ignored (in the no-candidate branch too). A crash in between lets the node sign a conflicting vote for the same round after restart, which is a slashable double-sign.
+  In `ConsensusEventLoop::tick` ([`ConsensusEventLoop.cpp`](../src/node/consensus/ConsensusEventLoop.cpp)), nil PREVOTE and PRECOMMIT votes are broadcast by `submitAndBroadcastSignedVote` before `saveRecoveryState()` runs, and its return value is ignored (in the no-candidate branch too). A crash in between lets the node sign a conflicting vote for the same round after restart, which is a slashable double-sign.
   *Fix:* persist before signing and broadcasting, for every vote, and fail closed if persisting fails.
 
 - [ ] **4.3 · High · No double-sign guard in the signer.**

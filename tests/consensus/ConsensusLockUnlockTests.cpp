@@ -20,12 +20,13 @@
 //   5. Two conflicting blocks are never both finalized at the same height,
 //      even when the second is independently backed by its own valid QC.
 
+#include "../common/TestFramework.hpp"
 #include "../common/ConsensusPhaseTestFixtures.hpp"
 #include "config/NetworkParameters.hpp"
 #include "consensus/BlockFinalizer.hpp"
-#include "consensus/BlockProductionPhase.hpp"
-#include "consensus/BlockProposalPhase.hpp"
-#include "consensus/ConsensusEventLoop.hpp"
+#include "node/consensus/BlockProductionPhase.hpp"
+#include "node/consensus/BlockProposalPhase.hpp"
+#include "node/consensus/ConsensusEventLoop.hpp"
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposalJustification.hpp"
 #include "consensus/ProposerSchedule.hpp"
@@ -57,11 +58,7 @@ namespace {
 using namespace nodo;
 
 constexpr std::int64_t kTimestamp = 1901000000;
-
-void require(bool condition, const std::string &message) {
-  if (!condition)
-    throw std::runtime_error(message);
-}
+using nodo::test::require;
 
 const crypto::CryptoPolicy &developmentPolicy() {
   static const crypto::CryptoPolicy policy =

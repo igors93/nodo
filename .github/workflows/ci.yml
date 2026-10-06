@@ -16,6 +16,7 @@ concurrency:
 
 env:
   BLST_VERSION: v0.3.11
+  BLST_COMMIT: 3dd0f804b1819e5d03fb22ca2e6fac105932043a
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Shared blst installation logic is repeated per job (no composite action
@@ -54,6 +55,7 @@ jobs:
         run: |
           git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
             https://github.com/supranational/blst.git /tmp/blst
+          test "$(git -C /tmp/blst rev-parse HEAD)" = "$BLST_COMMIT"
           cd /tmp/blst && ./build.sh
           mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
           cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
@@ -70,7 +72,7 @@ jobs:
         run: gcc --version && g++ --version && cmake --version && openssl version
 
       - name: Configure (Debug)
-        run: cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Debug
+        run: cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Debug -DNODO_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build build/cmake --parallel $(nproc)
@@ -126,6 +128,7 @@ jobs:
         run: |
           git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
             https://github.com/supranational/blst.git /tmp/blst
+          test "$(git -C /tmp/blst rev-parse HEAD)" = "$BLST_COMMIT"
           cd /tmp/blst && CC=clang ./build.sh
           mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
           cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
@@ -144,7 +147,7 @@ jobs:
       - name: Configure (Debug, Clang)
         run: |
           cmake -S . -B build/cmake \
-            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_BUILD_TYPE=Debug -DNODO_WARNINGS_AS_ERRORS=ON \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++
 
@@ -191,6 +194,7 @@ jobs:
         run: |
           git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
             https://github.com/supranational/blst.git /tmp/blst
+          test "$(git -C /tmp/blst rev-parse HEAD)" = "$BLST_COMMIT"
           cd /tmp/blst && ./build.sh
           mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
           cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
@@ -204,13 +208,16 @@ jobs:
           sudo ldconfig
 
       - name: Configure (Release)
-        run: cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release -DNODO_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build build/cmake --parallel $(nproc)
 
       - name: Verify CLI
         run: ./build/nodo --help
+
+      - name: Run Release CTest
+        run: ctest --test-dir build/cmake --output-on-failure --parallel $(nproc)
 
   # ───────────────────────────────────────────────────────────────────────────
   # 4. Linux · GCC · ASan + UBSan
@@ -243,6 +250,7 @@ jobs:
         run: |
           git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
             https://github.com/supranational/blst.git /tmp/blst
+          test "$(git -C /tmp/blst rev-parse HEAD)" = "$BLST_COMMIT"
           cd /tmp/blst && ./build.sh
           mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
           cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
@@ -258,7 +266,7 @@ jobs:
       - name: Configure (Debug + ASan + UBSan)
         run: |
           cmake -S . -B build/cmake-san \
-            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_BUILD_TYPE=Debug -DNODO_WARNINGS_AS_ERRORS=ON \
             -DCMAKE_C_FLAGS_DEBUG="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
             -DCMAKE_CXX_FLAGS_DEBUG="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
             -DCMAKE_EXE_LINKER_FLAGS_DEBUG="-fsanitize=address,undefined"
@@ -319,6 +327,7 @@ jobs:
         run: |
           git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
             https://github.com/supranational/blst.git /tmp/blst
+          test "$(git -C /tmp/blst rev-parse HEAD)" = "$BLST_COMMIT"
           cd /tmp/blst && ./build.sh
           mkdir -p /c/nodo-deps/blst/include /c/nodo-deps/blst/lib
           cp bindings/blst.h bindings/blst_aux.h /c/nodo-deps/blst/include/
@@ -328,7 +337,7 @@ jobs:
         run: |
           cmake -S . -B build/cmake \
             -G "MinGW Makefiles" \
-            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_BUILD_TYPE=Debug -DNODO_WARNINGS_AS_ERRORS=ON \
             -DBLST_ROOT=/c/nodo-deps/blst
 
       - name: Build
@@ -379,6 +388,7 @@ jobs:
         run: |
           git clone --depth 1 --branch ${{ env.BLST_VERSION }} \
             https://github.com/supranational/blst.git /tmp/blst
+          test "$(git -C /tmp/blst rev-parse HEAD)" = "$BLST_COMMIT"
           cd /tmp/blst && ./build.sh
           mkdir -p ~/.cache/nodo/blst/include ~/.cache/nodo/blst/lib
           cp bindings/blst.h bindings/blst_aux.h ~/.cache/nodo/blst/include/
@@ -396,7 +406,7 @@ jobs:
       - name: Configure (Debug)
         run: |
           cmake -S . -B build/cmake \
-            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_BUILD_TYPE=Debug -DNODO_WARNINGS_AS_ERRORS=ON \
             -DOPENSSL_ROOT_DIR="$(brew --prefix openssl)"
 
       - name: Build
@@ -418,3 +428,113 @@ jobs:
           name: ctest-macos
           path: build/cmake/Testing/
           retention-days: 7
+
+  markdown-links:
+    name: Documentation links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check local Markdown links
+        run: python3 scripts/check_markdown_links.py
+
+  static-analysis:
+    name: C++ static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cppcheck
+        run: sudo apt-get update -q && sudo apt-get install -y cppcheck
+      - name: Analyze project sources
+        run: cppcheck --error-exitcode=1 --enable=warning,portability --inline-suppr --quiet --std=c++20 -Iinclude src
+
+  thread-sanitizer:
+    name: Linux · Clang · TSan
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update -q && sudo apt-get install -y clang cmake libssl-dev
+      - name: Build pinned blst
+        run: |
+          git clone --depth 1 --branch "$BLST_VERSION" https://github.com/supranational/blst.git /tmp/blst
+          test "$(git -C /tmp/blst rev-parse HEAD)" = "$BLST_COMMIT"
+          cd /tmp/blst && CC=clang ./build.sh
+          mkdir -p "$HOME/.cache/nodo/blst/include" "$HOME/.cache/nodo/blst/lib"
+          cp bindings/blst.h bindings/blst_aux.h "$HOME/.cache/nodo/blst/include/"
+          cp libblst.a "$HOME/.cache/nodo/blst/lib/"
+      - name: Configure TSan
+        run: |
+          cmake -S . -B build/cmake-tsan -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DBLST_ROOT="$HOME/.cache/nodo/blst" \
+            -DNODO_TESTS_GROUPED=OFF -DNODO_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+      - name: Build concurrent runtime tests
+        run: cmake --build build/cmake-tsan --target node_NodeRpcServerHttpTests p2p_TcpTransportSocketDeliveryTests --parallel $(nproc)
+      - name: Run concurrent runtime tests
+        run: ctest --test-dir build/cmake-tsan -R '^(node_NodeRpcServerHttpTests|p2p_TcpTransportSocketDeliveryTests)$' --output-on-failure --parallel 1
+
+  coverage:
+    name: Linux · coverage report
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update -q && sudo apt-get install -y build-essential cmake libssl-dev gcovr
+      - name: Build pinned blst
+        run: |
+          git clone --depth 1 --branch "$BLST_VERSION" https://github.com/supranational/blst.git /tmp/blst
+          test "$(git -C /tmp/blst rev-parse HEAD)" = "$BLST_COMMIT"
+          cd /tmp/blst && ./build.sh
+          mkdir -p "$HOME/.cache/nodo/blst/include" "$HOME/.cache/nodo/blst/lib"
+          cp bindings/blst.h bindings/blst_aux.h "$HOME/.cache/nodo/blst/include/"
+          cp libblst.a "$HOME/.cache/nodo/blst/lib/"
+      - name: Configure coverage
+        run: |
+          cmake -S . -B build/cmake-coverage -DCMAKE_BUILD_TYPE=Debug \
+            -DBLST_ROOT="$HOME/.cache/nodo/blst" \
+            -DNODO_TESTS_GROUPED=OFF -DNODO_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_C_FLAGS=--coverage -DCMAKE_CXX_FLAGS=--coverage \
+            -DCMAKE_EXE_LINKER_FLAGS=--coverage
+      - name: Build and run representative tests
+        run: |
+          cmake --build build/cmake-coverage --target consensus_QuorumSafeMathTests node_LocalArtifactImportServiceTests --parallel $(nproc)
+          ctest --test-dir build/cmake-coverage -R '^(consensus_QuorumSafeMathTests|node_LocalArtifactImportServiceTests)$' --output-on-failure
+      - name: Generate coverage report
+        run: gcovr --root . --filter src --xml-pretty -o build/coverage.xml build/cmake-coverage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nodo-coverage
+          path: build/coverage.xml
+
+  fuzz-smoke:
+    name: Linux · network codec fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update -q && sudo apt-get install -y clang cmake libssl-dev
+      - name: Build pinned blst
+        run: |
+          git clone --depth 1 --branch "$BLST_VERSION" https://github.com/supranational/blst.git /tmp/blst
+          test "$(git -C /tmp/blst rev-parse HEAD)" = "$BLST_COMMIT"
+          cd /tmp/blst && CC=clang ./build.sh
+          mkdir -p "$HOME/.cache/nodo/blst/include" "$HOME/.cache/nodo/blst/lib"
+          cp bindings/blst.h bindings/blst_aux.h "$HOME/.cache/nodo/blst/include/"
+          cp libblst.a "$HOME/.cache/nodo/blst/lib/"
+      - name: Configure fuzz target
+        run: |
+          cmake -S . -B build/cmake-fuzz -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DBLST_ROOT="$HOME/.cache/nodo/blst" -DNODO_BUILD_FUZZERS=ON -DNODO_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=address" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=fuzzer-no-link,address"
+      - name: Build and fuzz
+        run: |
+          cmake --build build/cmake-fuzz --target nodo_fuzz_network_envelope --parallel $(nproc)
+          ./build/cmake-fuzz/nodo_fuzz_network_envelope -max_total_time=30

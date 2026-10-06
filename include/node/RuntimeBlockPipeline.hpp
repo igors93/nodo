@@ -273,7 +273,7 @@ public:
       SupplyExpansionRecord supplyExpansionRecord,
       FeeEconomicBalance feeEconomicBalance, FeeBurnRecord feeBurnRecord,
       TreasuryFeeRecord treasuryFeeRecord,
-      std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+      std::vector<ValidatorRiskEvidenceRecord> slashingEvidenceRecords,
       std::vector<SlashingPreparationRecord> slashingPreparationRecords,
       SlashingEvidenceSummary slashingEvidenceSummary);
 
@@ -301,7 +301,7 @@ public:
       SupplyExpansionRecord supplyExpansionRecord,
       FeeEconomicBalance feeEconomicBalance, FeeBurnRecord feeBurnRecord,
       TreasuryFeeRecord treasuryFeeRecord,
-      std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+      std::vector<ValidatorRiskEvidenceRecord> slashingEvidenceRecords,
       std::vector<SlashingPreparationRecord> slashingPreparationRecords,
       SlashingEvidenceSummary slashingEvidenceSummary,
       std::vector<CryptographicSlashingEvidenceRecord>
@@ -333,7 +333,7 @@ public:
       SupplyExpansionRecord supplyExpansionRecord,
       FeeEconomicBalance feeEconomicBalance, FeeBurnRecord feeBurnRecord,
       TreasuryFeeRecord treasuryFeeRecord,
-      std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+      std::vector<ValidatorRiskEvidenceRecord> slashingEvidenceRecords,
       std::vector<SlashingPreparationRecord> slashingPreparationRecords,
       SlashingEvidenceSummary slashingEvidenceSummary,
       std::vector<CryptographicSlashingEvidenceRecord>
@@ -376,7 +376,7 @@ public:
       SupplyExpansionRecord supplyExpansionRecord,
       FeeEconomicBalance feeEconomicBalance, FeeBurnRecord feeBurnRecord,
       TreasuryFeeRecord treasuryFeeRecord,
-      std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+      std::vector<ValidatorRiskEvidenceRecord> slashingEvidenceRecords,
       std::vector<SlashingPreparationRecord> slashingPreparationRecords,
       SlashingEvidenceSummary slashingEvidenceSummary,
       std::vector<CryptographicSlashingEvidenceRecord>
@@ -418,7 +418,7 @@ public:
       SupplyExpansionRecord supplyExpansionRecord,
       FeeEconomicBalance feeEconomicBalance, FeeBurnRecord feeBurnRecord,
       TreasuryFeeRecord treasuryFeeRecord,
-      std::vector<SlashingEvidenceRecord> slashingEvidenceRecords,
+      std::vector<ValidatorRiskEvidenceRecord> slashingEvidenceRecords,
       std::vector<SlashingPreparationRecord> slashingPreparationRecords,
       SlashingEvidenceSummary slashingEvidenceSummary,
       std::vector<CryptographicSlashingEvidenceRecord>
@@ -466,7 +466,7 @@ public:
   const FeeEconomicBalance &feeEconomicBalance() const;
   const FeeBurnRecord &feeBurnRecord() const;
   const TreasuryFeeRecord &treasuryFeeRecord() const;
-  const std::vector<SlashingEvidenceRecord> &slashingEvidenceRecords() const;
+  const std::vector<ValidatorRiskEvidenceRecord> &slashingEvidenceRecords() const;
   const std::vector<SlashingPreparationRecord> &
   slashingPreparationRecords() const;
   const SlashingEvidenceSummary &slashingEvidenceSummary() const;
@@ -527,7 +527,7 @@ private:
   FeeEconomicBalance m_feeEconomicBalance;
   FeeBurnRecord m_feeBurnRecord;
   TreasuryFeeRecord m_treasuryFeeRecord;
-  std::vector<SlashingEvidenceRecord> m_slashingEvidenceRecords;
+  std::vector<ValidatorRiskEvidenceRecord> m_slashingEvidenceRecords;
   std::vector<SlashingPreparationRecord> m_slashingPreparationRecords;
   SlashingEvidenceSummary m_slashingEvidenceSummary;
   std::vector<CryptographicSlashingEvidenceRecord>

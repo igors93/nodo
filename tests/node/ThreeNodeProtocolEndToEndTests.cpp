@@ -1,7 +1,8 @@
+#include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
-#include "consensus/BlockProductionPhase.hpp"
-#include "consensus/BlockProposalPhase.hpp"
-#include "consensus/ConsensusEventLoop.hpp"
+#include "node/consensus/BlockProductionPhase.hpp"
+#include "node/consensus/BlockProposalPhase.hpp"
+#include "node/consensus/ConsensusEventLoop.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
@@ -46,12 +47,7 @@ constexpr std::int64_t kTransactionTimestamp = kGenesisTimestamp + 10;
 constexpr const char *kProtocolVersion = "nodo/test";
 constexpr const char *kCanonicalPayloadPrefix =
     "NODO_CANONICAL_PROTOCOL_HEX_V1:";
-
-void require(bool condition, const std::string &message) {
-  if (!condition) {
-    throw std::runtime_error(message);
-  }
-}
+using nodo::test::require;
 
 const crypto::CryptoPolicy &developmentPolicy() {
   static const crypto::CryptoPolicy policy =

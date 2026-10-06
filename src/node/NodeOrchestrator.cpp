@@ -1,3 +1,4 @@
+#include "utils/Logger.hpp"
 #include "node/NodeOrchestrator.hpp"
 
 #include "utils/JsonText.hpp"
@@ -338,7 +339,7 @@ NodeOrchestratorStartResult NodeOrchestrator::start() {
             std::string("TCP transport startup failed: ") + error.what()};
   }
 
-  // Start consensus event loop (background thread).
+  // Initialize the consensus event loop for synchronous ticks.
   try {
     if (!startConsensus()) {
       stop();
@@ -424,7 +425,7 @@ void NodeOrchestrator::tick(std::int64_t now) {
       }
       m_peerReputation.reportBehavior(envelope.senderNodeId(), "", -10, now,
                                       validation.reason());
-      std::cout << "[NodeOrchestrator] inbound message rejected: "
+      utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "inbound message rejected: "
                 << p2p::inboundMessageStatusToString(validation.status())
                 << " type="
                 << p2p::networkMessageTypeToString(envelope.messageType())
@@ -538,13 +539,13 @@ void NodeOrchestrator::tick(std::int64_t now) {
                 NODO_PERSISTENT_SYNC_MAX_BLOCK_BATCH);
 
         if (decision.stale()) {
-          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST stale: "
+          utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator BLOCK_SYNC_REQUEST stale: "
                     << decision.reason() << std::endl;
           continue;
         }
 
         if (!decision.accepted()) {
-          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST rejected: "
+          utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator BLOCK_SYNC_REQUEST rejected: "
                     << decision.reason() << std::endl;
           m_syncHealth.recordServeFailure(decision.reason(), now);
           continue;
@@ -571,21 +572,21 @@ void NodeOrchestrator::tick(std::int64_t now) {
               req.requesterNodeId() +
               "; requester may be disconnected, unauthenticated, quarantined, "
               "or its outbound queue may be full.";
-          std::cout << "[DEBUG] NodeOrchestrator " << reason << std::endl;
+          utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator " << reason << std::endl;
           m_syncHealth.recordServeFailure(reason, now);
           continue;
         }
-        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST served "
+        utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator BLOCK_SYNC_REQUEST served "
                   << batch.blockCount() << " block(s) from height "
                   << batch.fromHeight() << " to " << batch.toHeight()
                   << " for peer " << req.requesterNodeId() << std::endl;
       } catch (const std::exception &e) {
-        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST serve error: "
+        utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator BLOCK_SYNC_REQUEST serve error: "
                   << e.what() << std::endl;
         m_syncHealth.recordServeFailure(
             std::string("BLOCK_SYNC_REQUEST serve error: ") + e.what(), now);
       } catch (...) {
-        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_REQUEST unknown "
+        utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator BLOCK_SYNC_REQUEST unknown "
                      "serve error."
                   << std::endl;
         m_syncHealth.recordServeFailure(
@@ -639,13 +640,13 @@ void NodeOrchestrator::tick(std::int64_t now) {
                 m_runtime->blockchain());
 
         if (decision.stale()) {
-          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE stale: "
+          utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator BLOCK_SYNC_RESPONSE stale: "
                     << decision.reason() << std::endl;
           continue;
         }
 
         if (!decision.accepted()) {
-          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE rejected: "
+          utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator BLOCK_SYNC_RESPONSE rejected: "
                     << decision.reason() << std::endl;
           m_syncHealth.recordBatchFailure(decision.reason(), now);
           continue;
@@ -661,7 +662,7 @@ void NodeOrchestrator::tick(std::int64_t now) {
         if (applyResult.applied()) {
           currentCheckpoint = applyResult.checkpoint().value();
           m_syncHealth.recordSuccess(now);
-          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE imported "
+          utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator BLOCK_SYNC_RESPONSE imported "
                        "blocks up to height "
                     << currentCheckpoint.finalizedHeight() << " from peer "
                     << batch.sourcePeerId() << std::endl;
@@ -669,23 +670,23 @@ void NodeOrchestrator::tick(std::int64_t now) {
           // The tip advanced past this batch between request and response
           // (local consensus kept finalizing, or another peer answered
           // first). The peer agrees with our chain; nothing to record.
-          std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE batch "
+          utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator BLOCK_SYNC_RESPONSE batch "
                        "is stale (already imported); ignoring."
                     << std::endl;
         } else {
-          std::cout
-              << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE import failed: "
+          utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator")
+              << "NodeOrchestrator BLOCK_SYNC_RESPONSE import failed: "
               << applyResult.reason() << std::endl;
           m_syncHealth.recordBatchFailure(applyResult.reason(), now);
         }
       } catch (const std::exception &e) {
-        std::cout << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE exception: "
+        utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator BLOCK_SYNC_RESPONSE exception: "
                   << e.what() << std::endl;
         m_syncHealth.recordBatchFailure(
             std::string("BLOCK_SYNC_RESPONSE import error: ") + e.what(), now);
       } catch (...) {
-        std::cout
-            << "[DEBUG] NodeOrchestrator BLOCK_SYNC_RESPONSE unknown exception."
+        utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator")
+            << "NodeOrchestrator BLOCK_SYNC_RESPONSE unknown exception."
             << std::endl;
         m_syncHealth.recordBatchFailure(
             "BLOCK_SYNC_RESPONSE unknown import error.", now);
@@ -945,7 +946,7 @@ void NodeOrchestrator::driveSyncWatchdog(std::int64_t now) {
                  .nodeId();
   }
 
-  std::cout << "[DEBUG] NodeOrchestrator sync watchdog re-requesting blocks: "
+  utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "NodeOrchestrator sync watchdog re-requesting blocks: "
             << "local height " << m_runtime->blockchain().latestBlock().index()
             << ", target height " << m_syncWatchdogTargetHeight << ", peer "
             << peerId << std::endl;
@@ -1353,7 +1354,7 @@ std::optional<core::Block> NodeOrchestrator::produceBlock(std::uint64_t height,
                                                pendingEvidence);
 
   if (!candidate.produced()) {
-    std::cout << "[NodeOrchestrator] candidate failed to produce: "
+    utils::log(utils::LogLevel::DEBUG, "NodeOrchestrator") << "candidate failed to produce: "
               << candidate.reason() << std::endl;
     return std::nullopt;
   }

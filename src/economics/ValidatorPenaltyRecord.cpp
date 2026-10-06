@@ -1,3 +1,4 @@
+#include "utils/HashString.hpp"
 #include "economics/ValidatorPenaltyRecord.hpp"
 
 #include "core/ValidatorProposalRegistry.hpp"
@@ -13,11 +14,7 @@ namespace nodo::economics {
 
 namespace {
 
-std::string hashString(const std::string &value) {
-  char output[NODO_HASH_BUFFER_SIZE] = {0};
-  nodo_hash_string(value.c_str(), output, sizeof(output));
-  return std::string(output);
-}
+
 
 bool isSafeText(const std::string &value) {
   if (value.empty()) {
@@ -224,7 +221,7 @@ std::string ValidatorPenaltyRecord::deterministicId() const {
         "Invalid ValidatorPenaltyRecord has no deterministic id.");
   }
 
-  return hashString("NODO_VALIDATOR_PENALTY_RECORD_V1|" + serialize());
+  return utils::hashCString("NODO_VALIDATOR_PENALTY_RECORD_V1|" + serialize());
 }
 
 ValidatorScoreRecord ValidatorPenaltyRecord::createScoreRecord() const {
@@ -374,7 +371,7 @@ ValidatorPenaltyRecord ValidatorPenaltyPolicy::createDoubleSignPenaltyRecord(
       evidence.validatorAddress(), epoch, evidence.blockIndex(), previousScore,
       newScore, ValidatorPenaltyReason::DOUBLE_SIGN,
       ValidatorPenaltyAction::SCORE_REDUCTION,
-      hashString("NODO_DOUBLE_SIGN_EVIDENCE_V1|" + evidence.serialize()),
+      utils::hashCString("NODO_DOUBLE_SIGN_EVIDENCE_V1|" + evidence.serialize()),
       evidence.firstProposal().blockHash(),
       evidence.conflictingProposal().blockHash(),
       evidence.firstProposal().signatureDigest(),

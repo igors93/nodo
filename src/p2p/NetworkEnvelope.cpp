@@ -1,3 +1,5 @@
+#include "utils/HashString.hpp"
+#include "utils/SafeScalar.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 
 #include "crypto/hash.h"
@@ -10,34 +12,10 @@ namespace nodo::p2p {
 namespace {
 
 bool isSafeScalar(const std::string& value) {
-    if (value.empty() || value.size() > 160) {
-        return false;
-    }
-
-    for (const char character : value) {
-        const bool allowed =
-            (character >= 'a' && character <= 'z') ||
-            (character >= 'A' && character <= 'Z') ||
-            (character >= '0' && character <= '9') ||
-            character == '_' ||
-            character == '-' ||
-            character == '.' ||
-            character == ':' ||
-            character == '/';
-
-        if (!allowed) {
-            return false;
-        }
-    }
-
-    return true;
+  return utils::isSafeIdentifier(value, 160, "_-.:/");
 }
 
-std::string hashString(const std::string& value) {
-    char output[NODO_HASH_BUFFER_SIZE] = {0};
-    nodo_hash_string(value.c_str(), output, sizeof(output));
-    return std::string(output);
-}
+
 
 } // namespace
 
@@ -208,11 +186,11 @@ std::string NetworkEnvelope::serialize() const {
 }
 
 std::string NetworkEnvelope::hashPayload(const std::string& payload) {
-    return hashString("NODO_NETWORK_PAYLOAD_V1|" + payload);
+    return utils::hashCString("NODO_NETWORK_PAYLOAD_V1|" + payload);
 }
 
 std::string NetworkEnvelope::computeMessageId(const NetworkEnvelope& envelope) {
-    return hashString(envelope.signingPayload());
+    return utils::hashCString(envelope.signingPayload());
 }
 
 } // namespace nodo::p2p

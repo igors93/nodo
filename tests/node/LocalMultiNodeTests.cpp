@@ -3,6 +3,7 @@
 // separate validator keys, and ability to reload and audit each local node
 // independently.
 
+#include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "core/TransactionType.hpp"
@@ -34,10 +35,7 @@ using namespace nodo;
 using nodo::utils::Amount;
 
 constexpr std::int64_t kTimestamp = 1900300000;
-
-void require(bool condition, const std::string& msg) {
-    if (!condition) throw std::runtime_error(msg);
-}
+using nodo::test::require;
 
 std::filesystem::path tempPath(const std::string& suffix) {
     return std::filesystem::temp_directory_path()

@@ -7,12 +7,7 @@
 
 namespace nodo::crypto {
 
-/*
- * PublicKey representa uma chave pública.
- *
- * A chave pública pode ser revelada para a rede.
- * Ela serve para verificar se uma assinatura veio do dono correto.
- */
+/* Public key material may be shared and used to verify signatures. */
 class PublicKey {
 public:
     PublicKey();
@@ -27,19 +22,10 @@ public:
 
     bool isValid() const;
 
-    /*
-     * Fingerprint é uma "impressão digital" curta da chave.
-     * No futuro, endereços da Nodo poderão ser derivados de algo assim.
-     */
+    /* A short fingerprint for display and lookup. */
     std::string fingerprint() const;
 
-    /*
-     * Serialização determinística.
-     *
-     * REGRA:
-     * Tudo que entra em hash/assinatura deve sempre ser serializado
-     * na mesma ordem.
-     */
+    /* Serialize deterministically before hashing or signing. */
     std::string serialize() const;
 
 private:

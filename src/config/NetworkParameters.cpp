@@ -1,4 +1,7 @@
+#include "utils/HashString.hpp"
+#include "utils/SafeScalar.hpp"
 #include "config/NetworkParameters.hpp"
+#include "config/ProtocolVersion.hpp"
 
 #include "core/Block.hpp"
 #include "core/LedgerRecord.hpp"
@@ -30,33 +33,10 @@ std::string networkClassToString(NetworkClass nc) {
 namespace {
 
 bool isSafeScalar(const std::string &value) {
-  if (value.empty()) {
-    return false;
-  }
-
-  for (const char character : value) {
-    const bool allowed = (character >= 'a' && character <= 'z') ||
-                         (character >= 'A' && character <= 'Z') ||
-                         (character >= '0' && character <= '9') ||
-                         character == '_' || character == '-' ||
-                         character == '.' || character == ':' ||
-                         character == '/';
-
-    if (!allowed) {
-      return false;
-    }
-  }
-
-  return true;
+  return utils::isSafeIdentifier(value, std::string::npos, "_-.:/");
 }
 
-std::string hashString(const std::string &value) {
-  char output[NODO_HASH_BUFFER_SIZE] = {0};
 
-  nodo_hash_string(value.c_str(), output, sizeof(output));
-
-  return std::string(output);
-}
 
 core::LedgerRecord
 genesisValidatorLedgerRecord(const GenesisConfig &config,
@@ -92,54 +72,34 @@ NetworkParameters::NetworkParameters()
       m_treasuryMaxSpendPerProposalRawUnits(0),
       m_treasuryMaxSpendPerEpochRawUnits(0) {}
 
-NetworkParameters::NetworkParameters(
-    std::string chainId, std::string networkName, std::string protocolVersion,
-    std::uint64_t epochDurationSeconds, std::uint64_t minimumValidatorCount,
-    std::uint64_t quorumThresholdNumerator,
-    std::uint64_t quorumThresholdDenominator,
-    std::uint64_t maxTransactionsPerBlock, std::uint64_t maxPeerCount,
-    std::uint64_t maxMempoolTransactions, std::uint64_t minimumFeeRawUnits,
-    std::uint64_t targetBlockTimeSeconds, std::uint64_t finalityDepth,
-    std::string signatureAlgorithm, std::string storageFormatVersion,
-    std::uint64_t proposalTimeoutMs, std::uint64_t prevoteTimeoutMs,
-    std::uint64_t precommitTimeoutMs,
-    std::uint32_t maxGossipMessagesPerPeerWindow,
-    std::uint32_t maxTransactionGossipPerPeerWindow,
-    std::uint32_t maxTransactionRelayPerSecond,
-    std::uint32_t doubleVoteSlashFractionBasisPoints,
-    std::uint32_t proposerEquivocationSlashFractionBasisPoints,
-    std::uint32_t epochSlashCapBasisPoints,
-    std::uint64_t treasuryTimelockBlocks,
-    std::uint64_t treasuryMaxSpendPerProposalRawUnits,
-    std::uint64_t treasuryMaxSpendPerEpochRawUnits)
-    : m_chainId(std::move(chainId)), m_networkName(std::move(networkName)),
-      m_protocolVersion(std::move(protocolVersion)),
-      m_epochDurationSeconds(epochDurationSeconds),
-      m_minimumValidatorCount(minimumValidatorCount),
-      m_quorumThresholdNumerator(quorumThresholdNumerator),
-      m_quorumThresholdDenominator(quorumThresholdDenominator),
-      m_maxTransactionsPerBlock(maxTransactionsPerBlock),
-      m_maxPeerCount(maxPeerCount),
-      m_maxMempoolTransactions(maxMempoolTransactions),
-      m_minimumFeeRawUnits(minimumFeeRawUnits),
-      m_targetBlockTimeSeconds(targetBlockTimeSeconds),
-      m_finalityDepth(finalityDepth),
-      m_signatureAlgorithm(std::move(signatureAlgorithm)),
-      m_storageFormatVersion(std::move(storageFormatVersion)),
-      m_proposalTimeoutMs(proposalTimeoutMs),
-      m_prevoteTimeoutMs(prevoteTimeoutMs),
-      m_precommitTimeoutMs(precommitTimeoutMs),
-      m_maxGossipMessagesPerPeerWindow(maxGossipMessagesPerPeerWindow),
-      m_maxTransactionGossipPerPeerWindow(maxTransactionGossipPerPeerWindow),
-      m_maxTransactionRelayPerSecond(maxTransactionRelayPerSecond),
-      m_doubleVoteSlashFractionBasisPoints(doubleVoteSlashFractionBasisPoints),
-      m_proposerEquivocationSlashFractionBasisPoints(
-          proposerEquivocationSlashFractionBasisPoints),
-      m_epochSlashCapBasisPoints(epochSlashCapBasisPoints),
-      m_treasuryTimelockBlocks(treasuryTimelockBlocks),
-      m_treasuryMaxSpendPerProposalRawUnits(
-          treasuryMaxSpendPerProposalRawUnits),
-      m_treasuryMaxSpendPerEpochRawUnits(treasuryMaxSpendPerEpochRawUnits) {}
+NetworkParameters::NetworkParameters(NetworkParameterValues values)
+    : m_chainId(std::move(values.chainId)),
+      m_networkName(std::move(values.networkName)),
+      m_protocolVersion(std::move(values.protocolVersion)),
+      m_epochDurationSeconds(values.epochDurationSeconds),
+      m_minimumValidatorCount(values.minimumValidatorCount),
+      m_quorumThresholdNumerator(values.quorumThresholdNumerator),
+      m_quorumThresholdDenominator(values.quorumThresholdDenominator),
+      m_maxTransactionsPerBlock(values.maxTransactionsPerBlock),
+      m_maxPeerCount(values.maxPeerCount),
+      m_maxMempoolTransactions(values.maxMempoolTransactions),
+      m_minimumFeeRawUnits(values.minimumFeeRawUnits),
+      m_targetBlockTimeSeconds(values.targetBlockTimeSeconds),
+      m_finalityDepth(values.finalityDepth),
+      m_signatureAlgorithm(std::move(values.signatureAlgorithm)),
+      m_storageFormatVersion(std::move(values.storageFormatVersion)),
+      m_proposalTimeoutMs(values.proposalTimeoutMs),
+      m_prevoteTimeoutMs(values.prevoteTimeoutMs),
+      m_precommitTimeoutMs(values.precommitTimeoutMs),
+      m_maxGossipMessagesPerPeerWindow(values.maxGossipMessagesPerPeerWindow),
+      m_maxTransactionGossipPerPeerWindow(values.maxTransactionGossipPerPeerWindow),
+      m_maxTransactionRelayPerSecond(values.maxTransactionRelayPerSecond),
+      m_doubleVoteSlashFractionBasisPoints(values.doubleVoteSlashFractionBasisPoints),
+      m_proposerEquivocationSlashFractionBasisPoints(values.proposerEquivocationSlashFractionBasisPoints),
+      m_epochSlashCapBasisPoints(values.epochSlashCapBasisPoints),
+      m_treasuryTimelockBlocks(values.treasuryTimelockBlocks),
+      m_treasuryMaxSpendPerProposalRawUnits(values.treasuryMaxSpendPerProposalRawUnits),
+      m_treasuryMaxSpendPerEpochRawUnits(values.treasuryMaxSpendPerEpochRawUnits) {}
 
 const std::string &NetworkParameters::chainId() const { return m_chainId; }
 
@@ -290,7 +250,7 @@ std::string NetworkParameters::deterministicId() const {
     return "";
   }
 
-  return hashString(serialize());
+  return utils::hashCString(serialize());
 }
 
 std::string NetworkParameters::serialize() const {
@@ -333,24 +293,57 @@ std::string NetworkParameters::serialize() const {
 }
 
 NetworkParameters NetworkParameters::developmentLocal() {
-  return NetworkParameters("nodo-localnet-1", "localnet", "nodo/0.1", 60, 1, 2,
-                           3, 1000, 128, 10000, 0, 60, 1,
-                           "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2", 3000,
-                           3000, 3000, 100, 50, 20, 500, 1000, 5000);
+  return NetworkParameters(NetworkParameterValues{
+      .chainId = "nodo-localnet-1",
+      .networkName = "localnet",
+      .protocolVersion = kProtocolVersion,
+      .epochDurationSeconds = 60,
+      .minimumValidatorCount = 1,
+      .quorumThresholdNumerator = 2,
+      .quorumThresholdDenominator = 3,
+      .maxTransactionsPerBlock = 1000,
+      .maxPeerCount = 128,
+      .maxMempoolTransactions = 10000,
+      .minimumFeeRawUnits = 0,
+      .targetBlockTimeSeconds = 60,
+      .finalityDepth = 1,
+  });
 }
 
 NetworkParameters NetworkParameters::developmentSoak() {
-  return NetworkParameters("nodo-localnet-soak-1", "localnet-soak", "nodo/0.1",
-                           60, 3, 2, 3, 1000, 128, 10000, 0, 60, 1,
-                           "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2", 3000,
-                           3000, 3000, 100, 50, 20, 500, 1000, 5000);
+  return NetworkParameters(NetworkParameterValues{
+      .chainId = "nodo-localnet-soak-1",
+      .networkName = "localnet-soak",
+      .protocolVersion = kProtocolVersion,
+      .epochDurationSeconds = 60,
+      .minimumValidatorCount = 3,
+      .quorumThresholdNumerator = 2,
+      .quorumThresholdDenominator = 3,
+      .maxTransactionsPerBlock = 1000,
+      .maxPeerCount = 128,
+      .maxMempoolTransactions = 10000,
+      .minimumFeeRawUnits = 0,
+      .targetBlockTimeSeconds = 60,
+      .finalityDepth = 1,
+  });
 }
 
 NetworkParameters NetworkParameters::testnetCandidate() {
-  return NetworkParameters("nodo-testnet-1", "testnet-candidate", "nodo/0.1",
-                           300, 4, 2, 3, 500, 64, 5000, 1000, 30, 3,
-                           "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2", 3000,
-                           3000, 3000, 100, 50, 20, 500, 1000, 5000);
+  return NetworkParameters(NetworkParameterValues{
+      .chainId = "nodo-testnet-1",
+      .networkName = "testnet-candidate",
+      .protocolVersion = kProtocolVersion,
+      .epochDurationSeconds = 300,
+      .minimumValidatorCount = 4,
+      .quorumThresholdNumerator = 2,
+      .quorumThresholdDenominator = 3,
+      .maxTransactionsPerBlock = 500,
+      .maxPeerCount = 64,
+      .maxMempoolTransactions = 5000,
+      .minimumFeeRawUnits = 1000,
+      .targetBlockTimeSeconds = 30,
+      .finalityDepth = 3,
+  });
 }
 
 BootstrapValidatorConfig::BootstrapValidatorConfig()
@@ -534,7 +527,7 @@ std::string GenesisConfig::deterministicId() const {
     return "";
   }
 
-  return hashString(serialize());
+  return utils::hashCString(serialize());
 }
 
 std::string GenesisConfig::serialize() const {

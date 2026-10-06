@@ -12,7 +12,6 @@
 #include "node/ValidatorLifecycle.hpp"
 #include "node/ValidatorStakeWeightUpdater.hpp"
 
-#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -42,14 +41,6 @@ accountViewFromAccounts(const std::vector<core::AccountState> &accounts) {
     }
   }
   return view;
-}
-
-std::int64_t checkedMinimumFee(std::uint64_t raw) {
-  if (raw >
-      static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-    throw std::overflow_error("Minimum fee exceeds supported Amount range.");
-  }
-  return static_cast<std::int64_t>(raw);
 }
 
 core::ValidatorSetHistory

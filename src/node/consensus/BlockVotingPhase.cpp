@@ -1,4 +1,4 @@
-#include "consensus/BlockVotingPhase.hpp"
+#include "node/consensus/BlockVotingPhase.hpp"
 
 #include "consensus/ValidatorVoteBuilder.hpp"
 #include "consensus/NetworkVoteCollector.hpp"

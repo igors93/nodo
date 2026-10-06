@@ -1,3 +1,4 @@
+#include "utils/SafeScalar.hpp"
 #include "node/SignedBlockProposalMessage.hpp"
 
 #include "core/ProtocolLimits.hpp"
@@ -23,16 +24,7 @@ constexpr std::size_t kMaxSerializedBlockBytes =
     core::ProtocolLimits::MAX_SERIALIZED_BLOCK_BYTES;
 
 bool isSafeScalar(const std::string &s, std::size_t maxLen = 240) {
-  if (s.empty() || s.size() > maxLen)
-    return false;
-  for (const char c : s) {
-    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                    (c >= '0' && c <= '9') || c == '_' || c == '-' ||
-                    c == '.' || c == ':' || c == '/';
-    if (!ok)
-      return false;
-  }
-  return true;
+  return utils::isSafeIdentifier(s, maxLen, "_-.:/");
 }
 
 std::vector<std::string> splitTopLevel(const std::string &body, char sep) {

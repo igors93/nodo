@@ -36,6 +36,8 @@ build.ninja
 # Local diagnostics/output data
 
 diagnostics/reports/
+/diagnostics/python/dist/
+/diagnostics/python/src/*.egg-info/
 
 # Local editor/system files
 

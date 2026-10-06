@@ -1,3 +1,4 @@
+#include "utils/SafeScalar.hpp"
 #include "node/NodePruningManifest.hpp"
 
 #include "serialization/KeyValueFileCodec.hpp"
@@ -12,16 +13,7 @@ namespace nodo::node {
 namespace {
 
 bool isSafeScalar(const std::string &value) {
-  if (value.empty())
-    return false;
-  for (char c : value) {
-    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                    (c >= '0' && c <= '9') || c == '_' || c == '-' ||
-                    c == '.' || c == ':' || c == '/' || c == '#';
-    if (!ok)
-      return false;
-  }
-  return true;
+  return utils::isSafeIdentifier(value, std::string::npos, "_-.:/#");
 }
 
 bool isHashLike(const std::string &value) {

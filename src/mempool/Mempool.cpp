@@ -1,3 +1,4 @@
+#include "utils/Logger.hpp"
 #include "mempool/Mempool.hpp"
 #include "core/TransactionTypePolicy.hpp"
 
@@ -472,7 +473,7 @@ bool Mempool::removeTransaction(const std::string &transactionId) {
     return false;
   }
 
-  std::cout << "[DEBUG] Mempool::removeTransaction called for " << transactionId
+  utils::log(utils::LogLevel::DEBUG, "Mempool") << "Mempool::removeTransaction called for " << transactionId
             << std::endl;
 
   m_currentMempoolSizeBytes -= found->second.transaction().serialize().size();

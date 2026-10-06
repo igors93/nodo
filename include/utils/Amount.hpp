@@ -6,16 +6,7 @@
 
 namespace nodo::utils {
 
-/*
- * Amount representa valores monetários da moeda NODO.
- *
- * DECISÃO DE SEGURANÇA:
- * Nunca usamos double/float para moeda.
- * Valores monetários usam inteiros para evitar erros de arredondamento.
- *
- * 1 NODO = 100.000.000 units
- * parecido com o conceito de satoshis no Bitcoin.
- */
+/* NODO monetary values use integer raw units to avoid floating-point rounding. One NODO is 100,000,000 raw units. */
 class Amount {
 public:
     static constexpr std::int64_t UNITS_PER_NODO = 100000000;

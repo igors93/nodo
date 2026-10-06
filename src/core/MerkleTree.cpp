@@ -1,3 +1,4 @@
+#include "utils/HashString.hpp"
 #include "core/MerkleTree.hpp"
 
 #include "crypto/hash.h"
@@ -10,35 +11,26 @@ namespace nodo::core {
 
 namespace {
 
-std::string hashString(const std::string& input) {
-    char output[NODO_HASH_BUFFER_SIZE] = {0};
-    nodo_hash_bytes(
-        reinterpret_cast<const unsigned char*>(input.data()),
-        input.size(),
-        output,
-        sizeof(output)
-    );
-    return std::string(output, NODO_HASH_HEX_SIZE);
-}
+
 
 } // namespace
 
 std::string MerkleTree::hashLeaf(const std::string& payload) {
-    return hashString(std::string(LEAF_PREFIX) + payload);
+    return utils::hashBytes(std::string(LEAF_PREFIX) + payload);
 }
 
 std::string MerkleTree::hashNode(
     const std::string& left,
     const std::string& right
 ) {
-    return hashString(std::string(NODE_PREFIX) + left + right);
+    return utils::hashBytes(std::string(NODE_PREFIX) + left + right);
 }
 
 std::string MerkleTree::hashLayer(
     const std::vector<std::string>& hashes
 ) {
     if (hashes.empty()) {
-        return hashString(EMPTY_PAYLOAD);
+        return utils::hashBytes(EMPTY_PAYLOAD);
     }
     if (hashes.size() == 1) {
         return hashes[0];
@@ -60,7 +52,7 @@ std::string MerkleTree::buildRoot(
     std::vector<std::string> leafPayloads
 ) {
     if (leafPayloads.empty()) {
-        return hashString(EMPTY_PAYLOAD);
+        return utils::hashBytes(EMPTY_PAYLOAD);
     }
 
     std::sort(leafPayloads.begin(), leafPayloads.end());

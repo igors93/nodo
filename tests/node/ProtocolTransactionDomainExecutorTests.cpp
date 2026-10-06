@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
 #include "core/TransactionExecutionRouter.hpp"
 #include "core/TransactionPayload.hpp"
@@ -18,11 +19,7 @@ namespace {
 using namespace nodo;
 constexpr std::int64_t kTimestamp = 1900000000;
 const std::string kOwner = "nodo-owner-account";
-
-void require(bool condition, const std::string &message) {
-  if (!condition)
-    throw std::runtime_error(message);
-}
+using nodo::test::require;
 
 struct Fixture {
   node::ProtocolExecutionState state;

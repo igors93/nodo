@@ -5,15 +5,7 @@
 
 namespace nodo::crypto {
 
-/*
- * SecurityContext define o tipo de ação que está sendo protegida.
- *
- * Algumas ações são mais sensíveis que outras.
- * Exemplo:
- * - transação comum é importante;
- * - operação de validador é mais importante;
- * - emissão de moeda é extremamente importante.
- */
+/* SecurityContext describes the operation protected by a signature. */
 enum class SecurityContext {
     PEER_AUTHENTICATION,
     USER_TRANSACTION,
@@ -23,19 +15,10 @@ enum class SecurityContext {
     DEVELOPMENT_ONLY
 };
 
-/*
- * CryptoPolicy decide quais algoritmos são permitidos.
- *
- * DECISÃO DE SEGURANÇA:
- * O algoritmo pode existir no código, mas a política decide
- * se ele pode ou não ser usado na rede.
- */
+/* CryptoPolicy selects which algorithms are permitted for each context. */
 class CryptoPolicy {
 public:
-    /*
-     * Política localnet atual.
-     * Permite Ed25519 para usuários e BLS12-381 para validadores.
-     */
+    /* Development policy permits Ed25519 user signatures and BLS12-381 validator signatures. */
     static CryptoPolicy developmentPolicy();
 
     bool isAlgorithmAllowed(

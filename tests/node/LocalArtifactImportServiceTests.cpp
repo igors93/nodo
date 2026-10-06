@@ -3,6 +3,7 @@
 // rejection of wrong height, wrong previous hash, invalid content,
 // conflicting artifact, and reward without evidence.
 
+#include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoPolicy.hpp"
@@ -38,10 +39,7 @@ using nodo::node::ArtifactImportRejectionReason;
 using nodo::node::LocalArtifactImportService;
 
 constexpr std::int64_t kTimestamp = 1900500000;
-
-void require(bool cond, const std::string& msg) {
-    if (!cond) throw std::runtime_error(msg);
-}
+using nodo::test::require;
 
 std::filesystem::path tempPath(const std::string& s) {
     return std::filesystem::temp_directory_path() / ("nodo-import-tests-" + s);

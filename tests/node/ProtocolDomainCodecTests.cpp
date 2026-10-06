@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "consensus/ValidatorPenaltyApplication.hpp"
 #include "core/TransactionPayload.hpp"
 #include "core/ValidatorRegistry.hpp"
@@ -19,12 +20,7 @@ namespace {
 
 using namespace nodo;
 constexpr std::int64_t kTimestamp = 1900000000;
-
-void require(bool condition, const std::string &message) {
-  if (!condition) {
-    throw std::runtime_error(message);
-  }
-}
+using nodo::test::require;
 
 // Truncating trailing bytes is a reliable corruption test: encode() packs
 // fields tightly with no padding, so removing bytes from the end always

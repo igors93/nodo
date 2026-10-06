@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
 #include "crypto/KeyPair.hpp"
 #include "core/TransactionPayload.hpp"
@@ -15,10 +16,7 @@ namespace {
 using namespace nodo;
 
 constexpr std::int64_t kTs = 1900000000LL;
-
-void require(bool condition, const std::string& msg) {
-    if (!condition) throw std::runtime_error(msg);
-}
+using nodo::test::require;
 
 void approve(
     node::GovernanceExecutor& executor,

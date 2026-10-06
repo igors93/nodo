@@ -1,3 +1,5 @@
+#include "utils/HashString.hpp"
+#include "utils/SafeScalar.hpp"
 #include "node/StakingRegistry.hpp"
 
 #include "crypto/hash.h"
@@ -13,22 +15,10 @@ namespace nodo::node {
 namespace {
 
 bool isSafeScalar(const std::string &value) {
-  if (value.empty())
-    return false;
-  for (const char c : value) {
-    if (c == ';' || c == '{' || c == '}' || c == '[' || c == ']' || c == ',' ||
-        c == '\n' || c == '\r' || c == '\t') {
-      return false;
-    }
-  }
-  return true;
+  return utils::isSafeDelimitedText(value, std::string::npos, ";{}[],\n\r\t");
 }
 
-std::string hashString(const std::string &value) {
-  char output[NODO_HASH_BUFFER_SIZE] = {0};
-  nodo_hash_string(value.c_str(), output, sizeof(output));
-  return std::string(output);
-}
+
 
 utils::Amount safeAvailable(const economics::StakeAccount &account) {
   if (account.bondedAmount() < account.slashedAmount()) {
@@ -180,7 +170,7 @@ StakingRegistry::stakePositionId(const std::string &ownerAddress,
   if (!isSafeScalar(ownerAddress) || !isSafeScalar(validatorAddress)) {
     return "";
   }
-  return hashString("stake-position:" + validatorAddress + ":" + ownerAddress);
+  return utils::hashCString("stake-position:" + validatorAddress + ":" + ownerAddress);
 }
 
 bool StakingRegistry::hasAccount(const std::string &validatorAddress) const {
@@ -849,7 +839,7 @@ void StakingRegistry::appendLifecycleRecord(
   record.activationHeight = position.activationHeight;
   record.withdrawableHeight = position.withdrawableHeight;
   record.reason = std::move(reason);
-  record.recordId = hashString(
+  record.recordId = utils::hashCString(
       "stake-lifecycle:" + std::to_string(m_lifecycleRecords.size()) + ":" +
       record.action + ":" + validatorAddress + ":" + ownerAddress + ":" +
       std::to_string(blockHeight) + ":" + std::to_string(amount.rawUnits()) +

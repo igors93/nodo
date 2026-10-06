@@ -34,16 +34,7 @@ std::uint64_t SecurityWeight::lockDurationMultiplier(
 
     const std::uint64_t remainingBlocks = lockedUntilBlock - currentBlock;
 
-    /*
-     * Regra inicial simples:
-     *
-     * 0-99 blocos restantes     → multiplicador 1
-     * 100-499 blocos restantes  → multiplicador 2
-     * 500+ blocos restantes     → multiplicador 3
-     *
-     * Isso incentiva travamentos mais longos,
-     * mas evita crescimento exagerado no início.
-     */
+    /* Remaining lock duration maps to multipliers 1 (<100 blocks), 2 (<500), or 3 (500+). */
     if (remainingBlocks >= 500) {
         return 3;
     }

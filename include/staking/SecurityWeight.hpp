@@ -7,25 +7,10 @@
 
 namespace nodo::staking {
 
-/*
- * SecurityWeight representa a força econômica gerada por moedas travadas.
- *
- * Ideia da Nodo:
- * - moeda livre = valor disponível;
- * - moeda travada = valor protegendo a rede.
- */
+/* SecurityWeight measures the economic weight of locked coin lots. */
 class SecurityWeight {
 public:
-    /*
-     * Calcula o peso de segurança de um lote de moedas.
-     *
-     * Nesta primeira versão:
-     * peso = quantidade de NODO travado * multiplicador por tempo.
-     *
-     * IMPORTANTE:
-     * Isso é uma regra econômica do protocolo.
-     * Deve ser determinística.
-     */
+    /* Calculate a lot's deterministic security weight from its locked amount and remaining lock duration. */
     static std::uint64_t calculateForCoinLot(
         const core::CoinLot& coinLot,
         std::uint64_t currentBlock

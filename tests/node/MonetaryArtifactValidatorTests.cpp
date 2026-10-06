@@ -106,8 +106,8 @@ nodo::node::MonetaryFirewallAudit makeFirewallAudit(
     std::int64_t treasuryDelta,
     std::int64_t supplyAfter
 ) {
-    const nodo::node::MonetaryPolicy policy =
-        nodo::node::MonetaryPolicy::protocolDefault();
+    const nodo::node::MonetaryFirewallRule policy =
+        nodo::node::MonetaryFirewallRule::protocolDefault();
 
     return nodo::node::MonetaryFirewallAudit(
         "PASS",

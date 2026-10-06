@@ -1,4 +1,4 @@
-#include "consensus/BlockProductionPhase.hpp"
+#include "node/consensus/BlockProductionPhase.hpp"
 
 #include "core/BlockStateTransitionValidator.hpp"
 #include "core/MempoolBlockProducer.hpp"

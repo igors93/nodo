@@ -66,7 +66,7 @@ See [Proof of Protection](docs/overview/proof-of-protection.md) for the deeper m
 Implemented foundations include:
 
 - localnet development pipeline with initialization, transaction submission, local PRECOMMIT-backed block production, finalization, reload, and audit;
-- CMake-based C++20 build with one test executable per `tests/**/*.cpp`;
+- CMake-based C++20 build with CTest-discovered protocol tests;
 - strict storage schema validation and atomic persistence helpers (`AtomicFile` crash-safe writes);
 - canonical finalized artifacts with monetary, treasury, governance, validator, and slashing sections;
 - authoritative state-transition execution before block votes and unified canonical replay of accounts plus protocol domains into deterministic state/receipts roots, with coin lot ownership validation and CoinLot registry digest included in the state root commitment;
@@ -118,6 +118,10 @@ export BLST_ROOT="$HOME/.nodo/deps/blst"
 If `blst` is not installed, see [Build](docs/getting-started/build.md).
 
 ## Build
+
+`VERSION` is the software release source used by CMake. The wire protocol
+version is defined separately in `include/config/ProtocolVersion.hpp`; a
+software patch release does not imply a protocol change.
 
 Prerequisites:
 
@@ -204,7 +208,7 @@ The official public protocol API is JSON-RPC 2.0 over HTTP at `POST /rpc`; REST 
 | `src/node/` | Runtime, storage/reload, finalized artifacts, QC persistence, diagnostics, readiness, and chain audit. |
 | `src/p2p/` | Messages, gossip, TCP/loopback transport, sync, encryption, and peer limiting. |
 | `src/storage/` | Atomic files, block storage, evidence stores, and persistence helpers. |
-| `tests/` | CTest-discovered module tests (one executable per file, named `{module}_{TestFile}`). |
+| `tests/` | CTest-discovered module tests with shared module runners; each test keeps its `{module}_{TestFile}` CTest name. |
 | `scripts/` | Build, test, cleanup, and dependency helper scripts. |
 | `docs/` | Project documentation. |
 
@@ -212,17 +216,15 @@ The official public protocol API is JSON-RPC 2.0 over HTTP at `POST /rpc`; REST 
 
 ```text
 {dataDirectory}/
-├── manifest               — latest height, hash, and state root
-├── schema                 — storage schema version
-├── blocks/                — finalized block artifact files
-├── mempool/               — persistent mempool transactions
-├── sync/
-│   ├── checkpoint.conf    — block sync checkpoint (last synced height)
-│   └── qc/
-│       ├── 1.qc           — FinalizedBlockRecord (QC proof) for height 1
-│       ├── 2.qc           — FinalizedBlockRecord (QC proof) for height 2
-│       └── ...
-└── ...
+  storage_schema.nodo       storage schema version
+  manifest.nodo             finalized height, hash and state root
+  genesis.nodo              network genesis document
+  blocks/                   finalized block artifacts
+  mempool/                  persistent pending transactions
+  peers/local_peer.nodo     local peer identity
+  runtime/runtime_snapshot.nodo
+  sync/qc/<height>.qc       persisted finality evidence
+
 ```
 
 Each `.qc` file is written atomically via temp file + rename. On startup, all `.qc` files are loaded and the in-memory `BlockFinalizationRegistry` is restored before sync or consensus resumes.
@@ -293,7 +295,7 @@ NodeDaemon.tick()
         └── FinalizedBlockRecordStore::save()   — persist QC to disk
 ```
 
-`ConsensusEventLoop` runs in a background thread inside `NodeOrchestrator`. It validates `BLOCK_PROPOSAL` messages, retains the active candidate outside the canonical chain, accumulates `PREVOTE` and `PRECOMMIT` `VALIDATOR_VOTE` messages, assembles a `QuorumCertificate` only from PRECOMMIT votes, and delegates the only distributed-network append to `BlockFinalizer` after quorum. The local `block produce` command uses a DEVELOPMENT_LOCAL-only helper and is rejected on testnet-candidate and production network classes.
+`NodeOrchestrator` ticks `ConsensusEventLoop` synchronously from the daemon loop. The event loop validates `BLOCK_PROPOSAL` messages, retains the active candidate outside the canonical chain, accumulates `PREVOTE` and `PRECOMMIT` `VALIDATOR_VOTE` messages, assembles a `QuorumCertificate` only from PRECOMMIT votes, and delegates the distributed-network append to `BlockFinalizer` after quorum. The local `block produce` command uses a DEVELOPMENT_LOCAL-only helper and is rejected on testnet-candidate and production network classes.
 
 ## Documentation
 
@@ -307,7 +309,7 @@ Key entry points:
 - [Build](docs/getting-started/build.md)
 - [Testing](docs/getting-started/testing.md)
 - [Architecture Overview](docs/architecture/architecture-overview.md)
-- [Persistent Block State Sync](docs/PERSISTENT_BLOCK_STATE_SYNC.md)
+- [Networking and Sync](docs/protocol/networking-and-sync.md)
 - [Governance Vote Evidence](docs/governance/vote-evidence.md)
 - [Treasury Execution Evidence](docs/treasury/treasury-execution-evidence.md)
 - [Security Model](docs/security/security-model.md)
@@ -358,41 +360,5 @@ Contribution expectations:
 
 ## License
 
-No repository license file is currently present. Until a license is added, do not assume open-source redistribution rights beyond what GitHub access permits.
-
-### Finalized slashing evidence sync audit
-
-Finalized block sync no longer depends on a peer having seen the original slashing-evidence gossip. When a synchronized finalized block carries `SLASHING_EVIDENCE` records, the import path replays the block, verifies that each evidence id produced exactly one `ValidatorPenaltyDecision`, and audits that `ValidatorRegistry` and `StakingRegistry` mirror the finalized jail/tombstone/slash effects before publishing the new runtime state. Evidence that was still pending locally is removed from the pending evidence store once its penalty is finalized by block sync.
-
-### Mandatory P2P hardening boundary
-
-The live TCP testnet path now treats P2P security controls as mandatory protocol admission gates, not optional helpers. Non-handshake traffic must arrive through an authenticated encrypted peer session, every envelope is validated against network id, chain id, protocol version, TTL, clock skew, duplicate message id and payload hash, rate limits are enforced per peer and per message type, repeated abuse quarantines and disconnects the peer, and peer admission is checked by `EclipseGuard` before registration. Local loopback tests may still instantiate `GossipMesh` without the hardened config, but `TcpTestnetNodeRuntime` always enables the hardened path.
-
-### Discovery and reconnection policy
-
-Bootstrap peers, UDP discovery results and disconnected authenticated peers now enter one deterministic reconnection policy before any TCP attempt is made. The daemon no longer connects discovered/static peers through an immediate shortcut: candidates are tracked, seeded into discovery, retried with exponential backoff, capped per tick, and suppressed when peer quarantine state is active. This keeps peer discovery useful without allowing tight reconnect loops or bypassing the hardened P2P admission gate.
-
-### Authenticated peer exchange
-
-Peer exchange is now a canonical authenticated P2P message. Nodes broadcast capped `PEER_EXCHANGE` payloads only through authenticated encrypted sessions, parse them through the strict peer-exchange codec, screen each candidate with `EclipseGuard`, persist accepted reconnect candidates separately from trusted peer metadata, and route every learned peer through `PeerReconnectionPolicy` instead of opening direct sockets.
-### Connection slot policy
-
-The TCP testnet transport now treats connection capacity as a protocol admission policy. Pending handshakes remain capped by total/IP/subnet limits and token buckets, while authenticated connections are capped by total, inbound, outbound, per-IP and per-/24 subnet slots. When a total or directional slot is full, the oldest replaceable connection is evicted deterministically; when an IP or subnet is saturated, new peers are rejected instead of weakening diversity. This keeps discovery and peer exchange useful without allowing one address block to occupy the node.
-
-### P2P reputation and temporary bans
-
-Peer abuse handling is now persistent and time-bounded. Repeated invalid or rate-limited traffic lowers the peer score, creates audit evidence, applies a temporary ban with `bannedUntil` and canonical reason, disconnects the peer, suppresses reconnect attempts while the ban is active, and lifts the ban deterministically after expiry. Peer penalty state is stored in `peers.conf` together with score, quarantine flag and invalid-message count.
-
-### Light client and event stream
-
-Nodo now exposes light-client primitives through JSON-RPC (`light_getCheckpoint`,
-`light_getHeaders`, `light_getAccountProof`, `light_getTransactionProof`) and a
-WebSocket-compatible event stream at `GET /events`. This is intended for wallets,
-explorers and monitoring tools that need finalized headers, account proofs,
-transaction proofs and live finalization/submission notifications without running
-a full archival node.
-
-
-### Production key-management foundation
-
-Nodo now includes a `VALIDATOR_KEY_ROTATE` protocol transaction and an external-signer-ready validator signing boundary. This is a pre-mainnet foundation for key rotation and future HSM-backed signing.
+Nodo is available under the [MIT License](LICENSE). Contributions follow the
+same terms; see [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -18,7 +18,7 @@
 
 #include "../common/RealTcpNodeTestSupport.hpp"
 
-#include "consensus/BlockProposalPhase.hpp"
+#include "node/consensus/BlockProposalPhase.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "p2p/NetworkEnvelope.hpp"
 #include "p2p/Peer.hpp"

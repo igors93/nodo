@@ -5,31 +5,16 @@
 
 namespace nodo::crypto {
 
-/*
- * CryptoAlgorithm define os algoritmos criptográficos que a Nodo conhece.
- *
- * DECISÃO DE SEGURANÇA:
- * A Nodo não deve depender para sempre de um único algoritmo.
- * Isso permite migrar no futuro para criptografia pós-quântica.
- */
+/* Algorithms recognized by Nodo. Availability does not imply production approval. */
 enum class CryptoAlgorithm {
-    /*
-     * Apenas para desenvolvimento.
-     * NÃO É SEGURO.
-     * Serve para testar a arquitetura antes de integrar uma biblioteca real.
-     */
+    /* Development-only fake signing is never safe for a live network. */
     DEVELOPMENT_FAKE_SIGNATURE,
 
-    /*
-     * Algoritmos clássicos.
-     * Futuramente podem ser implementados usando bibliotecas confiáveis.
-     */
+    /* Classical algorithms; availability depends on provider support. */
     CLASSIC_ED25519,
     CLASSIC_ECDSA_SECP256K1,
 
-    /*
-     * Validator consensus signatures.
-     */
+    /* Validator consensus signature algorithm. */
     BLS12_381
 };
 

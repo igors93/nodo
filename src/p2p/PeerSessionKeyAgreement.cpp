@@ -1,3 +1,4 @@
+#include "utils/SafeScalar.hpp"
 #include "p2p/PeerSessionKeyAgreement.hpp"
 
 #include "crypto/Hex.hpp"
@@ -31,8 +32,7 @@ std::optional<std::vector<unsigned char>> decodeKey(const std::string& value) {
 }
 
 bool isSafeScalar(const std::string& value, std::size_t maximum = 256) {
-    if (value.empty() || value.size() > maximum) return false;
-    return value.find_first_of("{};\r\n") == std::string::npos;
+  return utils::isSafeDelimitedText(value, maximum, "{};\r\n");
 }
 
 } // namespace

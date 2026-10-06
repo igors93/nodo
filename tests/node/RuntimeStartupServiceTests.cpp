@@ -170,11 +170,14 @@ void testValidateTestnetCandidateProfileValid() {
 }
 
 void testValidateMainnetProfileBlocked() {
-    const NetworkParameters params(
-        "nodo-mainnet-1", "mainnet", "nodo/0.1",
-        600, 7, 2, 3, 250, 256, 10000, 10000, 15, 6,
-        "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2"
-    );
+    const NetworkParameters params(nodo::config::NetworkParameterValues{
+        .chainId = "nodo-mainnet-1", .networkName = "mainnet",
+        .protocolVersion = "nodo/0.1", .epochDurationSeconds = 600,
+        .minimumValidatorCount = 7, .quorumThresholdNumerator = 2,
+        .quorumThresholdDenominator = 3, .maxTransactionsPerBlock = 250,
+        .maxPeerCount = 256, .maxMempoolTransactions = 10000,
+        .minimumFeeRawUnits = 10000, .targetBlockTimeSeconds = 15,
+        .finalityDepth = 6});
     const StartupValidationResult result =
         RuntimeStartupService::validateNetworkProfile(params);
     assert(!result.valid());

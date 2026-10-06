@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "storage/AccountStateSnapshotStore.hpp"
 
 #include "config/NetworkParameters.hpp"
@@ -21,11 +22,7 @@ using storage::AccountStateSnapshot;
 using storage::AccountStateSnapshotStore;
 
 constexpr std::int64_t kTs = 1900000000LL;
-
-void require(bool condition, const std::string &msg) {
-  if (!condition)
-    throw std::runtime_error(msg);
-}
+using nodo::test::require;
 
 std::filesystem::path tempDir() {
   const std::filesystem::path dir =

@@ -56,8 +56,12 @@ void testNetworkParametersAreValidAndDeterministic() {
   requireCondition(!params.deterministicId().empty(),
                    "Valid network parameters should have deterministic id.");
 
-  const NetworkParameters invalid("bad chain id with spaces", "nodo",
-                                  "nodo/0.1", 60, 1, 2, 3, 100, 10);
+  const NetworkParameters invalid(nodo::config::NetworkParameterValues{
+      .chainId = "bad chain id with spaces", .networkName = "nodo",
+      .protocolVersion = "nodo/0.1", .epochDurationSeconds = 60,
+      .minimumValidatorCount = 1, .quorumThresholdNumerator = 2,
+      .quorumThresholdDenominator = 3, .maxTransactionsPerBlock = 100,
+      .maxPeerCount = 10});
 
   requireCondition(!invalid.isValid(), "Unsafe chain id should be invalid.");
 }
@@ -83,8 +87,12 @@ void testGenesisConfigBuildsBlockchainAndValidatorRegistry() {
 }
 
 void testGenesisRejectsTooFewValidators() {
-  const NetworkParameters params("nodo-devnet-2", "nodo-devnet", "nodo/0.1", 60,
-                                 3, 2, 3, 100, 10);
+  const NetworkParameters params(nodo::config::NetworkParameterValues{
+      .chainId = "nodo-devnet-2", .networkName = "nodo-devnet",
+      .protocolVersion = "nodo/0.1", .epochDurationSeconds = 60,
+      .minimumValidatorCount = 3, .quorumThresholdNumerator = 2,
+      .quorumThresholdDenominator = 3, .maxTransactionsPerBlock = 100,
+      .maxPeerCount = 10});
 
   const GenesisConfig config(params, kTimestamp, {validator("only-one")},
                              "nodo-devnet-genesis");

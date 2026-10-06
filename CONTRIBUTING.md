@@ -36,6 +36,9 @@ Documentation-only changes do not require a full build unless they edit build sc
 
 ## Contribution Rules
 
+- Contributions are submitted under the repository's [MIT License](LICENSE).
+- Contributors retain copyright to their own work and must have the right to
+  submit it. No separate contributor license agreement is required.
 - Do not disable or weaken tests to make a change pass.
 - Do not remove protocol validation, P2P validation, storage validation, treasury validation, governance validation, or security gates.
 - Do not create fake transports, fake approvals, fake governance, or fake evidence in production code.

@@ -1,3 +1,4 @@
+#include "utils/Logger.hpp"
 #include "node/NodeDaemon.hpp"
 
 #include <iostream>
@@ -6,8 +7,8 @@
 #include <thread>
 
 #include "consensus/BlockFinalizer.hpp"
-#include "consensus/BlockProductionPhase.hpp"
-#include "consensus/BlockProposalPhase.hpp"
+#include "node/consensus/BlockProductionPhase.hpp"
+#include "node/consensus/BlockProposalPhase.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "crypto/Signer.hpp"
@@ -170,19 +171,19 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
           admitted = result.success();
 
           if (!admitted) {
-            std::cout << "[DEBUG] NodeDaemon processTransactionGossip "
+            utils::log(utils::LogLevel::DEBUG, "NodeDaemon") << "NodeDaemon processTransactionGossip "
                          "admitTransaction failed: "
                       << result.reason() << std::endl;
           }
         } else {
-          std::cout
-              << "[NodeDaemon] processTransactionGossip validation rejected: "
+          utils::log(utils::LogLevel::DEBUG, "NodeDaemon")
+              << "processTransactionGossip validation rejected: "
               << validation.reason() << std::endl;
         }
       }
     } else {
-      std::cout
-          << "[NodeDaemon] processTransactionGossip failed to decode payload"
+      utils::log(utils::LogLevel::DEBUG, "NodeDaemon")
+          << "processTransactionGossip failed to decode payload"
           << std::endl;
     }
 
@@ -218,7 +219,7 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
             p2p::NetworkMessageType::TRANSACTION_GOSSIP, payload, now);
       } else {
         m_txRelayDroppedCount++;
-        std::cout << "[NodeDaemon] Dropping transaction gossip relay to avoid "
+        utils::log(utils::LogLevel::DEBUG, "NodeDaemon") << "Dropping transaction gossip relay to avoid "
                      "amplification (budget exceeded)."
                   << std::endl;
       }
@@ -315,7 +316,7 @@ void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
                                                 m_orchestrator.mutableRuntime(),
                                                 m_policy, m_provider, store);
 
-    std::cout << "[DEBUG] processFinalizedArtifacts received artifact. "
+    utils::log(utils::LogLevel::DEBUG, "NodeDaemon") << "processFinalizedArtifacts received artifact. "
               << "status: " << (int)result.status()
               << ", reason: " << result.reason() << std::endl;
 
@@ -329,7 +330,7 @@ void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
         const consensus::FinalizedBlockRecord record =
             consensus::FinalizedBlockRecord::deserialize(envelope.payload());
         if (record.isStructurallyValid()) {
-          std::cout << "[DEBUG] Triggering sync for height "
+          utils::log(utils::LogLevel::DEBUG, "NodeDaemon") << "Triggering sync for height "
                     << record.blockIndex() << std::endl;
           // Registers the proven-ahead height with the orchestrator's sync
           // watchdog (which requests immediately and keeps retrying every
@@ -339,12 +340,12 @@ void NodeDaemon::processFinalizedArtifacts(std::int64_t now) {
                                            record.blockHash(),
                                            envelope.senderNodeId(), now);
         } else {
-          std::cout
-              << "[DEBUG] BLOCK_UNAVAILABLE but record structurally invalid."
+          utils::log(utils::LogLevel::DEBUG, "NodeDaemon")
+              << "BLOCK_UNAVAILABLE but record structurally invalid."
               << std::endl;
         }
       } catch (const std::exception &e) {
-        std::cout << "[DEBUG] BLOCK_UNAVAILABLE exception: " << e.what()
+        utils::log(utils::LogLevel::DEBUG, "NodeDaemon") << "BLOCK_UNAVAILABLE exception: " << e.what()
                   << std::endl;
       }
     }
@@ -463,7 +464,7 @@ void NodeDaemon::maintainPeerConnections(std::int64_t now) {
       guard.recommendEvictions(subnets, activePeers.size());
 
   for (const std::string &evictedNodeId : evictions) {
-    std::cout << "[NodeDaemon] Evicting peer " << evictedNodeId
+    utils::log(utils::LogLevel::DEBUG, "NodeDaemon") << "Evicting peer " << evictedNodeId
               << " to maintain EclipseGuard subnet limits." << std::endl;
     transport.disconnect(localNodeId, evictedNodeId);
   }
@@ -536,7 +537,7 @@ void NodeDaemon::maintainPeerConnections(std::int64_t now) {
       continue;
     }
 
-    std::cout << "[NodeDaemon] Discovered candidate " << candidate.host << ":"
+    utils::log(utils::LogLevel::DEBUG, "NodeDaemon") << "Discovered candidate " << candidate.host << ":"
               << candidate.tcpPort << ", registering." << std::endl;
 
     p2p::PeerEndpoint endpoint(candidate.host, candidate.tcpPort);

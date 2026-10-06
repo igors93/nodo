@@ -1,3 +1,4 @@
+#include "utils/SafeScalar.hpp"
 #include "node/NodeDataDirectory.hpp"
 
 #include "config/GenesisDocumentCodec.hpp"
@@ -26,28 +27,7 @@ constexpr const char* MANIFEST_VERSION =
 bool isSafeScalar(
     const std::string& value
 ) {
-    if (value.empty()) {
-        return false;
-    }
-
-    for (const char character : value) {
-        const bool allowed =
-            (character >= 'a' && character <= 'z') ||
-            (character >= 'A' && character <= 'Z') ||
-            (character >= '0' && character <= '9') ||
-            character == '_' ||
-            character == '-' ||
-            character == '.' ||
-            character == ':' ||
-            character == '/' ||
-            character == '#';
-
-        if (!allowed) {
-            return false;
-        }
-    }
-
-    return true;
+  return utils::isSafeIdentifier(value, std::string::npos, "_-.:/#");
 }
 
 bool isCanonicalHashString(
@@ -197,19 +177,6 @@ void requireCanonicalHashField(
     if (!isCanonicalHashString(value)) {
         throw std::invalid_argument("Manifest hash field is malformed: " + key);
     }
-}
-
-std::int64_t minimumFeeRawUnits(
-    const config::GenesisConfig& genesisConfig
-) {
-    const std::uint64_t minimumFee =
-        genesisConfig.networkParameters().minimumFeeRawUnits();
-
-    if (minimumFee > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-        throw std::invalid_argument("Network minimum fee exceeds supported Amount range.");
-    }
-
-    return static_cast<std::int64_t>(minimumFee);
 }
 
 std::string latestStateRootForRuntime(

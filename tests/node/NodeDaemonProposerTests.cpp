@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "node/NodeDaemon.hpp"
 #include "node/TcpTestnetNodeRuntime.hpp"
 #include "p2p/LoopbackTransport.hpp"
@@ -8,11 +9,8 @@
 
 using namespace nodo;
 
-void require(bool condition, const std::string &message) {
-  if (!condition) {
-    throw std::runtime_error(message);
-  }
-}
+namespace {
+using nodo::test::require;
 
 void testProposerEmitsExactlyOneBlockProposalPerRound() {
   // Check if exactly 1 BLOCK_PROPOSAL is emitted.
@@ -26,6 +24,8 @@ void testNonProposerNeverEmitsBlockProposal() {
 void testReTickInSameRoundDoesNotGenerateSecondProposal() {
   require(true, "testReTickInSameRoundDoesNotGenerateSecondProposal failed");
 }
+
+} // namespace
 
 int main() {
   try {

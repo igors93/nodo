@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "node/CanonicalSlashingTransition.hpp"
 #include "node/FinalizedSlashingEvidenceAudit.hpp"
 #include "node/StakingRegistry.hpp"
@@ -17,11 +18,7 @@ namespace {
 using namespace nodo;
 
 constexpr std::int64_t kTimestamp = 1900000000LL;
-
-void require(bool condition, const std::string &message) {
-  if (!condition)
-    throw std::runtime_error(message);
-}
+using nodo::test::require;
 
 class TestBlsSignatureProvider final : public crypto::SignatureProvider {
 public:

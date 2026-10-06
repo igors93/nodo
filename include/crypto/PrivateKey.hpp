@@ -7,15 +7,7 @@
 
 namespace nodo::crypto {
 
-/*
- * PrivateKey representa uma chave privada.
- *
- * ALERTA DE SEGURANÇA:
- * Em uma blockchain real, chave privada nunca deve ser salva em texto puro,
- * nunca deve ser enviada pela rede e nunca deve aparecer em logs.
- *
- * Nesta fase inicial, ela existe apenas para modelar a arquitetura.
- */
+/* Private key material must never be logged or transmitted. This type models a signing boundary. */
 class PrivateKey {
 public:
     PrivateKey();
@@ -29,12 +21,7 @@ public:
 
     bool isValid() const;
 
-    /*
-     * Usado somente pela fronteira de assinatura.
-     *
-     * NÃO imprimir esse valor.
-     * NÃO salvar em logs.
-     */
+    /* Expose key material only to the signing implementation. Never print or log it. */
     const std::string& keyMaterialForSigningOnly() const;
 
 private:

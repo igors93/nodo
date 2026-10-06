@@ -2,7 +2,7 @@
 #define NODO_NODE_NODE_ORCHESTRATOR_HPP
 
 #include "config/NetworkParameters.hpp"
-#include "consensus/ConsensusEventLoop.hpp"
+#include "node/consensus/ConsensusEventLoop.hpp"
 #include "consensus/EvidencePool.hpp"
 #include "consensus/ValidatorPenaltyApplication.hpp"
 #include "crypto/CryptoPolicy.hpp"
@@ -116,7 +116,7 @@ struct NodeOrchestratorStartResult {
  *   1. Detect if data directory is initialized; if not, run genesis init.
  *   2. Load NodeRuntime from disk (blocks + mempool + manifest).
  *   3. Start TcpTestnetNodeRuntime (bind TCP port, start gossip).
- *   4. Start ConsensusEventLoop (background thread with block producer wired).
+ *   4. Initialize ConsensusEventLoop with the block producer wired.
  *   5. Start NodeRpcServer, which hosts the official JSON-RPC API at POST /rpc
  * and keeps REST routes for operator diagnostics.
  *
@@ -130,7 +130,7 @@ struct NodeOrchestratorStartResult {
  *   - RPC server → ConsensusEventLoop → TcpTestnet → state flush
  *
  * Thread model:
- *   - ConsensusEventLoop runs on its own thread.
+ *   - ConsensusEventLoop is ticked synchronously by the caller.
  *   - NodeRpcServer runs on its own thread and serves JSON-RPC plus operational
  * REST routes.
  *   - The gossip/network tick is driven by the caller's thread or
@@ -150,7 +150,7 @@ public:
 
   /*
    * Initialize, load state, start all subsystems.
-   * Returns immediately after all threads are started.
+   * Returns after the transport, consensus state and RPC service are ready.
    */
   NodeOrchestratorStartResult start();
 

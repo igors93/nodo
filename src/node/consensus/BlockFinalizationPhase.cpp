@@ -1,4 +1,4 @@
-#include "consensus/BlockFinalizationPhase.hpp"
+#include "node/consensus/BlockFinalizationPhase.hpp"
 
 #include "node/RuntimeBlockPipeline.hpp"
 

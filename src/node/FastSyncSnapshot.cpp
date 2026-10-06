@@ -1,3 +1,4 @@
+#include "utils/SafeScalar.hpp"
 #include "node/FastSyncSnapshot.hpp"
 
 #include "core/StateRootCalculator.hpp"
@@ -36,18 +37,7 @@ bool isCanonicalHash(const std::string &value) {
 }
 
 bool isSafeScalar(const std::string &value) {
-  if (value.empty()) {
-    return false;
-  }
-  for (const char c : value) {
-    const bool allowed = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                         (c >= '0' && c <= '9') || c == '_' || c == '-' ||
-                         c == '.' || c == ':' || c == '#';
-    if (!allowed) {
-      return false;
-    }
-  }
-  return true;
+  return utils::isSafeIdentifier(value, std::string::npos, "_-.:#");
 }
 
 std::uint64_t parseU64(const std::string &value, const std::string &field) {

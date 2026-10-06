@@ -20,7 +20,7 @@ using nodo::node::ProtectionWorkRecord;
 using nodo::node::SecurityScoreCalculator;
 using nodo::node::SecurityScoreRecord;
 using nodo::node::SlashingEvidence;
-using nodo::node::SlashingEvidenceRecord;
+using nodo::node::ValidatorRiskEvidenceRecord;
 using nodo::node::SlashingEvidenceSummary;
 using nodo::node::SlashingPreparationRecord;
 using nodo::node::ValidatorContainmentDecisionBuilder;
@@ -117,7 +117,7 @@ std::vector<ProtectionWorkRecord> workRecords() {
 }
 
 void testBuildsRiskEvidence() {
-    const std::vector<SlashingEvidenceRecord> evidence =
+    const std::vector<ValidatorRiskEvidenceRecord> evidence =
         SlashingEvidence::buildEvidenceRecords(
             {riskAssessment()},
             {networkPolicy()},
@@ -135,7 +135,7 @@ void testBuildsRiskEvidence() {
 }
 
 void testBuildsPreparationAndSummary() {
-    const std::vector<SlashingEvidenceRecord> evidence =
+    const std::vector<ValidatorRiskEvidenceRecord> evidence =
         SlashingEvidence::buildEvidenceRecords(
             {riskAssessment()},
             {networkPolicy()},

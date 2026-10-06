@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "consensus/SlashingEvidence.hpp"
 #include "consensus/ValidatorPenaltyApplication.hpp"
 #include "core/ValidatorRegistry.hpp"
@@ -21,10 +22,7 @@ using nodo::crypto::AddressDerivation;
 using nodo::crypto::KeyPair;
 
 constexpr std::int64_t kNow = 1900000000LL;
-
-void require(bool condition, const std::string& msg) {
-    if (!condition) throw std::runtime_error(msg);
-}
+using nodo::test::require;
 
 // Build a ValidatorRegistry with one active validator.
 std::pair<ValidatorRegistry, std::string> registryWithOneValidator() {

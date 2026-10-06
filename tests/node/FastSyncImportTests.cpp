@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "config/GenesisRegistry.hpp"
 #include "consensus/BlockFinalizer.hpp"
 #include "core/Block.hpp"
@@ -26,12 +27,10 @@ using namespace nodo::config;
 using namespace nodo::crypto;
 using namespace nodo::p2p;
 
-constexpr std::int64_t kTimestamp = 1700000000LL;
+namespace {
 
-void require(bool condition, const std::string &message) {
-  if (!condition)
-    throw std::runtime_error(message);
-}
+constexpr std::int64_t kTimestamp = 1700000000LL;
+using nodo::test::require;
 
 KeyPair validatorKey() {
   return KeyPair::createDeterministicBls12381KeyPair("fastsync-validator");
@@ -136,6 +135,8 @@ void produceBlock(NodeRuntime &runtime, std::int64_t timestamp,
       validatorSigner(), &directoryConfig);
   require(result.finalized(), "Block must finalize: " + result.reason());
 }
+
+} // namespace
 
 int main() {
   try {

@@ -26,8 +26,8 @@ namespace nodo::economics {
  *
  * Inflation cap:
  * 400 basis points (4%) is the maximum allowed annual inflation rate.
- * This matches the constant NODO_MAX_ANNUAL_INFLATION_BASIS_POINTS in
- * node::MonetaryFirewall. Both must stay in sync.
+ * The node monetary firewall reads this constant instead of maintaining a
+ * second independently configured inflation ceiling.
  */
 class MonetaryPolicy {
 public:

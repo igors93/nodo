@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "core/AccountState.hpp"
 #include "core/AccountStateView.hpp"
 #include "core/TransactionPayload.hpp"
@@ -15,11 +16,7 @@
 namespace {
 
 using namespace nodo::node;
-
-void require(bool condition, const std::string &message) {
-  if (!condition)
-    throw std::runtime_error(message);
-}
+using nodo::test::require;
 
 void testProposalRequiresWeightedApprovalBeforeExecution() {
   GovernanceExecutor executor;

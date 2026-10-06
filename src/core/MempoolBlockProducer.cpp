@@ -1,3 +1,4 @@
+#include "utils/Logger.hpp"
 #include "core/MempoolBlockProducer.hpp"
 
 #include "core/StateTransitionPreview.hpp"
@@ -243,8 +244,8 @@ BlockProductionResult produceCandidateBlockImpl(
                                          *accountStateView);
 
   if (transactions.empty()) {
-    std::cout
-        << "[DEBUG] MempoolBlockProducer transactions empty. Mempool size: "
+    utils::log(utils::LogLevel::DEBUG, "MempoolBlockProducer")
+        << "MempoolBlockProducer transactions empty. Mempool size: "
         << mempool.size() << std::endl;
     return BlockProductionResult::rejected(
         BlockProductionStatus::EMPTY_MEMPOOL,

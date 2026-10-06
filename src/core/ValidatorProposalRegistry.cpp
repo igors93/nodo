@@ -1,3 +1,4 @@
+#include "utils/HashString.hpp"
 #include "core/ValidatorProposalRegistry.hpp"
 
 #include "crypto/hash.h"
@@ -10,11 +11,7 @@ namespace nodo::core {
 
 namespace {
 
-std::string hashString(const std::string& value) {
-    char output[NODO_HASH_BUFFER_SIZE] = {0};
-    nodo_hash_string(value.c_str(), output, sizeof(output));
-    return std::string(output);
-}
+
 
 bool isSafeRegistryText(const std::string& value) {
     if (value.empty()) {
@@ -188,7 +185,7 @@ ValidatorProposalRegistryEntry ValidatorProposalRegistryEntry::fromSignedProposa
         signature.signedChainSizeBeforeProposal(),
         signature.signedExpectedPreviousHash(),
         signature.proposedAt(),
-        hashString(signature.serialize())
+        utils::hashCString(signature.serialize())
     );
 
     if (!entry.isValid()) {

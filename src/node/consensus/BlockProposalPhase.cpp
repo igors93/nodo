@@ -1,4 +1,4 @@
-#include "consensus/BlockProposalPhase.hpp"
+#include "node/consensus/BlockProposalPhase.hpp"
 
 #include "node/SignedBlockProposalMessage.hpp"
 #include "p2p/NetworkEnvelope.hpp"
@@ -10,6 +10,7 @@ BlockProposalResult BlockProposalPhase::propose(
     std::uint64_t round, std::int64_t now, const crypto::Signer &signer,
     p2p::GossipMesh &gossip, const crypto::SignatureProvider &provider,
     const ProposalJustification &justification) {
+  (void)provider;
   if (!block.isValid(false)) {
     return BlockProposalResult::skipped("Block is structurally invalid.");
   }

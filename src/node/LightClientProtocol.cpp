@@ -1,3 +1,4 @@
+#include "utils/HashString.hpp"
 #include "node/LightClientProtocol.hpp"
 
 #include "utils/JsonText.hpp"
@@ -11,12 +12,7 @@
 namespace nodo::node {
 namespace {
 
-std::string hashString(const std::string &input) {
-  char output[NODO_HASH_BUFFER_SIZE] = {0};
-  nodo_hash_bytes(reinterpret_cast<const unsigned char *>(input.data()),
-                  input.size(), output, sizeof(output));
-  return std::string(output, NODO_HASH_HEX_SIZE);
-}
+
 
 using utils::jsonString;
 
@@ -98,7 +94,7 @@ bool LightClientHeader::isValid() const {
 }
 
 bool LightClientHeader::headerHashMatches() const {
-  return !m_headerPayload.empty() && hashString(m_headerPayload) == m_blockHash;
+  return !m_headerPayload.empty() && utils::hashBytes(m_headerPayload) == m_blockHash;
 }
 
 std::string LightClientHeader::serializeJson() const {

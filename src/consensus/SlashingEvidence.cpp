@@ -1,3 +1,5 @@
+#include "utils/HashString.hpp"
+#include "utils/SafeScalar.hpp"
 #include "consensus/SlashingEvidence.hpp"
 
 #include "crypto/hash.h"
@@ -15,30 +17,10 @@ namespace nodo::consensus {
 namespace {
 
 bool isSafeScalar(const std::string& value, std::size_t maxSize = 512) {
-    if (value.empty() || value.size() > maxSize) {
-        return false;
-    }
-
-    for (const char character : value) {
-        if (character == '\n' ||
-            character == '\r' ||
-            character == '\t' ||
-            character == '{' ||
-            character == '}' ||
-            character == '[' ||
-            character == ']') {
-            return false;
-        }
-    }
-
-    return true;
+  return utils::isSafeDelimitedText(value, maxSize, "{}[]\n\r\t");
 }
 
-std::string hashString(const std::string& value) {
-    char output[NODO_HASH_BUFFER_SIZE] = {0};
-    nodo_hash_string(value.c_str(), output, sizeof(output));
-    return std::string(output);
-}
+
 
 std::vector<std::string> splitTopLevel(const std::string& value, char separator) {
     std::vector<std::string> parts;
@@ -429,7 +411,7 @@ std::string DoubleVoteEvidence::payload() const {
 }
 
 std::string DoubleVoteEvidence::payloadHash() const {
-    return hashString("NODO_SLASHING_DOUBLE_VOTE_PAYLOAD_V1|" + payload());
+    return utils::hashCString("NODO_SLASHING_DOUBLE_VOTE_PAYLOAD_V1|" + payload());
 }
 
 std::string DoubleVoteEvidence::evidenceId() const {
@@ -437,7 +419,7 @@ std::string DoubleVoteEvidence::evidenceId() const {
         return "";
     }
 
-    return hashString("NODO_SLASHING_DOUBLE_VOTE_EVIDENCE_ID_V1|" + payloadHash());
+    return utils::hashCString("NODO_SLASHING_DOUBLE_VOTE_EVIDENCE_ID_V1|" + payloadHash());
 }
 
 SlashingEvidenceRecord DoubleVoteEvidence::toRecord() const {
@@ -588,7 +570,7 @@ std::string ProposerEquivocationEvidence::payload() const {
 }
 
 std::string ProposerEquivocationEvidence::payloadHash() const {
-    return hashString("NODO_SLASHING_PROPOSER_EQUIVOCATION_PAYLOAD_V1|" + payload());
+    return utils::hashCString("NODO_SLASHING_PROPOSER_EQUIVOCATION_PAYLOAD_V1|" + payload());
 }
 
 std::string ProposerEquivocationEvidence::evidenceId() const {
@@ -596,7 +578,7 @@ std::string ProposerEquivocationEvidence::evidenceId() const {
         return "";
     }
 
-    return hashString(
+    return utils::hashCString(
         "NODO_SLASHING_PROPOSER_EQUIVOCATION_EVIDENCE_ID_V1|" + payloadHash()
     );
 }

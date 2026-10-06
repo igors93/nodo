@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "core/Transaction.hpp"
 #include "core/TransactionPayload.hpp"
 #include "crypto/AddressDerivation.hpp"
@@ -9,10 +10,7 @@
 namespace {
 
 using namespace nodo;
-
-void require(bool condition, const std::string& message) {
-    if (!condition) throw std::runtime_error(message);
-}
+using nodo::test::require;
 
 void testValidatorRegistrationPayloadIsCanonical() {
     const crypto::KeyPair validator =

@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 
 #include "config/NetworkParameters.hpp"
@@ -17,11 +18,7 @@ using nodo::config::NetworkParameters;
 using nodo::node::RuntimeAccountStateBuilder;
 
 constexpr std::int64_t kNow = 1900000000LL;
-
-void require(bool condition, const std::string &msg) {
-  if (!condition)
-    throw std::runtime_error(msg);
-}
+using nodo::test::require;
 
 GenesisConfig minimalGenesisConfig() {
   return GenesisConfig(

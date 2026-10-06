@@ -1,3 +1,5 @@
+#include "utils/HashString.hpp"
+#include "utils/SafeScalar.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
 
 #include "crypto/Address.hpp"
@@ -21,24 +23,7 @@ constexpr const char* VOTE_PAYLOAD_VERSION =
 bool isSafeScalar(
     const std::string& value
 ) {
-    if (value.empty()) {
-        return false;
-    }
-
-    for (const char character : value) {
-        if (character == ';' ||
-            character == '{' ||
-            character == '}' ||
-            character == '[' ||
-            character == ']' ||
-            character == '\n' ||
-            character == '\r' ||
-            character == '\t') {
-            return false;
-        }
-    }
-
-    return true;
+  return utils::isSafeDelimitedText(value, std::string::npos, ";{}[]\n\r\t");
 }
 
 bool isValidatorAddressBoundToPublicKey(
@@ -58,19 +43,7 @@ bool isValidatorAddressBoundToPublicKey(
     );
 }
 
-std::string hashString(
-    const std::string& value
-) {
-    char output[NODO_HASH_BUFFER_SIZE] = {0};
 
-    nodo_hash_string(
-        value.c_str(),
-        output,
-        sizeof(output)
-    );
-
-    return std::string(output);
-}
 
 std::vector<std::string> splitTopLevel(
     const std::string& value,
@@ -548,7 +521,7 @@ const crypto::SignatureBundle& ValidatorVoteRecord::signatureBundle() const {
 }
 
 std::string ValidatorVoteRecord::deterministicId() const {
-    return hashString(
+    return utils::hashCString(
         "NODO_VALIDATOR_VOTE_RECORD_ID_V1|" + serialize()
     );
 }

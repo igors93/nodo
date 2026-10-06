@@ -48,8 +48,17 @@ BootstrapValidatorConfig validator(const std::string &suffix) {
 }
 
 GenesisConfig genesisConfig(const std::string &chainId = "nodo-data-dir-test") {
-  return GenesisConfig(NetworkParameters(chainId, "nodo-data-dir-network",
-                                         "nodo/0.1", 60, 1, 2, 3, 1000, 32),
+  return GenesisConfig(NetworkParameters(nodo::config::NetworkParameterValues{
+                           .chainId = chainId,
+                           .networkName = "nodo-data-dir-network",
+                           .protocolVersion = "nodo/0.1",
+                           .epochDurationSeconds = 60,
+                           .minimumValidatorCount = 1,
+                           .quorumThresholdNumerator = 2,
+                           .quorumThresholdDenominator = 3,
+                           .maxTransactionsPerBlock = 1000,
+                           .maxPeerCount = 32,
+                       }),
                        kTimestamp,
                        {validator(chainId + "-a"), validator(chainId + "-b")},
                        "nodo-data-dir-genesis");

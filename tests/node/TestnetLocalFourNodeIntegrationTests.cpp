@@ -9,9 +9,11 @@
 //   - remain isolated from each other's data directories
 //
 // Block production uses a single-validator (solo) genesis per node because
-// multi-validator quorum requires live P2P voting, which is a later phase.
-// Shared-genesis tests cover initialization and chain identity only.
+// multi-validator quorum requires live P2P voting. The separate
+// FourValidatorDevnetTests exercises that networked consensus path.
+// Shared-genesis cases here cover initialization and chain identity only.
 
+#include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "core/TransactionType.hpp"
@@ -46,10 +48,7 @@ constexpr int     kNodeCount      = 4;
 constexpr int     kBlocksPerNode  = 3;
 constexpr int     kBasePort       = 31330;
 constexpr std::int64_t kTimestamp = 1900400000;
-
-void require(bool condition, const std::string& msg) {
-    if (!condition) throw std::runtime_error(msg);
-}
+using nodo::test::require;
 
 std::filesystem::path tempPath(const std::string& suffix) {
     return std::filesystem::temp_directory_path()

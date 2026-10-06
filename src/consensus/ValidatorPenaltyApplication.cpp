@@ -1,3 +1,5 @@
+#include "utils/HashString.hpp"
+#include "utils/SafeScalar.hpp"
 #include "consensus/ValidatorPenaltyApplication.hpp"
 
 #include "crypto/hash.h"
@@ -14,31 +16,10 @@ namespace nodo::consensus {
 namespace {
 
 bool isSafeScalar(const std::string& value, std::size_t maxSize = 240) {
-    if (value.empty() || value.size() > maxSize) {
-        return false;
-    }
-
-    for (const char character : value) {
-        const bool allowed =
-            (character >= 'a' && character <= 'z') ||
-            (character >= 'A' && character <= 'Z') ||
-            (character >= '0' && character <= '9') ||
-            character == '_' || character == '-' || character == '.' ||
-            character == ':' || character == '/';
-
-        if (!allowed) {
-            return false;
-        }
-    }
-
-    return true;
+  return utils::isSafeIdentifier(value, maxSize, "_-.:/");
 }
 
-std::string hashString(const std::string& value) {
-    char output[NODO_HASH_BUFFER_SIZE] = {0};
-    nodo_hash_string(value.c_str(), output, sizeof(output));
-    return std::string(output);
-}
+
 
 std::vector<std::string> splitTopLevel(const std::string& value, char separator) {
     std::vector<std::string> parts;
@@ -192,7 +173,7 @@ std::string computePenaltyId(
             << ";action=" << validatorPenaltyActionToString(action)
             << ";slashAmountRawUnits=" << slashAmountRawUnits
             << ";jailEpochs=" << jailEpochs;
-    return hashString(payload.str());
+    return utils::hashCString(payload.str());
 }
 
 std::string computePenaltyId(

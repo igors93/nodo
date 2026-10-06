@@ -1,3 +1,4 @@
+#include "utils/SafeScalar.hpp"
 #include "p2p/EncryptedPeerChannel.hpp"
 
 #include "serialization/CanonicalHash.hpp"
@@ -47,24 +48,7 @@ bool isHex(const std::string& value) {
 }
 
 bool isSafeScalar(const std::string& value, std::size_t maxSize = 256) {
-    if (value.empty() || value.size() > maxSize) {
-        return false;
-    }
-
-    for (const char character : value) {
-        const bool allowed =
-            (character >= 'a' && character <= 'z') ||
-            (character >= 'A' && character <= 'Z') ||
-            (character >= '0' && character <= '9') ||
-            character == '_' || character == '-' || character == '.' ||
-            character == ':' || character == '/';
-
-        if (!allowed) {
-            return false;
-        }
-    }
-
-    return true;
+  return utils::isSafeIdentifier(value, maxSize, "_-.:/");
 }
 
 std::string hexEncode(const std::vector<unsigned char>& bytes) {

@@ -158,12 +158,12 @@ utils::Amount preparedPenalty(utils::Amount lockedStake,
 
 } // namespace
 
-SlashingEvidenceRecord::SlashingEvidenceRecord()
+ValidatorRiskEvidenceRecord::ValidatorRiskEvidenceRecord()
     : m_validatorAddress(""), m_blockHeight(0), m_evidenceType(""),
       m_severityScore(0), m_slashable(false), m_recommendedAction(""),
       m_reason(""), m_sourceSecurityDigest("") {}
 
-SlashingEvidenceRecord::SlashingEvidenceRecord(
+ValidatorRiskEvidenceRecord::ValidatorRiskEvidenceRecord(
     std::string validatorAddress, std::uint64_t blockHeight,
     std::string evidenceType, std::uint16_t severityScore, bool slashable,
     std::string recommendedAction, std::string reason,
@@ -175,35 +175,35 @@ SlashingEvidenceRecord::SlashingEvidenceRecord(
       m_reason(std::move(reason)),
       m_sourceSecurityDigest(std::move(sourceSecurityDigest)) {}
 
-const std::string &SlashingEvidenceRecord::validatorAddress() const {
+const std::string &ValidatorRiskEvidenceRecord::validatorAddress() const {
   return m_validatorAddress;
 }
 
-std::uint64_t SlashingEvidenceRecord::blockHeight() const {
+std::uint64_t ValidatorRiskEvidenceRecord::blockHeight() const {
   return m_blockHeight;
 }
 
-const std::string &SlashingEvidenceRecord::evidenceType() const {
+const std::string &ValidatorRiskEvidenceRecord::evidenceType() const {
   return m_evidenceType;
 }
 
-std::uint16_t SlashingEvidenceRecord::severityScore() const {
+std::uint16_t ValidatorRiskEvidenceRecord::severityScore() const {
   return m_severityScore;
 }
 
-bool SlashingEvidenceRecord::slashable() const { return m_slashable; }
+bool ValidatorRiskEvidenceRecord::slashable() const { return m_slashable; }
 
-const std::string &SlashingEvidenceRecord::recommendedAction() const {
+const std::string &ValidatorRiskEvidenceRecord::recommendedAction() const {
   return m_recommendedAction;
 }
 
-const std::string &SlashingEvidenceRecord::reason() const { return m_reason; }
+const std::string &ValidatorRiskEvidenceRecord::reason() const { return m_reason; }
 
-const std::string &SlashingEvidenceRecord::sourceSecurityDigest() const {
+const std::string &ValidatorRiskEvidenceRecord::sourceSecurityDigest() const {
   return m_sourceSecurityDigest;
 }
 
-bool SlashingEvidenceRecord::isValid() const {
+bool ValidatorRiskEvidenceRecord::isValid() const {
   return !m_validatorAddress.empty() && m_blockHeight > 0 &&
          !m_evidenceType.empty() && m_severityScore > 0 &&
          m_severityScore <= 1000 && !m_recommendedAction.empty() &&
@@ -211,7 +211,7 @@ bool SlashingEvidenceRecord::isValid() const {
          !m_sourceSecurityDigest.empty();
 }
 
-std::string SlashingEvidenceRecord::serialize() const {
+std::string ValidatorRiskEvidenceRecord::serialize() const {
   std::ostringstream oss;
   oss << "SlashingEvidenceRecord{"
       << "validatorAddress=" << m_validatorAddress
@@ -388,11 +388,11 @@ std::string SlashingEvidenceSummary::serialize() const {
   return oss.str();
 }
 
-std::vector<SlashingEvidenceRecord> SlashingEvidence::buildEvidenceRecords(
+std::vector<ValidatorRiskEvidenceRecord> SlashingEvidence::buildEvidenceRecords(
     const std::vector<ValidatorRiskAssessment> &riskAssessments,
     const std::vector<ValidatorNetworkPolicy> &networkPolicies,
     const std::vector<ProtectionWorkRecord> &protectionWorkRecords) {
-  std::vector<SlashingEvidenceRecord> records;
+  std::vector<ValidatorRiskEvidenceRecord> records;
 
   for (const ValidatorRiskAssessment &risk : riskAssessments) {
     if (!risk.isValid()) {
@@ -428,11 +428,11 @@ std::vector<SlashingEvidenceRecord> SlashingEvidence::buildEvidenceRecords(
 
 std::vector<SlashingPreparationRecord>
 SlashingEvidence::buildPreparationRecords(
-    const std::vector<SlashingEvidenceRecord> &evidenceRecords,
+    const std::vector<ValidatorRiskEvidenceRecord> &evidenceRecords,
     const std::vector<LockedStakePosition> &lockedStakePositions) {
-  std::map<std::string, std::vector<SlashingEvidenceRecord>> byValidator;
+  std::map<std::string, std::vector<ValidatorRiskEvidenceRecord>> byValidator;
 
-  for (const SlashingEvidenceRecord &record : evidenceRecords) {
+  for (const ValidatorRiskEvidenceRecord &record : evidenceRecords) {
     if (!record.isValid()) {
       throw std::invalid_argument(
           "Cannot prepare slashing review from invalid evidence record.");
@@ -444,13 +444,13 @@ SlashingEvidence::buildPreparationRecords(
 
   for (const auto &entry : byValidator) {
     const std::string &validatorAddress = entry.first;
-    const std::vector<SlashingEvidenceRecord> &records = entry.second;
+    const std::vector<ValidatorRiskEvidenceRecord> &records = entry.second;
     std::uint64_t slashableCount = 0;
     std::uint16_t maxSeverity = 0;
     std::uint64_t blockHeight = 0;
     std::ostringstream digest;
 
-    for (const SlashingEvidenceRecord &record : records) {
+    for (const ValidatorRiskEvidenceRecord &record : records) {
       if (record.slashable()) {
         ++slashableCount;
       }
@@ -475,7 +475,7 @@ SlashingEvidence::buildPreparationRecords(
 
 SlashingEvidenceSummary SlashingEvidence::buildSummary(
     std::uint64_t blockHeight,
-    const std::vector<SlashingEvidenceRecord> &evidenceRecords,
+    const std::vector<ValidatorRiskEvidenceRecord> &evidenceRecords,
     const std::vector<SlashingPreparationRecord> &preparationRecords) {
   if (blockHeight == 0) {
     throw std::invalid_argument(
@@ -485,7 +485,7 @@ SlashingEvidenceSummary SlashingEvidence::buildSummary(
   std::uint64_t slashableCount = 0;
   std::uint16_t maxSeverity = 0;
 
-  for (const SlashingEvidenceRecord &record : evidenceRecords) {
+  for (const ValidatorRiskEvidenceRecord &record : evidenceRecords) {
     if (!record.isValid()) {
       throw std::invalid_argument(
           "Cannot summarize invalid slashing evidence record.");
@@ -510,7 +510,7 @@ SlashingEvidenceSummary SlashingEvidence::buildSummary(
   }
 
   if (preparationRecords.empty()) {
-    for (const SlashingEvidenceRecord &record : evidenceRecords) {
+    for (const ValidatorRiskEvidenceRecord &record : evidenceRecords) {
       digest << record.serialize();
     }
   }
@@ -526,8 +526,8 @@ SlashingEvidenceSummary SlashingEvidence::buildSummary(
 }
 
 bool SlashingEvidence::sameEvidenceRecords(
-    const std::vector<SlashingEvidenceRecord> &left,
-    const std::vector<SlashingEvidenceRecord> &right) {
+    const std::vector<ValidatorRiskEvidenceRecord> &left,
+    const std::vector<ValidatorRiskEvidenceRecord> &right) {
   if (left.size() != right.size()) {
     return false;
   }

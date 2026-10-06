@@ -1,7 +1,8 @@
+#include "../common/TestFramework.hpp"
 #include "../common/ConsensusPhaseTestFixtures.hpp"
 #include "config/NetworkParameters.hpp"
-#include "consensus/BlockProductionPhase.hpp"
-#include "consensus/ConsensusEventLoop.hpp"
+#include "node/consensus/BlockProductionPhase.hpp"
+#include "node/consensus/ConsensusEventLoop.hpp"
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "consensus/ValidatorVoteRecord.hpp"
@@ -29,11 +30,7 @@ namespace {
 using namespace nodo;
 
 constexpr std::int64_t kTimestamp = 1900500000;
-
-void require(bool condition, const std::string &message) {
-  if (!condition)
-    throw std::runtime_error(message);
-}
+using nodo::test::require;
 
 const crypto::CryptoPolicy &developmentPolicy() {
   static const crypto::CryptoPolicy policy =
@@ -179,7 +176,7 @@ proposerFixture(const std::vector<ValidatorFixture> &validators,
   throw std::runtime_error("Scheduled proposer key was not found.");
 }
 
-#include "consensus/BlockProposalPhase.hpp"
+#include "node/consensus/BlockProposalPhase.hpp"
 
 void injectProposal(node::NodeRuntime &runtime, p2p::GossipMesh &mesh,
                     const crypto::Signer &signer, std::int64_t now) {

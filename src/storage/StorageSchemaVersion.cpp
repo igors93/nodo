@@ -1,3 +1,4 @@
+#include "utils/SafeScalar.hpp"
 #include "storage/StorageSchemaVersion.hpp"
 
 #include "serialization/KeyValueFileCodec.hpp"
@@ -17,23 +18,7 @@ constexpr const char *STORAGE_SCHEMA_FILE_VERSION =
     "NODO_STORAGE_SCHEMA_VERSION_V1";
 
 bool isSafeScalar(const std::string &value) {
-  if (value.empty() || value.size() > 160) {
-    return false;
-  }
-
-  for (const char character : value) {
-    const bool allowed = (character >= 'a' && character <= 'z') ||
-                         (character >= 'A' && character <= 'Z') ||
-                         (character >= '0' && character <= '9') ||
-                         character == '_' || character == '-' ||
-                         character == '.';
-
-    if (!allowed) {
-      return false;
-    }
-  }
-
-  return true;
+  return utils::isSafeIdentifier(value, 160, "_-.");
 }
 
 std::uint64_t parseU64Strict(const std::map<std::string, std::string> &fields,

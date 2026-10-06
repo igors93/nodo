@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
 #include "core/StateRootCalculator.hpp"
 #include "core/TransactionBuilder.hpp"
@@ -51,11 +52,7 @@ constexpr std::int64_t kStake = 1'000'000;
 constexpr std::int64_t kFee = 100;
 constexpr std::int64_t kGenesisStake = 1'000'000;
 const std::string kChainId = "nodo-localnet-1";
-
-void require(bool condition, const std::string &message) {
-  if (!condition)
-    throw std::runtime_error(message);
-}
+using nodo::test::require;
 
 KeyPair validatorKeyPair() {
   return KeyPair::createDeterministicBls12381KeyPair(

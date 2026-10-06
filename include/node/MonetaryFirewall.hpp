@@ -2,6 +2,7 @@
 #define NODO_NODE_MONETARY_FIREWALL_HPP
 
 #include "config/NetworkParameters.hpp"
+#include "economics/MonetaryPolicy.hpp"
 #include "utils/Amount.hpp"
 
 #include <cstdint>
@@ -9,13 +10,15 @@
 
 namespace nodo::node {
 
-constexpr std::uint32_t NODO_MAX_ANNUAL_INFLATION_BASIS_POINTS = 400;
+constexpr std::uint32_t NODO_MAX_ANNUAL_INFLATION_BASIS_POINTS =
+    economics::MonetaryPolicy::MAX_ANNUAL_INFLATION_BASIS_POINTS;
 
-class MonetaryPolicy {
+// An audit rule for the firewall; the network-wide policy is in economics.
+class MonetaryFirewallRule {
 public:
-  MonetaryPolicy();
+  MonetaryFirewallRule();
 
-  MonetaryPolicy(std::uint32_t maxAnnualInflationBasisPoints,
+  MonetaryFirewallRule(std::uint32_t maxAnnualInflationBasisPoints,
                  std::string ruleId, std::string reason);
 
   std::uint32_t maxAnnualInflationBasisPoints() const;
@@ -26,7 +29,7 @@ public:
   std::string deterministicId() const;
   std::string serialize() const;
 
-  static MonetaryPolicy protocolDefault();
+  static MonetaryFirewallRule protocolDefault();
 
 private:
   std::uint32_t m_maxAnnualInflationBasisPoints;
@@ -109,7 +112,7 @@ public:
   genesisSupply(const config::GenesisConfig &genesisConfig);
 
   static utils::Amount annualMintLimit(utils::Amount baseSupply,
-                                       const MonetaryPolicy &policy);
+                                       const MonetaryFirewallRule &policy);
 
   static MonetaryFirewallAudit
   buildZeroMintAudit(const config::GenesisConfig &genesisConfig,

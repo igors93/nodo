@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "node/LightClientProtocol.hpp"
 
 #include "consensus/BlockFinalizer.hpp"
@@ -29,12 +30,7 @@ using nodo::node::LightClientHeader;
 using nodo::node::LightClientProtocolVerifier;
 
 constexpr std::int64_t kTimestamp = 1900000000;
-
-void require(bool condition, const std::string &message) {
-  if (!condition) {
-    throw std::runtime_error(message);
-  }
-}
+using nodo::test::require;
 
 crypto::KeyPair keyPairFor(const std::string &suffix) {
   return crypto::KeyPair::createDeterministicBls12381KeyPair(

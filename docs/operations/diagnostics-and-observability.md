@@ -1,5 +1,11 @@
 # Diagnostics and Observability
 
+Library diagnostics are emitted as one JSON object per line on the process's
+standard error stream, with `time_unix_ms`, `level`, `component`, and `message`
+fields. Set `NODO_LOG_LEVEL` to `TRACE`, `DEBUG`, `INFO`, `WARN` (default), or
+`ERROR` before starting a node. Library code does not write operational
+messages to standard output, so CLI command output remains parseable.
+
 Nodo exposes diagnostics through CLI, Python scenarios, REST operational endpoints, and JSON-RPC methods.
 
 ## CLI diagnostics

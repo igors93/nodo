@@ -5,6 +5,7 @@
 // has new unused methods. Drives a real single-validator chain through
 // RuntimeBlockPipeline, exactly like tests/node/FastSyncImportTests.cpp.
 
+#include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
@@ -28,13 +29,10 @@ using namespace nodo::core;
 using namespace nodo::config;
 using namespace nodo::crypto;
 
-constexpr std::int64_t kTimestamp = 1800000000LL;
+namespace {
 
-void require(bool condition, const std::string &message) {
-  if (!condition) {
-    throw std::runtime_error(message);
-  }
-}
+constexpr std::int64_t kTimestamp = 1800000000LL;
+using nodo::test::require;
 
 KeyPair validatorKey() {
   return KeyPair::createDeterministicBls12381KeyPair("light-client-service-validator");
@@ -150,6 +148,8 @@ void testCheckpointJsonIsCryptographicallyVerified() {
   require(contains(json, "\"verified\":true"),
           "real crypto-backed checkpoint must report verified:true: " + json);
 }
+
+} // namespace
 
 int main() {
   try {

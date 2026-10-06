@@ -29,6 +29,39 @@ enum class NetworkClass {
 
 std::string networkClassToString(NetworkClass nc);
 
+// Named fields prevent silent swaps between adjacent consensus parameters.
+struct NetworkParameterValues {
+  std::string chainId;
+  std::string networkName;
+  std::string protocolVersion;
+  std::uint64_t epochDurationSeconds = 0;
+  std::uint64_t minimumValidatorCount = 0;
+  std::uint64_t quorumThresholdNumerator = 0;
+  std::uint64_t quorumThresholdDenominator = 0;
+  std::uint64_t maxTransactionsPerBlock = 0;
+  std::uint64_t maxPeerCount = 0;
+  std::uint64_t maxMempoolTransactions = 10000;
+  std::uint64_t minimumFeeRawUnits = 0;
+  std::uint64_t targetBlockTimeSeconds = 60;
+  std::uint64_t finalityDepth = 1;
+  std::string signatureAlgorithm = "NODO_CRYPTO_SUITE_V1";
+  std::string storageFormatVersion = "NODO_STORAGE_V2";
+  std::uint64_t proposalTimeoutMs = 3000;
+  std::uint64_t prevoteTimeoutMs = 3000;
+  std::uint64_t precommitTimeoutMs = 3000;
+  std::uint32_t maxGossipMessagesPerPeerWindow = 100;
+  std::uint32_t maxTransactionGossipPerPeerWindow = 50;
+  std::uint32_t maxTransactionRelayPerSecond = 20;
+  std::uint32_t doubleVoteSlashFractionBasisPoints = 500;
+  std::uint32_t proposerEquivocationSlashFractionBasisPoints = 1000;
+  std::uint32_t epochSlashCapBasisPoints = 5000;
+  std::uint64_t treasuryTimelockBlocks = 0;
+  std::uint64_t treasuryMaxSpendPerProposalRawUnits =
+      static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+  std::uint64_t treasuryMaxSpendPerEpochRawUnits =
+      static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+};
+
 /*
  * NetworkParameters defines the immutable safety limits for one Nodo network.
  *
@@ -40,32 +73,7 @@ class NetworkParameters {
 public:
   NetworkParameters();
 
-  NetworkParameters(
-      std::string chainId, std::string networkName, std::string protocolVersion,
-      std::uint64_t epochDurationSeconds, std::uint64_t minimumValidatorCount,
-      std::uint64_t quorumThresholdNumerator,
-      std::uint64_t quorumThresholdDenominator,
-      std::uint64_t maxTransactionsPerBlock, std::uint64_t maxPeerCount,
-      std::uint64_t maxMempoolTransactions = 10000,
-      std::uint64_t minimumFeeRawUnits = 0,
-      std::uint64_t targetBlockTimeSeconds = 60,
-      std::uint64_t finalityDepth = 1,
-      std::string signatureAlgorithm = "NODO_CRYPTO_SUITE_V1",
-      std::string storageFormatVersion = "NODO_STORAGE_V2",
-      std::uint64_t proposalTimeoutMs = 3000,
-      std::uint64_t prevoteTimeoutMs = 3000,
-      std::uint64_t precommitTimeoutMs = 3000,
-      std::uint32_t maxGossipMessagesPerPeerWindow = 100,
-      std::uint32_t maxTransactionGossipPerPeerWindow = 50,
-      std::uint32_t maxTransactionRelayPerSecond = 20,
-      std::uint32_t doubleVoteSlashFractionBasisPoints = 500,
-      std::uint32_t proposerEquivocationSlashFractionBasisPoints = 1000,
-      std::uint32_t epochSlashCapBasisPoints = 5000,
-      std::uint64_t treasuryTimelockBlocks = 0,
-      std::uint64_t treasuryMaxSpendPerProposalRawUnits =
-          kUnlimitedTreasurySpendRawUnits,
-      std::uint64_t treasuryMaxSpendPerEpochRawUnits =
-          kUnlimitedTreasurySpendRawUnits);
+  explicit NetworkParameters(NetworkParameterValues values);
 
   // A TreasuryPolicy limit of zero means "no spending permitted" (see
   // economics::TreasuryPolicy), so networks that do not configure explicit

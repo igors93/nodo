@@ -1,3 +1,4 @@
+#include "utils/HashString.hpp"
 #include "core/EventLog.hpp"
 
 #include "crypto/hash.h"
@@ -9,13 +10,7 @@ namespace nodo::core {
 
 namespace {
 
-std::string hashString(
-    const std::string& value
-) {
-    char output[NODO_HASH_BUFFER_SIZE] = {0};
-    nodo_hash_string(value.c_str(), output, sizeof(output));
-    return std::string(output);
-}
+
 
 } // namespace
 
@@ -217,7 +212,7 @@ std::string EventLog::serialize() const {
 }
 
 std::string EventLog::eventHash() const {
-    return hashString("NODO_EVENT_LOG_V1|" + serialize());
+    return utils::hashCString("NODO_EVENT_LOG_V1|" + serialize());
 }
 
 } // namespace nodo::core

@@ -1,11 +1,11 @@
 #ifndef NODO_CONSENSUS_CONSENSUS_EVENT_LOOP_HPP
 #define NODO_CONSENSUS_CONSENSUS_EVENT_LOOP_HPP
 
-#include "consensus/BlockFinalizationPhase.hpp"
+#include "node/consensus/BlockFinalizationPhase.hpp"
 #include "consensus/BlockFinalizer.hpp"
-#include "consensus/BlockProductionPhase.hpp"
-#include "consensus/BlockProposalPhase.hpp"
-#include "consensus/BlockVotingPhase.hpp"
+#include "node/consensus/BlockProductionPhase.hpp"
+#include "node/consensus/BlockProposalPhase.hpp"
+#include "node/consensus/BlockVotingPhase.hpp"
 #include "consensus/ConsensusRoundManager.hpp"
 #include "consensus/EvidencePool.hpp"
 #include "consensus/QuorumCertificate.hpp"
@@ -56,7 +56,7 @@ struct ConsensusTickResult {
 
 /*
  * ConsensusEventLoop drives the four BFT phases — production, proposal,
- * voting, and finalization — from a single background thread.
+ * voting, and finalization — on the caller's tick thread.
  *
  * Architecture (clean phase separation):
  *

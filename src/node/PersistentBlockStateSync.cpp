@@ -1,3 +1,4 @@
+#include "utils/SafeScalar.hpp"
 #include "node/PersistentBlockStateSync.hpp"
 #include "node/FastSyncSnapshotService.hpp"
 #include "node/FastSyncSnapshotStore.hpp"
@@ -39,24 +40,7 @@ constexpr const char *CODEC_VERSION =
     "NODO_PERSISTENT_BLOCK_STATE_SYNC_CODEC_V1";
 
 bool isSafeScalar(const std::string &value, std::size_t maxSize = 240) {
-  if (value.empty() || value.size() > maxSize) {
-    return false;
-  }
-
-  for (const char character : value) {
-    const bool allowed = (character >= 'a' && character <= 'z') ||
-                         (character >= 'A' && character <= 'Z') ||
-                         (character >= '0' && character <= '9') ||
-                         character == '_' || character == '-' ||
-                         character == '.' || character == ':' ||
-                         character == '/';
-
-    if (!allowed) {
-      return false;
-    }
-  }
-
-  return true;
+  return utils::isSafeIdentifier(value, maxSize, "_-.:/");
 }
 
 std::map<std::string, std::string>

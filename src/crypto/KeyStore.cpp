@@ -1,3 +1,4 @@
+#include "utils/SafeScalar.hpp"
 #include "crypto/KeyStore.hpp"
 
 #include "crypto/Bls12381SignatureProvider.hpp"
@@ -33,27 +34,7 @@ constexpr const char* KEY_INDEX_VERSION =
 bool isSafeScalar(
     const std::string& value
 ) {
-    if (value.empty()) {
-        return false;
-    }
-
-    for (const char character : value) {
-        const bool allowed =
-            (character >= 'a' && character <= 'z') ||
-            (character >= 'A' && character <= 'Z') ||
-            (character >= '0' && character <= '9') ||
-            character == '_' ||
-            character == '-' ||
-            character == '.' ||
-            character == ':' ||
-            character == '#';
-
-        if (!allowed) {
-            return false;
-        }
-    }
-
-    return true;
+  return utils::isSafeIdentifier(value, std::string::npos, "_-.:#");
 }
 
 serialization::KeyValueFileDocument parseKeyFileDocument(

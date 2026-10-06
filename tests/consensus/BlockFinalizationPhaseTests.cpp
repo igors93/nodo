@@ -1,7 +1,8 @@
-#include "consensus/BlockFinalizationPhase.hpp"
+#include "../common/TestFramework.hpp"
+#include "node/consensus/BlockFinalizationPhase.hpp"
 
-#include "consensus/BlockProductionPhase.hpp"
-#include "consensus/BlockVotingPhase.hpp"
+#include "node/consensus/BlockProductionPhase.hpp"
+#include "node/consensus/BlockVotingPhase.hpp"
 #include "config/NetworkParameters.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoPolicy.hpp"
@@ -25,10 +26,7 @@ namespace {
 using namespace nodo;
 
 constexpr std::int64_t kTs = 1900000000LL;
-
-void require(bool condition, const std::string& msg) {
-    if (!condition) throw std::runtime_error(msg);
-}
+using nodo::test::require;
 
 crypto::KeyPair userKey() {
     return test::consensusTestUserKey("block-finalization-phase-user");

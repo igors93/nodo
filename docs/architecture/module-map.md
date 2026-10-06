@@ -8,21 +8,34 @@ This map describes the intended responsibility of the main source modules.
 | `app` | Command parsing, command policy, CLI execution. |
 | `config` | Genesis registry, network profiles, network parameters. |
 | `core` | Accounts, transactions, blocks, state transition, state roots, ledger, governance/treasury domain records. |
-| `consensus` | Voting, quorum certificates, proposer schedule, finalization, slashing evidence, consensus recovery. |
+| `consensus` | Runtime-independent voting, quorum certificates, proposer schedule, finalization records, slashing evidence, and recovery data. |
 | `crypto` | Address derivation, key storage, signature providers, crypto policy. |
 | `economics` | Emission, rewards, score, protection accounting, staking-related economic helpers. |
 | `mempool` | Transaction admission and pending transaction storage. |
-| `node` | Runtime services, data directory, finalized block store, daemon, RPC, sync, health, metrics. |
+| `node` | Runtime services, consensus orchestration (`node/consensus`), data directory, finalized block store, daemon, RPC, sync, health, metrics. |
 | `p2p` | Peer information, messages, gossip, transport, peer policy, rate limiting, discovery. |
 | `serialization` | Canonical serialization and codecs. |
-| `staking` | Stake lifecycle, active stake, validator weight projection. |
+| `staking` | Security-weight helper. Stake lifecycle and `StakingRegistry` currently live in `node`. |
 | `storage` | Atomic writes and persistent storage helpers. |
 | `tests` | Protocol, runtime, and regression tests. |
 | `diagnostics` | Python scenarios and operator diagnostics. |
 
+Shared scalar validation policies live in `utils/SafeScalar.hpp`. Legacy
+C-string hashing and binary hashing are explicit alternatives in
+`utils/HashString.hpp`, so callers preserve their existing commitments while
+using one implementation. `economics::MonetaryPolicy` describes a network's
+monetary settings; `node::MonetaryFirewallRule` is the narrower inflation-cap
+rule used by the firewall. `node::ValidatorRiskEvidenceRecord` records risk
+signals, while `consensus::SlashingEvidenceRecord` records cryptographic
+equivocation evidence. Their serialized tags are unchanged for compatibility.
+
+The RPC transport and route handlers live in separate translation units, as
+do CLI parsing, staking commands and other command execution; finalized
+artifact state and its codec; and runtime block execution and result validation.
+
 ## Dependency direction
 
-Preferred direction:
+Dependency direction after the Phase 0 orchestration move:
 
 ```text
 app/node → consensus/core/p2p/crypto/config/storage

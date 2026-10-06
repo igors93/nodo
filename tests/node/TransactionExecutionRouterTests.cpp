@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "core/Block.hpp"
 #include "core/LedgerRecord.hpp"
 #include "core/StateTransitionPreview.hpp"
@@ -18,11 +19,7 @@
 namespace {
 
 using namespace nodo;
-
-void require(bool condition, const std::string &message) {
-  if (!condition)
-    throw std::runtime_error(message);
-}
+using nodo::test::require;
 
 class RecordingDomainExecutor final : public core::TransactionDomainExecutor {
 public:

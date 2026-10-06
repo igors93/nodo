@@ -1,8 +1,9 @@
+#include "../common/TestFramework.hpp"
 #include "../common/ConsensusPhaseTestFixtures.hpp"
 #include "config/NetworkParameters.hpp"
-#include "consensus/BlockFinalizationPhase.hpp"
-#include "consensus/BlockProductionPhase.hpp"
-#include "consensus/BlockVotingPhase.hpp"
+#include "node/consensus/BlockFinalizationPhase.hpp"
+#include "node/consensus/BlockProductionPhase.hpp"
+#include "node/consensus/BlockVotingPhase.hpp"
 #include "core/State.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
@@ -27,12 +28,7 @@ namespace {
 using namespace nodo;
 
 constexpr std::int64_t kTimestamp = 1900000000LL;
-
-void require(bool condition, const std::string &message) {
-  if (!condition) {
-    throw std::runtime_error(message);
-  }
-}
+using nodo::test::require;
 
 crypto::KeyPair validatorKey() {
   return crypto::KeyPair::createDeterministicBls12381KeyPair(

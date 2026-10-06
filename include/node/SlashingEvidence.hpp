@@ -13,11 +13,12 @@
 
 namespace nodo::node {
 
-class SlashingEvidenceRecord {
+// A risk-derived recommendation, distinct from cryptographic consensus evidence.
+class ValidatorRiskEvidenceRecord {
 public:
-    SlashingEvidenceRecord();
+    ValidatorRiskEvidenceRecord();
 
-    SlashingEvidenceRecord(
+    ValidatorRiskEvidenceRecord(
         std::string validatorAddress,
         std::uint64_t blockHeight,
         std::string evidenceType,
@@ -147,26 +148,26 @@ public:
     static constexpr const char* NOT_EVALUATED_REASON =
         "SLASHING_EVIDENCE_NOT_EVALUATED";
 
-    static std::vector<SlashingEvidenceRecord> buildEvidenceRecords(
+    static std::vector<ValidatorRiskEvidenceRecord> buildEvidenceRecords(
         const std::vector<ValidatorRiskAssessment>& riskAssessments,
         const std::vector<ValidatorNetworkPolicy>& networkPolicies,
         const std::vector<ProtectionWorkRecord>& protectionWorkRecords
     );
 
     static std::vector<SlashingPreparationRecord> buildPreparationRecords(
-        const std::vector<SlashingEvidenceRecord>& evidenceRecords,
+        const std::vector<ValidatorRiskEvidenceRecord>& evidenceRecords,
         const std::vector<LockedStakePosition>& lockedStakePositions
     );
 
     static SlashingEvidenceSummary buildSummary(
         std::uint64_t blockHeight,
-        const std::vector<SlashingEvidenceRecord>& evidenceRecords,
+        const std::vector<ValidatorRiskEvidenceRecord>& evidenceRecords,
         const std::vector<SlashingPreparationRecord>& preparationRecords
     );
 
     static bool sameEvidenceRecords(
-        const std::vector<SlashingEvidenceRecord>& left,
-        const std::vector<SlashingEvidenceRecord>& right
+        const std::vector<ValidatorRiskEvidenceRecord>& left,
+        const std::vector<ValidatorRiskEvidenceRecord>& right
     );
 
     static bool samePreparationRecords(

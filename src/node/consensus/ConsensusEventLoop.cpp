@@ -1,4 +1,4 @@
-#include "consensus/ConsensusEventLoop.hpp"
+#include "node/consensus/ConsensusEventLoop.hpp"
 
 #include "consensus/ConsensusRecoveryStore.hpp"
 #include "consensus/ProposalJustification.hpp"
@@ -444,14 +444,14 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
 
     for (const auto &envelope : voteMessages) {
       if (envelope.payload().empty())
-        continue; // debug loop
+        continue;
 
       try {
         ValidatorVoteRecord vote =
             ValidatorVoteRecord::deserialize(envelope.payload());
 
         if (!vote.isStructurallyValid(m_policy))
-          continue; // debug loop
+          continue;
 
         const VoteCollectResult collected = m_runtime.submitConsensusVote(vote);
 
@@ -459,7 +459,7 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
           result.votesCollected++;
         }
       } catch (const std::exception &) {
-        continue; // debug loop
+        continue;
       }
     }
   }
@@ -506,13 +506,13 @@ void ConsensusEventLoop::drainSlashingEvidence(std::int64_t now,
             *m_evidencePool, now);
     if (admitted.rateLimited()) {
       ++result.evidenceRateLimited;
-      continue; // debug loop
+      continue;
     }
     if (!admitted.accepted()) {
       if (!admitted.duplicate()) {
         ++result.evidenceRejected;
       }
-      continue; // debug loop
+      continue;
     }
 
     ++result.evidenceAccepted;
@@ -624,14 +624,14 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
       m_runtime.config().genesisConfig().networkParameters().chainId();
   for (const auto &envelope : messages) {
     if (envelope.payload().empty())
-      continue; // debug loop
+      continue;
 
     try {
       const node::SignedBlockProposalMessage proposal =
           node::SignedBlockProposalMessage::deserialize(envelope.payload());
 
       if (!proposal.isValid() || proposal.blockIndex() != state.height()) {
-        continue; // debug loop
+        continue;
       }
 
       const bool forCurrentRound = proposal.round() == state.round();
@@ -639,16 +639,16 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
           state.round() != std::numeric_limits<std::uint64_t>::max() &&
           proposal.round() == state.round() + 1;
       if (!forCurrentRound && !forNextRound)
-        continue; // debug loop
+        continue;
 
       const std::string expectedProposer = ProposerSchedule::selectProposer(
           validators, chainId, state.height(), proposal.round());
       if (expectedProposer.empty())
-        continue; // debug loop
+        continue;
 
       if (!proposal.verify(expectedProposer, validators, m_policy,
                            m_provider)) {
-        continue; // debug loop
+        continue;
       }
 
       const core::Block block =
@@ -699,7 +699,7 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
       std::string epochRewardRejection;
       if (!node::EpochRewardSettlementService::candidateRecordsMatch(
               m_runtime, block, epochRewardRejection)) {
-        continue; // debug loop
+        continue;
       }
 
       if (forNextRound) {
@@ -714,7 +714,7 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
             m_bufferedNextRoundProposals.push_back(envelope);
           }
         }
-        continue; // debug loop
+        continue;
       }
 
       m_pendingCandidate =
@@ -722,7 +722,7 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
     } catch (const std::exception &) {
       // Malformed or unverifiable peer input is ignored without changing
       // the active candidate or canonical chain.
-      continue; // debug loop
+      continue;
     }
   }
 }

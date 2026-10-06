@@ -5,13 +5,7 @@
 
 namespace nodo::utils {
 
-/*
- * Retorna timestamp Unix em segundos.
- *
- * DECISÃO:
- * Manter tempo centralizado evita espalhar chamadas de relógio
- * pelo projeto inteiro.
- */
+/* Return the current Unix timestamp in seconds. Centralizing clock reads keeps time handling consistent. */
 std::int64_t currentUnixTimestamp();
 
 } // namespace nodo::utils

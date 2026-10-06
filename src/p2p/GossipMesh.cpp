@@ -1,3 +1,4 @@
+#include "utils/SafeScalar.hpp"
 #include "p2p/GossipMesh.hpp"
 
 #include "core/ProtocolLimits.hpp"
@@ -23,24 +24,7 @@ constexpr std::int32_t kRateLimitScorePenalty = -5;
 constexpr std::int32_t kTemporaryBanScoreThreshold = -50;
 
 bool isSafeScalar(const std::string &value) {
-  if (value.empty() || value.size() > 200) {
-    return false;
-  }
-
-  for (const char character : value) {
-    const bool allowed = (character >= 'a' && character <= 'z') ||
-                         (character >= 'A' && character <= 'Z') ||
-                         (character >= '0' && character <= '9') ||
-                         character == '_' || character == '-' ||
-                         character == '.' || character == ':' ||
-                         character == '/';
-
-    if (!allowed) {
-      return false;
-    }
-  }
-
-  return true;
+  return utils::isSafeIdentifier(value, 200, "_-.:/");
 }
 
 } // namespace

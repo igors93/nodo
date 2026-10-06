@@ -1,3 +1,4 @@
+#include "utils/HashString.hpp"
 #include "core/SparseMerkleTree.hpp"
 #include "crypto/hash.h"
 #include <algorithm>
@@ -8,16 +9,7 @@ namespace nodo::core {
 
 namespace {
 
-std::string hashString(const std::string& input) {
-    char output[NODO_HASH_BUFFER_SIZE] = {0};
-    nodo_hash_bytes(
-        reinterpret_cast<const unsigned char*>(input.data()),
-        input.size(),
-        output,
-        sizeof(output)
-    );
-    return std::string(output, NODO_HASH_HEX_SIZE);
-}
+
 
 } // namespace
 
@@ -30,7 +22,7 @@ SparseMerkleTree::~SparseMerkleTree() = default;
 
 void SparseMerkleTree::precomputeDefaultHashes() {
     m_defaultHashes.resize(DEPTH + 1);
-    m_defaultHashes[0] = hashString("");
+    m_defaultHashes[0] = utils::hashBytes("");
     for (int i = 1; i <= DEPTH; ++i) {
         m_defaultHashes[i] = MerkleTree::hashNode(m_defaultHashes[i - 1], m_defaultHashes[i - 1]);
     }

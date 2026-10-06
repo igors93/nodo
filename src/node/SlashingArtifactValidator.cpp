@@ -19,7 +19,7 @@ ArtifactValidationResult SlashingArtifactValidator::validate(
         const core::Block& block =
             artifact.block();
 
-        const std::vector<SlashingEvidenceRecord> expectedSlashingEvidence =
+        const std::vector<ValidatorRiskEvidenceRecord> expectedSlashingEvidence =
             SlashingEvidence::buildEvidenceRecords(
                 context.expectedRiskAssessments(),
                 context.expectedNetworkPolicies(),

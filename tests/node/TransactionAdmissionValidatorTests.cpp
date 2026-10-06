@@ -1,4 +1,5 @@
 #include "config/NetworkParameters.hpp"
+#include "config/ProtocolVersion.hpp"
 #include "core/AccountState.hpp"
 #include "core/AccountStateView.hpp"
 #include "core/TransactionBuilder.hpp"
@@ -42,10 +43,18 @@ void clean(const std::filesystem::path &path) {
 
 config::NetworkParameters
 localnetWithMinimumFee(std::uint64_t minimumFeeRawUnits) {
-  return config::NetworkParameters("nodo-localnet-admission-test", "localnet",
-                                   "nodo/0.1", 60, 1, 2, 3, 1000, 128, 10000,
-                                   minimumFeeRawUnits, 60, 1,
-                                   "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2");
+  return config::NetworkParameters(config::NetworkParameterValues{
+      .chainId = "nodo-localnet-admission-test",
+      .networkName = "localnet",
+      .protocolVersion = config::kProtocolVersion,
+      .epochDurationSeconds = 60,
+      .minimumValidatorCount = 1,
+      .quorumThresholdNumerator = 2,
+      .quorumThresholdDenominator = 3,
+      .maxTransactionsPerBlock = 1000,
+      .maxPeerCount = 128,
+      .minimumFeeRawUnits = minimumFeeRawUnits,
+  });
 }
 
 crypto::KeyStoreLoadResult createAndLoadKey(const std::filesystem::path &path,

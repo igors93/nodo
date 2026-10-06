@@ -1216,7 +1216,7 @@ std::string FinalizedBlockStore::finalizedBlockFileContents(
   fields.emplace_back("treasuryFee.sourceFeeBalanceDigest",
                       treasuryFee.sourceFeeBalanceDigest());
 
-  const std::vector<SlashingEvidenceRecord> &evidenceRecords =
+  const std::vector<ValidatorRiskEvidenceRecord> &evidenceRecords =
       pipelineResult.slashingEvidenceRecords();
 
   for (std::size_t index = 0; index < evidenceRecords.size(); ++index) {

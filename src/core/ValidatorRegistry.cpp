@@ -1,3 +1,5 @@
+#include "utils/HashString.hpp"
+#include "utils/SafeScalar.hpp"
 #include "core/ValidatorRegistry.hpp"
 
 #include "consensus/ConsensusWeight.hpp"
@@ -14,28 +16,10 @@ namespace nodo::core {
 namespace {
 
 bool isSafeScalar(const std::string &value) {
-  if (value.empty()) {
-    return false;
-  }
-
-  for (const char character : value) {
-    if (character == ';' || character == '{' || character == '}' ||
-        character == '[' || character == ']' || character == '\n' ||
-        character == '\r' || character == '\t') {
-      return false;
-    }
-  }
-
-  return true;
+  return utils::isSafeDelimitedText(value, std::string::npos, ";{}[]\n\r\t");
 }
 
-std::string hashString(const std::string &value) {
-  char output[NODO_HASH_BUFFER_SIZE] = {0};
 
-  nodo_hash_string(value.c_str(), output, sizeof(output));
-
-  return std::string(output);
-}
 
 } // namespace
 
@@ -156,7 +140,7 @@ std::string ValidatorRegistrationRecord::deterministicId() const {
     return "";
   }
 
-  return hashString(serialize());
+  return utils::hashCString(serialize());
 }
 
 std::string ValidatorRegistrationRecord::serialize() const {
@@ -1082,7 +1066,7 @@ std::uint64_t ValidatorRegistry::totalConsensusWeight() const {
 }
 
 std::string ValidatorRegistry::validatorSetRoot() const {
-  return hashString(serialize());
+  return utils::hashCString(serialize());
 }
 
 std::size_t ValidatorRegistry::size() const { return m_entries.size(); }

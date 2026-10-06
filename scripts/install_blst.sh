@@ -2,8 +2,8 @@
 set -euo pipefail
 
 BLST_VERSION="v0.3.11"
+BLST_COMMIT="3dd0f804b1819e5d03fb22ca2e6fac105932043a"
 BLST_REPOSITORY_URL="https://github.com/supranational/blst.git"
-BLST_ARCHIVE_URL="https://github.com/supranational/blst/archive/refs/tags/${BLST_VERSION}.tar.gz"
 INSTALL_PREFIX="${BLST_INSTALL_PREFIX:-"$HOME/.nodo/deps/blst"}"
 
 if [ -z "${HOME:-}" ]; then
@@ -29,19 +29,15 @@ cleanup() {
 trap cleanup EXIT
 
 download_blst() {
-    if command -v git >/dev/null 2>&1; then
+    if [ -n "${BLST_SOURCE_DIR:-}" ]; then
+        cp -R "$BLST_SOURCE_DIR" "$SOURCE_DIR"
+    else
         git clone --depth 1 --branch "$BLST_VERSION" "$BLST_REPOSITORY_URL" "$SOURCE_DIR"
-        return
     fi
-
-    if command -v curl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1; then
-        mkdir -p "$SOURCE_DIR"
-        curl -L "$BLST_ARCHIVE_URL" | tar -xz --strip-components=1 -C "$SOURCE_DIR"
-        return
+    if [ "$(git -C "$SOURCE_DIR" rev-parse HEAD)" != "$BLST_COMMIT" ]; then
+        echo "Error: blst source revision does not match pinned $BLST_COMMIT."
+        exit 1
     fi
-
-    echo "Error: install_blst.sh needs either git, or curl plus tar, to download blst."
-    exit 1
 }
 
 download_blst

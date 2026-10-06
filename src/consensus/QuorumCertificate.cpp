@@ -1,3 +1,4 @@
+#include "utils/SafeScalar.hpp"
 #include "consensus/QuorumCertificate.hpp"
 
 #include <limits>
@@ -14,24 +15,7 @@ namespace {
 bool isSafeScalar(
     const std::string& value
 ) {
-    if (value.empty()) {
-        return false;
-    }
-
-    for (const char character : value) {
-        if (character == ';' ||
-            character == '{' ||
-            character == '}' ||
-            character == '[' ||
-            character == ']' ||
-            character == '\n' ||
-            character == '\r' ||
-            character == '\t') {
-            return false;
-        }
-    }
-
-    return true;
+  return utils::isSafeDelimitedText(value, std::string::npos, ";{}[]\n\r\t");
 }
 
 bool hasDuplicateVoter(

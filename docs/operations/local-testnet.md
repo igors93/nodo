@@ -1,10 +1,25 @@
-# Local Testnet
+# Local Development Networks
 
-The local testnet script starts multiple independent Nodo nodes on the same machine for development validation.
+The legacy `testnet_local_multi_node.sh` script initializes separate local
+chains and produces blocks independently. It is an isolated-node smoke test,
+not a networked consensus test.
+
+The four-validator devnet test launches four independent processes, connects
+them over authenticated loopback TCP, finalizes a common block, compares the
+finalized hash on every node, and audits each node's persisted chain. Run it
+after building:
+
+```bash
+./scripts/devnet_real_four_node.sh
+```
+
+The same test is registered as `node_FourValidatorDevnetTests` in CTest and
+runs on Linux and macOS CI. The process harness currently uses POSIX `fork`;
+Windows CI does not run this test.
 
 ## Purpose
 
-The local testnet validates:
+The isolated-node script validates:
 
 - independent data directories;
 - local genesis initialization;
@@ -14,7 +29,7 @@ The local testnet validates:
 - chain audit;
 - per-node logs.
 
-This is not a public testnet and does not replace live multi-operator validation.
+Neither local harness replaces a public multi-operator testnet.
 
 ## Prerequisites
 

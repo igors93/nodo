@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "core/Block.hpp"
 #include "core/ProtocolLimits.hpp"
 #include "node/PersistentBlockStateSync.hpp"
@@ -9,10 +10,7 @@
 #include <stdexcept>
 
 namespace {
-
-void require(bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
-}
+using nodo::test::require;
 
 } // namespace
 

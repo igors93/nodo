@@ -1,3 +1,4 @@
+#include "utils/HashString.hpp"
 #include "p2p/PeerMessage.hpp"
 
 #include "core/ProtocolLimits.hpp"
@@ -45,19 +46,7 @@ bool isSafeIdentifier(
     return true;
 }
 
-std::string hashString(
-    const std::string& value
-) {
-    char output[NODO_HASH_BUFFER_SIZE] = {0};
 
-    nodo_hash_string(
-        value.c_str(),
-        output,
-        sizeof(output)
-    );
-
-    return std::string(output);
-}
 
 std::string hexEncodePayload(const std::string& payload) {
     return nodo::crypto::hexEncode(
@@ -328,7 +317,7 @@ std::string PeerMessage::computeMessageId(
         << ";payloadHex=" << hexEncodePayload(payload)
         << "}";
 
-    return hashString(oss.str());
+    return utils::hashCString(oss.str());
 }
 
 PeerMessage PeerMessageFactory::handshake(

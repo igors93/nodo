@@ -1,5 +1,21 @@
 # Testing Strategy
 
+CTest keeps a stable name for each source-level test. The default CMake build
+links tests into one runner per module to reduce binary and link overhead;
+`-DNODO_TESTS_GROUPED=OFF` restores separate executables for focused sanitizer
+and coverage jobs. Shared integration fixtures and the `require` assertion
+helper live in `tests/common`. Existing source-level `main` functions become
+named entries in the module runner at compile time. Assertions remain active
+in Release test binaries.
+
+CI builds with warnings treated as errors and checks Linux GCC/Clang, Windows
+MinGW, and macOS. Linux also runs ASan/UBSan, TSan concurrency tests, a
+coverage-report subset, static analysis, and a short network-codec libFuzzer
+smoke run. `scripts/check_markdown_links.py` checks local documentation links.
+The cross-platform authenticated real-TCP handshake test runs on Windows too;
+the longer process-isolated multi-validator scenarios use POSIX `fork` and run
+on Linux and macOS.
+
 Nodo tests should prove that the protocol rejects unsafe behavior and rebuilds valid behavior deterministically.
 
 ## Required test categories

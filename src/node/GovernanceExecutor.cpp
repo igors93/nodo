@@ -1,3 +1,4 @@
+#include "utils/HashString.hpp"
 #include "node/GovernanceExecutor.hpp"
 
 #include "core/ProtocolLimits.hpp"
@@ -378,13 +379,7 @@ bool ratioMet(std::uint64_t value, std::uint64_t denominator,
              static_cast<unsigned __int128>(numerator);
 }
 
-std::string hashString(const std::string &value) {
-  char output[NODO_HASH_BUFFER_SIZE] = {0};
-  nodo_hash_bytes(reinterpret_cast<const unsigned char *>(value.data()),
-                  static_cast<unsigned long long>(value.size()), output,
-                  sizeof(output));
-  return std::string(output);
-}
+
 
 } // namespace
 
@@ -1262,7 +1257,7 @@ std::string GovernanceExecutor::serialize() const {
     oss << ";pending=" << change.serialize();
   oss << ";proposalCount=" << m_proposals.size();
   for (const auto &[id, proposal] : m_proposals) {
-    const std::string payloadDigest = hashString(proposal.payload.serialize());
+    const std::string payloadDigest = utils::hashBytes(proposal.payload.serialize());
     oss << ";proposal={id=" << id << ",proposer=" << proposal.proposerAddress
         << ",type="
         << core::governanceProposalTypeToString(proposal.payload.type())

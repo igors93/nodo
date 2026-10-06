@@ -1,3 +1,4 @@
+#include "../common/TestFramework.hpp"
 #include "node/PersistentBlockStateSync.hpp"
 
 #include <filesystem>
@@ -12,10 +13,7 @@ using nodo::node::PersistentSyncCheckpointStore;
 using nodo::node::PersistentSyncStatus;
 
 constexpr std::int64_t kNow = 1900000000LL;
-
-void require(bool condition, const std::string& msg) {
-    if (!condition) throw std::runtime_error(msg);
-}
+using nodo::test::require;
 
 // Return a writable temp directory unique to this test run.
 std::filesystem::path tempDir() {

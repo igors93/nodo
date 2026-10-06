@@ -3,6 +3,7 @@
 // monetary mismatch, treasury mismatch, evidence capture unhealthy,
 // and official readiness being stricter than local readiness.
 
+#include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
 #include "config/NetworkProfileRegistry.hpp"
 #include "core/TransactionBuilder.hpp"
@@ -44,10 +45,7 @@ using namespace nodo;
 using nodo::utils::Amount;
 
 constexpr std::int64_t kTimestamp = 1900200000;
-
-void require(bool condition, const std::string& msg) {
-    if (!condition) throw std::runtime_error(msg);
-}
+using nodo::test::require;
 
 std::filesystem::path tempPath(const std::string& suffix) {
     return std::filesystem::temp_directory_path()
