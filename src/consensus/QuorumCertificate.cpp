@@ -422,6 +422,12 @@ bool QuorumCertificate::verify(
         return false;
     }
 
+    const unsigned __int128 minimumSafeWeight =
+        (static_cast<unsigned __int128>(m_totalVotingWeight) * 2 + 2) / 3;
+    if (m_requiredVotingWeight < minimumSafeWeight) {
+        return false;
+    }
+
     if (validatorRegistry.validatorSetRoot() != m_validatorSetRoot) {
         return false;
     }
@@ -619,7 +625,9 @@ std::uint64_t QuorumCertificateBuilder::requiredVotingWeight(
     if (totalVotingWeight == 0 ||
         thresholdNumerator == 0 ||
         thresholdDenominator == 0 ||
-        thresholdNumerator > thresholdDenominator) {
+        thresholdNumerator > thresholdDenominator ||
+        static_cast<unsigned __int128>(thresholdNumerator) * 3 <
+            static_cast<unsigned __int128>(thresholdDenominator) * 2) {
         throw std::invalid_argument("Invalid quorum threshold parameters.");
     }
 

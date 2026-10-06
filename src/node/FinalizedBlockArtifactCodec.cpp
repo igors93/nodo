@@ -1694,16 +1694,64 @@ std::string FinalizedBlockArtifact::serialize() const {
 }
 
 std::string FinalizedBlockArtifact::artifactDigest() const {
-  // Canonical input: block hash + post state root + supply delta serialization.
-  // This captures the three primary identifiers that make an artifact unique.
-  const std::string blockHash =
-      (m_block.has_value() && m_block->isValid()) ? m_block->hash() : "INVALID";
-  const std::string canonical = "artifact:" + blockHash + ":" +
-                                m_postStateRoot + ":" +
-                                m_supplyDelta.serialize();
+  // Length prefixes bind every section, including finality and evidence, and
+  // keep concatenated fields unambiguous.
+  std::ostringstream canonical;
+  const auto append = [&canonical](const std::string &value) {
+    canonical << value.size() << ':' << value;
+  };
+  const auto appendCollection = [&append](const auto &items) {
+    append(std::to_string(items.size()));
+    for (const auto &item : items) {
+      append(item.serialize());
+    }
+  };
+  append("NODO_FINALIZED_ARTIFACT_DIGEST_V2");
+  append(m_block.has_value() ? m_block->serialize() : "INVALID");
+  append(m_postStateRoot);
+  append(std::to_string(m_totalFee.rawUnits()));
+  append(m_supplyDelta.serialize());
+  appendCollection(m_rewardDistributions);
+  appendCollection(m_lockedStakePositions);
+  appendCollection(m_securityScoreRecords);
+  appendCollection(m_securityCheckpoints);
+  appendCollection(m_validatorRiskAssessments);
+  appendCollection(m_validatorContainmentDecisions);
+  appendCollection(m_validatorNetworkPolicies);
+  append(m_monetaryFirewallAudit.serialize());
+  append(m_genesisTreasurySnapshot.serialize());
+  append(m_protectionRewardBudget.serialize());
+  appendCollection(m_protectionRewardGrants);
+  appendCollection(m_protectionWorkRecords);
+  append(m_protectionRewardSummary.serialize());
+  appendCollection(m_protectionRewardSettlements);
+  append(m_inflationEpochSnapshot.serialize());
+  append(m_mintAuthorizationRecord.serialize());
+  append(m_supplyExpansionRecord.serialize());
+  append(m_feeEconomicBalance.serialize());
+  append(m_feeBurnRecord.serialize());
+  append(m_treasuryFeeRecord.serialize());
+  appendCollection(m_slashingEvidenceRecords);
+  appendCollection(m_slashingPreparationRecords);
+  append(m_slashingEvidenceSummary.serialize());
+  appendCollection(m_cryptographicSlashingEvidenceRecords);
+  appendCollection(m_stakePenaltyRecords);
+  append(m_cryptographicSlashingSummary.serialize());
+  append(m_governancePolicySnapshot.serialize());
+  appendCollection(m_governanceActionGuards);
+  append(m_governanceSummary.serialize());
+  appendCollection(m_validatorLifecycleRecords);
+  append(m_epochAccountingRecord.serialize());
+  append(m_validatorLifecycleSummary.serialize());
+  append(m_quorumCertificate.serialize());
+  append(m_finalizedRecord.serialize());
+  append(m_treasurySection.serialize());
 
   char buf[NODO_HASH_BUFFER_SIZE] = {};
-  nodo_hash_string(canonical.c_str(), buf, NODO_HASH_BUFFER_SIZE);
+  const std::string payload = canonical.str();
+  nodo_hash_bytes(reinterpret_cast<const unsigned char *>(payload.data()),
+                  static_cast<unsigned long long>(payload.size()), buf,
+                  NODO_HASH_BUFFER_SIZE);
   return std::string(buf);
 }
 

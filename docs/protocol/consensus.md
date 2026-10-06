@@ -23,6 +23,11 @@ A finalized block requires a quorum certificate formed from valid PRECOMMIT vote
 
 The normal target is 2/3+ validator weight, but exact thresholds are network-parameter controlled and must be documented per network profile.
 
+Network parameters and quorum-certificate construction reject thresholds below
+two thirds of total voting weight. Safety assumes Byzantine voting weight is
+strictly less than one third of the historical validator set. The configured
+fraction is rounded up to an integer voting weight.
+
 ## Validator weights
 
 Validator voting power should be derived from the active validator set snapshot for the relevant height/epoch. Stake changes must not unexpectedly rewrite historical voting power.

@@ -1,6 +1,8 @@
 #include "node/LocalArtifactImportService.hpp"
 
 #include "consensus/QuorumCertificate.hpp"
+#include "consensus/ProposerSchedule.hpp"
+#include "core/StateRootCalculator.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
 #include "node/FinalizedArtifactValidationContext.hpp"
 #include "node/FinalizedArtifactValidator.hpp"
@@ -116,10 +118,12 @@ FinalizedArtifactImportResult importImpl(
     const std::string& rawContents,
     std::int64_t importedAt
 ) {
-    if (!targetDir.isValid()) {
+    if (!targetDir.isValid() || importedAt <= 0 ||
+        importedAt == std::numeric_limits<std::int64_t>::max() ||
+        !runtime.isValid() || !genesisConfig.isValid()) {
         return FinalizedArtifactImportResult::rejected(
             ArtifactImportRejectionReason::INVALID_CONFIG,
-            "target data directory config is invalid"
+            "target directory, runtime, genesis or import timestamp is invalid"
         );
     }
 
@@ -150,6 +154,14 @@ FinalizedArtifactImportResult importImpl(
         );
     }
 
+    if (runtime.config().genesisConfig().deterministicId() !=
+        genesisConfig.deterministicId()) {
+        return FinalizedArtifactImportResult::rejected(
+            ArtifactImportRejectionReason::GENESIS_MISMATCH,
+            "runtime genesis does not match the import genesis"
+        );
+    }
+
     // Structural validity.
     if (!artifact.isValid()) {
         return FinalizedArtifactImportResult::rejected(
@@ -157,16 +169,35 @@ FinalizedArtifactImportResult importImpl(
             "artifact is not structurally valid"
         );
     }
+    if (artifact.block().index() == std::numeric_limits<std::uint64_t>::max()) {
+        return FinalizedArtifactImportResult::rejected(
+            ArtifactImportRejectionReason::HEIGHT_CONTINUITY_MISMATCH,
+            "artifact height cannot have a successor"
+        );
+    }
 
-    // Idempotency check: if the artifact is already on disk at this height,
-    // verify it matches and return success without re-validating or re-applying.
-    // This check must happen before height continuity to support repeated imports.
+    if (artifact.block().timestamp() > importedAt &&
+        artifact.block().timestamp() - importedAt > 300) {
+        return FinalizedArtifactImportResult::rejected(
+            ArtifactImportRejectionReason::INVALID_ARTIFACT,
+            "artifact block timestamp is more than 300 seconds in the future"
+        );
+    }
+
+    // An artifact file can be left behind when a prior import failed before
+    // publishing the runtime snapshot. Its presence alone proves no commit.
     const std::filesystem::path targetPath =
         FinalizedBlockStore::blockFilePath(targetDir, artifact.block().index());
 
     if (std::filesystem::exists(targetPath)) {
-        const std::string existingContents =
-            storage::AtomicFile::readTextFile(targetPath);
+        std::string existingContents;
+        try {
+            existingContents = storage::AtomicFile::readTextFile(targetPath);
+        } catch (const std::exception& error) {
+            return FinalizedArtifactImportResult::rejected(
+                ArtifactImportRejectionReason::PERSIST_FAILED, error.what()
+            );
+        }
 
         if (existingContents != rawContents) {
             return FinalizedArtifactImportResult::rejected(
@@ -176,20 +207,91 @@ FinalizedArtifactImportResult importImpl(
             );
         }
 
-        // Identical artifact already stored — return the current manifest.
-        const NodeDataDirectoryReadResult snapshot =
-            NodeDataDirectory::writeRuntimeSnapshot(targetDir, runtime, importedAt);
-        if (!snapshot.loaded()) {
-            return FinalizedArtifactImportResult::rejected(
-                ArtifactImportRejectionReason::PERSIST_FAILED,
-                snapshot.reason()
-            );
+        if (runtime.blockchain().latestBlock().index() >= artifact.block().index()) {
+            bool applied = false;
+            for (const core::Block& block : runtime.blockchain().blocks()) {
+                if (block.index() == artifact.block().index()) {
+                    applied = block.hash() == artifact.block().hash();
+                    break;
+                }
+            }
+            if (!applied) {
+                return FinalizedArtifactImportResult::rejected(
+                    ArtifactImportRejectionReason::CONFLICTING_ARTIFACT,
+                    "stored artifact does not match the runtime chain at its height"
+                );
+            }
+            if (!runtime.finalizationRegistry().isFinalizedBlock(
+                    artifact.block().index(), artifact.block().hash())) {
+                return FinalizedArtifactImportResult::rejected(
+                    ArtifactImportRejectionReason::FINALITY_VALIDATION_FAILED,
+                    "stored artifact has not been finalized in the runtime"
+                );
+            }
+            NodeRuntime stagedRuntime = runtime;
+            try {
+                const ProtocolReplayState current =
+                    ProtocolStateTransition::replayStateFromRuntime(
+                        stagedRuntime, minimumFeeRawUnits(genesisConfig)
+                    );
+                const std::string currentRoot =
+                    core::StateRootCalculator::calculateProtocolStateRoot(
+                        current.accounts, protocolExecutionDomains(current.execution)
+                    );
+                if (currentRoot != stagedRuntime.blockchain().latestBlock().stateRoot()) {
+                    throw std::logic_error(
+                        "runtime protocol domains do not match the finalized tip"
+                    );
+                }
+                if (stagedRuntime.blockchain().latestBlock().index() ==
+                    std::numeric_limits<std::uint64_t>::max()) {
+                    throw std::overflow_error(
+                        "runtime block height cannot advance without overflow"
+                    );
+                }
+                const std::uint64_t nextHeight =
+                    stagedRuntime.blockchain().latestBlock().index() + 1;
+                if (stagedRuntime.consensusRoundManager().currentState().height() !=
+                    nextHeight) {
+                    const std::string proposer =
+                        consensus::ProposerSchedule::selectProposer(
+                            stagedRuntime.validatorRegistry(),
+                            genesisConfig.networkParameters().chainId(),
+                            nextHeight, 1
+                        );
+                    stagedRuntime.mutableConsensusRoundManager().advanceToHeight(
+                        nextHeight, 1, proposer, importedAt + 1,
+                        genesisConfig.networkParameters().targetBlockTimeSeconds()
+                    );
+                }
+            } catch (const std::exception& error) {
+                return FinalizedArtifactImportResult::rejected(
+                    ArtifactImportRejectionReason::ARTIFACT_VALIDATION_FAILED,
+                    error.what()
+                );
+            }
+            const NodeDataDirectoryReadResult snapshot =
+                NodeDataDirectory::writeRuntimeSnapshot(
+                    targetDir, stagedRuntime, importedAt
+                );
+            if (!snapshot.loaded()) {
+                return FinalizedArtifactImportResult::rejected(
+                    ArtifactImportRejectionReason::PERSIST_FAILED, snapshot.reason()
+                );
+            }
+            runtime = std::move(stagedRuntime);
+            return FinalizedArtifactImportResult::accepted(snapshot.manifest());
         }
-        return FinalizedArtifactImportResult::accepted(snapshot.manifest());
     }
 
     // Height continuity: artifact must be exactly the next block.
     const std::uint64_t currentHeight = runtime.blockchain().latestBlock().index();
+    if (currentHeight == std::numeric_limits<std::uint64_t>::max()) {
+        return FinalizedArtifactImportResult::rejected(
+            ArtifactImportRejectionReason::HEIGHT_CONTINUITY_MISMATCH,
+            "runtime block height cannot advance without overflow"
+        );
+    }
     const std::uint64_t expectedHeight = currentHeight + 1;
 
     if (artifact.block().index() != expectedHeight) {
@@ -287,10 +389,86 @@ FinalizedArtifactImportResult importImpl(
         );
     }
 
-    // Write artifact to disk BEFORE mutating runtime state.
+    // Prepare the complete next runtime before publishing either the block file
+    // or the live runtime. A failed replay cannot leave a partially applied tip.
+    NodeRuntime stagedRuntime = runtime;
+    try {
+        const std::int64_t minFee = minimumFeeRawUnits(genesisConfig);
+        const ProtocolReplayState previous =
+            ProtocolStateTransition::replayStateFromRuntime(stagedRuntime, minFee);
+        const ProtocolReplayState replayed =
+            ProtocolStateTransition::replayBlock(
+                genesisConfig,
+                previous,
+                artifact.block(),
+                minFee,
+                artifact.block().timestamp()
+            );
+        if (replayed.stateRoot != artifact.postStateRoot() ||
+            replayed.receiptsRoot != artifact.block().receiptsRoot() ||
+            replayed.execution.supply != artifact.supplyDelta().supplyAfter()) {
+            throw std::logic_error(
+                "Replayed commitments or supply differ from the artifact."
+            );
+        }
+
+        FinalizedArtifactValidationContext stagedContext(
+            genesisConfig, stagedRuntime, cryptoContext, targetPath,
+            requiredVotingWeight(genesisConfig, stagedRuntime.validatorRegistry()),
+            minFee
+        );
+        const ArtifactValidationResult finalization =
+            FinalityArtifactValidator::applyFinalization(stagedContext, artifact);
+        if (!finalization.accepted()) {
+            return FinalizedArtifactImportResult::rejected(
+                ArtifactImportRejectionReason::FINALITY_VALIDATION_FAILED,
+                finalization.reason()
+            );
+        }
+
+        stagedRuntime.mutableSupplyState().applyFinalizedDelta(artifact.supplyDelta());
+        ProtocolStateTransition::applyReplayDomainsToRuntime(stagedRuntime, replayed);
+        stagedRuntime.setCachedAccountStateAtTip(replayed.accounts);
+        const FinalizedSlashingEvidenceAuditResult slashingAudit =
+            FinalizedSlashingEvidenceAudit::auditBlockEffects(
+                artifact.block(), stagedRuntime.validatorPenaltyLedger(),
+                stagedRuntime.validatorRegistry(), stagedRuntime.stakingRegistry()
+            );
+        if (!slashingAudit.passed()) {
+            throw std::logic_error(slashingAudit.reason());
+        }
+        const std::uint64_t nextHeight = artifact.block().index() + 1;
+        if (!stagedRuntime.mutableValidatorSetHistory().recordSet(
+                nextHeight, stagedRuntime.validatorRegistry())) {
+            throw std::logic_error("Validator set history conflict after import.");
+        }
+        if (!artifact.postStateRoot().empty()) {
+            stagedRuntime.mutableStatePruner().recordStateRoot(
+                artifact.block().index(), artifact.postStateRoot()
+            );
+        }
+        constexpr std::uint64_t nextRound = 1;
+        const std::string nextProposer = consensus::ProposerSchedule::selectProposer(
+            stagedRuntime.validatorRegistry(),
+            genesisConfig.networkParameters().chainId(), nextHeight, nextRound
+        );
+        stagedRuntime.mutableConsensusRoundManager().advanceToHeight(
+            nextHeight, nextRound, nextProposer, importedAt + 1,
+            genesisConfig.networkParameters().targetBlockTimeSeconds()
+        );
+    } catch (const std::exception& e) {
+        return FinalizedArtifactImportResult::rejected(
+            ArtifactImportRejectionReason::SUPPLY_CONTINUITY_BREAK,
+            std::string("protocol state preparation failed at height ") +
+            std::to_string(artifact.block().index()) + ": " + e.what()
+        );
+    }
+
     try {
         std::filesystem::create_directories(targetDir.blocksDirectoryPath());
-        storage::AtomicFile::writeTextFile(targetPath, rawContents);
+        if (!std::filesystem::exists(targetPath)) {
+            storage::AtomicFile::writeTextFile(targetPath, rawContents);
+        }
     } catch (const std::exception& e) {
         return FinalizedArtifactImportResult::rejected(
             ArtifactImportRejectionReason::PERSIST_FAILED,
@@ -298,60 +476,9 @@ FinalizedArtifactImportResult importImpl(
         );
     }
 
-    // Apply finalization to runtime blockchain (appends block, updates state).
-    const ArtifactValidationResult finalization =
-        FinalityArtifactValidator::applyFinalization(validationContext, artifact);
-
-    if (!finalization.accepted()) {
-        return FinalizedArtifactImportResult::rejected(
-            ArtifactImportRejectionReason::FINALITY_VALIDATION_FAILED,
-            finalization.reason()
-        );
-    }
-
-    try {
-        const ProtocolReplayState replayed =
-            ProtocolStateTransition::replayNextBlock(
-                runtime,
-                artifact.block(),
-                minimumFeeRawUnits(genesisConfig),
-                artifact.block().timestamp()
-            );
-        if (replayed.execution.supply != artifact.supplyDelta().supplyAfter()) {
-            throw std::logic_error(
-                "Replayed transaction supply differs from persisted delta."
-            );
-        }
-        runtime.mutableSupplyState().applyFinalizedDelta(artifact.supplyDelta());
-        ProtocolStateTransition::applyReplayDomainsToRuntime(runtime, replayed);
-    } catch (const std::exception& e) {
-        return FinalizedArtifactImportResult::rejected(
-            ArtifactImportRejectionReason::SUPPLY_CONTINUITY_BREAK,
-            std::string("supply continuity break at height ") +
-            std::to_string(artifact.block().index()) + ": " + e.what()
-        );
-    }
-
-    if (!runtime.mutableValidatorSetHistory().recordSet(
-            artifact.block().index() + 1, runtime.validatorRegistry()
-        )) {
-        return FinalizedArtifactImportResult::rejected(
-            ArtifactImportRejectionReason::FINALITY_VALIDATION_FAILED,
-            "Validator set history conflict while importing block " +
-            std::to_string(artifact.block().index())
-        );
-    }
-
-    if (!artifact.postStateRoot().empty()) {
-        runtime.mutableStatePruner().recordStateRoot(
-            artifact.block().index(),
-            artifact.postStateRoot()
-        );
-    }
-
-    // Update manifest to reflect the new latest block.
+    // The manifest is published last. An orphaned block file is safe to retry.
     const NodeDataDirectoryReadResult snapshot =
-        NodeDataDirectory::writeRuntimeSnapshot(targetDir, runtime, importedAt);
+        NodeDataDirectory::writeRuntimeSnapshot(targetDir, stagedRuntime, importedAt);
 
     if (!snapshot.loaded()) {
         return FinalizedArtifactImportResult::rejected(
@@ -360,6 +487,16 @@ FinalizedArtifactImportResult importImpl(
         );
     }
 
+    if (snapshot.manifest().latestBlockHeight() != artifact.block().index() ||
+        snapshot.manifest().latestBlockHash() != artifact.block().hash() ||
+        snapshot.manifest().latestStateRoot() != artifact.postStateRoot()) {
+        return FinalizedArtifactImportResult::rejected(
+            ArtifactImportRejectionReason::PERSIST_FAILED,
+            "published manifest does not match imported block commitments"
+        );
+    }
+
+    runtime = std::move(stagedRuntime);
     return FinalizedArtifactImportResult::accepted(snapshot.manifest());
 }
 
@@ -405,8 +542,28 @@ FinalizedArtifactImportResult LocalArtifactImportService::importArtifact(
     const std::string& rawArtifactContents,
     std::int64_t importedAt
 ) {
+    FinalizedBlockArtifact decoded;
+    try {
+        decoded = FinalizedBlockArtifactCodec::decodeBlockArtifactFileContents(
+            rawArtifactContents
+        );
+    } catch (const std::exception& error) {
+        return FinalizedArtifactImportResult::rejected(
+            ArtifactImportRejectionReason::DECODE_FAILED, error.what()
+        );
+    }
+    if (!artifact.isValid() ||
+        artifact.block().hash() != decoded.block().hash() ||
+        artifact.artifactDigest() != decoded.artifactDigest() ||
+        artifact.quorumCertificate().serialize() !=
+            decoded.quorumCertificate().serialize()) {
+        return FinalizedArtifactImportResult::rejected(
+            ArtifactImportRejectionReason::INVALID_ARTIFACT,
+            "decoded artifact does not match the supplied artifact"
+        );
+    }
     return importImpl(
-        targetDir, runtime, genesisConfig, artifact, rawArtifactContents, importedAt
+        targetDir, runtime, genesisConfig, decoded, rawArtifactContents, importedAt
     );
 }
 

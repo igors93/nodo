@@ -271,7 +271,9 @@ bool NetworkParameters::isValid() const {
   }
 
   if (m_quorumThresholdNumerator == 0 || m_quorumThresholdDenominator == 0 ||
-      m_quorumThresholdNumerator > m_quorumThresholdDenominator) {
+      m_quorumThresholdNumerator > m_quorumThresholdDenominator ||
+      static_cast<unsigned __int128>(m_quorumThresholdNumerator) * 3 <
+          static_cast<unsigned __int128>(m_quorumThresholdDenominator) * 2) {
     return false;
   }
 

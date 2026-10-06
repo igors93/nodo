@@ -40,6 +40,11 @@ Validators should not vote for a block unless the block passes deterministic che
 
 A finalized artifact must be sufficient for replay and audit. It should include consensus evidence and all protocol-domain records that affect state.
 
+The artifact digest covers the complete canonical artifact, including the block,
+quorum certificate, finalized record, monetary and governance sections, rewards,
+treasury records, and slashing evidence. Peers must verify this digest against
+the decoded artifact before import.
+
 ## QC persistence
 
 Quorum certificates should be persisted so that restart and fast sync can verify finality without relying on volatile memory.

@@ -2,6 +2,7 @@
 
 #include <sstream>
 #include <stdexcept>
+#include <limits>
 
 namespace nodo::core {
 
@@ -172,7 +173,8 @@ bool Blockchain::isValidNextBlock(
     return false;
   }
 
-  if (currentBlock.index() != previousBlock.index() + 1) {
+  if (previousBlock.index() == std::numeric_limits<std::uint64_t>::max() ||
+      currentBlock.index() != previousBlock.index() + 1) {
     return false;
   }
 

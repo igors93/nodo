@@ -12,7 +12,7 @@ int main() {
     assert(QuorumCertificateBuilder::requiredVoteCount(2, 2, 3) == 2);
     assert(QuorumCertificateBuilder::requiredVoteCount(3, 2, 3) == 2);
     assert(QuorumCertificateBuilder::requiredVoteCount(4, 2, 3) == 3);
-    assert(QuorumCertificateBuilder::requiredVoteCount(10, 1, 2) == 5);
+    assert(QuorumCertificateBuilder::requiredVoteCount(10, 2, 3) == 7);
 
     bool rejected = false;
 
@@ -22,6 +22,14 @@ int main() {
         rejected = true;
     }
 
+    assert(rejected);
+
+    rejected = false;
+    try {
+        (void)QuorumCertificateBuilder::requiredVoteCount(10, 1, 2);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
     assert(rejected);
 
     rejected = false;

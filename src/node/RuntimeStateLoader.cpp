@@ -363,6 +363,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             }
             runtime.mutableSupplyState().applyFinalizedDelta(artifact.supplyDelta());
             ProtocolStateTransition::applyReplayDomainsToRuntime(runtime, replayState);
+            runtime.setCachedAccountStateAtTip(replayState.accounts);
 
             const FinalizedSlashingEvidenceAuditResult slashingAudit =
                 FinalizedSlashingEvidenceAudit::auditBlockEffects(

@@ -14,6 +14,7 @@
 #include "core/TransactionType.hpp"
 #include "node/ChainAuditor.hpp"
 #include "node/FinalizedBlockStore.hpp"
+#include "node/FinalizedBlockArtifactCodec.hpp"
 #include "node/LocalArtifactImportService.hpp"
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
@@ -440,6 +441,68 @@ void testImportingSameArtifactTwiceIsIdempotent() {
     clean(dirB);
 }
 
+void testOrphanedArtifactIsAppliedOnRetry() {
+    const auto dirA = tempPath("import-orphan-a");
+    const auto dirB = tempPath("import-orphan-b");
+    clean(dirA);
+    clean(dirB);
+
+    const auto vk = validatorKey("orphan-v");
+    const auto uk = userKey("orphan-u");
+    const auto genesis = buildGenesis("orphan-genesis", vk, uk);
+    const node::NodeDataDirectoryConfig cfgA(dirA);
+    const node::NodeDataDirectoryConfig cfgB(dirB);
+    require(node::NodeDataDirectory::initialize(cfgA, genesis, peerInfo("nA", "127.0.0.1:19901"), kTimestamp + 1).initialized(), "cfgA init");
+    require(node::NodeDataDirectory::initialize(cfgB, genesis, peerInfo("nB", "127.0.0.1:19902"), kTimestamp + 1).initialized(), "cfgB init");
+
+    auto rtA = startRuntime(genesis, "nA", "127.0.0.1:19901");
+    const auto block = produceBlock(rtA, vk, uk, kTimestamp + 50, 1);
+    require(block.finalized(), "source block finalize");
+    const auto stored = node::FinalizedBlockStore::persist(cfgA, rtA, block, kTimestamp + 60);
+    require(stored.stored(), "source block persist");
+
+    auto rtB = startRuntime(genesis, "nB", "127.0.0.1:19902");
+    const auto first = LocalArtifactImportService::importArtifactFromFile(
+        cfgB, rtB, genesis, stored.blockPath(), kTimestamp - 251
+    );
+    require(!first.accepted() && first.rejectionReason() == ArtifactImportRejectionReason::INVALID_ARTIFACT,
+            "future-dated block must be rejected");
+    require(rtB.blockchain().latestBlock().index() == 0, "rejected import must leave runtime at genesis");
+
+    const std::string raw = readFile(stored.blockPath());
+    const auto decoded = node::FinalizedBlockArtifactCodec::decodeBlockArtifactFileContents(raw);
+    const std::string finalizedAt = std::to_string(decoded.finalizedRecord().finalizedAt());
+    const std::string alteredRaw = replaceFirst(
+        raw, "finalizedAt=" + finalizedAt,
+        "finalizedAt=" + std::to_string(decoded.finalizedRecord().finalizedAt() + 1)
+    );
+    require(alteredRaw != raw, "fixture must contain finalization timestamp");
+    const auto altered = node::FinalizedBlockArtifactCodec::decodeBlockArtifactFileContents(alteredRaw);
+    require(altered.artifactDigest() != decoded.artifactDigest(),
+            "artifact digest must include finality evidence");
+    const auto mismatched = LocalArtifactImportService::importArtifact(
+        cfgB, rtB, genesis, decoded, raw + "garbage", kTimestamp + 70
+    );
+    require(!mismatched.accepted() && mismatched.rejectionReason() == ArtifactImportRejectionReason::DECODE_FAILED,
+            "pre-decoded artifact must be checked against raw bytes");
+
+    std::filesystem::create_directories(cfgB.blocksDirectoryPath());
+    storage::AtomicFile::writeTextFile(
+        node::FinalizedBlockStore::blockFilePath(cfgB, 1), raw
+    );
+    const auto recovered = LocalArtifactImportService::importArtifactFromFile(
+        cfgB, rtB, genesis, stored.blockPath(), kTimestamp + 70
+    );
+    require(recovered.accepted(), "orphaned artifact must be applied: " + recovered.detail());
+    require(rtB.blockchain().latestBlock().index() == 1, "retry must advance runtime");
+    require(rtB.consensusRoundManager().currentState().height() == 2,
+            "retry must advance consensus to the next height");
+    require(recovered.manifest().latestBlockHeight() == 1, "retry must publish block height");
+
+    clean(dirA);
+    clean(dirB);
+}
+
 } // namespace
 
 int main() {
@@ -451,6 +514,7 @@ int main() {
         testRejectedImportDoesNotModifyState();
         testNonexistentSourceFileIsRejected();
         testImportingSameArtifactTwiceIsIdempotent();
+        testOrphanedArtifactIsAppliedOnRetry();
 
         std::cout << "Local artifact import service tests passed.\n";
         return 0;

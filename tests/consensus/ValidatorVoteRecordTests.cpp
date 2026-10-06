@@ -210,6 +210,16 @@ void testQuorumCertificateBuildsWithTwoOfThree() {
         result.certificate().validatorSetRoot() == registry.validatorSetRoot(),
         "Two minimum-stake validators should certify with 2000/3000 voting weight."
     );
+
+    const nodo::consensus::QuorumCertificate forgedLowThreshold(
+        7, "block-hash-consensus-qc", "previous-hash-consensus", 1,
+        1000U, 3000U, 1000U, registry.validatorSetRoot(), {votes.front()}
+    );
+    requireCondition(
+        !forgedLowThreshold.verify(registry,
+                                   CryptoPolicy::developmentPolicy(), provider),
+        "A certificate with a forged low quorum threshold must be rejected."
+    );
 }
 
 void testQuorumRejectsDuplicateVoter() {

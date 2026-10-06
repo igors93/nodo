@@ -121,8 +121,8 @@ public:
   bool isValid() const;
   std::string serialize() const;
 
-  // Returns a deterministic SHA-256 hex digest of the canonical artifact
-  // representation. Used by DataAvailabilityChallenge and audit assignments.
+  // Returns a deterministic digest covering every finalized artifact section.
+  // Used by DataAvailabilityChallenge and audit assignments.
   std::string artifactDigest() const;
 
 private:

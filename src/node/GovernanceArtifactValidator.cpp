@@ -37,12 +37,14 @@ ArtifactValidationResult GovernanceArtifactValidator::validate(
             );
         }
 
+        const ProtocolReplayState previous =
+            ProtocolStateTransition::replayStateFromRuntime(
+                context.runtime(), context.minimumFeeRawUnits()
+            );
         const ProtocolReplayState replayed =
-            ProtocolStateTransition::replayNextBlock(
-                context.runtime(),
-                block,
-                context.minimumFeeRawUnits(),
-                block.timestamp()
+            ProtocolStateTransition::replayBlock(
+                context.genesisConfig(), previous, block,
+                context.minimumFeeRawUnits(), block.timestamp()
             );
         const GovernanceSummary expectedGovernanceSummary =
             Governance::buildSummary(

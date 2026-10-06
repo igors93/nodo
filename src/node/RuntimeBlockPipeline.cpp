@@ -1543,6 +1543,30 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
         "Node runtime is invalid.");
   }
 
+  if (!runtime.validatorSetHistory().hasSet(block.index())) {
+    return RuntimeBlockPipelineResult::rejected(
+        RuntimeBlockPipelineStatus::FINALIZATION_FAILED,
+        "Historical validator set is missing for certified block.");
+  }
+  try {
+    const auto &params = runtime.config().genesisConfig().networkParameters();
+    const auto &historicalSet = runtime.validatorSetHistory().setAt(block.index());
+    const std::uint64_t requiredWeight =
+        consensus::QuorumCertificateBuilder::requiredVotingWeight(
+            historicalSet.totalConsensusWeight(),
+            params.quorumThresholdNumerator(), params.quorumThresholdDenominator());
+    if (certificate.requiredVotingWeight() != requiredWeight ||
+        certificate.totalVotingWeight() != historicalSet.totalConsensusWeight() ||
+        certificate.validatorSetRoot() != historicalSet.validatorSetRoot()) {
+      return RuntimeBlockPipelineResult::rejected(
+          RuntimeBlockPipelineStatus::FINALIZATION_FAILED,
+          "Certified block quorum does not match historical network parameters.");
+    }
+  } catch (const std::exception &error) {
+    return RuntimeBlockPipelineResult::rejected(
+        RuntimeBlockPipelineStatus::FINALIZATION_FAILED, error.what());
+  }
+
   std::string epochRewardRejection;
   if (!EpochRewardSettlementService::candidateRecordsMatch(
           runtime, block, epochRewardRejection)) {

@@ -55,6 +55,13 @@ void testDevelopmentLocalNotSafeForProduction() {
   assert(testnetParams.networkClass() != NetworkClass::DEVELOPMENT_LOCAL);
 }
 
+void testUnsafeQuorumThresholdIsRejected() {
+  const NetworkParameters params("nodo-unsafe-1", "unsafe", "nodo/0.1", 60,
+                                 1, 1, 2, 1000, 128, 10000, 0, 60, 1,
+                                 "NODO_CRYPTO_SUITE_V1", "NODO_STORAGE_V2");
+  assert(!params.isValid());
+}
+
 } // namespace
 
 int main() {
@@ -64,5 +71,6 @@ int main() {
   testMainnetIsLockedProduction();
   testNetworkClassStringConversion();
   testDevelopmentLocalNotSafeForProduction();
+  testUnsafeQuorumThresholdIsRejected();
   return 0;
 }
