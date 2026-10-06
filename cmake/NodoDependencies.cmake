@@ -120,3 +120,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(asio)
 
+# nlohmann/json parses untrusted JSON-RPC input. The release tarball is pinned
+# by SHA-256 so a moved tag or a tampered download fails the configure step.
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+set(JSON_ImplicitConversions OFF CACHE INTERNAL "Require explicit nlohmann::json conversions")
+set(JSON_SystemInclude ON CACHE INTERNAL "Treat nlohmann::json headers as system headers")
+FetchContent_Declare(
+    nlohmann_json
+    URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+    URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
+)
+FetchContent_MakeAvailable(nlohmann_json)
+

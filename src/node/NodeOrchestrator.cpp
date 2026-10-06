@@ -1,5 +1,7 @@
 #include "node/NodeOrchestrator.hpp"
 
+#include "utils/JsonText.hpp"
+
 #include <iostream>
 
 #include "node/CanonicalSlashingTransition.hpp"
@@ -30,6 +32,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <thread>
 
 namespace nodo::node {
 
@@ -97,35 +100,7 @@ namespace {
 static const std::string kOrchestratorCanonicalPrefix =
     "NODO_CANONICAL_PROTOCOL_HEX_V1:";
 
-std::string jsonString(const std::string &value) {
-  std::string out;
-  out.reserve(value.size() + 2);
-  out.push_back('"');
-  for (const char c : value) {
-    switch (c) {
-    case '"':
-      out += "\\\"";
-      break;
-    case '\\':
-      out += "\\\\";
-      break;
-    case '\n':
-      out += "\\n";
-      break;
-    case '\r':
-      out += "\\r";
-      break;
-    case '\t':
-      out += "\\t";
-      break;
-    default:
-      out.push_back(c);
-      break;
-    }
-  }
-  out.push_back('"');
-  return out;
-}
+using utils::jsonString;
 
 // Decode a canonical-hex gossip payload; returns std::nullopt if not in
 // canonical format or if hex decoding fails.

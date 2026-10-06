@@ -1,5 +1,7 @@
 #include "node/LightClientProtocol.hpp"
 
+#include "utils/JsonText.hpp"
+
 #include "crypto/hash.h"
 
 #include <exception>
@@ -16,35 +18,7 @@ std::string hashString(const std::string &input) {
   return std::string(output, NODO_HASH_HEX_SIZE);
 }
 
-std::string jsonString(const std::string &value) {
-  std::string out;
-  out.reserve(value.size() + 2);
-  out.push_back('"');
-  for (const char c : value) {
-    switch (c) {
-    case '"':
-      out += "\\\"";
-      break;
-    case '\\':
-      out += "\\\\";
-      break;
-    case '\n':
-      out += "\\n";
-      break;
-    case '\r':
-      out += "\\r";
-      break;
-    case '\t':
-      out += "\\t";
-      break;
-    default:
-      out.push_back(c);
-      break;
-    }
-  }
-  out.push_back('"');
-  return out;
-}
+using utils::jsonString;
 
 std::string merkleProofJson(const core::MerkleProof &proof) {
   std::ostringstream oss;

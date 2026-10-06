@@ -3,6 +3,7 @@
 #include <iostream>
 #include <mutex>
 #include <set>
+#include <thread>
 
 #include "consensus/BlockFinalizer.hpp"
 #include "consensus/BlockProductionPhase.hpp"

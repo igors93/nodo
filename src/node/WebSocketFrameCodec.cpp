@@ -92,7 +92,8 @@ WebSocketFrameCodec::decodeClientFrame(const std::string &bytes) {
     }
     payload[i] = static_cast<char>(value);
   }
-  return WebSocketFrame{opcode, payload, fin};
+  return WebSocketFrame{opcode, payload, fin, masked,
+                        cursor + static_cast<std::size_t>(payloadLen)};
 }
 
 } // namespace nodo::node

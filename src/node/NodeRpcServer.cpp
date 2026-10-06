@@ -23,16 +23,19 @@
 #include "p2p/EncryptedPeerTransport.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "utils/Amount.hpp"
+#include "utils/JsonText.hpp"
 
-#include <algorithm>
-#include <cerrno>
-#include <iostream>
+#include <asio.hpp>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 
+#include <algorithm>
+#include <array>
 #include <chrono>
-#include <cstring>
+#include <deque>
+#include <iostream>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -43,27 +46,6 @@
 #include <utility>
 #include <vector>
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <winsock2.h>
-#include <ws2tcpip.h>
-using platform_ssize_t = int;
-namespace {
-int close_socket(int fd) {
-  return static_cast<int>(::closesocket(static_cast<SOCKET>(fd)));
-}
-} // namespace
-#else
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-using platform_ssize_t = ssize_t;
-namespace {
-int close_socket(int fd) { return ::close(fd); }
-} // namespace
-#endif
-
 namespace nodo::node {
 
 // ---------------------------------------------------------------------------
@@ -72,69 +54,34 @@ namespace nodo::node {
 
 namespace {
 
+using asio::ip::tcp;
+
 const std::string kRpcSubmitSchemaId = "NODO_RPC_TRANSACTION_SUBMISSION_V1";
 
 const std::set<std::string> kRpcSubmitFields = {"transaction"};
 
-std::string jsonString(const std::string &s) {
-  std::string out;
-  out.reserve(s.size() + 2);
-  out += '"';
-  for (char c : s) {
-    if (c == '"')
-      out += "\\\"";
-    else if (c == '\\')
-      out += "\\\\";
-    else if (c == '\n')
-      out += "\\n";
-    else if (c == '\r')
-      out += "\\r";
-    else if (c == '\t')
-      out += "\\t";
-    else
-      out += c;
-  }
-  out += '"';
-  return out;
-}
+// WebSocket subscribers only send control frames; buffering more than this
+// from one is treated as abuse.
+constexpr std::size_t kMaxWebSocketInboundBytes = 8192;
+// A subscriber that stops reading is dropped instead of letting queued
+// events grow without bound.
+constexpr std::size_t kMaxQueuedWrites = 256;
+constexpr std::size_t kEventsPerPoll = 100;
+// After a response, unread request bytes are drained for up to this long
+// before closing, so the client receives the response instead of a reset.
+constexpr std::chrono::milliseconds kLingerTimeout{1000};
+// Accept errors are usually descriptor exhaustion; retry after a pause
+// instead of spinning.
+constexpr std::chrono::milliseconds kAcceptRetryDelay{100};
+// RFC 6455: Sec-WebSocket-Key is 16 random bytes, base64 encoded.
+constexpr std::size_t kWebSocketKeyLength = 24;
 
-bool sendAll(int fd, const std::string &data) {
-#if !defined(_WIN32) && defined(SO_NOSIGPIPE)
-  int suppressSigPipe = 1;
-  if (::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &suppressSigPipe,
-                   sizeof(suppressSigPipe)) != 0) {
-    return false;
-  }
-#endif
+using utils::jsonString;
 
-  const char *cursor = data.data();
-  std::size_t remaining = data.size();
-
-  while (remaining > 0) {
-    const platform_ssize_t sent = ::send(fd, cursor, remaining,
-#if !defined(_WIN32) && defined(MSG_NOSIGNAL)
-                                         MSG_NOSIGNAL
-#else
-                                         0
-#endif
-    );
-    if (sent < 0) {
-#if !defined(_WIN32)
-      if (errno == EINTR) {
-        continue;
-      }
-#endif
-      return false;
-    }
-    if (sent == 0) {
-      return false;
-    }
-
-    cursor += sent;
-    remaining -= static_cast<std::size_t>(sent);
-  }
-
-  return true;
+std::int64_t nowUnixSeconds() {
+  return std::chrono::duration_cast<std::chrono::seconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
 }
 
 bool parseUint64Strict(const std::string &value, std::uint64_t &out) {
@@ -176,47 +123,6 @@ bool asciiCaseEqual(const std::string &value, const std::string &expected) {
       return false;
   }
   return true;
-}
-
-std::string httpHeaderValue(const std::string &request,
-                            const std::string &name) {
-  const std::string wanted = name + ":";
-  std::size_t lineStart = 0;
-  while (lineStart < request.size()) {
-    const std::size_t lineEnd = request.find("\r\n", lineStart);
-    if (lineEnd == std::string::npos) {
-      break;
-    }
-    const std::string line = request.substr(lineStart, lineEnd - lineStart);
-    if (line.size() >= wanted.size()) {
-      bool matches = true;
-      for (std::size_t i = 0; i < wanted.size(); ++i) {
-        char a = line[i];
-        char b = wanted[i];
-        if (a >= 'A' && a <= 'Z')
-          a = static_cast<char>(a + ('a' - 'A'));
-        if (b >= 'A' && b <= 'Z')
-          b = static_cast<char>(b + ('a' - 'A'));
-        if (a != b) {
-          matches = false;
-          break;
-        }
-      }
-      if (matches) {
-        std::string value = line.substr(wanted.size());
-        std::size_t begin = 0;
-        while (begin < value.size() &&
-               (value[begin] == ' ' || value[begin] == '\t'))
-          ++begin;
-        std::size_t end = value.size();
-        while (end > begin && (value[end - 1] == ' ' || value[end - 1] == '\t'))
-          --end;
-        return value.substr(begin, end - begin);
-      }
-    }
-    lineStart = lineEnd + 2;
-  }
-  return "";
 }
 
 std::string websocketAcceptKey(const std::string &clientKey) {
@@ -271,84 +177,170 @@ std::string trimHttpWhitespace(const std::string &value) {
   return value.substr(begin, end - begin);
 }
 
-bool receiveHttpRequest(int fd, std::string &request) {
-  request.clear();
-  std::optional<std::size_t> expectedSize;
-
-  while (request.size() < NodeRpcServer::MAX_REQUEST_LEN) {
-    char buffer[4096];
-    const std::size_t remaining =
-        NodeRpcServer::MAX_REQUEST_LEN - request.size();
-    const std::size_t capacity =
-        remaining < sizeof(buffer) ? remaining : sizeof(buffer);
-    const platform_ssize_t received = ::recv(fd, buffer, capacity, 0);
-    if (received < 0) {
-#if !defined(_WIN32)
-      if (errno == EINTR)
-        continue;
-#endif
+// RFC 9110 token characters, used for methods and header names.
+bool isHttpToken(const std::string &value) {
+  if (value.empty()) {
+    return false;
+  }
+  for (const char c : value) {
+    const bool alphanumeric = (c >= 'a' && c <= 'z') ||
+                              (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+    if (!alphanumeric && std::string("!#$%&'*+-.^_`|~").find(c) ==
+                             std::string::npos) {
       return false;
-    }
-    if (received == 0) {
-      return false;
-    }
-    request.append(buffer, static_cast<std::size_t>(received));
-
-    if (!expectedSize.has_value()) {
-      const std::size_t headerEnd = request.find("\r\n\r\n");
-      if (headerEnd == std::string::npos) {
-        continue;
-      }
-
-      std::uint64_t contentLength = 0;
-      bool contentLengthSeen = false;
-      const std::size_t requestLineEnd = request.find("\r\n");
-      if (requestLineEnd == std::string::npos || requestLineEnd > headerEnd) {
-        return false;
-      }
-
-      std::size_t cursor = requestLineEnd + 2;
-      while (cursor < headerEnd) {
-        const std::size_t lineEnd = request.find("\r\n", cursor);
-        if (lineEnd == std::string::npos || lineEnd > headerEnd) {
-          return false;
-        }
-        const std::string line = request.substr(cursor, lineEnd - cursor);
-        const std::size_t colon = line.find(':');
-        if (colon == std::string::npos) {
-          return false;
-        }
-        const std::string name = trimHttpWhitespace(line.substr(0, colon));
-        const std::string value = trimHttpWhitespace(line.substr(colon + 1));
-
-        if (asciiCaseEqual(name, "content-length")) {
-          if (contentLengthSeen || !parseUint64Strict(value, contentLength)) {
-            return false;
-          }
-          contentLengthSeen = true;
-        } else if (asciiCaseEqual(name, "transfer-encoding")) {
-          // Chunked requests are intentionally unsupported. Rejecting
-          // them also prevents ambiguous request framing.
-          return false;
-        }
-        cursor = lineEnd + 2;
-      }
-
-      const std::uint64_t prefixSize =
-          static_cast<std::uint64_t>(headerEnd + 4);
-      if (contentLength > NodeRpcServer::MAX_REQUEST_LEN ||
-          prefixSize > NodeRpcServer::MAX_REQUEST_LEN - contentLength) {
-        return false;
-      }
-      expectedSize = static_cast<std::size_t>(prefixSize + contentLength);
-    }
-
-    if (request.size() >= expectedSize.value()) {
-      request.resize(expectedSize.value());
-      return true;
     }
   }
-  return false;
+  return true;
+}
+
+struct HttpRequest {
+  std::string method;
+  std::string target;
+  std::string body;
+  std::string upgrade;
+  std::string websocketKey;
+  std::size_t consumedBytes = 0; // request line through the end of the body
+};
+
+enum class HttpParseStatus {
+  INCOMPLETE,
+  COMPLETE,
+  BAD_REQUEST,
+  PAYLOAD_TOO_LARGE,
+  HEADERS_TOO_LARGE,
+  NOT_IMPLEMENTED
+};
+
+// Frames one HTTP/1.x request from the bytes received so far. A body is
+// framed only by Content-Length; chunked transfer coding, duplicate
+// Content-Length headers, folded header lines and whitespace before a colon
+// are all refused, so the request cannot be read two different ways.
+HttpParseStatus parseHttpRequest(const std::string &data, HttpRequest &out) {
+  const std::size_t headerEnd = data.find("\r\n\r\n");
+  if (headerEnd == std::string::npos) {
+    return data.size() > NodeRpcServer::MAX_HEADER_LEN
+               ? HttpParseStatus::HEADERS_TOO_LARGE
+               : HttpParseStatus::INCOMPLETE;
+  }
+  const std::size_t bodyStart = headerEnd + 4;
+  if (bodyStart > NodeRpcServer::MAX_HEADER_LEN) {
+    return HttpParseStatus::HEADERS_TOO_LARGE;
+  }
+
+  HttpRequest request;
+  const std::size_t requestLineEnd = data.find("\r\n");
+  const std::string requestLine = data.substr(0, requestLineEnd);
+  const std::size_t firstSpace = requestLine.find(' ');
+  const std::size_t secondSpace = firstSpace == std::string::npos
+                                      ? std::string::npos
+                                      : requestLine.find(' ', firstSpace + 1);
+  if (secondSpace == std::string::npos ||
+      requestLine.find(' ', secondSpace + 1) != std::string::npos) {
+    return HttpParseStatus::BAD_REQUEST;
+  }
+  request.method = requestLine.substr(0, firstSpace);
+  request.target =
+      requestLine.substr(firstSpace + 1, secondSpace - firstSpace - 1);
+  const std::string version = requestLine.substr(secondSpace + 1);
+  if (!isHttpToken(request.method) || request.target.empty() ||
+      request.target.front() != '/' ||
+      (version != "HTTP/1.0" && version != "HTTP/1.1")) {
+    return HttpParseStatus::BAD_REQUEST;
+  }
+  for (const char c : request.target) {
+    const auto byte = static_cast<unsigned char>(c);
+    if (byte <= 0x20 || byte >= 0x7f) {
+      return HttpParseStatus::BAD_REQUEST;
+    }
+  }
+
+  std::optional<std::uint64_t> contentLength;
+  std::size_t cursor = requestLineEnd + 2;
+  while (cursor < headerEnd) {
+    const std::size_t lineEnd = data.find("\r\n", cursor);
+    const std::string line = data.substr(cursor, lineEnd - cursor);
+    cursor = lineEnd + 2;
+
+    const std::size_t colon = line.find(':');
+    if (colon == std::string::npos) {
+      return HttpParseStatus::BAD_REQUEST;
+    }
+    const std::string name = line.substr(0, colon);
+    if (!isHttpToken(name)) {
+      return HttpParseStatus::BAD_REQUEST;
+    }
+    const std::string value = trimHttpWhitespace(line.substr(colon + 1));
+
+    if (asciiCaseEqual(name, "content-length")) {
+      std::uint64_t parsed = 0;
+      if (contentLength.has_value() || !parseUint64Strict(value, parsed)) {
+        return HttpParseStatus::BAD_REQUEST;
+      }
+      contentLength = parsed;
+    } else if (asciiCaseEqual(name, "transfer-encoding")) {
+      return HttpParseStatus::NOT_IMPLEMENTED;
+    } else if (asciiCaseEqual(name, "upgrade")) {
+      request.upgrade = value;
+    } else if (asciiCaseEqual(name, "sec-websocket-key")) {
+      request.websocketKey = value;
+    }
+  }
+
+  const std::uint64_t bodyLength = contentLength.value_or(0);
+  if (bodyLength > NodeRpcServer::MAX_REQUEST_LEN - bodyStart) {
+    return HttpParseStatus::PAYLOAD_TOO_LARGE;
+  }
+  if (data.size() - bodyStart < bodyLength) {
+    return HttpParseStatus::INCOMPLETE;
+  }
+
+  request.body = data.substr(bodyStart, static_cast<std::size_t>(bodyLength));
+  request.consumedBytes = bodyStart + static_cast<std::size_t>(bodyLength);
+  out = std::move(request);
+  return HttpParseStatus::COMPLETE;
+}
+
+// Reads ?after=N from a /events target; 0 when absent or malformed.
+std::uint64_t afterSequenceFromTarget(const std::string &target) {
+  std::uint64_t afterSequence = 0;
+  const std::size_t query = target.find('?');
+  if (query == std::string::npos) {
+    return afterSequence;
+  }
+  const std::string q = target.substr(query + 1);
+  const std::string marker = "after=";
+  std::size_t pos = 0;
+  while (pos < q.size()) {
+    std::size_t end = q.find('&', pos);
+    if (end == std::string::npos) {
+      end = q.size();
+    }
+    if (q.compare(pos, marker.size(), marker) == 0) {
+      (void)parseUint64Strict(
+          q.substr(pos + marker.size(), end - (pos + marker.size())),
+          afterSequence);
+    }
+    pos = end + 1;
+  }
+  return afterSequence;
+}
+
+tcp::endpoint resolveBindEndpoint(asio::io_context &io,
+                                  const std::string &host,
+                                  std::uint16_t port) {
+  asio::error_code error;
+  const asio::ip::address address = asio::ip::make_address(host, error);
+  if (!error) {
+    return tcp::endpoint(address, port);
+  }
+
+  tcp::resolver resolver(io);
+  const tcp::resolver::results_type results = resolver.resolve(
+      host, std::to_string(port), tcp::resolver::passive, error);
+  if (error || results.empty()) {
+    throw std::runtime_error("NodeRpcServer: invalid bind address: " + host);
+  }
+  return results.begin()->endpoint();
 }
 
 core::Transaction parseSignedTransactionSubmission(const std::string &body) {
@@ -365,6 +357,320 @@ core::Transaction parseSignedTransactionSubmission(const std::string &body) {
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
+// Transport
+// ---------------------------------------------------------------------------
+
+struct NodeRpcServer::Transport {
+  asio::io_context io;
+  tcp::acceptor acceptor{io};
+  asio::steady_timer acceptRetry{io};
+  std::vector<std::thread> workers;
+};
+
+// One accepted connection. Every handler runs on the socket's strand, so a
+// session's state is never touched by two threads at once. The session lives
+// as long as one of its asynchronous operations holds a reference to it.
+class NodeRpcServer::Session
+    : public std::enable_shared_from_this<NodeRpcServer::Session> {
+public:
+  Session(NodeRpcServer &server, tcp::socket socket)
+      : m_server(server), m_socket(std::move(socket)),
+        m_deadline(m_socket.get_executor()),
+        m_pollTimer(m_socket.get_executor()) {
+    ++m_server.m_activeConnections;
+  }
+
+  ~Session() {
+    if (m_isWebSocket) {
+      --m_server.m_activeWebSockets;
+    }
+    --m_server.m_activeConnections;
+  }
+
+  Session(const Session &) = delete;
+  Session &operator=(const Session &) = delete;
+
+  // Reads one request and answers it.
+  void start() {
+    asio::dispatch(m_socket.get_executor(), [self = shared_from_this()] {
+      self->armDeadline(self->m_server.m_limits.requestTimeout);
+      self->readRequest();
+    });
+  }
+
+  // Answers without serving the request (rate limiting).
+  void reject(int statusCode, std::string body) {
+    asio::dispatch(m_socket.get_executor(),
+                   [self = shared_from_this(), statusCode,
+                    body = std::move(body)] {
+                     self->respondAndClose(statusCode, body);
+                   });
+  }
+
+private:
+  NodeRpcServer &m_server;
+  tcp::socket m_socket;
+  asio::steady_timer m_deadline;
+  asio::steady_timer m_pollTimer;
+  std::array<char, 4096> m_chunk{};
+  std::string m_buffer;
+  std::deque<std::string> m_writeQueue;
+  bool m_writing = false;
+  bool m_closeAfterWrites = false;
+  bool m_closed = false;
+  bool m_isWebSocket = false;
+  std::uint64_t m_afterSequence = 0;
+
+  void armDeadline(std::chrono::milliseconds timeout) {
+    m_deadline.expires_after(timeout);
+    m_deadline.async_wait(
+        [self = shared_from_this()](const asio::error_code &error) {
+          if (!error) {
+            self->close();
+          }
+        });
+  }
+
+  void readRequest() {
+    m_socket.async_read_some(
+        asio::buffer(m_chunk),
+        [self = shared_from_this()](const asio::error_code &error,
+                                    std::size_t received) {
+          self->onRequestBytes(error, received);
+        });
+  }
+
+  void onRequestBytes(const asio::error_code &error, std::size_t received) {
+    if (error || m_closed) {
+      close();
+      return;
+    }
+    m_buffer.append(m_chunk.data(), received);
+
+    HttpRequest request;
+    switch (parseHttpRequest(m_buffer, request)) {
+    case HttpParseStatus::INCOMPLETE:
+      readRequest();
+      return;
+    case HttpParseStatus::COMPLETE:
+      m_buffer.erase(0, request.consumedBytes);
+      serve(request);
+      return;
+    case HttpParseStatus::BAD_REQUEST:
+      respondAndClose(400, jsonError("Bad request"));
+      return;
+    case HttpParseStatus::PAYLOAD_TOO_LARGE:
+      respondAndClose(413,
+                      jsonError("Request too large; the limit is " +
+                                std::to_string(MAX_REQUEST_LEN) + " bytes."));
+      return;
+    case HttpParseStatus::HEADERS_TOO_LARGE:
+      respondAndClose(431, jsonError("Request headers too large."));
+      return;
+    case HttpParseStatus::NOT_IMPLEMENTED:
+      respondAndClose(
+          501, jsonError(
+                   "Transfer-Encoding is not supported; send Content-Length."));
+      return;
+    }
+  }
+
+  void serve(const HttpRequest &request) {
+    const std::string cleanPath =
+        request.target.substr(0, request.target.find('?'));
+    if ((cleanPath == "/events" || cleanPath == "/events/ws") &&
+        asciiCaseEqual(request.upgrade, "websocket")) {
+      upgradeToWebSocket(request);
+      return;
+    }
+
+    HttpDispatchResponse response(200, "{}");
+    try {
+      response =
+          m_server.dispatch(request.method, request.target, request.body);
+    } catch (const std::exception &e) {
+      response = HttpDispatchResponse(
+          500, jsonError(std::string("Internal RPC error: ") + e.what()));
+    } catch (...) {
+      response = HttpDispatchResponse(500, jsonError("Internal RPC error."));
+    }
+    respondAndClose(response.statusCode, response.body, response.contentType);
+  }
+
+  void respondAndClose(int statusCode, const std::string &body,
+                       const std::string &contentType = "application/json") {
+    armDeadline(m_server.m_limits.writeTimeout);
+    m_closeAfterWrites = true;
+    enqueue(httpResponse(statusCode, body, contentType));
+  }
+
+  void upgradeToWebSocket(const HttpRequest &request) {
+    if (request.websocketKey.size() != kWebSocketKeyLength) {
+      respondAndClose(400, jsonError("Missing or invalid Sec-WebSocket-Key."));
+      return;
+    }
+    if (m_server.m_activeWebSockets.fetch_add(1) >=
+        m_server.m_limits.maxWebSocketSessions) {
+      --m_server.m_activeWebSockets;
+      respondAndClose(503, jsonError("Too many WebSocket subscribers."));
+      return;
+    }
+    m_isWebSocket = true;
+    m_deadline.cancel(); // an event stream has no request deadline
+
+    enqueue("HTTP/1.1 101 Switching Protocols\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            "Sec-WebSocket-Accept: " +
+            websocketAcceptKey(request.websocketKey) + "\r\n\r\n");
+
+    const auto hello = m_server.m_eventBus->publish(
+        NodeEventType::RPC_SUBSCRIPTION, 0, "",
+        "{\"transport\":\"websocket\",\"endpoint\":\"/events\"}",
+        nowUnixSeconds());
+    enqueue(WebSocketFrameCodec::textFrame(hello.serializeJson()));
+    m_afterSequence =
+        std::max(afterSequenceFromTarget(request.target), hello.sequence());
+
+    pollEvents();
+    processWebSocketInput(); // frames may have arrived with the handshake
+  }
+
+  void pollEvents() {
+    if (m_closed || m_closeAfterWrites) {
+      return;
+    }
+    for (const ChainEvent &event :
+         m_server.m_eventBus->recent(m_afterSequence, kEventsPerPoll)) {
+      enqueue(WebSocketFrameCodec::textFrame(event.serializeJson()));
+      m_afterSequence = std::max(m_afterSequence, event.sequence());
+    }
+    m_pollTimer.expires_after(m_server.m_limits.eventPollInterval);
+    m_pollTimer.async_wait(
+        [self = shared_from_this()](const asio::error_code &error) {
+          if (!error) {
+            self->pollEvents();
+          }
+        });
+  }
+
+  void processWebSocketInput() {
+    while (!m_closed && !m_closeAfterWrites) {
+      const std::optional<WebSocketFrame> frame =
+          WebSocketFrameCodec::decodeClientFrame(m_buffer);
+      if (!frame.has_value()) {
+        break;
+      }
+      m_buffer.erase(0, frame->consumedBytes);
+      // RFC 6455 section 5.1: a server closes on an unmasked client frame.
+      if (!frame->masked || frame->opcode == WebSocketOpcode::CLOSE) {
+        m_closeAfterWrites = true;
+        enqueue(WebSocketFrameCodec::closeFrame());
+        return;
+      }
+      if (frame->opcode == WebSocketOpcode::PING) {
+        enqueue(WebSocketFrameCodec::pongFrame(frame->payload));
+      }
+    }
+    if (m_closed || m_closeAfterWrites) {
+      return;
+    }
+    if (m_buffer.size() > kMaxWebSocketInboundBytes) {
+      close();
+      return;
+    }
+
+    m_socket.async_read_some(
+        asio::buffer(m_chunk),
+        [self = shared_from_this()](const asio::error_code &error,
+                                    std::size_t received) {
+          if (error) {
+            self->close();
+            return;
+          }
+          self->m_buffer.append(self->m_chunk.data(), received);
+          self->processWebSocketInput();
+        });
+  }
+
+  void enqueue(std::string data) {
+    if (m_closed) {
+      return;
+    }
+    if (m_writeQueue.size() >= kMaxQueuedWrites) {
+      close();
+      return;
+    }
+    m_writeQueue.push_back(std::move(data));
+    if (!m_writing) {
+      m_writing = true;
+      writeNext();
+    }
+  }
+
+  void writeNext() {
+    asio::async_write(
+        m_socket, asio::buffer(m_writeQueue.front()),
+        [self = shared_from_this()](const asio::error_code &error,
+                                    std::size_t) {
+          if (error) {
+            self->close();
+            return;
+          }
+          self->m_writeQueue.pop_front();
+          if (!self->m_writeQueue.empty()) {
+            self->writeNext();
+            return;
+          }
+          self->m_writing = false;
+          if (self->m_closeAfterWrites) {
+            self->finish();
+          }
+        });
+  }
+
+  // Ends the connection once everything queued has been written.
+  void finish() {
+    if (m_isWebSocket) {
+      close();
+      return;
+    }
+    // Lingering close: stop sending, then discard whatever the client still
+    // sends, so closing never resets the connection before the client has
+    // read the response.
+    asio::error_code ignored;
+    m_socket.shutdown(tcp::socket::shutdown_send, ignored);
+    armDeadline(kLingerTimeout);
+    drain();
+  }
+
+  void drain() {
+    m_socket.async_read_some(
+        asio::buffer(m_chunk),
+        [self = shared_from_this()](const asio::error_code &error,
+                                    std::size_t) {
+          if (error) {
+            self->close();
+            return;
+          }
+          self->drain();
+        });
+  }
+
+  void close() {
+    if (m_closed) {
+      return;
+    }
+    m_closed = true;
+    m_deadline.cancel();
+    m_pollTimer.cancel();
+    asio::error_code ignored;
+    m_socket.shutdown(tcp::socket::shutdown_both, ignored);
+    m_socket.close(ignored);
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
 
@@ -377,7 +683,9 @@ NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
                              NodeEventBus *eventBus, std::uint16_t port,
                              const std::string &bindAddr)
     : m_runtime(runtime), m_runtimeMutex(runtimeMutex), m_gossip(nullptr),
-      m_port(port), m_bindAddr(bindAddr), m_running(false), m_serverFd(-1),
+      m_configuredPort(port), m_port(port), m_bindAddr(bindAddr),
+      m_running(false), m_limits(),
+      m_transport(), m_activeConnections(0), m_activeWebSockets(0),
       m_ownedEventBus(),
       m_eventBus(eventBus == nullptr ? &m_ownedEventBus : eventBus),
       m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS),
@@ -389,7 +697,9 @@ NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
                              p2p::GossipMesh &gossip, NodeEventBus *eventBus,
                              std::uint16_t port, const std::string &bindAddr)
     : m_runtime(runtime), m_runtimeMutex(runtimeMutex), m_gossip(&gossip),
-      m_port(port), m_bindAddr(bindAddr), m_running(false), m_serverFd(-1),
+      m_configuredPort(port), m_port(port), m_bindAddr(bindAddr),
+      m_running(false), m_limits(),
+      m_transport(), m_activeConnections(0), m_activeWebSockets(0),
       m_ownedEventBus(),
       m_eventBus(eventBus == nullptr ? &m_ownedEventBus : eventBus),
       m_rateLimiter(MAX_REQUESTS_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS),
@@ -399,7 +709,7 @@ NodeRpcServer::NodeRpcServer(NodeRuntime &runtime, std::mutex &runtimeMutex,
 
 NodeRpcServer::~NodeRpcServer() { stop(); }
 
-std::uint16_t NodeRpcServer::port() const { return m_port; }
+std::uint16_t NodeRpcServer::port() const { return m_port.load(); }
 
 bool NodeRpcServer::isRunning() const { return m_running.load(); }
 
@@ -407,299 +717,140 @@ void NodeRpcServer::attachSyncHealth(const SyncHealth *syncHealth) {
   m_syncHealth = syncHealth;
 }
 
+void NodeRpcServer::setLimits(const Limits &limits) {
+  if (m_transport != nullptr) {
+    throw std::logic_error("NodeRpcServer limits cannot change while running.");
+  }
+  if (limits.workerThreads == 0 || limits.maxConnections == 0 ||
+      limits.maxWebSocketSessions > limits.maxConnections ||
+      limits.requestTimeout.count() <= 0 || limits.writeTimeout.count() <= 0 ||
+      limits.eventPollInterval.count() <= 0 ||
+      limits.maxRequestsPerWindow == 0 || limits.rateLimitWindowSeconds == 0) {
+    throw std::invalid_argument("NodeRpcServer limits are invalid.");
+  }
+  m_limits = limits;
+  m_rateLimiter = p2p::PeerRateLimiter(limits.maxRequestsPerWindow,
+                                       limits.rateLimitWindowSeconds);
+}
+
+const NodeRpcServer::Limits &NodeRpcServer::limits() const { return m_limits; }
+
 // ---------------------------------------------------------------------------
 // Start / Stop
 // ---------------------------------------------------------------------------
 
 void NodeRpcServer::start() {
-  if (m_running.load())
+  if (m_transport != nullptr) {
     return;
-
-  const int serverFd = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (serverFd < 0) {
-    throw std::runtime_error(std::string("NodeRpcServer: socket() failed: ") +
-                             strerror(errno));
   }
 
-  int yes = 1;
-  ::setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR,
-               reinterpret_cast<const char *>(&yes), sizeof(yes));
+  auto transport = std::make_unique<Transport>();
+  const tcp::endpoint endpoint =
+      resolveBindEndpoint(transport->io, m_bindAddr, m_configuredPort);
 
-  struct sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(m_port);
-  if (::inet_pton(AF_INET, m_bindAddr.c_str(), &addr.sin_addr) <= 0) {
-    close_socket(serverFd);
-    throw std::runtime_error("NodeRpcServer: invalid bind address: " +
-                             m_bindAddr);
+  asio::error_code error;
+  transport->acceptor.open(endpoint.protocol(), error);
+  if (error) {
+    throw std::runtime_error("NodeRpcServer: cannot open socket: " +
+                             error.message());
+  }
+#ifndef _WIN32
+  // On Windows SO_REUSEADDR lets another process bind the same port, so it
+  // is only set where it means "reuse a port in TIME_WAIT".
+  transport->acceptor.set_option(tcp::acceptor::reuse_address(true), error);
+#endif
+  transport->acceptor.bind(endpoint, error);
+  if (error) {
+    throw std::runtime_error("NodeRpcServer: bind() failed on " + m_bindAddr +
+                             ":" + std::to_string(endpoint.port()) + ": " +
+                             error.message());
+  }
+  transport->acceptor.listen(asio::socket_base::max_listen_connections, error);
+  if (error) {
+    throw std::runtime_error("NodeRpcServer: listen() failed: " +
+                             error.message());
   }
 
-  if (::bind(serverFd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
-    close_socket(serverFd);
-    throw std::runtime_error(std::string("NodeRpcServer: bind() failed: ") +
-                             strerror(errno));
-  }
-
-  if (::listen(serverFd, 16) < 0) {
-    close_socket(serverFd);
-    throw std::runtime_error(std::string("NodeRpcServer: listen() failed: ") +
-                             strerror(errno));
-  }
-
-  m_serverFd.store(serverFd);
+  m_port.store(transport->acceptor.local_endpoint().port());
+  m_transport = std::move(transport);
   m_running.store(true);
+  acceptNext();
+
   try {
-    m_thread = std::thread([this] { runLoop(); });
+    for (std::size_t index = 0; index < m_limits.workerThreads; ++index) {
+      m_transport->workers.emplace_back([io = &m_transport->io] {
+        for (;;) {
+          try {
+            io->run();
+            return;
+          } catch (...) {
+            // A throwing handler must not stop the server; keep serving.
+          }
+        }
+      });
+    }
   } catch (...) {
-    m_running.store(false);
-    const int fd = m_serverFd.exchange(-1);
-    if (fd >= 0)
-      close_socket(fd);
+    stop();
     throw;
   }
 }
 
 void NodeRpcServer::stop() {
   m_running.store(false);
-  const int serverFd = m_serverFd.exchange(-1);
-  if (serverFd >= 0) {
-#ifdef _WIN32
-    (void)::shutdown(static_cast<SOCKET>(serverFd), SD_BOTH);
-#else
-    (void)::shutdown(serverFd, SHUT_RDWR);
-#endif
-    close_socket(serverFd);
-  }
-  if (m_thread.joinable()) {
-    m_thread.join();
-  }
-  joinClientThreads();
-}
-
-void NodeRpcServer::joinClientThreads() {
-  std::vector<std::thread> threads;
-  {
-    std::lock_guard<std::mutex> lock(m_clientThreadsMutex);
-    threads.swap(m_clientThreads);
-  }
-  for (std::thread &thread : threads) {
-    if (thread.joinable()) {
-      thread.join();
-    }
-  }
-}
-
-void NodeRpcServer::runLoop() {
-  while (m_running.load()) {
-    const int serverFd = m_serverFd.load();
-    if (serverFd < 0)
-      break;
-    struct sockaddr_in clientAddr{};
-    socklen_t addrLen = sizeof(clientAddr);
-    int clientFd =
-        ::accept(serverFd, reinterpret_cast<sockaddr *>(&clientAddr), &addrLen);
-    if (clientFd < 0) {
-      if (!m_running.load())
-        break;
-      continue;
-    }
-
-    char ipBuffer[INET_ADDRSTRLEN] = {0};
-    const char *ipStr =
-        ::inet_ntop(AF_INET, &clientAddr.sin_addr, ipBuffer, sizeof(ipBuffer));
-    const std::string clientIp =
-        ipStr != nullptr ? std::string(ipStr) : std::string("unknown");
-
-    const std::int64_t now =
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count();
-
-    if (!m_rateLimiter.shouldAllow(clientIp, now)) {
-      const std::string resp =
-          httpResponse(429, jsonError("Rate limit exceeded. Try again later."));
-      (void)sendAll(clientFd, resp);
-      close_socket(clientFd);
-      continue;
-    }
-
-#ifdef _WIN32
-    const DWORD timeoutMs = 2000;
-    (void)::setsockopt(static_cast<SOCKET>(clientFd), SOL_SOCKET, SO_RCVTIMEO,
-                       reinterpret_cast<const char *>(&timeoutMs),
-                       sizeof(timeoutMs));
-    (void)::setsockopt(static_cast<SOCKET>(clientFd), SOL_SOCKET, SO_SNDTIMEO,
-                       reinterpret_cast<const char *>(&timeoutMs),
-                       sizeof(timeoutMs));
-#else
-    timeval timeout{};
-    timeout.tv_sec = 2;
-    (void)::setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO, &timeout,
-                       sizeof(timeout));
-    (void)::setsockopt(clientFd, SOL_SOCKET, SO_SNDTIMEO, &timeout,
-                       sizeof(timeout));
-#endif
-
-    {
-      std::lock_guard<std::mutex> lock(m_clientThreadsMutex);
-      m_clientThreads.emplace_back([this, clientFd] {
-        try {
-          handleClient(clientFd);
-        } catch (...) {
-          // A malformed or aborted client must not terminate the RPC loop.
-        }
-        close_socket(clientFd);
-      });
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// HTTP framing
-// ---------------------------------------------------------------------------
-
-void NodeRpcServer::handleClient(int clientFd) {
-  std::string request;
-  if (!receiveHttpRequest(clientFd, request))
-    return;
-
-  std::string method, path, body;
-  if (!parseRequestLine(request, method, path, body)) {
-    const std::string resp = httpResponse(400, jsonError("Bad request"));
-    (void)sendAll(clientFd, resp);
+  if (m_transport == nullptr) {
     return;
   }
-
-  if (isWebSocketUpgrade(request, path)) {
-    handleWebSocket(clientFd, request, path);
-    return;
-  }
-
-  HttpDispatchResponse response(200, "{}");
-  try {
-    response = dispatch(method, path, body);
-  } catch (const std::exception &e) {
-    response = HttpDispatchResponse(
-        500, jsonError(std::string("Internal RPC error: ") + e.what()));
-  }
-
-  const std::string resp =
-      httpResponse(response.statusCode, response.body, response.contentType);
-  (void)sendAll(clientFd, resp);
-}
-
-bool NodeRpcServer::parseRequestLine(const std::string &request,
-                                     std::string &outMethod,
-                                     std::string &outPath,
-                                     std::string &outBody) {
-  const std::size_t lineEnd = request.find("\r\n");
-  if (lineEnd == std::string::npos)
-    return false;
-
-  const std::string firstLine = request.substr(0, lineEnd);
-  std::istringstream iss(firstLine);
-  std::string proto;
-  if (!(iss >> outMethod >> outPath >> proto))
-    return false;
-
-  // Body follows the blank line.
-  const std::size_t bodyPos = request.find("\r\n\r\n");
-  if (bodyPos != std::string::npos) {
-    outBody = request.substr(bodyPos + 4);
-  }
-  return true;
-}
-
-bool NodeRpcServer::isWebSocketUpgrade(const std::string &request,
-                                       const std::string &path) const {
-  const std::string cleanPath = path.substr(0, path.find('?'));
-  if (cleanPath != "/events" && cleanPath != "/events/ws") {
-    return false;
-  }
-  return asciiCaseEqual(httpHeaderValue(request, "Upgrade"), "websocket") &&
-         httpHeaderValue(request, "Sec-WebSocket-Key").size() >= 16;
-}
-
-void NodeRpcServer::handleWebSocket(int clientFd, const std::string &request,
-                                    const std::string &path) {
-  const std::string key = httpHeaderValue(request, "Sec-WebSocket-Key");
-  if (key.empty()) {
-    (void)sendAll(clientFd,
-                  httpResponse(400, jsonError("Missing WebSocket key")));
-    return;
-  }
-
-  const std::string response = "HTTP/1.1 101 Switching Protocols\r\n"
-                               "Upgrade: websocket\r\n"
-                               "Connection: Upgrade\r\n"
-                               "Sec-WebSocket-Accept: " +
-                               websocketAcceptKey(key) +
-                               "\r\n"
-                               "\r\n";
-  if (!sendAll(clientFd, response)) {
-    return;
-  }
-
-  std::uint64_t afterSequence = 0;
-  const std::size_t query = path.find('?');
-  if (query != std::string::npos) {
-    const std::string q = path.substr(query + 1);
-    const std::string marker = "after=";
-    const std::size_t pos = q.find(marker);
-    if (pos != std::string::npos) {
-      std::size_t end = q.find('&', pos + marker.size());
-      if (end == std::string::npos)
-        end = q.size();
-      (void)parseUint64Strict(
-          q.substr(pos + marker.size(), end - (pos + marker.size())),
-          afterSequence);
+  m_transport->io.stop();
+  for (std::thread &worker : m_transport->workers) {
+    if (worker.joinable()) {
+      worker.join();
     }
   }
+  // Destroying the io_context destroys every pending handler, and with them
+  // the sessions they own, which closes their sockets.
+  m_transport.reset();
+}
 
-  const auto hello = m_eventBus->publish(
-      NodeEventType::RPC_SUBSCRIPTION, 0, "",
-      "{\"transport\":\"websocket\",\"endpoint\":\"/events\"}",
-      std::chrono::duration_cast<std::chrono::seconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count());
-  (void)sendAll(clientFd,
-                WebSocketFrameCodec::textFrame(hello.serializeJson()));
-  afterSequence = std::max(afterSequence, hello.sequence());
-
-  while (m_running.load()) {
-    const std::vector<ChainEvent> events =
-        m_eventBus->recent(afterSequence, 100);
-    for (const ChainEvent &event : events) {
-      if (!sendAll(clientFd,
-                   WebSocketFrameCodec::textFrame(event.serializeJson()))) {
-        return;
-      }
-      afterSequence = std::max(afterSequence, event.sequence());
-    }
-
-    char buffer[512];
-    const platform_ssize_t received =
-        ::recv(clientFd, buffer, sizeof(buffer), 0);
-    if (received == 0) {
-      return;
-    }
-    if (received > 0) {
-      const auto frame = WebSocketFrameCodec::decodeClientFrame(
-          std::string(buffer, buffer + received));
-      if (frame.has_value()) {
-        if (frame->opcode == WebSocketOpcode::CLOSE) {
-          (void)sendAll(clientFd, WebSocketFrameCodec::closeFrame());
+void NodeRpcServer::acceptNext() {
+  Transport &transport = *m_transport;
+  transport.acceptor.async_accept(
+      asio::make_strand(transport.io),
+      [this](const asio::error_code &error, tcp::socket socket) {
+        if (!m_running.load() || error == asio::error::operation_aborted) {
           return;
         }
-        if (frame->opcode == WebSocketOpcode::PING) {
-          (void)sendAll(clientFd,
-                        WebSocketFrameCodec::pongFrame(frame->payload));
+        if (error) {
+          m_transport->acceptRetry.expires_after(kAcceptRetryDelay);
+          m_transport->acceptRetry.async_wait(
+              [this](const asio::error_code &waitError) {
+                if (!waitError && m_running.load()) {
+                  acceptNext();
+                }
+              });
+          return;
         }
-      }
-    }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-  }
+        // Only this handler runs at a time (one accept is ever pending), so
+        // the connection cap and the rate limiter need no further locking.
+        if (m_activeConnections.load() >= m_limits.maxConnections) {
+          asio::error_code ignored;
+          socket.close(ignored);
+        } else {
+          asio::error_code endpointError;
+          const tcp::endpoint remote = socket.remote_endpoint(endpointError);
+          const std::string clientIp = endpointError
+                                           ? std::string("unknown")
+                                           : remote.address().to_string();
+          const auto session = std::make_shared<Session>(*this, std::move(socket));
+          if (m_rateLimiter.shouldAllow(clientIp, nowUnixSeconds())) {
+            session->start();
+          } else {
+            session->reject(429,
+                            jsonError("Rate limit exceeded. Try again later."));
+          }
+        }
+        acceptNext();
+      });
 }
 
 std::string NodeRpcServer::httpResponse(int statusCode, const std::string &body,
@@ -718,11 +869,23 @@ std::string NodeRpcServer::httpResponse(int statusCode, const std::string &body,
   case 405:
     statusText = "Method Not Allowed";
     break;
+  case 413:
+    statusText = "Content Too Large";
+    break;
   case 429:
     statusText = "Too Many Requests";
     break;
+  case 431:
+    statusText = "Request Header Fields Too Large";
+    break;
   case 500:
     statusText = "Internal Server Error";
+    break;
+  case 501:
+    statusText = "Not Implemented";
+    break;
+  case 503:
+    statusText = "Service Unavailable";
     break;
   default:
     statusText = "Unknown";
@@ -730,7 +893,7 @@ std::string NodeRpcServer::httpResponse(int statusCode, const std::string &body,
   }
 
   std::ostringstream oss;
-  oss << "HTTP/1.0 " << statusCode << " " << statusText << "\r\n"
+  oss << "HTTP/1.1 " << statusCode << " " << statusText << "\r\n"
       << "Content-Type: " << contentType << "\r\n"
       << "Content-Length: " << body.size() << "\r\n"
       << "Connection: close\r\n"

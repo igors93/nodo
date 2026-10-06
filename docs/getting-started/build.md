@@ -8,6 +8,7 @@ Nodo uses CMake and C++20.
 - C++20 compiler
 - OpenSSL/libcrypto
 - BLST
+- Network access on the first configure: CMake fetches standalone Asio and nlohmann/json (the latter pinned by SHA-256)
 
 ## Install BLST on Unix-like systems
 

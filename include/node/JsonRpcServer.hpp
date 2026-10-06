@@ -13,14 +13,21 @@ namespace nodo::node {
  * JsonRpcRequest holds a parsed JSON-RPC 2.0 request.
  *
  * Security principle:
- * Parsing is defensive: any missing or unexpected field causes the request to
- * be rejected with an appropriate JSON-RPC error code.
+ * Parsing is defensive: input is parsed by nlohmann::json and rejected when it
+ * is not well-formed JSON, nests deeper than a fixed limit, or repeats a key
+ * in any object (duplicate keys let two parsers disagree on what was sent).
+ * Any missing, mistyped, or unexpected request member makes the request
+ * invalid.
  */
 struct JsonRpcRequest {
   std::string jsonrpc; // must be "2.0"
   std::string method;
-  std::string params; // raw JSON params string
-  std::string id;     // string id for correlation
+  std::string params; // params re-serialized as compact JSON; "{}" if absent
+  std::string id;     // string ids as-is, integer ids as decimal text
+  std::string idJson{"null"}; // the id exactly as JSON, echoed in responses
+
+  bool wellFormedJson = false; // false: the body was not valid JSON
+  std::string invalidReason;   // non-empty: valid JSON but not a valid request
 
   bool isValid() const;
   static JsonRpcRequest parse(const std::string &rawJson);
@@ -29,6 +36,7 @@ struct JsonRpcRequest {
 struct JsonRpcResponse {
   std::string jsonrpc{"2.0"};
   std::string id;
+  std::string idJson; // when set, serialized verbatim instead of id
   std::string result; // JSON result string (set on success)
   std::string error;  // JSON error object string (set on failure)
 
@@ -117,9 +125,11 @@ public:
 
   std::vector<std::string> registeredMethods() const;
 
-  // Extract a flat JSON parameter value. Public so runtime-bound servers can
-  // register narrow methods without duplicating JSON helper code. Returns an
-  // empty string when the key is absent.
+  // Returns the top-level member `key` of a params object as text: strings
+  // decoded, numbers and booleans as their JSON text. Returns an empty string
+  // when the key is absent, the value is null, an object or an array, or
+  // paramsJson is not a JSON object. Public so runtime-bound servers can
+  // register narrow methods without duplicating JSON helper code.
   static std::string extractParam(const std::string &paramsJson,
                                   const std::string &key);
 

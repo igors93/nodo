@@ -124,7 +124,8 @@ Prerequisites:
 - CMake 3.20 or newer;
 - a C++20 compiler;
 - OpenSSL libcrypto development files;
-- external `blst` headers and library, installed outside this repository.
+- external `blst` headers and library, installed outside this repository;
+- network access on the first configure, when CMake fetches standalone Asio and nlohmann/json.
 
 Windows:
 

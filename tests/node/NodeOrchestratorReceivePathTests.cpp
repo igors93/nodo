@@ -5,6 +5,7 @@
 #include "serialization/ProtocolMessageCodec.hpp"
 #include <asio.hpp>
 #include <iostream>
+#include <thread>
 
 using namespace nodo;
 

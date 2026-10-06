@@ -17,6 +17,42 @@ Nodo does not yet publish versioned production releases. This changelog starts a
   default key ids, the localnet seeds) as the key seed. It now uses
   `KeyStore::createRandomKey`. `localnet` and `localnet-soak` keep
   deterministic keys for reproducible development.
+- **JSON-RPC requests are parsed by nlohmann/json** (v3.12.0, pinned by
+  SHA-256) instead of a hand-rolled substring search. The old parser took the
+  first `"method"`, `"id"`, or parameter name found anywhere in the body, so a
+  key nested inside `params` could choose which handler ran or which value a
+  handler read. Requests are now rejected on malformed JSON, trailing data,
+  invalid UTF-8, duplicate keys at any depth, nesting deeper than 32 levels,
+  unknown top-level members, or mistyped `jsonrpc`/`method`/`params`/`id`.
+- **The RPC HTTP server runs on Asio instead of raw sockets.** The old server
+  spawned one thread per connection and kept every finished thread until
+  `stop()`, so threads accumulated with each request; it had no connection
+  cap; and its 2-second timeout applied per `recv`, so a client sending one
+  byte every 1.9 s held a thread for hours. Connections are now asynchronous
+  sessions on a fixed pool of 4 threads, capped at 128 (32 WebSocket
+  subscribers), and a whole request must arrive within 10 s.
+- On Windows the RPC listener no longer sets `SO_REUSEADDR`, which there
+  allows another process to bind the same port.
+
+### Fixed
+
+- Six copies of a hand-written `jsonString` escaped only `"`, `\`, `\n`,
+  `\r` and `\t`, so any other control byte or invalid UTF-8 in chain data
+  produced invalid JSON in health, metrics, event, light-client and RPC
+  responses. All of them now use `utils::jsonString` (nlohmann/json).
+- Malformed, oversized, or chunked HTTP requests were closed without a
+  response; they now get `400`, `413`, `431`, or `501`. Unread request bytes
+  are drained before closing, so the client sees the status instead of a
+  connection reset.
+- WebSocket client frames split across reads, or several frames in one read,
+  were mis-decoded; `WebSocketFrame` now reports the bytes it consumed. An
+  unmasked client frame closes the stream, as RFC 6455 requires.
+- `stop()` waited up to 3 s for each open WebSocket subscriber; it now
+  returns as soon as the worker threads exit.
+- `--rpc-listen` now accepts bracketed IPv6 literals (`[::1]:8545`) and host
+  names; the server previously accepted only IPv4 literals.
+- Asio warned on every Windows translation unit about `_WIN32_WINNT`; it is
+  now defined as Windows 10.
 
 ### Added
 
@@ -39,6 +75,13 @@ Nodo does not yet publish versioned production releases. This changelog starts a
 
 ### Changed
 
+- RPC responses use `HTTP/1.1` status lines (still `Connection: close`);
+  `NodeRpcServer::Limits` makes the transport limits configurable, and port
+  `0` binds an ephemeral port reported by `port()`.
+- JSON-RPC responses echo the request `id` with its JSON type (`7` stays a
+  number) and answer parse errors with `"id":null`; previously every id was
+  returned as a string. `\uXXXX` escapes in parameters are now decoded, and
+  error messages always serialize to valid JSON.
 - `init` writes `genesis.nodo` as a genesis document for every network
   (previously a write-only debug serialization).
 - Existing `testnet-candidate` data directories were initialized from the

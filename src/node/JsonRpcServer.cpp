@@ -1,129 +1,64 @@
 #include "node/JsonRpcServer.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <limits>
-#include <sstream>
+#include <set>
 #include <stdexcept>
 #include <utility>
 
 namespace nodo::node {
 
-// ---------------------------------------------------------------------------
-// Minimal hand-rolled JSON helpers
-// (No external JSON library. Supports flat {"key": "value"} objects only.)
-// ---------------------------------------------------------------------------
-
 namespace {
 
-// Trim leading/trailing whitespace
-std::string trim(const std::string& s) {
-    const std::size_t start = s.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) {
-        return "";
-    }
-    const std::size_t end = s.find_last_not_of(" \t\r\n");
-    return s.substr(start, end - start + 1);
-}
+using Json = nlohmann::json;
 
-void appendJsonStringEscape(std::string& out, char escaped) {
-    switch (escaped) {
-        case '"': out += '"'; break;
-        case '\\': out += '\\'; break;
-        case '/': out += '/'; break;
-        case 'b': out += '\b'; break;
-        case 'f': out += '\f'; break;
-        case 'n': out += '\n'; break;
-        case 'r': out += '\r'; break;
-        case 't': out += '\t'; break;
-        // Minimal parser: keep unicode escapes in canonical escaped form instead
-        // of silently corrupting them. Nodo RPC parameters currently use ASCII
-        // protocol material (ids, hashes, addresses, envelopes).
-        case 'u': out += "\\u"; break;
-        default: out += escaped; break;
-    }
-}
+// RPC requests are at most two or three levels deep; anything deeper is
+// treated as hostile input rather than parsed.
+constexpr int kMaxJsonNestingDepth = 32;
 
-// Extract the raw string value for a JSON key from a flat JSON object string.
-// Handles quoted string values with escapes plus numeric/boolean values.
-// Returns empty string if not found or malformed.
-std::string jsonGetValue(const std::string& json, const std::string& key) {
-    const std::string quotedKey = "\"" + key + "\"";
-    std::size_t pos = json.find(quotedKey);
-    if (pos == std::string::npos) {
-        return "";
-    }
+// Parses untrusted JSON, throwing std::exception on malformed input, nesting
+// deeper than kMaxJsonNestingDepth, or a key repeated within one object.
+Json parseStrictJson(const std::string& text) {
+    std::vector<std::set<std::string>> keysPerOpenObject;
 
-    // Advance past the key and the colon
-    pos += quotedKey.size();
-    while (pos < json.size() &&
-           (json[pos] == ' ' || json[pos] == ':' || json[pos] == '\t' ||
-            json[pos] == '\r' || json[pos] == '\n')) {
-        ++pos;
-    }
-
-    if (pos >= json.size()) {
-        return "";
-    }
-
-    if (json[pos] == '"') {
-        ++pos;
-        std::string value;
-        for (; pos < json.size(); ++pos) {
-            const char c = json[pos];
-            if (c == '"') {
-                return value;
+    const Json::parser_callback_t callback =
+        [&keysPerOpenObject](int depth, Json::parse_event_t event, Json& parsed) {
+            if (depth > kMaxJsonNestingDepth) {
+                throw std::invalid_argument("JSON nesting is too deep.");
             }
-            if (c == '\\') {
-                ++pos;
-                if (pos >= json.size()) {
-                    return "";
-                }
-                const char escaped = json[pos];
-                appendJsonStringEscape(value, escaped);
-                if (escaped == 'u') {
-                    // Preserve the four hex digits when present.
-                    for (int i = 0; i < 4 && pos + 1 < json.size(); ++i) {
-                        ++pos;
-                        value += json[pos];
+            switch (event) {
+                case Json::parse_event_t::object_start:
+                    keysPerOpenObject.emplace_back();
+                    break;
+                case Json::parse_event_t::key:
+                    if (!keysPerOpenObject.back()
+                             .insert(parsed.get<std::string>())
+                             .second) {
+                        throw std::invalid_argument("Duplicate JSON object key.");
                     }
-                }
-                continue;
+                    break;
+                case Json::parse_event_t::object_end:
+                    keysPerOpenObject.pop_back();
+                    break;
+                default:
+                    break;
             }
-            value += c;
-        }
-        return "";
-    }
+            return true;
+        };
 
-    // Numeric or boolean value — read until delimiter
-    const std::size_t endPos = json.find_first_of(",}\t\r\n ", pos);
-    if (endPos == std::string::npos) {
-        return trim(json.substr(pos));
-    }
-    return trim(json.substr(pos, endPos - pos));
+    return Json::parse(text, callback);
 }
 
-// Escape a string for embedding in a JSON string value.
-std::string jsonEscape(const std::string& s) {
-    std::string out;
-    out.reserve(s.size());
-    for (char c : s) {
-        switch (c) {
-            case '"':  out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n";  break;
-            case '\r': out += "\\r";  break;
-            case '\t': out += "\\t";  break;
-            default:   out += c;      break;
-        }
-    }
-    return out;
+// Compact JSON text; invalid UTF-8 is replaced instead of throwing, since
+// error messages may echo client-supplied bytes.
+std::string dumpJson(const Json& value) {
+    return value.dump(-1, ' ', false, Json::error_handler_t::replace);
 }
 
 // Build a JSON error object: {"code": N, "message": "..."}
 std::string buildErrorObject(int code, const std::string& message) {
-    std::ostringstream oss;
-    oss << "{\"code\":" << code
-        << ",\"message\":\"" << jsonEscape(message) << "\"}";
-    return oss.str();
+    return dumpJson(Json{{"code", code}, {"message", message}});
 }
 
 bool parseUint64Strict(const std::string& value, std::uint64_t& parsedValue) {
@@ -159,87 +94,77 @@ bool parseUint64Strict(const std::string& value, std::uint64_t& parsedValue) {
 // ---------------------------------------------------------------------------
 
 bool JsonRpcRequest::isValid() const {
-    return jsonrpc == "2.0" && !method.empty();
+    return wellFormedJson && invalidReason.empty() && jsonrpc == "2.0" &&
+           !method.empty();
 }
 
 JsonRpcRequest JsonRpcRequest::parse(const std::string& rawJson) {
     JsonRpcRequest req;
 
-    const std::string trimmed = trim(rawJson);
-    if (trimmed.empty() || trimmed.front() != '{') {
-        return req;  // will fail isValid()
+    Json root;
+    try {
+        root = parseStrictJson(rawJson);
+    } catch (const std::exception&) {
+        return req;  // wellFormedJson stays false
+    }
+    req.wellFormedJson = true;
+
+    if (root.is_array()) {
+        req.invalidReason = "Batch requests are not supported.";
+        return req;
+    }
+    if (!root.is_object()) {
+        req.invalidReason = "Request must be a JSON object.";
+        return req;
     }
 
-    req.jsonrpc = jsonGetValue(trimmed, "jsonrpc");
-    req.method  = jsonGetValue(trimmed, "method");
-    req.id      = jsonGetValue(trimmed, "id");
-
-    // Extract params: find the "params" value which may be an object
-    const std::string paramsKey = "\"params\"";
-    const std::size_t paramsPos = trimmed.find(paramsKey);
-    if (paramsPos != std::string::npos) {
-        std::size_t colonPos = trimmed.find(':', paramsPos + paramsKey.size());
-        if (colonPos != std::string::npos) {
-            // Skip whitespace after colon
-            std::size_t valueStart = colonPos + 1;
-            while (valueStart < trimmed.size() &&
-                   (trimmed[valueStart] == ' ' || trimmed[valueStart] == '\t')) {
-                ++valueStart;
-            }
-
-            if (valueStart < trimmed.size()) {
-                if (trimmed[valueStart] == '{' || trimmed[valueStart] == '[') {
-                    // Object/array params — find the matching closing delimiter
-                    // while respecting quoted strings and escaped characters.
-                    const char open = trimmed[valueStart];
-                    const char close = open == '{' ? '}' : ']';
-                    int depth = 0;
-                    bool inString = false;
-                    bool escaped = false;
-                    std::size_t end = valueStart;
-                    for (; end < trimmed.size(); ++end) {
-                        const char c = trimmed[end];
-                        if (escaped) {
-                            escaped = false;
-                            continue;
-                        }
-                        if (c == '\\' && inString) {
-                            escaped = true;
-                            continue;
-                        }
-                        if (c == '"') {
-                            inString = !inString;
-                            continue;
-                        }
-                        if (inString) {
-                            continue;
-                        }
-                        if (c == open) {
-                            ++depth;
-                        } else if (c == close) {
-                            --depth;
-                            if (depth == 0) {
-                                break;
-                            }
-                        }
-                    }
-                    if (end < trimmed.size() && depth == 0) {
-                        req.params = trimmed.substr(valueStart, end - valueStart + 1);
-                    }
-                } else {
-                    // Primitive param
-                    std::size_t end = trimmed.find_first_of(",}", valueStart);
-                    if (end == std::string::npos) {
-                        end = trimmed.size();
-                    }
-                    req.params = trim(trimmed.substr(valueStart, end - valueStart));
-                }
-            }
+    // Read the id first so every later rejection can still be correlated.
+    const auto id = root.find("id");
+    if (id != root.end()) {
+        if (id->is_string()) {
+            req.id = id->get<std::string>();
+            req.idJson = dumpJson(*id);
+        } else if (id->is_number_integer()) {
+            req.id = id->dump();
+            req.idJson = req.id;
+        } else if (!id->is_null()) {
+            req.invalidReason = "id must be a string, an integer, or null.";
+            return req;
         }
     }
 
-    if (req.params.empty()) {
+    for (const auto& member : root.items()) {
+        if (member.key() != "jsonrpc" && member.key() != "method" &&
+            member.key() != "params" && member.key() != "id") {
+            req.invalidReason = "Unknown request member '" + member.key() + "'.";
+            return req;
+        }
+    }
+
+    const auto version = root.find("jsonrpc");
+    if (version == root.end() || !version->is_string() ||
+        version->get<std::string>() != "2.0") {
+        req.invalidReason = "jsonrpc must be \"2.0\".";
+        return req;
+    }
+    req.jsonrpc = "2.0";
+
+    const auto method = root.find("method");
+    if (method == root.end() || !method->is_string() ||
+        method->get<std::string>().empty()) {
+        req.invalidReason = "method must be a non-empty string.";
+        return req;
+    }
+    req.method = method->get<std::string>();
+
+    const auto params = root.find("params");
+    if (params == root.end()) {
         req.params = "{}";
+    } else if (params->is_object() || params->is_array()) {
+        req.params = dumpJson(*params);
+    } else {
+        req.invalidReason = "params must be an object or an array.";
+        return req;
     }
 
     return req;
@@ -254,17 +179,17 @@ bool JsonRpcResponse::isSuccess() const {
 }
 
 std::string JsonRpcResponse::serialize() const {
-    std::ostringstream oss;
-    oss << "{\"jsonrpc\":\"" << jsonEscape(jsonrpc) << "\",\"id\":\"" << jsonEscape(id) << "\"";
+    // Responses built by dispatch() echo the request id with its JSON type.
+    // A response built directly with no id refers to no request: null.
+    const std::string idText = !idJson.empty() ? idJson
+                               : id.empty()    ? "null"
+                                               : dumpJson(Json(id));
 
-    if (!error.empty()) {
-        oss << ",\"error\":" << error;
-    } else {
-        oss << ",\"result\":" << result;
-    }
-
-    oss << "}";
-    return oss.str();
+    // result and error are JSON documents produced by handlers and
+    // buildErrorObject(); they are embedded as-is.
+    return "{\"jsonrpc\":" + dumpJson(Json(jsonrpc)) + ",\"id\":" + idText +
+           (error.empty() ? ",\"result\":" + result : ",\"error\":" + error) +
+           "}";
 }
 
 JsonRpcResponse JsonRpcResponse::success(
@@ -299,41 +224,43 @@ void JsonRpcDispatcher::registerHandler(const std::string& method, Handler handl
 }
 
 JsonRpcResponse JsonRpcDispatcher::dispatch(const std::string& rawJson) const {
-    // Attempt to parse the raw JSON
     const JsonRpcRequest req = JsonRpcRequest::parse(rawJson);
 
-    if (req.jsonrpc.empty() && req.method.empty()) {
-        // Completely failed to parse
-        return JsonRpcResponse::makeError("", JsonRpcError::PARSE_ERROR, "Parse error");
+    const auto respond = [&req](JsonRpcResponse response) {
+        response.idJson = req.idJson;
+        return response;
+    };
+
+    if (!req.wellFormedJson) {
+        return respond(JsonRpcResponse::makeError(
+            "", JsonRpcError::PARSE_ERROR, "Parse error"));
     }
 
     if (!req.isValid()) {
-        return JsonRpcResponse::makeError(req.id, JsonRpcError::INVALID_REQUEST, "Invalid Request");
+        return respond(JsonRpcResponse::makeError(
+            req.id,
+            JsonRpcError::INVALID_REQUEST,
+            req.invalidReason.empty() ? "Invalid Request"
+                                      : "Invalid Request: " + req.invalidReason));
     }
 
     const auto it = m_handlers.find(req.method);
     if (it == m_handlers.end()) {
-        return JsonRpcResponse::makeError(
+        return respond(JsonRpcResponse::makeError(
             req.id,
             JsonRpcError::METHOD_NOT_FOUND,
             "Method not found: " + req.method
-        );
+        ));
     }
 
     try {
-        return it->second(req);
-    } catch (const std::exception&) {
-        return JsonRpcResponse::makeError(
-            req.id,
-            JsonRpcError::INTERNAL_ERROR,
-            "RPC handler failed"
-        );
+        return respond(it->second(req));
     } catch (...) {
-        return JsonRpcResponse::makeError(
+        return respond(JsonRpcResponse::makeError(
             req.id,
             JsonRpcError::INTERNAL_ERROR,
             "RPC handler failed"
-        );
+        ));
     }
 }
 
@@ -341,7 +268,30 @@ std::string JsonRpcDispatcher::extractParam(
     const std::string& paramsJson,
     const std::string& key
 ) {
-    return jsonGetValue(paramsJson, key);
+    Json params;
+    try {
+        params = parseStrictJson(paramsJson);
+    } catch (const std::exception&) {
+        return "";
+    }
+
+    if (!params.is_object()) {
+        return "";
+    }
+
+    // Only a top-level member counts: a same-named key nested inside another
+    // value must never be mistaken for this parameter.
+    const auto value = params.find(key);
+    if (value == params.end()) {
+        return "";
+    }
+    if (value->is_string()) {
+        return value->get<std::string>();
+    }
+    if (value->is_number() || value->is_boolean()) {
+        return value->dump();
+    }
+    return "";
 }
 
 void JsonRpcDispatcher::registerStandardMethods(

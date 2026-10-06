@@ -1,5 +1,7 @@
 #include "node/LightClientService.hpp"
 
+#include "utils/JsonText.hpp"
+
 #include "core/MerkleTree.hpp"
 #include "core/StateRootCalculator.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
@@ -13,35 +15,7 @@
 namespace nodo::node {
 namespace {
 
-std::string jsonString(const std::string &value) {
-  std::string out;
-  out.reserve(value.size() + 2);
-  out.push_back('"');
-  for (const char c : value) {
-    switch (c) {
-    case '"':
-      out += "\\\"";
-      break;
-    case '\\':
-      out += "\\\\";
-      break;
-    case '\n':
-      out += "\\n";
-      break;
-    case '\r':
-      out += "\\r";
-      break;
-    case '\t':
-      out += "\\t";
-      break;
-    default:
-      out.push_back(c);
-      break;
-    }
-  }
-  out.push_back('"');
-  return out;
-}
+using utils::jsonString;
 
 std::string jsonError(const std::string &message) {
   return "{\"error\":" + jsonString(message) + "}";

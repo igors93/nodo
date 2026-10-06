@@ -72,6 +72,9 @@ target_include_directories(nodo_core
 target_compile_definitions(nodo_core
     PUBLIC
     ASIO_STANDALONE
+    # Without an explicit target Asio warns on every Windows translation unit
+    # and assumes Windows 7; Windows 10 is also MinGW's own default.
+    $<$<BOOL:${WIN32}>:_WIN32_WINNT=0x0A00>
 )
 
 target_compile_options(nodo_core
@@ -87,12 +90,15 @@ target_link_libraries(nodo_core
     ${NODO_CRYPTO_TARGET}
     blst::blst
     Threads::Threads
+    PRIVATE
+    nlohmann_json::nlohmann_json
 )
 
 if(WIN32)
     target_link_libraries(nodo_core
         PUBLIC
         ws2_32
+        mswsock # Asio's asynchronous accept on Windows
     )
 endif()
 

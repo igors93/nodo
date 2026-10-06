@@ -83,6 +83,16 @@ void testRpcListenDefaultsAndValidation() {
         rejected = true;
     }
     requireCondition(rejected, "Out-of-range RPC ports must be rejected.");
+
+    const CommandLineOptions ipv6 =
+        CommandLineInterface::parse({"node", "run", "--rpc-listen", "[::1]:8602"});
+    const CommandLineOptions hostName = CommandLineInterface::parse(
+        {"node", "run", "--rpc-listen", "localhost:8603"});
+    requireCondition(
+        ipv6.rpcBindAddress == "::1" && ipv6.rpcPort == 8602 &&
+            hostName.rpcBindAddress == "localhost" && hostName.rpcPort == 8603,
+        "--rpc-listen must accept bracketed IPv6 literals and host names."
+    );
 }
 
 void testPeerOptionAccumulates() {

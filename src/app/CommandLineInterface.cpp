@@ -55,6 +55,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #ifdef _WIN32
@@ -205,7 +206,11 @@ ParsedHostPort parseHostPort(const std::string &option,
         option + " requires HOST:PORT with a non-empty host and port.");
   }
 
-  const std::string host = value.substr(0, separator);
+  std::string host = value.substr(0, separator);
+  // IPv6 literals are written in brackets, as in [::1]:8545.
+  if (host.size() > 2 && host.front() == '[' && host.back() == ']') {
+    host = host.substr(1, host.size() - 2);
+  }
   const std::string portText = value.substr(separator + 1);
   for (const char character : portText) {
     if (character < '0' || character > '9') {

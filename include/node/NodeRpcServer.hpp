@@ -14,10 +14,12 @@
 #include "p2p/PeerRateLimiter.hpp"
 
 #include <atomic>
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
 namespace nodo::node {
@@ -28,9 +30,17 @@ namespace nodo::node {
  * available as operational/development endpoints for status, health, metrics,
  * diagnostics and backward-compatible integration tests.
  *
- * Transport: POSIX TCP sockets, single-threaded accept loop.
- * Protocol:  Plain HTTP/1.0 with JSON response bodies.
+ * Transport: standalone Asio. A fixed pool of worker threads runs one
+ *   io_context; every connection is an asynchronous session on its own
+ *   strand, so no thread is tied to a connection.
+ * Protocol:  HTTP/1.x, one request per connection (Connection: close), JSON
+ *   response bodies; GET /events upgrades to a WebSocket event stream.
  * Auth:      None — bind to loopback by default.
+ * Limits (see Limits): concurrent connections and WebSocket sessions are
+ *   capped (connections beyond the cap are closed at accept); the whole
+ *   request must arrive within requestTimeout, so a client trickling bytes
+ *   cannot hold a session open; malformed or oversized requests get a 4xx
+ *   status instead of a silent close.
  * Rate limit: per-source-IP request cap (see MAX_REQUESTS_PER_WINDOW /
  *   RATE_LIMIT_WINDOW_SECONDS) to bound resource exhaustion from a local
  *   process hammering the endpoint; excess requests get HTTP 429. The
@@ -76,8 +86,20 @@ class NodeRpcServer {
 public:
   static constexpr std::uint16_t DEFAULT_PORT = 8545;
   static constexpr std::size_t MAX_REQUEST_LEN = 65536;
+  static constexpr std::size_t MAX_HEADER_LEN = 16384;
   static constexpr std::uint32_t MAX_REQUESTS_PER_WINDOW = 3000;
   static constexpr std::uint64_t RATE_LIMIT_WINDOW_SECONDS = 60;
+
+  struct Limits {
+    std::size_t workerThreads = 4;
+    std::size_t maxConnections = 128;      // HTTP and WebSocket together
+    std::size_t maxWebSocketSessions = 32; // counted within maxConnections
+    std::chrono::milliseconds requestTimeout{10000}; // whole request
+    std::chrono::milliseconds writeTimeout{10000};   // whole HTTP response
+    std::chrono::milliseconds eventPollInterval{1000};
+    std::uint32_t maxRequestsPerWindow = MAX_REQUESTS_PER_WINDOW;
+    std::uint64_t rateLimitWindowSeconds = RATE_LIMIT_WINDOW_SECONDS;
+  };
 
   // `runtimeMutex` must be the same mutex the owning NodeOrchestrator holds
   // while ticking, so RPC request handling and block production/consensus
@@ -96,9 +118,21 @@ public:
 
   ~NodeRpcServer();
 
+  NodeRpcServer(const NodeRpcServer &) = delete;
+  NodeRpcServer &operator=(const NodeRpcServer &) = delete;
+
+  // Binds and starts serving. Throws std::runtime_error if the bind address
+  // cannot be resolved or bound. bindAddr may be an IPv4 or IPv6 literal or a
+  // host name such as "localhost"; port 0 binds an ephemeral port, which
+  // port() then reports.
   void start();
+  // Closes every connection and joins the worker threads. Safe to call twice.
   void stop();
   bool isRunning() const;
+
+  // Replaces the transport limits. Throws std::logic_error while running.
+  void setLimits(const Limits &limits);
+  const Limits &limits() const;
 
   // Optional operational health source owned by NodeOrchestrator. When absent,
   // metrics still expose runtime/RPC/event data and report sync as UNKNOWN.
@@ -107,19 +141,23 @@ public:
   std::uint16_t port() const;
 
 private:
+  struct Transport; // io_context, acceptor and worker threads
+  class Session;    // one accepted connection: an HTTP request or a WebSocket
+
   NodeRuntime &m_runtime;
   std::mutex &m_runtimeMutex; // shared with the owning NodeOrchestrator
   p2p::GossipMesh *m_gossip;  // optional; nullptr means no gossip broadcast
-  std::uint16_t m_port;
+  std::uint16_t m_configuredPort;    // what start() binds; 0 = ephemeral
+  std::atomic<std::uint16_t> m_port; // the port actually bound
   std::string m_bindAddr;
   std::atomic<bool> m_running;
-  std::thread m_thread;
-  std::atomic<int> m_serverFd;
-  mutable std::mutex m_clientThreadsMutex;
-  std::vector<std::thread> m_clientThreads;
+  Limits m_limits;
+  std::unique_ptr<Transport> m_transport;
+  std::atomic<std::size_t> m_activeConnections;
+  std::atomic<std::size_t> m_activeWebSockets;
   NodeEventBus m_ownedEventBus;
   NodeEventBus *m_eventBus;
-  p2p::PeerRateLimiter m_rateLimiter;
+  p2p::PeerRateLimiter m_rateLimiter; // touched only by the accept handler
   JsonRpcDispatcher m_jsonRpcDispatcher;
   const SyncHealth *m_syncHealth;
 
@@ -132,13 +170,7 @@ private:
                          std::string responseContentType = "application/json");
   };
 
-  void runLoop();
-  void handleClient(int clientFd);
-  void joinClientThreads();
-  bool isWebSocketUpgrade(const std::string &request,
-                          const std::string &path) const;
-  void handleWebSocket(int clientFd, const std::string &request,
-                       const std::string &path);
+  void acceptNext();
 
   HttpDispatchResponse dispatch(const std::string &method,
                                 const std::string &path,
@@ -197,10 +229,6 @@ private:
                const std::string &contentType = "application/json");
 
   static std::string jsonError(const std::string &message);
-
-  static bool parseRequestLine(const std::string &request,
-                               std::string &outMethod, std::string &outPath,
-                               std::string &outBody);
 
   static std::string pathSegment(const std::string &path, int index);
 };
