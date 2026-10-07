@@ -14,6 +14,7 @@
 #include "node/FinalizedSlashingEvidenceAudit.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
+#include "node/ValidatorSetSchedule.hpp"
 #include "serialization/BlockCodec.hpp"
 #include "serialization/CanonicalHash.hpp"
 #include "serialization/CanonicalReader.hpp"
@@ -996,10 +997,18 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::applyValidatedBatch(
   const core::ValidatorSetHistory *effectiveValidatorSetHistory = nullptr;
   if (validatorSetHistory != nullptr) {
     stagedValidatorSetHistory = *validatorSetHistory;
+    if (!stagedValidatorSetHistory.changesOnlyAtBoundaries(
+            NODO_VALIDATOR_EPOCH_BLOCKS)) {
+      return PersistentSyncApplyResult(
+          PersistentSyncApplyStatus::REJECTED,
+          "Historical validator set changes outside an epoch boundary.",
+          std::nullopt);
+    }
     for (const auto &item : batch.items()) {
       if (!stagedValidatorSetHistory.hasSet(item.height())) {
         const std::uint64_t previousHeight = item.height() - 1;
         if (!stagedValidatorSetHistory.hasSet(previousHeight) ||
+            ValidatorSetSchedule::isBoundary(previousHeight) ||
             !stagedValidatorSetHistory.recordSet(
                 item.height(),
                 stagedValidatorSetHistory.setAt(previousHeight))) {
@@ -1434,6 +1443,30 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importSnapshot(
         PersistentSyncApplyStatus::REJECTED,
         "Snapshot height is not ahead of the local checkpoint.", std::nullopt);
   }
+  if (runtime.blockchain().latestBlock().index() !=
+          checkpoint.finalizedHeight() ||
+      runtime.blockchain().latestBlock().hash() !=
+          checkpoint.finalizedBlockHash()) {
+    return PersistentSyncApplyResult(
+        PersistentSyncApplyStatus::REJECTED,
+        "Snapshot checkpoint does not match the local canonical tip.",
+        std::nullopt);
+  }
+  // A snapshot carries economic state, not an authenticated proof of the
+  // validator set selected at an intervening epoch boundary. Reuse the
+  // locally verified set only while the next consensus height stays in the
+  // same epoch; crossing a boundary requires a verified transition path.
+  const std::uint64_t checkpointNextHeight = checkpoint.finalizedHeight() + 1;
+  if (manifest.snapshotHeight() ==
+          std::numeric_limits<std::uint64_t>::max() ||
+      !runtime.validatorSetHistory().hasSet(checkpointNextHeight) ||
+      (checkpointNextHeight - 1) / NODO_VALIDATOR_EPOCH_BLOCKS !=
+          manifest.snapshotHeight() / NODO_VALIDATOR_EPOCH_BLOCKS) {
+    return PersistentSyncApplyResult(
+        PersistentSyncApplyStatus::REJECTED,
+        "Snapshot crosses an unverified validator-set boundary.",
+        std::nullopt);
+  }
 
   const FastSyncSnapshotStore snapshotStore(
       directoryConfig.runtimeDirectoryPath() / "fast_sync_snapshots");
@@ -1464,7 +1497,8 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importSnapshot(
 
   core::ValidatorSetHistory validatorSetHistory;
   validatorSetHistory.recordSet(snapshot->blockHeight() + 1,
-                                executionState.validators);
+                                runtime.validatorSetHistory().setAt(
+                                    checkpointNextHeight));
   tip.validatorSetHistory = validatorSetHistory;
 
   ProtocolStateTransition::applyReplayDomainsToRuntime(runtime, tip);
@@ -1475,7 +1509,7 @@ PersistentSyncApplyResult PersistentBlockStateSyncApplier::importSnapshot(
   runtime.setCachedAccountStateAtTip(tip.accounts);
 
   const std::string proposer = consensus::ProposerSchedule::selectProposer(
-      runtime.validatorRegistry(),
+      runtime.validatorSetHistory().setAt(snapshot->blockHeight() + 1),
       runtime.config().genesisConfig().networkParameters().chainId(),
       snapshot->blockHeight() + 1, 1);
   runtime.mutableConsensusRoundManager().advanceToHeight(

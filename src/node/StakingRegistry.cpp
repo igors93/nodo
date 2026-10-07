@@ -1,6 +1,7 @@
 #include "utils/HashString.hpp"
 #include "utils/SafeScalar.hpp"
 #include "node/StakingRegistry.hpp"
+#include "node/ValidatorSetSchedule.hpp"
 
 #include "crypto/hash.h"
 
@@ -243,10 +244,8 @@ void StakingRegistry::deposit(const std::string &ownerAddress,
                               const std::string &transactionId) {
   requireValidOperationInput(ownerAddress, validatorAddress, amount,
                              blockHeight);
-  if (blockHeight >
-      std::numeric_limits<std::uint64_t>::max() - ACTIVATION_DELAY_BLOCKS) {
-    throw std::overflow_error("Stake activation height would overflow.");
-  }
+  const std::uint64_t activationHeight =
+      ValidatorSetSchedule::activationHeight(blockHeight);
 
   const economics::StakeAccount current = accountOrDefault(validatorAddress);
   if (current.tombstoned()) {
@@ -272,7 +271,7 @@ void StakingRegistry::deposit(const std::string &ownerAddress,
     next.lockHeight = blockHeight;
   }
   next.pendingActivationAmount = next.pendingActivationAmount + amount;
-  next.activationHeight = blockHeight + ACTIVATION_DELAY_BLOCKS;
+  next.activationHeight = activationHeight;
   next.status = statusFor(next);
   positions[ownerAddress] = next;
 

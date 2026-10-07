@@ -45,7 +45,7 @@ NodeRuntime startRuntime() {
     const auto result = NodeRuntimeFactory::startFromGenesis(
         NodeRuntimeConfig(
             minimalGenesisConfig(),
-            PeerInfo("rmv-peer", "127.0.0.1:9400", "nodo/0.1", 0, kTimestamp),
+            PeerInfo("rmv-peer", "127.0.0.1:9400", "nodo/0.4", 0, kTimestamp),
             16
         )
     );

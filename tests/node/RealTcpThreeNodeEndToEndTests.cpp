@@ -189,7 +189,7 @@ config::GenesisConfig makeGenesis(const std::array<NodeSpec, 3> &specs,
 
 p2p::PeerInfo peerInfo(const NodeSpec &spec, std::int64_t timestamp) {
   return p2p::PeerInfo(spec.nodeId, "127.0.0.1:" + std::to_string(spec.p2pPort),
-                       "nodo/0.1", 0, timestamp);
+                       "nodo/0.4", 0, timestamp);
 }
 
 int runDaemonChild(std::size_t nodeIndex, const std::array<NodeSpec, 3> &specs,

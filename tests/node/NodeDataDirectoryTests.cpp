@@ -51,7 +51,7 @@ GenesisConfig genesisConfig(const std::string &chainId = "nodo-data-dir-test") {
   return GenesisConfig(NetworkParameters(nodo::config::NetworkParameterValues{
                            .chainId = chainId,
                            .networkName = "nodo-data-dir-network",
-                           .protocolVersion = "nodo/0.1",
+                           .protocolVersion = "nodo/0.4",
                            .epochDurationSeconds = 60,
                            .minimumValidatorCount = 1,
                            .quorumThresholdNumerator = 2,
@@ -65,7 +65,7 @@ GenesisConfig genesisConfig(const std::string &chainId = "nodo-data-dir-test") {
 }
 
 PeerInfo localPeer() {
-  return PeerInfo("local-test-peer", "127.0.0.1:9100", "nodo/0.1", 0,
+  return PeerInfo("local-test-peer", "127.0.0.1:9100", "nodo/0.4", 0,
                   kTimestamp);
 }
 

@@ -13,6 +13,7 @@
 #include "node/FinalizedTreasuryAudit.hpp"
 #include "node/ProtectionRewards.hpp"
 #include "node/ProtocolStateTransition.hpp"
+#include "node/ValidatorSetSchedule.hpp"
 #include "storage/AtomicFile.hpp"
 
 #include <exception>
@@ -255,7 +256,7 @@ FinalizedArtifactImportResult importImpl(
                     nextHeight) {
                     const std::string proposer =
                         consensus::ProposerSchedule::selectProposer(
-                            stagedRuntime.validatorRegistry(),
+                            stagedRuntime.validatorSetHistory().setAt(nextHeight),
                             genesisConfig.networkParameters().chainId(),
                             nextHeight, 1
                         );
@@ -438,8 +439,9 @@ FinalizedArtifactImportResult importImpl(
             throw std::logic_error(slashingAudit.reason());
         }
         const std::uint64_t nextHeight = artifact.block().index() + 1;
-        if (!stagedRuntime.mutableValidatorSetHistory().recordSet(
-                nextHeight, stagedRuntime.validatorRegistry())) {
+        if (!ValidatorSetSchedule::recordNext(
+                artifact.block().index(), stagedRuntime.validatorRegistry(),
+                stagedRuntime.mutableValidatorSetHistory())) {
             throw std::logic_error("Validator set history conflict after import.");
         }
         if (!artifact.postStateRoot().empty()) {
@@ -449,7 +451,7 @@ FinalizedArtifactImportResult importImpl(
         }
         constexpr std::uint64_t nextRound = 1;
         const std::string nextProposer = consensus::ProposerSchedule::selectProposer(
-            stagedRuntime.validatorRegistry(),
+            stagedRuntime.validatorSetHistory().setAt(nextHeight),
             genesisConfig.networkParameters().chainId(), nextHeight, nextRound
         );
         stagedRuntime.mutableConsensusRoundManager().advanceToHeight(

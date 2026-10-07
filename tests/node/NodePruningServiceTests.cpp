@@ -47,7 +47,7 @@ nodo::node::FastSyncSnapshot snapshotAt(std::uint64_t height) {
 
 nodo::node::NodeRuntimeManifest runtimeManifest(std::uint64_t height) {
   return nodo::node::NodeRuntimeManifest(
-      "chain-a", "localnet", "nodo/0.1", HASH_A, height, HASH_B, HASH_C, 1, 0,
+      "chain-a", "localnet", "nodo/0.4", HASH_A, height, HASH_B, HASH_C, 1, 0,
       1900000000, 1900000000 + static_cast<std::int64_t>(height));
 }
 

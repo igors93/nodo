@@ -8,6 +8,7 @@
 #include "crypto/KeyPair.hpp"
 #include "crypto/Signer.hpp"
 #include "node/StakingRegistry.hpp"
+#include "node/ValidatorSetSchedule.hpp"
 #include "utils/Amount.hpp"
 
 #include <iostream>
@@ -105,10 +106,12 @@ void testStakingRegistryRotatesValidatorAddress() {
   StakingRegistry staking;
   staking.deposit("owner-a", "validator-old", Amount::fromRawUnits(2'000'000),
                   10, false, "tx-deposit");
-  staking.activatePending(11);
+  const std::uint64_t activation =
+      nodo::node::ValidatorSetSchedule::activationHeight(10);
+  staking.activatePending(activation);
 
   staking.rotateValidatorAddress("validator-old", "validator-new", "owner-a",
-                                 12, "tx-rotate");
+                                 activation + 1, "tx-rotate");
 
   require(!staking.hasAccount("validator-old"),
           "Old validator stake account should be removed.");

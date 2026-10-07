@@ -10,7 +10,7 @@ using nodo::p2p::PeerInfo;
 constexpr std::int64_t kTs = 1700000000;
 
 PeerInfo makePeer(const std::string& endpoint) {
-    return PeerInfo("peer-id", endpoint, "nodo/0.1", 0, kTs);
+    return PeerInfo("peer-id", endpoint, "nodo/0.4", 0, kTs);
 }
 
 void testValidIpv4Endpoint() {

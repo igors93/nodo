@@ -10,6 +10,7 @@
 #include "node/NodeRuntime.hpp"
 #include "node/ProtectionTreasury.hpp"
 #include "node/ValidatorLifecycle.hpp"
+#include "node/ValidatorSetSchedule.hpp"
 #include "node/ValidatorStakeWeightUpdater.hpp"
 
 #include <stdexcept>
@@ -209,7 +210,8 @@ ProtocolStateTransition::contextFromReplayState(
   }
   if (!state.execution.validators.isValid() ||
       !state.execution.penaltyLedger.isValid() ||
-      !state.validatorSetHistory.isValid()) {
+      !state.validatorSetHistory.changesOnlyAtBoundaries(
+          NODO_VALIDATOR_EPOCH_BLOCKS)) {
     throw std::invalid_argument(
         "Cannot build protocol replay context from invalid protocol domains.");
   }
@@ -259,8 +261,9 @@ ProtocolReplayState ProtocolStateTransition::replayBlock(
   next.accounts = accountViewFromAccounts(execution.resultingAccounts());
   next.execution = *tracker;
   next.validatorSetHistory = previousState.validatorSetHistory;
-  if (!next.validatorSetHistory.recordSet(block.index() + 1,
-                                          next.execution.validators)) {
+  if (!ValidatorSetSchedule::recordNext(block.index(),
+                                        next.execution.validators,
+                                        next.validatorSetHistory)) {
     throw std::logic_error(
         "Validator set history conflict after replaying block " +
         std::to_string(block.index()));

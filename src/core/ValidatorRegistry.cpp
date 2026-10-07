@@ -7,6 +7,7 @@
 #include "crypto/hash.h"
 
 #include <limits>
+#include <iterator>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -245,6 +246,13 @@ bool ValidatorRegistryEntry::isValid() const {
   }
 
   if (m_lastUpdatedAt < m_registrationRecord.registeredAt()) {
+    return false;
+  }
+
+  // Stake is represented by utils::Amount in the state machine. A wider value
+  // cannot be backed by a valid stake account even if it fits in the registry.
+  if (m_stakeAmount >
+      static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
     return false;
   }
 
@@ -762,7 +770,7 @@ ValidatorRegistry::activateValidator(const std::string &validatorAddress,
         "Validator is not registered.");
   }
 
-  const ValidatorRegistryEntry &existing = it->second;
+  const ValidatorRegistryEntry existing = it->second;
 
   if (existing.status() == ValidatorRegistrationStatus::ACTIVE) {
     return ValidatorRegistryUpdateResult::rejected(
@@ -795,6 +803,12 @@ ValidatorRegistry::activateValidator(const std::string &validatorAddress,
       existing.exitRequestHeight(), existing.ownerAddress());
 
   it->second = updated;
+  if (!isValid()) {
+    it->second = existing;
+    return ValidatorRegistryUpdateResult::rejected(
+        ValidatorRegistryUpdateStatus::INVALID_REGISTRY,
+        "Activation would overflow the total consensus voting weight.");
+  }
   return ValidatorRegistryUpdateResult::activated(updated);
 }
 
@@ -843,7 +857,7 @@ ValidatorRegistry::unjailValidator(const std::string &validatorAddress,
         "Validator is not registered.");
   }
 
-  const ValidatorRegistryEntry &existing = it->second;
+  const ValidatorRegistryEntry existing = it->second;
 
   if (existing.status() != ValidatorRegistrationStatus::JAILED) {
     return ValidatorRegistryUpdateResult::rejected(
@@ -871,6 +885,12 @@ ValidatorRegistry::unjailValidator(const std::string &validatorAddress,
       existing.ownerAddress());
 
   it->second = updated;
+  if (!isValid()) {
+    it->second = existing;
+    return ValidatorRegistryUpdateResult::rejected(
+        ValidatorRegistryUpdateStatus::INVALID_REGISTRY,
+        "Unjailing would overflow the total consensus voting weight.");
+  }
   return ValidatorRegistryUpdateResult::unjailed(updated);
 }
 
@@ -945,7 +965,7 @@ ValidatorRegistry::updateStake(const std::string &validatorAddress,
         "Validator is not registered.");
   }
 
-  const ValidatorRegistryEntry &existing = it->second;
+  const ValidatorRegistryEntry existing = it->second;
 
   ValidatorRegistryEntry updated(
       existing.registrationRecord(), existing.status(), timestamp,
@@ -959,6 +979,12 @@ ValidatorRegistry::updateStake(const std::string &validatorAddress,
   }
 
   it->second = updated;
+  if (!isValid()) {
+    it->second = existing;
+    return ValidatorRegistryUpdateResult::rejected(
+        ValidatorRegistryUpdateStatus::INVALID_REGISTRY,
+        "Stake update would overflow the total consensus voting weight.");
+  }
   return ValidatorRegistryUpdateResult::accepted(updated);
 }
 
@@ -1086,6 +1112,7 @@ std::size_t ValidatorRegistry::activeCount() const {
 }
 
 bool ValidatorRegistry::isValid() const {
+  std::uint64_t totalVotingWeight = 0;
   for (const auto &[address, entry] : m_entries) {
     if (!isSafeScalar(address)) {
       return false;
@@ -1097,6 +1124,15 @@ bool ValidatorRegistry::isValid() const {
 
     if (entry.registrationRecord().validatorAddress() != address) {
       return false;
+    }
+
+    if (entry.eligibleForConsensus()) {
+      const std::uint64_t weight = entry.consensusWeight();
+      if (totalVotingWeight >
+          std::numeric_limits<std::uint64_t>::max() - weight) {
+        return false;
+      }
+      totalVotingWeight += weight;
     }
   }
 
@@ -1130,60 +1166,88 @@ std::string ValidatorRegistry::serialize() const {
 
 bool ValidatorSetHistory::recordSet(std::uint64_t height,
                                     const ValidatorRegistry &registry) {
-  if (height == 0 || !registry.isValid()) {
+  if (height == 0) {
     return false;
   }
-  const auto existing = m_setsByHeight.find(height);
-  if (existing != m_setsByHeight.end()) {
-    return existing->second.serialize() == registry.serialize();
+  const bool alreadyStored = !m_setsByHeight.empty() &&
+                             &m_setsByHeight.rbegin()->second == &registry;
+  if (!alreadyStored && !registry.isValid())
+    return false;
+  if (hasSet(height)) {
+    const ValidatorRegistry &existing = setAt(height);
+    return &existing == &registry ||
+           existing.serialize() == registry.serialize();
   }
-  if (!m_setsByHeight.empty() &&
-      m_setsByHeight.rbegin()->first ==
-          std::numeric_limits<std::uint64_t>::max()) {
+  if (m_firstHeight != 0 &&
+      (m_highestHeight == std::numeric_limits<std::uint64_t>::max() ||
+       height != m_highestHeight + 1)) {
     return false;
   }
-  const std::uint64_t expectedHeight =
-      m_setsByHeight.empty() ? height : m_setsByHeight.rbegin()->first + 1;
-  if (height != expectedHeight) {
-    return false;
+  if (m_firstHeight == 0) {
+    m_firstHeight = height;
+    m_setsByHeight.emplace(height, registry);
+  } else if (!alreadyStored &&
+             m_setsByHeight.rbegin()->second.serialize() != registry.serialize()) {
+    m_setsByHeight.emplace(height, registry);
   }
-  m_setsByHeight.emplace(height, registry);
+  m_highestHeight = height;
   return true;
 }
 
 bool ValidatorSetHistory::hasSet(std::uint64_t height) const {
-  return m_setsByHeight.find(height) != m_setsByHeight.end();
+  return m_firstHeight != 0 && height >= m_firstHeight &&
+         height <= m_highestHeight;
 }
 
 const ValidatorRegistry &
 ValidatorSetHistory::setAt(std::uint64_t height) const {
-  const auto found = m_setsByHeight.find(height);
-  if (found == m_setsByHeight.end()) {
+  if (!hasSet(height)) {
     throw std::out_of_range("No validator set recorded for block height.");
   }
-  return found->second;
+  return std::prev(m_setsByHeight.upper_bound(height))->second;
 }
 
 std::uint64_t ValidatorSetHistory::highestRecordedHeight() const {
-  return m_setsByHeight.empty() ? 0 : m_setsByHeight.rbegin()->first;
+  return m_highestHeight;
 }
 
 bool ValidatorSetHistory::isValid() const {
-  if (m_setsByHeight.empty())
-    return true;
-  std::uint64_t expectedHeight = m_setsByHeight.begin()->first;
+  if (m_firstHeight == 0)
+    return m_highestHeight == 0 && m_setsByHeight.empty();
+  if (m_setsByHeight.empty() || m_setsByHeight.begin()->first != m_firstHeight ||
+      m_highestHeight < m_firstHeight ||
+      m_setsByHeight.rbegin()->first > m_highestHeight)
+    return false;
+  const ValidatorRegistry *previous = nullptr;
   for (const auto &[height, registry] : m_setsByHeight) {
-    if (height != expectedHeight || !registry.isValid()) {
+    if (height > m_highestHeight || !registry.isValid() ||
+        (previous != nullptr && previous->serialize() == registry.serialize())) {
       return false;
     }
-    ++expectedHeight;
+    previous = &registry;
+  }
+  return true;
+}
+
+bool ValidatorSetHistory::changesOnlyAtBoundaries(
+    std::uint64_t epochLength) const {
+  if (epochLength == 0 || !isValid())
+    return false;
+  if (m_setsByHeight.empty())
+    return true;
+  for (auto it = std::next(m_setsByHeight.begin());
+       it != m_setsByHeight.end(); ++it) {
+    if ((it->first - 1) % epochLength != 0)
+      return false;
   }
   return true;
 }
 
 std::string ValidatorSetHistory::serialize() const {
   std::ostringstream output;
-  output << "ValidatorSetHistory{size=" << m_setsByHeight.size() << ";sets=[";
+  output << "ValidatorSetHistory{firstHeight=" << m_firstHeight
+         << ";highestHeight=" << m_highestHeight
+         << ";snapshotCount=" << m_setsByHeight.size() << ";sets=[";
   bool first = true;
   for (const auto &[height, registry] : m_setsByHeight) {
     if (!first)

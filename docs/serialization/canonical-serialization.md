@@ -1,5 +1,9 @@
 # Canonical Serialization
 
+This page describes the `nodo/0.4` development format. The future v1 binary
+contract and its byte vectors are in [protocol v1](../spec/protocol-v1.md) and
+[v1 vectors](../spec/vectors-v1.md).
+
 Canonical serialization means the same logical object must always produce the same serialized representation.
 
 This is required because hashes, signatures, state roots, storage checks, and replay validation depend on deterministic bytes or text.

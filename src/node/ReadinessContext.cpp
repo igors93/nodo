@@ -22,11 +22,9 @@ static bool governanceLifecycleVerificationIntegrated() {
 ReadinessContextBuilder::ReadinessContextBuilder(
     const NodeDataDirectoryConfig& directoryConfig,
     const config::NetworkParameters& networkParams,
-    const crypto::StoredKeyMetadata& validatorKey
+    const crypto::StoredKeyMetadata& /*validatorKey*/
 )
     : m_directoryConfig(directoryConfig),
-      m_networkParams(networkParams),
-      m_validatorKey(validatorKey),
       m_context()
 {
     // Set policy-driven facts using the shared ProtocolCommandPolicy.

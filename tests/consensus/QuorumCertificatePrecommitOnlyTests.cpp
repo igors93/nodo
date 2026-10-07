@@ -122,7 +122,8 @@ void testPrecommitVotesBuildQc() {
         1,
         {
             voteFor(keyPair("a"), block, ValidatorVoteDecision::PRECOMMIT, kTimestamp + 20),
-            voteFor(keyPair("b"), block, ValidatorVoteDecision::PRECOMMIT, kTimestamp + 21)
+            voteFor(keyPair("b"), block, ValidatorVoteDecision::PRECOMMIT, kTimestamp + 21),
+            voteFor(keyPair("c"), block, ValidatorVoteDecision::PRECOMMIT, kTimestamp + 22)
         },
         registry,
         CryptoPolicy::developmentPolicy(),

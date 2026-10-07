@@ -13,6 +13,7 @@
 #include "node/ProtocolDomainCodec.hpp"
 #include "node/ProtocolStateTransition.hpp"
 #include "node/ValidatorLifecycle.hpp"
+#include "node/ValidatorSetSchedule.hpp"
 #include "node/ValidatorStakeWeightUpdater.hpp"
 
 #include <algorithm>
@@ -129,7 +130,7 @@ public:
                               height, false, tx.id());
       const core::ValidatorRegistrationRecord record(
           validatorAddress, payload.validatorPublicKey(),
-          ValidatorLifecycle::epochIndexForBlock(height) + 1,
+          ValidatorSetSchedule::activationEpoch(height),
           payload.metadataHash(), now);
       const auto registered = m_state.validators.registerPendingValidator(
           record, static_cast<std::uint64_t>(tx.amount().rawUnits()),
@@ -201,6 +202,11 @@ public:
             "Exited, deactivated, or exiting validators cannot rotate keys.");
       }
       const std::string newValidatorAddress = payload.newValidatorAddress();
+      if (payload.activationEpoch() <
+          ValidatorSetSchedule::activationEpoch(height)) {
+        throw std::invalid_argument(
+            "Validator key rotation activates before the minimum epoch delay.");
+      }
       if (newValidatorAddress.empty() ||
           newValidatorAddress == tx.toAddress() ||
           m_state.validators.hasValidator(newValidatorAddress)) {

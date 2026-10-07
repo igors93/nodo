@@ -106,9 +106,8 @@ ArtifactValidationResult FinalityArtifactValidator::applyFinalization(
         context.rejectionPrefix();
 
     try {
-        if (!context.runtime().mutableValidatorSetHistory().recordSet(
-                artifact.block().index(), context.runtime().validatorRegistry()
-            )) {
+        if (!context.runtime().validatorSetHistory().hasSet(
+                artifact.block().index())) {
             return ArtifactValidationResult::rejected(
                 prefix + "historical validator set conflicts at finalized block height."
             );

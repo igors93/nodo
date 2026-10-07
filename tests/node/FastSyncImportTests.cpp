@@ -15,6 +15,7 @@
 #include "node/NodeDataDirectory.hpp"
 #include "node/NodeRuntime.hpp"
 #include "node/PersistentBlockStateSync.hpp"
+#include "node/ValidatorSetSchedule.hpp"
 #include "node/RuntimeBlockPipeline.hpp"
 
 #include <cassert>
@@ -228,6 +229,19 @@ int main() {
             kTimestamp + 2);
     require(plan.status() == PersistentSyncPlanStatus::REQUEST_BLOCKS,
             "Planner should request blocks when gap is small");
+
+    // A snapshot cannot invent the set selected at an unverified boundary.
+    const PersistentSnapshotSyncManifest boundaryManifest(
+        "source-peer", NODO_VALIDATOR_EPOCH_BLOCKS,
+        snapshot.blockHash(), snapshot.stateRoot(), snapshot.digest(),
+        snapshot.createdAt());
+    const auto boundaryResult = PersistentBlockStateSyncApplier::importSnapshot(
+        localCheckpoint, boundaryManifest, targetNode, targetConfig, nullptr,
+        kTimestamp + 5);
+    require(!boundaryResult.applied() &&
+                boundaryResult.reason().find("validator-set boundary") !=
+                    std::string::npos,
+            "Snapshot import must reject an unverified epoch transition.");
 
     // 5. Positive Test: Import Snapshot
     auto result = PersistentBlockStateSyncApplier::importSnapshot(

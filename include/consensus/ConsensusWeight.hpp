@@ -9,11 +9,9 @@ namespace nodo::consensus {
  * ConsensusWeight encapsulates the logic for deriving validator voting weight
  * from active locked stake.
  *
- * This employs a canonical weightFromStake(lockedAmount) = floor(sqrt(locked))
- * function using deterministic integer arithmetic to avoid floating-point
- * rounding disparities across platforms. This sub-linear scaling represents an
- * anti-plutocracy choice, ensuring large stake pools have diminishing influence
- * over consensus and promoting decentralization.
+ * One raw unit of active locked stake gives one unit of voting power. Linear
+ * weight preserves the same total when a stakeholder divides stake among
+ * validator keys. No per-validator truncation or cap is applied here.
  */
 class ConsensusWeight {
 public:

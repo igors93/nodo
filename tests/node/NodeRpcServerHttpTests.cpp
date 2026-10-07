@@ -40,7 +40,7 @@ NodeRuntime startRuntime() {
   const auto started = nodo::node::NodeRuntimeFactory::startFromGenesis(
       nodo::node::NodeRuntimeConfig(
           nodo::config::GenesisRegistry::get("localnet").genesis(),
-          nodo::p2p::PeerInfo("rpc-http-test", "127.0.0.1:29990", "nodo/0.1", 0,
+          nodo::p2p::PeerInfo("rpc-http-test", "127.0.0.1:29990", "nodo/0.4", 0,
                               1900000000),
           16));
   requireCondition(started.started(), "Runtime must start from genesis.");

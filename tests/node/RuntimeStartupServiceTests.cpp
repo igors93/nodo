@@ -172,7 +172,7 @@ void testValidateTestnetCandidateProfileValid() {
 void testValidateMainnetProfileBlocked() {
     const NetworkParameters params(nodo::config::NetworkParameterValues{
         .chainId = "nodo-mainnet-1", .networkName = "mainnet",
-        .protocolVersion = "nodo/0.1", .epochDurationSeconds = 600,
+        .protocolVersion = "nodo/0.4", .epochDurationSeconds = 600,
         .minimumValidatorCount = 7, .quorumThresholdNumerator = 2,
         .quorumThresholdDenominator = 3, .maxTransactionsPerBlock = 250,
         .maxPeerCount = 256, .maxMempoolTransactions = 10000,

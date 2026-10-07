@@ -28,6 +28,8 @@
 
 using namespace nodo;
 
+namespace {
+
 constexpr std::int64_t kTimestamp = 1900000000;
 
 void requireCondition(bool condition, const std::string &message) {
@@ -47,7 +49,7 @@ void testStakeLifecycleEndToEnd() {
   const std::string validatorAddress =
       genesis.bootstrapValidators().front().validatorAddress();
 
-  p2p::PeerInfo localPeer("test-peer", "127.0.0.1:9000", "nodo/0.1", 0,
+  p2p::PeerInfo localPeer("test-peer", "127.0.0.1:9000", "nodo/0.4", 0,
                           kTimestamp);
   node::NodeRuntimeStartResult start =
       node::NodeRuntimeFactory::startFromGenesis(node::NodeRuntimeConfig(
@@ -58,8 +60,7 @@ void testStakeLifecycleEndToEnd() {
   requireCondition(runtime.validatorRegistry().activeCount() > 0,
                    "Genesis should have validators.");
 
-  // 2. We verify that ConsensusWeight calculation correctly gives sqrt weights.
-  // We can just verify it is > 0
+  // 2. The bootstrap validator must have positive consensus weight.
   requireCondition(
       runtime.validatorRegistry().consensusWeightFor(validatorAddress) > 0,
       "Validator consensus weight should be > 0.");
@@ -162,6 +163,8 @@ void testStakeLifecycleEndToEnd() {
   requireCondition(audit.passed(),
                    "Chain audit should pass for the current chain state.");
 }
+
+} // namespace
 
 int main() {
   try {

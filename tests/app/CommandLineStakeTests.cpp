@@ -78,8 +78,9 @@ void testStakeLockAndStatusFlow() {
     requireCondition(status.success() &&
         status.message().find("Stake status") != std::string::npos &&
         status.message().find("Bonded stake (raw units): 1001000") != std::string::npos &&
-        status.message().find("Active stake (raw units): 1001000") != std::string::npos,
-        "Stake status should resolve the validator key and expose finalized stake.");
+        status.message().find("Active stake (raw units): 1000000") != std::string::npos &&
+        status.message().find("Pending activation: 1000") != std::string::npos,
+        "Stake status should expose the finalized but not yet active stake.");
 
     clean(path);
 }

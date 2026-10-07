@@ -8,7 +8,7 @@ int main() {
     nodo::node::ChainStatusMessage status(
         "nodo-localnet",
         "nodo-localnet-1",
-        "nodo/0.1",
+        "nodo/0.4",
         20,
         "hash-tip",
         19,

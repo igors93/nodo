@@ -291,9 +291,14 @@ public:
   const ValidatorRegistry &setAt(std::uint64_t height) const;
   std::uint64_t highestRecordedHeight() const;
   bool isValid() const;
+  bool changesOnlyAtBoundaries(std::uint64_t epochLength) const;
   std::string serialize() const;
 
 private:
+  std::uint64_t m_firstHeight = 0;
+  std::uint64_t m_highestHeight = 0;
+  // A registry is stored only when it changes. Every intervening height uses
+  // the most recent snapshot, so historical QC lookup stays exact.
   std::map<std::uint64_t, ValidatorRegistry> m_setsByHeight;
 };
 

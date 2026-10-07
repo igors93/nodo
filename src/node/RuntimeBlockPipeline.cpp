@@ -11,6 +11,7 @@
 #include "node/StateSnapshot.hpp"
 #include "node/TreasuryExecutionEvidenceBuilder.hpp"
 #include "node/ValidatorLifecycle.hpp"
+#include "node/ValidatorSetSchedule.hpp"
 
 #include "node/consensus/BlockProductionPhase.hpp"
 #include "consensus/ProposerSchedule.hpp"
@@ -473,14 +474,15 @@ RuntimeBlockPipelineResult RuntimeBlockPipeline::applyCertifiedBlock(
 
     constexpr std::uint64_t nextRound = 1;
     const std::uint64_t nextHeight = block.index() + 1;
-    if (!runtime.mutableValidatorSetHistory().recordSet(
-            nextHeight, runtime.validatorRegistry())) {
+    if (!ValidatorSetSchedule::recordNext(
+            block.index(), runtime.validatorRegistry(),
+            runtime.mutableValidatorSetHistory())) {
       throw std::logic_error(
           "Validator set history conflicts at the next consensus height.");
     }
     const std::string nextProposer =
         consensus::ProposerSchedule::selectProposer(
-            runtime.validatorRegistry(),
+            runtime.validatorSetHistory().setAt(nextHeight),
             runtime.config().genesisConfig().networkParameters().chainId(),
             nextHeight, nextRound);
     runtime.mutableConsensusRoundManager().advanceToHeight(

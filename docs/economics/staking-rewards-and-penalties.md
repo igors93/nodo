@@ -18,13 +18,19 @@ bad behavior creates penalty evidence
 
 Stake changes should be recorded in the staking registry, but consensus voting power should change only through an epoch-bound projection.
 
-Recommended rule:
+The [v1 decision](../spec/adr-0001-validator-weight.md) is:
 
 ```text
-active locked stake → integer_sqrt(active stake) → consensus weight snapshot
+active locked stake → linear raw-unit weight → epoch validator-set snapshot
 ```
 
-This avoids unlimited linear dominance by large validators and protects historical quorum verification.
+Each eligible weight unit must be backed by one distinct, active, locked stake
+unit. Partitioning stake among validator keys cannot increase aggregate power.
+The minimum stake limits cheap identities, but does not establish Sybil
+resistance by itself. A stake-rich actor can still hold a large fraction of
+voting power. Historical quorum verification uses the set snapshot for the
+finalized height. The current development runtime has linear weight in
+`nodo/0.4`; full v1 stake-lot backing and evidence-window rules remain roadmap work.
 
 ## Rewards
 

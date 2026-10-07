@@ -36,6 +36,7 @@ struct NetworkParameterValues {
   std::string protocolVersion;
   std::uint64_t epochDurationSeconds = 0;
   std::uint64_t minimumValidatorCount = 0;
+  // Canonical protocol fraction 2/3; the actual threshold is strictly above it.
   std::uint64_t quorumThresholdNumerator = 0;
   std::uint64_t quorumThresholdDenominator = 0;
   std::uint64_t maxTransactionsPerBlock = 0;

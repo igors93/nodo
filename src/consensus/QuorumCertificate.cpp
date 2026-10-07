@@ -1,5 +1,6 @@
 #include "utils/SafeScalar.hpp"
 #include "consensus/QuorumCertificate.hpp"
+#include "consensus/QuorumThreshold.hpp"
 
 #include <limits>
 #include <map>
@@ -360,6 +361,11 @@ bool QuorumCertificate::isStructurallyValid() const {
         return false;
     }
 
+    if (m_requiredVotingWeight !=
+        QuorumThreshold::requiredWeight(m_totalVotingWeight)) {
+        return false;
+    }
+
     if (m_votes.empty()) {
         return false;
     }
@@ -406,9 +412,8 @@ bool QuorumCertificate::verify(
         return false;
     }
 
-    const unsigned __int128 minimumSafeWeight =
-        (static_cast<unsigned __int128>(m_totalVotingWeight) * 2 + 2) / 3;
-    if (m_requiredVotingWeight < minimumSafeWeight) {
+    if (m_requiredVotingWeight !=
+        QuorumThreshold::requiredWeight(m_totalVotingWeight)) {
         return false;
     }
 
@@ -606,29 +611,12 @@ std::uint64_t QuorumCertificateBuilder::requiredVotingWeight(
     std::uint64_t thresholdNumerator,
     std::uint64_t thresholdDenominator
 ) {
-    if (totalVotingWeight == 0 ||
-        thresholdNumerator == 0 ||
-        thresholdDenominator == 0 ||
-        thresholdNumerator > thresholdDenominator ||
-        static_cast<unsigned __int128>(thresholdNumerator) * 3 <
-            static_cast<unsigned __int128>(thresholdDenominator) * 2) {
+    if (!QuorumThreshold::isCanonicalFraction(thresholdNumerator,
+                                               thresholdDenominator) ||
+        totalVotingWeight == 0) {
         throw std::invalid_argument("Invalid quorum threshold parameters.");
     }
-
-    const unsigned __int128 scaledVotes =
-        static_cast<unsigned __int128>(totalVotingWeight) *
-        static_cast<unsigned __int128>(thresholdNumerator);
-
-    const unsigned __int128 roundedVotes =
-        scaledVotes +
-        static_cast<unsigned __int128>(thresholdDenominator) -
-        1;
-
-    const unsigned __int128 requiredVotes =
-        roundedVotes /
-        static_cast<unsigned __int128>(thresholdDenominator);
-
-    return static_cast<std::uint64_t>(requiredVotes);
+    return QuorumThreshold::requiredWeight(totalVotingWeight);
 }
 
 QuorumCertificateBuildResult QuorumCertificateBuilder::buildFromVotes(

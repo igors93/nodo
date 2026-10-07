@@ -38,7 +38,7 @@ void clean(const std::filesystem::path& path) {
 }
 
 p2p::PeerInfo localPeer() {
-    return p2p::PeerInfo("genesis-compat-peer", "127.0.0.1:19700", "nodo/0.1", 0, kTs);
+    return p2p::PeerInfo("genesis-compat-peer", "127.0.0.1:19700", "nodo/0.4", 0, kTs);
 }
 
 // ---- Test 1: Correct genesis accepted ----

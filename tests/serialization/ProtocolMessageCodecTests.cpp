@@ -31,7 +31,7 @@ nodo::core::LedgerRecord ledgerRecord(const std::string &suffix,
 
 int main() {
   nodo::node::ChainStatusMessage status("nodo-localnet", "nodo-localnet-1",
-                                        "nodo/0.1", 12, HASH_A, 10, HASH_B);
+                                        "nodo/0.4", 12, HASH_A, 10, HASH_B);
 
   const auto statusBytes =
       nodo::serialization::ProtocolMessageCodec::encodeChainStatusMessage(
@@ -110,7 +110,7 @@ int main() {
              decodedRoundAdvance));
 
   nodo::p2p::NetworkEnvelope envelope(
-      "nodo-localnet", "nodo-localnet-1", "nodo/0.1",
+      "nodo-localnet", "nodo-localnet-1", "nodo/0.4",
       nodo::p2p::NetworkMessageType::SLASHING_EVIDENCE_RESPONSE, "node-a",
       1700000000, 60, status.serialize());
 

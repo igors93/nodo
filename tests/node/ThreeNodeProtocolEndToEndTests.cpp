@@ -1,9 +1,11 @@
 #include "../common/TestFramework.hpp"
 #include "config/NetworkParameters.hpp"
+#include "config/ProtocolVersion.hpp"
 #include "node/consensus/BlockProductionPhase.hpp"
 #include "node/consensus/BlockProposalPhase.hpp"
 #include "node/consensus/ConsensusEventLoop.hpp"
 #include "consensus/ProposerSchedule.hpp"
+#include "consensus/QuorumThreshold.hpp"
 #include "core/TransactionBuilder.hpp"
 #include "crypto/Bls12381SignatureProvider.hpp"
 #include "crypto/CryptoPolicy.hpp"
@@ -44,7 +46,7 @@ using namespace nodo;
 
 constexpr std::int64_t kGenesisTimestamp = 1900700000;
 constexpr std::int64_t kTransactionTimestamp = kGenesisTimestamp + 10;
-constexpr const char *kProtocolVersion = "nodo/test";
+constexpr const char *kProtocolVersion = config::kProtocolVersion;
 constexpr const char *kCanonicalPayloadPrefix =
     "NODO_CANONICAL_PROTOCOL_HEX_V1:";
 using nodo::test::require;
@@ -96,8 +98,12 @@ config::GenesisConfig makeGenesis(const std::array<NodeSpec, 3> &specs) {
   std::vector<config::BootstrapValidatorConfig> validators;
   validators.reserve(specs.size());
 
-  for (const NodeSpec &spec : specs) {
-    validators.emplace_back(spec.validatorKey.publicKey(), 1, 1,
+  constexpr std::array<std::uint32_t, 3> kStakeWeights = {
+      4'000'000, 2'000'000, 1'000'000};
+  for (std::size_t index = 0; index < specs.size(); ++index) {
+    const NodeSpec &spec = specs[index];
+    validators.emplace_back(spec.validatorKey.publicKey(), 1,
+                            kStakeWeights[index],
                             "three-node-e2e-" + spec.nodeId);
   }
 
@@ -246,7 +252,7 @@ void configureConsensus(TestNode &node,
   node.consensusLoop->setDataDirectoryConfig(&node.directory);
 }
 
-void finalizeWithTwoOfThreeValidators(TestNode &first, TestNode &second) {
+void finalizeWithWeightedQuorum(TestNode &first, TestNode &second) {
   for (std::int64_t step = 0; step < 40; ++step) {
     const std::int64_t now = kGenesisTimestamp + 1 + step;
     pumpNetwork(first, second, now);
@@ -271,7 +277,7 @@ void finalizeWithTwoOfThreeValidators(TestNode &first, TestNode &second) {
 
   require(first.runtime.blockchain().size() == 2 &&
               second.runtime.blockchain().size() == 2,
-          "Two online validators did not finalize the proposed block.");
+          "Online validators holding strict quorum weight did not finalize.");
   require(first.runtime.blockchain().latestBlock().hash() ==
               second.runtime.blockchain().latestBlock().hash(),
           "Online validators finalized different block hashes.");
@@ -282,7 +288,7 @@ void finalizeWithTwoOfThreeValidators(TestNode &first, TestNode &second) {
     require(record != nullptr,
             node->spec.nodeId + " has no finalization record.");
     require(record->quorumCertificate().voteCount() == 2,
-            "Finalization must contain the two-of-three PRECOMMIT quorum.");
+            "Finalization must contain both online weighted PRECOMMIT votes.");
     require(node->runtime.mempool().empty(),
             "Finalized transaction was not removed from the mempool.");
     require(std::filesystem::exists(
@@ -456,10 +462,7 @@ void testThreeNodeProtocolJourney() {
   }
 
   const std::size_t producerIndex = proposerIndex(nodes, genesis);
-  std::size_t voterIndex = 0;
-  while (voterIndex == producerIndex) {
-    ++voterIndex;
-  }
+  const std::size_t voterIndex = producerIndex == 0 ? 1 : 0;
   std::size_t laggingIndex = 0;
   while (laggingIndex == producerIndex || laggingIndex == voterIndex) {
     ++laggingIndex;
@@ -468,6 +471,16 @@ void testThreeNodeProtocolJourney() {
   TestNode &producer = *nodes[producerIndex];
   TestNode &voter = *nodes[voterIndex];
   TestNode &lagging = *nodes[laggingIndex];
+  const core::ValidatorRegistry &validatorSet = producer.runtime.validatorRegistry();
+  const std::uint64_t totalWeight = validatorSet.totalConsensusWeight();
+  const std::uint64_t onlineWeight =
+      validatorSet.consensusWeightFor(producer.spec.validatorKey.address().value()) +
+      validatorSet.consensusWeightFor(voter.spec.validatorKey.address().value());
+  require(onlineWeight >= consensus::QuorumThreshold::requiredWeight(totalWeight),
+          "The two online validators must own strict quorum weight.");
+  require(3 * validatorSet.consensusWeightFor(
+                  lagging.spec.validatorKey.address().value()) < totalWeight,
+          "The offline validator must hold less than one third of weight.");
   connectNodes(producer, producerIndex, voter, voterIndex);
 
   const core::Transaction transaction = makeTransaction(genesis);
@@ -501,7 +514,7 @@ void testThreeNodeProtocolJourney() {
   producer.mesh.injectLocalMessage(p2p::NetworkMessageType::BLOCK_PROPOSAL,
                                    proposal.serializedProposal(), now);
 
-  finalizeWithTwoOfThreeValidators(producer, voter);
+  finalizeWithWeightedQuorum(producer, voter);
   require(lagging.runtime.blockchain().size() == 1,
           "Offline node must remain at genesis before catch-up sync.");
 

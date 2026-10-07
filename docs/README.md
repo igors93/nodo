@@ -14,7 +14,7 @@ Start here if you are new to the project:
 2. [Proof of Protection](overview/proof-of-protection.md)
 3. [Current status](status.md)
 4. [Architecture overview](architecture/architecture-overview.md)
-5. [Protocol overview](protocol/protocol-overview.md)
+5. [Protocol v1 design contract](spec/protocol-v1.md) and [protocol overview](protocol/protocol-overview.md)
 6. [Security model](security/security-model.md)
 7. [Roadmap](roadmap.md)
 
@@ -41,6 +41,11 @@ Start here if you are new to the project:
 
 ### Protocol
 
+- [Protocol v1 design contract](spec/protocol-v1.md)
+- [V1 canonical vectors](spec/vectors-v1.md)
+- [Validator weight decision](spec/adr-0001-validator-weight.md)
+- [Fault model and quorum decision](spec/adr-0002-fault-model-and-quorum.md)
+- [Epoch validator-set decision](spec/adr-0003-epoch-validator-sets.md)
 - [Protocol overview](protocol/protocol-overview.md)
 - [Consensus](protocol/consensus.md)
 - [Blocks and finalization](protocol/blocks-and-finalization.md)

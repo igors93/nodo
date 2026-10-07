@@ -166,16 +166,28 @@ void testVoteSignsAndVerifies() {
     );
 }
 
-void testQuorumCertificateBuildsWithTwoOfThree() {
+void testQuorumCertificateRequiresMoreThanTwoThirds() {
     const ValidatorRegistry registry =
         registryWithThreeValidators();
 
-    const std::vector<ValidatorVoteRecord> votes = {
+    const std::vector<ValidatorVoteRecord> twoVotes = {
         approveVote("a", 7, "block-hash-consensus-qc", "previous-hash-consensus", 1, kTimestamp + 10),
         approveVote("b", 7, "block-hash-consensus-qc", "previous-hash-consensus", 1, kTimestamp + 11)
     };
 
     const Bls12381SignatureProvider provider;
+
+    const auto insufficient = QuorumCertificateBuilder::buildFromVotes(
+        7, "block-hash-consensus-qc", "previous-hash-consensus", 1,
+        twoVotes, registry, CryptoPolicy::developmentPolicy(), provider);
+    requireCondition(
+        insufficient.status() == QuorumCertificateBuildStatus::NOT_ENOUGH_VALID_VOTES,
+        "Exactly two thirds of a divisible total must not certify."
+    );
+
+    std::vector<ValidatorVoteRecord> votes = twoVotes;
+    votes.push_back(approveVote("c", 7, "block-hash-consensus-qc",
+                                "previous-hash-consensus", 1, kTimestamp + 12));
 
     const auto result =
         QuorumCertificateBuilder::buildFromVotes(
@@ -191,7 +203,7 @@ void testQuorumCertificateBuildsWithTwoOfThree() {
 
     requireCondition(
         result.certified(),
-        "Two of three active validators should certify with 2/3 threshold."
+        "All three validators should certify with a strict 2/3 threshold."
     );
 
     requireCondition(
@@ -204,22 +216,61 @@ void testQuorumCertificateBuildsWithTwoOfThree() {
     );
 
     requireCondition(
-        result.certificate().requiredVotingWeight() == 2000U &&
-        result.certificate().signedVotingWeight() == 2000U &&
-        result.certificate().totalVotingWeight() == 3000U &&
+        result.certificate().requiredVotingWeight() ==
+            2 * ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + 1 &&
+        result.certificate().signedVotingWeight() ==
+            3 * ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS &&
+        result.certificate().totalVotingWeight() ==
+            3 * ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS &&
         result.certificate().validatorSetRoot() == registry.validatorSetRoot(),
-        "Two minimum-stake validators should certify with 2000/3000 voting weight."
+        "A divisible total requires strictly more than two thirds."
     );
 
     const nodo::consensus::QuorumCertificate forgedLowThreshold(
         7, "block-hash-consensus-qc", "previous-hash-consensus", 1,
-        1000U, 3000U, 1000U, registry.validatorSetRoot(), {votes.front()}
+        2 * ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS,
+        3 * ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS,
+        2 * ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS,
+        registry.validatorSetRoot(), twoVotes
     );
     requireCondition(
-        !forgedLowThreshold.verify(registry,
+        !forgedLowThreshold.isStructurallyValid() &&
+            !forgedLowThreshold.verify(registry,
                                    CryptoPolicy::developmentPolicy(), provider),
-        "A certificate with a forged low quorum threshold must be rejected."
+        "A certificate with exactly two-thirds quorum metadata must be rejected."
     );
+}
+
+void testQuorumCertificateRejectsNoncanonicalHigherMetadata() {
+    ValidatorRegistry registry = registryWithThreeValidators();
+    const auto fourth = registrationFor(publicKey("d"), 1, kTimestamp + 4);
+    requireCondition(registry.registerValidator(fourth).accepted(),
+                     "Fourth validator should register.");
+
+    const std::vector<ValidatorVoteRecord> votes = {
+        approveVote("a", 7, "block-hash-consensus-high", "previous-hash-consensus", 1, kTimestamp + 10),
+        approveVote("b", 7, "block-hash-consensus-high", "previous-hash-consensus", 1, kTimestamp + 11),
+        approveVote("c", 7, "block-hash-consensus-high", "previous-hash-consensus", 1, kTimestamp + 12),
+        approveVote("d", 7, "block-hash-consensus-high", "previous-hash-consensus", 1, kTimestamp + 13)
+    };
+    const Bls12381SignatureProvider provider;
+    const auto built = QuorumCertificateBuilder::buildFromVotes(
+        7, "block-hash-consensus-high", "previous-hash-consensus", 1,
+        std::vector<ValidatorVoteRecord>(votes.begin(), votes.begin() + 3), registry,
+        CryptoPolicy::developmentPolicy(), provider);
+    requireCondition(built.certified() &&
+                         built.certificate().requiredVotingWeight() == 2'666'667,
+                     "Three of four equal weights should satisfy strict quorum.");
+
+    constexpr std::uint64_t allWeight =
+        4 * ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS;
+    const nodo::consensus::QuorumCertificate forgedHighThreshold(
+        7, "block-hash-consensus-high", "previous-hash-consensus", 1,
+        allWeight, allWeight, allWeight, registry.validatorSetRoot(), votes);
+    requireCondition(!forgedHighThreshold.isStructurallyValid() &&
+                         !forgedHighThreshold.verify(
+                             registry, CryptoPolicy::developmentPolicy(), provider),
+                     "A certificate must not replace the canonical threshold with unanimity.");
 }
 
 void testQuorumRejectsDuplicateVoter() {
@@ -327,7 +378,8 @@ void testQuorumRejectsConflictingBlockVote() {
 int main() {
     try {
         testVoteSignsAndVerifies();
-        testQuorumCertificateBuildsWithTwoOfThree();
+        testQuorumCertificateRequiresMoreThanTwoThirds();
+        testQuorumCertificateRejectsNoncanonicalHigherMetadata();
         testQuorumRejectsDuplicateVoter();
         testQuorumRejectsUnregisteredVoter();
         testQuorumRejectsConflictingBlockVote();

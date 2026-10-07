@@ -14,6 +14,7 @@
 #include "node/ProtocolStateTransition.hpp"
 #include "node/RuntimeStateVerifier.hpp"
 #include "node/TransactionAdmissionPolicy.hpp"
+#include "node/ValidatorSetSchedule.hpp"
 #include "consensus/QuorumCertificate.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "crypto/ProtocolCryptoContext.hpp"
@@ -384,9 +385,9 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
             );
         }
 
-        if (!runtime.mutableValidatorSetHistory().recordSet(
-                artifact.block().index() + 1, runtime.validatorRegistry()
-            )) {
+        if (!ValidatorSetSchedule::recordNext(
+                artifact.block().index(), runtime.validatorRegistry(),
+                runtime.mutableValidatorSetHistory())) {
             return RuntimeStateLoadResult::rejected(
                 RuntimeStateLoadStatus::BLOCK_FILE_INVALID,
                 "Validator set history conflict while replaying block "
@@ -414,7 +415,7 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
     if (runtime.consensusRoundManager().currentState().height() != nextConsensusHeight) {
         constexpr std::uint64_t nextRound = 1;
         const std::string proposer = consensus::ProposerSchedule::selectProposer(
-            runtime.validatorRegistry(),
+            runtime.validatorSetHistory().setAt(nextConsensusHeight),
             genesisConfig.networkParameters().chainId(),
             nextConsensusHeight,
             nextRound

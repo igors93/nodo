@@ -184,7 +184,8 @@ ChainFixture buildChainFixture() {
   const consensus::QuorumCertificate qc1 = certificateFrom(
       block1,
       {voteFor("a", block1, 1, kTimestamp + 11, provider),
-       voteFor("b", block1, 1, kTimestamp + 12, provider)},
+       voteFor("b", block1, 1, kTimestamp + 12, provider),
+       voteFor("c", block1, 1, kTimestamp + 13, provider)},
       registry1);
   const consensus::FinalizedBlockRecord record1(
       block1.index(), block1.hash(), block1.previousHash(), 1,
@@ -295,6 +296,8 @@ void testRejectsForgedVoteSignature() {
       forgedVoteFor("a", fixture.block1, 1, kTimestamp + 11, provider);
   const consensus::ValidatorVoteRecord realB =
       voteFor("b", fixture.block1, 1, kTimestamp + 12, provider);
+  const consensus::ValidatorVoteRecord realC =
+      voteFor("c", fixture.block1, 1, kTimestamp + 13, provider);
 
   const std::uint64_t totalWeight = fixture.registry1.totalConsensusWeight();
   const std::uint64_t requiredWeight =
@@ -302,7 +305,8 @@ void testRejectsForgedVoteSignature() {
                                                                  3);
   const std::uint64_t signedWeight =
       fixture.registry1.consensusWeightFor(forgedA.validatorAddress()) +
-      fixture.registry1.consensusWeightFor(realB.validatorAddress());
+      fixture.registry1.consensusWeightFor(realB.validatorAddress()) +
+      fixture.registry1.consensusWeightFor(realC.validatorAddress());
   require(signedWeight >= requiredWeight,
           "forged-vote fixture must still meet the weight threshold so only "
           "the signature check can reject it");
@@ -310,7 +314,8 @@ void testRejectsForgedVoteSignature() {
   const consensus::QuorumCertificate forgedCertificate(
       fixture.block1.index(), fixture.block1.hash(),
       fixture.block1.previousHash(), 1, requiredWeight, totalWeight,
-      signedWeight, fixture.registry1.validatorSetRoot(), {forgedA, realB});
+      signedWeight, fixture.registry1.validatorSetRoot(),
+      {forgedA, realB, realC});
   require(forgedCertificate.isStructurallyValid(),
           "forged certificate must still be structurally well-formed");
 

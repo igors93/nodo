@@ -1,4 +1,5 @@
 #include "consensus/VotePool.hpp"
+#include "consensus/QuorumThreshold.hpp"
 
 #include <limits>
 #include <sstream>
@@ -110,7 +111,8 @@ bool VotePoolQuorumProgress::isValid() const {
            m_round > 0 &&
            m_requiredVotingWeight > 0 &&
            m_totalVotingWeight > 0 &&
-           m_requiredVotingWeight <= m_totalVotingWeight &&
+           m_requiredVotingWeight ==
+               QuorumThreshold::requiredWeight(m_totalVotingWeight) &&
            m_acceptedVotingWeight <= m_totalVotingWeight;
 }
 

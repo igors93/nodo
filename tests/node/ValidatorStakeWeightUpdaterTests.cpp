@@ -52,12 +52,12 @@ void testWeightsChangeOnlyAtEpochBoundaryAndHistoryRemainsImmutable() {
     const std::string first = registerValidator(
         validators,
         "first",
-        1'000'000
+        100'000'000
     );
     const std::string second = registerValidator(
         validators,
         "second",
-        4'000'000
+        400'000'000
     );
 
     core::ValidatorSetHistory history;
@@ -68,14 +68,14 @@ void testWeightsChangeOnlyAtEpochBoundaryAndHistoryRemainsImmutable() {
         first,
         economics::StakeAccount(
             first,
-            utils::Amount::fromRawUnits(9'000'000)
+            utils::Amount::fromRawUnits(900'000'000)
         )
     );
     staking.setAccount(
         second,
         economics::StakeAccount(
             second,
-            utils::Amount::fromRawUnits(16'000'000)
+            utils::Amount::fromRawUnits(1'600'000'000)
         )
     );
 
@@ -85,8 +85,8 @@ void testWeightsChangeOnlyAtEpochBoundaryAndHistoryRemainsImmutable() {
         staking,
         validators
     ));
-    assert(validators.consensusWeightFor(first) == 1'000);
-    assert(validators.consensusWeightFor(second) == 2'000);
+    assert(validators.consensusWeightFor(first) == 100'000'000);
+    assert(validators.consensusWeightFor(second) == 400'000'000);
 
     assert(node::ValidatorStakeWeightUpdater::synchronizeAtEpochBoundary(
         node::NODO_VALIDATOR_EPOCH_BLOCKS,
@@ -99,20 +99,20 @@ void testWeightsChangeOnlyAtEpochBoundaryAndHistoryRemainsImmutable() {
             node::NODO_VALIDATOR_EPOCH_BLOCKS
         ) == 2
     );
-    assert(validators.consensusWeightFor(first) == 3'000);
-    assert(validators.consensusWeightFor(second) == 4'000);
-    assert(validators.totalConsensusWeight() == 7'000);
+    assert(validators.consensusWeightFor(first) == 900'000'000);
+    assert(validators.consensusWeightFor(second) == 1'600'000'000);
+    assert(validators.totalConsensusWeight() == 2'500'000'000);
     assert(consensus::QuorumCertificateBuilder::requiredVotingWeight(
         validators.totalConsensusWeight(),
         2,
         3
-    ) == 4'667);
+    ) == 1'666'666'667);
     assert(history.recordSet(2, validators));
 
-    assert(history.setAt(1).consensusWeightFor(first) == 1'000);
-    assert(history.setAt(1).consensusWeightFor(second) == 2'000);
-    assert(history.setAt(2).consensusWeightFor(first) == 3'000);
-    assert(history.setAt(2).consensusWeightFor(second) == 4'000);
+    assert(history.setAt(1).consensusWeightFor(first) == 100'000'000);
+    assert(history.setAt(1).consensusWeightFor(second) == 400'000'000);
+    assert(history.setAt(2).consensusWeightFor(first) == 900'000'000);
+    assert(history.setAt(2).consensusWeightFor(second) == 1'600'000'000);
     assert(
         history.setAt(1).validatorSetRoot() !=
         history.setAt(2).validatorSetRoot()
@@ -124,7 +124,7 @@ void testZeroActiveStakeIsExcludedFromConsensus() {
     const std::string address = registerValidator(
         validators,
         "zero-stake",
-        1'000'000
+        100'000'000
     );
 
     node::StakingRegistry staking;

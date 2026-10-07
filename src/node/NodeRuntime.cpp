@@ -12,6 +12,7 @@
 #include "node/MonetaryFirewall.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
+#include "node/ValidatorLifecycle.hpp"
 
 #include <sstream>
 #include <utility>
@@ -484,7 +485,8 @@ bool NodeRuntime::isValid() const {
   return isRunning() && m_config.isValid() && !m_blockchain.empty() &&
          m_blockchain.isValid(false) && m_validatorRegistry.isValid() &&
          m_validatorPenaltyLedger.isValid() &&
-         m_validatorSetHistory.isValid() &&
+         m_validatorSetHistory.changesOnlyAtBoundaries(
+             NODO_VALIDATOR_EPOCH_BLOCKS) &&
          m_validatorSetHistory.hasSet(
              m_consensusRoundManager.currentState().height()) &&
          m_finalizationRegistry.isValid() &&
@@ -526,7 +528,7 @@ bool NodeRuntime::advanceConsensusRoundIfTimedOut(std::int64_t now) {
       m_consensusRoundManager.currentState().round() + 1;
 
   const std::string proposer = consensus::ProposerSchedule::selectProposer(
-      m_validatorRegistry,
+      m_validatorSetHistory.setAt(m_consensusRoundManager.currentState().height()),
       m_config.genesisConfig().networkParameters().chainId(),
       m_consensusRoundManager.currentState().height(), newRound);
 

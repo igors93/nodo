@@ -201,7 +201,8 @@ QuorumCertificate certificateFor(
 ) {
     const std::vector<ValidatorVoteRecord> votes = {
         precommitVoteFor("a", block, round, kTimestamp + 20),
-        precommitVoteFor("b", block, round, kTimestamp + 21)
+        precommitVoteFor("b", block, round, kTimestamp + 21),
+        precommitVoteFor("c", block, round, kTimestamp + 22)
     };
 
     const Bls12381SignatureProvider provider;

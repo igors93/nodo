@@ -74,7 +74,7 @@ private:
   std::unique_ptr<asio::ip::udp::socket> m_socket;
   std::thread m_ioThread;
 
-  std::array<char, 4096> m_recvBuffer;
+  std::array<char, 4096> m_recvBuffer{};
   asio::ip::udp::endpoint m_recvEndpoint;
 
   void startReceive();

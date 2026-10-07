@@ -11,6 +11,8 @@ using namespace nodo;
 
 #ifndef _WIN32
 
+namespace {
+
 void requireCondition(bool condition, const std::string &message) {
   if (!condition) {
     throw std::runtime_error(message);
@@ -96,6 +98,8 @@ void testReceivePathDropsInvalidMessages() {
   }
   std::filesystem::remove_all(root);
 }
+
+} // namespace
 
 int main() {
   try {

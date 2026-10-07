@@ -104,8 +104,6 @@ public:
 
 private:
     const NodeDataDirectoryConfig& m_directoryConfig;
-    const config::NetworkParameters& m_networkParams;
-    const crypto::StoredKeyMetadata& m_validatorKey;
     ReadinessContext m_context;
 };
 

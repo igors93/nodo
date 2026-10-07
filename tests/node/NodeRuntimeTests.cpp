@@ -57,7 +57,7 @@ GenesisConfig genesisConfig() {
 
 PeerInfo peer(const std::string &id, std::uint64_t height = 0,
               std::int64_t lastSeen = kTimestamp) {
-  return PeerInfo(id, "127.0.0.1:9000", "nodo/0.1", height, lastSeen);
+  return PeerInfo(id, "127.0.0.1:9000", "nodo/0.4", height, lastSeen);
 }
 
 nodo::consensus::ValidatorVoteRecord
@@ -165,6 +165,18 @@ void testRuntimeAdvancesConsensusRoundOnTimeout() {
 
   nodo::node::NodeRuntime runtime = start.runtime();
 
+  const std::string expectedProposer =
+      nodo::consensus::ProposerSchedule::selectProposer(
+          runtime.validatorSetHistory().setAt(1),
+          genesisConfig().networkParameters().chainId(), 1, 2);
+  requireCondition(runtime.mutableValidatorRegistry()
+                       .jailValidator(expectedProposer, 2, kTimestamp + 1)
+                       .success(),
+                   "Mutable registry should diverge from the frozen voting set.");
+  requireCondition(runtime.validatorRegistry().validatorSetRoot() !=
+                       runtime.validatorSetHistory().setAt(1).validatorSetRoot(),
+                   "The regression fixture must use two different sets.");
+
   requireCondition(
       !runtime.advanceConsensusRoundIfTimedOut(kTimestamp + 8),
       "Runtime should not advance consensus round before timeout.");
@@ -172,16 +184,26 @@ void testRuntimeAdvancesConsensusRoundOnTimeout() {
   requireCondition(runtime.advanceConsensusRoundIfTimedOut(kTimestamp + 10),
                    "Runtime should advance consensus round after timeout.");
 
-  const std::string expectedProposer =
-      nodo::consensus::ProposerSchedule::selectProposer(
-          runtime.validatorRegistry(),
-          genesisConfig().networkParameters().chainId(), 1, 2);
-
   requireCondition(
       runtime.consensusRoundManager().currentState().round() == 2 &&
           runtime.consensusRoundManager().currentState().proposerAddress() ==
               expectedProposer,
       "Round timeout should advance to deterministic next-round proposer.");
+}
+
+void testRuntimeRejectsMidEpochValidatorSetInjection() {
+  auto start = NodeRuntimeFactory::startFromGenesis(
+      NodeRuntimeConfig(genesisConfig(), peer("local-node", 0), 8));
+  requireCondition(start.started(), "Runtime should start.");
+  nodo::node::NodeRuntime runtime = start.runtime();
+  auto changed = runtime.validatorRegistry();
+  const std::string address = changed.eligibleValidatorAddresses().front();
+  requireCondition(changed.jailValidator(address, 2, kTimestamp + 1).success(),
+                   "Validator-set injection fixture must change membership.");
+  requireCondition(runtime.mutableValidatorSetHistory().recordSet(2, changed),
+                   "Historical set fixture should record the injected set.");
+  requireCondition(!runtime.isValid(),
+                   "Runtime must reject an injected mid-epoch set change.");
 }
 
 void testPeerManagerAddUpdateCapacityAndBestPeer() {
@@ -287,6 +309,7 @@ int main() {
     testRuntimeInitializesConsensusRoundFromProposerSchedule();
     testRuntimeConsensusVoteAdmissionChecksCurrentRoundReplayAndConflicts();
     testRuntimeAdvancesConsensusRoundOnTimeout();
+    testRuntimeRejectsMidEpochValidatorSetInjection();
     testPeerManagerAddUpdateCapacityAndBestPeer();
     testRuntimeCreatesChainSummaryMessage();
     testRuntimeEvaluatesBetterPeerForSync();

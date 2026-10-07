@@ -12,40 +12,47 @@ void requireCondition(bool condition, const std::string &message) {
   }
 }
 
-void testDeterministicSquareRoot() {
+void testLinearWeight() {
   requireCondition(nodo::consensus::ConsensusWeight::weightFromStake(0) == 0,
-                   "sqrt(0) should be 0");
+                   "zero stake has zero weight");
   requireCondition(nodo::consensus::ConsensusWeight::weightFromStake(1) == 1,
-                   "sqrt(1) should be 1");
-  requireCondition(nodo::consensus::ConsensusWeight::weightFromStake(3) == 1,
-                   "sqrt(3) should be 1");
-  requireCondition(nodo::consensus::ConsensusWeight::weightFromStake(4) == 2,
-                   "sqrt(4) should be 2");
-  requireCondition(nodo::consensus::ConsensusWeight::weightFromStake(99) == 9,
-                   "sqrt(99) should be 9");
-  requireCondition(nodo::consensus::ConsensusWeight::weightFromStake(100) == 10,
-                   "sqrt(100) should be 10");
-
-  // Large values
+                   "one raw unit has one unit of weight");
   requireCondition(
-      nodo::consensus::ConsensusWeight::weightFromStake(1'000'000ULL) == 1000,
-      "sqrt(1,000,000) should be 1000");
+      nodo::consensus::ConsensusWeight::weightFromStake(1'000'000ULL) ==
+          1'000'000ULL,
+      "weight must equal the exact stake in raw units");
   requireCondition(nodo::consensus::ConsensusWeight::weightFromStake(
-                       1'000'000'000ULL) == 31622,
-                   "sqrt(1,000,000,000) should be 31622");
+                       1'000'000'000ULL) == 1'000'000'000ULL,
+                   "large stakes must not be truncated");
+  requireCondition(nodo::consensus::ConsensusWeight::weightFromStake(
+                       18'446'744'073'709'551'615ULL) ==
+                       18'446'744'073'709'551'615ULL,
+                   "the weight function must not silently cap large input");
+}
 
-  // Maximum uint64
-  requireCondition(nodo::consensus::ConsensusWeight::weightFromStake(
-                       18'446'744'073'709'551'615ULL) == 4'294'967'295ULL,
-                   "sqrt(MAX) should be 4,294,967,295");
+void testSplittingNeverCreatesVotingPower() {
+  constexpr std::uint64_t stake = 1'000'000'003ULL;
+  for (std::uint64_t validatorCount : {2ULL, 3ULL, 7ULL, 101ULL}) {
+    const std::uint64_t base = stake / validatorCount;
+    const std::uint64_t remainder = stake % validatorCount;
+    std::uint64_t splitWeight = 0;
+    for (std::uint64_t index = 0; index < validatorCount; ++index) {
+      splitWeight += nodo::consensus::ConsensusWeight::weightFromStake(
+          base + (index < remainder ? 1 : 0));
+    }
+    requireCondition(
+        splitWeight == nodo::consensus::ConsensusWeight::weightFromStake(stake),
+        "splitting stake across validators must preserve total voting power");
+  }
 }
 
 } // namespace
 
 int main() {
   try {
-    testDeterministicSquareRoot();
-    std::cout << "ConsensusWeight deterministic square root tests passed.\n";
+    testLinearWeight();
+    testSplittingNeverCreatesVotingPower();
+    std::cout << "ConsensusWeight linear-stake tests passed.\n";
     return 0;
   } catch (const std::exception &error) {
     std::cerr << "ConsensusWeight tests failed: " << error.what() << "\n";

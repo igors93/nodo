@@ -40,7 +40,7 @@ PeerInfo peer(
     return PeerInfo(
         id,
         "127.0.0.1:9000",
-        "nodo/0.1",
+        "nodo/0.4",
         height,
         kTimestamp
     );
@@ -169,7 +169,7 @@ void testInvalidPeerRejected() {
             PeerInfo(
                 "bad peer id",
                 "127.0.0.1:9000",
-                "nodo/0.1",
+                "nodo/0.4",
                 0,
                 kTimestamp
             ),

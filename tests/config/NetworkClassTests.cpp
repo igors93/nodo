@@ -1,7 +1,9 @@
 #include "config/NetworkParameters.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -30,7 +32,7 @@ void testTestnetCandidateIsStaging() {
 void testMainnetIsLockedProduction() {
   const NetworkParameters params(nodo::config::NetworkParameterValues{
       .chainId = "nodo-mainnet-1", .networkName = "mainnet",
-      .protocolVersion = "nodo/0.1", .epochDurationSeconds = 600,
+      .protocolVersion = "nodo/0.4", .epochDurationSeconds = 600,
       .minimumValidatorCount = 7, .quorumThresholdNumerator = 2,
       .quorumThresholdDenominator = 3, .maxTransactionsPerBlock = 250,
       .maxPeerCount = 256, .maxMempoolTransactions = 10000,
@@ -61,13 +63,30 @@ void testDevelopmentLocalNotSafeForProduction() {
 }
 
 void testUnsafeQuorumThresholdIsRejected() {
-  const NetworkParameters params(nodo::config::NetworkParameterValues{
-      .chainId = "nodo-unsafe-1", .networkName = "unsafe",
-      .protocolVersion = "nodo/0.1", .epochDurationSeconds = 60,
-      .minimumValidatorCount = 1, .quorumThresholdNumerator = 1,
-      .quorumThresholdDenominator = 2, .maxTransactionsPerBlock = 1000,
-      .maxPeerCount = 128});
-  assert(!params.isValid());
+  for (const auto [numerator, denominator] :
+       {std::pair<std::uint64_t, std::uint64_t>{1, 2},
+        {3, 4}, {1, 1}, {4, 6}, {0, 3}}) {
+    const NetworkParameters params(nodo::config::NetworkParameterValues{
+        .chainId = "nodo-unsafe-1", .networkName = "unsafe",
+        .protocolVersion = "nodo/0.4", .epochDurationSeconds = 60,
+        .minimumValidatorCount = 1,
+        .quorumThresholdNumerator = numerator,
+        .quorumThresholdDenominator = denominator,
+        .maxTransactionsPerBlock = 1000, .maxPeerCount = 128});
+    assert(!params.isValid());
+  }
+}
+
+void testOldProtocolVersionIsRejected() {
+  for (const std::string version : {"nodo/0.2", "nodo/0.3"}) {
+    const NetworkParameters params(nodo::config::NetworkParameterValues{
+        .chainId = "nodo-old-1", .networkName = "old",
+        .protocolVersion = version, .epochDurationSeconds = 60,
+        .minimumValidatorCount = 1, .quorumThresholdNumerator = 2,
+        .quorumThresholdDenominator = 3, .maxTransactionsPerBlock = 1000,
+        .maxPeerCount = 128});
+    assert(!params.isValid());
+  }
 }
 
 } // namespace
@@ -80,5 +99,6 @@ int main() {
   testNetworkClassStringConversion();
   testDevelopmentLocalNotSafeForProduction();
   testUnsafeQuorumThresholdIsRejected();
+  testOldProtocolVersionIsRejected();
   return 0;
 }

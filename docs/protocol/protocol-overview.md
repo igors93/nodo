@@ -1,5 +1,8 @@
 # Protocol Overview
 
+This page describes the current development implementation. The proposed
+incompatible v1 rules are in the [protocol v1 design contract](../spec/protocol-v1.md).
+
 Nodo's protocol is composed of five main layers:
 
 1. network admission and message exchange;

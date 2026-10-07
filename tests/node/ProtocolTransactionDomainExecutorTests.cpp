@@ -6,6 +6,7 @@
 #include "crypto/KeyPair.hpp"
 #include "node/FeeEconomics.hpp"
 #include "node/ProtocolTransactionDomainExecutor.hpp"
+#include "node/ValidatorSetSchedule.hpp"
 
 #include <iostream>
 #include <memory>
@@ -52,7 +53,7 @@ Fixture fixture() {
       utils::Amount::fromRawUnits(
           core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + 2000),
       1, false);
-  staking.activatePending(2);
+  staking.activatePending(node::ValidatorSetSchedule::activationHeight(1));
 
   return {node::ProtocolExecutionState{node::GovernanceExecutor(),
                                        validators,

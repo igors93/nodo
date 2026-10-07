@@ -191,7 +191,7 @@ PeerInfo localPeer() {
     return PeerInfo(
         "runtime-state-loader-peer",
         "127.0.0.1:9600",
-        "nodo/0.1",
+        "nodo/0.4",
         0,
         kTimestamp
     );
@@ -800,7 +800,7 @@ void testRejectsFinalizedBlockWithInvalidQuorumCertificate() {
 
     contents = replaceAll(
         contents,
-        "requiredVotingWeight=667",
+        "requiredVotingWeight=666667",
         "requiredVotingWeight=2000"
     );
 

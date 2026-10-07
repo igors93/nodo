@@ -105,7 +105,7 @@ p2p::PeerInfo localPeer(const std::string& tag = "default") {
     return p2p::PeerInfo(
         "readiness-peer-" + tag,
         "127.0.0.1:19600",
-        "nodo/0.1",
+        "nodo/0.4",
         0,
         kTimestamp
     );

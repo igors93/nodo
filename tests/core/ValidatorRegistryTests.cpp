@@ -1,4 +1,5 @@
 #include "core/ValidatorRegistry.hpp"
+#include "consensus/QuorumCertificate.hpp"
 #include "crypto/Address.hpp"
 #include "crypto/AddressDerivation.hpp"
 #include "crypto/KeyPair.hpp"
@@ -6,6 +7,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -326,6 +328,136 @@ void testValidatorSetHistoryRejectsHeightGaps() {
     );
 }
 
+void testStakeSplittingCannotIncreaseQuorumPower() {
+    constexpr std::uint64_t oneNodo =
+        ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS;
+    const auto attackerA = registrationFor(publicKey("split-a"), 1,
+                                           "metadata-split-a", kTimestamp);
+    const auto attackerB = registrationFor(publicKey("split-b"), 1,
+                                           "metadata-split-b", kTimestamp);
+    const auto honest = registrationFor(publicKey("split-honest"), 1,
+                                        "metadata-split-honest", kTimestamp);
+
+    ValidatorRegistry concentrated;
+    requireCondition(concentrated.registerValidator(attackerA, 30 * oneNodo,
+                                                    attackerA.validatorAddress()).accepted(),
+                     "concentrated attacker registration should succeed");
+    requireCondition(concentrated.registerValidator(honest, 60 * oneNodo,
+                                                    honest.validatorAddress()).accepted(),
+                     "honest registration should succeed");
+
+    ValidatorRegistry split;
+    requireCondition(split.registerValidator(attackerA, 15 * oneNodo,
+                                            attackerA.validatorAddress()).accepted(),
+                     "first split registration should succeed");
+    requireCondition(split.registerValidator(attackerB, 15 * oneNodo,
+                                            attackerB.validatorAddress()).accepted(),
+                     "second split registration should succeed");
+    requireCondition(split.registerValidator(honest, 60 * oneNodo,
+                                            honest.validatorAddress()).accepted(),
+                     "honest registration in split set should succeed");
+
+    const std::uint64_t concentratedAttacker =
+        concentrated.consensusWeightFor(attackerA.validatorAddress());
+    const std::uint64_t splitAttacker =
+        split.consensusWeightFor(attackerA.validatorAddress()) +
+        split.consensusWeightFor(attackerB.validatorAddress());
+    requireCondition(concentratedAttacker == splitAttacker &&
+                         concentratedAttacker == 30 * oneNodo,
+                     "splitting keys must not create attacker voting power");
+    requireCondition(concentrated.totalConsensusWeight() ==
+                         split.totalConsensusWeight(),
+                     "splitting keys must not change total quorum weight");
+    requireCondition(split.eligibleValidatorAddresses().size() == 3,
+                     "split keys must not displace the honest validator");
+    requireCondition(
+        nodo::consensus::QuorumCertificateBuilder::requiredVotingWeight(
+            concentrated.totalConsensusWeight(), 2, 3) ==
+            nodo::consensus::QuorumCertificateBuilder::requiredVotingWeight(
+                split.totalConsensusWeight(), 2, 3),
+        "splitting keys must not change the quorum threshold");
+}
+
+void testInvalidStakeAndAggregateOverflowFailClosed() {
+    const auto belowMinimum = registrationFor(publicKey("below-minimum"), 1,
+                                               "metadata-below", kTimestamp);
+    ValidatorRegistry registry;
+    requireCondition(!registry.registerValidator(
+                         belowMinimum,
+                         ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS - 1,
+                         belowMinimum.validatorAddress()).success(),
+                     "a validator below the minimum must be rejected");
+
+    const auto first = registrationFor(publicKey("overflow-a"), 1,
+                                        "metadata-overflow-a", kTimestamp);
+    const auto second = registrationFor(publicKey("overflow-b"), 1,
+                                         "metadata-overflow-b", kTimestamp);
+    const auto third = registrationFor(publicKey("overflow-c"), 1,
+                                        "metadata-overflow-c", kTimestamp);
+    constexpr std::uint64_t largestAmount =
+        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    requireCondition(registry.registerValidator(first, largestAmount,
+                                                first.validatorAddress()).accepted(),
+                     "largest representable stake should be accepted");
+    requireCondition(registry.registerValidator(second, largestAmount,
+                                                second.validatorAddress()).accepted(),
+                     "two largest stakes still fit the aggregate");
+    const auto rejected = registry.registerValidator(
+        third, ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS,
+        third.validatorAddress());
+    requireCondition(!rejected.success() && registry.size() == 2 &&
+                         registry.isValid(),
+                     "aggregate overflow must reject and preserve registry");
+
+    ValidatorRegistry withPending = registry;
+    requireCondition(withPending.registerPendingValidator(
+                         third, ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS,
+                         third.validatorAddress()).accepted(),
+                     "pending stake does not yet enter voting weight");
+    const auto rejectedActivation = withPending.activateValidator(
+        third.validatorAddress(), 1, kTimestamp + 1);
+    requireCondition(!rejectedActivation.success() && withPending.isValid() &&
+                         !withPending.isEligibleForConsensus(third.validatorAddress()),
+                     "overflowing activation must leave the validator pending");
+
+    ValidatorRegistry withJailed = registry;
+    requireCondition(withJailed.jailValidator(first.validatorAddress(), 1,
+                                             kTimestamp + 1).success(),
+                     "validator should be jailed before overflow test");
+    requireCondition(withJailed.registerValidator(
+                         third, ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS,
+                         third.validatorAddress()).accepted(),
+                     "released voting headroom should allow another validator");
+    const auto rejectedUnjail = withJailed.unjailValidator(
+        first.validatorAddress(), 1, kTimestamp + 2);
+    requireCondition(!rejectedUnjail.success() && withJailed.isValid() &&
+                         !withJailed.isEligibleForConsensus(first.validatorAddress()),
+                     "overflowing unjail must leave the validator jailed");
+
+    ValidatorRegistry withHeadroom;
+    requireCondition(withHeadroom.registerValidator(
+                         first, largestAmount, first.validatorAddress()).accepted(),
+                     "first bounded stake should register");
+    requireCondition(withHeadroom.registerValidator(
+                         second,
+                         largestAmount -
+                             ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS,
+                         second.validatorAddress()).accepted(),
+                     "second bounded stake should register");
+    requireCondition(withHeadroom.registerValidator(
+                         third, ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS,
+                         third.validatorAddress()).accepted(),
+                     "exactly bounded total should register");
+    const auto rejectedUpdate = withHeadroom.updateStake(
+        third.validatorAddress(),
+        ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + 2,
+        kTimestamp + 1);
+    requireCondition(!rejectedUpdate.success() && withHeadroom.isValid() &&
+                         withHeadroom.consensusWeightFor(third.validatorAddress()) ==
+                             ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS,
+                     "overflowing stake update must preserve previous weight");
+}
+
 } // namespace
 
 int main() {
@@ -337,6 +469,8 @@ int main() {
         testInvalidAddressPublicKeyBindingIsRejected();
         testDeactivateValidator();
         testValidatorSetHistoryRejectsHeightGaps();
+        testStakeSplittingCannotIncreaseQuorumPower();
+        testInvalidStakeAndAggregateOverflowFailClosed();
 
         std::cout << "Nodo validator registry tests passed.\n";
         return 0;

@@ -37,7 +37,7 @@ This roadmap lists every known problem that stands between the current code and 
 
 These ten findings explain the phase order. Each one is detailed in its phase.
 
-1. **Stake splitting multiplies voting power** (1.2, 4.8). Consensus weight is `floor(sqrt(stake))`, the minimum validator stake is 0.01 NODO, and there is no cap on the validator count. Splitting stake `S` into `k` validators yields `sqrt(k·S)` weight, so the BFT "1/3 Byzantine" bound no longer maps to any stake fraction.
+1. **Stake splitting multiplied voting power in `nodo/0.1`** (1.2, 4.8). The former `floor(sqrt(stake))` rule let one party gain weight by creating keys. Since `nodo/0.2`, weight is linear in recorded raw stake. V1 additionally requires every unit of voting weight to be backed by a unique locked stake unit; genesis backing and complete v1 migration remain open.
 2. **A height can stall forever** (4.1). A locked validator can only unlock with a PRECOMMIT quorum certificate for the new block, and proposers never re-propose the locked block.
 3. **Nil votes are broadcast before they are persisted** (4.2). A crash in between lets the validator double-sign after restart.
 4. **Unbonding takes 21 blocks** (1.5, 6.3). A validator can exit before equivocation evidence is included, so slashing cannot be enforced.
@@ -157,7 +157,13 @@ real-TCP handshake pass.
 
 **Goal:** write the rules of the L1 down so later phases implement a specification instead of evolving code. Several current design choices are unsafe and must be decided here, because they change data formats and the consensus security model.
 
-- [ ] **1.1 · Critical · There is no protocol specification.**
+The [v1 design contract](spec/protocol-v1.md) records target rules for several
+items below. Those items stay open until their rationale is captured in
+architecture decision records, the required formal checks and external review
+are complete, and the affected implementation work is scheduled. The v1
+contract is not wire-compatible with the current development runtime.
+
+- [x] **1.1 · Critical · There is no protocol specification.**
   The rules exist only as prose docs plus code.
   *Fix:* write specification v1 covering:
   - the state machine (accounts, coin lots, staking, validators, governance, treasury);
@@ -165,18 +171,57 @@ real-TCP handshake pass.
   - the consensus protocol and finality;
   - canonical encoding;
   - network messages.
+  *Design contract:* [protocol v1](spec/protocol-v1.md) defines the target
+  state machine, all 13 transaction types, ordered rejection codes, block and
+  finality rules, canonical binary encoding and authenticated network messages.
+  [Primitive byte vectors](spec/vectors-v1.md) anchor the encoding rules.
+  This is an incompatible target protocol, not a claim that `nodo/0.4` already
+  implements it. Full signed-object vectors, architecture decision records,
+  formal checking and external BFT review remain in the Phase 1 exit gate;
+  runtime migration remains in Phases 2–8.
 
-- [ ] **1.2 · Critical · The validator weight model is Sybil-amplifiable.**
-  `ConsensusWeight::weightFromStake` is `floor(sqrt(stake))` ([`ConsensusWeight.cpp`](../src/consensus/ConsensusWeight.cpp)). Square root is sub-additive, so splitting stake across `k` validators multiplies voting power by `√k`. `ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS` is 1,000,000 raw units, which is 0.01 NODO, and the active set has no maximum size.
-  *Decide:* linear stake weight (the standard for PoS BFT), or sub-linear weight only with a Sybil-resistant identity. Also set the minimum stake, the maximum active set, and a per-validator weight cap. Then update [staking, rewards and penalties](economics/staking-rewards-and-penalties.md), which currently recommends `integer_sqrt`.
+- [x] **1.2 · Critical · The validator weight model is Sybil-amplifiable.**
+  `nodo/0.1` used `floor(sqrt(stake))`, so splitting stake across `k` validators
+  multiplied voting power by approximately `√k`. The minimum was 0.01 NODO.
+  *Decision and implementation:* [ADR 0001](spec/adr-0001-validator-weight.md)
+  proves the split invariant and rejects square-root weight, per-validator
+  weight caps and naive top-K active-set caps. [Protocol v1](spec/protocol-v1.md)
+  requires linear weight backed one-to-one by locked stake. The development
+  runtime now uses linear weight, the existing 0.01 NODO minimum, checked
+  aggregate weight and version separation. Regression tests cover split stake,
+  historical snapshots, minimum stake and overflow. The remaining stake-lot
+  backing (3.16), genesis migration, epoch timing and active-set resource
+  design remain open; this checkbox does not mark them complete.
 
-- [ ] **1.3 · Critical · The fault model and quorum are unspecified.**
-  The quorum is `ceil(W·2/3)`, which is safe only if Byzantine weight is strictly below `W/3`. `NetworkParameters::isValid` only checks `numerator ≤ denominator`, so a profile with a 1/2 threshold would be accepted.
-  *Fix:* specify `f < W/3` by weight and partial synchrony (GST), and reject thresholds below 2/3 in parameter validation.
+- [x] **1.3 · Critical · The fault model and quorum are unspecified.**
+  The development runtime used `ceil(2W/3)`, which allowed exactly two thirds
+  when `W` was divisible by three, contrary to the v1 contract. Parameter
+  validation already rejected fractions below two thirds, but accepted higher
+  fractions with different liveness assumptions; QC verification accepted
+  noncanonical required-weight metadata.
+  *Decision and implementation:* [ADR 0002](spec/adr-0002-fault-model-and-quorum.md)
+  and [protocol v1](spec/protocol-v1.md) define Byzantine weight `B < W/3`,
+  safety before and after GST, and conditional liveness under partial
+  synchrony. `nodo/0.3` accepts only the canonical 2/3 parameter pair and
+  requires exactly `floor(2W/3)+1` signed weight from the height's validator
+  set. QC metadata, construction and vote-pool progress use the same checked
+  rule. Boundary and intersection tests cover the decision. System-wide
+  safety and liveness still require Phase 4 locking, persistence and formal
+  verification; this checkbox records the Phase 1 rule and arithmetic.
 
-- [ ] **1.4 · Critical · The validator set changes every block.**
-  The set is re-recorded for every height (`recordSet(block.index() + 1, …)` in [`ProtocolStateTransition.cpp`](../src/node/ProtocolStateTransition.cpp) and `RuntimeBlockPipeline`), so a stake change alters weights on the next block. The docs promise an epoch-bound projection, and `StakingRegistry::ACTIVATION_DELAY_BLOCKS` is 1.
-  *Decide:* set changes only at epoch boundaries, an activation delay, and maximum churn per epoch.
+- [x] **1.4 · Critical · The validator set changes every block.**
+  Previously, replay, commit, reload and import copied the mutable economic
+  registry into the next height, so stake and status changes could alter
+  consensus membership in the middle of an epoch.
+  *Decision and implementation:* [ADR 0003](spec/adr-0003-epoch-validator-sets.md)
+  fixes consensus sets for all 43200 heights of an epoch. The final block
+  deterministically projects the next set with two-boundary activation delay
+  and at most 3333 basis points of changed voting weight; excess changes are
+  staged. Proposal and QC paths use the historical set. History stores full
+  registries only when the selected set changes. Boundary, staged-churn and
+  Sybil-split tests cover the policy. The one-to-one locked-stake backing and
+  unbonding guarantees (3.16 and 1.5), light-client transition proofs and
+  dynamic-set formal verification remain separate production gates.
 
 - [ ] **1.5 · Critical · Unbonding is shorter than any evidence window.**
   `StakingRegistry::UNBONDING_DELAY_BLOCKS` is 21. With blocks seconds apart, a validator can leave in about a minute, before equivocation evidence lands in a block. That makes slashing unenforceable and opens long-range attacks.
@@ -208,7 +253,7 @@ real-TCP handshake pass.
   *Decide:* fees per resource unit, block resource limits, and a base-fee mechanism if any.
 
 - [ ] **1.11 · High · There is no protocol upgrade mechanism.**
-  Rules are not versioned by activation height; the protocol version is just the string `nodo/0.1`.
+  Rules are not versioned by activation height; the protocol version is just the string `nodo/0.4`.
   *Specify:* how rule changes activate (height-gated rule sets, version in the header, client signalling) and how historical rules stay replayable.
 
 - [ ] **1.12 · Medium · Programmability is undecided.**
@@ -296,8 +341,11 @@ real-TCP handshake pass.
   *Fix:* a write batch or overlay on top of the state store.
 
 - [ ] **3.2 · Critical · The whole chain lives in memory.**
-  `Blockchain` holds every `Block` in a `std::vector`. `ValidatorSetHistory` stores a full `ValidatorRegistry` copy for every height in a `std::map`, so memory grows as height × validators.
-  *Fix:* keep blocks on disk behind a bounded cache, and store validator sets only where they change (1.4).
+  `Blockchain` still holds every `Block` in a `std::vector`, so memory grows
+  with chain length. `ValidatorSetHistory` now stores full registries only at
+  actual set changes, but the block and state caches remain unbounded.
+  *Fix:* keep blocks on disk behind a bounded cache and use transactional
+  state overlays instead of copying the whole runtime.
 
 - [ ] **3.3 · Critical · Hot paths replay from genesis.**
   `ProtocolStateTransition::replayNextBlock` calls `replayToTip`, which re-executes the whole chain; `GovernanceArtifactValidator` uses it. `RuntimeAccountStateBuilder` and `RuntimeStateVerifier` also replay to the tip.
@@ -357,6 +405,10 @@ real-TCP handshake pass.
 - [ ] **3.15 · Medium · No storage migrations.**
   The docs require explicit, versioned, tested migrations, but only schema-version checks exist.
 
+- [ ] **3.16 · Critical · Bootstrap voting stake is synthesized rather than proven by locked coin lots.**
+  `GenesisBuilder::build` floors each `bootstrapWeight` to `MIN_VALIDATOR_STAKE_RAW_UNITS` before registering its voting weight. The resulting registry entry is not a proof that distinct genesis coin lots of that amount were locked to that validator. Linear weights alone cannot establish a stake-based Byzantine bound without that backing.
+  *Fix:* encode exact bootstrap stake amounts and unique stake-lot commitments in genesis; reject missing, duplicated, underfunded or mismatched allocations; derive each initial validator's weight only from the locked lots. Apply the same one-to-one invariant to later registrations, stake changes, state replay and snapshots, with adversarial conservation tests.
+
 **Exit gate:**
 - A benchmark with 1M blocks and 1M accounts shows flat commit time and memory as the chain grows.
 - Crash-injection tests (kill at every write point) always reload to a consistent state.
@@ -392,11 +444,16 @@ real-TCP handshake pass.
   Timeouts do not grow per round, which partial-synchrony liveness requires. Elapsed time is computed as `(now - start) * 1000` from whole-second timestamps, and `NodeRuntime::advanceConsensusRoundIfTimedOut` truncates the millisecond sum to whole seconds.
   *Fix:* a monotonic millisecond clock and timeouts that increase per round.
 
-- [ ] **4.7 · High · The next proposer is computed from the wrong validator set.**
-  `NodeRuntime::advanceConsensusRoundIfTimedOut` selects the next round's proposer from the current `m_validatorRegistry`, while voting and proposal checks use `validatorSetHistory().setAt(height)`. When the set changes, the two disagree and the expected proposer's block is rejected.
-  *Fix:* use the height's set everywhere.
+- [x] **4.7 · High · The next proposer is computed from the wrong validator set.**
+  Timeout rounds, block production, commit, reload and artifact import now
+  select the proposer from `validatorSetHistory().setAt(height)`, the same
+  frozen set used by voting and proposal validation. Epoch-boundary tests
+  exercise old and new sets separately.
 
-- [ ] **4.8 · Critical · Implement the Phase 1 consensus decisions:** the weight model (1.2), epoch-boundary set changes and active-set cap (1.4), BFT time (1.7) and the proposer rule (1.13).
+- [ ] **4.8 · Critical · Complete the Phase 1 consensus decisions:** consume
+  one-to-one stake backing (3.16), prove the epoch transition and bounded
+  churn rules of 1.4 against the dynamic-set fault model, implement the v1
+  evidence-driven jail exception, BFT time (1.7) and proposer rule (1.13).
 
 - [ ] **4.9 · High · No evidence lifecycle.**
   *Fix:* enforce a maximum evidence age (1.5), guarantee evidence inclusion before unbonding completes, and keep evidence for the weak-subjectivity window.

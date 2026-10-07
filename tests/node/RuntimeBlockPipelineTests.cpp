@@ -160,7 +160,7 @@ PeerInfo localPeer() {
     return PeerInfo(
         "runtime-pipeline-peer",
         "127.0.0.1:9300",
-        "nodo/0.1",
+        "nodo/0.4",
         0,
         kTimestamp
     );
@@ -192,7 +192,7 @@ NodeRuntime startTestnetCandidateRuntime() {
                 PeerInfo(
                     "runtime-pipeline-testnet-peer",
                     "127.0.0.1:9301",
-                    "nodo/0.1",
+                    "nodo/0.4",
                     0,
                     kTimestamp
                 ),

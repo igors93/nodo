@@ -1322,7 +1322,10 @@ void NodeOrchestrator::setLocalNodeIdentity(crypto::KeyPair nodeIdentityKey) {
 std::optional<core::Block> NodeOrchestrator::produceBlock(std::uint64_t height,
                                                           std::uint64_t round,
                                                           std::int64_t now) {
-  if (m_runtime->validatorRegistry().totalConsensusWeight() == 0)
+  if (!m_runtime->validatorSetHistory().hasSet(height))
+    return std::nullopt;
+  const auto &validators = m_runtime->validatorSetHistory().setAt(height);
+  if (validators.totalConsensusWeight() == 0)
     return std::nullopt;
 
   // Confirm this node is the designated proposer for (height, round).
@@ -1330,7 +1333,7 @@ std::optional<core::Block> NodeOrchestrator::produceBlock(std::uint64_t height,
       m_config.genesisConfig().networkParameters().chainId();
   const std::string expectedProposer =
       consensus::ProposerSchedule::selectProposer(
-          m_runtime->validatorRegistry(), chainId, height, round);
+          validators, chainId, height, round);
 
   if (expectedProposer != m_config.localValidatorAddress())
     return std::nullopt;

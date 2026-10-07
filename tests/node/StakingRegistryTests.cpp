@@ -1,4 +1,5 @@
 #include "node/StakingRegistry.hpp"
+#include "node/ValidatorSetSchedule.hpp"
 
 #include "economics/StakeAccount.hpp"
 #include "utils/Amount.hpp"
@@ -92,16 +93,19 @@ void testDepositActivationUnlockWithdrawLifecycle() {
     reg.deposit("owner-a", "val-a", Amount::fromRawUnits(1'000), 10, false, "tx-deposit");
     assert(reg.pendingActivationStake("owner-a", "val-a").rawUnits() == 1'000);
     assert(reg.activeStake("owner-a", "val-a").isZero());
-    assert(reg.activatePending(11));
+    const std::uint64_t activation =
+        nodo::node::ValidatorSetSchedule::activationHeight(10);
+    assert(!reg.activatePending(activation - 1));
+    assert(reg.activatePending(activation));
     assert(reg.activeStake("owner-a", "val-a").rawUnits() == 1'000);
 
-    reg.requestUnlock("owner-a", "val-a", Amount::fromRawUnits(400), 12, "tx-unlock");
+    reg.requestUnlock("owner-a", "val-a", Amount::fromRawUnits(400), activation + 1, "tx-unlock");
     assert(reg.activeStake("owner-a", "val-a").rawUnits() == 600);
     assert(reg.pendingUnbondingStake("owner-a", "val-a").rawUnits() == 400);
-    assert(reg.withdrawableStake("owner-a", "val-a", 12).isZero());
-    assert(reg.withdrawableStake("owner-a", "val-a", 33).rawUnits() == 400);
+    assert(reg.withdrawableStake("owner-a", "val-a", activation + 1).isZero());
+    assert(reg.withdrawableStake("owner-a", "val-a", activation + 22).rawUnits() == 400);
 
-    reg.withdraw("owner-a", "val-a", Amount::fromRawUnits(400), 33, "tx-withdraw");
+    reg.withdraw("owner-a", "val-a", Amount::fromRawUnits(400), activation + 22, "tx-withdraw");
     assert(reg.ownedStake("owner-a", "val-a").rawUnits() == 600);
     assert(reg.accountOrDefault("val-a").bondedAmount().rawUnits() == 600);
     assert(reg.lifecycleRecords().size() == 4);
@@ -111,8 +115,10 @@ void testDepositActivationUnlockWithdrawLifecycle() {
 void testPenaltyStateSlashesActiveStakeAndBlocksWithdrawableAmount() {
     StakingRegistry reg;
     reg.deposit("owner-a", "val-a", Amount::fromRawUnits(1'000), 10, false);
-    reg.activatePending(11);
-    reg.applyPenaltyState("val-a", Amount::fromRawUnits(250), true, false, 12);
+    const std::uint64_t activation =
+        nodo::node::ValidatorSetSchedule::activationHeight(10);
+    reg.activatePending(activation);
+    reg.applyPenaltyState("val-a", Amount::fromRawUnits(250), true, false, activation + 1);
 
     const auto account = reg.accountOrDefault("val-a");
     assert(account.bondedAmount().rawUnits() == 1'000);

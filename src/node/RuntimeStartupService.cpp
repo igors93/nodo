@@ -151,14 +151,6 @@ StartupValidationResult RuntimeStartupService::validateNetworkProfile(
         );
     }
 
-    if (params.quorumThresholdNumerator() == 0 ||
-        params.quorumThresholdDenominator() == 0 ||
-        params.quorumThresholdNumerator() > params.quorumThresholdDenominator()) {
-        return StartupValidationResult::failed(
-            "Network profile quorum parameters are invalid."
-        );
-    }
-
     if (params.finalityDepth() == 0) {
         return StartupValidationResult::failed(
             "Network profile finality depth must be at least 1."

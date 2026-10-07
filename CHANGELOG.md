@@ -6,6 +6,26 @@ Nodo does not yet publish versioned production releases. This changelog starts a
 
 ### Security
 
+- **Validator sets are frozen for each epoch in development protocol
+  `nodo/0.4`.** Finalized epoch boundaries project the next voting set with
+  two-boundary activation delay and a 3333-basis-point changed-weight budget.
+  Historical QC verification, replay, reload and artifact import use the
+  selected set. Oversized changes are staged, and history stores snapshots
+  only when the set changes. This is incompatible with `nodo/0.3` state;
+  [ADR 0003](docs/spec/adr-0003-epoch-validator-sets.md) records the rule and
+  remaining production prerequisites.
+- **Quorum is strictly greater than two thirds of historical voting weight.**
+  Profiles accept only the canonical 2/3 fraction; vote pools and certificates
+  require `floor(2W/3)+1` weight, and certificate validation rejects a forged
+  threshold. The incompatible development protocol is `nodo/0.3`; there is no
+  in-place migration from `nodo/0.2`. [ADR 0002](docs/spec/adr-0002-fault-model-and-quorum.md)
+  defines the Byzantine fault bound and partial-synchrony assumptions.
+- **Validator voting power is linear in recorded active stake.** Splitting a
+  stake across keys no longer increases aggregate voting weight. Registry
+  transitions reject weight overflow. The change was introduced in the
+  `nodo/0.2` development rules; older state has no in-place migration.
+  [ADR 0001](docs/spec/adr-0001-validator-weight.md) records
+  the design and remaining v1 stake-backing requirements.
 - **testnet-candidate genesis no longer embeds derivable keys.** Its
   bootstrap validator keys, owner keys, and funded account were derived from
   fixed seeds in `GenesisRegistry.cpp`, so anyone could recompute every

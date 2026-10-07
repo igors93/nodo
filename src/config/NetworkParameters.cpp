@@ -3,6 +3,7 @@
 #include "config/NetworkParameters.hpp"
 #include "config/ProtocolVersion.hpp"
 
+#include "consensus/QuorumThreshold.hpp"
 #include "core/Block.hpp"
 #include "core/LedgerRecord.hpp"
 #include "crypto/AddressDerivation.hpp"
@@ -218,7 +219,8 @@ NetworkClass NetworkParameters::networkClass() const {
 
 bool NetworkParameters::isValid() const {
   if (!isSafeScalar(m_chainId) || !isSafeScalar(m_networkName) ||
-      !isSafeScalar(m_protocolVersion) || !isSafeScalar(m_signatureAlgorithm) ||
+      m_protocolVersion != kProtocolVersion ||
+      !isSafeScalar(m_signatureAlgorithm) ||
       !isSafeScalar(m_storageFormatVersion)) {
     return false;
   }
@@ -230,10 +232,8 @@ bool NetworkParameters::isValid() const {
     return false;
   }
 
-  if (m_quorumThresholdNumerator == 0 || m_quorumThresholdDenominator == 0 ||
-      m_quorumThresholdNumerator > m_quorumThresholdDenominator ||
-      static_cast<unsigned __int128>(m_quorumThresholdNumerator) * 3 <
-          static_cast<unsigned __int128>(m_quorumThresholdDenominator) * 2) {
+  if (!consensus::QuorumThreshold::isCanonicalFraction(
+          m_quorumThresholdNumerator, m_quorumThresholdDenominator)) {
     return false;
   }
 

@@ -12,6 +12,7 @@
 #include "crypto/SigningDomain.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <string>
 
 namespace {
@@ -97,6 +98,13 @@ int main() {
     nodo::consensus::VotePool pool;
     const nodo::core::ValidatorRegistry registry = validatorRegistry();
 
+    constexpr std::uint64_t stake =
+        nodo::core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS;
+    const nodo::consensus::VotePoolQuorumProgress forgedProgress(
+        1, "block-hash-A", 1, 2 * stake, 2 * stake, 3 * stake);
+    assert(!forgedProgress.isValid());
+    assert(!forgedProgress.canCertify());
+
     const auto vote = makeVote(
         "A",
         "block-hash-A",
@@ -112,9 +120,12 @@ int main() {
         pool.quorumProgressForBlock(1, "block-hash-A", 1, registry, 2, 3);
 
     assert(partialProgress.isValid());
-    assert(partialProgress.acceptedVotingWeight() == 1000);
-    assert(partialProgress.requiredVotingWeight() == 2000);
-    assert(partialProgress.totalVotingWeight() == 3000);
+    assert(partialProgress.acceptedVotingWeight() ==
+           nodo::core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS);
+    assert(partialProgress.requiredVotingWeight() ==
+           2 * nodo::core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + 1);
+    assert(partialProgress.totalVotingWeight() ==
+           3 * nodo::core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS);
     assert(!partialProgress.canCertify());
 
     const auto secondAccepted = pool.submitVote(
@@ -133,9 +144,22 @@ int main() {
         pool.quorumProgressForBlock(1, "block-hash-A", 1, registry, 2, 3);
 
     assert(quorumProgress.isValid());
-    assert(quorumProgress.acceptedVotingWeight() == 2000);
-    assert(quorumProgress.requiredVotingWeight() == 2000);
-    assert(quorumProgress.canCertify());
+    assert(quorumProgress.acceptedVotingWeight() ==
+           2 * nodo::core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS);
+    assert(quorumProgress.requiredVotingWeight() ==
+           2 * nodo::core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + 1);
+    assert(!quorumProgress.canCertify());
+
+    const auto thirdAccepted = pool.submitVote(
+        makeVote("C", "block-hash-A",
+                 nodo::consensus::ValidatorVoteDecision::PRECOMMIT),
+        ctx.policy(), ctx.validatorSignatureProvider());
+    assert(thirdAccepted.accepted());
+    const auto strictQuorumProgress =
+        pool.quorumProgressForBlock(1, "block-hash-A", 1, registry, 2, 3);
+    assert(strictQuorumProgress.acceptedVotingWeight() ==
+           3 * nodo::core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS);
+    assert(strictQuorumProgress.canCertify());
 
     const auto duplicate = pool.submitVote(vote, ctx.policy(), ctx.validatorSignatureProvider());
     assert(duplicate.duplicate());
@@ -151,7 +175,7 @@ int main() {
     );
 
     assert(replaySameSlot.duplicate());
-    assert(pool.totalVoteCount() == 2);
+    assert(pool.totalVoteCount() == 3);
 
     const auto conflicting = pool.submitVote(
         makeVote(

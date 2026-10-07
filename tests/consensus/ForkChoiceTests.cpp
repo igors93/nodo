@@ -178,7 +178,8 @@ QuorumCertificate certificateFor(
 ) {
     const std::vector<ValidatorVoteRecord> votes = {
         voteFor("a", block, kTimestamp + 10),
-        voteFor("b", block, kTimestamp + 11)
+        voteFor("b", block, kTimestamp + 11),
+        voteFor("c", block, kTimestamp + 12)
     };
 
     const Bls12381SignatureProvider provider;

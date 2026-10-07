@@ -73,7 +73,6 @@ struct StakeLifecycleRecord {
 class StakingRegistry {
 public:
   static constexpr std::uint64_t UNBONDING_DELAY_BLOCKS = 21;
-  static constexpr std::uint64_t ACTIVATION_DELAY_BLOCKS = 1;
 
   struct Position {
     std::string positionId;
