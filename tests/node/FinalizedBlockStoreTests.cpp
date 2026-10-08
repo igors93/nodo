@@ -217,7 +217,7 @@ PeerInfo localPeer() {
     return PeerInfo(
         "finalized-block-store-peer",
         "127.0.0.1:9400",
-        "nodo/0.5",
+        "nodo/0.7",
         0,
         kTimestamp
     );

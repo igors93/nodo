@@ -12,7 +12,7 @@ void testDuplicateAndRoutingValidation() {
     nodo::p2p::NetworkEnvelope first(
         "nodo-localnet",
         "nodo-localnet-1",
-        "nodo/0.5",
+        "nodo/0.7",
         nodo::p2p::NetworkMessageType::PEER_HELLO,
         "node-A",
         1000,
@@ -24,7 +24,7 @@ void testDuplicateAndRoutingValidation() {
         first,
         "nodo-localnet",
         "nodo-localnet-1",
-        "nodo/0.5",
+        "nodo/0.7",
         1001
     );
 
@@ -35,7 +35,7 @@ void testDuplicateAndRoutingValidation() {
         first,
         "nodo-localnet",
         "nodo-localnet-1",
-        "nodo/0.5",
+        "nodo/0.7",
         1002
     );
 
@@ -44,7 +44,7 @@ void testDuplicateAndRoutingValidation() {
     nodo::p2p::NetworkEnvelope wrongChain(
         "nodo-localnet",
         "wrong-chain",
-        "nodo/0.5",
+        "nodo/0.7",
         nodo::p2p::NetworkMessageType::PING,
         "node-B",
         1000,
@@ -56,7 +56,7 @@ void testDuplicateAndRoutingValidation() {
         wrongChain,
         "nodo-localnet",
         "nodo-localnet-1",
-        "nodo/0.5",
+        "nodo/0.7",
         1001
     );
 
@@ -71,7 +71,7 @@ void testPeerRateWindowUsesSeparatePolicy() {
     nodo::p2p::NetworkEnvelope first(
         "nodo-localnet",
         "nodo-localnet-1",
-        "nodo/0.5",
+        "nodo/0.7",
         nodo::p2p::NetworkMessageType::PING,
         "node-rate",
         1000,
@@ -82,7 +82,7 @@ void testPeerRateWindowUsesSeparatePolicy() {
     nodo::p2p::NetworkEnvelope second(
         "nodo-localnet",
         "nodo-localnet-1",
-        "nodo/0.5",
+        "nodo/0.7",
         nodo::p2p::NetworkMessageType::PING,
         "node-rate",
         1001,
@@ -93,7 +93,7 @@ void testPeerRateWindowUsesSeparatePolicy() {
     nodo::p2p::NetworkEnvelope afterWindow(
         "nodo-localnet",
         "nodo-localnet-1",
-        "nodo/0.5",
+        "nodo/0.7",
         nodo::p2p::NetworkMessageType::PING,
         "node-rate",
         1003,
@@ -106,7 +106,7 @@ void testPeerRateWindowUsesSeparatePolicy() {
             first,
             "nodo-localnet",
             "nodo-localnet-1",
-            "nodo/0.5",
+            "nodo/0.7",
             1001
         ).accepted()
     );
@@ -115,7 +115,7 @@ void testPeerRateWindowUsesSeparatePolicy() {
         second,
         "nodo-localnet",
         "nodo-localnet-1",
-        "nodo/0.5",
+        "nodo/0.7",
         1002
     );
 
@@ -125,7 +125,7 @@ void testPeerRateWindowUsesSeparatePolicy() {
         afterWindow,
         "nodo-localnet",
         "nodo-localnet-1",
-        "nodo/0.5",
+        "nodo/0.7",
         1004
     );
 

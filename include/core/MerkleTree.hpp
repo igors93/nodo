@@ -38,6 +38,14 @@ public:
         std::vector<std::string> leafPayloads
     );
 
+    // Block records are an ordered execution sequence. Their commitment must
+    // bind each record to its position, unlike buildRoot's sorted-set semantics.
+    static std::string buildOrderedRoot(
+        const std::vector<std::string>& leafPayloads
+    );
+    static std::string hashOrderedLeaf(std::size_t index,
+                                       const std::string& payload);
+
     /*
      * Hash a single leaf with the leaf domain prefix.
      */

@@ -60,6 +60,16 @@ One-to-one stake-lot backing and formal dynamic-set safety checks remain open.
 The enforced 21-epoch evidence and 28-epoch plus calendar unbonding windows
 are defined in [ADR 0004](../spec/adr-0004-accountability-windows.md).
 
+## Consensus time
+
+[ADR 0006](../spec/adr-0006-bft-time.md) defines v1 header time from the
+verified parent PRECOMMIT QC's historical-weight lower median, with checked
+genesis and parent-time floors. `nodo/0.7` rejects PRECOMMIT votes whose
+timestamp precedes the certified block, and `BftTime` implements the checked
+reference calculation. Production, replay and import still need to enforce
+the exact v1 header time. Live future-message holding and round timeouts must
+use local clocks separately from replayable block validity.
+
 ## Remaining consensus work
 
 Before public testnet, implementation and formal checking must establish:

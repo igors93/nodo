@@ -77,6 +77,15 @@ const std::string &Block::stateRoot() const { return m_stateRoot; }
 
 const std::string &Block::receiptsRoot() const { return m_receiptsRoot; }
 
+std::string Block::recordsRoot() const {
+  std::vector<std::string> payloads;
+  payloads.reserve(m_records.size());
+  for (const LedgerRecord &record : m_records) {
+    payloads.push_back(record.serialize());
+  }
+  return MerkleTree::buildOrderedRoot(payloads);
+}
+
 bool Block::isGenesisBlock() const {
   return m_index == 0 && m_previousHash == "GENESIS";
 }
@@ -174,40 +183,13 @@ bool Block::isWithinResourceLimits() const {
 
 std::string Block::headerPayload() const {
   std::ostringstream oss;
-
-  /*
-   * The order of these fields must remain stable.
-   * Block hash depends on this exact representation.
-   *
-   * Records are committed via a Merkle root instead of concatenation.
-   * Direct concatenation with a ',' separator created a second-preimage
-   * risk: an address containing ',' could produce an ambiguous serialisation
-   * where two distinct record sets yield the same headerPayload string, and
-   * therefore the same block hash.  MerkleTree::buildRoot hashes each leaf
-   * independently with a domain-separated prefix, eliminating that ambiguity.
-   */
-  std::vector<std::string> recordPayloads;
-  recordPayloads.reserve(m_records.size());
-  for (const auto &record : m_records) {
-    recordPayloads.push_back(record.serialize());
-  }
-  const std::string recordsMerkleRoot = MerkleTree::buildRoot(recordPayloads);
-
   oss << "BlockHeader{"
       << "index=" << m_index << ";previousHash=" << m_previousHash
       << ";timestamp=" << m_timestamp
-      << ";recordsMerkleRoot=" << recordsMerkleRoot
+      << ";recordCount=" << m_records.size()
+      << ";recordsMerkleRoot=" << recordsRoot()
       << ";stateRoot=" << m_stateRoot << ";receiptsRoot=" << m_receiptsRoot
-      << ";records=[";
-
-  for (std::size_t i = 0; i < m_records.size(); ++i) {
-    if (i > 0) {
-      oss << ",";
-    }
-    oss << recordPayloads[i];
-  }
-
-  oss << "]}";
+      << "}";
 
   return oss.str();
 }
@@ -220,7 +202,12 @@ std::string Block::serialize() const {
       << ";hash=" << m_hash << ";timestamp=" << m_timestamp
       << ";stateRoot=" << m_stateRoot << ";receiptsRoot=" << m_receiptsRoot
       << ";recordCount=" << m_records.size() << ";payload=" << headerPayload()
-      << "}";
+      << ";records=[";
+  for (std::size_t i = 0; i < m_records.size(); ++i) {
+    if (i != 0) oss << ",";
+    oss << m_records[i].serialize();
+  }
+  oss << "]}";
 
   return oss.str();
 }
@@ -312,41 +299,29 @@ std::optional<Block> Block::deserialize(const std::string &text) {
   } catch (...) {
     return std::nullopt;
   }
-  if (recordCount == 0)
+  if (recordCount == 0 || recordCount > MAX_RECORDS)
     return std::nullopt;
 
-  // Extract the records array from inside the payload
-  // (BlockHeader{...;records=[...]}).
-  if (payload.rfind("BlockHeader{", 0) != 0 || payload.size() < 16) {
+  // The header must be complete and the body must be a separate trailing
+  // section. The final canonical round-trip below rejects duplicate or
+  // reordered metadata and any stale embedded-record header format.
+  if (payload.rfind("BlockHeader{", 0) != 0 || payload.back() != '}') {
     return std::nullopt;
   }
 
-  const std::string recordsKey = "records=[";
-  const auto recPos = payload.find(recordsKey);
+  const std::string recordsKey = ";records=[";
+  const auto recPos = text.find(recordsKey);
   if (recPos == std::string::npos)
     return std::nullopt;
 
   const auto arrayStart = recPos + recordsKey.size();
-  // Find the matching ']' for the records array.
-  int depth = 0;
-  std::size_t arrayEnd = arrayStart;
-  while (arrayEnd < payload.size()) {
-    const char c = payload[arrayEnd];
-    if (c == '[')
-      ++depth;
-    else if (c == ']') {
-      if (depth == 0)
-        break;
-      --depth;
-    }
-    ++arrayEnd;
-  }
-  if (arrayEnd >= payload.size() || payload[arrayEnd] != ']' ||
-      arrayEnd + 2 != payload.size() || payload[arrayEnd + 1] != '}') {
+  if (text.size() < arrayStart + 2 ||
+      text.compare(text.size() - 2, 2, "]}") != 0) {
     return std::nullopt;
   }
+  const std::size_t arrayEnd = text.size() - 2;
   const std::string arrayContent =
-      payload.substr(arrayStart, arrayEnd - arrayStart);
+      text.substr(arrayStart, arrayEnd - arrayStart);
 
   // Split arrayContent into individual LedgerRecord strings by tracking brace
   // depth.
@@ -404,6 +379,8 @@ std::optional<Block> Block::deserialize(const std::string &text) {
                 receiptsRoot);
     // Verify hash integrity.
     if (block.hash() != storedHash)
+      return std::nullopt;
+    if (block.headerPayload() != payload)
       return std::nullopt;
     if (block.serialize() != text)
       return std::nullopt;

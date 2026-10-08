@@ -265,7 +265,16 @@ void testLineTopologyFinalizesThroughRelay() {
   proposer.mesh.injectLocalMessage(p2p::NetworkMessageType::BLOCK_PROPOSAL,
                                    proposal.serializedProposal(), proposedAt);
 
-  const std::int64_t now = kGenesisTimestamp + 1;
+  // The test controls time explicitly: start round 1 when the proposal is
+  // delivered, so its old genesis-time timeout cannot discard the candidate.
+  for (TestNode *node : line) {
+    auto &manager = node->runtime.mutableConsensusRoundManager();
+    const auto &state = manager.currentState();
+    manager.advanceToHeight(state.height(), state.round(),
+                            state.proposerAddress(), proposedAt,
+                            genesis.networkParameters().targetBlockTimeSeconds());
+  }
+  const std::int64_t now = proposedAt;
   if (!runUntilAllFinalized(line, now)) {
     std::string heights;
     for (const TestNode *node : line) {

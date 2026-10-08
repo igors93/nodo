@@ -16,6 +16,7 @@
 #include "crypto/PrivateKey.hpp"
 #include "crypto/PublicKey.hpp"
 #include "economics/ValidationWorkRecord.hpp"
+#include "utils/JsonText.hpp"
 
 #include <cassert>
 #include <iostream>
@@ -28,6 +29,7 @@ namespace {
 using namespace nodo;
 using nodo::node::LightClientHeader;
 using nodo::node::LightClientProtocolVerifier;
+using nodo::node::LightClientTransactionProof;
 
 constexpr std::int64_t kTimestamp = 1900000000;
 using nodo::test::require;
@@ -420,6 +422,52 @@ void testRejectsMalformedEmbeddedFields() {
   require(!reason.empty(), "rejection must carry a reason");
 }
 
+void testRejectsMetadataNotBoundToCompactHeader() {
+  const crypto::Bls12381SignatureProvider provider;
+  const ChainFixture fixture = buildChainFixture();
+  const LightClientHeader tampered(
+      fixture.header1.networkName(), fixture.header1.chainId(),
+      fixture.header1.genesisConfigId(), fixture.header1.height(),
+      fixture.header1.blockHash(), fixture.header1.previousHash(),
+      std::string(64, 'f'), fixture.header1.receiptsRoot(),
+      fixture.header1.timestamp(), fixture.header1.headerPayload(),
+      fixture.header1.validatorSetRoot(), fixture.header1.finalizedRecord(),
+      fixture.header1.quorumCertificate());
+  require(!tampered.headerHashMatches(),
+          "uncommitted light-client metadata must not match the header");
+  std::string reason;
+  require(!LightClientProtocolVerifier::verifyFinalizedHeader(
+              tampered, fixture.registry1, fixture.policy, provider, &reason),
+          "a QC must not authenticate metadata outside the compact header");
+}
+
+void testOrderedRecordProofBindsIdentityAndIndex() {
+  const ChainFixture fixture = buildChainFixture();
+  const auto &record = fixture.block1.records().front();
+  const std::string serialized = record.serialize();
+  const std::string json =
+      "{\"id\":" + utils::jsonString(record.id()) +
+      ",\"sourceId\":" + utils::jsonString(record.sourceId()) +
+      ",\"type\":" +
+      utils::jsonString(core::ledgerRecordTypeToString(record.type())) +
+      ",\"payloadHash\":" + utils::jsonString(record.payloadHash()) +
+      ",\"timestamp\":" + std::to_string(record.timestamp()) + "}";
+  const core::MerkleProof merkle(
+      core::MerkleTree::hashOrderedLeaf(0, serialized), {});
+  const LightClientTransactionProof valid(
+      fixture.header1, record.id(), json, fixture.block1.recordsRoot(),
+      merkle, 0, serialized);
+  require(valid.verifies(), "the committed ordered record must verify");
+  const LightClientTransactionProof wrongId(
+      fixture.header1, "unrelated-id", json, fixture.block1.recordsRoot(),
+      merkle, 0, serialized);
+  require(!wrongId.verifies(), "proof must bind the transaction ID");
+  const LightClientTransactionProof wrongIndex(
+      fixture.header1, record.id(), json, fixture.block1.recordsRoot(),
+      merkle, 1, serialized);
+  require(!wrongIndex.verifies(), "proof must bind the record index");
+}
+
 void testChainRejectsMissingValidatorSetForHeight() {
   const crypto::Bls12381SignatureProvider provider;
   const ChainFixture fixture = buildChainFixture();
@@ -451,6 +499,8 @@ int main() {
     testRejectsInsufficientSignedWeight();
     testRejectsInconsistentStandaloneQuorumCertificateField();
     testRejectsMalformedEmbeddedFields();
+    testRejectsMetadataNotBoundToCompactHeader();
+    testOrderedRecordProofBindsIdentityAndIndex();
     testChainRejectsMissingValidatorSetForHeight();
     std::cout << "Nodo LightClientProtocol tests passed.\n";
     return 0;

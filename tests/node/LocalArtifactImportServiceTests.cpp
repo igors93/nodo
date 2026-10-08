@@ -89,7 +89,7 @@ config::GenesisConfig buildGenesis(
 }
 
 p2p::PeerInfo peerInfo(const std::string& id, const std::string& ep) {
-    return p2p::PeerInfo(id, ep, "nodo/0.5", 0, kTimestamp);
+    return p2p::PeerInfo(id, ep, "nodo/0.7", 0, kTimestamp);
 }
 
 node::NodeRuntime startRuntime(

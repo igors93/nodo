@@ -1,9 +1,6 @@
 #include "serialization/BlockCodec.hpp"
 
-#include "serialization/FieldCodec.hpp"
-#include "serialization/LedgerRecordCodec.hpp"
 #include "storage/BlockSnapshotHeader.hpp"
-
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -12,48 +9,13 @@
 namespace nodo::serialization {
 
 core::Block BlockCodec::deserialize(const std::string &serializedBlock) {
-  if (serializedBlock.rfind("Block{", 0) != 0) {
-    throw std::invalid_argument("Serialized object is not a Block.");
-  }
-
-  const storage::BlockSnapshotHeader snapshotHeader =
+  const auto header =
       storage::BlockSnapshotHeader::fromSerializedBlock(serializedBlock);
-
-  std::vector<core::LedgerRecord> records =
-      LedgerRecordCodec::deserializeListFromBlockHeaderPayload(
-          snapshotHeader.headerPayload());
-
-  if (records.size() != snapshotHeader.recordCount()) {
-    throw std::logic_error("BlockCodec record count mismatch.");
+  const auto block = core::Block::deserialize(serializedBlock);
+  if (!block || !block->isValid(false) || block->hash() != header.blockHash()) {
+    throw std::invalid_argument("Invalid canonical serialized Block.");
   }
-
-  const std::string stateRoot =
-      FieldCodec::extractField(serializedBlock, "stateRoot");
-
-  const std::string receiptsRoot =
-      FieldCodec::extractField(serializedBlock, "receiptsRoot");
-
-  /*
-   * Block constructor recalculates the block hash from the reconstructed
-   * header payload. This protects against trusting the serialized hash field.
-   */
-  core::Block block(snapshotHeader.blockIndex(), snapshotHeader.previousHash(),
-                    std::move(records), snapshotHeader.timestamp(), stateRoot,
-                    receiptsRoot);
-
-  if (!block.isValid(false)) {
-    throw std::invalid_argument("Deserialized Block is invalid.");
-  }
-
-  if (block.hash() != snapshotHeader.blockHash()) {
-    throw std::logic_error("Deserialized Block hash mismatch.");
-  }
-
-  if (block.serialize() != serializedBlock) {
-    throw std::logic_error("Block round-trip serialization mismatch.");
-  }
-
-  return block;
+  return *block;
 }
 
 core::Block BlockCodec::deserializeFromFile(const std::string &filePath) {

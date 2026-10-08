@@ -71,7 +71,7 @@ PeerInfo peer(const std::string& id, std::uint64_t height) {
     return PeerInfo(
         id,
         "127.0.0.1:9001",
-        "nodo/0.5",
+        "nodo/0.7",
         height,
         kTimestamp
     );
@@ -216,7 +216,7 @@ void testRejectsInvalidPeerMetadata() {
             PeerInfo(
                 "local peer bad",
                 "127.0.0.1:9001",
-                "nodo/0.5",
+                "nodo/0.7",
                 0,
                 kTimestamp
             ),

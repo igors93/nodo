@@ -57,7 +57,7 @@ GenesisConfig genesisConfig() {
 
 PeerInfo peer(const std::string &id, std::uint64_t height = 0,
               std::int64_t lastSeen = kTimestamp) {
-  return PeerInfo(id, "127.0.0.1:9000", "nodo/0.5", height, lastSeen);
+  return PeerInfo(id, "127.0.0.1:9000", "nodo/0.7", height, lastSeen);
 }
 
 nodo::consensus::ValidatorVoteRecord

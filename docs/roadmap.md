@@ -46,7 +46,7 @@ These ten findings explain the phase order. Each one is detailed in its phase.
 7. **One slow peer stalls the node** (5.1). Blocking reads inside the single daemon loop let a peer that trickles bytes block consensus.
 8. **Fast sync is not anchored to finality** (5.3). A snapshot is checked only against a manifest supplied by the same peer, and the import path is wired only in tests.
 9. **Development monetary policy runs on every network** (6.1, 6.2). The "annual" inflation caps are measured in block counts calibrated for 60 s blocks.
-10. **The block "header" is the whole block** (1.6, 5.6). The block hash covers every record, and the header has no chain id or validator-set commitment, so light clients cannot work from headers.
+10. **Header-only light-client trust remains open** (1.6, 5.6). `nodo/0.6` separates a compact, ordered-record-root header from the block body. The v1 network, validator-set, parameter and parent-QC commitments and authenticated transition proofs remain Phase 2/5 work.
 
 ---
 
@@ -175,7 +175,7 @@ contract is not wire-compatible with the current development runtime.
   state machine, all 13 transaction types, ordered rejection codes, block and
   finality rules, canonical binary encoding and authenticated network messages.
   [Primitive byte vectors](spec/vectors-v1.md) anchor the encoding rules.
-  This is an incompatible target protocol, not a claim that `nodo/0.5` already
+  This is an incompatible target protocol, not a claim that `nodo/0.7` already
   implements it. Full signed-object vectors, architecture decision records,
   formal checking and external BFT review remain in the Phase 1 exit gate;
   runtime migration remains in Phases 2–8.
@@ -235,13 +235,33 @@ contract is not wire-compatible with the current development runtime.
   (3.16), and automated checkpoint enforcement (Phase 5) remain production
   gates.
 
-- [ ] **1.6 · High · The block header is not a header.**
-  The block hash is SHA-256 of a text "header" that embeds every record (`Block::headerPayload` in [`Block.cpp`](../src/core/Block.cpp)), so hashing or proving a header requires the whole block. The header also lacks several commitments: chain id, protocol version, proposer, validator-set hash, next-validator-set hash, previous-commit (QC) hash, consensus-parameters hash, and evidence hash.
-  *Fix:* design a compact header with separate record, receipt and state roots.
+- [x] **1.6 · High · The block header is not a header.**
+  [ADR 0005](spec/adr-0005-compact-block-header.md) fixes the v1 header layout,
+  canonical hash domain, ordered body roots, genesis and parent-QC rules, and
+  validation obligations. In the incompatible `nodo/0.6` development format,
+  `Block::headerPayload` is compact and contains the ordered record Merkle root,
+  record count, receipt and state roots; the serialized body carries records
+  separately. Snapshot parsing, block decoding and indexed light-client record
+  proofs use the new split. Reordering or substituting records changes the block ID
+  or fails decoding. The v1-only chain ID, protocol version, proposer, active
+  and next set roots, parameter root, parent QC and evidence root remain the
+  explicit implementation gates in 2.1, 4.8 and 5.6; `nodo/0.6` does not
+  claim a production-ready light client.
 
-- [ ] **1.7 · High · There is no time model.**
-  Block time is the proposer's wall clock, checked only for `> previous` and `≤ now + 300 s` (`BlockStateTransitionValidator`). Rounds are timed with local whole-second clocks.
-  *Decide:* BFT time (for example, the weighted median of precommit timestamps) and clock-skew bounds. All time-based economics must use it.
+- [x] **1.7 · High · There is no time model.**
+  [ADR 0006](spec/adr-0006-bft-time.md) fixes v1 time as a checked function of
+  genesis time or the verified parent PRECOMMIT QC's historical-weight lower
+  median, with an exact parent-QC hash, timestamp and overflow rules. It
+  separates replayable consensus validity from bounded local future-message
+  holding, monotonic signing delays and timeout clocks; economic deadlines
+  use authenticated BFT header time. An executable `BftTime` reference and
+  adversarial median/QC tests anchor the decision. In the incompatible
+  `nodo/0.7` development protocol, PRECOMMIT construction and finalized
+  artifact matching reject votes timestamped before their block. Exact time
+  enforcement across production, voting, import and replay remains in 4.8;
+  monotonic adaptive timeouts remain in 4.6, and migration of all economic
+  deadlines remains in 6.3. The current proposer-clock path is not a
+  production-safe BFT time implementation.
 
 - [ ] **1.8 · High · Epoch and block cadence are inconsistent.**
   - `NetworkParameters::epochDurationSeconds` (60 s or 300 s) is never used.
@@ -261,7 +281,7 @@ contract is not wire-compatible with the current development runtime.
   *Decide:* fees per resource unit, block resource limits, and a base-fee mechanism if any.
 
 - [ ] **1.11 · High · There is no protocol upgrade mechanism.**
-  Rules are not versioned by activation height; the protocol version is just the string `nodo/0.5`.
+  Rules are not versioned by activation height; the protocol version is just the string `nodo/0.7`.
   *Specify:* how rule changes activate (height-gated rule sets, version in the header, client signalling) and how historical rules stay replayable.
 
 - [ ] **1.12 · Medium · Programmability is undecided.**
@@ -512,8 +532,10 @@ contract is not wire-compatible with the current development runtime.
   *Fix:* inventory/pull for blocks and large transactions, topic meshes, and rate limits based on bytes and cost.
 
 - [ ] **5.6 · High · Light clients have no real headers.**
-  `light_getHeaders` returns `headerPayload`, which embeds all records.
-  *Fix:* header-only sync on the new header (1.6), with validator-set transition proofs and bounded proof sizes.
+  `light_getHeaders` now returns a compact header, but its chain ID and active
+  validator-set commitment are still outside the hashed payload.
+  *Fix:* implement the v1 authenticated header and QC chain from 1.6, with
+  validator-set transition proofs, trusted checkpoints and bounded proof sizes.
 
 - [ ] **5.7 · Medium · Validator node protection is undefined.**
   *Specify:* sentry and private-peer topologies, and how peer identity keys relate to validator keys and rotate (8.2).

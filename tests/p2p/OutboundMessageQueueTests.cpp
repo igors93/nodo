@@ -7,7 +7,7 @@ namespace {
 nodo::p2p::NetworkEnvelope envelope(nodo::p2p::NetworkMessageType type,
                                     const std::string &payload) {
   return nodo::p2p::NetworkEnvelope("nodo-localnet", "nodo-localnet-1",
-                                    "nodo/0.5", type, "node-A", 1000, 60,
+                                    "nodo/0.7", type, "node-A", 1000, 60,
                                     payload);
 }
 

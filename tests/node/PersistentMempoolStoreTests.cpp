@@ -94,7 +94,7 @@ GenesisConfig genesisConfig() {
 }
 
 PeerInfo localPeer() {
-  return PeerInfo("persistent-mempool-peer", "127.0.0.1:9700", "nodo/0.5", 0,
+  return PeerInfo("persistent-mempool-peer", "127.0.0.1:9700", "nodo/0.7", 0,
                   kTimestamp);
 }
 

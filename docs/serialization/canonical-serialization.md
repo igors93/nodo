@@ -1,6 +1,6 @@
 # Canonical Serialization
 
-This page describes the `nodo/0.5` development format. The future v1 binary
+This page describes the `nodo/0.7` development format. The future v1 binary
 contract and its byte vectors are in [protocol v1](../spec/protocol-v1.md) and
 [v1 vectors](../spec/vectors-v1.md).
 
@@ -53,6 +53,22 @@ Numeric values should use canonical base-10 representation unless a specific fie
 ## Hash and signature safety
 
 A signed object must serialize exactly the same way on every node. A hash commitment must be computed from canonical serialization only.
+
+## Development block header and body
+
+Since `nodo/0.6`, blocks use `Block{...;payload=BlockHeader{...};records=[...]}`. The
+header contains height, parent hash, timestamp, record count, an ordered
+record Merkle root, state root and receipt root. It contains no record payload.
+The block ID is SHA-256 of the exact header text. Each ordered record leaf is
+`hashLeaf("NODO_BLOCK_RECORD_0.6:" || decimal_index || ":" || decimal_byte_length || ":" || canonical_record)`;
+the existing node hash and odd-leaf duplication rules apply. The record count
+is also committed in the header. Decoders reconstruct the block and require
+both the recomputed header and full serialization to match byte for byte.
+Older record-bearing block headers are rejected. This format is incompatible
+with `nodo/0.5` persisted blocks and peers; there is no in-place migration.
+`nodo/0.7` also changes PRECOMMIT time admission and rejects `nodo/0.6` peers.
+The full v1 header and binary Merkle rules are specified in
+[ADR 0005](../spec/adr-0005-compact-block-header.md).
 
 ## Future binary format
 

@@ -7,6 +7,7 @@
 #include "crypto/CryptoPolicy.hpp"
 #include "crypto/SignatureProvider.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -88,7 +89,9 @@ public:
   LightClientTransactionProof();
   LightClientTransactionProof(LightClientHeader header,
                               std::string transactionId, std::string recordJson,
-                              std::string recordsRoot, core::MerkleProof proof);
+                              std::string recordsRoot, core::MerkleProof proof,
+                              std::size_t recordIndex,
+                              std::string serializedRecord);
 
   const LightClientHeader &header() const;
   const std::string &transactionId() const;
@@ -106,6 +109,8 @@ private:
   std::string m_recordJson;
   std::string m_recordsRoot;
   core::MerkleProof m_proof;
+  std::size_t m_recordIndex = 0;
+  std::string m_serializedRecord;
 };
 
 class LightClientProtocolVerifier {

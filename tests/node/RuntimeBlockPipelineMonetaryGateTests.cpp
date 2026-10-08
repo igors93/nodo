@@ -86,7 +86,7 @@ Signer localUserSigner() {
 }
 
 PeerInfo localPeer() {
-    return PeerInfo("gate-test-peer", "127.0.0.1:9399", "nodo/0.5", 0, kTimestamp);
+    return PeerInfo("gate-test-peer", "127.0.0.1:9399", "nodo/0.7", 0, kTimestamp);
 }
 
 NodeRuntime startRuntime() {

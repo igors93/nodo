@@ -2,6 +2,8 @@
 #include "core/Blockchain.hpp"
 #include "core/LedgerRecord.hpp"
 #include "economics/ValidationWorkRecord.hpp"
+#include "serialization/BlockCodec.hpp"
+#include "storage/BlockSnapshotHeader.hpp"
 
 #include <iostream>
 #include <stdexcept>
@@ -270,6 +272,57 @@ void testHasCanonicalReceiptsRootHelper() {
     requireCondition(!badBlock.hasCanonicalReceiptsRoot(), "hasCanonicalReceiptsRoot must be false for non-canonical.");
 }
 
+void testCompactHeaderCommitsOrderedBody() {
+    const auto first = LedgerRecord::fromValidationWorkRecord(
+        workRecord("first"), kTimestamp + 1);
+    const auto second = LedgerRecord::fromValidationWorkRecord(
+        workRecord("other"), kTimestamp + 2);
+    const Block block(1, kValidHash64, {first, second}, kTimestamp + 3,
+                      kValidHash64, kValidHash64);
+    const Block reversed(1, kValidHash64, {second, first}, kTimestamp + 3,
+                         kValidHash64, kValidHash64);
+    requireCondition(block.headerPayload().find("LedgerRecord{") ==
+                         std::string::npos,
+                     "A compact header must not contain body records.");
+    requireCondition(block.headerPayload().size() < block.serialize().size(),
+                     "The serialized body must be outside the header.");
+    requireCondition(block.hash() != reversed.hash(),
+                     "Changing execution order must change the block ID.");
+    const auto decoded = Block::deserialize(block.serialize());
+    requireCondition(decoded && decoded->serialize() == block.serialize(),
+                     "The compact-header block must round trip canonically.");
+    requireCondition(nodo::serialization::BlockCodec::deserialize(
+                         block.serialize()).hash() == block.hash(),
+                     "The network codec must use the canonical block decoder.");
+    const auto snapshot = nodo::storage::BlockSnapshotHeader::fromSerializedBlock(
+        block.serialize());
+    requireCondition(snapshot.isValid() &&
+                         snapshot.headerPayload() == block.headerPayload(),
+                     "Snapshot metadata must validate the compact header.");
+}
+
+void testRejectsUncommittedBodyMutation() {
+    const auto first = LedgerRecord::fromValidationWorkRecord(
+        workRecord("first"), kTimestamp + 1);
+    const auto second = LedgerRecord::fromValidationWorkRecord(
+        workRecord("other"), kTimestamp + 2);
+    const Block block(1, kValidHash64, {first, second}, kTimestamp + 3,
+                      kValidHash64, kValidHash64);
+    std::string tampered = block.serialize();
+    const auto firstPos = tampered.find(first.serialize());
+    const auto secondPos = tampered.find(second.serialize());
+    requireCondition(firstPos != std::string::npos &&
+                         secondPos != std::string::npos,
+                     "Both records must be in the body.");
+    tampered.replace(secondPos, second.serialize().size(), first.serialize());
+    requireCondition(!Block::deserialize(tampered),
+                     "A substituted body record must fail root verification.");
+    const std::string legacy = block.headerPayload() +
+                               ";records=[" + first.serialize() + "]";
+    requireCondition(legacy != block.headerPayload(),
+                     "Legacy record-bearing headers cannot be canonical.");
+}
+
 } // namespace
 
 int main() {
@@ -291,6 +344,8 @@ int main() {
         testNonGenesisBlockPassesIsValidWithoutProtocolRequirement();
         testHasCanonicalStateRootHelper();
         testHasCanonicalReceiptsRootHelper();
+        testCompactHeaderCommitsOrderedBody();
+        testRejectsUncommittedBodyMutation();
 
         std::cout << "Block canonical root tests passed.\n";
         return 0;

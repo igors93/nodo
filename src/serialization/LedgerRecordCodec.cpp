@@ -72,22 +72,6 @@ std::vector<core::LedgerRecord> LedgerRecordCodec::deserializeList(
     return records;
 }
 
-std::vector<core::LedgerRecord> LedgerRecordCodec::deserializeListFromBlockHeaderPayload(
-    const std::string& blockHeaderPayload
-) {
-    if (blockHeaderPayload.rfind("BlockHeader{", 0) != 0) {
-        throw std::invalid_argument("Serialized object is not a BlockHeader.");
-    }
-
-    const std::string recordsList = FieldCodec::extractTrailingSection(
-        blockHeaderPayload,
-        ";records=[",
-        "]}"
-    );
-
-    return deserializeList(recordsList);
-}
-
 core::LedgerRecordType LedgerRecordCodec::parseLedgerRecordType(
     const std::string& value
 ) {

@@ -3,7 +3,10 @@
 
 #include "utils/JsonText.hpp"
 
+#include "core/Block.hpp"
+#include "core/LedgerRecord.hpp"
 #include "crypto/hash.h"
+#include "serialization/FieldCodec.hpp"
 
 #include <exception>
 #include <sstream>
@@ -94,7 +97,35 @@ bool LightClientHeader::isValid() const {
 }
 
 bool LightClientHeader::headerHashMatches() const {
-  return !m_headerPayload.empty() && utils::hashBytes(m_headerPayload) == m_blockHash;
+  if (m_headerPayload.empty() ||
+      utils::hashBytes(m_headerPayload) != m_blockHash) {
+    return false;
+  }
+  try {
+    const std::string count = serialization::FieldCodec::extractField(
+        m_headerPayload, "recordCount");
+    const std::string root = serialization::FieldCodec::extractField(
+        m_headerPayload, "recordsMerkleRoot");
+    if (!core::Block::isCanonicalCommitmentRoot(root) ||
+        count.empty() || count.front() == '0') {
+      return false;
+    }
+    const auto parsed = std::stoull(count);
+    if (parsed == 0 || parsed > core::Block::MAX_RECORDS ||
+        count != std::to_string(parsed)) {
+      return false;
+    }
+    const std::string expected =
+        "BlockHeader{index=" + std::to_string(m_height) +
+        ";previousHash=" + m_previousHash +
+        ";timestamp=" + std::to_string(m_timestamp) +
+        ";recordCount=" + count + ";recordsMerkleRoot=" + root +
+        ";stateRoot=" + m_stateRoot + ";receiptsRoot=" + m_receiptsRoot +
+        "}";
+    return expected == m_headerPayload;
+  } catch (...) {
+    return false;
+  }
 }
 
 std::string LightClientHeader::serializeJson() const {
@@ -170,10 +201,13 @@ LightClientTransactionProof::LightClientTransactionProof() = default;
 
 LightClientTransactionProof::LightClientTransactionProof(
     LightClientHeader header, std::string transactionId, std::string recordJson,
-    std::string recordsRoot, core::MerkleProof proof)
+    std::string recordsRoot, core::MerkleProof proof,
+    std::size_t recordIndex, std::string serializedRecord)
     : m_header(std::move(header)), m_transactionId(std::move(transactionId)),
       m_recordJson(std::move(recordJson)),
-      m_recordsRoot(std::move(recordsRoot)), m_proof(std::move(proof)) {}
+      m_recordsRoot(std::move(recordsRoot)), m_proof(std::move(proof)),
+      m_recordIndex(recordIndex),
+      m_serializedRecord(std::move(serializedRecord)) {}
 
 const LightClientHeader &LightClientTransactionProof::header() const {
   return m_header;
@@ -193,12 +227,44 @@ const core::MerkleProof &LightClientTransactionProof::proof() const {
 
 bool LightClientTransactionProof::isValid() const {
   return m_header.isValid() && !m_transactionId.empty() &&
-         !m_recordJson.empty() && !m_recordsRoot.empty() && m_proof.isValid();
+         !m_recordJson.empty() && !m_recordsRoot.empty() && m_proof.isValid() &&
+         m_recordIndex < core::Block::MAX_RECORDS &&
+         !m_serializedRecord.empty();
 }
 
 bool LightClientTransactionProof::verifies() const {
-  return isValid() && m_header.headerHashMatches() &&
-         m_proof.verify(m_recordsRoot);
+  if (!isValid() || !m_header.headerHashMatches() ||
+      !m_proof.verify(m_recordsRoot)) {
+    return false;
+  }
+  try {
+    if (serialization::FieldCodec::extractField(
+            m_header.headerPayload(), "recordsMerkleRoot") != m_recordsRoot ||
+        m_recordIndex >= std::stoull(
+            serialization::FieldCodec::extractField(
+                m_header.headerPayload(), "recordCount")) ||
+        m_proof.leafHash() !=
+            core::MerkleTree::hashOrderedLeaf(m_recordIndex,
+                                              m_serializedRecord)) {
+      return false;
+    }
+    const auto record = core::LedgerRecord::deserialize(m_serializedRecord);
+    if (!record ||
+        (record->id() != m_transactionId &&
+         record->sourceId() != m_transactionId)) {
+      return false;
+    }
+    const std::string expectedJson =
+        "{\"id\":" + jsonString(record->id()) +
+        ",\"sourceId\":" + jsonString(record->sourceId()) +
+        ",\"type\":" +
+        jsonString(core::ledgerRecordTypeToString(record->type())) +
+        ",\"payloadHash\":" + jsonString(record->payloadHash()) +
+        ",\"timestamp\":" + std::to_string(record->timestamp()) + "}";
+    return expectedJson == m_recordJson;
+  } catch (...) {
+    return false;
+  }
 }
 
 std::string LightClientTransactionProof::serializeJson() const {
@@ -206,6 +272,8 @@ std::string LightClientTransactionProof::serializeJson() const {
   oss << "{\"header\":" << m_header.serializeJson()
       << ",\"transactionId\":" << jsonString(m_transactionId)
       << ",\"record\":" << m_recordJson
+      << ",\"recordIndex\":" << m_recordIndex
+      << ",\"serializedRecord\":" << jsonString(m_serializedRecord)
       << ",\"recordsRoot\":" << jsonString(m_recordsRoot)
       << ",\"proof\":" << merkleProofJson(m_proof)
       << ",\"verified\":" << (verifies() ? "true" : "false") << "}";
@@ -263,7 +331,7 @@ bool LightClientProtocolVerifier::verifyFinalizedHeader(
     const core::ValidatorRegistry &validatorRegistryAtHeight,
     const crypto::CryptoPolicy &policy, const crypto::SignatureProvider &provider,
     std::string *reason) {
-  if (!header.isValid()) {
+  if (!header.isValid() || !header.headerHashMatches()) {
     if (reason != nullptr)
       *reason = "invalid light-client header";
     return false;

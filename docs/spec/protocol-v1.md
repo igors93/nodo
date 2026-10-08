@@ -95,6 +95,9 @@ Evidence ID is `H("EVIDENCE", evidence_bytes)` and a system-record ID is
 `H("RECORD", record_bytes)`.
 `tx_root`, `receipt_root` and `evidence_root` are the Merkle roots of their
 canonical element bytes with kinds `tx`, `receipt` and `evidence` respectively.
+`body_root = H("BODY", canonical_body_encoding)` commits to the entire body,
+including deterministic system-transition records; the header's `body_bytes`
+field is its exact encoded byte length.
 `state_root` uses kind `state`. A signature never substitutes for a root or a
 root for a signature. The binary digest, rather than its hexadecimal display,
 is embedded in other objects.
@@ -244,8 +247,13 @@ to the set for epoch `e+1`. Exit, jailing, key rotation and stake changes never
 rewrite the set used at an earlier height. If the churn bound would be exceeded, excess
 changes wait in deterministic candidate order. A validator cannot withdraw
 until BFT time has advanced by `unbonding_seconds` after unlock *and* all
-evidence within the allowed window has been resolved. Evidence with event time
-older than `evidence_max_age_seconds` is rejected; accepted evidence IDs are
+evidence within the allowed window has been resolved. Evidence age is measured
+from the authenticated BFT header time of the finalized parent at the offense
+height (genesis for height 1), never from an accused validator's claimed vote
+time or a reporting peer's detection time. At inclusion, the checked difference
+`inclusion_header_time - offense_parent_header_time` MUST be between zero and
+`evidence_max_age_seconds`, inclusive; an overflow or missing canonical
+offense parent invalidates the evidence. Accepted evidence IDs are
 idempotent. `double_vote_slash_bps` and `double_proposal_slash_bps` are
 immutable genesis parameters in 1–10000. For each accepted evidence record,
 burn `min(current_locked_stake, ceil(stake_at_offense * fraction / 10000))`
@@ -360,7 +368,7 @@ not to a permissive fallback. Peer-specific codes are not consensus data.
 Header fields in order are `chain_id:str, genesis_hash:hash, height:u64,
 protocol_version:u16, round:u64, parent_id:hash, time:i64,
 proposer:validator, validator_set_root:hash, next_validator_set_root:hash,
-parameter_root:hash, parent_qc_hash:hash, tx_root:hash, receipt_root:hash,
+parameter_root:hash, parent_qc_hash:hash, body_root:hash, tx_root:hash, receipt_root:hash,
 evidence_root:hash, state_root:hash, body_bytes:u32, resource_units:u64`.
 The block body is ordered transactions then sorted unique evidence records and
 the deterministic system-transition records. The block ID covers only the
@@ -369,7 +377,7 @@ uses height 0, zero parent/QC hashes, and its own rules. Every later header
 must have the prior finalized block ID and a verified parent PRECOMMIT QC.
 Height 1 is the sole exception: its parent is genesis, `parent_qc_hash` is all
 zero bytes and `parent_qc` is absent. It uses the genesis validator-set
-commitment as its trust anchor. Receipt, transaction, evidence, state, set and parameter roots
+commitment as its trust anchor. Body, receipt, transaction, evidence, state, set and parameter roots
 MUST be recomputed, never trusted from a peer. A finalized artifact contains
 the header, body, receipts, state-transition records, parent QC and the new
 PRECOMMIT QC, all canonically encoded.
@@ -402,19 +410,37 @@ MUST obtain a trusted finalized checkpoint no older than
 `weak_subjectivity_seconds` in BFT time; they cannot accept a snapshot merely
 because a peer supplied a matching manifest.
 
-Time is deterministic: for height 1, `time = genesis.time +
-target_block_seconds`. At height `h>1`, `time = max(parent.time +
-target_block_seconds, weighted_median(parent_QC.vote_time))`. Every non-nil
-PRECOMMIT vote time MUST be at least its block's header time. Equal
-weighted-median ties choose the smaller timestamp. Honest validators timestamp
-votes with their current clock and MUST wait at least `target_block_seconds`
-of local monotonic time after finalizing a height before signing the next
-height. They hold a future proposal or vote until it is no more than
-`max_future_skew_seconds` ahead of local wall time. These local clock checks
-govern signing and relay, never historical replay. Safety of BFT time assumes
-honest clocks stay within that skew bound; consensus timeouts use monotonic
-local clocks and do not enter block hashes. Economic time, evidence age and
-unbonding use this BFT time.
+Time is deterministic. Timestamps are positive Unix seconds in signed `i64`;
+zero, noncanonical values and overflow fail closed. For height 1,
+`time = checked_add(genesis.time, target_block_seconds)` and no parent QC is
+present. At height `h>1`, the child supplies the exact parent PRECOMMIT QC
+whose hash is in its header, verified against the frozen set at `h-1`, and
+`time = max(checked_add(parent.time, target_block_seconds),
+weighted_lower_median(parent_QC.vote_time))`. The median uses the historical
+weight of **every** signed voter in that QC, not validator count or a claimed
+weight. For total signed weight `S`, sort votes by time and select the first
+time whose cumulative weight reaches `ceil(S/2)`; this chooses the lower time
+when exactly half the weight is on each side. Duplicate, zero-weight,
+non-PRECOMMIT or invalidly signed votes and a vote time before the parent's
+header time invalidate the QC time proof. Different valid parent QCs may give
+different child times; the child's parent-QC hash makes the choice explicit
+and replayable. The [time-model decision](adr-0006-bft-time.md) gives the
+proof boundary and required local-clock behavior.
+
+Honest validators sign PRECOMMIT votes with their current wall-clock seconds
+only after that clock reaches the block header time. They MUST wait at least
+`target_block_seconds` on a local monotonic clock after finalizing a height
+before signing at the next height, and persist signed vote times so a wall
+clock step backward cannot produce a contradictory timestamp. A future
+proposal or vote is held, with bounded buffering, until it is no more than
+`max_future_skew_seconds` ahead of local wall time; it is not permanently
+invalidated solely by the receiving node's clock. These readiness checks
+govern live signing and relay, never historical replay. Under `3B < W` and
+honest clock error bounded by the genesis skew parameter, fewer than half of
+a valid QC's signed weight is Byzantine, so its median lies within the range
+of honest signed times. Consensus timeouts use local monotonic milliseconds
+and never enter block hashes. Economic deadlines, evidence age and unbonding
+use authenticated BFT header time, not a proposer or receiver's wall clock.
 
 Proposer selection is deterministic weighted round-robin over the frozen set,
 with signed integer priority, initial priority zero, validator-ID tie break,

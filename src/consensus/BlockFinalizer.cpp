@@ -1,6 +1,7 @@
 #include "utils/SafeScalar.hpp"
 #include "consensus/BlockFinalizer.hpp"
 
+#include <algorithm>
 #include <map>
 #include <set>
 #include <sstream>
@@ -273,7 +274,12 @@ bool FinalizedBlockRecord::matchesBlock(
 ) const {
     return m_blockIndex == block.index() &&
            m_blockHash == block.hash() &&
-           m_previousHash == block.previousHash();
+           m_previousHash == block.previousHash() &&
+           std::all_of(m_quorumCertificate.votes().begin(),
+                       m_quorumCertificate.votes().end(),
+                       [&](const ValidatorVoteRecord& vote) {
+                           return vote.createdAt() >= block.timestamp();
+                       });
 }
 
 bool FinalizedBlockRecord::isStructurallyValid() const {
@@ -803,6 +809,13 @@ BlockFinalizationResult BlockFinalizer::finalizeBlock(
         finalizedAt,
         certificate
     );
+
+    if (!record.matchesBlock(block)) {
+        return BlockFinalizationResult::rejected(
+            BlockFinalizationStatus::INVALID_CERTIFICATE,
+            "PRECOMMIT vote time is earlier than the certified block time."
+        );
+    }
 
     if (!record.verify(
             validatorRegistry,

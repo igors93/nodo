@@ -4,7 +4,7 @@
 namespace nodo::config {
 
 // Wire compatibility is independent of the software release in VERSION.
-inline constexpr const char *kProtocolVersion = "nodo/0.5";
+inline constexpr const char *kProtocolVersion = "nodo/0.7";
 
 } // namespace nodo::config
 

@@ -1,6 +1,7 @@
 #include "serialization/BlockSnapshotHeaderCodec.hpp"
 
 #include "crypto/hash.h"
+#include "core/Block.hpp"
 #include "serialization/FieldCodec.hpp"
 
 #include <limits>
@@ -11,6 +12,9 @@ namespace nodo::serialization {
 storage::BlockSnapshotHeader
 BlockSnapshotHeaderCodec::deserializeFromSerializedBlock(
     const std::string &serializedBlock) {
+  if (serializedBlock.size() > core::Block::MAX_SERIALIZED_BYTES) {
+    throw std::invalid_argument("Serialized Block exceeds protocol size limit.");
+  }
   if (serializedBlock.rfind("Block{", 0) != 0) {
     throw std::invalid_argument("Serialized object is not a Block.");
   }
@@ -29,11 +33,14 @@ BlockSnapshotHeaderCodec::deserializeFromSerializedBlock(
 
   const std::size_t recordCount = parseSize(
       FieldCodec::extractField(serializedBlock, "recordCount"), "recordCount");
+  if (recordCount == 0 || recordCount > core::Block::MAX_RECORDS) {
+    throw std::invalid_argument("Serialized Block record count exceeds limit.");
+  }
 
   const std::string headerPayload = extractHeaderPayload(serializedBlock);
 
   const std::size_t parsedRecordCount =
-      countLedgerRecordsInHeaderPayload(headerPayload);
+      countLedgerRecordsInSerializedBlock(serializedBlock);
 
   if (recordCount != parsedRecordCount) {
     throw std::logic_error(
@@ -64,8 +71,9 @@ std::string BlockSnapshotHeaderCodec::extractHeaderPayload(
   }
 
   const std::size_t payloadStart = markerPosition + marker.size();
+  const std::size_t bodyStart = serializedBlock.find(";records=[", payloadStart);
 
-  if (serializedBlock.size() <= payloadStart + 1) {
+  if (bodyStart == std::string::npos || bodyStart <= payloadStart) {
     throw std::invalid_argument("Serialized Block payload is empty.");
   }
 
@@ -73,10 +81,10 @@ std::string BlockSnapshotHeaderCodec::extractHeaderPayload(
     throw std::invalid_argument("Serialized Block is missing closing brace.");
   }
 
-  const std::string payload = serializedBlock.substr(
-      payloadStart, serializedBlock.size() - payloadStart - 1);
+  const std::string payload =
+      serializedBlock.substr(payloadStart, bodyStart - payloadStart);
 
-  if (payload.rfind("BlockHeader{", 0) != 0) {
+  if (payload.rfind("BlockHeader{", 0) != 0 || payload.back() != '}') {
     throw std::invalid_argument(
         "Serialized Block payload is not a BlockHeader.");
   }
@@ -84,14 +92,15 @@ std::string BlockSnapshotHeaderCodec::extractHeaderPayload(
   return payload;
 }
 
-std::size_t BlockSnapshotHeaderCodec::countLedgerRecordsInHeaderPayload(
-    const std::string &headerPayload) {
-  if (headerPayload.rfind("BlockHeader{", 0) != 0) {
-    throw std::invalid_argument("Serialized payload is not a BlockHeader.");
+std::size_t BlockSnapshotHeaderCodec::countLedgerRecordsInSerializedBlock(
+    const std::string &serializedBlock) {
+  if (serializedBlock.rfind("Block{", 0) != 0 ||
+      serializedBlock.size() < 3 || serializedBlock.back() != '}') {
+    throw std::invalid_argument("Serialized payload is not a Block.");
   }
 
   const std::string recordsList =
-      FieldCodec::extractTrailingSection(headerPayload, ";records=[", "]}");
+      FieldCodec::extractTrailingSection(serializedBlock, ";records=[", "]}");
 
   return FieldCodec::splitTopLevelObjects(recordsList, "LedgerRecord{").size();
 }
@@ -112,7 +121,28 @@ bool BlockSnapshotHeaderCodec::headerPayloadMatchesMetadata(
                       "payload.timestamp");
 
     const std::size_t payloadRecordCount =
-        countLedgerRecordsInHeaderPayload(headerPayload);
+        parseSize(FieldCodec::extractField(headerPayload, "recordCount"),
+                  "payload.recordCount");
+
+    const std::string recordsRoot =
+        FieldCodec::extractField(headerPayload, "recordsMerkleRoot");
+    if (!core::Block::isCanonicalCommitmentRoot(recordsRoot)) {
+      return false;
+    }
+    const std::string stateRoot =
+        FieldCodec::extractField(headerPayload, "stateRoot");
+    const std::string receiptsRoot =
+        FieldCodec::extractField(headerPayload, "receiptsRoot");
+    const std::string expected =
+        "BlockHeader{index=" + std::to_string(blockIndex) +
+        ";previousHash=" + previousHash +
+        ";timestamp=" + std::to_string(timestamp) +
+        ";recordCount=" + std::to_string(recordCount) +
+        ";recordsMerkleRoot=" + recordsRoot +
+        ";stateRoot=" + stateRoot + ";receiptsRoot=" + receiptsRoot + "}";
+    if (headerPayload != expected) {
+      return false;
+    }
 
     if (payloadIndex != blockIndex) {
       return false;

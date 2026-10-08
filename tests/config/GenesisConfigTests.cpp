@@ -58,7 +58,7 @@ void testNetworkParametersAreValidAndDeterministic() {
 
   const NetworkParameters invalid(nodo::config::NetworkParameterValues{
       .chainId = "bad chain id with spaces", .networkName = "nodo",
-      .protocolVersion = "nodo/0.5", .epochDurationSeconds = 60,
+      .protocolVersion = "nodo/0.7", .epochDurationSeconds = 60,
       .minimumValidatorCount = 1, .quorumThresholdNumerator = 2,
       .quorumThresholdDenominator = 3, .maxTransactionsPerBlock = 100,
       .maxPeerCount = 10});
@@ -89,7 +89,7 @@ void testGenesisConfigBuildsBlockchainAndValidatorRegistry() {
 void testGenesisRejectsTooFewValidators() {
   const NetworkParameters params(nodo::config::NetworkParameterValues{
       .chainId = "nodo-devnet-2", .networkName = "nodo-devnet",
-      .protocolVersion = "nodo/0.5", .epochDurationSeconds = 60,
+      .protocolVersion = "nodo/0.7", .epochDurationSeconds = 60,
       .minimumValidatorCount = 3, .quorumThresholdNumerator = 2,
       .quorumThresholdDenominator = 3, .maxTransactionsPerBlock = 100,
       .maxPeerCount = 10});

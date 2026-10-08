@@ -31,8 +31,8 @@ public:
         const std::string& serializedBlock
     );
 
-    static std::size_t countLedgerRecordsInHeaderPayload(
-        const std::string& headerPayload
+    static std::size_t countLedgerRecordsInSerializedBlock(
+        const std::string& serializedBlock
     );
 
     static bool headerPayloadMatchesMetadata(

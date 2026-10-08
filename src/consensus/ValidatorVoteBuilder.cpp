@@ -48,7 +48,7 @@ ValidatorVoteRecord ValidatorVoteBuilder::buildPrecommit(
 ) {
     if (!block.isValid() ||
         round == 0 ||
-        createdAt <= 0) {
+        createdAt < block.timestamp()) {
         throw std::invalid_argument("Validator vote build input is invalid.");
     }
 

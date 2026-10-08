@@ -45,6 +45,7 @@ public:
   const std::vector<LedgerRecord> &records() const;
   const std::string &stateRoot() const;
   const std::string &receiptsRoot() const;
+  std::string recordsRoot() const;
 
   bool isGenesisBlock() const;
   bool isValid(bool requireProtocolCommitments = true) const;
@@ -61,7 +62,8 @@ public:
   bool hasCanonicalReceiptsRoot() const;
 
   /*
-   * Deterministic representation of the block header.
+   * Compact deterministic representation of the block header. Records are
+   * committed by their ordered Merkle root and live only in the body.
    *
    * This payload excludes the final hash field.
    * The hash is calculated from this payload.

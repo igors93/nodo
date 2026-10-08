@@ -6,6 +6,19 @@ Nodo does not yet publish versioned production releases. This changelog starts a
 
 ### Security
 
+- **The v1 BFT time rule is specified and has a checked reference calculator.**
+  [ADR 0006](docs/spec/adr-0006-bft-time.md) defines historical-weight lower
+  medians, parent-QC binding, overflow, clock skew and replay rules. The
+  incompatible `nodo/0.7` development protocol rejects PRECOMMIT votes before
+  their block time during signing and finalized-artifact matching. Exact
+  header-time enforcement and economic migration remain later roadmap gates.
+- **`nodo/0.6` separates the compact block header from the record body.**
+  Block IDs commit to an ordered record Merkle root, count, receipt root and
+  state root. Canonical decoding rejects tampered bodies and the old embedded
+  record header format. Snapshot metadata and light-client record proofs use
+  the same commitment. Persisted `nodo/0.5` blocks are incompatible; there is
+  no in-place migration. [ADR 0005](docs/spec/adr-0005-compact-block-header.md)
+  defines the full v1 header and remaining implementation gates.
 - **Evidence and unbonding windows are enforced in development protocol
   `nodo/0.5`.** Evidence expires after 21 validator epochs. Unbonding requires
   28 epochs and at least 28 days plus a future-block margin; withdrawal keeps

@@ -111,25 +111,15 @@ std::string headersJson(const NodeRuntime &runtime,
 }
 
 core::MerkleProof
-buildSortedMerkleProof(const std::vector<std::string> &payloads,
-                       const std::string &targetPayload) {
-  if (payloads.empty()) {
+buildOrderedMerkleProof(const std::vector<std::string> &payloads,
+                        std::size_t targetIndex) {
+  if (payloads.empty() || targetIndex >= payloads.size()) {
     return core::MerkleProof();
   }
-
-  std::vector<std::string> sorted = payloads;
-  std::sort(sorted.begin(), sorted.end());
-  auto found = std::find(sorted.begin(), sorted.end(), targetPayload);
-  if (found == sorted.end()) {
-    return core::MerkleProof();
-  }
-
-  std::size_t targetIndex =
-      static_cast<std::size_t>(std::distance(sorted.begin(), found));
   std::vector<std::string> level;
-  level.reserve(sorted.size());
-  for (const auto &payload : sorted) {
-    level.push_back(core::MerkleTree::hashLeaf(payload));
+  level.reserve(payloads.size());
+  for (std::size_t i = 0; i < payloads.size(); ++i) {
+    level.push_back(core::MerkleTree::hashOrderedLeaf(i, payloads[i]));
   }
 
   const std::string leafHash = level[targetIndex];
@@ -155,15 +145,6 @@ buildSortedMerkleProof(const std::vector<std::string> &payloads,
   }
 
   return core::MerkleProof(leafHash, steps);
-}
-
-std::string recordsRootForBlock(const core::Block &block) {
-  std::vector<std::string> payloads;
-  payloads.reserve(block.records().size());
-  for (const auto &record : block.records()) {
-    payloads.push_back(record.serialize());
-  }
-  return core::MerkleTree::buildRoot(payloads);
 }
 
 } // namespace
@@ -289,7 +270,9 @@ LightClientService::transactionProofJson(const NodeRuntime &runtime,
     return jsonError("Missing transaction id.");
   }
   for (const auto &block : runtime.blockchain().blocks()) {
-    for (const auto &record : block.records()) {
+    for (std::size_t recordIndex = 0; recordIndex < block.records().size();
+         ++recordIndex) {
+      const auto &record = block.records()[recordIndex];
       if (record.id() != transactionId && record.sourceId() != transactionId) {
         continue;
       }
@@ -303,13 +286,13 @@ LightClientService::transactionProofJson(const NodeRuntime &runtime,
         payloads.push_back(candidate.serialize());
       }
       const core::MerkleProof proof =
-          buildSortedMerkleProof(payloads, record.serialize());
+          buildOrderedMerkleProof(payloads, recordIndex);
       if (!proof.isValid()) {
         return jsonError("Failed to build transaction inclusion proof.");
       }
       const LightClientTransactionProof bundle(
           *header, transactionId, recordJson(record),
-          recordsRootForBlock(block), proof);
+          block.recordsRoot(), proof, recordIndex, record.serialize());
       return bundle.serializeJson();
     }
   }

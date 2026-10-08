@@ -254,7 +254,7 @@ void configureConsensus(TestNode &node,
 
 void finalizeWithWeightedQuorum(TestNode &first, TestNode &second) {
   for (std::int64_t step = 0; step < 40; ++step) {
-    const std::int64_t now = kGenesisTimestamp + 1 + step;
+    const std::int64_t now = kTransactionTimestamp + 15 + step;
     pumpNetwork(first, second, now);
     first.routeMessages();
     second.routeMessages();
@@ -514,6 +514,13 @@ void testThreeNodeProtocolJourney() {
   producer.mesh.injectLocalMessage(p2p::NetworkMessageType::BLOCK_PROPOSAL,
                                    proposal.serializedProposal(), now);
 
+  for (TestNode *node : {&producer, &voter}) {
+    auto &manager = node->runtime.mutableConsensusRoundManager();
+    const auto &state = manager.currentState();
+    manager.advanceToHeight(state.height(), state.round(),
+                            state.proposerAddress(), now,
+                            genesis.networkParameters().targetBlockTimeSeconds());
+  }
   finalizeWithWeightedQuorum(producer, voter);
   require(lagging.runtime.blockchain().size() == 1,
           "Offline node must remain at genesis before catch-up sync.");

@@ -66,6 +66,22 @@ std::string MerkleTree::buildRoot(
     return hashLayer(leaves);
 }
 
+std::string MerkleTree::hashOrderedLeaf(std::size_t index,
+                                        const std::string& payload) {
+    return hashLeaf("NODO_BLOCK_RECORD_0.6:" + std::to_string(index) + ":" +
+                    std::to_string(payload.size()) + ":" + payload);
+}
+
+std::string MerkleTree::buildOrderedRoot(
+    const std::vector<std::string>& leafPayloads) {
+    std::vector<std::string> leaves;
+    leaves.reserve(leafPayloads.size());
+    for (std::size_t i = 0; i < leafPayloads.size(); ++i) {
+        leaves.push_back(hashOrderedLeaf(i, leafPayloads[i]));
+    }
+    return hashLayer(leaves);
+}
+
 MerkleProof::MerkleProof(
     std::string leafHash,
     std::vector<MerkleProofStep> steps

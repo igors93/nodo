@@ -32,7 +32,7 @@ p2p::PeerInfo localPeer() {
     return p2p::PeerInfo(
         "chain-auditor-report-test-peer",
         "127.0.0.1:9001",
-        "nodo/0.5",
+        "nodo/0.7",
         0,
         kTimestamp
     );

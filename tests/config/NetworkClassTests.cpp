@@ -32,7 +32,7 @@ void testTestnetCandidateIsStaging() {
 void testMainnetIsLockedProduction() {
   const NetworkParameters params(nodo::config::NetworkParameterValues{
       .chainId = "nodo-mainnet-1", .networkName = "mainnet",
-      .protocolVersion = "nodo/0.5", .epochDurationSeconds = 600,
+      .protocolVersion = "nodo/0.7", .epochDurationSeconds = 600,
       .minimumValidatorCount = 7, .quorumThresholdNumerator = 2,
       .quorumThresholdDenominator = 3, .maxTransactionsPerBlock = 250,
       .maxPeerCount = 256, .maxMempoolTransactions = 10000,
@@ -68,7 +68,7 @@ void testUnsafeQuorumThresholdIsRejected() {
         {3, 4}, {1, 1}, {4, 6}, {0, 3}}) {
     const NetworkParameters params(nodo::config::NetworkParameterValues{
         .chainId = "nodo-unsafe-1", .networkName = "unsafe",
-        .protocolVersion = "nodo/0.5", .epochDurationSeconds = 60,
+        .protocolVersion = "nodo/0.7", .epochDurationSeconds = 60,
         .minimumValidatorCount = 1,
         .quorumThresholdNumerator = numerator,
         .quorumThresholdDenominator = denominator,

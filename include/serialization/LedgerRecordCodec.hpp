@@ -29,10 +29,6 @@ public:
         const std::string& serializedList
     );
 
-    static std::vector<core::LedgerRecord> deserializeListFromBlockHeaderPayload(
-        const std::string& blockHeaderPayload
-    );
-
 private:
     static core::LedgerRecordType parseLedgerRecordType(
         const std::string& value
