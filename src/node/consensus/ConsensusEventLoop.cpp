@@ -19,6 +19,7 @@
 #include "serialization/BlockCodec.hpp"
 #include "serialization/ProtocolMessageCodec.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <limits>
@@ -105,7 +106,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
 
   // BLOCK_PROPOSAL is consensus input. Keeping proposal admission on this
   // thread prevents the daemon from mutating the canonical chain concurrently.
-  processBlockProposals(result);
+  processBlockProposals(result, now);
 
   const auto &state = m_runtime.consensusRoundManager().currentState();
   const std::uint64_t height = state.height();
@@ -119,6 +120,7 @@ ConsensusTickResult ConsensusEventLoop::tick(std::int64_t now) {
   }
   const core::ValidatorRegistry &validators =
       m_runtime.validatorSetHistory().setAt(height);
+  sizeVoteRateLimitForRelay(validators.size());
 
   // After a restart, the recovery store sets m_lastProcessedHeight to the
   // height at which we last voted. If the finalization registry shows that
@@ -457,6 +459,15 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
 
         if (collected.accepted()) {
           result.votesCollected++;
+          // Only a vote the pool newly accepted is relayed: duplicates come
+          // back as REJECTED_REPLAY, so each node forwards each vote at most
+          // once and relay cycles terminate. Stale, unsigned, ineligible or
+          // conflicting votes are never amplified (double votes travel as
+          // slashing evidence instead).
+          if (relayToPeers(p2p::NetworkMessageType::VALIDATOR_VOTE, envelope,
+                           now)) {
+            result.votesRelayed++;
+          }
         }
       } catch (const std::exception &) {
         continue;
@@ -481,6 +492,37 @@ ConsensusTickResult ConsensusEventLoop::drainVotesAndCollect(std::int64_t now) {
   }
 
   return result;
+}
+
+bool ConsensusEventLoop::relayToPeers(p2p::NetworkMessageType type,
+                                      const p2p::NetworkEnvelope &received,
+                                      std::int64_t now) {
+  if (received.senderNodeId() == m_gossip.config().localNodeId())
+    return false;
+
+  return m_gossip
+             .broadcastExcept(type, received.payload(), now,
+                              received.senderNodeId())
+             .acceptedCount() > 0;
+}
+
+void ConsensusEventLoop::sizeVoteRateLimitForRelay(
+    std::size_t validatorCount) {
+  if (validatorCount == m_voteRateLimitValidatorCount)
+    return;
+  m_voteRateLimitValidatorCount = validatorCount;
+
+  // Without relay a peer sends only its own votes. With relay it forwards at
+  // most one copy of every validator's votes, so its legitimate VALIDATOR_VOTE
+  // rate is the single-validator budget times the set size.
+  const std::uint64_t base = m_gossip.config().maxGossipMessagesPerPeerWindow();
+  const std::uint64_t validators =
+      std::max<std::uint64_t>(1, static_cast<std::uint64_t>(validatorCount));
+  const std::uint64_t cap = std::numeric_limits<std::uint32_t>::max();
+  const std::uint64_t scaled =
+      base != 0 && validators > cap / base ? cap : base * validators;
+  m_gossip.setRateLimitForType(p2p::NetworkMessageType::VALIDATOR_VOTE,
+                               static_cast<std::uint32_t>(scaled));
 }
 
 void ConsensusEventLoop::drainSlashingEvidence(std::int64_t now,
@@ -581,7 +623,8 @@ void ConsensusEventLoop::admitAndBroadcastProposerEquivocationEvidence(
   }
 }
 
-void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
+void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result,
+                                               std::int64_t now) {
   auto messages =
       m_validatedInbox.drain(p2p::NetworkMessageType::BLOCK_PROPOSAL);
 
@@ -719,6 +762,15 @@ void ConsensusEventLoop::processBlockProposals(ConsensusTickResult &result) {
 
       m_pendingCandidate =
           PendingBlockCandidate{block, state.round(), proposal};
+
+      // Validators without a session to the proposer can only vote on a
+      // block they receive from someone else. Forward it once, when it
+      // becomes the candidate; later copies hit the existing-candidate
+      // branch above and are not relayed again.
+      if (relayToPeers(p2p::NetworkMessageType::BLOCK_PROPOSAL, envelope,
+                       now)) {
+        result.proposalsRelayed++;
+      }
     } catch (const std::exception &) {
       // Malformed or unverifiable peer input is ignored without changing
       // the active candidate or canonical chain.

@@ -91,7 +91,7 @@ PeerInfo localPeer() {
     return PeerInfo(
         "staking-writeback-peer",
         "127.0.0.1:9901",
-        "nodo/0.4",
+        "nodo/0.5",
         0,
         kTimestamp
     );

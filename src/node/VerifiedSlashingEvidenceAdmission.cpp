@@ -3,6 +3,7 @@
 #include "core/ProtocolLimits.hpp"
 #include "consensus/ProposerSchedule.hpp"
 #include "node/SignedBlockProposalMessage.hpp"
+#include "node/AccountabilityWindow.hpp"
 
 #include <limits>
 
@@ -31,6 +32,14 @@ VerifiedSlashingEvidenceAdmission::admit(
             "Slashing evidence is already known.",
             structural.record()
         );
+    }
+    if (currentConsensusHeight == std::numeric_limits<std::uint64_t>::max() ||
+        !AccountabilityWindow::evidenceHeightIsAdmissible(
+            evidence.firstVote().blockIndex(), currentConsensusHeight + 1)) {
+        return consensus::SlashingEvidenceValidationResult(
+            consensus::SlashingEvidenceValidationStatus::REJECTED,
+            "Double-vote evidence is outside the admissible height window.",
+            structural.record());
     }
 
     const std::int64_t skew =
@@ -109,10 +118,12 @@ VerifiedSlashingEvidenceAdmission::admit(
         );
     }
 
-    if (evidence.blockIndex() == 0 || evidence.blockIndex() > currentConsensusHeight) {
+    if (currentConsensusHeight == std::numeric_limits<std::uint64_t>::max() ||
+        !AccountabilityWindow::evidenceHeightIsAdmissible(
+            evidence.blockIndex(), currentConsensusHeight + 1)) {
         return consensus::SlashingEvidenceValidationResult(
             consensus::SlashingEvidenceValidationStatus::REJECTED,
-            "Proposer-equivocation evidence refers to an unavailable consensus height.",
+            "Proposer-equivocation evidence is outside the admissible height window.",
             structural.record()
         );
     }

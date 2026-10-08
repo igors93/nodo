@@ -39,6 +39,8 @@ namespace nodo::consensus {
  */
 struct ConsensusTickResult {
   std::uint32_t votesCollected = 0;
+  std::uint32_t votesRelayed = 0;
+  std::uint32_t proposalsRelayed = 0;
   std::uint32_t evidenceAccepted = 0;
   std::uint32_t evidenceRejected = 0;
   std::uint32_t evidenceRateLimited = 0;
@@ -76,6 +78,11 @@ struct ConsensusTickResult {
  *     Once 2/3+ PRECOMMIT weight is reached, assembles a QuorumCertificate
  *     and commits the block. Advances the consensus round to the next height
  *     and notifies registered application callbacks.
+ *
+ *   Relay: peers are not assumed to form a full mesh. A vote newly accepted
+ *   into the vote pool and a proposal newly adopted as the round's candidate
+ *   are forwarded once to every other peer, so a validator reaches quorum
+ *   even without a direct session to the proposer or to every voter.
  *
  *   The caller (NodeDaemon via NodeOrchestrator) calls tick() synchronously.
  *   Callers must not call tick() concurrently with another tick().
@@ -156,7 +163,8 @@ public:
    *
    * Steps:
    *   1. Admit live and synchronized slashing evidence from gossip.
-   *   2. Drain VOTE_ANNOUNCE / VALIDATOR_VOTE messages from gossip inbox.
+   *   2. Drain VOTE_ANNOUNCE / VALIDATOR_VOTE messages from gossip inbox and
+   *      relay each newly accepted vote.
    *   3. Forward newly detected double-votes to EvidencePool if wired.
    *   4. Phase 1+2: If proposer, produce candidate + broadcast proposal.
    *   5. Phase 3a: Cast PREVOTE if eligible and not yet voted.
@@ -220,7 +228,20 @@ private:
   std::optional<std::filesystem::path> m_recoveryPath;
   const node::NodeDataDirectoryConfig *m_dataDirectoryConfig = nullptr;
 
+  // Validator-set size the VALIDATOR_VOTE peer window was last sized for.
+  std::size_t m_voteRateLimitValidatorCount = 0;
+
   ConsensusTickResult drainVotesAndCollect(std::int64_t now);
+
+  // Forward a received consensus message to every peer except its sender.
+  // Returns false for local loopback input, which its originating phase has
+  // already broadcast, and when no other peer could take the message.
+  bool relayToPeers(p2p::NetworkMessageType type,
+                    const p2p::NetworkEnvelope &received, std::int64_t now);
+
+  // Each peer relays every validator's votes, so the per-peer VALIDATOR_VOTE
+  // window must scale with the validator set or honest relays get penalized.
+  void sizeVoteRateLimitForRelay(std::size_t validatorCount);
 
   void drainSlashingEvidence(std::int64_t now, ConsensusTickResult &result);
 
@@ -235,8 +256,8 @@ private:
       ConsensusTickResult &result);
 
   // Validate proposals on the consensus thread and retain at most one
-  // candidate for the active height and round.
-  void processBlockProposals(ConsensusTickResult &result);
+  // candidate for the active height and round, relaying it once adopted.
+  void processBlockProposals(ConsensusTickResult &result, std::int64_t now);
 
   // Advance a timed-out round even when no proposal was received. Any
   // candidate from the expired round is discarded before the next proposer.

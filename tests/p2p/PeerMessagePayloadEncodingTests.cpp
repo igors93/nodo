@@ -13,7 +13,7 @@ using nodo::p2p::PeerMessageType;
 constexpr std::int64_t kTs = 1700000000;
 
 PeerInfo peer(const std::string& id) {
-    return PeerInfo(id, "127.0.0.1:9000", "nodo/0.4", 0, kTs);
+    return PeerInfo(id, "127.0.0.1:9000", "nodo/0.5", 0, kTs);
 }
 
 void testSerializeDoesNotExposeRawPayloadWithDelimiters() {

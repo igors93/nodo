@@ -1,6 +1,6 @@
 # Canonical Serialization
 
-This page describes the `nodo/0.4` development format. The future v1 binary
+This page describes the `nodo/0.5` development format. The future v1 binary
 contract and its byte vectors are in [protocol v1](../spec/protocol-v1.md) and
 [v1 vectors](../spec/vectors-v1.md).
 

@@ -25,6 +25,29 @@ A node should only admit peers that pass protocol-version, identity, network, an
 
 Gossip should avoid accepting or relaying invalid protocol data. The relay path must not bypass normal transaction, block, or vote validation.
 
+### Consensus relay
+
+Validators are not assumed to form a full mesh. Quorum needs more than two
+thirds of the voting weight ([ADR 0002](../spec/adr-0002-fault-model-and-quorum.md)),
+so a validator that only heard its direct peers could stall even with every
+validator online. `ConsensusEventLoop` therefore forwards consensus messages:
+
+- a vote is relayed, as `VALIDATOR_VOTE`, only when the local vote pool newly
+  accepts it: a valid signature from an eligible validator, for the current
+  height and the current or next round. A copy of a known vote is a duplicate,
+  so each node forwards each vote at most once and cycles stop. Stale,
+  invalid and conflicting votes are never forwarded; a double vote travels as
+  slashing evidence;
+- a block proposal is relayed once, when it passes verification and becomes
+  the candidate for the current round;
+- a relayed message goes to every peer except the one that delivered it, and
+  a node never relays its own loopback proposal.
+
+A relaying peer forwards one copy of every validator's votes, so the per-peer
+`VALIDATOR_VOTE` receive window is the network's
+`maxGossipMessagesPerPeerWindow` multiplied by the validator-set size. Other
+message types keep the single budget.
+
 ## Sync
 
 Sync should verify downloaded artifacts before accepting them. Fast sync and snapshot sync must still be tied to trusted finality evidence and canonical state commitments.

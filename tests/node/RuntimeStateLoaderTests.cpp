@@ -191,7 +191,7 @@ PeerInfo localPeer() {
     return PeerInfo(
         "runtime-state-loader-peer",
         "127.0.0.1:9600",
-        "nodo/0.4",
+        "nodo/0.5",
         0,
         kTimestamp
     );

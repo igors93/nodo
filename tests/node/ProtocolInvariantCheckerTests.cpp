@@ -67,7 +67,7 @@ PeerInfo localPeer() {
     return PeerInfo(
         "protocol-invariant-checker-peer",
         "127.0.0.1:9700",
-        "nodo/0.4",
+        "nodo/0.5",
         0,
         kTimestamp
     );

@@ -21,7 +21,8 @@ public:
         const StakingRegistry& staking,
         const core::ValidatorRegistry& validators,
         const GovernanceExecutor& governance,
-        std::uint64_t nextBlockHeight
+        std::uint64_t nextBlockHeight,
+        std::int64_t finalizedBlockTimestamp
     );
 
     const core::AccountStateView& accounts() const;
@@ -30,6 +31,7 @@ public:
     const core::ValidatorRegistry& validators() const;
     const GovernanceExecutor& governance() const;
     std::uint64_t nextBlockHeight() const;
+    std::int64_t finalizedBlockTimestamp() const;
 
 private:
     const core::AccountStateView* m_accounts;
@@ -38,6 +40,7 @@ private:
     const core::ValidatorRegistry* m_validators;
     const GovernanceExecutor* m_governance;
     std::uint64_t m_nextBlockHeight;
+    std::int64_t m_finalizedBlockTimestamp;
 };
 
 class TransactionAdmissionPolicy {

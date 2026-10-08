@@ -1,6 +1,7 @@
 # ADR 0003: Epoch-bound validator sets and bounded weight churn
 
-**Status:** accepted for the development protocol `nodo/0.4` and the v1
+**Status:** accepted for the development protocol since `nodo/0.4` (retained
+in `nodo/0.5`) and the v1
 design contract. The v1 binary commitment and proof format remain Phase 2
 and Phase 5 work.
 

@@ -101,7 +101,7 @@ p2p::PeerInfo localPeer() {
     return p2p::PeerInfo(
         "local-lifecycle-peer",
         "127.0.0.1:19500",
-        "nodo/0.4",
+        "nodo/0.5",
         0,
         kTimestamp
     );

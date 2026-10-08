@@ -15,7 +15,7 @@ namespace nodo::node {
 namespace {
 
 constexpr std::size_t MAX_DOMAIN_CODEC_FIELD_BYTES = 16 * 1024 * 1024;
-constexpr const char *DOMAIN_CODEC_VERSION = "NODO_PROTOCOL_DOMAIN_CODEC_V1";
+constexpr const char *DOMAIN_CODEC_VERSION = "NODO_PROTOCOL_DOMAIN_CODEC_V2";
 
 std::vector<unsigned char> hexToBytesStrict(const std::string &encodedHex,
                                             const char *domainName) {
@@ -145,6 +145,8 @@ void writeStaking(serialization::CanonicalWriter &writer,
     writer.writeUInt64(position.activationHeight);
     writer.writeUInt64(position.unbondingStartHeight);
     writer.writeUInt64(position.withdrawableHeight);
+    writer.writeInt64(position.unbondingStartTime);
+    writer.writeInt64(position.withdrawableTime);
     writer.writeUInt32(encodeStakePositionStatus(position.status));
   }
 
@@ -157,6 +159,7 @@ void writeStaking(serialization::CanonicalWriter &writer,
     writer.writeString(record.transactionId);
     writer.writeString(record.ownerAddress);
     writer.writeString(record.validatorAddress);
+    writer.writeString(record.previousValidatorAddress);
     writer.writeInt64(record.amount.rawUnits());
     writer.writeInt64(record.activeAfter.rawUnits());
     writer.writeInt64(record.pendingActivationAfter.rawUnits());
@@ -209,6 +212,8 @@ StakingRegistry readStaking(serialization::CanonicalReader &reader) {
     view.activationHeight = reader.readUInt64();
     view.unbondingStartHeight = reader.readUInt64();
     view.withdrawableHeight = reader.readUInt64();
+    view.unbondingStartTime = reader.readInt64();
+    view.withdrawableTime = reader.readInt64();
     view.status = decodeStakePositionStatus(reader.readUInt32());
     view.positionId =
         StakingRegistry::stakePositionId(view.ownerAddress,
@@ -226,6 +231,7 @@ StakingRegistry readStaking(serialization::CanonicalReader &reader) {
     record.transactionId = reader.readString();
     record.ownerAddress = reader.readString();
     record.validatorAddress = reader.readString();
+    record.previousValidatorAddress = reader.readString();
     record.amount = utils::Amount::fromRawUnits(reader.readInt64());
     record.activeAfter = utils::Amount::fromRawUnits(reader.readInt64());
     record.pendingActivationAfter =
@@ -735,7 +741,7 @@ std::string StakingDomainCodec::calculateRoot(const StakingRegistry &staking) {
   serialization::CanonicalWriter writer;
   writeStaking(writer, staking);
   return serialization::CanonicalHash::hashBytes(
-      writer.bytes(), "NODO_STAKING_DOMAIN_ROOT_V1");
+      writer.bytes(), "NODO_STAKING_DOMAIN_ROOT_V2");
 }
 
 bool StakingDomainCodec::validateRoot(const StakingRegistry &staking,

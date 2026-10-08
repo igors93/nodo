@@ -2,6 +2,7 @@
 #define NODO_NODE_STAKING_REGISTRY_HPP
 
 #include "economics/StakeAccount.hpp"
+#include "node/AccountabilityWindow.hpp"
 
 #include <cstdint>
 #include <map>
@@ -34,6 +35,8 @@ struct StakePositionView {
   std::uint64_t activationHeight = 0;
   std::uint64_t unbondingStartHeight = 0;
   std::uint64_t withdrawableHeight = 0;
+  std::int64_t unbondingStartTime = 0;
+  std::int64_t withdrawableTime = 0;
   StakePositionStatus status = StakePositionStatus::PENDING_ACTIVATION;
 
   utils::Amount availableAmount() const;
@@ -46,6 +49,7 @@ struct StakeLifecycleRecord {
   std::string transactionId;
   std::string ownerAddress;
   std::string validatorAddress;
+  std::string previousValidatorAddress;
   utils::Amount amount;
   utils::Amount activeAfter;
   utils::Amount pendingActivationAfter;
@@ -72,7 +76,8 @@ struct StakeLifecycleRecord {
  */
 class StakingRegistry {
 public:
-  static constexpr std::uint64_t UNBONDING_DELAY_BLOCKS = 21;
+  static constexpr std::uint64_t UNBONDING_DELAY_BLOCKS =
+      AccountabilityWindow::kUnbondingBlocks;
 
   struct Position {
     std::string positionId;
@@ -86,6 +91,8 @@ public:
     std::uint64_t activationHeight = 0;
     std::uint64_t unbondingStartHeight = 0;
     std::uint64_t withdrawableHeight = 0;
+    std::int64_t unbondingStartTime = 0;
+    std::int64_t withdrawableTime = 0;
     StakePositionStatus status = StakePositionStatus::PENDING_ACTIVATION;
   };
 
@@ -131,17 +138,18 @@ public:
 
   void requestUnlock(const std::string &ownerAddress,
                      const std::string &validatorAddress, utils::Amount amount,
-                     std::uint64_t blockHeight,
+                     std::uint64_t blockHeight, std::int64_t blockTimestamp,
                      const std::string &transactionId = "");
 
   void withdraw(const std::string &ownerAddress,
                 const std::string &validatorAddress, utils::Amount amount,
-                std::uint64_t blockHeight,
+                std::uint64_t blockHeight, std::int64_t blockTimestamp,
                 const std::string &transactionId = "");
 
   void requestValidatorExit(const std::string &ownerAddress,
                             const std::string &validatorAddress,
                             std::uint64_t blockHeight,
+                            std::int64_t blockTimestamp,
                             const std::string &transactionId = "");
 
   bool activatePending(std::uint64_t boundaryHeight);
@@ -163,6 +171,10 @@ public:
   utils::Amount withdrawableStake(const std::string &ownerAddress,
                                   const std::string &validatorAddress,
                                   std::uint64_t blockHeight) const;
+  utils::Amount withdrawableStake(const std::string &ownerAddress,
+                                  const std::string &validatorAddress,
+                                  std::uint64_t blockHeight,
+                                  std::int64_t blockTimestamp) const;
   utils::Amount activeStakeFor(const std::string &validatorAddress) const;
   utils::Amount bondedStakeFor(const std::string &validatorAddress) const;
   std::uint64_t unlockHeight(const std::string &ownerAddress,
@@ -174,6 +186,9 @@ public:
                               const std::string &ownerAddress,
                               std::uint64_t blockHeight,
                               const std::string &transactionId = "");
+  // Follow the canonical key-rotation chain to the staking account that now
+  // backs votes signed by a historical validator key.
+  std::string currentAddressFor(const std::string &historicalAddress) const;
 
   const std::map<std::string, economics::StakeAccount> &accounts() const;
   std::vector<StakePositionView> positions() const;
@@ -192,6 +207,7 @@ private:
   std::map<std::string, std::map<std::string, Position>>
       m_positionsByValidatorAndOwner;
   std::vector<StakeLifecycleRecord> m_lifecycleRecords;
+  std::map<std::string, std::string> m_rotationSuccessors;
 
   StakePositionView viewFor(const std::string &validatorAddress,
                             const std::string &ownerAddress,
@@ -202,7 +218,8 @@ private:
                              const std::string &ownerAddress,
                              const std::string &validatorAddress,
                              utils::Amount amount, std::uint64_t blockHeight,
-                             const Position &position, std::string reason);
+                             const Position &position, std::string reason,
+                             std::string previousValidatorAddress = "");
 
   void rewriteAccountFromPositions(const std::string &validatorAddress,
                                    bool preserveJailed,

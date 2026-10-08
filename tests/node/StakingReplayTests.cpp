@@ -109,7 +109,7 @@ PeerInfo localPeer() {
     return PeerInfo(
         "staking-replay-peer",
         "127.0.0.1:9902",
-        "nodo/0.4",
+        "nodo/0.5",
         0,
         kTimestamp
     );

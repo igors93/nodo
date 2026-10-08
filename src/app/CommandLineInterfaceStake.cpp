@@ -273,7 +273,8 @@ CommandLineInterface::executeStakeLock(const CommandLineOptions &options) {
   const node::TransactionAdmissionContext admissionContext(
       accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
       load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
-      load.runtime().blockchain().size());
+      load.runtime().blockchain().size(),
+      load.runtime().blockchain().latestBlock().timestamp());
 
   const node::TransactionAdmissionResult admission =
       node::TransactionAdmissionValidator::validateRuntimeSubmission(
@@ -443,6 +444,7 @@ CommandLineInterface::executeStakeStatus(const CommandLineOptions &options) {
           << "  Pending unbonding: "
           << position.pendingUnbondingAmount.rawUnits() << "\n"
           << "  Withdrawable height: " << position.withdrawableHeight << "\n"
+          << "  Withdrawable time: " << position.withdrawableTime << "\n"
           << "  Withdrawn: " << position.withdrawnAmount.rawUnits() << "\n";
     }
   }
@@ -503,6 +505,8 @@ CommandLineInterface::executeStakePositions(const CommandLineOptions &options) {
           << "      \"activationHeight\": " << position.activationHeight
           << ",\n"
           << "      \"withdrawableHeight\": " << position.withdrawableHeight
+          << ",\n"
+          << "      \"withdrawableTime\": " << position.withdrawableTime
           << "\n"
           << "    }";
       first = false;
@@ -531,7 +535,8 @@ CommandLineInterface::executeStakePositions(const CommandLineOptions &options) {
         << "Withdrawn: " << position.withdrawnAmount.rawUnits() << "\n"
         << "Slashed: " << position.slashedAmount.rawUnits() << "\n"
         << "Activation height: " << position.activationHeight << "\n"
-        << "Withdrawable height: " << position.withdrawableHeight << "\n";
+        << "Withdrawable height: " << position.withdrawableHeight << "\n"
+        << "Withdrawable time: " << position.withdrawableTime << "\n";
   }
   out << "Count: " << count << "\n";
   return CommandLineResult::success(out.str());

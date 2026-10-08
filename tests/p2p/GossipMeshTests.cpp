@@ -78,5 +78,37 @@ int main() {
   assert(meshB.inbox().countForType(NetworkMessageType::TRANSACTION_ANNOUNCE) ==
          100);
 
+  // broadcastExcept skips exactly the excluded peer, so a relay never echoes
+  // a message back to the peer that delivered it.
+  LoopbackTransport transportC(bus);
+  GossipMeshConfig configC("node-c", "localnet", "chain-localnet", "1",
+                           genesisId, 60, 2, 100, 50);
+  GossipMesh meshC(configC, transportC);
+  assert(meshA.registerPeer(makePeer("node-c", 19003)).success());
+  assert(meshC.registerPeer(makePeer("node-a", 19001)).success());
+  assert(meshA.connectPeer("node-c").sent());
+  assert(meshC.connectPeer("node-a").sent());
+
+  const GossipDeliveryReport relayed = meshA.broadcastExcept(
+      NetworkMessageType::VALIDATOR_VOTE, "vote-1", 1020, "node-b");
+  assert(relayed.acceptedCount() == 1);
+  assert(meshA.flushOutbound(1020).acceptedCount() == 1);
+  assert(meshC.receiveAvailable(1020).acceptedCount() == 1);
+  assert(meshB.receiveAvailable(1020).acceptedCount() == 0);
+  assert(meshC.inbox().countForType(NetworkMessageType::VALIDATOR_VOTE) == 1);
+  assert(meshB.inbox().countForType(NetworkMessageType::VALIDATOR_VOTE) == 0);
+
+  // setRateLimitForType raises one type's window without touching others.
+  meshC.setRateLimitForType(NetworkMessageType::VALIDATOR_VOTE, 300);
+  for (int index = 0; index < 250; ++index) {
+    meshA.broadcastExcept(NetworkMessageType::VALIDATOR_VOTE,
+                          "vote-burst-" + std::to_string(index), 1030,
+                          "node-b");
+  }
+  assert(meshA.flushOutbound(1030).acceptedCount() == 250);
+  const GossipDeliveryReport burst = meshC.receiveAvailable(1030);
+  assert(burst.acceptedCount() == 250);
+  assert(burst.rejectedCount() == 0);
+
   return 0;
 }

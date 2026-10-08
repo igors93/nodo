@@ -1,14 +1,18 @@
 // Real multi-node TCP end-to-end test for view change / proposer failover
 // (roadmap item 1.3):
 //
-//   (a) The first-round scheduled proposer never comes online. The two other
-//       validators must time out round 1 (rounds are 1-based), advance to
-//       round 2 (a different scheduled proposer), and finalize block 1
-//       without it.
+//   (a) The first-round scheduled proposer never comes online. The three
+//       other validators must time out round 1 (rounds are 1-based), advance
+//       to a later round with a different scheduled proposer, and finalize
+//       block 1 without it.
 //   (b) The absent validator then starts fresh, authenticates, catches up
 //       via persistent block sync instead of waiting on a stale round, and
 //       keeps tracking the chain as the network finalizes a further block.
-
+//
+// Four equal-weight validators: the strict quorum floor(2W/3)+1 (ADR 0002)
+// tolerates one absent validator only when W >= 4. With three, all three
+// must vote and a single absent proposer halts finality.
+#define NODO_REAL_TCP_NODE_COUNT 4
 #include "../common/RealTcpNodeTestSupport.hpp"
 
 namespace {
@@ -30,31 +34,45 @@ void testProposerFailoverAndLaggingNodeRecovery() {
 
   try {
     const std::size_t round0Proposer = scheduledProposerIndex(specs, genesis);
-    std::array<std::size_t, 2> onlineIndices{};
+    std::array<std::size_t, kTestNodeCount - 1> onlineIndices{};
     std::size_t onlineCount = 0;
     for (std::size_t index = 0; index < specs.size(); ++index) {
       if (index != round0Proposer) {
         onlineIndices[onlineCount++] = index;
       }
     }
-    require(onlineCount == 2, "Expected exactly two online validators.");
-    const std::size_t onlineA = onlineIndices[0];
-    const std::size_t onlineB = onlineIndices[1];
+    require(onlineCount == onlineIndices.size(),
+            "Expected every validator except the round-1 proposer online.");
+    const auto allOnline = [&](const auto &predicate) {
+      for (const std::size_t index : onlineIndices) {
+        if (!predicate(specs[index])) {
+          return false;
+        }
+      }
+      return true;
+    };
 
     // (a) The first-round proposer is never started (equivalent to it being
-    // killed before it could propose). Only the two other validators
-    // come online.
-    nodes.start(onlineA);
-    nodes.start(onlineB);
-    waitForRpc(specs[onlineA]);
-    waitForRpc(specs[onlineB]);
+    // killed before it could propose). Only the other validators come
+    // online.
+    for (const std::size_t index : onlineIndices) {
+      nodes.start(index);
+    }
+    for (const std::size_t index : onlineIndices) {
+      waitForRpc(specs[index]);
+    }
 
+    // Votes are not relayed, so every online validator needs a direct
+    // session with each other online validator to see a quorum.
     require(waitUntil(90s,
                       [&] {
-                        return hasAuthenticatedPeer(specs[onlineA]) &&
-                               hasAuthenticatedPeer(specs[onlineB]);
+                        return allOnline([&](const NodeSpec &spec) {
+                          return authenticatedPeerCount(spec) >=
+                                 onlineIndices.size() - 1;
+                        });
                       }),
             "Online validators did not authenticate with each other.");
+    const std::size_t onlineA = onlineIndices[0];
 
     // A block only gets produced once the mempool holds a pending
     // transaction (empty blocks are refused outside epoch-settlement
@@ -66,7 +84,7 @@ void testProposerFailoverAndLaggingNodeRecovery() {
     require(firstSubmitted.has_value() && firstSubmitted->statusCode == 200,
             "First transaction submission did not return HTTP 200.");
 
-    // The first-round proposer never proposes, so both online validators
+    // The first-round proposer never proposes, so the online validators
     // must time out and advance past round 1 (rounds are 1-based) before
     // any block can be finalized. Catching round > 1 here proves the view
     // change fired rather than the block having been finalized by some
@@ -81,14 +99,17 @@ void testProposerFailoverAndLaggingNodeRecovery() {
 
     require(waitUntil(180s,
                       [&] {
-                        return reachedFinalizedHeight(specs[onlineA], 1) &&
-                               reachedFinalizedHeight(specs[onlineB], 1);
+                        return allOnline([](const NodeSpec &spec) {
+                          return reachedFinalizedHeight(spec, 1);
+                        });
                       }),
-            "The two online validators did not finalize block 1 via view "
-            "change after the round-0 proposer failed to propose.");
+            "The online validators did not finalize block 1 via view "
+            "change after the round-1 proposer failed to propose.");
     const std::string finalizedHash = blockHashAt(specs[onlineA], 1);
-    require(blockHashAt(specs[onlineB], 1) == finalizedHash,
-            "Online validators finalized different block hashes.");
+    for (const std::size_t index : onlineIndices) {
+      require(blockHashAt(specs[index], 1) == finalizedHash,
+              "Online validators finalized different block hashes.");
+    }
 
     // (b) The previously-absent round-0 proposer now starts, fresh,
     // with an empty chain. It must authenticate, discover the height
@@ -117,8 +138,9 @@ void testProposerFailoverAndLaggingNodeRecovery() {
 
     require(waitUntil(180s,
                       [&] {
-                        return reachedFinalizedHeight(specs[onlineA], 2) &&
-                               reachedFinalizedHeight(specs[onlineB], 2) &&
+                        return allOnline([](const NodeSpec &spec) {
+                                 return reachedFinalizedHeight(spec, 2);
+                               }) &&
                                reachedFinalizedHeight(specs[round0Proposer], 2);
                       }),
             "The network (including the recovered validator) did not "

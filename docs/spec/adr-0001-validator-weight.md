@@ -1,7 +1,7 @@
 # ADR 0001: Stake-proportional validator voting weight
 
 **Status:** accepted for the v1 design contract; the development runtime uses
-this weight function since `nodo/0.2` (and retains it in `nodo/0.4`). The remaining v1 state and consensus
+this weight function since `nodo/0.2` (and retains it in `nodo/0.5`). The remaining v1 state and consensus
 rules are tracked separately in the roadmap.
 
 ## Threat and decision

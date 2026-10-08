@@ -430,6 +430,13 @@ NetworkEnvelope GossipMesh::createEnvelope(NetworkMessageType type,
 GossipDeliveryReport GossipMesh::broadcast(NetworkMessageType type,
                                            const std::string &payload,
                                            std::int64_t now) {
+  return broadcastExcept(type, payload, now, "");
+}
+
+GossipDeliveryReport
+GossipMesh::broadcastExcept(NetworkMessageType type, const std::string &payload,
+                            std::int64_t now,
+                            const std::string &excludedNodeId) {
   if (!m_config.isValid()) {
     return GossipDeliveryReport(0, 1);
   }
@@ -445,8 +452,9 @@ GossipDeliveryReport GossipMesh::broadcast(NetworkMessageType type,
   std::size_t rejected = 0;
 
   for (const PeerMetadata &peer : m_peerRegistry.activePeersAt(now)) {
-    if (peer.nodeId() == m_config.localNodeId() || peer.quarantined() ||
-        peer.bannedAt(now)) {
+    if (peer.nodeId() == m_config.localNodeId() ||
+        (!excludedNodeId.empty() && peer.nodeId() == excludedNodeId) ||
+        peer.quarantined() || peer.bannedAt(now)) {
       continue;
     }
 
@@ -467,6 +475,11 @@ GossipDeliveryReport GossipMesh::broadcast(NetworkMessageType type,
   }
 
   return GossipDeliveryReport(accepted, rejected);
+}
+
+void GossipMesh::setRateLimitForType(NetworkMessageType type,
+                                     std::uint32_t limit) {
+  m_rateLimiter.setLimitForType(type, limit);
 }
 
 GossipDeliveryReport GossipMesh::sendTo(const std::string &targetNodeId,

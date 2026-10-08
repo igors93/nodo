@@ -47,8 +47,10 @@ FinalizedSlashingEvidenceAuditResult auditEvidenceRecord(
         );
     }
 
+    const std::string stakeAddress =
+        staking.currentAddressFor(decision->validatorAddress());
     const core::ValidatorRegistryEntry* entry =
-        validators.entryForAddress(decision->validatorAddress());
+        validators.entryForAddress(stakeAddress);
     if (entry == nullptr) {
         return FinalizedSlashingEvidenceAuditResult::failed(
             "Penalized validator is missing from the finalized validator registry."
@@ -56,20 +58,26 @@ FinalizedSlashingEvidenceAuditResult auditEvidenceRecord(
     }
 
     const economics::StakeAccount* stakeAccount =
-        staking.accountFor(decision->validatorAddress());
+        staking.accountFor(stakeAddress);
     if (stakeAccount == nullptr) {
         return FinalizedSlashingEvidenceAuditResult::failed(
             "Penalized validator is missing from the finalized staking registry."
         );
     }
 
-    const std::int64_t totalSlashRaw =
-        penaltyLedger.totalSlashAmountForValidator(decision->validatorAddress());
-    const std::int64_t expectedSlashedRaw = std::min(
-        std::max<std::int64_t>(totalSlashRaw, 0),
-        stakeAccount->bondedAmount().rawUnits()
-    );
-    if (stakeAccount->slashedAmount().rawUnits() != expectedSlashedRaw) {
+    const std::uint64_t bonded = static_cast<std::uint64_t>(
+        stakeAccount->bondedAmount().rawUnits());
+    std::uint64_t expectedSlashedRaw = 0;
+    for (const auto &historicalDecision : penaltyLedger.allDecisions()) {
+        if (staking.currentAddressFor(historicalDecision.validatorAddress()) !=
+            stakeAddress)
+            continue;
+        const std::uint64_t slash = static_cast<std::uint64_t>(
+            std::max<std::int64_t>(historicalDecision.slashAmountRawUnits(), 0));
+        expectedSlashedRaw += std::min(slash, bonded - expectedSlashedRaw);
+    }
+    if (static_cast<std::uint64_t>(stakeAccount->slashedAmount().rawUnits()) !=
+        expectedSlashedRaw) {
         return FinalizedSlashingEvidenceAuditResult::failed(
             "Finalized staking registry does not mirror the bounded slash total."
         );

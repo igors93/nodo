@@ -147,6 +147,17 @@ public:
   GossipDeliveryReport broadcast(NetworkMessageType type,
                                  const std::string &payload, std::int64_t now);
 
+  // broadcast() to every eligible peer except excludedNodeId. Relays use it
+  // to avoid echoing a message back to the peer that delivered it.
+  GossipDeliveryReport broadcastExcept(NetworkMessageType type,
+                                       const std::string &payload,
+                                       std::int64_t now,
+                                       const std::string &excludedNodeId);
+
+  // Overrides the per-peer inbound window for one message type, e.g. to give
+  // relayed consensus votes a budget proportional to the validator set.
+  void setRateLimitForType(NetworkMessageType type, std::uint32_t limit);
+
   GossipDeliveryReport sendTo(const std::string &targetNodeId,
                               NetworkMessageType type,
                               const std::string &payload, std::int64_t now);

@@ -4,6 +4,7 @@
 #include "core/LedgerRecordDomainValidator.hpp"
 #include "core/ProtocolLimits.hpp"
 #include "node/SignedBlockProposalMessage.hpp"
+#include "node/AccountabilityWindow.hpp"
 #include "node/ValidatorLifecycle.hpp"
 
 #include <algorithm>
@@ -214,8 +215,10 @@ void applyPenaltyEffects(
     core::ValidatorRegistry& validators,
     StakingRegistry& staking
 ) {
+    const std::string stakeAddress =
+        staking.currentAddressFor(decision.validatorAddress());
     const core::ValidatorRegistryEntry* entry =
-        validators.entryForAddress(decision.validatorAddress());
+        validators.entryForAddress(stakeAddress);
     if (entry == nullptr) {
         throw std::logic_error(
             "Penalized validator is missing from the current registry."
@@ -223,26 +226,32 @@ void applyPenaltyEffects(
     }
 
     const economics::StakeAccount* stakeAccount =
-        staking.accountFor(decision.validatorAddress());
+        staking.accountFor(stakeAddress);
     if (stakeAccount == nullptr) {
         throw std::logic_error(
             "Penalized validator is missing from the staking registry."
         );
     }
 
-    const std::int64_t totalSlashRaw =
-        penaltyLedger.totalSlashAmountForValidator(decision.validatorAddress());
+    const std::int64_t totalSlashRaw = static_cast<std::int64_t>(
+        std::min<unsigned __int128>(
+            static_cast<unsigned __int128>(stakeAccount->slashedAmount().rawUnits()) +
+                static_cast<std::uint64_t>(std::max<std::int64_t>(
+                    decision.slashAmountRawUnits(), 0)),
+            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())));
     const std::int64_t boundedSlashRaw = std::min(
         std::max<std::int64_t>(totalSlashRaw, 0),
         stakeAccount->bondedAmount().rawUnits()
     );
     const bool tombstoned =
-        penaltyLedger.validatorIsTombstoned(decision.validatorAddress());
+        penaltyLedger.validatorIsTombstoned(decision.validatorAddress()) ||
+        stakeAccount->tombstoned();
     const bool jailed = tombstoned ||
-        penaltyLedger.validatorIsJailed(decision.validatorAddress());
+        penaltyLedger.validatorIsJailed(decision.validatorAddress()) ||
+        stakeAccount->jailed();
 
     staking.applyPenaltyState(
-        decision.validatorAddress(),
+        stakeAddress,
         utils::Amount::fromRawUnits(boundedSlashRaw),
         jailed,
         tombstoned,
@@ -250,13 +259,13 @@ void applyPenaltyEffects(
     );
 
     const std::int64_t activeStakeRaw =
-        staking.activeStakeFor(decision.validatorAddress()).rawUnits();
+        staking.activeStakeFor(stakeAddress).rawUnits();
     const std::uint64_t registryStake = activeStakeRaw <= 0
         ? 0
         : static_cast<std::uint64_t>(activeStakeRaw);
     const core::ValidatorRegistryUpdateResult stakeResult =
         validators.updateStake(
-            decision.validatorAddress(),
+            stakeAddress,
             registryStake,
             blockTimestamp
         );
@@ -266,7 +275,7 @@ void applyPenaltyEffects(
         );
     }
 
-    entry = validators.entryForAddress(decision.validatorAddress());
+    entry = validators.entryForAddress(stakeAddress);
     if (entry == nullptr) {
         throw std::logic_error(
             "Penalized validator disappeared after stake update."
@@ -277,7 +286,7 @@ void applyPenaltyEffects(
         if (!entry->exited()) {
             const core::ValidatorRegistryUpdateResult result =
                 validators.deactivateValidator(
-                    decision.validatorAddress(),
+                    stakeAddress,
                     blockTimestamp
                 );
             if (!result.success()) {
@@ -294,7 +303,7 @@ void applyPenaltyEffects(
             ((blockHeight - 1) / NODO_VALIDATOR_EPOCH_BLOCKS) + 1;
         const core::ValidatorRegistryUpdateResult result =
             validators.jailValidator(
-                decision.validatorAddress(),
+                stakeAddress,
                 currentEpoch + decision.jailEpochs(),
                 blockTimestamp
             );
@@ -461,10 +470,11 @@ void CanonicalSlashingTransition::applyEvidenceRecords(
                 "Slashing evidence is duplicated or already finalized."
             );
         }
-        if (offenseHeight == 0 || offenseHeight >= blockHeight ||
+        if (!AccountabilityWindow::evidenceHeightIsAdmissible(
+                offenseHeight, blockHeight) ||
             detectedAtOf(evidence) > blockTimestamp) {
             throw std::invalid_argument(
-                "Slashing evidence must refer to a prior block height."
+                "Slashing evidence is outside the admissible height window."
             );
         }
 
@@ -483,13 +493,21 @@ void CanonicalSlashingTransition::applyEvidenceRecords(
             );
         }
 
-        const economics::StakeAccount* stakeAccount = staking.accountFor(record.validatorAddress());
-        const std::uint64_t bondedStake = stakeAccount ? stakeAccount->bondedAmount().rawUnits() : 0;
+        const auto *offenderAtHeight = validatorSetHistory.setAt(offenseHeight)
+            .entryForAddress(record.validatorAddress());
+        if (offenderAtHeight == nullptr)
+            throw std::invalid_argument("Offender is absent from historical validator set.");
+        const std::uint64_t bondedStake = offenderAtHeight->stakeAmount();
         
-        const std::int64_t doubleVoteSlash = 
-            (static_cast<std::uint64_t>(networkParameters.doubleVoteSlashFractionBasisPoints()) * bondedStake) / 10000ULL;
-        const std::int64_t equivocationSlash = 
-            (static_cast<std::uint64_t>(networkParameters.proposerEquivocationSlashFractionBasisPoints()) * bondedStake) / 10000ULL;
+        const auto slashFor = [&](std::uint32_t basisPoints) {
+            return static_cast<std::int64_t>(
+                (static_cast<unsigned __int128>(basisPoints) * bondedStake +
+                 9999) / 10000);
+        };
+        const std::int64_t doubleVoteSlash =
+            slashFor(networkParameters.doubleVoteSlashFractionBasisPoints());
+        const std::int64_t equivocationSlash =
+            slashFor(networkParameters.proposerEquivocationSlashFractionBasisPoints());
 
         consensus::ValidatorPenaltyPolicy validatorPolicy(
             doubleVoteSlash,

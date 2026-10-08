@@ -84,7 +84,7 @@ GenesisConfig genesisConfig() {
 }
 
 PeerInfo localPeer() {
-  return PeerInfo("protocol-replay-peer", "127.0.0.1:9903", "nodo/0.4", 0,
+  return PeerInfo("protocol-replay-peer", "127.0.0.1:9903", "nodo/0.5", 0,
                   kTimestamp);
 }
 

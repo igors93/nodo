@@ -7,7 +7,7 @@ int main() {
     nodo::p2p::NetworkEnvelope envelope(
         "nodo-localnet",
         "nodo-localnet-1",
-        "nodo/0.4",
+        "nodo/0.5",
         nodo::p2p::NetworkMessageType::PING,
         "node-A",
         1000,

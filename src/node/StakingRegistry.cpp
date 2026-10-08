@@ -34,6 +34,16 @@ utils::Amount positionAvailable(const StakingRegistry::Position &position) {
          position.pendingUnbondingAmount;
 }
 
+std::int64_t withdrawableTime(std::int64_t blockTimestamp) {
+  constexpr std::int64_t delay =
+      AccountabilityWindow::kUnbondingSeconds +
+      AccountabilityWindow::kFutureBlockSkewSeconds;
+  if (blockTimestamp <= 0 ||
+      blockTimestamp > std::numeric_limits<std::int64_t>::max() - delay)
+    throw std::overflow_error("Stake withdrawable time would overflow.");
+  return blockTimestamp + delay;
+}
+
 StakePositionStatus statusFor(const StakingRegistry::Position &position) {
   if (position.status == StakePositionStatus::TOMBSTONED) {
     return StakePositionStatus::TOMBSTONED;
@@ -101,13 +111,22 @@ std::string StakePositionView::serialize() const {
       << ";lockHeight=" << lockHeight
       << ";activationHeight=" << activationHeight
       << ";unbondingStartHeight=" << unbondingStartHeight
-      << ";withdrawableHeight=" << withdrawableHeight << "}";
+      << ";withdrawableHeight=" << withdrawableHeight
+      << ";unbondingStartTime=" << unbondingStartTime
+      << ";withdrawableTime=" << withdrawableTime << "}";
   return oss.str();
 }
 
 bool StakeLifecycleRecord::isValid() const {
   return !recordId.empty() && !action.empty() && isSafeScalar(ownerAddress) &&
-         isSafeScalar(validatorAddress) && !amount.isNegative() &&
+         isSafeScalar(validatorAddress) &&
+         (previousValidatorAddress.empty() ||
+          isSafeScalar(previousValidatorAddress)) &&
+         ((action == "VALIDATOR_KEY_ROTATE") ==
+          !previousValidatorAddress.empty()) &&
+         (previousValidatorAddress.empty() ||
+          previousValidatorAddress != validatorAddress) &&
+         !amount.isNegative() &&
          !activeAfter.isNegative() && !pendingActivationAfter.isNegative() &&
          !pendingUnbondingAfter.isNegative() && !slashedAfter.isNegative() &&
          blockHeight > 0;
@@ -118,7 +137,9 @@ std::string StakeLifecycleRecord::serialize() const {
   oss << "StakeLifecycleRecord{"
       << "id=" << recordId << ";action=" << action
       << ";transactionId=" << transactionId << ";owner=" << ownerAddress
-      << ";validator=" << validatorAddress << ";amount=" << amount.rawUnits()
+      << ";validator=" << validatorAddress
+      << ";previousValidator=" << previousValidatorAddress
+      << ";amount=" << amount.rawUnits()
       << ";activeAfter=" << activeAfter.rawUnits()
       << ";pendingActivationAfter=" << pendingActivationAfter.rawUnits()
       << ";pendingUnbondingAfter=" << pendingUnbondingAfter.rawUnits()
@@ -151,12 +172,22 @@ StakingRegistry StakingRegistry::restore(
     position.activationHeight = view.activationHeight;
     position.unbondingStartHeight = view.unbondingStartHeight;
     position.withdrawableHeight = view.withdrawableHeight;
+    position.unbondingStartTime = view.unbondingStartTime;
+    position.withdrawableTime = view.withdrawableTime;
     position.status = view.status;
     registry.m_positionsByValidatorAndOwner[view.validatorAddress]
                                             [view.ownerAddress] = position;
   }
 
   registry.m_lifecycleRecords = std::move(lifecycleRecords);
+  for (const auto &record : registry.m_lifecycleRecords) {
+    if (record.action != "VALIDATOR_KEY_ROTATE")
+      continue;
+    const auto [it, inserted] = registry.m_rotationSuccessors.emplace(
+        record.previousValidatorAddress, record.validatorAddress);
+    if (!inserted && it->second != record.validatorAddress)
+      throw std::invalid_argument("Conflicting restored validator key rotations.");
+  }
 
   if (!registry.isValid()) {
     throw std::invalid_argument(
@@ -289,6 +320,7 @@ void StakingRegistry::requestUnlock(const std::string &ownerAddress,
                                     const std::string &validatorAddress,
                                     utils::Amount amount,
                                     std::uint64_t blockHeight,
+                                    std::int64_t blockTimestamp,
                                     const std::string &transactionId) {
   requireValidOperationInput(ownerAddress, validatorAddress, amount,
                              blockHeight);
@@ -296,6 +328,7 @@ void StakingRegistry::requestUnlock(const std::string &ownerAddress,
       std::numeric_limits<std::uint64_t>::max() - UNBONDING_DELAY_BLOCKS) {
     throw std::overflow_error("Stake withdrawable height would overflow.");
   }
+  const std::int64_t deadline = withdrawableTime(blockTimestamp);
 
   const economics::StakeAccount current = accountOrDefault(validatorAddress);
   if (current.jailed() || current.tombstoned()) {
@@ -317,6 +350,8 @@ void StakingRegistry::requestUnlock(const std::string &ownerAddress,
       owner->second.pendingUnbondingAmount + amount;
   owner->second.unbondingStartHeight = blockHeight;
   owner->second.withdrawableHeight = blockHeight + UNBONDING_DELAY_BLOCKS;
+  owner->second.unbondingStartTime = blockTimestamp;
+  owner->second.withdrawableTime = deadline;
   owner->second.status = statusFor(owner->second);
   rewriteAccountFromPositions(validatorAddress, current.jailed(),
                               current.tombstoned());
@@ -328,6 +363,7 @@ void StakingRegistry::requestUnlock(const std::string &ownerAddress,
 void StakingRegistry::withdraw(const std::string &ownerAddress,
                                const std::string &validatorAddress,
                                utils::Amount amount, std::uint64_t blockHeight,
+                               std::int64_t blockTimestamp,
                                const std::string &transactionId) {
   requireValidOperationInput(ownerAddress, validatorAddress, amount,
                              blockHeight);
@@ -349,7 +385,9 @@ void StakingRegistry::withdraw(const std::string &ownerAddress,
         "Stake withdrawal exceeds the owner's unbonding position.");
   }
   if (owner->second.withdrawableHeight == 0 ||
-      blockHeight < owner->second.withdrawableHeight) {
+      owner->second.withdrawableTime == 0 ||
+      blockHeight < owner->second.withdrawableHeight ||
+      blockTimestamp < owner->second.withdrawableTime) {
     throw std::invalid_argument("Stake unbonding cooldown has not elapsed.");
   }
 
@@ -367,6 +405,7 @@ void StakingRegistry::withdraw(const std::string &ownerAddress,
 void StakingRegistry::requestValidatorExit(const std::string &ownerAddress,
                                            const std::string &validatorAddress,
                                            std::uint64_t blockHeight,
+                                           std::int64_t blockTimestamp,
                                            const std::string &transactionId) {
   if (!isSafeScalar(ownerAddress) || !isSafeScalar(validatorAddress) ||
       blockHeight == 0) {
@@ -376,6 +415,7 @@ void StakingRegistry::requestValidatorExit(const std::string &ownerAddress,
       std::numeric_limits<std::uint64_t>::max() - UNBONDING_DELAY_BLOCKS) {
     throw std::overflow_error("Stake withdrawable height would overflow.");
   }
+  const std::int64_t deadline = withdrawableTime(blockTimestamp);
   auto validator = m_positionsByValidatorAndOwner.find(validatorAddress);
   if (validator == m_positionsByValidatorAndOwner.end()) {
     return;
@@ -391,6 +431,8 @@ void StakingRegistry::requestValidatorExit(const std::string &ownerAddress,
       owner->second.pendingUnbondingAmount + amount;
   owner->second.unbondingStartHeight = blockHeight;
   owner->second.withdrawableHeight = blockHeight + UNBONDING_DELAY_BLOCKS;
+  owner->second.unbondingStartTime = blockTimestamp;
+  owner->second.withdrawableTime = deadline;
   owner->second.status = statusFor(owner->second);
   rewriteAccountFromPositions(validatorAddress, current.jailed(),
                               current.tombstoned());
@@ -583,6 +625,20 @@ StakingRegistry::withdrawableStake(const std::string &ownerAddress,
   return owner->second.pendingUnbondingAmount;
 }
 
+utils::Amount StakingRegistry::withdrawableStake(
+    const std::string &ownerAddress, const std::string &validatorAddress,
+    std::uint64_t blockHeight, std::int64_t blockTimestamp) const {
+  const auto validator = m_positionsByValidatorAndOwner.find(validatorAddress);
+  if (validator == m_positionsByValidatorAndOwner.end())
+    return utils::Amount();
+  const auto owner = validator->second.find(ownerAddress);
+  if (owner == validator->second.end() ||
+      owner->second.withdrawableTime == 0 ||
+      blockTimestamp < owner->second.withdrawableTime)
+    return utils::Amount();
+  return withdrawableStake(ownerAddress, validatorAddress, blockHeight);
+}
+
 utils::Amount
 StakingRegistry::activeStakeFor(const std::string &validatorAddress) const {
   const auto account = m_accounts.find(validatorAddress);
@@ -643,9 +699,10 @@ void StakingRegistry::rotateValidatorAddress(
   }
   if (m_accounts.find(newValidatorAddress) != m_accounts.end() ||
       m_positionsByValidatorAndOwner.find(newValidatorAddress) !=
-          m_positionsByValidatorAndOwner.end()) {
+          m_positionsByValidatorAndOwner.end() ||
+      m_rotationSuccessors.contains(newValidatorAddress)) {
     throw std::invalid_argument(
-        "New validator address already has staking state.");
+        "New validator address already has staking history or state.");
   }
 
   auto accountIt = m_accounts.find(oldValidatorAddress);
@@ -671,7 +728,8 @@ void StakingRegistry::rotateValidatorAddress(
     appendLifecycleRecord("VALIDATOR_KEY_ROTATE", transactionId, owner,
                           newValidatorAddress, positionAvailable(position),
                           blockHeight, position,
-                          "validator key rotation from " + oldValidatorAddress);
+                          "validator key rotation from " + oldValidatorAddress,
+                          oldValidatorAddress);
   }
 
   m_positionsByValidatorAndOwner.emplace(newValidatorAddress,
@@ -681,10 +739,23 @@ void StakingRegistry::rotateValidatorAddress(
       economics::StakeAccount(newValidatorAddress, oldAccount.bondedAmount(),
                               oldAccount.slashedAmount(), oldAccount.jailed(),
                               oldAccount.tombstoned()));
+  m_rotationSuccessors.emplace(oldValidatorAddress, newValidatorAddress);
 
   if (!isValid()) {
     throw std::logic_error("Staking registry failed post key-rotation audit.");
   }
+}
+
+std::string StakingRegistry::currentAddressFor(
+    const std::string &historicalAddress) const {
+  std::string current = historicalAddress;
+  for (std::size_t i = 0; i <= m_rotationSuccessors.size(); ++i) {
+    const auto found = m_rotationSuccessors.find(current);
+    if (found == m_rotationSuccessors.end())
+      return current;
+    current = found->second;
+  }
+  throw std::logic_error("Validator key-rotation chain contains a cycle.");
 }
 
 const std::map<std::string, economics::StakeAccount> &
@@ -744,9 +815,28 @@ bool StakingRegistry::isValid() const {
           position.pendingUnbondingAmount.isNegative() ||
           position.withdrawnAmount.isNegative() ||
           position.slashedAmount.isNegative() ||
-          position.rewardsPending.isNegative()) {
+          position.rewardsPending.isNegative() ||
+          position.unbondingStartTime < 0 ||
+          position.withdrawableTime < 0) {
         return false;
       }
+      if (position.pendingUnbondingAmount.isPositive() &&
+          (position.unbondingStartHeight == 0 ||
+           position.unbondingStartTime <= 0 ||
+           position.unbondingStartHeight >
+               std::numeric_limits<std::uint64_t>::max() -
+                   UNBONDING_DELAY_BLOCKS ||
+           position.withdrawableHeight !=
+               position.unbondingStartHeight + UNBONDING_DELAY_BLOCKS ||
+           position.unbondingStartTime >
+               std::numeric_limits<std::int64_t>::max() -
+                   AccountabilityWindow::kUnbondingSeconds -
+                   AccountabilityWindow::kFutureBlockSkewSeconds ||
+           position.withdrawableTime !=
+               position.unbondingStartTime +
+                   AccountabilityWindow::kUnbondingSeconds +
+                   AccountabilityWindow::kFutureBlockSkewSeconds))
+        return false;
       availableTotal = availableTotal + positionAvailable(position);
       slashedTotal = slashedTotal + position.slashedAmount;
     }
@@ -758,9 +848,29 @@ bool StakingRegistry::isValid() const {
     if (account->second.bondedAmount() != availableTotal + slashedTotal)
       return false;
   }
+  std::map<std::string, std::string> expectedRotations;
   for (const auto &record : m_lifecycleRecords) {
     if (!record.isValid())
       return false;
+    if (record.action == "VALIDATOR_KEY_ROTATE") {
+      const auto [it, inserted] = expectedRotations.emplace(
+          record.previousValidatorAddress, record.validatorAddress);
+      if (!inserted && it->second != record.validatorAddress)
+        return false;
+    }
+  }
+  if (expectedRotations != m_rotationSuccessors)
+    return false;
+  for (const auto &[oldAddress, newAddress] : m_rotationSuccessors) {
+    (void)newAddress;
+    try {
+      const std::string current = currentAddressFor(oldAddress);
+      if (current == oldAddress || m_accounts.contains(oldAddress) ||
+          !m_accounts.contains(current))
+        return false;
+    } catch (const std::logic_error &) {
+      return false;
+    }
   }
   return true;
 }
@@ -815,6 +925,8 @@ StakePositionView StakingRegistry::viewFor(const std::string &validatorAddress,
   view.activationHeight = position.activationHeight;
   view.unbondingStartHeight = position.unbondingStartHeight;
   view.withdrawableHeight = position.withdrawableHeight;
+  view.unbondingStartTime = position.unbondingStartTime;
+  view.withdrawableTime = position.withdrawableTime;
   view.status = position.status;
   return view;
 }
@@ -823,12 +935,13 @@ void StakingRegistry::appendLifecycleRecord(
     std::string action, const std::string &transactionId,
     const std::string &ownerAddress, const std::string &validatorAddress,
     utils::Amount amount, std::uint64_t blockHeight, const Position &position,
-    std::string reason) {
+    std::string reason, std::string previousValidatorAddress) {
   StakeLifecycleRecord record;
   record.action = std::move(action);
   record.transactionId = transactionId;
   record.ownerAddress = ownerAddress;
   record.validatorAddress = validatorAddress;
+  record.previousValidatorAddress = std::move(previousValidatorAddress);
   record.amount = amount;
   record.activeAfter = position.activeAmount;
   record.pendingActivationAfter = position.pendingActivationAmount;
@@ -842,7 +955,7 @@ void StakingRegistry::appendLifecycleRecord(
       "stake-lifecycle:" + std::to_string(m_lifecycleRecords.size()) + ":" +
       record.action + ":" + validatorAddress + ":" + ownerAddress + ":" +
       std::to_string(blockHeight) + ":" + std::to_string(amount.rawUnits()) +
-      ":" + transactionId);
+      ":" + transactionId + ":" + record.previousValidatorAddress);
   if (!record.isValid()) {
     throw std::logic_error("Generated invalid stake lifecycle record.");
   }

@@ -29,8 +29,18 @@ unit. Partitioning stake among validator keys cannot increase aggregate power.
 The minimum stake limits cheap identities, but does not establish Sybil
 resistance by itself. A stake-rich actor can still hold a large fraction of
 voting power. Historical quorum verification uses the set snapshot for the
-finalized height. The current development runtime has linear weight in
-`nodo/0.4`; full v1 stake-lot backing and evidence-window rules remain roadmap work.
+finalized height. The current development runtime has linear weight and
+epoch projection in `nodo/0.5`; full v1 stake-lot backing remains roadmap work.
+
+## Accountability windows
+
+In `nodo/0.5`, an unlock or validator exit starts a 28-epoch height hold and
+a 28-day timestamp hold with a 300-second future-block margin. Withdrawal
+requires both deadlines and must leave enough stake locked to back every
+historical vote still within the 21-epoch evidence window. A rotated key
+retains its predecessor's slash liability. See
+[ADR 0004](../spec/adr-0004-accountability-windows.md) for the exact rules
+and the remaining BFT-time and evidence-inclusion work.
 
 ## Rewards
 

@@ -134,7 +134,7 @@ p2p::PeerInfo peerInfo(const TestNode& n) {
     return p2p::PeerInfo(
         "peer-" + n.id,
         n.endpoint,
-        "nodo/0.4",
+        "nodo/0.5",
         0,
         kTimestamp
     );

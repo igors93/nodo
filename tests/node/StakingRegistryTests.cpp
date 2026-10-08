@@ -99,13 +99,26 @@ void testDepositActivationUnlockWithdrawLifecycle() {
     assert(reg.activatePending(activation));
     assert(reg.activeStake("owner-a", "val-a").rawUnits() == 1'000);
 
-    reg.requestUnlock("owner-a", "val-a", Amount::fromRawUnits(400), activation + 1, "tx-unlock");
+    constexpr std::int64_t unlockTime = 1'900'000'000;
+    const std::uint64_t unlockHeight = activation + 1;
+    const std::uint64_t matureHeight =
+        unlockHeight + StakingRegistry::UNBONDING_DELAY_BLOCKS;
+    const std::int64_t matureTime = unlockTime +
+        nodo::node::AccountabilityWindow::kUnbondingSeconds +
+        nodo::node::AccountabilityWindow::kFutureBlockSkewSeconds;
+    reg.requestUnlock("owner-a", "val-a", Amount::fromRawUnits(400),
+                      unlockHeight, unlockTime, "tx-unlock");
     assert(reg.activeStake("owner-a", "val-a").rawUnits() == 600);
     assert(reg.pendingUnbondingStake("owner-a", "val-a").rawUnits() == 400);
-    assert(reg.withdrawableStake("owner-a", "val-a", activation + 1).isZero());
-    assert(reg.withdrawableStake("owner-a", "val-a", activation + 22).rawUnits() == 400);
+    assert(reg.withdrawableStake("owner-a", "val-a", matureHeight - 1,
+                                 matureTime).isZero());
+    assert(reg.withdrawableStake("owner-a", "val-a", matureHeight,
+                                 matureTime - 1).isZero());
+    assert(reg.withdrawableStake("owner-a", "val-a", matureHeight,
+                                 matureTime).rawUnits() == 400);
 
-    reg.withdraw("owner-a", "val-a", Amount::fromRawUnits(400), activation + 22, "tx-withdraw");
+    reg.withdraw("owner-a", "val-a", Amount::fromRawUnits(400),
+                 matureHeight, matureTime, "tx-withdraw");
     assert(reg.ownedStake("owner-a", "val-a").rawUnits() == 600);
     assert(reg.accountOrDefault("val-a").bondedAmount().rawUnits() == 600);
     assert(reg.lifecycleRecords().size() == 4);

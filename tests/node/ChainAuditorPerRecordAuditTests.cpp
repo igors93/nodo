@@ -88,7 +88,7 @@ node::RuntimeStateLoadResult runtimeWithOneDelta(
                 p2p::PeerInfo(
                     "chain-audit-perrecord-peer",
                     "127.0.0.1:9002",
-                    "nodo/0.4",
+                    "nodo/0.5",
                     0,
                     kTimestamp
                 ),

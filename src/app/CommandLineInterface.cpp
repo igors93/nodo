@@ -371,7 +371,8 @@ CommandLineResult submitSignedTransactionToPersistentMempool(
   const node::TransactionAdmissionContext admissionContext(
       accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
       load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
-      load.runtime().blockchain().size());
+      load.runtime().blockchain().size(),
+      load.runtime().blockchain().latestBlock().timestamp());
 
   const node::TransactionAdmissionResult admission =
       node::TransactionAdmissionValidator::validateRuntimeSubmission(
@@ -1711,7 +1712,8 @@ CommandLineResult CommandLineInterface::executeSubmitTransaction(
   const node::TransactionAdmissionContext admissionContext(
       accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
       load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
-      load.runtime().blockchain().size());
+      load.runtime().blockchain().size(),
+      load.runtime().blockchain().latestBlock().timestamp());
 
   const node::TransactionAdmissionResult admission =
       node::TransactionAdmissionValidator::validateRuntimeSubmission(
@@ -2750,7 +2752,8 @@ CommandLineInterface::executeValidatorExit(const CommandLineOptions &options) {
   const node::TransactionAdmissionContext admissionContext(
       accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
       load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
-      load.runtime().blockchain().size());
+      load.runtime().blockchain().size(),
+      load.runtime().blockchain().latestBlock().timestamp());
 
   const node::TransactionAdmissionResult admission =
       node::TransactionAdmissionValidator::validateRuntimeSubmission(
@@ -2878,7 +2881,8 @@ CommandLineResult CommandLineInterface::executeValidatorUnjail(
   const node::TransactionAdmissionContext admissionContext(
       accountState, load.runtime().mempool(), load.runtime().stakingRegistry(),
       load.runtime().validatorRegistry(), load.runtime().governanceExecutor(),
-      load.runtime().blockchain().size());
+      load.runtime().blockchain().size(),
+      load.runtime().blockchain().latestBlock().timestamp());
 
   const node::TransactionAdmissionResult admission =
       node::TransactionAdmissionValidator::validateRuntimeSubmission(

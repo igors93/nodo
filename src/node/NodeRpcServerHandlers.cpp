@@ -99,7 +99,9 @@ std::string jsonStakePosition(const StakePositionView &position) {
       << ",\"lockHeight\":" << position.lockHeight
       << ",\"activationHeight\":" << position.activationHeight
       << ",\"unbondingStartHeight\":" << position.unbondingStartHeight
-      << ",\"withdrawableHeight\":" << position.withdrawableHeight << "}";
+      << ",\"withdrawableHeight\":" << position.withdrawableHeight
+      << ",\"unbondingStartTime\":" << position.unbondingStartTime
+      << ",\"withdrawableTime\":" << position.withdrawableTime << "}";
   return oss.str();
 }
 
@@ -704,7 +706,8 @@ std::string NodeRpcServer::handleSubmit(const std::string &body) {
   const TransactionAdmissionContext admissionContext(
       accountState, m_runtime.mempool(), m_runtime.stakingRegistry(),
       m_runtime.validatorRegistry(), m_runtime.governanceExecutor(),
-      m_runtime.blockchain().size());
+      m_runtime.blockchain().size(),
+      m_runtime.blockchain().latestBlock().timestamp());
 
   const TransactionAdmissionResult validation =
       TransactionAdmissionValidator::validateNetworkSubmission(

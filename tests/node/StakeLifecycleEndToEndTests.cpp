@@ -49,7 +49,7 @@ void testStakeLifecycleEndToEnd() {
   const std::string validatorAddress =
       genesis.bootstrapValidators().front().validatorAddress();
 
-  p2p::PeerInfo localPeer("test-peer", "127.0.0.1:9000", "nodo/0.4", 0,
+  p2p::PeerInfo localPeer("test-peer", "127.0.0.1:9000", "nodo/0.5", 0,
                           kTimestamp);
   node::NodeRuntimeStartResult start =
       node::NodeRuntimeFactory::startFromGenesis(node::NodeRuntimeConfig(

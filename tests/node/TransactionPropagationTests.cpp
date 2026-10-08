@@ -1,13 +1,17 @@
 // Real multi-node TCP end-to-end test (roadmap item 1.4, gate scenario 2):
 // a transaction submitted at node A reaches node C's mempool through relay
 // gossip, even though A and C are never statically peered with each other —
-// only through the intermediate node B (a line topology A-B-C). Propagation
-// therefore requires B to receive, admit, and re-broadcast the transaction
-// (NodeDaemon::processTransactionGossip does this for every admitted
-// transaction), i.e. two hops, not a direct A-to-C broadcast. The
-// transaction must then be included in a finalized block on all three
-// nodes.
-
+// only through the intermediate nodes B and D (every edge except A-C).
+// Propagation therefore requires B or D to receive, admit, and re-broadcast
+// the transaction (NodeDaemon::processTransactionGossip does this for every
+// admitted transaction), i.e. two hops, not a direct A-to-C broadcast. The
+// transaction must then be included in a finalized block on all four nodes.
+//
+// Four equal-weight validators need three votes (strict quorum
+// floor(2W/3)+1, ADR 0002). Consensus votes are not relayed, so the topology
+// keeps every node directly connected to at least two other validators;
+// a pure A-B-C line would leave A and C one vote short forever.
+#define NODO_REAL_TCP_NODE_COUNT 4
 #include "../common/RealTcpNodeTestSupport.hpp"
 
 namespace {
@@ -25,22 +29,24 @@ void testTwoHopTransactionPropagation() {
   const config::GenesisConfig genesis =
       makeGenesis(specs, unixTime() - 5, "txprop");
 
-  // Line topology: A(0) -- B(1) -- C(2). Neither A nor C statically dials
-  // the other; B is the only node that dials anyone from A's side.
+  // Full mesh minus the A-C edge: A(0) and C(2) each peer only with B(1)
+  // and D(3). Neither A nor C statically dials the other.
   Topology topology;
-  topology[1] = {0}; // B dials A
-  topology[2] = {1}; // C dials B
+  topology[1] = {0};       // B dials A
+  topology[2] = {1};       // C dials B
+  topology[3] = {0, 1, 2}; // D dials A, B and C
   ChildProcesses nodes(specs, genesis, topology);
 
   const NodeSpec &nodeA = specs[0];
   const NodeSpec &nodeB = specs[1];
   const NodeSpec &nodeC = specs[2];
+  const NodeSpec &nodeD = specs[3];
 
   try {
     nodes.startAll();
-    waitForRpc(nodeA);
-    waitForRpc(nodeB);
-    waitForRpc(nodeC);
+    for (const NodeSpec &spec : specs) {
+      waitForRpc(spec);
+    }
 
     // 120s, not 90s: matches the more generous budget already used for
     // comparable authenticated-peer waits elsewhere in this test family
@@ -48,15 +54,17 @@ void testTwoHopTransactionPropagation() {
     // process-startup/handshake timing on loaded CI runners.
     require(waitUntil(120s,
                       [&] {
-                        return authenticatedPeerCount(nodeA) == 1 &&
-                               authenticatedPeerCount(nodeB) == 2 &&
-                               authenticatedPeerCount(nodeC) == 1;
+                        return authenticatedPeerCount(nodeA) == 2 &&
+                               authenticatedPeerCount(nodeB) == 3 &&
+                               authenticatedPeerCount(nodeC) == 2 &&
+                               authenticatedPeerCount(nodeD) == 3;
                       }),
-            "Nodes did not form the expected line topology (A-B-C, no "
+            "Nodes did not form the expected topology (full mesh with no "
             "direct A-C edge). A: " +
                 std::to_string(authenticatedPeerCount(nodeA)) +
                 " B: " + std::to_string(authenticatedPeerCount(nodeB)) +
-                " C: " + std::to_string(authenticatedPeerCount(nodeC)));
+                " C: " + std::to_string(authenticatedPeerCount(nodeC)) +
+                " D: " + std::to_string(authenticatedPeerCount(nodeD)));
 
     const core::Transaction transaction =
         signedTransfer(genesis, "txprop", "txprop-recipient", 1, unixTime());
@@ -67,7 +75,7 @@ void testTwoHopTransactionPropagation() {
                 std::string::npos,
             "RPC transaction submission was not accepted: " + submitted->body);
 
-    // C only has a path to A's transaction through B's relay
+    // C only has a path to A's transaction through B's or D's relay
     // (processTransactionGossip re-broadcasts every admitted tx to its
     // own peers), so this can only succeed as a two-hop propagation.
     require(waitUntil(90s,
@@ -76,24 +84,28 @@ void testTwoHopTransactionPropagation() {
                                reachedFinalizedHeight(nodeC, 1);
                       }),
             "The transaction submitted at node A did not propagate through "
-            "node B to node C's mempool.");
+            "an intermediate node to node C's mempool.");
 
     require(waitUntil(120s,
                       [&] {
-                        return reachedFinalizedHeight(nodeA, 1) &&
-                               reachedFinalizedHeight(nodeB, 1) &&
-                               reachedFinalizedHeight(nodeC, 1);
+                        for (const NodeSpec &spec : specs) {
+                          if (!reachedFinalizedHeight(spec, 1)) {
+                            return false;
+                          }
+                        }
+                        return true;
                       }),
-            "The relayed transaction was not finalized on all three nodes.");
+            "The relayed transaction was not finalized on all four nodes.");
 
     const std::string finalizedHash = blockHashAt(nodeA, 1);
-    require(blockHashAt(nodeB, 1) == finalizedHash &&
-                blockHashAt(nodeC, 1) == finalizedHash,
-            "Nodes finalized different block hashes.");
+    for (const NodeSpec &spec : specs) {
+      require(blockHashAt(spec, 1) == finalizedHash,
+              "Nodes finalized different block hashes.");
+    }
 
-    verifyTransactionFinalized(nodeA, transaction.id(), 1);
-    verifyTransactionFinalized(nodeB, transaction.id(), 1);
-    verifyTransactionFinalized(nodeC, transaction.id(), 1);
+    for (const NodeSpec &spec : specs) {
+      verifyTransactionFinalized(spec, transaction.id(), 1);
+    }
 
     nodes.stopAll();
     std::filesystem::remove_all(root, cleanupError);

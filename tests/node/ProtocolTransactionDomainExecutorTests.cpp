@@ -111,9 +111,7 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
            2),
         tx(core::TransactionType::STAKE_TOP_UP, base.validatorAddress, 1000, 3),
         tx(core::TransactionType::STAKE_UNLOCK, base.validatorAddress, 500, 4),
-        tx(core::TransactionType::STAKE_WITHDRAW, base.validatorAddress, 500,
-           5),
-        tx(core::TransactionType::GOVERNANCE_PROPOSE, "nodo_governance", 0, 6,
+        tx(core::TransactionType::GOVERNANCE_PROPOSE, "nodo_governance", 0, 5,
            core::GovernanceProposalPayload::parameterChange(
                "Minimum fee", "Set minimum fee through on-chain governance",
                "MINIMUM_FEE_RAW", "250", 201, 0, 1)
@@ -143,7 +141,7 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
     const core::GovernanceVotePayload vote(proposalId, base.validatorAddress,
                                            core::GovernanceVoteChoice::YES);
     const auto voteResult = execute(tx(core::TransactionType::GOVERNANCE_VOTE,
-                                       proposalId, 0, 7, vote.serialize()),
+                                       proposalId, 0, 6, vote.serialize()),
                                     view, *executor, 200);
     require(voteResult.success(),
             "authorized governance vote must execute: " + voteResult.reason());
@@ -151,7 +149,7 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
     receiptHashes.push_back(voteResult.receipt().receiptHash());
 
     const auto finalized = executor->finalizeBlock(
-        view, utils::Amount::fromRawUnits(70), {}, 200, kTimestamp + 200);
+        view, utils::Amount::fromRawUnits(60), {}, 200, kTimestamp + 200);
     require(finalized.applied(),
             "governance decision must finalize at voting boundary: " +
                 finalized.reason());
@@ -160,14 +158,14 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
     const utils::Amount expectedSupply =
         base.state.supply - utils::Amount::fromRawUnits(100) -
         node::FeeEconomics::buildFeeEconomicBalance(
-            200, utils::Amount::fromRawUnits(70))
+            200, utils::Amount::fromRawUnits(60))
             .burnAmount();
     require(tracker->supply == expectedSupply,
             "voluntary and fee burns must reduce canonical supply");
     require(
         tracker->staking.ownedStake(kOwner, base.validatorAddress).rawUnits() ==
-            core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + 3500,
-        "deposit, top-up, unlock and withdrawal must update the owned stake "
+            core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + 4000,
+        "deposit, top-up and unlock must update the owned stake "
         "position");
     require(
         tracker->governance.proposalApproved(proposalId) &&
@@ -189,6 +187,54 @@ void testCanonicalDomainHandlersAndDeterministicReplay() {
   require(run(firstTracker) == run(secondTracker),
           "replaying the same mixed transaction sequence must produce "
           "identical state and receipts");
+}
+
+void testWithdrawalCannotDrainStillSlashableVotingWeight() {
+  Fixture base = fixture();
+  constexpr std::uint64_t extraStake = 2000;
+  const std::uint64_t votingWeight =
+      core::ValidatorRegistry::MIN_VALIDATOR_STAKE_RAW_UNITS + extraStake;
+  require(base.state.validators
+              .updateStake(base.validatorAddress, votingWeight, kTimestamp + 1)
+              .success(),
+          "Historical voting weight fixture must be valid.");
+  const std::uint64_t unlockHeight =
+      node::ValidatorSetSchedule::activationHeight(1) + 1;
+  const std::int64_t unlockTime = kTimestamp + 100;
+  base.state.staking.requestUnlock(
+      kOwner, base.validatorAddress,
+      utils::Amount::fromRawUnits(extraStake), unlockHeight, unlockTime);
+  const std::uint64_t matureHeight =
+      unlockHeight + node::StakingRegistry::UNBONDING_DELAY_BLOCKS;
+  const std::int64_t matureTime =
+      unlockTime + node::AccountabilityWindow::kUnbondingSeconds +
+      node::AccountabilityWindow::kFutureBlockSkewSeconds;
+  require(base.state.staking
+              .withdrawableStake(kOwner, base.validatorAddress, matureHeight,
+                                 matureTime)
+              .rawUnits() == static_cast<std::int64_t>(extraStake),
+          "Both unbonding deadlines must have matured.");
+
+  core::ValidatorSetHistory history;
+  const std::uint64_t first =
+      matureHeight - node::AccountabilityWindow::kEvidenceMaxAgeBlocks;
+  require(history.recordSet(first, base.state.validators),
+          "Historical selected set must begin at the evidence horizon.");
+  for (std::uint64_t height = first + 1; height <= matureHeight; ++height)
+    require(history.recordSet(height, history.setAt(height - 1)),
+            "Historical selected set must cover the evidence horizon.");
+
+  auto factory = node::makeProtocolDomainExecutorFactory(
+      base.state, history, config::NetworkParameters::developmentLocal(),
+      nullptr);
+  auto executor = factory();
+  const auto result = executor->applyStakeWithdraw(
+      tx(core::TransactionType::STAKE_WITHDRAW, base.validatorAddress,
+         extraStake, 1),
+      accounts(), matureHeight, matureTime);
+  require(!result.applied() &&
+              result.reason().find("slashable votes") != std::string::npos,
+          "Cooldown alone must never release collateral for live vote evidence.");
 }
 
 void testValidatorRegistrationExitAndUnjail() {
@@ -263,6 +309,7 @@ void testValidatorRegistrationExitAndUnjail() {
 int main() {
   try {
     testCanonicalDomainHandlersAndDeterministicReplay();
+    testWithdrawalCannotDrainStillSlashableVotingWeight();
     testValidatorRegistrationExitAndUnjail();
     std::cout << "Protocol transaction domain executor tests passed.\n";
     return 0;

@@ -2,14 +2,19 @@
 // diverges from the network's is rejected at handshake, while unaffected
 // honest peers keep authenticating with each other normally.
 //
-// Two honest validators (index 0 and 2) run the shared "honest" genesis. A
-// third process (index 1) runs with a differently-memoed genesis (different
-// deterministic genesis id, same network parameters/chain id), reusing the
-// same validator identity/ports slot the honest network reserved for it.
-// The static-peer topology is a full mesh, so:
-//   - node 0 <-> node 2 (both honest) must authenticate successfully.
-//   - node 0 <-> node 1 (impostor) and node 2 <-> node 1 must be rejected.
-
+// Three honest validators (index 0, 2 and 3) run the shared "honest"
+// genesis. A fourth process (index 1) runs with a differently-memoed genesis
+// (different deterministic genesis id, same network parameters/chain id),
+// reusing the same validator identity/ports slot the honest network reserved
+// for it. The static-peer topology is a full mesh, so:
+//   - nodes 0, 2 and 3 (all honest) must authenticate with each other.
+//   - every honest node <-> node 1 (impostor) must be rejected.
+//
+// Four equal-weight validators: the strict quorum floor(2W/3)+1 (ADR 0002)
+// lets the three honest validators finalize without the rejected one. With
+// three validators the honest pair would hold exactly 2/3, which is not a
+// quorum.
+#define NODO_REAL_TCP_NODE_COUNT 4
 #include "../common/RealTcpNodeTestSupport.hpp"
 
 namespace {
@@ -36,23 +41,34 @@ void testWrongGenesisPeerIsRejected() {
   const Topology topology = fullMeshTopology();
   ChildProcesses honestNodes(specs, honestGenesis, topology);
   pid_t impostorPid = 0;
+  constexpr std::size_t kImpostorIndex = 1;
+  const std::array<std::size_t, kTestNodeCount - 1> honestIndices{0, 2, 3};
 
   try {
     // Node index 1's real identity/ports slot is deliberately left out
     // of `honestNodes`: it is started separately, below, under the
     // mismatched genesis instead.
-    honestNodes.start(0);
-    honestNodes.start(2);
-    impostorPid = forkDaemonChild(1, specs, mismatchedGenesis, topology);
+    for (const std::size_t index : honestIndices) {
+      honestNodes.start(index);
+    }
+    impostorPid =
+        forkDaemonChild(kImpostorIndex, specs, mismatchedGenesis, topology);
 
-    waitForRpc(specs[0]);
-    waitForRpc(specs[2]);
-    waitForRpc(specs[1]);
+    for (const std::size_t index : honestIndices) {
+      waitForRpc(specs[index]);
+    }
+    waitForRpc(specs[kImpostorIndex]);
 
+    const std::uint64_t honestPeerCount = honestIndices.size() - 1;
     require(waitUntil(90s,
                       [&] {
-                        return hasAuthenticatedPeer(specs[0]) &&
-                               hasAuthenticatedPeer(specs[2]);
+                        for (const std::size_t index : honestIndices) {
+                          if (authenticatedPeerCount(specs[index]) <
+                              honestPeerCount) {
+                            return false;
+                          }
+                        }
+                        return true;
                       }),
             "Honest validators did not authenticate with each other.");
 
@@ -60,18 +76,18 @@ void testWrongGenesisPeerIsRejected() {
     // rejection must be stable, not a one-off race.
     std::this_thread::sleep_for(10s);
 
-    require(authenticatedPeerCount(specs[1]) == 0,
+    require(authenticatedPeerCount(specs[kImpostorIndex]) == 0,
             "Peer with mismatched genesis must never authenticate with "
             "any honest validator.");
-    require(authenticatedPeerCount(specs[0]) == 1,
-            "Honest node 0 must only ever authenticate with node 2, "
-            "not with the mismatched-genesis peer.");
-    require(authenticatedPeerCount(specs[2]) == 1,
-            "Honest node 2 must only ever authenticate with node 0, "
-            "not with the mismatched-genesis peer.");
+    for (const std::size_t index : honestIndices) {
+      require(authenticatedPeerCount(specs[index]) == honestPeerCount,
+              "Honest node " + std::to_string(index) +
+                  " must only ever authenticate with the other honest "
+                  "nodes, not with the mismatched-genesis peer.");
+    }
 
-    // The honest pair must still be able to make protocol progress
-    // despite the third, rejected peer retrying indefinitely. A block only
+    // The honest validators must still be able to make protocol progress
+    // despite the rejected peer retrying indefinitely. A block only
     // gets produced once the mempool holds a pending transaction (empty
     // blocks are refused outside epoch-settlement heights), so submit one.
     const core::Transaction transaction =
@@ -83,18 +99,22 @@ void testWrongGenesisPeerIsRejected() {
 
     require(waitUntil(120s,
                       [&] {
-                        return reachedFinalizedHeight(specs[0], 1) &&
-                               reachedFinalizedHeight(specs[2], 1);
+                        for (const std::size_t index : honestIndices) {
+                          if (!reachedFinalizedHeight(specs[index], 1)) {
+                            return false;
+                          }
+                        }
+                        return true;
                       }),
             "Honest validators did not finalize block 1 despite the "
             "rejected peer.");
 
-    stopPid(impostorPid, specs[1].nodeId);
+    stopPid(impostorPid, specs[kImpostorIndex].nodeId);
     impostorPid = 0;
     honestNodes.stopAll();
     std::filesystem::remove_all(root, cleanupError);
   } catch (...) {
-    stopPid(impostorPid, specs[1].nodeId);
+    stopPid(impostorPid, specs[kImpostorIndex].nodeId);
     honestNodes.stopAll();
     std::filesystem::remove_all(root, cleanupError);
     throw;

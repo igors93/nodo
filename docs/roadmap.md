@@ -40,7 +40,7 @@ These ten findings explain the phase order. Each one is detailed in its phase.
 1. **Stake splitting multiplied voting power in `nodo/0.1`** (1.2, 4.8). The former `floor(sqrt(stake))` rule let one party gain weight by creating keys. Since `nodo/0.2`, weight is linear in recorded raw stake. V1 additionally requires every unit of voting weight to be backed by a unique locked stake unit; genesis backing and complete v1 migration remain open.
 2. **A height can stall forever** (4.1). A locked validator can only unlock with a PRECOMMIT quorum certificate for the new block, and proposers never re-propose the locked block.
 3. **Nil votes are broadcast before they are persisted** (4.2). A crash in between lets the validator double-sign after restart.
-4. **Unbonding takes 21 blocks** (1.5, 6.3). A validator can exit before equivocation evidence is included, so slashing cannot be enforced.
+4. **Evidence and unbonding need aligned windows** (1.5, 4.9, 6.3). `nodo/0.5` enforces bounded evidence age and longer dual-clock unbonding, while censorship-resistant inclusion remains a production gate.
 5. **Every block commit costs O(chain length)** (3.1–3.3). The whole `NodeRuntime`, including every block, is copied on each commit, and some validation paths replay the chain from genesis.
 6. **Height is used as a vector index** (3.4). After a snapshot reset, RPC, gossip admission, fork choice and reward code read the wrong block.
 7. **One slow peer stalls the node** (5.1). Blocking reads inside the single daemon loop let a peer that trickles bytes block consensus.
@@ -175,7 +175,7 @@ contract is not wire-compatible with the current development runtime.
   state machine, all 13 transaction types, ordered rejection codes, block and
   finality rules, canonical binary encoding and authenticated network messages.
   [Primitive byte vectors](spec/vectors-v1.md) anchor the encoding rules.
-  This is an incompatible target protocol, not a claim that `nodo/0.4` already
+  This is an incompatible target protocol, not a claim that `nodo/0.5` already
   implements it. Full signed-object vectors, architecture decision records,
   formal checking and external BFT review remain in the Phase 1 exit gate;
   runtime migration remains in Phases 2–8.
@@ -220,12 +220,20 @@ contract is not wire-compatible with the current development runtime.
   staged. Proposal and QC paths use the historical set. History stores full
   registries only when the selected set changes. Boundary, staged-churn and
   Sybil-split tests cover the policy. The one-to-one locked-stake backing and
-  unbonding guarantees (3.16 and 1.5), light-client transition proofs and
+  genesis stake backing (3.16), light-client transition proofs and
   dynamic-set formal verification remain separate production gates.
 
-- [ ] **1.5 · Critical · Unbonding is shorter than any evidence window.**
-  `StakingRegistry::UNBONDING_DELAY_BLOCKS` is 21. With blocks seconds apart, a validator can leave in about a minute, before equivocation evidence lands in a block. That makes slashing unenforceable and opens long-range attacks.
-  *Decide:* an unbonding period measured in weeks, a maximum evidence age shorter than unbonding, and a weak-subjectivity period for new nodes.
+- [x] **1.5 · Critical · Unbonding is shorter than any evidence window.**
+  [ADR 0004](spec/adr-0004-accountability-windows.md) fixes the development
+  evidence limit at 21 validator epochs and unbonding at 28 epochs **and** at
+  least 28 days plus the current future-block margin. Execution checks both
+  deadlines and retains stake backing every still-slashable historical vote;
+  key rotations preserve liability against the successor account. Canonical
+  and gossip admission reject expired evidence. New nodes require an
+  out-of-band checkpoint no older than 14 days under the v1 design decision.
+  BFT time (1.7), guaranteed evidence inclusion (4.9), genesis backing
+  (3.16), and automated checkpoint enforcement (Phase 5) remain production
+  gates.
 
 - [ ] **1.6 · High · The block header is not a header.**
   The block hash is SHA-256 of a text "header" that embeds every record (`Block::headerPayload` in [`Block.cpp`](../src/core/Block.cpp)), so hashing or proving a header requires the whole block. The header also lacks several commitments: chain id, protocol version, proposer, validator-set hash, next-validator-set hash, previous-commit (QC) hash, consensus-parameters hash, and evidence hash.
@@ -253,7 +261,7 @@ contract is not wire-compatible with the current development runtime.
   *Decide:* fees per resource unit, block resource limits, and a base-fee mechanism if any.
 
 - [ ] **1.11 · High · There is no protocol upgrade mechanism.**
-  Rules are not versioned by activation height; the protocol version is just the string `nodo/0.4`.
+  Rules are not versioned by activation height; the protocol version is just the string `nodo/0.5`.
   *Specify:* how rule changes activate (height-gated rule sets, version in the header, client signalling) and how historical rules stay replayable.
 
 - [ ] **1.12 · Medium · Programmability is undecided.**
@@ -455,8 +463,11 @@ contract is not wire-compatible with the current development runtime.
   churn rules of 1.4 against the dynamic-set fault model, implement the v1
   evidence-driven jail exception, BFT time (1.7) and proposer rule (1.13).
 
-- [ ] **4.9 · High · No evidence lifecycle.**
-  *Fix:* enforce a maximum evidence age (1.5), guarantee evidence inclusion before unbonding completes, and keep evidence for the weak-subjectivity window.
+- [ ] **4.9 · High · Complete the evidence lifecycle.**
+  `nodo/0.5` enforces a 21-epoch maximum age on evidence admission and
+  execution. *Remaining:* guarantee inclusion despite censorship, retain and
+  prune evidence consistently with the window, and make recent evidence
+  available to weak-subjectivity checkpoint clients.
 
 - [ ] **4.10 · Medium · Nil is a magic string.**
   A nil vote is encoded as decision `REJECT` with `blockHash = "nil"` and `previousHash = "nil"`.
@@ -530,7 +541,7 @@ contract is not wire-compatible with the current development runtime.
   The inflation cap window is 525,600 blocks, which is one year only at 60 s blocks. Reward emission spreads the yearly target over 365 epochs of 43,200 blocks each, which is one day only at 2 s blocks. The real block time follows consensus speed (1.8), so effective yearly inflation swings with block speed: about 0.13 % at 60 s blocks, the 4 % target at 2 s, and 8 % at 1 s. At 1 s blocks, the 4 % cap window resets about every six days.
   *Fix:* re-derive emission and caps from the cadence model and test them across block times.
 
-- [ ] **6.3 · High · Implement the stake windows and liveness accountability:** unbonding, activation and evidence windows (1.5; unbonding is 21 blocks today) and downtime rules (1.14).
+- [ ] **6.3 · High · Complete stake windows and liveness accountability:** the `nodo/0.5` unbonding and evidence windows are enforced (1.5); BFT time (1.7), parameterized v1 windows, stake-lot backing, and downtime rules (1.14) remain.
 
 - [ ] **6.4 · High · "Measurable protection work" is undefined.**
   *Fix:* define work metrics that a validator cannot generate by itself (votes included in QCs, finalized proposals, accepted evidence), make the validator score a deterministic function of on-chain records, and cap rewards per epoch.

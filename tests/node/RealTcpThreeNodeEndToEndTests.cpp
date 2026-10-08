@@ -44,6 +44,10 @@ using namespace std::chrono_literals;
 
 #ifndef _WIN32
 
+// Three online validators plus one that joins late. Four equal-weight
+// validators are the smallest set where the strict quorum floor(2W/3)+1
+// (ADR 0002) still finalizes with one validator absent.
+constexpr std::size_t kValidatorCount = 4;
 constexpr std::int64_t kConsensusTickMilliseconds = 1000;
 constexpr std::int64_t kDaemonTickMilliseconds = 20;
 constexpr std::chrono::seconds kRpcStartupTimeout = 60s;
@@ -113,6 +117,8 @@ struct NodeSpec {
   crypto::KeyPair identityKey;
 };
 
+using NodeSpecs = std::array<NodeSpec, kValidatorCount>;
+
 std::filesystem::path childStatusPath(const NodeSpec &spec) {
   return spec.dataDirectory.parent_path() / (spec.nodeId + ".status");
 }
@@ -136,12 +142,12 @@ std::string readChildStatus(const NodeSpec &spec) {
                      std::istreambuf_iterator<char>());
 }
 
-std::array<NodeSpec, 3> makeNodeSpecs(const std::filesystem::path &root) {
+NodeSpecs makeNodeSpecs(const std::filesystem::path &root) {
   std::vector<std::uint16_t> reserved;
   const std::uint16_t seed = static_cast<std::uint16_t>(
       24000 + (static_cast<unsigned long>(::getpid()) % 1000UL) * 20UL);
 
-  std::array<NodeSpec, 3> specs;
+  NodeSpecs specs;
   for (std::size_t index = 0; index < specs.size(); ++index) {
     const std::uint16_t p2pPort =
         findP2pPort(static_cast<std::uint16_t>(seed + index * 4), reserved);
@@ -169,7 +175,7 @@ crypto::KeyPair testUserKey() {
       "real-tcp-e2e-funded-user");
 }
 
-config::GenesisConfig makeGenesis(const std::array<NodeSpec, 3> &specs,
+config::GenesisConfig makeGenesis(const NodeSpecs &specs,
                                   std::int64_t genesisTimestamp) {
   std::vector<config::BootstrapValidatorConfig> validators;
   validators.reserve(specs.size());
@@ -189,10 +195,10 @@ config::GenesisConfig makeGenesis(const std::array<NodeSpec, 3> &specs,
 
 p2p::PeerInfo peerInfo(const NodeSpec &spec, std::int64_t timestamp) {
   return p2p::PeerInfo(spec.nodeId, "127.0.0.1:" + std::to_string(spec.p2pPort),
-                       "nodo/0.4", 0, timestamp);
+                       "nodo/0.5", 0, timestamp);
 }
 
-int runDaemonChild(std::size_t nodeIndex, const std::array<NodeSpec, 3> &specs,
+int runDaemonChild(std::size_t nodeIndex, const NodeSpecs &specs,
                    const config::GenesisConfig &genesis) {
   gChildStopRequested = 0;
   std::signal(SIGTERM, requestChildStop);
@@ -252,7 +258,7 @@ int runDaemonChild(std::size_t nodeIndex, const std::array<NodeSpec, 3> &specs,
 
 class ChildProcesses {
 public:
-  ChildProcesses(const std::array<NodeSpec, 3> &specs,
+  ChildProcesses(const NodeSpecs &specs,
                  const config::GenesisConfig &genesis)
       : m_specs(specs), m_genesis(genesis), m_pids{} {}
 
@@ -325,9 +331,9 @@ public:
   }
 
 private:
-  const std::array<NodeSpec, 3> &m_specs;
+  const NodeSpecs &m_specs;
   const config::GenesisConfig &m_genesis;
-  std::array<pid_t, 3> m_pids;
+  std::array<pid_t, kValidatorCount> m_pids;
 };
 
 struct HttpResponse {
@@ -511,6 +517,19 @@ bool hasAuthenticatedPeer(const NodeSpec &spec) {
          sessions.value() > 0;
 }
 
+std::uint64_t authenticatedPeerCount(const NodeSpec &spec) {
+  const auto response = statusResponse(spec);
+  if (!response.has_value()) {
+    return 0;
+  }
+  const auto peers = jsonUnsigned(response->body, "authenticatedPeerCount");
+  const auto sessions = jsonUnsigned(response->body, "encryptedSessionCount");
+  if (!peers.has_value() || !sessions.has_value()) {
+    return 0;
+  }
+  return std::min(peers.value(), sessions.value());
+}
+
 bool reachedFinalizedHeight(const NodeSpec &spec, std::uint64_t height) {
   const auto response = statusResponse(spec);
   if (!response.has_value()) {
@@ -536,7 +555,7 @@ std::string blockHashAt(const NodeSpec &spec, std::uint64_t height) {
   return hash.value();
 }
 
-std::size_t scheduledProposerIndex(const std::array<NodeSpec, 3> &specs,
+std::size_t scheduledProposerIndex(const NodeSpecs &specs,
                                    const config::GenesisConfig &genesis) {
   const auto runtimeStart =
       node::NodeRuntimeFactory::startFromGenesis(node::NodeRuntimeConfig(
@@ -591,7 +610,7 @@ void testRealTcpThreeNodeLifecycle() {
   std::error_code cleanupError;
   std::filesystem::remove_all(root, cleanupError);
 
-  const std::array<NodeSpec, 3> specs = makeNodeSpecs(root);
+  const NodeSpecs specs = makeNodeSpecs(root);
   const config::GenesisConfig genesis = makeGenesis(specs, unixTime() - 5);
   ChildProcesses children(specs, genesis);
 
@@ -601,22 +620,31 @@ void testRealTcpThreeNodeLifecycle() {
     while (laggingIndex == proposerIndex) {
       ++laggingIndex;
     }
-    std::size_t voterIndex = 0;
-    while (voterIndex == proposerIndex || voterIndex == laggingIndex) {
-      ++voterIndex;
+    // Descending index order: each node only dials peers with a greater
+    // node id (see runDaemonChild), so its dial targets are already up.
+    std::vector<std::size_t> onlineIndices;
+    for (std::size_t index = specs.size(); index-- > 0;) {
+      if (index != laggingIndex) {
+        onlineIndices.push_back(index);
+      }
     }
-    const std::size_t firstOnline = std::max(proposerIndex, voterIndex);
-    const std::size_t secondOnline = std::min(proposerIndex, voterIndex);
-    const std::size_t restartIndex = secondOnline;
+    const std::size_t restartIndex = onlineIndices.back();
 
-    children.start(firstOnline);
-    waitForRpc(specs[firstOnline]);
-    children.start(secondOnline);
-    waitForRpc(specs[secondOnline]);
-    require(waitUntil(30s,
+    for (const std::size_t index : onlineIndices) {
+      children.start(index);
+      waitForRpc(specs[index]);
+    }
+    // Votes are not relayed, so every online validator needs a direct
+    // session with each other online validator to see a quorum.
+    require(waitUntil(60s,
                       [&] {
-                        return hasAuthenticatedPeer(specs[proposerIndex]) &&
-                               hasAuthenticatedPeer(specs[voterIndex]);
+                        for (const std::size_t index : onlineIndices) {
+                          if (authenticatedPeerCount(specs[index]) <
+                              onlineIndices.size() - 1) {
+                            return false;
+                          }
+                        }
+                        return true;
                       }),
             "Validators did not establish mutually authenticated encrypted "
             "sessions.");
@@ -634,33 +662,46 @@ void testRealTcpThreeNodeLifecycle() {
                 std::string::npos,
             "RPC transaction submission was not accepted: " + submitted->body);
 
-    require(waitUntil(10s,
+    require(waitUntil(20s,
                       [&] {
-                        const auto status = statusResponse(specs[voterIndex]);
-                        if (!status.has_value()) {
-                          return false;
+                        for (const std::size_t index : onlineIndices) {
+                          if (index == proposerIndex) {
+                            continue;
+                          }
+                          const auto status = statusResponse(specs[index]);
+                          if (!status.has_value()) {
+                            return false;
+                          }
+                          const auto mempool =
+                              jsonUnsigned(status->body, "mempoolSize");
+                          const auto height =
+                              jsonUnsigned(status->body, "height");
+                          if (!((mempool.has_value() && mempool.value() == 1) ||
+                                (height.has_value() && height.value() >= 1))) {
+                            return false;
+                          }
                         }
-                        const auto mempool =
-                            jsonUnsigned(status->body, "mempoolSize");
-                        const auto height =
-                            jsonUnsigned(status->body, "height");
-                        return (mempool.has_value() && mempool.value() == 1) ||
-                               (height.has_value() && height.value() >= 1);
+                        return true;
                       }),
-            "The RPC transaction did not propagate to the second process.");
+            "The RPC transaction did not propagate to the other online "
+            "processes.");
 
     require(waitUntil(60s,
                       [&] {
-                        return reachedFinalizedHeight(specs[proposerIndex],
-                                                      1) &&
-                               reachedFinalizedHeight(specs[voterIndex], 1);
+                        for (const std::size_t index : onlineIndices) {
+                          if (!reachedFinalizedHeight(specs[index], 1)) {
+                            return false;
+                          }
+                        }
+                        return true;
                       }),
-            "The two online validators did not finalize block 1.");
+            "The online validators did not finalize block 1.");
     const std::string finalizedHash = blockHashAt(specs[proposerIndex], 1);
-    require(blockHashAt(specs[voterIndex], 1) == finalizedHash,
-            "Online validators finalized different block hashes.");
-    verifyTransactionFinalized(specs[proposerIndex], transaction.id());
-    verifyTransactionFinalized(specs[voterIndex], transaction.id());
+    for (const std::size_t index : onlineIndices) {
+      require(blockHashAt(specs[index], 1) == finalizedHash,
+              "Online validators finalized different block hashes.");
+      verifyTransactionFinalized(specs[index], transaction.id());
+    }
 
     children.stop(restartIndex);
     children.start(restartIndex);

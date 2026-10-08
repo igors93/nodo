@@ -153,7 +153,8 @@ void NodeDaemon::processTransactionGossip(std::int64_t now) {
         const TransactionAdmissionContext admissionContext(
             accounts, runtime.mempool(), runtime.stakingRegistry(),
             runtime.validatorRegistry(), runtime.governanceExecutor(),
-            runtime.blockchain().size());
+            runtime.blockchain().size(),
+            runtime.blockchain().latestBlock().timestamp());
 
         const TransactionAdmissionResult validation =
             TransactionAdmissionValidator::validateNetworkSubmission(
@@ -263,7 +264,8 @@ void NodeDaemon::processLocalMempoolSubmissions(std::int64_t now) {
     const TransactionAdmissionContext admissionContext(
         accounts, runtime.mempool(), runtime.stakingRegistry(),
         runtime.validatorRegistry(), runtime.governanceExecutor(),
-        runtime.blockchain().size());
+        runtime.blockchain().size(),
+        runtime.blockchain().latestBlock().timestamp());
 
     const TransactionAdmissionResult validation =
         TransactionAdmissionValidator::validateNetworkSubmission(

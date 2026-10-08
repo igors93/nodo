@@ -1,6 +1,9 @@
 #include "../common/TestFramework.hpp"
 #include "economics/StakeAccount.hpp"
 #include "node/CanonicalSlashingTransition.hpp"
+#include "node/AccountabilityWindow.hpp"
+#include "node/ProtocolDomainCodec.hpp"
+#include "node/FinalizedSlashingEvidenceAudit.hpp"
 #include "node/SignedBlockProposalMessage.hpp"
 #include "node/StakingRegistry.hpp"
 
@@ -213,12 +216,109 @@ void testAppliesProposerEquivocationAsTombstoneAndStakeSlash() {
           "Equivocating proposer must be tombstoned and partially slashed.");
 }
 
+void testHistoricalKeyRemainsSlashableAfterRotation() {
+  const crypto::KeyPair oldKey = validatorKey();
+  const crypto::KeyPair newKey =
+      crypto::KeyPair::createDeterministicBls12381KeyPair(
+          "canonical-slashing-rotated-key");
+  const TestBlsSignatureProvider provider;
+  const auto evidence = evidenceFor(oldKey, provider);
+  const std::string oldAddress = oldKey.address().value();
+  const std::string newAddress = newKey.address().value();
+
+  core::ValidatorRegistry validators;
+  require(validators.registerValidator(core::ValidatorRegistrationRecord(
+              oldAddress, oldKey.publicKey(), 1, "rotating", kTimestamp))
+              .success(),
+          "Original validator must register.");
+  core::ValidatorSetHistory history;
+  require(history.recordSet(1, validators), "Original voting set is required.");
+
+  node::StakingRegistry staking;
+  staking.setAccount(oldAddress, economics::StakeAccount(
+                                     oldAddress,
+                                     utils::Amount::fromRawUnits(1'000'000)));
+  require(validators.rotateValidatorKey(
+              oldAddress,
+              core::ValidatorRegistrationRecord(newAddress, newKey.publicKey(),
+                                                3, "rotated", kTimestamp + 1),
+              kTimestamp + 1)
+              .success(),
+          "Validator key must rotate.");
+  staking.rotateValidatorAddress(oldAddress, newAddress, oldAddress, 2,
+                                 "rotation-tx");
+  require(staking.currentAddressFor(oldAddress) == newAddress &&
+              staking.isValid(),
+          "Rotated stake must retain a canonical predecessor mapping.");
+  staking = node::StakingDomainCodec::decode(
+      node::StakingDomainCodec::encode(staking));
+  require(staking.currentAddressFor(oldAddress) == newAddress,
+          "Rotation liability must survive canonical persistence.");
+
+  consensus::ValidatorPenaltyLedger ledger;
+  const auto record = node::CanonicalSlashingTransition::buildEvidenceRecord(
+      evidence, kTimestamp + 3);
+  node::CanonicalSlashingTransition::applyEvidenceRecords(
+      {record}, 3, kTimestamp + 3, history,
+      config::NetworkParameters::developmentLocal(),
+      crypto::CryptoPolicy::developmentPolicy(), provider, ledger, validators,
+      staking);
+  const auto *account = staking.accountFor(newAddress);
+  require(account != nullptr && account->jailed() &&
+              account->slashedAmount().rawUnits() == 50'000 &&
+              validators.entryForAddress(newAddress)->jailed(),
+          "Evidence against the old key must slash and jail its successor.");
+  const core::Block finalized(3, "previous-rotated-block", {record},
+                              kTimestamp + 3, std::string(64, 'a'),
+                              std::string(64, 'b'));
+  require(node::FinalizedSlashingEvidenceAudit::auditBlockEffects(
+              finalized, ledger, validators, staking)
+              .passed(),
+          "Finalized evidence audit must follow the rotated staking key.");
+}
+
+void testExpiredEvidenceCannotBeFinalized() {
+  const crypto::KeyPair key = validatorKey();
+  const TestBlsSignatureProvider provider;
+  const auto evidence = evidenceFor(key, provider);
+  core::ValidatorRegistry validators;
+  require(validators.registerValidator(core::ValidatorRegistrationRecord(
+              key.address().value(), key.publicKey(), 1, "expiry", kTimestamp))
+              .success(),
+          "Expiry fixture requires a validator.");
+  core::ValidatorSetHistory history;
+  require(history.recordSet(1, validators), "Expiry fixture requires history.");
+  node::StakingRegistry staking;
+  staking.setAccount(key.address().value(), economics::StakeAccount(
+                                                key.address().value(),
+                                                utils::Amount::fromRawUnits(
+                                                    1'000'000)));
+  consensus::ValidatorPenaltyLedger ledger;
+  const auto record = node::CanonicalSlashingTransition::buildEvidenceRecord(
+      evidence, kTimestamp + 3);
+  bool rejected = false;
+  try {
+    node::CanonicalSlashingTransition::applyEvidenceRecords(
+        {record}, node::AccountabilityWindow::kEvidenceMaxAgeBlocks + 2,
+        kTimestamp + 3, history,
+        config::NetworkParameters::developmentLocal(),
+        crypto::CryptoPolicy::developmentPolicy(), provider, ledger,
+        validators, staking);
+  } catch (const std::invalid_argument &) {
+    rejected = true;
+  }
+  require(rejected && ledger.size() == 0,
+          "Evidence older than the fixed height window must be rejected.");
+}
+
 } // namespace
 
 int main() {
   try {
     testAppliesVerifiedEvidenceOnce();
     testAppliesProposerEquivocationAsTombstoneAndStakeSlash();
+    testHistoricalKeyRemainsSlashableAfterRotation();
+    testExpiredEvidenceCannotBeFinalized();
     std::cout << "Canonical slashing transition tests passed.\n";
     return 0;
   } catch (const std::exception &error) {

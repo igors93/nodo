@@ -6,6 +6,13 @@ Nodo does not yet publish versioned production releases. This changelog starts a
 
 ### Security
 
+- **Evidence and unbonding windows are enforced in development protocol
+  `nodo/0.5`.** Evidence expires after 21 validator epochs. Unbonding requires
+  28 epochs and at least 28 days plus a future-block margin; withdrawal keeps
+  collateral for still-slashable historical votes, including rotated keys.
+  The canonical staking codec is incompatible with `nodo/0.4` state.
+  [ADR 0004](docs/spec/adr-0004-accountability-windows.md) records the rule
+  and remaining production gates.
 - **Validator sets are frozen for each epoch in development protocol
   `nodo/0.4`.** Finalized epoch boundaries project the next voting set with
   two-boundary activation delay and a 3333-basis-point changed-weight budget.
@@ -56,6 +63,19 @@ Nodo does not yet publish versioned production releases. This changelog starts a
 
 ### Fixed
 
+- **Finality no longer needs a full mesh of validators.** Received votes and
+  block proposals were never forwarded, so a validator finalized only if it
+  had direct sessions to the proposer and to validators holding more than two
+  thirds of the weight. In a partially connected network it could stall with
+  every validator online. `ConsensusEventLoop` now relays each newly accepted
+  vote and each newly adopted round candidate once, to every peer except the
+  sender. The per-peer `VALIDATOR_VOTE` window scales with the validator set
+  so honest relays are not penalized. See
+  [consensus relay](docs/protocol/networking-and-sync.md#consensus-relay).
+- The real-TCP end-to-end tests ran one validator short of the strict quorum:
+  2 of 3 equal-weight validators hold exactly two thirds, which is not a
+  quorum. They now use four validators, the smallest set that tolerates one
+  absent validator.
 - Six copies of a hand-written `jsonString` escaped only `"`, `\`, `\n`,
   `\r` and `\t`, so any other control byte or invalid UTF-8 in chain data
   produced invalid JSON in health, metrics, event, light-client and RPC

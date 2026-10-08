@@ -46,6 +46,7 @@ Start here if you are new to the project:
 - [Validator weight decision](spec/adr-0001-validator-weight.md)
 - [Fault model and quorum decision](spec/adr-0002-fault-model-and-quorum.md)
 - [Epoch validator-set decision](spec/adr-0003-epoch-validator-sets.md)
+- [Evidence and unbonding windows](spec/adr-0004-accountability-windows.md)
 - [Protocol overview](protocol/protocol-overview.md)
 - [Consensus](protocol/consensus.md)
 - [Blocks and finalization](protocol/blocks-and-finalization.md)

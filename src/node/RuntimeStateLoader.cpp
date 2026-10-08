@@ -475,7 +475,8 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
     const TransactionAdmissionContext admissionContext(
         tipAccountState, runtime.mempool(), runtime.stakingRegistry(),
         runtime.validatorRegistry(), runtime.governanceExecutor(),
-        runtime.blockchain().size()
+        runtime.blockchain().size(),
+        runtime.blockchain().latestBlock().timestamp()
     );
     const PersistentMempoolLoadResult mempoolLoad =
         PersistentMempoolStore::loadIntoMempool(

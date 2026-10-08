@@ -69,7 +69,7 @@ Signer userSigner() {
 NodeRuntime startRuntime() {
     const auto result = NodeRuntimeFactory::startFromGenesis(
         NodeRuntimeConfig(genesisConfig(),
-            PeerInfo("sd-peer", "127.0.0.1:9500", "nodo/0.4", 0, kTimestamp), 16)
+            PeerInfo("sd-peer", "127.0.0.1:9500", "nodo/0.5", 0, kTimestamp), 16)
     );
     assert(result.started());
     return result.runtime();

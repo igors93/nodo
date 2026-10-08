@@ -26,10 +26,12 @@ governanceVotingWeight(const core::ValidatorRegistryEntry &entry) {
 TransactionAdmissionContext::TransactionAdmissionContext(
     const core::AccountStateView &accounts, const mempool::Mempool &mempool,
     const StakingRegistry &staking, const core::ValidatorRegistry &validators,
-    const GovernanceExecutor &governance, std::uint64_t nextBlockHeight)
+    const GovernanceExecutor &governance, std::uint64_t nextBlockHeight,
+    std::int64_t finalizedBlockTimestamp)
     : m_accounts(&accounts), m_mempool(&mempool), m_staking(&staking),
       m_validators(&validators), m_governance(&governance),
-      m_nextBlockHeight(nextBlockHeight) {}
+      m_nextBlockHeight(nextBlockHeight),
+      m_finalizedBlockTimestamp(finalizedBlockTimestamp) {}
 
 const core::AccountStateView &TransactionAdmissionContext::accounts() const {
   return *m_accounts;
@@ -48,6 +50,9 @@ const GovernanceExecutor &TransactionAdmissionContext::governance() const {
 }
 std::uint64_t TransactionAdmissionContext::nextBlockHeight() const {
   return m_nextBlockHeight;
+}
+std::int64_t TransactionAdmissionContext::finalizedBlockTimestamp() const {
+  return m_finalizedBlockTimestamp;
 }
 
 bool TransactionAdmissionPolicy::validateTypeAndPayload(
@@ -152,9 +157,11 @@ bool TransactionAdmissionPolicy::validateDomain(
       break;
     }
     case core::TransactionType::STAKE_WITHDRAW: {
+      // The next block's timestamp is unknown at admission. Use the last
+      // finalized timestamp conservatively; execution checks the candidate.
       const utils::Amount withdrawable = context.staking().withdrawableStake(
           transaction.fromAddress(), transaction.toAddress(),
-          context.nextBlockHeight());
+          context.nextBlockHeight(), context.finalizedBlockTimestamp());
       utils::Amount reserved;
       for (const auto &queued : pending) {
         if (queued.type() == core::TransactionType::STAKE_WITHDRAW &&

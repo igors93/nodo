@@ -7,6 +7,7 @@
 #include "economics/BurnRecord.hpp"
 #include "economics/GovernanceApprovalBridge.hpp"
 #include "node/CanonicalSlashingTransition.hpp"
+#include "node/AccountabilityWindow.hpp"
 #include "node/EpochRewardSettlementService.hpp"
 #include "node/FeeEconomics.hpp"
 #include "node/GovernanceLifecycleRecordBuilder.hpp"
@@ -72,7 +73,7 @@ public:
   core::TransactionDomainExecutionResult
   applyStakeUnlock(const core::Transaction &tx,
                    const core::AccountStateView &accounts, std::uint64_t height,
-                   std::int64_t) override {
+                   std::int64_t now) override {
     return atomically(accounts, [&] {
       const auto *entry = m_state.validators.entryForAddress(tx.toAddress());
       if (entry != nullptr && entry->eligibleForConsensus()) {
@@ -91,17 +92,64 @@ public:
         }
       }
       m_state.staking.requestUnlock(tx.fromAddress(), tx.toAddress(),
-                                    tx.amount(), height, tx.id());
+                                    tx.amount(), height, now, tx.id());
     });
   }
 
   core::TransactionDomainExecutionResult
   applyStakeWithdraw(const core::Transaction &tx,
                      const core::AccountStateView &accounts,
-                     std::uint64_t height, std::int64_t) override {
+                     std::uint64_t height, std::int64_t now) override {
     return atomically(accounts, [&] {
+      // Keep enough locked stake to cover every signing weight that can still
+      // be proven by admissible evidence. This also covers an old key whose
+      // stake has moved to a replacement key owned by the same operator.
+      const auto *entry = m_state.validators.entryForAddress(tx.toAddress());
+      if (entry != nullptr) {
+        const std::string &operatorOwner = entry->ownerAddress();
+        const std::uint64_t first =
+            height > AccountabilityWindow::kEvidenceMaxAgeBlocks
+                ? height - AccountabilityWindow::kEvidenceMaxAgeBlocks
+                : 1;
+        if (!m_validatorSetHistory.hasSet(first) ||
+            !m_validatorSetHistory.hasSet(height))
+          throw std::invalid_argument(
+              "Historical validator set is incomplete for stake withdrawal.");
+        std::uint64_t required = 0;
+        for (std::uint64_t scan = first;;) {
+          const auto &selected = m_validatorSetHistory.setAt(scan);
+          std::uint64_t ownerWeight = 0;
+          for (const auto &address : selected.eligibleValidatorAddresses()) {
+            const auto *historical = selected.entryForAddress(address);
+            if (historical != nullptr &&
+                historical->ownerAddress() == operatorOwner)
+              ownerWeight += selected.consensusWeightFor(address);
+          }
+          required = std::max(required, ownerWeight);
+          const std::uint64_t throughBoundary =
+              NODO_VALIDATOR_EPOCH_BLOCKS -
+              ((scan - 1) % NODO_VALIDATOR_EPOCH_BLOCKS);
+          if (height - scan < throughBoundary)
+            break;
+          scan += throughBoundary;
+        }
+        unsigned __int128 locked = 0;
+        for (const auto &address : m_state.validators.validatorAddresses()) {
+          const auto *current = m_state.validators.entryForAddress(address);
+          if (current == nullptr || current->ownerAddress() != operatorOwner)
+            continue;
+          const auto account = m_state.staking.accountOrDefault(address);
+          locked += static_cast<std::uint64_t>(
+              (account.bondedAmount() - account.slashedAmount()).rawUnits());
+        }
+        const std::uint64_t withdrawing =
+            static_cast<std::uint64_t>(tx.amount().rawUnits());
+        if (withdrawing > locked || locked - withdrawing < required)
+          throw std::invalid_argument(
+              "Withdrawal would release stake still backing slashable votes.");
+      }
       m_state.staking.withdraw(tx.fromAddress(), tx.toAddress(), tx.amount(),
-                               height, tx.id());
+                               height, now, tx.id());
     });
   }
 
@@ -155,7 +203,7 @@ public:
       if (!result.success())
         throw std::invalid_argument(result.reason());
       m_state.staking.requestValidatorExit(tx.fromAddress(), tx.toAddress(),
-                                           height, tx.id());
+                                           height, now, tx.id());
     });
   }
 
@@ -484,7 +532,7 @@ private:
       const std::int64_t totalSlash =
           m_state.penaltyLedger.totalSlashAmountForValidator(address);
       const std::int64_t boundedSlash =
-          std::min(std::max<std::int64_t>(totalSlash, 0),
+          std::min(std::max(current.slashedAmount().rawUnits(), totalSlash),
                    current.bondedAmount().rawUnits());
       const bool tombstoned =
           current.tombstoned() ||

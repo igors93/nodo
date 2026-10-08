@@ -142,7 +142,12 @@ node::StakingRegistry buildStakingFixture() {
   unbonding.lockHeight = 20;
   unbonding.activationHeight = 21;
   unbonding.unbondingStartHeight = 30;
-  unbonding.withdrawableHeight = 51;
+  unbonding.withdrawableHeight =
+      30 + node::StakingRegistry::UNBONDING_DELAY_BLOCKS;
+  unbonding.unbondingStartTime = 1'900'000'000;
+  unbonding.withdrawableTime = unbonding.unbondingStartTime +
+      node::AccountabilityWindow::kUnbondingSeconds +
+      node::AccountabilityWindow::kFutureBlockSkewSeconds;
   unbonding.status = node::StakePositionStatus::UNBONDING;
 
   node::StakeLifecycleRecord record;
@@ -185,7 +190,8 @@ void testStakingDomainRoundTrip() {
               "position status must round-trip");
       require(position.pendingUnbondingAmount.rawUnits() == 100,
               "position pending-unbonding amount must round-trip");
-      require(position.withdrawableHeight == 51,
+      require(position.withdrawableHeight ==
+                  30 + node::StakingRegistry::UNBONDING_DELAY_BLOCKS,
               "position withdrawable height must round-trip");
     }
   }
