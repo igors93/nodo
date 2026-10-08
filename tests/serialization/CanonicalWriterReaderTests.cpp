@@ -3,6 +3,7 @@
 #include "serialization/CanonicalWriter.hpp"
 
 #include <cassert>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -11,6 +12,7 @@ int main() {
   nodo::serialization::CanonicalWriter writer;
   writer.writeUInt8(7);
   writer.writeBool(true);
+  writer.writeUInt16(0x0102U);
   writer.writeUInt32(0x01020304U);
   writer.writeUInt64(0x0102030405060708ULL);
   writer.writeInt64(-42);
@@ -24,6 +26,7 @@ int main() {
   nodo::serialization::CanonicalReader reader(writer.bytes());
   assert(reader.readUInt8() == 7);
   assert(reader.readBool());
+  assert(reader.readUInt16() == 0x0102U);
   assert(reader.readUInt32() == 0x01020304U);
   assert(reader.readUInt64() == 0x0102030405060708ULL);
   assert(reader.readInt64() == -42);
@@ -35,6 +38,16 @@ int main() {
   assert(bytes[1] == 0x01);
   assert(bytes[2] == 0xff);
   reader.requireFullyConsumed();
+
+  nodo::serialization::CanonicalWriter signedBounds;
+  signedBounds.writeInt64(std::numeric_limits<std::int64_t>::min());
+  signedBounds.writeInt64(std::numeric_limits<std::int64_t>::max());
+  nodo::serialization::CanonicalReader signedBoundsReader(signedBounds.bytes());
+  assert(signedBoundsReader.readInt64() ==
+         std::numeric_limits<std::int64_t>::min());
+  assert(signedBoundsReader.readInt64() ==
+         std::numeric_limits<std::int64_t>::max());
+  signedBoundsReader.requireFullyConsumed();
 
   const std::string firstHash = nodo::serialization::CanonicalHash::hashBytes(
       writer.bytes(), "TEST_DOMAIN");

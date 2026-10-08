@@ -174,10 +174,10 @@ contract is not wire-compatible with the current development runtime.
   *Design contract:* [protocol v1](spec/protocol-v1.md) defines the target
   state machine, all 13 transaction types, ordered rejection codes, block and
   finality rules, canonical binary encoding and authenticated network messages.
-  [Primitive byte vectors](spec/vectors-v1.md) anchor the encoding rules.
+  [Primitive and 14-kind byte vectors](spec/vectors-v1.md) anchor the encoding rules.
   This is an incompatible target protocol, not a claim that `nodo/0.7` already
-  implements it. Full signed-object vectors, architecture decision records,
-  formal checking and external BFT review remain in the Phase 1 exit gate;
+  implements it. Vectors for all transaction and message variants, formal
+  checking and external BFT review remain in the Phase 1 exit gate;
   runtime migration remains in Phases 2–8.
 
 - [x] **1.2 · Critical · The validator weight model is Sybil-amplifiable.**
@@ -263,18 +263,34 @@ contract is not wire-compatible with the current development runtime.
   deadlines remains in 6.3. The current proposer-clock path is not a
   production-safe BFT time implementation.
 
-- [ ] **1.8 · High · Epoch and block cadence are inconsistent.**
-  - `NetworkParameters::epochDurationSeconds` (60 s or 300 s) is never used.
-  - Validator epochs are hard-coded at 43,200 blocks (`NODO_VALIDATOR_EPOCH_BLOCKS`).
-  - Issuance windows are hard-coded at 525,600 blocks (`NODO_CONTROLLED_ISSUANCE_EPOCH_BLOCKS`).
-  - `EpochEmissionPolicy` assumes 365 epochs per year.
-  - The target block time (60 s localnet, 30 s testnet) is not enforced: blocks are produced as fast as a round completes, limited only by whole-second timestamps.
+- [x] **1.8 · High · Epoch and block cadence are inconsistent.**
+  [ADR 0007](spec/adr-0007-epoch-cadence.md) fixes one v1 model: genesis-bound
+  height epochs of `L` blocks with a BFT-time floor of `T` seconds per height.
+  Genesis must commit `L`, `T` and exact per-epoch issuance; `T <= 300` and
+  `86400 <= L*T <= 604800` seconds. Epoch membership and boundaries use checked height
+  arithmetic, while seconds-based accountability uses authenticated BFT time.
+  There is no independent epoch-duration field or assumed 365 epochs per year
+  in v1. The checked `EpochCadence` reference and boundary/overflow tests
+  anchor the rule. The `nodo/0.7` runtime still has an unused
+  `epochDurationSeconds`, 43,200-block validator epochs, 525,600-block
+  issuance windows and unenforced target cadence. Genesis parameter wiring,
+  exact time enforcement and replay/import parity remain Phase 4 gates;
+  replacing economic constants and annualized assumptions remains in 6.1–6.3.
+  The current development runtime does not implement this v1 cadence.
 
-  *Decide:* one cadence model, either height-based epochs with an enforced block time or time-based epochs on BFT time, and move every constant into the genesis parameters.
-
-- [ ] **1.9 · High · Two serialization formats, one of them ad-hoc text.**
-  Consensus objects are hashed and signed as text built with `std::ostringstream` (`Name{a=…;b=…}`), while a binary `CanonicalWriter` is used for other objects.
-  *Fix:* specify one binary canonical encoding, with versioning and test vectors for every consensus object.
+- [x] **1.9 · High · Two serialization formats, one of them ad-hoc text.**
+  [ADR 0008](spec/adr-0008-canonical-binary.md) fixes one v1 binary schema
+  for all 14 top-level kinds: exact prefix/version, field order and widths,
+  nested lengths, signed preimages including handshake and peer records,
+  domain hashes, per-kind caps, strict
+  decoding and a count-committed ordered Merkle tree without odd-leaf
+  duplication. [Full-byte fixtures](spec/v1-object-vectors.json) for every
+  kind include verifiable Ed25519 transaction, vote, proposal and envelope
+  signatures; a generator and C++ primitive tests guard their bytes and
+  hash rules. This is the Phase 1 format decision. `nodo/0.7` still uses
+  development text for consensus hashing/signing; Phase 2.1 must implement
+  strict typed codecs for all kinds and variants and migrate every live,
+  persisted, replay, sync and import path in one incompatible activation.
 
 - [ ] **1.10 · High · There is no resource or fee model.**
   The fee is an absolute amount per transaction, and the mempool orders by absolute fee (`sortedEntriesByPriority` in [`Mempool.cpp`](../src/mempool/Mempool.cpp)). A 200 KiB transaction pays the same as a 200-byte one, and nothing meters bytes, signature checks, or state writes.
@@ -311,7 +327,11 @@ contract is not wire-compatible with the current development runtime.
 
 **Goal:** implement the byte-level base defined in Phase 1. Every higher layer hashes, signs, and stores these bytes.
 
-- [ ] **2.1 · High · Implement the canonical binary encoding** (1.9) for transactions, headers, votes, quorum certificates, receipts, evidence and snapshots. Remove text serialization from every hashing and signing path, and keep text only for display and diagnostics.
+- [ ] **2.1 · High · Implement the canonical binary encoding** (1.9) for all
+  14 kinds, all 13 transaction payloads and all 21 network message payloads.
+  Enforce strict decoding and signature preimages on production, voting,
+  replay, import, storage and sync together. Remove text serialization from
+  every consensus hashing and signing path; keep text for diagnostics only.
 
 - [ ] **2.2 · High · Hashes are strings.**
   Hashes travel as 64-character hex `std::string`. `MerkleTree::hashNode` hashes the concatenation of two hex strings, which doubles the input. The magic strings `"GENESIS"` and `"SNAPSHOT"` stand in for hashes.
@@ -481,7 +501,9 @@ contract is not wire-compatible with the current development runtime.
 - [ ] **4.8 · Critical · Complete the Phase 1 consensus decisions:** consume
   one-to-one stake backing (3.16), prove the epoch transition and bounded
   churn rules of 1.4 against the dynamic-set fault model, implement the v1
-  evidence-driven jail exception, BFT time (1.7) and proposer rule (1.13).
+  evidence-driven jail exception, BFT time (1.7), genesis-bound epoch and
+  block cadence (1.8), and proposer rule (1.13). Production, voting,
+  finalization, replay and import must share the same checked cadence rule.
 
 - [ ] **4.9 · High · Complete the evidence lifecycle.**
   `nodo/0.5` enforces a 21-epoch maximum age on evidence admission and

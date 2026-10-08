@@ -22,6 +22,11 @@ void CanonicalWriter::writeBool(
     writeUInt8(value ? 1U : 0U);
 }
 
+void CanonicalWriter::writeUInt16(std::uint16_t value) {
+    m_bytes.push_back(static_cast<unsigned char>((value >> 8) & 0xffU));
+    m_bytes.push_back(static_cast<unsigned char>(value & 0xffU));
+}
+
 void CanonicalWriter::writeUInt32(
     std::uint32_t value
 ) {

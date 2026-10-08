@@ -70,6 +70,16 @@ reference calculation. Production, replay and import still need to enforce
 the exact v1 header time. Live future-message holding and round timeouts must
 use local clocks separately from replayable block validity.
 
+## Epoch cadence
+
+[ADR 0007](../spec/adr-0007-epoch-cadence.md) fixes v1 epochs by height using
+genesis `epoch_length_blocks`, with an enforced BFT-time target floor from
+ADR 0006. `EpochCadence` checks the genesis bounds, height boundaries and
+overflow. Issuance is scheduled in exact units per epoch; a stalled chain
+cannot skip epochs or mint for elapsed wall time. The current development
+runtime still uses independent validator and issuance block constants, so
+runtime migration and annualized economic policy remain open roadmap gates.
+
 ## Remaining consensus work
 
 Before public testnet, implementation and formal checking must establish:

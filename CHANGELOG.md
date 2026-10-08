@@ -6,6 +6,19 @@ Nodo does not yet publish versioned production releases. This changelog starts a
 
 ### Security
 
+- **The v1 canonical binary format is specified for all 14 consensus kinds.**
+  [ADR 0008](docs/spec/adr-0008-canonical-binary.md) fixes versioned schemas,
+  signed preimages, object limits and an ordered, count-committed Merkle tree.
+  [Full-byte fixtures](docs/spec/v1-object-vectors.json) include four signed
+  top-level objects plus handshake and peer-record signatures. The new C++
+  primitives are references; the development runtime still needs the Phase 2.1
+  typed-codec migration.
+- **The v1 epoch and block cadence is specified and has a checked reference.**
+  [ADR 0007](docs/spec/adr-0007-epoch-cadence.md) binds height-based epoch
+  length and BFT block target to genesis, rejects impossible bounds, and
+  defines exact per-epoch issuance without annualized block-count assumptions.
+  The current development runtime still needs genesis wiring, time enforcement
+  and economic migration before this rule is active.
 - **The v1 BFT time rule is specified and has a checked reference calculator.**
   [ADR 0006](docs/spec/adr-0006-bft-time.md) defines historical-weight lower
   medians, parent-QC binding, overflow, clock skew and replay rules. The

@@ -18,6 +18,7 @@ public:
 
     void writeUInt8(std::uint8_t value);
     void writeBool(bool value);
+    void writeUInt16(std::uint16_t value);
     void writeUInt32(std::uint32_t value);
     void writeUInt64(std::uint64_t value);
     void writeInt64(std::int64_t value);

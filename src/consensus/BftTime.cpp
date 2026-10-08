@@ -1,4 +1,5 @@
 #include "consensus/BftTime.hpp"
+#include "consensus/EpochCadence.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -17,6 +18,7 @@ std::optional<std::int64_t> BftTime::expectedChildTime(
       parent.previousHash() == "SNAPSHOT" ||
       parent.index() == std::numeric_limits<std::uint64_t>::max() ||
       targetBlockSeconds == 0 ||
+      targetBlockSeconds > EpochCadence::kMaxTargetBlockSeconds ||
       targetBlockSeconds > static_cast<std::uint64_t>(
                                std::numeric_limits<std::int64_t>::max() -
                                parent.timestamp())) {

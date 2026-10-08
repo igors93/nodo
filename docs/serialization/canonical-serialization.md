@@ -70,6 +70,11 @@ with `nodo/0.5` persisted blocks and peers; there is no in-place migration.
 The full v1 header and binary Merkle rules are specified in
 [ADR 0005](../spec/adr-0005-compact-block-header.md).
 
-## Future binary format
+## V1 binary format
 
-A future production binary format may replace development text serialization, but it must preserve deterministic ordering, strict field definitions, round-trip validation, and compatibility rules.
+The target [v1 protocol](../spec/protocol-v1.md) and
+[ADR 0008](../spec/adr-0008-canonical-binary.md) fix one versioned binary
+format for every consensus kind. [Object byte vectors](../spec/v1-object-vectors.json)
+and C++ primitive tests anchor its framing, hash and Merkle rules. The
+`nodo/0.7` development runtime remains text-based on consensus paths; typed
+binary codecs and a single incompatible activation are required by Phase 2.1.

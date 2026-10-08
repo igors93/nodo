@@ -13,11 +13,13 @@ It commits to chain ID and genesis hash, height and rule version, consensus
 round and parent ID, BFT time and proposer, the active and next validator-set
 roots, the parameter root, the parent PRECOMMIT QC hash, the complete body
 root and length, transaction, receipt and evidence roots, the resulting state
-root, and resource units. The block ID is `H("BLOCK", canonical_header_bytes)`.
+root, and resource units. The block ID is `H("BLOCK", canonical_header_bytes)`,
+where those bytes include the complete eight-byte v1 top-level header prefix.
 No body record, signature or QC bytes are embedded in the header.
 
-`body_root = H("BODY", canonical_body_bytes)` binds every byte of the ordered
-body, including system-transition records. Indexed Merkle leaves bind every
+`body_root = H("BODY", canonical_body_bytes)` binds every byte of the complete
+top-level body, including its eight-byte v1 prefix and ordered
+system-transition records. Indexed Merkle leaves bind every
 transaction, receipt and evidence item to its position. Evidence is sorted
 and unique before commitment; transaction order is execution order. The
 validator-set and parameter roots use the canonical binary snapshots selected

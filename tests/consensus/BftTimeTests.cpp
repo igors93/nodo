@@ -90,6 +90,9 @@ void testGenesisTimeAndOverflow() {
   require(!consensus::BftTime::expectedChildTime(
                genesis, 0, nullptr, nullptr, policy, provider),
           "zero target seconds must fail closed");
+  require(!consensus::BftTime::expectedChildTime(
+               genesis, 301, nullptr, nullptr, policy, provider),
+          "target seconds outside the genesis cadence bound must fail closed");
   const core::Block nearLimit = core::Block::createGenesisBlock(
       {record("limit")}, std::numeric_limits<std::int64_t>::max() - 1);
   require(!consensus::BftTime::expectedChildTime(

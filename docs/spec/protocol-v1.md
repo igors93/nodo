@@ -20,8 +20,10 @@ consensus parameters, and the complete parameter schedule. There is no default
 value for a missing genesis field. Nodes MUST pin the expected genesis hash out
 of band. A different genesis hash is a different chain, even with the same name.
 
-The genesis parameter record contains positive `epoch_length_blocks`,
-`target_block_seconds`, `min_validator_stake`, `max_tx_bytes` (at most 262144),
+The genesis parameter record contains positive `epoch_length_blocks` (`L`)
+and `target_block_seconds` (`T`), with `T <= 300` and the checked product
+`86400 <= L*T <= 604800` (one to seven nominal days), plus `min_validator_stake`,
+`max_tx_bytes` (at most 262144),
 `max_block_bytes` (at most 1048576),
 `max_block_units`, `fee_base`, `fee_per_unit`, `min_proposal_deposit`,
 `max_treasury_spend_per_epoch`, and `treasury_timelock_epochs`. Genesis MUST
@@ -56,10 +58,29 @@ activation height. Nodes MUST retain historical rule sets to replay old blocks.
 Unknown versions and unscheduled transitions are rejected. No v1 mainnet genesis
 or activation height is defined by this repository.
 
+Epoch membership depends only on height: at positive height `h`,
+`e = floor((h-1)/L)` and a finalized block is an epoch boundary exactly when
+`h mod L = 0`. Genesis has no epoch. Every boundary and activation height uses
+checked `u64` arithmetic. The boundary block itself uses the old set and
+parameters; the next height uses its committed successors. The exact BFT-time
+rule below guarantees `header.time >= genesis.time + h*T` with checked `i64`
+arithmetic. `L*T` is the nominal minimum from one epoch boundary to the next
+(or genesis to the first boundary), never a wall-clock trigger for epoch
+transitions. A stalled or delayed chain does not skip epochs or issue coins
+for elapsed calendar time. Epoch `e` issues its scheduled exact units once in
+its final block `(e+1)*L`; epoch 0 issues zero outside genesis. The schedule
+is not an implicit annual rate; evidence and unbonding
+seconds use BFT header time, while epoch delays use height-derived indices.
+There is no independent `epoch_duration_seconds` or `epochs_per_year` v1
+parameter. [ADR 0007](adr-0007-epoch-cadence.md) fixes the cadence decision.
+
 ## 2. Canonical bytes and cryptography
 
 All consensus objects are binary. A top-level object is `magic="NODO"` (four
 ASCII bytes), `version:u16=1`, `kind:u16`, followed by the kind's fixed schema.
+The prefix is exactly eight bytes. A nested object is `length:u32` followed
+by that object's schema bytes without another top-level prefix; fixed-size
+hashes, keys and signatures are the only nested values without a length.
 Integers are unsigned big-endian unless explicitly `i64` (two's complement
 big-endian). `bool` is one byte, exactly `00` or `01`. `bytes` is a `u32`
 length followed by that many bytes. UTF-8 fields MUST be valid UTF-8 in NFC,
@@ -76,13 +97,18 @@ original bytes.
 `H(domain, x) = SHA-256(bytes("NODO/V1/") || ASCII(domain) || 0x00 || x)`.
 Every domain below is distinct and fixed. Transaction ID is `H("TXID",
 signed_transaction_bytes)`. Block ID is `H("BLOCK", header_bytes)`. A signature
-is Ed25519 over `H(sign_domain, unsigned_object_bytes)`, where those bytes
-include version, chain ID and genesis hash; the signature is excluded. The
+is Ed25519 over `H(sign_domain, unsigned_object_bytes)`. For transactions,
+votes, proposals and envelopes, those bytes are the complete top-level prefix
+and fields before the signature; they include version, chain ID and genesis
+hash. Handshake authentication uses the separately prefixed transcript in
+[ADR 0008](adr-0008-canonical-binary.md). The
 closed signing-domain registry is `SIGN/TX` for transactions, `SIGN/VOTE` for
 votes, `SIGN/PROPOSAL` for consensus proposals, `SIGN/ENVELOPE` for network
-envelopes and `SIGN/HANDSHAKE` for handshake transcripts. Public
+envelopes, `SIGN/HANDSHAKE` for handshake transcripts and `SIGN/PEER` for
+signed peer records. Public
 keys are exactly 32 bytes, signatures exactly 64 bytes, hashes exactly 32
-bytes. Account ID is `H("ACCOUNT", public_key)`; validator ID is
+bytes. Account ID is `H("ACCOUNT", public_key)`, peer ID is
+`H("PEER", peer_public_key)`, and validator ID is
 `H("VALIDATOR", consensus_public_key)`. There is no BLS or text-signing
 fallback in v1. Reused keys across chains cannot replay signed objects because
 chain ID and genesis hash are signed. The same domain rule applies to votes,
@@ -91,20 +117,28 @@ proposals, handshake transcripts and evidence.
 `genesis_hash = H("GENESIS", genesis_bytes)`. `validator_set_root =
 H("VALSET", validator_set_bytes)`, `parameter_root = H("PARAMS",
 parameter_set_bytes)`, and `parent_qc_hash = H("QC", parent_qc_bytes)`.
+For every named top-level object hash, these inputs are the **complete top-level bytes**
+including the eight-byte prefix, even if the object was transported nested.
 Evidence ID is `H("EVIDENCE", evidence_bytes)` and a system-record ID is
 `H("RECORD", record_bytes)`.
 `tx_root`, `receipt_root` and `evidence_root` are the Merkle roots of their
-canonical element bytes with kinds `tx`, `receipt` and `evidence` respectively.
-`body_root = H("BODY", canonical_body_encoding)` commits to the entire body,
+complete top-level element bytes with kinds `tx`, `receipt` and `evidence`
+respectively. State leaves and system records use their exact nested schema
+bytes because neither has a top-level kind. `body_root =
+H("BODY", complete_top_level_body_bytes)` commits to the entire body,
 including deterministic system-transition records; the header's `body_bytes`
-field is its exact encoded byte length.
+field is the length of those complete top-level bytes.
 `state_root` uses kind `state`. A signature never substitutes for a root or a
 root for a signature. The binary digest, rather than its hexadecimal display,
 is embedded in other objects.
 
 Merkle roots use `H("MERKLE-LEAF/" + kind, u32(index)||element_bytes)` and
-`H("MERKLE-NODE/" + kind, left||right)`. Duplicate the last node at an odd
-level; the empty root is `H("MERKLE-EMPTY/" + kind, empty)`. List order is
+`H("MERKLE-NODE/" + kind, left||right)`. For `n>1`, split at the largest
+power of two strictly less than `n`, recursively hash both sides, and never
+duplicate a leaf. The nonempty root is
+`H("MERKLE-ROOT/" + kind, u32(n)||tree_hash)`; the empty root is
+`H("MERKLE-EMPTY/" + kind, empty)`. Allowed kinds are `tx`, `receipt`,
+`evidence` and `state`. List order is
 significant unless a schema explicitly requires sorting. State leaves are
 `domain:u8 || key:bytes || value:bytes`, sorted lexicographically by the full
 encoded key; duplicate keys are invalid. The state root is the Merkle root of
@@ -120,6 +154,12 @@ The top-level kind registry is: `1 genesis`, `2 transaction`, `3 header`,
 rule requires a new version. Object schemas in sections 3–7 list fields in
 wire order; `hash` means 32 bytes, `account`/`validator` means their 32-byte
 IDs, `key` means 32 bytes, `sig` means 64 bytes, and `str` means UTF-8 `bytes`.
+The exact top-level byte caps are: transaction and evidence 262144; header
+4096; vote 1024; receipt 65536; genesis, body, QC, validator set and parameter
+set 1048576; proposal, finalized artifact, snapshot and envelope 4194304.
+The frame cap is 5242880. Counts may not exceed 1048576 even when the byte cap
+would allow more, and lower field-specific caps apply. This registry and the
+full nested wire schema are fixed by [ADR 0008](adr-0008-canonical-binary.md).
 
 The remaining container schemas are fixed as follows. Genesis is `chain_id,
 genesis_time:i64, parameter_set, validator_set, initial_accounts:list<key>,
@@ -132,10 +172,8 @@ owner:account, validator_id:hash, lot_ids:list<hash>` with sorted unique lot
 IDs. Every non-treasury genesis lot owner MUST derive from an initial account
 key. Every STAKED genesis lot MUST belong to exactly one genesis stake, and
 each initial validator's weight MUST equal the sum of its staked lots. A
-parameter set
-encodes the named parameters of section 1 in their first-mention order,
-followed by `double_vote_slash_bps:u16, double_proposal_slash_bps:u16,
-jail_seconds:u64`; a validator-set entry
+parameter set encodes the 20 typed fields in the exact order of
+[ADR 0008](adr-0008-canonical-binary.md); a validator-set entry
 is `validator_id, owner:account, consensus_key, weight:u64, status:u8`, sorted
 by validator ID. A consensus proposal (kind 7, distinct from a governance
 proposal transaction) is `header, body, valid_round:optional<u64>,
@@ -152,8 +190,8 @@ second_signed_object:bytes`; only conflicting votes for one
 `(chain,height,round,proposer)` are accepted in v1. The two objects sort by
 their canonical byte strings. A snapshot is `height:u64, header_id:hash,
 state_root:hash, state_leaves:list<state_leaf>, finality_path:list<qc>`;
-leaves sort by state key. Every nested value uses its canonical schema without
-a second magic/version prefix; nested variable-size values have `u32` length.
+leaves sort by state key. Every nested structured object has a `u32` byte
+length and its canonical schema without a second magic/version prefix.
 System records are tagged `slash`, `stake_maturity`, `validator_set_change`,
 `governance_decision`, `treasury_execution`, `epoch_issuance`, or
 `parameter_change`, followed by the affected ID, previous value hash and new
@@ -455,7 +493,7 @@ proposal contains header/body plus `valid_round` and the PREVOTE QC for that
 round when present. Votes have `chain_id, genesis_hash, height, round,
 step:u8, block_id:optional<hash>, validator_id, vote_time:i64, signature`;
 steps are PREVOTE=1 and PRECOMMIT=2. Nil is absent `block_id`, not a magic
-hash. A QC contains height, round, step, block ID, set root, strictly sorted
+hash. A QC contains height, round, step, `block_id:optional<hash>`, set root, strictly sorted
 unique signed votes and checked total/signed weight, with required weight
 exactly `Q` from that historical set. A nil QC may advance a
 round but never finalize a block.
@@ -492,16 +530,20 @@ proposals lead to nil PREVOTE; they are never partly executed.
 ## 6. Network messages and synchronization
 
 Transport is a length-prefixed frame (`u32` big-endian frame length) containing
-one canonical network envelope. Hard limit: 5 MiB frame, 4 MiB envelope
-payload, plus lower object-specific caps. Zero-length, truncated, oversized
+one canonical network envelope. Hard limit: 5 MiB frame, 4 MiB complete
+envelope including its prefix, plus lower object-specific caps. Zero-length, truncated, oversized
 and trailing frames are rejected before decoding. An authenticated session
 uses an ephemeral key exchange, a challenge nonce from each peer, and signatures
-over the transcript containing both peer IDs, both nonces, chain ID, genesis
-hash, protocol version and negotiated session keys. Nonces MUST be fresh and
+over the exact [ADR 0008](adr-0008-canonical-binary.md) transcript containing
+the complete signed HELLO and CHALLENGE envelopes, their peer IDs, nonces,
+ephemeral keys, chain ID and genesis hash, plus the directional traffic-key
+commitment and signer role. Nonces MUST be fresh and
 replay-guarded. A mismatched network or unsupported version closes the session.
 Encryption alone never substitutes for object signature or finality checks.
+Peer records use the exact network-bound `SIGN/PEER` preimage in ADR 0008;
+their public key must derive the advertised peer ID.
 
-Envelope fields are `chain_id:str, genesis_hash:hash, version:u16=1,
+Envelope fields are `chain_id:str, genesis_hash:hash,
 type:u16, sender_id:hash, sequence:u64, created_at:i64, ttl_seconds:u32,
 payload:bytes, payload_hash:hash, signature:sig`. `payload_hash` is
 `H("NET-PAYLOAD", payload)`. Signature covers all preceding fields. The
@@ -534,6 +576,13 @@ rejected; no executable payload is accepted through a generic extension tag.
 | 19 PEER_EXCHANGE | `peers:list<signed_peer_record>` (at most 32) | Never grants automatic trust. |
 | 20 PING | `nonce:u64` | Session liveness only. |
 | 21 PONG | `nonce:u64` | Must match an outstanding PING. |
+
+HELLO and CHALLENGE envelopes are each capped at 4096 complete bytes. The
+CHALLENGE `hello_hash` is `H("HANDSHAKE-MSG", complete_signed_HELLO_envelope)`;
+AUTH carries that same hash and
+`H("HANDSHAKE-MSG", complete_signed_CHALLENGE_envelope)`. The AUTH transcript
+signature uses the role-bound, key-bound preimage in ADR 0008. A peer rejects
+any mismatch before treating the session as authenticated.
 
 Requests MUST be bounded by count and bytes and tied to a session request ID;
 unsolicited responses are dropped. A sync response is not authoritative until

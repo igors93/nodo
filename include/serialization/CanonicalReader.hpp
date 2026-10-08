@@ -27,6 +27,7 @@ public:
 
     std::uint8_t readUInt8();
     bool readBool();
+    std::uint16_t readUInt16();
     std::uint32_t readUInt32();
     std::uint64_t readUInt64();
     std::int64_t readInt64();

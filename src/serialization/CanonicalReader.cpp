@@ -1,5 +1,6 @@
 #include "serialization/CanonicalReader.hpp"
 
+#include <bit>
 #include <stdexcept>
 #include <utility>
 
@@ -43,6 +44,15 @@ bool CanonicalReader::readBool() {
     throw std::runtime_error("Canonical boolean field must be 0 or 1.");
 }
 
+std::uint16_t CanonicalReader::readUInt16() {
+    requireAvailable(2);
+    const std::uint16_t value =
+        static_cast<std::uint16_t>(m_bytes[m_position]) << 8 |
+        static_cast<std::uint16_t>(m_bytes[m_position + 1]);
+    m_position += 2;
+    return value;
+}
+
 std::uint32_t CanonicalReader::readUInt32() {
     requireAvailable(4);
 
@@ -68,7 +78,9 @@ std::uint64_t CanonicalReader::readUInt64() {
 }
 
 std::int64_t CanonicalReader::readInt64() {
-    return static_cast<std::int64_t>(readUInt64());
+    // Preserve the exact two's-complement bit pattern. Converting a u64 value
+    // above INT64_MAX with static_cast is implementation-defined.
+    return std::bit_cast<std::int64_t>(readUInt64());
 }
 
 std::string CanonicalReader::readString() {
