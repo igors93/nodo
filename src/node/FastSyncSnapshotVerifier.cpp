@@ -122,6 +122,13 @@ FastSyncSnapshotVerifier::verifyAgainstManifest(
         FastSyncSnapshotVerificationStatus::DIGEST_MISMATCH,
         "snapshot digest does not match manifest");
   }
+  // The manifest only repeats what the same peer claims. The carried state
+  // must itself hash to the committed state root.
+  if (!snapshot.verifiesProtocolStateRoot()) {
+    return FastSyncSnapshotVerificationResult::rejected(
+        FastSyncSnapshotVerificationStatus::STATE_ROOT_MISMATCH,
+        "snapshot accounts and domains do not hash to its state root");
+  }
   return FastSyncSnapshotVerificationResult::acceptedResult();
 }
 

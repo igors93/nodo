@@ -101,9 +101,9 @@ first_epoch:u64, last_epoch:u64, units_per_epoch:u64`. A `validator_entry`
 is `validator_id:validator, owner:account, consensus_key:key, weight:u64,
 status:u8`. A `state_leaf` is `domain:u8, key:bytes, value:bytes`.
 `system_record` is `tag:u8, affected_id:hash, previous_value_hash:hash,
-new_value:bytes`; tags 1–9 are slash, stake maturity, validator-set change,
+new_value:bytes`; tags 1–10 are slash, stake maturity, validator-set change,
 governance decision, treasury execution, epoch issuance, parameter change,
-upgrade schedule and proposer schedule in that order. Upgrade schedule `new_value` is the exact
+upgrade schedule, proposer schedule and liveness window respectively. Upgrade schedule `new_value` is the exact
 tag-11 state value; the affected ID and transition order are defined in
 [ADR 0010](adr-0010-protocol-upgrades.md) and protocol v1 section 3.
 Proposer-schedule tag 9 carries the exact 32-byte next-value hash defined in
@@ -112,6 +112,12 @@ wire order is `set_root:hash, last_finalized_height:u64,
 total_weight:u64, entries:list<proposer_entry>`. Each
 `proposer_entry` has a four-byte length of 48, followed by a 32-byte
 validator ID and a 16-byte signed two's-complement big-endian priority.
+Liveness-window tag 10 carries the exact 32-byte next-value hash defined in
+[ADR 0013](adr-0013-liveness-accountability.md). The tag-13 state value is
+`set_root:hash, last_finalized_height:u64, epoch:u64,
+observed_heights:u64, total_weight:u64, entries:list<liveness_entry>`;
+each `liveness_entry` has a four-byte length of 48 followed by validator ID,
+`weight:u64` and `signed_heights:u64`.
 Sorted lists use the ordering specified by protocol v1;
 duplicate keys, voters, lot IDs or evidence objects are noncanonical.
 

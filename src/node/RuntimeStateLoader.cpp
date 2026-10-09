@@ -10,6 +10,7 @@
 #include "node/FinalizedBlockStore.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/NodePruningService.hpp"
+#include "node/history/HistoryPruningEngine.hpp"
 #include "node/ProtocolInvariantChecker.hpp"
 #include "node/ProtocolStateTransition.hpp"
 #include "node/RuntimeStateVerifier.hpp"
@@ -215,6 +216,25 @@ RuntimeStateLoadResult RuntimeStateLoader::loadFromDataDirectory(
 
     if (manifest.genesisConfigId() != genesisConfig.deterministicId()) {
         return RuntimeStateLoadResult::rejected(RuntimeStateLoadStatus::GENESIS_MISMATCH, "Data directory genesis does not match loader genesis config.");
+    }
+
+    // Finish (or quarantine) a pruning run interrupted by a crash before the
+    // pruning manifest is trusted; the manifest only advances on COMMIT.
+    try {
+        const PruningRecoveryResult recovery =
+            HistoryPruningEngine::recover(directoryConfig);
+        if (recovery.status == PruningRecoveryStatus::QUARANTINED) {
+            return RuntimeStateLoadResult::rejected(
+                RuntimeStateLoadStatus::MANIFEST_MISMATCH,
+                "Unable to recover interrupted pruning run: " + recovery.reason
+            );
+        }
+    } catch (const std::exception& error) {
+        return RuntimeStateLoadResult::rejected(
+            RuntimeStateLoadStatus::MANIFEST_MISMATCH,
+            std::string("Unable to recover interrupted pruning run: ") +
+                error.what()
+        );
     }
 
     std::string pruningReason;

@@ -47,6 +47,54 @@ std::string labels(const NodeMetricsSnapshot &metrics) {
 
 } // namespace
 
+namespace {
+
+void gauge(std::ostringstream &out, const std::string &name,
+           const std::string &help, const std::string &common,
+           std::uint64_t value) {
+  out << "# HELP " << name << " " << help << "\n"
+      << "# TYPE " << name << " gauge\n"
+      << name << "{" << common << "} " << value << "\n";
+}
+
+std::string historyGauges(const NodeMetricsSnapshot &metrics,
+                          const std::string &common) {
+  if (!metrics.storageCollected) {
+    return "";
+  }
+  std::ostringstream out;
+  gauge(out, "nodo_checkpoint_height", "Latest finalized state checkpoint",
+        common, metrics.checkpointHeight);
+  gauge(out, "nodo_checkpoint_age", "Blocks since the latest checkpoint",
+        common, metrics.checkpointAgeBlocks);
+  gauge(out, "nodo_checkpoint_age_seconds",
+        "Seconds since the latest checkpoint block", common,
+        static_cast<std::uint64_t>(metrics.checkpointAgeSeconds));
+  gauge(out, "nodo_pruned_height", "Block bodies are pruned below this height",
+        common, metrics.prunedHeight);
+  gauge(out, "nodo_storage_bytes", "Bytes used by the node data directory",
+        common, metrics.storageBytes);
+  gauge(out, "nodo_archive_segments", "Committed archive segments", common,
+        metrics.archiveSegments);
+  gauge(out, "nodo_archive_bytes", "Bytes of history covered by archive segments",
+        common, metrics.archiveBytes);
+  gauge(out, "nodo_archival_challenges_total", "Archival challenges answered",
+        common, metrics.archivalChallengesTotal);
+  gauge(out, "nodo_archival_challenges_success", "Archival challenges passed",
+        common, metrics.archivalChallengesSuccess);
+  gauge(out, "nodo_archival_challenges_failed", "Archival challenges failed",
+        common, metrics.archivalChallengesFailed);
+  gauge(out, "nodo_archive_replication_min",
+        "Minimum proven replicas over sealed segments", common,
+        metrics.archiveReplicationMin);
+  gauge(out, "nodo_archive_replication_avg",
+        "Average proven replicas times 10000", common,
+        metrics.archiveReplicationAvgBasisPoints);
+  return out.str();
+}
+
+} // namespace
+
 std::string
 PrometheusExporter::exportMetrics(const NodeMetricsSnapshot &metrics,
                                   NodeHealthStatus healthStatus) {
@@ -96,6 +144,7 @@ PrometheusExporter::exportMetrics(const NodeMetricsSnapshot &metrics,
       << "# TYPE nodo_event_retained_count gauge\n"
       << "nodo_event_retained_count{" << common << "} "
       << metrics.eventRetainedCount << "\n"
+      << historyGauges(metrics, common)
       << "# HELP nodo_rpc_running RPC server running state\n"
       << "# TYPE nodo_rpc_running gauge\n"
       << "nodo_rpc_running{" << common << "} " << (metrics.rpcRunning ? 1 : 0)

@@ -52,6 +52,20 @@ public:
   std::filesystem::path epochTreasuryReportPath() const;
   std::filesystem::path runtimeSafetyStatePath() const;
 
+  // Bounded-history layout (storage schema v2, ADR 0014). Every file name
+  // below these directories is derived from a height or segment index, never
+  // from peer- or operator-supplied text.
+  std::filesystem::path historyDirectoryPath() const;
+  std::filesystem::path checkpointsDirectoryPath() const;
+  std::filesystem::path checkpointConflictsDirectoryPath() const;
+  std::filesystem::path checkpointSnapshotsDirectoryPath() const;
+  std::filesystem::path archiveDirectoryPath() const;
+  std::filesystem::path archiveCommitmentsDirectoryPath() const;
+  std::filesystem::path archiveLedgerPath() const;
+  std::filesystem::path historyPruningDirectoryPath() const;
+  std::filesystem::path historyPruningManifestPath() const;
+  std::filesystem::path pruningJournalPath() const;
+
   bool isValid() const;
 
   std::string serialize() const;
@@ -207,6 +221,10 @@ public:
 
   static std::optional<PersistentSnapshotSyncManifest>
   loadEpochSnapshotManifest(const NodeDataDirectoryConfig &directoryConfig);
+
+  // Creates the storage schema v2 history directories. Idempotent.
+  static void
+  ensureHistoryDirectoryTree(const NodeDataDirectoryConfig &directoryConfig);
 
 private:
   static void

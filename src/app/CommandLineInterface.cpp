@@ -439,7 +439,9 @@ CommandLineOptions::CommandLineOptions()
       showHelp(false), keyIdProvided(false), validatorKeyIdProvided(false),
       outputJson(false), pruningMode("archive"), pruningRetainEpochs(1),
       genesisFile(), genesisValidators(), genesisAccounts(), genesisMemo(""),
-      outputPath() {}
+      outputPath(), height(0), heightProvided(false), sourceDataDirectory(),
+      trustedCheckpoint(""), retainBlocks(0), retainSnapshots(0),
+      dryRun(false), segmentIndex(0), segmentProvided(false) {}
 
 std::string commandLineStatusToString(CommandLineStatus status) {
   switch (status) {
@@ -543,6 +545,10 @@ CommandLineInterface::execute(const std::vector<std::string> &args) {
 
     if (options.command == "node run") {
       return executeNodeRun(options);
+    }
+
+    if (isHistoryCommand(options.command)) {
+      return executeHistoryCommand(options);
     }
 
     if (options.command == "node prune") {

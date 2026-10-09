@@ -58,6 +58,46 @@ Proof of Protection should not become:
 - a way to pay validators for creating artificial work;
 - a hidden shortcut around consensus or state-transition rules.
 
+## Protection pillars
+
+Every reward must trace to measurable work in exactly one pillar
+(`economics::ProtectionWorkType`):
+
+```text
+Proof of Protection
+├── Consensus protection      proposing finalized blocks
+├── Finality participation    PRECOMMIT votes inside quorum certificates
+├── Network availability      relaying and serving data (not yet provable)
+├── Data availability         integrity and availability challenges
+├── Historical archival       Proof of Archival (ADR 0014)
+└── Useful compute            reserved for a future protocol version
+```
+
+The epoch emission cap from `EpochEmissionPolicy` is the ceiling of the whole
+Epoch Protection Budget (`economics::ProtectionBudgetSplit`). Consensus keeps
+the remainder and at least 60%; a pillar without verifiable work receives
+nothing, and unearned budget is never minted.
+
+## Historical preservation is protection work
+
+The intended archival protocol lets normal nodes keep bounded history while
+archive nodes preserve it. Once the outstanding consensus integration and
+protocol upgrade gates are complete, the network can pay providers for
+verified preservation ([ADR 0014](../spec/adr-0014-bounded-storage-and-proof-of-archival.md)):
+
+- providers bond per segment slot and are assigned segments by the network;
+- unpredictable challenges, seeded by finalized blocks, sample pieces of a
+  segment; the provider answers with the pieces and Merkle proofs;
+- verification is cheap, while answering without the data fails with high
+  probability;
+- rewards scale with bytes preserved, availability, reliability and the
+  scarcity of the segment, inside the archival share of the budget;
+- a missed challenge lowers score and reward; only a signed invalid answer
+  is evidence that can justify a penalty.
+
+Proof of Archival protects history. It does not finalize anything and never
+replaces the BFT consensus or its quorum certificates.
+
 ## Implementation direction
 
-The current implementation contains foundations for validator score, stake, reward records, coin lots, penalty evidence, governance audit, treasury evidence, and state rebuilding. The final Proof-of-Protection model still needs testnet parameters and formal specification before public value can depend on it.
+The current implementation contains foundations for validator score, stake, reward records, coin lots, penalty evidence, governance audit, treasury evidence, and state rebuilding, plus the Proof-of-Archival reference (challenges, proofs, scoring, replication, bounded rewards). Archival rewards are not minted until a protocol upgrade activates them (roadmap 6.9). The final Proof-of-Protection model still needs testnet parameters and formal specification before public value can depend on it.

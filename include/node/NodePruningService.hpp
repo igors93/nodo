@@ -5,6 +5,7 @@
 #include "node/NodePruningConfig.hpp"
 #include "node/NodePruningManifest.hpp"
 #include "node/NodePruningPlan.hpp"
+#include "node/history/HistoryPruningEngine.hpp"
 
 #include <optional>
 #include <string>
@@ -27,6 +28,10 @@ public:
 
   static NodePruningResult rejected(std::string reason);
 
+  static NodePruningResult fromRun(const PruningRunResult &run);
+  // Set when HistoryPruningEngine handled the request.
+  const std::optional<PruningRunResult> &run() const;
+
   NodePruningStatus status() const;
   const std::string &reason() const;
   bool success() const;
@@ -40,6 +45,7 @@ private:
   std::string m_reason;
   std::optional<NodePruningManifest> m_manifest;
   std::optional<NodePruningPlan> m_plan;
+  std::optional<PruningRunResult> m_run;
 };
 
 class NodePruningService {
@@ -58,9 +64,11 @@ public:
                                  std::int64_t now);
 
   /*
-   * Called after block persistence.  If no pruning manifest exists, archive
-   * mode is assumed and no files are touched.  If a non-archive manifest
-   * exists, the same policy is reapplied against the updated chain tip.
+   * Called after block persistence. Archive mode (the default, also when no
+   * manifest exists) touches nothing. A v2 NORMAL/LIGHT policy runs the
+   * crash-safe HistoryPruningEngine once per newly confirmed checkpoint. A
+   * legacy v1 manifest is never re-applied, because its LIGHT mode deleted
+   * finalized block files that reload still needs.
    */
   static NodePruningResult
   applyConfiguredPolicy(const NodeDataDirectoryConfig &directoryConfig,

@@ -20,6 +20,8 @@ std::string signingDomainToString(SigningDomain domain) {
             return "NODO_GOVERNANCE_VOTE_V1";
         case SigningDomain::VALIDATOR_BLOCK_PROPOSAL:
             return "NODO_VALIDATOR_BLOCK_PROPOSAL_V1";
+        case SigningDomain::ARCHIVAL_PROOF:
+            return "NODO_ARCHIVAL_PROOF_V1";
         case SigningDomain::UNKNOWN:
         default:
             return "UNKNOWN";
@@ -57,6 +59,10 @@ SigningDomain signingDomainFromString(const std::string& value) {
 
     if (value == "NODO_VALIDATOR_BLOCK_PROPOSAL_V1") {
         return SigningDomain::VALIDATOR_BLOCK_PROPOSAL;
+    }
+
+    if (value == "NODO_ARCHIVAL_PROOF_V1") {
+        return SigningDomain::ARCHIVAL_PROOF;
     }
 
     return SigningDomain::UNKNOWN;

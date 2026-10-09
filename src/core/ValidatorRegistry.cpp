@@ -1243,6 +1243,45 @@ bool ValidatorSetHistory::changesOnlyAtBoundaries(
   return true;
 }
 
+std::uint64_t ValidatorSetHistory::firstRecordedHeight() const {
+  return m_firstHeight;
+}
+
+const std::map<std::uint64_t, ValidatorRegistry> &
+ValidatorSetHistory::recordedChanges() const {
+  return m_setsByHeight;
+}
+
+ValidatorSetHistory
+ValidatorSetHistory::windowFrom(std::uint64_t fromHeight) const {
+  if (!hasSet(fromHeight)) {
+    throw std::out_of_range("Validator-set window start is not recorded.");
+  }
+  ValidatorSetHistory window;
+  window.m_firstHeight = fromHeight;
+  window.m_highestHeight = m_highestHeight;
+  window.m_setsByHeight.emplace(fromHeight, setAt(fromHeight));
+  for (auto it = m_setsByHeight.upper_bound(fromHeight);
+       it != m_setsByHeight.end(); ++it) {
+    window.m_setsByHeight.emplace(it->first, it->second);
+  }
+  return window;
+}
+
+std::optional<ValidatorSetHistory>
+ValidatorSetHistory::restore(std::uint64_t firstHeight,
+                             std::uint64_t highestHeight,
+                             std::map<std::uint64_t, ValidatorRegistry> changes) {
+  ValidatorSetHistory history;
+  history.m_firstHeight = firstHeight;
+  history.m_highestHeight = highestHeight;
+  history.m_setsByHeight = std::move(changes);
+  if (firstHeight == 0 || !history.isValid()) {
+    return std::nullopt;
+  }
+  return history;
+}
+
 std::string ValidatorSetHistory::serialize() const {
   std::ostringstream output;
   output << "ValidatorSetHistory{firstHeight=" << m_firstHeight

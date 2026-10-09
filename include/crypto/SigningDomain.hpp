@@ -16,7 +16,9 @@ enum class SigningDomain {
     MINT_AUTHORIZATION,
     TREASURY_PROPOSAL,
     GOVERNANCE_VOTE,
-    VALIDATOR_BLOCK_PROPOSAL
+    VALIDATOR_BLOCK_PROPOSAL,
+    // Archive provider registrations and archival proofs (ADR 0014).
+    ARCHIVAL_PROOF
 };
 
 std::string signingDomainToString(SigningDomain domain);

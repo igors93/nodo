@@ -296,6 +296,46 @@ void testInvalidPenaltyInputsAreRejected() {
     );
 }
 
+void testManualAndUnimplementedPenaltiesAreRejected() {
+    const auto valid = ValidatorPenaltyPolicy::conservativeDefaultPolicy()
+        .createDoubleSignPenaltyRecord(doubleSignEvidence(), 3, 80, kTimestamp + 9);
+    std::string manual = valid.serialize();
+    const auto position = manual.find("reason=DOUBLE_SIGN");
+    requireCondition(position != std::string::npos,
+                     "Fixture must contain the double-sign reason.");
+    manual.replace(position, std::string("reason=DOUBLE_SIGN").size(),
+                   "reason=MANUAL_REVIEW");
+    bool rejected = false;
+    try {
+        (void)ValidatorPenaltyRecord::deserialize(manual);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+    requireCondition(rejected, "Manual penalties must not deserialize.");
+    rejected = false;
+    try {
+        (void)nodo::economics::validatorScoreReasonFromString("MANUAL_REVIEW");
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+    requireCondition(rejected, "Manual score reductions must not deserialize.");
+    nodo::economics::ValidatorScoreRecord forgedScore(
+        valid.validatorAddress(), valid.epoch(), 80, 40,
+        static_cast<ValidatorScoreReason>(99), valid.evidenceHash(),
+        valid.timestamp());
+    requireCondition(!forgedScore.isValid(),
+                     "Unknown score reasons must fail even when cast directly.");
+    ValidatorPenaltyRecord forged(
+        valid.validatorAddress(), valid.epoch(), valid.blockIndex(),
+        valid.previousScore(), valid.newScore(),
+        static_cast<ValidatorPenaltyReason>(99), valid.action(),
+        valid.evidenceHash(), valid.firstBlockHash(),
+        valid.conflictingBlockHash(), valid.firstSignatureDigest(),
+        valid.conflictingSignatureDigest(), valid.timestamp());
+    requireCondition(!forged.isValid(),
+                     "Unknown and unimplemented penalty reasons must fail closed.");
+}
+
 void testPenaltyLedgerRecordsAreAuditedByChainStateRebuilder() {
     const ValidatorPenaltyRecord penalty =
         ValidatorPenaltyPolicy::conservativeDefaultPolicy()
@@ -356,6 +396,7 @@ int main() {
         testPenaltyLedgerRecordRoundTripsThroughCodec();
         testPenaltyRecordDeserializesRoundTrip();
         testInvalidPenaltyInputsAreRejected();
+        testManualAndUnimplementedPenaltiesAreRejected();
         testPenaltyLedgerRecordsAreAuditedByChainStateRebuilder();
 
         std::cout << "Nodo validator penalty record tests passed.\n";

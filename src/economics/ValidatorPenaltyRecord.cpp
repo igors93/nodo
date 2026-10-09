@@ -37,12 +37,6 @@ std::string validatorPenaltyReasonToString(ValidatorPenaltyReason reason) {
   switch (reason) {
   case ValidatorPenaltyReason::DOUBLE_SIGN:
     return "DOUBLE_SIGN";
-  case ValidatorPenaltyReason::INVALID_PROPOSAL:
-    return "INVALID_PROPOSAL";
-  case ValidatorPenaltyReason::INVALID_SIGNATURE:
-    return "INVALID_SIGNATURE";
-  case ValidatorPenaltyReason::MANUAL_REVIEW:
-    return "MANUAL_REVIEW";
   default:
     return "UNKNOWN";
   }
@@ -54,18 +48,6 @@ validatorPenaltyReasonFromString(const std::string &value) {
     return ValidatorPenaltyReason::DOUBLE_SIGN;
   }
 
-  if (value == "INVALID_PROPOSAL") {
-    return ValidatorPenaltyReason::INVALID_PROPOSAL;
-  }
-
-  if (value == "INVALID_SIGNATURE") {
-    return ValidatorPenaltyReason::INVALID_SIGNATURE;
-  }
-
-  if (value == "MANUAL_REVIEW") {
-    return ValidatorPenaltyReason::MANUAL_REVIEW;
-  }
-
   throw std::invalid_argument("Unknown ValidatorPenaltyReason: " + value);
 }
 
@@ -73,10 +55,6 @@ std::string validatorPenaltyActionToString(ValidatorPenaltyAction action) {
   switch (action) {
   case ValidatorPenaltyAction::SCORE_REDUCTION:
     return "SCORE_REDUCTION";
-  case ValidatorPenaltyAction::SLASHING_REVIEW:
-    return "SLASHING_REVIEW";
-  case ValidatorPenaltyAction::SECURITY_LOCK_REVIEW:
-    return "SECURITY_LOCK_REVIEW";
   default:
     return "UNKNOWN";
   }
@@ -86,14 +64,6 @@ ValidatorPenaltyAction
 validatorPenaltyActionFromString(const std::string &value) {
   if (value == "SCORE_REDUCTION") {
     return ValidatorPenaltyAction::SCORE_REDUCTION;
-  }
-
-  if (value == "SLASHING_REVIEW") {
-    return ValidatorPenaltyAction::SLASHING_REVIEW;
-  }
-
-  if (value == "SECURITY_LOCK_REVIEW") {
-    return ValidatorPenaltyAction::SECURITY_LOCK_REVIEW;
   }
 
   throw std::invalid_argument("Unknown ValidatorPenaltyAction: " + value);
@@ -187,8 +157,8 @@ bool ValidatorPenaltyRecord::isValid() const {
     return false;
   }
 
-  if (m_reason == ValidatorPenaltyReason::UNKNOWN ||
-      m_action == ValidatorPenaltyAction::UNKNOWN) {
+  if (m_reason != ValidatorPenaltyReason::DOUBLE_SIGN ||
+      m_action != ValidatorPenaltyAction::SCORE_REDUCTION) {
     return false;
   }
 
@@ -203,8 +173,7 @@ bool ValidatorPenaltyRecord::isValid() const {
     return false;
   }
 
-  if (m_reason == ValidatorPenaltyReason::DOUBLE_SIGN &&
-      m_newScore >= m_previousScore) {
+  if (m_newScore >= m_previousScore) {
     return false;
   }
 

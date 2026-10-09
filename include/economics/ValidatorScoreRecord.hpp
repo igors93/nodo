@@ -22,8 +22,7 @@ enum class ValidatorScoreReason {
     NETWORK_CLUSTER_PENALTY,
     MISSED_CHALLENGE,
     INVALID_WORK,
-    CONFLICTING_SIGNATURE,
-    MANUAL_REVIEW
+    CONFLICTING_SIGNATURE
 };
 
 std::string validatorScoreReasonToString(

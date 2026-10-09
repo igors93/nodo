@@ -71,20 +71,20 @@ schema bytes with a `u32` length and without a second eight-byte prefix.
 
 | Kind | Object | Bytes | Raw SHA-256 |
 | ---: | --- | ---: | --- |
-| 1 | genesis | 1907 | `fd2c1caaf341d58dd726d6ef96b872f888550ec43fcc6087455c481dfbaccb73` |
-| 2 | transaction | 249 | `e139af3fde99621a05d38dac8d1f9bf8245f107b515b23a727e7962b877f7dbd` |
-| 3 | header | 512 | `db3cf1ffac4487badebc7b246612739a668544685bd9f9fc2493fddea99a3a6b` |
-| 4 | block body | 265 | `275cf248de93df01b8b2a3317ef15767b3ac5e749e9141f7701b4a2fc285cda7` |
-| 5 | receipt | 92 | `d5a2aca9559d40c0a19fa6f3f3edff3942be240c83ab374ed132fe1393e3f1b8` |
-| 6 | vote | 202 | `b8ed110b276a65a1aa0d04cf1154a62084f345ed14c90edaa1b45ffee82b6940` |
-| 7 | proposal | 843 | `fc90479644aad641b6c00541e6f822dae7a51c94cc5f833c7199edd0d4b5411d` |
-| 8 | quorum certificate | 910 | `9c2d9feceade94c846b1ebbd431aee44dcf0501a8d8041fd318682d4705e6491` |
-| 9 | evidence | 421 | `12b716c823b4267e427331002a645a7f52bdd4f3ce6950d9905a7c93912c320d` |
+| 1 | genesis | 1907 | `f3a85a24c4adf46dc25c52f7cb3752defde18b7630dd6c5ea81851a0e4546d96` |
+| 2 | transaction | 249 | `83cebde2e915140b0171a11a465a57126bfee3fa8bf5d60ce69db97bbe84871e` |
+| 3 | header | 512 | `fd4b97ec6cc44dcab6112e857a1c64ce73ad0b5a3b6a89195cac1d61cdc59142` |
+| 4 | block body | 265 | `af8b065d5f6ec46e66e169b63e2b7a0ac22ed8f780aa6e7b32bb43303208a9dc` |
+| 5 | receipt | 92 | `a3fc2b10e923af0dfca8d34e8e018f59a55885a2ee416319d0003015954ee473` |
+| 6 | vote | 202 | `002ba0267a035340b4b8388170b3df0020962ce4af5a7586a20802561fb0310e` |
+| 7 | proposal | 843 | `e1df9bba8f80c44cc2017d0088927fae74acc0bf9c97db67bb5e6a229d867d83` |
+| 8 | quorum certificate | 910 | `9cd98fbf0673798c7e55b00baa09a6bc4da3fb74d589b63fcbc3cfa00bb1f4f0` |
+| 9 | evidence | 421 | `6ee7fe06ce3e5a8efbd40cb050ab014f61c9370affac13871ee3280040e8cc77` |
 | 10 | validator set | 448 | `32ff9166c940091bb17a58c7d203aed81b966b316e1aee3b47d20d12a46fa381` |
-| 11 | parameter set | 150 | `207abdd9785bee5c38ee4a3b883effc1d61a1ff0e6980bb2bd7e113e722dbec5` |
-| 12 | finalized artifact | 1776 | `6f386da6fbead0a1f500e9f5710bcdfe508e269e86c5c0fac1fb87261e7715e7` |
-| 13 | state snapshot | 1080 | `bcb383f73a2681b557d907a367ba74dfbfb4b18298e24cd82a2cb8793095b97b` |
-| 14 | network envelope | 404 | `c85b589069e76ade5bbdd7c92c3e85bb21fc63cf2121c5a71e23696e6e147350` |
+| 11 | parameter set | 150 | `1414a5633f1f08be6dd72080df277b1f4b606380c9216de38f715e85bbd56cee` |
+| 12 | finalized artifact | 1776 | `77417e00a043b5376cc6dbe8abfd37237c336541f091b60d515f2b1e2aad42ea` |
+| 13 | state snapshot | 1080 | `90642292882a97497415e2a72f0c33f97b70fef70bf1b77b8a59fdb5e58b0c6f` |
+| 14 | network envelope | 404 | `f394cfceacb7e0f26fee8c0645a4d10c58f1c87aaf4bd11b416303b8b173edcc` |
 
 ## Protocol upgrade vectors
 
@@ -164,7 +164,7 @@ The [v1 fee decision](adr-0009-resource-fees.md) uses complete top-level
 transaction and receipt lengths. These are arithmetic fixtures, independent
 of the encoding-only transaction above. Reference parameters are
 `max_tx_bytes=262144`, `max_block_bytes=1048576`, `max_tx_units=524288`,
-`max_block_units=1048576`, `fee_base=1`, `fee_per_unit=1`.
+`max_block_units=5000000`, `fee_base=1`, `fee_per_unit=1`.
 
 | Input | Required result |
 | --- | ---: |
@@ -173,18 +173,44 @@ of the encoding-only transaction above. Reference parameters are
 | Evidence with `complete_bytes=421` | `evidence_units=2981` |
 | System record with `nested_bytes=100`, `receipt_bytes=156`, `E=2` | `system_units=1408` |
 | Mandatory proposer record with `nested_bytes=105`, `receipt_bytes=124`, `E=1` | `system_units=1317` |
-| Block containing the three above | `resource_units=6394` |
-| Parent `base_fee=100`, `M=1048576`, `U=524288`, child floor 1 | Next base fee `100` |
-| Same parent with `U=1048576` | Next base fee `112` |
+| Mandatory liveness record with the same byte sizes and 4 active validators | `liveness_units=1829` |
+| Same liveness record with 9619 active validators | `liveness_units=1232549` |
+| Arithmetic sum of the transfer, evidence and generic system record | `resource_units=6394` |
+| Same work plus both mandatory per-height records with 4 validators | `resource_units=9540` |
+| Parent `base_fee=100`, `M=5000000`, `U=2500000`, child floor 1 | Next base fee `100` |
+| Same parent with `U=5000000` | Next base fee `112` |
 | Same parent with `U=0` | Next base fee `88` |
-| Parent `base_fee=1`, `U=524289` | Next base fee `2` |
+| Parent `base_fee=1`, `U=2500001` | Next base fee `2` |
 | Parent `base_fee=100`, `U=0`, child floor `200` | Next base fee `200` |
 
-The user transaction budget is `786432` units for this parameter set. A sum
-of `786433` user units is invalid even when the whole block is below
-`1048576`; adding evidence or system work must also keep the full sum at or
-below `1048576`. All multiplication and overflow checks precede comparison
+The user transaction budget is `3750000` units for this parameter set. A sum
+of `3750001` user units is invalid even when the whole block is below
+`5000000`; adding evidence or system work must also keep the full sum at or
+below `5000000`. All multiplication and overflow checks precede comparison
 with an offered u64 fee.
+
+## Liveness accountability vectors
+
+For a synthetic four-validator set sorted by 32-byte ID suffixes `01` to
+`04`, weights `[4,3,2,1]`, a set root with suffix `63`, epoch 0 and zero
+counters, the exact tag-13 state value is 276 bytes. Its
+`H("STATE-VALUE", value_bytes)` is
+`6a87da18306fbcb88a69a4c705acadc873460eb4cbe5eb591a138dfbfa0196b0`.
+Each entry has a four-byte `00000030` length followed by ID, `weight:u64`
+and zero `signed_heights:u64`.
+
+With `L=288`, height 1 has no parent QC. Heights 2 through 288 count
+certified parent QCs 1 through 287. If every QC has only signers `01` and
+`02`, their weight is exactly the required `Q=7` of `W=10`, and the
+boundary assessments are signed heights `[287,287,0,0]`. The last two IDs
+are inactivity candidates because `4*0 < 3*287`; the first two pass. The
+boundary QC at height 288 is ignored by height 289's new window. A duplicate
+signer, weight 6, wrong set root or wrong parent height is invalid and does
+not change state. This vector establishes the candidate calculation, not an
+automatic slash or unbounded jail.
+
+For `L=289`, the window has 288 QCs: 215 included signatures fail the
+75% threshold, while exactly 216 pass.
 
 ## Strict weighted quorum vectors
 

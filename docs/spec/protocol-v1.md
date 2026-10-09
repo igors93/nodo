@@ -201,8 +201,9 @@ state_leaves:list<state_leaf>, finality_path:list<qc>`;
 leaves sort by state key. Every nested structured object has a `u32` byte
 length and its canonical schema without a second magic/version prefix.
 System records are tagged `slash`, `stake_maturity`, `validator_set_change`,
-`governance_decision`, `treasury_execution`, `epoch_issuance`, or
-`parameter_change`, `upgrade_schedule`, or `proposer_schedule`, followed by the affected ID,
+`governance_decision`, `treasury_execution`, `epoch_issuance`,
+`parameter_change`, `upgrade_schedule`, `proposer_schedule`, or
+`liveness_window`, followed by the affected ID,
 previous value hash and new
 value bytes. Their order is the system-transition order in section 3, then
 affected ID ascending within a tag. A record with no actual state change is
@@ -213,7 +214,8 @@ invalid. This rule also fixes receipt and root order.
 The canonical state is a tuple of account records, coin-lot records, staking
 positions, validator registry and pending set changes, governance proposals and
 votes, treasury balance and execution IDs, supply counters, protocol parameter
-schedule, protocol upgrade schedule, proposer-priority schedule, and processed
+schedule, protocol upgrade schedule, proposer-priority schedule,
+QC-participation window, and processed
 evidence IDs. Every state
 key belongs to exactly one domain. At an upgrade height, the versioned
 deterministic migration and schedule activation execute once on the old
@@ -226,9 +228,10 @@ fee deduction on failure. Receipts for valid transactions record transaction
 ID, resource units, charged fee, ordered state-effect IDs and post-transaction
 state root. System transitions run **after** user transactions in this order:
 accepted evidence and slashing, matured stake/validator changes, governance
-decision and execution records (including upgrade schedule/cancel), epoch
-settlement, next-epoch set/parameter and next-rule commitments, and the
-proposer-priority update/rebase. Each transition
+decision and execution records (including upgrade schedule/cancel),
+parent-QC liveness assessment, epoch settlement, next-epoch set/parameter and
+next-rule commitments, liveness-window update/reset, and the
+proposer-priority update/rebase. Each committed transition
 emits a typed receipt and ledger record.
 At each height, the required issuance and already committed parameter/set
 transition costs are reserved before user transactions. Evidence inclusion
@@ -263,6 +266,7 @@ account, code store or user-program-controlled state namespace; see
 | 10 evidence | evidence ID | `inclusion_height:u64, offender:validator, slash:u64` |
 | 11 upgrade schedule | activation height as `u64` | `from_version:u16, to_version:u16, previous_rules_hash:hash, next_rules_hash:hash, rule_bundle_hash:hash, vectors_hash:hash, migration_hash:hash, status:u8` |
 | 12 proposer schedule | 32 zero bytes | `set_root:hash, last_finalized_height:u64, total_weight:u64, entries:list<proposer_entry>`; each entry is a length-prefixed 48-byte `validator_id:validator, priority:i128` |
+| 13 liveness window | 32 zero bytes | `set_root:hash, last_finalized_height:u64, epoch:u64, observed_heights:u64, total_weight:u64, entries:list<liveness_entry>`; each entry is a length-prefixed 48-byte `validator_id:validator, weight:u64, signed_heights:u64` |
 
 The proposer-schedule leaf exists from genesis. Its entries match the frozen
 active validator set for the next height exactly and its set root and total
@@ -275,6 +279,16 @@ hash. Its zero-fee receipt has the sole effect ID
 `H("PROPOSER-SCHEDULE", empty)`; the transition consumes the reserved
 system budget. Missing, extra or malformed priority
 entries invalidate a block or imported snapshot.
+
+The liveness-window leaf exists from genesis with zero counters. At height
+`h>1`, the verified parent PRECOMMIT QC supplies the only signer list that
+may increase counts for height `h-1`. The boundary QC is excluded because it
+is unknown when that boundary header commits the next set. The boundary
+assesses exactly `L-1` preceding QCs using
+[ADR 0013](adr-0013-liveness-accountability.md), then resets the window
+onto the next set. System-record tag 10 commits the derived next value by
+hash and has one zero-fee receipt. Missing, extra or fabricated counts,
+manual penalties, or a slash based on QC absence invalidate the candidate.
 
 Upgrade status is 1 PENDING, 2 ACTIVE or 3 CANCELED. An entry is created
 only by an approved upgrade action, becomes ACTIVE exactly at its activation
@@ -357,6 +371,15 @@ from the offender's lots in ascending lot-ID order and jail until at least
 `unbonding_seconds`. A partial lot burn creates a new remainder lot with a
 deterministic evidence-derived ID. The same evidence cannot slash twice.
 Jailed stake stays slashable through unbonding.
+
+Inactivity is separate from cryptographic equivocation evidence. A validator
+with fewer than 75% of its `L-1` selected finalized-QC opportunities may be
+reversibly jailed at the next epoch boundary under the ordinary churn cap,
+with at least four validators remaining and a checked one-day BFT-time jail
+deadline. This action never burns stake or creates an evidence ID. A QC can
+omit a valid vote, so QC absence is not slashable proof of operator fault.
+There is no manual consensus penalty. ADR 0013 fixes exact accounting,
+assessment order, deferral and re-entry.
 
 Governance has `PARAMETER_CHANGE` (kind 1), `TREASURY_SPEND` (2), `TEXT` (3),
 `PROTOCOL_UPGRADE` (4) and `UPGRADE_CANCEL` (5) proposals. Kinds 4 and 5

@@ -16,7 +16,13 @@
 #include "crypto/PublicKey.hpp"
 #include "crypto/SignatureBundle.hpp"
 #include "mempool/Mempool.hpp"
+#include "archive/ArchivalScoreLedger.hpp"
+#include "config/HistoryParameters.hpp"
 #include "node/LightClientService.hpp"
+#include "node/NodeDataDirectory.hpp"
+#include "node/history/HistoryPruningEngine.hpp"
+#include "node/history/HistoryStore.hpp"
+#include "node/history/StorageStatus.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/RuntimeAccountStateBuilder.hpp"
 #include "node/TransactionAdmissionValidator.hpp"
@@ -842,8 +848,12 @@ std::string NodeRpcServer::handleMetrics() const {
       std::chrono::duration_cast<std::chrono::seconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count();
-  const NodeMetricsSnapshot metrics = NodeMetricsCollector::collect(
+  NodeMetricsSnapshot metrics = NodeMetricsCollector::collect(
       m_runtime, m_syncHealth, m_eventBus, m_running.load(), "", now);
+  if (m_dataDirectory != nullptr) {
+    NodeMetricsCollector::applyStorage(
+        metrics, StorageStatusReport::collect(*m_dataDirectory));
+  }
   const NodeHealthReport health = HealthCheckService::evaluate(metrics);
   std::ostringstream oss;
   oss << "{"
@@ -858,10 +868,163 @@ std::string NodeRpcServer::handlePrometheusMetrics() const {
       std::chrono::duration_cast<std::chrono::seconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count();
-  const NodeMetricsSnapshot metrics = NodeMetricsCollector::collect(
+  NodeMetricsSnapshot metrics = NodeMetricsCollector::collect(
       m_runtime, m_syncHealth, m_eventBus, m_running.load(), "", now);
+  if (m_dataDirectory != nullptr) {
+    NodeMetricsCollector::applyStorage(
+        metrics, StorageStatusReport::collect(*m_dataDirectory));
+  }
   const NodeHealthReport health = HealthCheckService::evaluate(metrics);
   return PrometheusExporter::exportMetrics(metrics, health.status());
+}
+
+std::string NodeRpcServer::handleStorageStatus() const {
+  if (m_dataDirectory == nullptr) {
+    return jsonError("Data directory is not attached to this RPC server.");
+  }
+  return StorageStatusReport::collect(*m_dataDirectory).serializeJson();
+}
+
+std::string NodeRpcServer::handleCheckpoint(const std::string &height) const {
+  if (m_dataDirectory == nullptr) {
+    return jsonError("Data directory is not attached to this RPC server.");
+  }
+  const HistoryStore store(*m_dataDirectory);
+  std::uint64_t target = 0;
+  if (height.empty()) {
+    const std::vector<std::uint64_t> heights = store.checkpointHeights();
+    if (heights.empty()) {
+      return jsonError("No checkpoint has been created yet.");
+    }
+    target = heights.back();
+  } else {
+    if (height.size() > 20 ||
+        height.find_first_not_of("0123456789") != std::string::npos) {
+      return jsonError("height must be a decimal block height.");
+    }
+    target = std::stoull(height);
+  }
+  try {
+    const auto checkpoint = store.loadCheckpoint(target);
+    if (!checkpoint) {
+      return jsonError("No checkpoint at height " + std::to_string(target) + ".");
+    }
+    const std::vector<std::uint64_t> snapshots = store.snapshotHeights();
+    const bool snapshot =
+        std::find(snapshots.begin(), snapshots.end(), target) != snapshots.end();
+    return std::string("{\"checkpoint\":") + checkpoint->serializeJson() +
+           ",\"snapshotAvailable\":" + (snapshot ? "true" : "false") + "}";
+  } catch (const std::exception &error) {
+    return jsonError(std::string("Stored checkpoint is unreadable: ") +
+                     error.what());
+  }
+}
+
+std::string NodeRpcServer::handlePruningStatus() const {
+  if (m_dataDirectory == nullptr) {
+    return jsonError("Data directory is not attached to this RPC server.");
+  }
+  PruningOptions options;
+  options.mode = NodeStorageMode::ARCHIVE;
+  std::string manifestJson = "null";
+  try {
+    if (const auto manifest = HistoryPruningEngine::loadManifest(*m_dataDirectory)) {
+      options.mode = manifest->mode;
+      options.retentionBlocks = manifest->retentionBlocks;
+      options.retainedCheckpointSnapshots = manifest->retainedCheckpointSnapshots;
+      manifestJson = manifest->serializeJson();
+    }
+  } catch (const std::exception &error) {
+    return jsonError(std::string("Pruning manifest is corrupt: ") + error.what());
+  }
+  const PruningRunResult planned = HistoryPruningEngine::plan(
+      *m_dataDirectory, m_runtime.config().genesisConfig(), options);
+  const RetentionPlan &plan = planned.plan;
+  std::ostringstream oss;
+  oss << "{\"manifest\":" << manifestJson
+      << ",\"status\":" << jsonString(pruningRunStatusToString(planned.status))
+      << ",\"reason\":" << jsonString(planned.reason)
+      << ",\"mode\":" << jsonString(nodeStorageModeToString(plan.mode))
+      << ",\"tipHeight\":" << plan.tipHeight << ",\"baseCheckpointHeight\":"
+      << (plan.baseCheckpointHeight ? std::to_string(*plan.baseCheckpointHeight)
+                                    : std::string("null"))
+      << ",\"blockBodySafeBelowHeight\":" << plan.blockBodySafeBelowHeight
+      << ",\"blockBodyPruningAllowed\":"
+      << (plan.blockBodyPruningAllowed ? "true" : "false")
+      << ",\"blockBodyBlockers\":[";
+  for (std::size_t index = 0; index < plan.blockBodyBlockers.size(); ++index) {
+    oss << (index == 0 ? "" : ",") << jsonString(plan.blockBodyBlockers[index]);
+  }
+  oss << "],\"rules\":[";
+  for (std::size_t index = 0; index < plan.rules.size(); ++index) {
+    const RetentionRule &rule = plan.rules[index];
+    oss << (index == 0 ? "" : ",") << "{\"category\":"
+        << jsonString(retentionCategoryToString(rule.category))
+        << ",\"permanent\":" << (rule.permanent ? "true" : "false")
+        << ",\"pruneBelowHeight\":" << rule.pruneBelowHeight
+        << ",\"rule\":" << jsonString(rule.rule) << "}";
+  }
+  oss << "],\"pendingRemovals\":" << planned.removedTargets.size() << "}";
+  return oss.str();
+}
+
+std::string NodeRpcServer::handleArchiveStatus() const {
+  if (m_dataDirectory == nullptr) {
+    return jsonError("Data directory is not attached to this RPC server.");
+  }
+  const StorageStatusReport report = StorageStatusReport::collect(*m_dataDirectory);
+  try {
+    const config::HistoryParameters parameters =
+        config::HistoryParameters::forNetwork(report.networkName);
+    std::ostringstream oss;
+    oss << "{\"mode\":" << jsonString(report.mode)
+        << ",\"segmentBlocks\":" << parameters.archiveSegmentBlocks()
+        << ",\"pieceBytes\":" << parameters.archivePieceBytes()
+        << ",\"sealedSegments\":" << report.archiveSegmentsSealed
+        << ",\"committedSegments\":" << report.archiveSegments
+        << ",\"historyBytes\":" << report.archiveBytes
+        << ",\"replicationTarget\":" << parameters.archiveReplicationTarget()
+        << ",\"rewardShareBasisPoints\":"
+        << parameters.archiveRewardShareBasisPoints()
+        << ",\"networkProofOfArchivalActive\":false"
+        << ",\"selfAudit\":{\"challenges\":" << report.selfAudit.challenges
+        << ",\"passed\":" << report.selfAudit.passed
+        << ",\"failed\":" << report.selfAudit.failed << "}}";
+    return oss.str();
+  } catch (const std::exception &error) {
+    return jsonError(error.what());
+  }
+}
+
+std::string NodeRpcServer::handleArchiveReplication() const {
+  if (m_dataDirectory == nullptr) {
+    return jsonError("Data directory is not attached to this RPC server.");
+  }
+  try {
+    const NodeDataDirectoryReadResult manifest =
+        NodeDataDirectory::loadManifest(*m_dataDirectory);
+    if (!manifest.loaded()) {
+      return jsonError(manifest.reason());
+    }
+    const config::HistoryParameters parameters =
+        config::HistoryParameters::forNetwork(manifest.manifest().networkName());
+    const HistoryStore store(*m_dataDirectory);
+    const auto commitments =
+        store.loadSegmentCommitments(store.contiguousSegmentCommitmentCount());
+    if (!commitments) {
+      return jsonError("Archive segment commitments are inconsistent.");
+    }
+    // Replication is measured only from on-chain archival proofs, which are
+    // not active yet; the report shows the byte targets and zero proven
+    // replicas rather than trusting announcements.
+    const archive::ArchiveReplicationReport report =
+        archive::ArchiveReplicationReport::build(parameters, *commitments, {},
+                                                 nullptr);
+    return std::string("{\"measured\":false,\"report\":") +
+           report.serializeJson() + "}";
+  } catch (const std::exception &error) {
+    return jsonError(error.what());
+  }
 }
 
 } // namespace nodo::node

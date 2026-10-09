@@ -6,13 +6,14 @@ This map describes the intended responsibility of the main source modules.
 | --- | --- |
 | `apps/cli` | CLI entry point. |
 | `app` | Command parsing, command policy, CLI execution. |
+| `archive` | Proof of Archival (ADR 0014): archive segment commitments, provider registry, replica assignment, challenges, proofs, scoring, replication. |
 | `config` | Genesis registry, network profiles, network parameters. |
 | `core` | Accounts, transactions, blocks, state transition, state roots, ledger, governance/treasury domain records. |
 | `consensus` | Runtime-independent voting, quorum certificates, proposer schedule, finalization records, slashing evidence, and recovery data. |
 | `crypto` | Address derivation, key storage, signature providers, crypto policy. |
 | `economics` | Emission, rewards, score, protection accounting, staking-related economic helpers. |
 | `mempool` | Transaction admission and pending transaction storage. |
-| `node` | Runtime services, consensus orchestration (`node/consensus`), data directory, finalized block store, daemon, RPC, sync, health, metrics. |
+| `node` | Runtime services, consensus orchestration (`node/consensus`), bounded history (`node/history`: checkpoints, full state snapshots, bootstrap verification, retention, crash-safe pruning, history sync messages, storage migration), data directory, finalized block store, daemon, RPC, sync, health, metrics. |
 | `p2p` | Peer information, messages, gossip, transport, peer policy, rate limiting, discovery. |
 | `serialization` | Canonical serialization and codecs. |
 | `staking` | Security-weight helper. Stake lifecycle and `StakingRegistry` currently live in `node`. |
@@ -41,7 +42,9 @@ Dependency direction after the Phase 0 orchestration move:
 app/node → consensus/core/p2p/crypto/config/storage
 core → crypto/serialization
 consensus → core/crypto/storage
-node → p2p/consensus/core/storage
+node → p2p/consensus/core/storage/archive
+archive → config/core/crypto/serialization
+economics → config/core
 ```
 
 Avoid circular dependencies. When a domain needs data from another domain, prefer narrow value types or explicit service boundaries.

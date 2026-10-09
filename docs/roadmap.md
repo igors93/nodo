@@ -320,7 +320,7 @@ contract is not wire-compatible with the current development runtime.
 - [x] **1.12 · Medium · Programmability is undecided.**
   [ADR 0011](spec/adr-0011-fixed-function-v1.md) fixes v1 as a
   fixed-function L1 with exactly 13 transaction types, five typed governance
-  actions and twelve state domains. There is no VM, contract deployment,
+  actions and thirteen state domains. There is no VM, contract deployment,
   arbitrary calldata execution, plugin fallback or user-defined storage at
   launch. The `V1FixedFunctionPolicy` reference rejects unknown types,
   noncanonical action shapes and extra bytes; its tests cover the closed
@@ -342,9 +342,19 @@ contract is not wire-compatible with the current development runtime.
   weighted schedule remains predictable; targeted DoS needs operational
   defenses and does not disappear by changing the selector.
 
-- [ ] **1.14 · Medium · Liveness faults have no accountability.**
-  Penalty reasons are only `DOUBLE_SIGN`, `INVALID_PROPOSAL`, `INVALID_SIGNATURE` and `MANUAL_REVIEW` (`ValidatorPenaltyRecord.hpp`). There is no downtime or missed-vote jailing, and `MANUAL_REVIEW` contradicts "no penalty without evidence".
-  *Specify:* downtime rules, and remove or strictly bound manual penalties.
+- [x] **1.14 · Medium · Liveness faults have no accountability.**
+  [ADR 0013](spec/adr-0013-liveness-accountability.md) defines a complete
+  epoch window from verified parent QCs, authenticated per-validator counts,
+  a strict 75% participation threshold, bounded reversible inactivity
+  suspension, re-entry and resource reservation. QC absence cannot prove
+  operator fault, so it never slashes stake. The development penalty and
+  score codecs now reject `MANUAL_REVIEW` and unimplemented penalty reasons.
+  The `V1LivenessAccountability` reference and adversarial tests cover
+  missing, duplicate, subquorum and wrong-set QCs, boundary resets and set
+  transitions.
+  This closes the Phase 1 **decision**. Live v1 state/record codecs (2.1),
+  consensus integration (4.8), sync proofs (5.3) and suspension/reward
+  execution (6.3–6.4) remain mandatory before activation.
 
 - [ ] **1.15 · Medium · No formal model.**
   *Fix:* write a TLA+ (or Quint/Apalache) model of the voting, locking and round rules decided here, and model-check agreement and validity.
@@ -366,7 +376,8 @@ contract is not wire-compatible with the current development runtime.
   and all 21 network message payloads. Enforce the closed 1.12 registry,
   amount classes, nested action lengths and full payload consumption.
   Include the signed `i128` proposer-priority state leaf and compact
-  transition record from 1.13.
+  transition record from 1.13, and the authenticated liveness counter leaf
+  and transition record from 1.14.
   Enforce strict decoding and signature preimages on production, voting,
   replay, import, storage and sync together. Remove text serialization from
   every consensus hashing and signing path; keep text for diagnostics only.
@@ -505,6 +516,10 @@ contract is not wire-compatible with the current development runtime.
   `GenesisBuilder::build` floors each `bootstrapWeight` to `MIN_VALIDATOR_STAKE_RAW_UNITS` before registering its voting weight. The resulting registry entry is not a proof that distinct genesis coin lots of that amount were locked to that validator. Linear weights alone cannot establish a stake-based Byzantine bound without that backing.
   *Fix:* encode exact bootstrap stake amounts and unique stake-lot commitments in genesis; reject missing, duplicated, underfunded or mismatched allocations; derive each initial validator's weight only from the locked lots. Apply the same one-to-one invariant to later registrations, stake changes, state replay and snapshots, with adversarial conservation tests.
 
+- [ ] **3.17 · Critical · Bounded normal-node storage is not operational.**
+  [ADR 0014](spec/adr-0014-bounded-storage-and-proof-of-archival.md) provides finalized checkpoints, full protocol snapshots, archive commitments and a crash-safe pruning planner. The normal runtime still replays every finalized block from genesis, keeps the whole chain in memory, and derives validator scores from old settlement blocks. The pruning engine therefore deliberately refuses to delete block bodies. A checkpoint bootstrap verifier and CLI check exist, but no verified snapshot is installed as the node's durable reload base.
+  *Fix:* commit all replay-dependent state, including validator scores, at each checkpoint; install only a QC-verified, weak-subjectivity-anchored snapshot; persist a checkpoint base and bounded post-base block range atomically; reload and validate production, voting, RPC and reward settlement from that base; then enable body pruning only after verified distinct archive replicas and every retention floor. Test restart and crash injection after every deletion and a million-block bounded-memory run. Never remove the current safety blocker before these checks pass.
+
 **Exit gate:**
 - A benchmark with 1M blocks and 1M accounts shows flat commit time and memory as the chain grows.
 - Crash-injection tests (kill at every write point) always reload to a consistent state.
@@ -550,7 +565,8 @@ contract is not wire-compatible with the current development runtime.
   one-to-one stake backing (3.16), prove the epoch transition and bounded
   churn rules of 1.4 against the dynamic-set fault model, implement the v1
   evidence-driven jail exception, BFT time (1.7), genesis-bound epoch and
-  block cadence (1.8), and the priority/fallback/rebase proposer rule (1.13).
+  block cadence (1.8), the priority/fallback/rebase proposer rule (1.13),
+  and verified-parent-QC liveness accounting (1.14).
   Production, voting, finalization, replay and import must share the same
   checked cadence and proposer state. Reject wrong-signature proposals and
   state-root mismatches across heights and epoch boundaries.
@@ -596,7 +612,8 @@ contract is not wire-compatible with the current development runtime.
   *Fix:* state sync that verifies a light-client chain of QCs and validator-set
   transitions (or a weak-subjectivity checkpoint) up to the snapshot header,
   then downloads chunked state with proofs against the state root, including
-  the full proposer-priority leaf required by 1.13.
+  the full proposer-priority leaf required by 1.13 and the current
+  liveness-window leaf required by 1.14.
 
 - [ ] **5.4 · High · Sync fetches one block per round trip.**
   `ProtocolLimits::MAX_PERSISTENT_SYNC_BLOCK_BATCH` is 1.
@@ -622,6 +639,10 @@ contract is not wire-compatible with the current development runtime.
   proposer disruption, eclipse attempts, reconnect storms and malformed
   handshakes against the devnet in CI.
 
+- [ ] **5.9 · High · History distribution is only a bounded message codec.**
+  [ADR 0014](spec/adr-0014-bounded-storage-and-proof-of-archival.md) defines typed checkpoint, snapshot, range and archival messages with size and request guards. No live P2P handler serves them, requests them from authenticated peers, or installs a verified checkpoint bootstrap. CLI verification of local files does not make a fresh node sync from the network.
+  *Fix:* wire authenticated request/response handlers, multi-peer discovery and bounded retrieval into the nonblocking transport; derive seed hashes and proof inclusion heights from finalized blocks rather than peer claims; require an out-of-band recent checkpoint anchor; verify each chunk and replay all later certified blocks before activation. Exercise eclipse, malformed, delayed and conflicting peer responses end to end.
+
 **Exit gate:**
 - The adversarial suite passes.
 - A 100-node emulated network with latency and loss keeps finalizing.
@@ -642,10 +663,10 @@ contract is not wire-compatible with the current development runtime.
   The inflation cap window is 525,600 blocks, which is one year only at 60 s blocks. Reward emission spreads the yearly target over 365 epochs of 43,200 blocks each, which is one day only at 2 s blocks. The real block time follows consensus speed (1.8), so effective yearly inflation swings with block speed: about 0.13 % at 60 s blocks, the 4 % target at 2 s, and 8 % at 1 s. At 1 s blocks, the 4 % cap window resets about every six days.
   *Fix:* re-derive emission and caps from the cadence model and test them across block times.
 
-- [ ] **6.3 · High · Complete stake windows and liveness accountability:** the `nodo/0.5` unbonding and evidence windows are enforced (1.5); BFT time (1.7), parameterized v1 windows, stake-lot backing, and downtime rules (1.14) remain.
+- [ ] **6.3 · High · Complete stake windows and liveness accountability:** the `nodo/0.5` unbonding and evidence windows are enforced (1.5); BFT time (1.7), parameterized v1 windows, stake-lot backing, and execution of the bounded, nonslashable inactivity suspension and unjail rule (1.14) remain.
 
 - [ ] **6.4 · High · "Measurable protection work" is undefined.**
-  *Fix:* define work metrics that a validator cannot generate by itself (votes included in QCs, finalized proposals, accepted evidence), make the validator score a deterministic function of on-chain records, and cap rewards per epoch.
+  *Fix:* define work metrics that a validator cannot generate by itself (votes included in QCs, finalized proposals, accepted evidence), use the authenticated 1.14 QC-participation counters, make the validator score a deterministic function of on-chain records, and cap rewards per epoch.
 
 - [ ] **6.5 · High · No economic simulation or abuse analysis.**
   *Fix:* agent-based simulation of rewards, fees, slashing, stake splitting, cartel and censorship incentives, and treasury drain; publish the rationale for every parameter.
@@ -659,6 +680,10 @@ contract is not wire-compatible with the current development runtime.
 
 - [ ] **6.8 · Medium · Testnet parameters are not locked.**
   *Fix:* lock supply, epoch length, inflation cap, reward cap, fee policy, minimum stake, unbonding, penalty sizes and treasury limits (the list in [economics overview](economics/economics-overview.md)).
+
+- [ ] **6.9 · Critical · Proof-of-Archival rewards are not part of canonical execution.**
+  [ADR 0014](spec/adr-0014-bounded-storage-and-proof-of-archival.md) implements reference provider, challenge, proof, score, replication and capped reward calculations. Registrations, bonds, assignments, challenges and proof outcomes are not finalized transactions or committed protocol state; the runtime neither mints archival rewards nor accounts for them in supply audits. The current reward calculator accepts caller-provided tallies and must never be invoked for minting without replaying finalized evidence.
+  *Fix:* activate these objects through a versioned protocol upgrade; derive every challenge from a finalized seed and authenticated assignment; use the actual finalized proof inclusion height to prevent backdating; persist registry, bonds, challenge outcomes and closed-epoch summaries in the state root; derive rewards only from that replayed ledger, with one economic operator per segment, a bounded epoch allocation and supply-audit invariants. Test reorg/replay, Sybil splitting, forged/missing proofs, duplicate settlement and cap exhaustion.
 
 **Exit gate:**
 - Economics specification v1 is published with the rationale for every parameter.

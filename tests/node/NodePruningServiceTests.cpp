@@ -76,7 +76,9 @@ void testManifestRoundTrip() {
   assert(decoded.config().mode() == nodo::node::NodePruningMode::LIGHT);
 }
 
-void testFullModePrunesOnlyOldSnapshots() {
+void testPruningRequiresTheHistoryLayout() {
+  // Pruning is planned by HistoryPruningEngine, which refuses a directory
+  // without the storage schema v2 history layout instead of guessing.
   const std::filesystem::path dir = tempDir("full");
   clean(dir);
   const nodo::node::NodeDataDirectoryConfig config(dir);
@@ -87,22 +89,25 @@ void testFullModePrunesOnlyOldSnapshots() {
       config.fastSyncSnapshotsDirectoryPath());
   assert(store.save(snapshotAt(100)));
   assert(store.save(snapshotAt(1005)));
-
+  // The legacy per-block snapshot cache keeps only the newest snapshot.
+  assert(!std::filesystem::exists(store.snapshotPath(100)));
   touch(config.blocksDirectoryPath() / ("block_1_" + HASH_B + ".nodo"));
 
   const auto result = nodo::node::NodePruningService::apply(
       config, runtimeManifest(2005), nodo::node::NodePruningConfig::fullMode(1),
       1900000300);
 
-  assert(result.success());
-  assert(!std::filesystem::exists(store.snapshotPath(100)));
+  assert(!result.success());
   assert(std::filesystem::exists(store.snapshotPath(1005)));
   assert(std::filesystem::exists(config.blocksDirectoryPath() /
                                  ("block_1_" + HASH_B + ".nodo")));
   clean(dir);
 }
 
-void testLightModeRequiresBoundarySnapshotAndPrunesOldArtifacts() {
+void testLegacyLightManifestNeverDeletesBlocks() {
+  // Legacy LIGHT pruning removed finalized block files that the replay-based
+  // reload still needs, leaving a node unable to restart. A legacy manifest
+  // is now never re-applied.
   const std::filesystem::path dir = tempDir("light");
   clean(dir);
   const nodo::node::NodeDataDirectoryConfig config(dir);
@@ -117,14 +122,23 @@ void testLightModeRequiresBoundarySnapshotAndPrunesOldArtifacts() {
       config.blocksDirectoryPath() / ("block_1_" + HASH_B + ".nodo");
   touch(oldBlock);
 
-  const auto result = nodo::node::NodePruningService::apply(
-      config, runtimeManifest(12), nodo::node::NodePruningConfig::lightMode(),
-      1900000400);
+  const nodo::node::NodeRuntimeManifest runtime = runtimeManifest(12);
+  const nodo::node::NodePruningManifest legacy(
+      nodo::node::NodePruningConfig::lightMode(), runtime.chainId(),
+      runtime.genesisConfigId(), runtime.latestBlockHeight(),
+      runtime.latestBlockHash(), runtime.latestStateRoot(), 12, 12, HASH_D, 0,
+      0, 1900000100);
+  nodo::storage::AtomicFile::writeTextFile(config.pruningManifestPath(),
+                                           legacy.toFileContents());
+
+  const auto result = nodo::node::NodePruningService::applyConfiguredPolicy(
+      config, runtime, 1900000400);
 
   assert(result.success());
-  assert(!std::filesystem::exists(oldBlock));
-  assert(
-      std::filesystem::exists(config.prunedBlocksDirectoryPath() / "1.pruned"));
+  assert(result.status() == nodo::node::NodePruningStatus::NOOP);
+  assert(std::filesystem::exists(oldBlock));
+  assert(!std::filesystem::exists(config.prunedBlocksDirectoryPath() /
+                                  "1.pruned"));
   clean(dir);
 }
 
@@ -132,7 +146,7 @@ void testLightModeRequiresBoundarySnapshotAndPrunesOldArtifacts() {
 
 int main() {
   testManifestRoundTrip();
-  testFullModePrunesOnlyOldSnapshots();
-  testLightModeRequiresBoundarySnapshotAndPrunesOldArtifacts();
+  testPruningRequiresTheHistoryLayout();
+  testLegacyLightManifestNeverDeletesBlocks();
   return 0;
 }

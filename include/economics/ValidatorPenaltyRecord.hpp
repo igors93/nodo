@@ -20,10 +20,7 @@ namespace nodo::economics {
  */
 enum class ValidatorPenaltyReason {
     UNKNOWN,
-    DOUBLE_SIGN,
-    INVALID_PROPOSAL,
-    INVALID_SIGNATURE,
-    MANUAL_REVIEW
+    DOUBLE_SIGN
 };
 
 std::string validatorPenaltyReasonToString(
@@ -43,9 +40,7 @@ ValidatorPenaltyReason validatorPenaltyReasonFromString(
  */
 enum class ValidatorPenaltyAction {
     UNKNOWN,
-    SCORE_REDUCTION,
-    SLASHING_REVIEW,
-    SECURITY_LOCK_REVIEW
+    SCORE_REDUCTION
 };
 
 std::string validatorPenaltyActionToString(

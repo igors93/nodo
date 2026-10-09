@@ -24,6 +24,8 @@
 
 namespace nodo::node {
 
+class NodeDataDirectoryConfig;
+
 /*
  * NodeRpcServer is the node HTTP surface. JSON-RPC is the official public
  * protocol API and is exposed through POST /rpc. The older REST routes remain
@@ -138,6 +140,10 @@ public:
   // metrics still expose runtime/RPC/event data and report sync as UNKNOWN.
   void attachSyncHealth(const SyncHealth *syncHealth);
 
+  // Optional data directory owned by NodeOrchestrator; enables the storage,
+  // checkpoint, pruning and archive methods and history metrics.
+  void attachDataDirectory(const NodeDataDirectoryConfig *directory);
+
   std::uint16_t port() const;
 
 private:
@@ -160,6 +166,7 @@ private:
   p2p::PeerRateLimiter m_rateLimiter; // touched only by the accept handler
   JsonRpcDispatcher m_jsonRpcDispatcher;
   const SyncHealth *m_syncHealth;
+  const NodeDataDirectoryConfig *m_dataDirectory = nullptr;
 
   struct HttpDispatchResponse {
     int statusCode;
@@ -214,6 +221,11 @@ private:
   std::string handleHealth() const;
   std::string handleMetrics() const;
   std::string handlePrometheusMetrics() const;
+  std::string handleStorageStatus() const;
+  std::string handleCheckpoint(const std::string &height) const;
+  std::string handlePruningStatus() const;
+  std::string handleArchiveStatus() const;
+  std::string handleArchiveReplication() const;
   std::string handleGovernanceStatus() const;
   std::string handleGovernanceProposals() const;
   std::string handleGovernanceProposal(const std::string &proposalId) const;

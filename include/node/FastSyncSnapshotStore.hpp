@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <vector>
 
 namespace nodo::node {
 
@@ -23,6 +24,8 @@ public:
   std::uint64_t latestHeight() const;
 
 private:
+  void pruneSupersededSnapshots(std::uint64_t keptHeight) const;
+
   std::filesystem::path m_directoryPath;
 };
 

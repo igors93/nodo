@@ -155,8 +155,12 @@ std::string StorageSchemaVersion::nodeDataDirectorySchemaId() {
   return "NODO_NODE_DATA_DIRECTORY";
 }
 
+// Version 2 adds the bounded-history layout under history/ (ADR 0014):
+// finalized state checkpoints, checkpoint snapshots, archive segment
+// commitments and the crash-safe pruning manifest and journal. Version 1
+// directories stay loadable; history writes require an explicit migration.
 std::uint64_t StorageSchemaVersion::currentNodeDataDirectoryVersion() {
-  return 1;
+  return 2;
 }
 
 std::uint64_t StorageSchemaVersion::minimumSupportedNodeDataDirectoryVersion() {

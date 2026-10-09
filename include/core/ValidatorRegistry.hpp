@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -293,6 +294,22 @@ public:
   bool isValid() const;
   bool changesOnlyAtBoundaries(std::uint64_t epochLength) const;
   std::string serialize() const;
+
+  // Exact stored representation: the first height plus one registry for
+  // every height at which the set changed.
+  std::uint64_t firstRecordedHeight() const;
+  const std::map<std::uint64_t, ValidatorRegistry> &recordedChanges() const;
+
+  // The same history restricted to heights >= fromHeight. Lookups for every
+  // retained height return exactly the registry the full history returns.
+  // Throws std::out_of_range when fromHeight is not recorded.
+  ValidatorSetHistory windowFrom(std::uint64_t fromHeight) const;
+
+  // Rebuilds a history from its stored representation (for example, a
+  // checkpoint snapshot window). Returns nullopt unless the result isValid().
+  static std::optional<ValidatorSetHistory>
+  restore(std::uint64_t firstHeight, std::uint64_t highestHeight,
+          std::map<std::uint64_t, ValidatorRegistry> changes);
 
 private:
   std::uint64_t m_firstHeight = 0;

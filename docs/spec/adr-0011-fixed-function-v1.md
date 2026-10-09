@@ -35,7 +35,7 @@ lots under its fixed rule, or schedule/cancel a future protocol version as
 specified by [ADR 0010](adr-0010-protocol-upgrades.md). It cannot deploy or invoke code
 under v1 or grant a new transaction type by parameter vote.
 
-V1 state has only the twelve tagged domains in protocol v1 section 3. There
+V1 state has only the thirteen tagged domains in protocol v1 section 3. There
 is no contract account, storage namespace, code hash, code cache, call stack,
 host function, event log or user-program-controlled privileged API. Every
 state mutation is a deterministic effect of a named v1 transaction, accepted

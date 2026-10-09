@@ -54,6 +54,16 @@ public:
   std::vector<std::string> genesisAccounts;   // --genesis-account (repeatable)
   std::string genesisMemo;                    // --memo TEXT for genesis create
   std::filesystem::path outputPath;           // --output PATH
+  // Bounded-history commands (ADR 0014).
+  std::uint64_t height;                       // --height N
+  bool heightProvided;
+  std::filesystem::path sourceDataDirectory;  // --source-dir PATH
+  std::string trustedCheckpoint;              // --trusted-checkpoint H:ID
+  std::uint64_t retainBlocks;                 // --retain-blocks N
+  std::uint32_t retainSnapshots;              // --retain-snapshots N
+  bool dryRun;                                // --dry-run
+  std::uint64_t segmentIndex;                 // --segment N
+  bool segmentProvided;
 };
 
 enum class CommandLineStatus { SUCCESS, INVALID_ARGUMENTS, COMMAND_FAILED };
@@ -180,6 +190,12 @@ private:
 
   static CommandLineResult
   executeNodePruningStatus(const CommandLineOptions &options);
+
+  // checkpoint, storage, pruning and archive commands
+  // (CommandLineInterfaceHistory.cpp).
+  static bool isHistoryCommand(const std::string &command);
+  static CommandLineResult
+  executeHistoryCommand(const CommandLineOptions &options);
 };
 
 } // namespace nodo::app

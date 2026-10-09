@@ -1,5 +1,7 @@
 #include "node/NodeMetrics.hpp"
 
+#include "node/history/StorageStatus.hpp"
+
 #include "utils/JsonText.hpp"
 
 #include <algorithm>
@@ -59,8 +61,24 @@ std::string NodeMetricsSnapshot::serializeJson() const {
       << ",\"runtime\":{"
       << "\"valid\":" << (runtimeValid ? "true" : "false")
       << ",\"running\":" << (runtimeRunning ? "true" : "false")
-      << ",\"halted\":" << (runtimeHalted ? "true" : "false") << "}"
-      << "}";
+      << ",\"halted\":" << (runtimeHalted ? "true" : "false") << "}";
+  if (storageCollected) {
+    oss << ",\"history\":{"
+        << "\"checkpointHeight\":" << checkpointHeight
+        << ",\"checkpointAgeBlocks\":" << checkpointAgeBlocks
+        << ",\"checkpointAgeSeconds\":" << checkpointAgeSeconds
+        << ",\"prunedHeight\":" << prunedHeight
+        << ",\"storageBytes\":" << storageBytes
+        << ",\"archiveSegments\":" << archiveSegments
+        << ",\"archiveBytes\":" << archiveBytes
+        << ",\"archivalChallengesTotal\":" << archivalChallengesTotal
+        << ",\"archivalChallengesSuccess\":" << archivalChallengesSuccess
+        << ",\"archivalChallengesFailed\":" << archivalChallengesFailed
+        << ",\"archiveReplicationMin\":" << archiveReplicationMin
+        << ",\"archiveReplicationAvgBasisPoints\":"
+        << archiveReplicationAvgBasisPoints << "}";
+  }
+  oss << "}";
   return oss.str();
 }
 
@@ -130,6 +148,25 @@ NodeMetricsSnapshot NodeMetricsCollector::collect(const NodeRuntime &runtime,
   snapshot.runtimeHalted = runtime.isHalted();
 
   return snapshot;
+}
+
+void NodeMetricsCollector::applyStorage(NodeMetricsSnapshot &snapshot,
+                                        const StorageStatusReport &report) {
+  snapshot.storageCollected = true;
+  snapshot.checkpointHeight = report.latestCheckpointHeight;
+  snapshot.checkpointAgeBlocks = report.checkpointAgeBlocks;
+  snapshot.checkpointAgeSeconds =
+      report.latestCheckpointTimestamp > 0 &&
+              snapshot.collectedAt > report.latestCheckpointTimestamp
+          ? snapshot.collectedAt - report.latestCheckpointTimestamp
+          : 0;
+  snapshot.prunedHeight = report.prunedHeight;
+  snapshot.storageBytes = report.totalBytes;
+  snapshot.archiveSegments = report.archiveSegments;
+  snapshot.archiveBytes = report.archiveBytes;
+  snapshot.archivalChallengesTotal = report.selfAudit.challenges;
+  snapshot.archivalChallengesSuccess = report.selfAudit.passed;
+  snapshot.archivalChallengesFailed = report.selfAudit.failed;
 }
 
 } // namespace nodo::node

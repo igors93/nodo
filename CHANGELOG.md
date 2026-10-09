@@ -6,6 +6,12 @@ Nodo does not yet publish versioned production releases. This changelog starts a
 
 ### Security
 
+- **V1 liveness accountability is specified without downtime slashing.**
+  [ADR 0013](docs/spec/adr-0013-liveness-accountability.md) commits
+  parent-QC participation counters and bounds reversible inactivity
+  suspension at epoch boundaries. A checked C++ reference and tests anchor
+  the rule; development penalty codecs now reject manual penalties.
+  Live v1 codec, consensus, sync and economic execution remain open gates.
 - **V1 proposer selection has a checked weighted-priority design.**
   [ADR 0012](docs/spec/adr-0012-proposer-selection.md) replaces the
   development hash lottery with height-bound stake-weighted primaries,

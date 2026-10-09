@@ -680,6 +680,11 @@ void NodeRpcServer::attachSyncHealth(const SyncHealth *syncHealth) {
   m_syncHealth = syncHealth;
 }
 
+void NodeRpcServer::attachDataDirectory(
+    const NodeDataDirectoryConfig *directory) {
+  m_dataDirectory = directory;
+}
+
 void NodeRpcServer::setLimits(const Limits &limits) {
   if (m_transport != nullptr) {
     throw std::logic_error("NodeRpcServer limits cannot change while running.");
@@ -1065,6 +1070,37 @@ void NodeRpcServer::registerJsonRpcMethods() {
         }
         return JsonRpcResponse::success(req.id,
                                         handleLightTransactionProof(txId));
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getStorageStatus",
+      [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(req.id, handleStorageStatus());
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getCheckpoint", [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(
+            req.id, handleCheckpoint(
+                        JsonRpcDispatcher::extractParam(req.params, "height")));
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getPruningStatus",
+      [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(req.id, handlePruningStatus());
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getArchiveStatus",
+      [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(req.id, handleArchiveStatus());
+      });
+
+  m_jsonRpcDispatcher.registerHandler(
+      "nodo_getArchiveReplication",
+      [this](const JsonRpcRequest &req) -> JsonRpcResponse {
+        return JsonRpcResponse::success(req.id, handleArchiveReplication());
       });
 
   m_jsonRpcDispatcher.registerHandler(

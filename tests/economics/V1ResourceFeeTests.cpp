@@ -14,14 +14,21 @@ using nodo::economics::V1ResourceFee;
 using nodo::test::require;
 
 V1ResourceFee::Parameters parameters() {
-  return {262'144, 1'048'576, 524'288, 1'048'576, 1, 1};
+  return {262'144, 1'048'576, 524'288, 5'000'000, 1, 1};
 }
 
 void testParameterBounds() {
   auto value = parameters();
   require(V1ResourceFee::validParameters(value),
           "the reference parameter set must be admissible");
+  value.maxBlockUnits = 4'999'999;
+  require(!V1ResourceFee::validParameters(value),
+          "the block must reserve the worst-case liveness update");
+  value = parameters();
   value.maxTxUnits = 524'289;
+  require(V1ResourceFee::validParameters(value),
+          "larger blocks may admit a larger transaction unit limit");
+  value.maxTxUnits = 2'500'001;
   require(!V1ResourceFee::validParameters(value),
           "a transaction cannot exceed half a block's unit limit");
   value = parameters();
@@ -50,6 +57,12 @@ void testMeterAndFee() {
           "two evidence signatures and validation work must be charged");
   require(V1ResourceFee::systemRecordUnits({100, 156, 2}) == 1'408,
           "system records must account for their receipt and effects");
+  require(V1ResourceFee::livenessRecordUnits({105, 124, 1}, 4) == 1'829 &&
+              V1ResourceFee::livenessRecordUnits({105, 124, 1}, 9'619) ==
+                  1'232'549 &&
+              !V1ResourceFee::livenessRecordUnits({105, 124, 1}, 9'620) &&
+              !V1ResourceFee::livenessRecordUnits({106, 124, 1}, 4),
+          "liveness work must be charged by the complete active set");
   require(V1ResourceFee::systemRecordUnits({100, 65'532, 2'045}) ==
               197'536,
           "the largest complete system receipt is an inclusive boundary");
@@ -83,15 +96,23 @@ void testBlockBudget() {
   require(V1ResourceFee::blockUnits(policy, 300, transactions, evidence,
                                     system) == 6'394,
           "the header must commit the recomputed sum of every work class");
+  const std::array<std::uint64_t, 3> completeSystem{1'408, 1'317, 1'829};
+  require(V1ResourceFee::blockUnits(policy, 300, transactions, evidence,
+                                    completeSystem) == 9'540,
+          "both mandatory per-height transitions must enter the block total");
   require(V1ResourceFee::blockUnits(policy, 20, {}, {}, {}) == 0,
           "an empty body has zero execution units");
-  const std::array<std::uint64_t, 2> tooManyUserUnits{524'288, 262'145};
+  const std::array<std::uint64_t, 8> tooManyUserUnits{
+      500'000, 500'000, 500'000, 500'000,
+      500'000, 500'000, 500'000, 250'001};
   require(!V1ResourceFee::blockUnits(policy, 300, tooManyUserUnits, {}, {}),
           "user transactions cannot consume the reserved quarter");
-  const std::array<std::uint64_t, 2> userCap{524'288, 262'144};
-  require(V1ResourceFee::blockUnits(policy, 300, userCap, {}, {}) == 786'432,
+  const std::array<std::uint64_t, 8> userCap{
+      500'000, 500'000, 500'000, 500'000,
+      500'000, 500'000, 500'000, 250'000};
+  require(V1ResourceFee::blockUnits(policy, 300, userCap, {}, {}) == 3'750'000,
           "the user budget boundary is inclusive");
-  const std::array<std::uint64_t, 2> overBlock{262'144, 1};
+  const std::array<std::uint64_t, 2> overBlock{1'250'000, 1};
   require(!V1ResourceFee::blockUnits(policy, 300, userCap, {}, overBlock),
           "system work may not overflow the total block cap");
   const std::vector<std::uint64_t> tooMuchEvidence(33, 1);
@@ -100,7 +121,7 @@ void testBlockBudget() {
 }
 
 void testBaseFeeAdjustment() {
-  constexpr std::uint64_t maximum = 1'048'576;
+  constexpr std::uint64_t maximum = 5'000'000;
   constexpr std::uint64_t target = maximum / 2;
   require(V1ResourceFee::nextBaseFee(100, target, maximum, 1) == 100 &&
               V1ResourceFee::nextBaseFee(100, maximum, maximum, 1) == 112 &&

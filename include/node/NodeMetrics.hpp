@@ -10,6 +10,8 @@
 
 namespace nodo::node {
 
+struct StorageStatusReport;
+
 /*
  * NodeMetricsSnapshot is a point-in-time, read-only operational view of a
  * running node. It deliberately contains primitive values only so it can be
@@ -60,6 +62,24 @@ public:
   bool runtimeRunning{false};
   bool runtimeHalted{false};
 
+  // Bounded-history storage (ADR 0014); set only when the data directory is
+  // known to the collector.
+  bool storageCollected{false};
+  std::uint64_t checkpointHeight{0};
+  std::uint64_t checkpointAgeBlocks{0};
+  std::int64_t checkpointAgeSeconds{0};
+  std::uint64_t prunedHeight{0};
+  std::uint64_t storageBytes{0};
+  std::uint64_t archiveSegments{0};
+  std::uint64_t archiveBytes{0};
+  std::uint64_t archivalChallengesTotal{0};
+  std::uint64_t archivalChallengesSuccess{0};
+  std::uint64_t archivalChallengesFailed{0};
+  // Network replication is not measured until Proof of Archival is
+  // activated on chain; both stay zero until then.
+  std::uint32_t archiveReplicationMin{0};
+  std::uint64_t archiveReplicationAvgBasisPoints{0};
+
   bool isValid() const;
   std::string serializeJson() const;
 };
@@ -71,6 +91,9 @@ public:
                                      const NodeEventBus *eventBus,
                                      bool rpcRunning, std::string rpcStartError,
                                      std::int64_t now);
+
+  static void applyStorage(NodeMetricsSnapshot &snapshot,
+                           const StorageStatusReport &report);
 };
 
 } // namespace nodo::node

@@ -296,6 +296,49 @@ std::filesystem::path NodeDataDirectoryConfig::runtimeSafetyStatePath() const {
     return m_rootPath / "runtime" / "safety_state.nodo";
 }
 
+std::filesystem::path NodeDataDirectoryConfig::historyDirectoryPath() const {
+    return m_rootPath / "history";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::checkpointsDirectoryPath() const {
+    return historyDirectoryPath() / "checkpoints";
+}
+
+std::filesystem::path
+NodeDataDirectoryConfig::checkpointConflictsDirectoryPath() const {
+    return checkpointsDirectoryPath() / "conflicts";
+}
+
+std::filesystem::path
+NodeDataDirectoryConfig::checkpointSnapshotsDirectoryPath() const {
+    return historyDirectoryPath() / "snapshots";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::archiveDirectoryPath() const {
+    return historyDirectoryPath() / "archive";
+}
+
+std::filesystem::path
+NodeDataDirectoryConfig::archiveCommitmentsDirectoryPath() const {
+    return archiveDirectoryPath() / "commitments";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::archiveLedgerPath() const {
+    return archiveDirectoryPath() / "ledger.nodo";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::historyPruningDirectoryPath() const {
+    return historyDirectoryPath() / "pruning";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::historyPruningManifestPath() const {
+    return historyPruningDirectoryPath() / "manifest.nodo";
+}
+
+std::filesystem::path NodeDataDirectoryConfig::pruningJournalPath() const {
+    return historyPruningDirectoryPath() / "journal.nodo";
+}
+
 bool NodeDataDirectoryConfig::isValid() const {
     return isSafePath(m_rootPath);
 }
@@ -1052,6 +1095,24 @@ void NodeDataDirectory::ensureDirectoryTree(
     );
     std::filesystem::create_directories(
         directoryConfig.prunedBlocksDirectoryPath()
+    );
+    ensureHistoryDirectoryTree(directoryConfig);
+}
+
+void NodeDataDirectory::ensureHistoryDirectoryTree(
+    const NodeDataDirectoryConfig& directoryConfig
+) {
+    std::filesystem::create_directories(
+        directoryConfig.checkpointsDirectoryPath()
+    );
+    std::filesystem::create_directories(
+        directoryConfig.checkpointSnapshotsDirectoryPath()
+    );
+    std::filesystem::create_directories(
+        directoryConfig.archiveCommitmentsDirectoryPath()
+    );
+    std::filesystem::create_directories(
+        directoryConfig.historyPruningDirectoryPath()
     );
 }
 

@@ -1,6 +1,9 @@
 #include "node/NodePruningService.hpp"
 
 #include "node/FastSyncSnapshotStore.hpp"
+#include "node/RuntimeStartupService.hpp"
+#include "node/ValidatorLifecycle.hpp"
+#include "node/history/HistoryPruningEngine.hpp"
 #include "storage/AtomicFile.hpp"
 
 #include <algorithm>
@@ -13,35 +16,6 @@
 namespace nodo::node {
 
 namespace {
-
-bool parseHeightFromBlockArtifactName(const std::filesystem::path &path,
-                                      std::uint64_t &height) {
-  const std::string name = path.filename().string();
-  const std::string prefix = "block_";
-  if (name.rfind(prefix, 0) != 0 || path.extension() != ".nodo") {
-    return false;
-  }
-  const std::size_t heightStart = prefix.size();
-  const std::size_t separator = name.find('_', heightStart);
-  if (separator == std::string::npos || separator == heightStart) {
-    return false;
-  }
-  const std::string text = name.substr(heightStart, separator - heightStart);
-  for (char c : text) {
-    if (c < '0' || c > '9')
-      return false;
-  }
-  try {
-    std::size_t used = 0;
-    const unsigned long long parsed = std::stoull(text, &used);
-    if (used != text.size())
-      return false;
-    height = static_cast<std::uint64_t>(parsed);
-    return true;
-  } catch (...) {
-    return false;
-  }
-}
 
 bool parseHeightFromFastSnapshotName(const std::filesystem::path &path,
                                      std::uint64_t &height) {
@@ -83,36 +57,6 @@ sortedRegularFiles(const std::filesystem::path &directory) {
   }
   std::sort(files.begin(), files.end());
   return files;
-}
-
-void writePrunedBlockTombstone(const NodeDataDirectoryConfig &directoryConfig,
-                               const std::filesystem::path &originalPath,
-                               std::uint64_t height) {
-  std::filesystem::create_directories(
-      directoryConfig.prunedBlocksDirectoryPath());
-  std::ostringstream contents;
-  contents << "NODO_PRUNED_BLOCK_ARTIFACT_V1\n"
-           << "height=" << height << "\n"
-           << "originalPath=" << originalPath.filename().string() << "\n";
-  storage::AtomicFile::writeTextFile(
-      directoryConfig.prunedBlocksDirectoryPath() /
-          (std::to_string(height) + ".pruned"),
-      contents.str());
-}
-
-std::uint64_t
-existingPrunedBlockCount(const NodeDataDirectoryConfig &directoryConfig) {
-  if (!std::filesystem::exists(directoryConfig.prunedBlocksDirectoryPath())) {
-    return 0;
-  }
-  std::uint64_t count = 0;
-  for (const auto &entry : std::filesystem::directory_iterator(
-           directoryConfig.prunedBlocksDirectoryPath())) {
-    if (entry.is_regular_file() && entry.path().extension() == ".pruned") {
-      ++count;
-    }
-  }
-  return count;
 }
 
 } // namespace
@@ -162,6 +106,29 @@ NodePruningResult NodePruningResult::rejected(std::string reason) {
   result.m_status = NodePruningStatus::REJECTED;
   result.m_reason = std::move(reason);
   return result;
+}
+
+NodePruningResult NodePruningResult::fromRun(const PruningRunResult &run) {
+  NodePruningResult result;
+  switch (run.status) {
+  case PruningRunStatus::APPLIED:
+    result.m_status = NodePruningStatus::APPLIED;
+    break;
+  case PruningRunStatus::NOOP:
+  case PruningRunStatus::DRY_RUN:
+    result.m_status = NodePruningStatus::NOOP;
+    break;
+  case PruningRunStatus::REJECTED:
+    result.m_status = NodePruningStatus::REJECTED;
+    break;
+  }
+  result.m_reason = run.reason;
+  result.m_run = run;
+  return result;
+}
+
+const std::optional<PruningRunResult> &NodePruningResult::run() const {
+  return m_run;
 }
 
 NodePruningStatus NodePruningResult::status() const { return m_status; }
@@ -243,17 +210,11 @@ NodePruningService::buildPlan(const NodeDataDirectoryConfig &directoryConfig,
                                std::to_string(requiredSnapshotHeight));
   }
 
+  // Finalized block files are never listed: reload replays from genesis and
+  // needs every one of them. Block-body pruning belongs to
+  // HistoryPruningEngine and stays blocked until checkpoint-base reload
+  // exists (ADR 0014, roadmap 3.17).
   std::vector<std::filesystem::path> blockArtifactsToPrune;
-  if (pruningConfig.mode() == NodePruningMode::LIGHT) {
-    for (const auto &path :
-         sortedRegularFiles(directoryConfig.blocksDirectoryPath())) {
-      std::uint64_t height = 0;
-      if (parseHeightFromBlockArtifactName(path, height) && height > 0 &&
-          height < retainFromHeight) {
-        blockArtifactsToPrune.push_back(path);
-      }
-    }
-  }
 
   std::vector<std::filesystem::path> snapshotsToPrune;
   for (const auto &path :
@@ -282,94 +243,108 @@ NodePruningService::apply(const NodeDataDirectoryConfig &directoryConfig,
   if (now <= 0) {
     return NodePruningResult::rejected("pruning timestamp must be positive");
   }
-
-  const NodePruningPlan plan =
-      buildPlan(directoryConfig, runtimeManifest, pruningConfig);
-  if (!plan.safeToApply()) {
-    return NodePruningResult::rejected(plan.reason());
+  if (!directoryConfig.isValid() || !runtimeManifest.isValid() ||
+      !pruningConfig.isValid()) {
+    return NodePruningResult::rejected("invalid pruning input");
   }
-
-  try {
-    std::uint64_t prunedBlocks = existingPrunedBlockCount(directoryConfig);
-    std::uint64_t prunedSnapshots = 0;
-
-    for (const auto &path : plan.blockArtifactsToPrune()) {
-      std::uint64_t height = 0;
-      if (!parseHeightFromBlockArtifactName(path, height)) {
-        continue;
-      }
-      writePrunedBlockTombstone(directoryConfig, path, height);
-      std::error_code ec;
-      std::filesystem::remove(path, ec);
-      if (ec) {
-        return NodePruningResult::rejected(
-            "failed to remove finalized block artifact " + path.string() +
-            ": " + ec.message());
-      }
-      ++prunedBlocks;
-    }
-
-    for (const auto &path : plan.snapshotsToPrune()) {
-      std::error_code ec;
-      std::filesystem::remove(path, ec);
-      if (ec) {
-        return NodePruningResult::rejected(
-            "failed to remove old fast-sync snapshot " + path.string() + ": " +
-            ec.message());
-      }
-      ++prunedSnapshots;
-    }
-
-    NodePruningManifest manifest(
-        pruningConfig, runtimeManifest.chainId(),
-        runtimeManifest.genesisConfigId(), runtimeManifest.latestBlockHeight(),
-        runtimeManifest.latestBlockHash(), runtimeManifest.latestStateRoot(),
-        plan.retainFromHeight(), plan.snapshotBoundaryHeight(),
-        plan.snapshotBoundaryDigest(), prunedBlocks, prunedSnapshots, now);
-
-    if (pruningConfig.mode() == NodePruningMode::ARCHIVE) {
-      manifest = NodePruningManifest::archive(runtimeManifest, now);
-    }
-
-    if (!manifest.isValid()) {
-      return NodePruningResult::rejected(
-          "generated pruning manifest is invalid");
-    }
-
-    storage::AtomicFile::writeTextFile(directoryConfig.pruningManifestPath(),
-                                       manifest.toFileContents());
-
-    if (plan.totalFileCount() == 0) {
-      return NodePruningResult::noop(
-          std::move(manifest), plan,
-          "pruning policy recorded; no files were eligible for removal");
-    }
-
-    return NodePruningResult::applied(std::move(manifest), plan,
-                                      "pruning policy applied");
-  } catch (const std::exception &error) {
-    return NodePruningResult::rejected(error.what());
+  const config::GenesisLookupResult genesis =
+      RuntimeStartupService::resolveGenesis(runtimeManifest.networkName(),
+                                            directoryConfig.rootPath(), {});
+  if (!genesis.found()) {
+    return NodePruningResult::rejected("cannot resolve genesis: " +
+                                       genesis.reason());
   }
+  PruningOptions options;
+  switch (pruningConfig.mode()) {
+  case NodePruningMode::ARCHIVE:
+    options.mode = NodeStorageMode::ARCHIVE;
+    break;
+  case NodePruningMode::FULL:
+    options.mode = NodeStorageMode::NORMAL;
+    options.retentionBlocks =
+        static_cast<std::uint64_t>(pruningConfig.retainEpochs()) *
+        NODO_VALIDATOR_EPOCH_BLOCKS;
+    break;
+  case NodePruningMode::LIGHT:
+    options.mode = NodeStorageMode::LIGHT;
+    break;
+  }
+  return NodePruningResult::fromRun(HistoryPruningEngine::run(
+      directoryConfig, genesis.genesis(), options, now));
 }
 
 NodePruningResult NodePruningService::applyConfiguredPolicy(
     const NodeDataDirectoryConfig &directoryConfig,
     const NodeRuntimeManifest &runtimeManifest, std::int64_t now) {
-  const std::optional<NodePruningManifest> manifest =
-      loadManifest(directoryConfig);
-  if (!manifest.has_value()) {
+  if (loadManifest(directoryConfig).has_value()) {
+    // A legacy policy could delete block files; it is never re-applied.
     return NodePruningResult::noop(
-        NodePruningManifest::archive(runtimeManifest, now),
-        buildPlan(directoryConfig, runtimeManifest,
-                  NodePruningConfig::archiveMode()),
-        "no pruning manifest configured; archive mode assumed");
+        NodePruningManifest::archive(runtimeManifest, now), NodePruningPlan(),
+        "legacy pruning manifest present; run `nodo storage migrate`");
   }
-  return apply(directoryConfig, runtimeManifest, manifest->config(), now);
+  std::optional<PruningManifestV2> configured;
+  try {
+    configured = HistoryPruningEngine::loadManifest(directoryConfig);
+  } catch (const std::exception &error) {
+    return NodePruningResult::rejected(
+        std::string("pruning manifest is corrupt: ") + error.what());
+  }
+  if (!configured.has_value() || configured->mode == NodeStorageMode::ARCHIVE) {
+    return NodePruningResult::noop(
+        NodePruningManifest::archive(runtimeManifest, now), NodePruningPlan(),
+        "archive mode keeps all finalized history");
+  }
+  try {
+    const config::HistoryParameters parameters =
+        config::HistoryParameters::forNetwork(runtimeManifest.networkName());
+    if (!HistoryPruningEngine::shouldRunAutomatically(
+            parameters, runtimeManifest.latestBlockHeight())) {
+      return NodePruningResult::noop(
+          NodePruningManifest::archive(runtimeManifest, now),
+          NodePruningPlan(), "no newly confirmed checkpoint");
+    }
+  } catch (const std::exception &error) {
+    return NodePruningResult::noop(
+        NodePruningManifest::archive(runtimeManifest, now), NodePruningPlan(),
+        error.what());
+  }
+  const config::GenesisLookupResult genesis =
+      RuntimeStartupService::resolveGenesis(runtimeManifest.networkName(),
+                                            directoryConfig.rootPath(), {});
+  if (!genesis.found()) {
+    return NodePruningResult::rejected("cannot resolve genesis: " +
+                                       genesis.reason());
+  }
+  PruningOptions options;
+  options.mode = configured->mode;
+  options.retentionBlocks = configured->retentionBlocks;
+  options.retainedCheckpointSnapshots = configured->retainedCheckpointSnapshots;
+  return NodePruningResult::fromRun(HistoryPruningEngine::run(
+      directoryConfig, genesis.genesis(), options, now));
 }
 
 bool NodePruningService::validateManifestAgainstRuntime(
     const NodeDataDirectoryConfig &directoryConfig,
     const NodeRuntimeManifest &runtimeManifest, std::string &reason) {
+  std::optional<PruningManifestV2> history;
+  try {
+    history = HistoryPruningEngine::loadManifest(directoryConfig);
+  } catch (const std::exception &error) {
+    reason = std::string("pruning manifest is corrupt: ") + error.what();
+    return false;
+  }
+  if (history.has_value()) {
+    if (history->chainId != runtimeManifest.chainId() ||
+        history->genesisConfigId != runtimeManifest.genesisConfigId()) {
+      reason = "pruning manifest does not match runtime chain/genesis";
+      return false;
+    }
+    if (history->lastFinalizedHeight > runtimeManifest.latestBlockHeight()) {
+      reason = "pruning manifest is ahead of the runtime manifest";
+      return false;
+    }
+  }
+
   const std::optional<NodePruningManifest> manifest =
       loadManifest(directoryConfig);
   if (!manifest.has_value()) {

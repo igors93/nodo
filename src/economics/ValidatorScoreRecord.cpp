@@ -34,8 +34,6 @@ std::string validatorScoreReasonToString(ValidatorScoreReason reason) {
   case ValidatorScoreReason::CONFLICTING_SIGNATURE:
     return "CONFLICTING_SIGNATURE";
 
-  case ValidatorScoreReason::MANUAL_REVIEW:
-    return "MANUAL_REVIEW";
 
   default:
     return "UNKNOWN";
@@ -59,8 +57,6 @@ ValidatorScoreReason validatorScoreReasonFromString(const std::string &value) {
     return ValidatorScoreReason::INVALID_WORK;
   if (value == "CONFLICTING_SIGNATURE")
     return ValidatorScoreReason::CONFLICTING_SIGNATURE;
-  if (value == "MANUAL_REVIEW")
-    return ValidatorScoreReason::MANUAL_REVIEW;
   throw std::invalid_argument("Unknown ValidatorScoreReason: " + value);
 }
 
@@ -137,7 +133,17 @@ bool ValidatorScoreRecord::isValid() const {
     return false;
   }
 
-  if (m_reason == ValidatorScoreReason::UNKNOWN) {
+  switch (m_reason) {
+  case ValidatorScoreReason::INITIAL_REGISTRATION:
+  case ValidatorScoreReason::CONSISTENT_VALIDATION:
+  case ValidatorScoreReason::SUCCESSFUL_CHALLENGE_RESPONSE:
+  case ValidatorScoreReason::USEFUL_STORAGE_SERVICE:
+  case ValidatorScoreReason::NETWORK_CLUSTER_PENALTY:
+  case ValidatorScoreReason::MISSED_CHALLENGE:
+  case ValidatorScoreReason::INVALID_WORK:
+  case ValidatorScoreReason::CONFLICTING_SIGNATURE:
+    break;
+  default:
     return false;
   }
 

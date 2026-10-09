@@ -23,7 +23,22 @@ Typical layout:
     runtime_snapshot.nodo
   sync/
     qc/<height>.qc
+  history/                                  (storage schema v2)
+    checkpoints/<height>.checkpoint
+    checkpoints/conflicts/<height>-<id>.checkpoint
+    snapshots/<height>.snapshot
+    archive/commitments/<segment>.segment
+    archive/self_audit.nodo
+    pruning/manifest.nodo
+    pruning/journal.nodo
 ```
+
+The `history/` tree holds finalized state checkpoints, their full protocol
+state snapshots, archive segment commitments and the crash-safe pruning
+manifest and journal ([ADR 0014](../spec/adr-0014-bounded-storage-and-proof-of-archival.md)).
+File names derive only from heights and segment indices; reads are size
+capped and refuse symbolic links; an existing checkpoint is never
+overwritten by a different one.
 
 `genesis.nodo` is a `NODO_GENESIS_DOCUMENT_V1` genesis document (`config::GenesisDocumentCodec`) written by `init`. For networks without a built-in genesis (`testnet-candidate`), later commands load the genesis from this file, and the manifest's genesis id must match it.
 
@@ -32,6 +47,14 @@ Typical layout:
 Before the manifest is trusted, the loader validates the storage schema. Unknown schema ids, missing schema files, future versions, unsafe downgrades, and malformed files must be rejected.
 
 Nodo should not perform implicit storage migration. Migration must be explicit, versioned, and test-covered.
+
+The current node data directory schema is **version 2**. Version 1
+directories still load, but the node writes no checkpoint, snapshot or
+pruning state into them until the operator runs `nodo storage migrate`. The
+migration creates the `history/` tree, converts a legacy pruning manifest
+and rewrites the schema file last, so a crash at any point leaves a
+directory that still reads as version 1 and the migration can run again.
+Binaries that only know version 1 refuse a version 2 directory.
 
 ## Manifest
 
@@ -84,3 +107,9 @@ canonical genesis + finalized blocks + deterministic replay = accepted runtime s
 ```
 
 If replay does not match persisted commitments, the node must fail safe.
+
+Reload still replays every finalized block from genesis. Checkpoints and
+snapshots are verified, durable artifacts, but they are not yet a reload
+base, so finalized block files are never pruned (roadmap 3.17). Before it
+trusts the pruning manifest, the loader rolls forward an interrupted pruning
+run or quarantines a tampered journal.

@@ -7,7 +7,7 @@ namespace nodo::economics {
 
 namespace {
 
-constexpr std::uint64_t kMinBlockUnits = 65'536;
+constexpr std::uint64_t kMinBlockUnits = 5'000'000;
 constexpr std::uint64_t kMinTxUnits = 2'048;
 constexpr std::uint32_t kMaxReceiptBytes = 65'536;
 constexpr std::uint32_t kMaxEvidenceBytes = 262'144;
@@ -110,6 +110,20 @@ V1ResourceFee::systemRecordUnits(const SystemRecordWork &work) {
   return static_cast<std::uint64_t>(work.nestedRecordBytes) +
          work.receiptBytes + kSignatureUnits +
          kEffectUnits * work.effectIds;
+}
+
+std::optional<std::uint64_t> V1ResourceFee::livenessRecordUnits(
+    const SystemRecordWork &work, std::uint32_t accountedValidators) {
+  if (accountedValidators < 4 || accountedValidators > 9'619 ||
+      work.nestedRecordBytes != 105 || work.receiptBytes != 124 ||
+      work.effectIds != 1) {
+    return std::nullopt;
+  }
+  const auto base = systemRecordUnits(work);
+  if (!base) {
+    return std::nullopt;
+  }
+  return *base + 128ULL * accountedValidators;
 }
 
 std::optional<std::uint64_t> V1ResourceFee::blockUnits(

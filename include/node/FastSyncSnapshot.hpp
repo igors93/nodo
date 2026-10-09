@@ -53,7 +53,16 @@ public:
 
   core::AccountStateView accountStateView() const;
 
+  // Structural checks only: identity fields, unique accounts and the
+  // account root. It does NOT prove the snapshot matches stateRoot().
   bool isValid() const;
+
+  // Recomputes the canonical protocol state root from the carried accounts
+  // and domain payloads, strictly decodes every domain and checks the domain
+  // digest. A snapshot that pairs a genuine (blockHash, stateRoot) with
+  // fabricated balances or domains fails here. Never throws.
+  bool verifiesProtocolStateRoot() const;
+
   std::string digest() const;
   std::string serialize() const;
 

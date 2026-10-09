@@ -60,17 +60,24 @@ Evidence and system transitions are also charged against the block, even
 though they carry no transaction fee. The
 [proposer-priority transition](adr-0012-proposer-selection.md) emits one
 mandatory, bounded tag-9 system record and receipt at every finalized height;
-its units are reserved before user transaction selection:
+the [liveness-window transition](adr-0013-liveness-accountability.md) emits
+one mandatory tag-10 record and receipt. Their units are reserved before
+user transaction selection:
 
 ```text
 evidence_units = complete_evidence_bytes + 2*1024 + 512
 system_units   = nested_record_bytes + complete_receipt_bytes
                + 1024 + 64*receipt_effect_ids
+liveness_units = system_units + 128*max(old_set_count, next_set_count)
 ```
 
 `nested_record_bytes` includes its four-byte length prefix. Evidence verifies
 two conflicting signatures, and its slashing system record is charged
-separately. A system receipt has `fee = 0`, its computed `units`, and at most
+separately. The liveness surcharge pays for re-encoding and checking every
+active counter, including nonsigners; it is never multiplied only by QC
+signers. At non-boundary heights the two set counts are equal; a boundary
+charges the larger set because both the old assessment and new vector reset
+must be processed. A system receipt has `fee = 0`, its computed `units`, and at most
 2045 effect IDs under the 65536-byte receipt cap. A block contains at most
 32 evidence objects, 4096 system records and 4096
 transactions. Any state transition requiring more work must be split into
@@ -92,7 +99,8 @@ enforce the **same** historical parameter set and recomputed limits.
 The v1 parameter set adds `max_tx_units:u64` after `max_block_units:u64`.
 `max_tx_bytes` is 256–262144, `max_block_bytes` is at most 1048576 and at
 least `max_tx_bytes+16` so a maximal transaction fits an otherwise empty
-body. `max_block_units` is 65536–16777216. `max_tx_units` is at least
+body. `max_block_units` is 5000000–16777216 so the two mandatory per-height
+records fit even at 9619 validators. `max_tx_units` is at least
 `max_tx_bytes+2048`, at most 4194304 and at most half `max_block_units`.
 `fee_per_unit` is a positive u64 minimum and the genesis initial congestion
 price; `fee_base` is a nonnegative u64 per-transaction charge. A parameter

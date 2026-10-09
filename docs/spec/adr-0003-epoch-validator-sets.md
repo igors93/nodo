@@ -38,6 +38,10 @@ Pending, jailed and exited registry entries are omitted from consensus
 snapshots. This keeps inactive identities out of QC set roots and bounds the
 active set by voting weight divided by minimum stake, without a Sybil-prone
 top-K cap. The selected set must retain positive total voting weight.
+The reversible QC-participation suspension in
+[ADR 0013](adr-0013-liveness-accountability.md) is applied at a boundary
+within this ordinary churn budget and leaves at least four active validators;
+only verified equivocation-driven jail uses the separate evidence exception.
 
 `ValidatorSetHistory` covers every verified height but stores a full registry
 only at a change point. A lookup for an intermediate height returns the last

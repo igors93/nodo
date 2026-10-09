@@ -47,6 +47,10 @@ public:
   static std::optional<std::uint64_t> evidenceUnits(std::uint32_t evidenceBytes);
   static std::optional<std::uint64_t>
   systemRecordUnits(const SystemRecordWork &work);
+  // Pass max(old set count, next set count) at an epoch boundary.
+  static std::optional<std::uint64_t>
+  livenessRecordUnits(const SystemRecordWork &work,
+                      std::uint32_t accountedValidators);
   static std::optional<std::uint64_t> blockUnits(
       const Parameters &parameters, std::uint32_t bodyBytes,
       std::span<const std::uint64_t> transactions,

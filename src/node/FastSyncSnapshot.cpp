@@ -3,6 +3,7 @@
 
 #include "core/StateRootCalculator.hpp"
 #include "node/NodeRuntime.hpp"
+#include "node/ProtocolDomainCodec.hpp"
 #include "serialization/CanonicalHash.hpp"
 #include "serialization/CanonicalWriter.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
@@ -189,6 +190,24 @@ bool FastSyncSnapshot::isValid() const {
   try {
     return core::StateRootCalculator::calculateAccountStateRoot(
                accountStateView()) == m_accountRoot;
+  } catch (...) {
+    return false;
+  }
+}
+
+bool FastSyncSnapshot::verifiesProtocolStateRoot() const {
+  if (!isValid() || m_protocolDomains.empty()) {
+    return false;
+  }
+  try {
+    if (digestProtocolDomains(m_protocolDomains) != m_protocolDomainDigest) {
+      return false;
+    }
+    // Strict decode rejects malformed, non-round-tripping or inconsistent
+    // domains (for example validator_weights not matching validators).
+    (void)ProtocolDomainCodec::decodeState(m_protocolDomains);
+    return core::StateRootCalculator::calculateProtocolStateRoot(
+               accountStateView(), m_protocolDomains) == m_stateRoot;
   } catch (...) {
     return false;
   }

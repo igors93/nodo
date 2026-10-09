@@ -2,6 +2,7 @@
 
 #include "storage/AtomicFile.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <sstream>
 #include <stdexcept>
@@ -63,9 +64,40 @@ bool FastSyncSnapshotStore::save(const FastSyncSnapshot &snapshot) const {
                                        snapshot.serialize());
     storage::AtomicFile::writeTextFile(
         latestPointerPath(), std::to_string(snapshot.blockHeight()) + "\n");
+    pruneSupersededSnapshots(snapshot.blockHeight());
     return true;
   } catch (...) {
     return false;
+  }
+}
+
+void FastSyncSnapshotStore::pruneSupersededSnapshots(
+    std::uint64_t keptHeight) const {
+  // Legacy fast-sync snapshots are a per-block cache of derived state, not
+  // history: reload never reads them and finalized state checkpoints are the
+  // durable snapshots (ADR 0014). Keeping every one grew storage with every
+  // block, so only the snapshot just written and the newest one survive.
+  std::vector<std::uint64_t> heights;
+  for (const auto &entry :
+       std::filesystem::directory_iterator(m_directoryPath)) {
+    std::uint64_t height = 0;
+    if (entry.is_regular_file() && !entry.is_symlink() &&
+        entry.path().extension() == ".fastsnap" &&
+        parseU64Strict(entry.path().stem().string(), height) &&
+        std::to_string(height) == entry.path().stem().string()) {
+      heights.push_back(height);
+    }
+  }
+  if (heights.empty()) {
+    return;
+  }
+  const std::uint64_t newest =
+      *std::max_element(heights.begin(), heights.end());
+  for (const std::uint64_t height : heights) {
+    if (height != keptHeight && height != newest) {
+      std::error_code ec;
+      std::filesystem::remove(snapshotPath(height), ec);
+    }
   }
 }
 

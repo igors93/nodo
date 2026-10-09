@@ -536,5 +536,6 @@ jobs:
             -DCMAKE_CXX_FLAGS="-fsanitize=fuzzer-no-link,address"
       - name: Build and fuzz
         run: |
-          cmake --build build/cmake-fuzz --target nodo_fuzz_network_envelope --parallel $(nproc)
+          cmake --build build/cmake-fuzz --target nodo_fuzz_network_envelope nodo_fuzz_history_codecs --parallel $(nproc)
           ./build/cmake-fuzz/nodo_fuzz_network_envelope -max_total_time=30
+          ./build/cmake-fuzz/nodo_fuzz_history_codecs -max_total_time=30

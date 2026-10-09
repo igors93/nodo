@@ -1292,6 +1292,7 @@ bool NodeOrchestrator::startRpc() {
         *m_runtime, m_runtimeMutex, m_tcpRuntime->gossipMesh(), &m_eventBus,
         m_config.rpcPort(), m_config.rpcBindAddr());
     m_rpcServer->attachSyncHealth(&m_syncHealth);
+    m_rpcServer->attachDataDirectory(&m_config.dataDirectory());
     m_rpcServer->start();
     return true;
   } catch (const std::exception &error) {

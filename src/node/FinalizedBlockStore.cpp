@@ -10,6 +10,7 @@
 #include "node/PersistentBlockStateSync.hpp"
 #include "node/PersistentMempoolStore.hpp"
 #include "node/NodePruningService.hpp"
+#include "node/history/CheckpointService.hpp"
 #include "serialization/KeyValueFileCodec.hpp"
 #include "storage/AtomicFile.hpp"
 
@@ -379,6 +380,7 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
       PersistentMempoolStore::removeTransactions(
           directoryConfig, pipelineResult.finalizedTransactionIds());
       removeJournalFile(commitJournalPath(directoryConfig));
+      CheckpointService::onBlockFinalized(directoryConfig, runtime);
 
       const NodePruningResult pruning =
           NodePruningService::applyConfiguredPolicy(directoryConfig,
@@ -433,6 +435,9 @@ FinalizedBlockStoreResult FinalizedBlockStore::persist(
     }
 
     removeJournalFile(commitJournalPath(directoryConfig));
+    // Checkpoints are derived from the block that is now durably final; a
+    // checkpoint failure is reported by the service and never undoes it.
+    CheckpointService::onBlockFinalized(directoryConfig, runtime);
 
     const NodePruningResult pruning =
         NodePruningService::applyConfiguredPolicy(directoryConfig,
@@ -539,6 +544,10 @@ FinalizedBlockStoreResult FinalizedBlockStore::persistBatch(
     PersistentMempoolStore::removeTransactions(directoryConfig,
                                                finalizedTransactionIds);
     removeJournalFile(commitJournalPath(directoryConfig));
+    // Only the batch tip state is available here. Batches are one block today
+    // (MAX_PERSISTENT_SYNC_BLOCK_BATCH); a checkpoint height inside a larger
+    // batch is recovered by `nodo checkpoint backfill`.
+    CheckpointService::onBlockFinalized(directoryConfig, finalRuntime);
 
     const NodePruningResult pruning =
         NodePruningService::applyConfiguredPolicy(directoryConfig,

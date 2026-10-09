@@ -170,7 +170,9 @@ bool isCommandGroup(const std::string &value) {
   return value == "tx" || value == "block" || value == "node" ||
          value == "chain" || value == "keys" || value == "validator" ||
          value == "stake" || value == "rewards" || value == "slashing" ||
-         value == "governance" || value == "testnet" || value == "genesis";
+         value == "governance" || value == "testnet" || value == "genesis" ||
+         value == "checkpoint" || value == "storage" || value == "pruning" ||
+         value == "archive";
 }
 
 std::string normalizeGovernanceToken(std::string value) {
@@ -581,8 +583,10 @@ CommandLineInterface::parse(const std::vector<std::string> &args) {
       options.pruningMode = args[index + 1];
       if (options.pruningMode != "archive" && options.pruningMode != "full" &&
           options.pruningMode != "light" && options.pruningMode != "ARCHIVE" &&
-          options.pruningMode != "FULL" && options.pruningMode != "LIGHT") {
-        throw std::invalid_argument(option + " must be archive, full, or light.");
+          options.pruningMode != "FULL" && options.pruningMode != "LIGHT" &&
+          options.pruningMode != "normal" && options.pruningMode != "NORMAL") {
+        throw std::invalid_argument(option +
+                                    " must be archive, normal, full, or light.");
       }
       index += 2;
       continue;
@@ -598,6 +602,75 @@ CommandLineInterface::parse(const std::vector<std::string> &args) {
         throw std::invalid_argument("--retain-epochs must be positive.");
       }
       index += 2;
+      continue;
+    }
+
+    if (option == "--height") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--height requires a value.");
+      }
+      options.height = parseUnsignedInt64("--height", args[index + 1]);
+      options.heightProvided = true;
+      index += 2;
+      continue;
+    }
+
+    if (option == "--segment") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--segment requires a value.");
+      }
+      options.segmentIndex = parseUnsignedInt64("--segment", args[index + 1]);
+      options.segmentProvided = true;
+      index += 2;
+      continue;
+    }
+
+    if (option == "--source-dir") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--source-dir requires a value.");
+      }
+      options.sourceDataDirectory = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--trusted-checkpoint") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument(
+            "--trusted-checkpoint requires HEIGHT:CHECKPOINT_ID.");
+      }
+      options.trustedCheckpoint = args[index + 1];
+      index += 2;
+      continue;
+    }
+
+    if (option == "--retain-blocks") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--retain-blocks requires a value.");
+      }
+      options.retainBlocks =
+          parseUnsignedInt64("--retain-blocks", args[index + 1]);
+      index += 2;
+      continue;
+    }
+
+    if (option == "--retain-snapshots") {
+      if (index + 1 >= args.size()) {
+        throw std::invalid_argument("--retain-snapshots requires a value.");
+      }
+      const std::uint64_t value =
+          parseUnsignedInt64("--retain-snapshots", args[index + 1]);
+      if (value > 1000000) {
+        throw std::invalid_argument("--retain-snapshots is out of range.");
+      }
+      options.retainSnapshots = static_cast<std::uint32_t>(value);
+      index += 2;
+      continue;
+    }
+
+    if (option == "--dry-run") {
+      options.dryRun = true;
+      ++index;
       continue;
     }
 
@@ -723,6 +796,17 @@ std::string CommandLineInterface::helpText() {
          "[--data-dir PATH] [--key-id ID]\n"
          "  nodo diagnostics [--network localnet|testnet-candidate] "
          "[--data-dir PATH] [--key-id ID]\n"
+         "  nodo checkpoint status|list|backfill [--data-dir PATH] [--json]\n"
+         "  nodo checkpoint show|verify [--data-dir PATH] [--height HEIGHT] "
+         "[--json]\n"
+         "  nodo checkpoint verify-bootstrap --source-dir PATH "
+         "--trusted-checkpoint HEIGHT:CHECKPOINT_ID [--data-dir PATH]\n"
+         "  nodo storage status|migrate [--data-dir PATH] [--json]\n"
+         "  nodo pruning status|run [--data-dir PATH] "
+         "[--mode archive|normal|light] [--retain-blocks N] "
+         "[--retain-snapshots N] [--dry-run]\n"
+         "  nodo archive status|segments|enable [--data-dir PATH] [--json]\n"
+         "  nodo archive self-audit [--data-dir PATH] [--segment INDEX]\n"
          "\n"
          "Options:\n"
          "  --data-dir PATH      Node data directory. Default: .nodo\n"
