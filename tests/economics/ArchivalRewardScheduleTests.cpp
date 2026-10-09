@@ -6,6 +6,7 @@
 #include "economics/ProtectionWorkType.hpp"
 
 #include <iostream>
+#include <stdexcept>
 
 using nodo::test::require;
 using namespace nodo;
@@ -45,7 +46,7 @@ ArchivalRewardInputs baseInputs() {
   ArchivalRewardInputs inputs;
   inputs.epoch = 7;
   inputs.epochEmissionCap = cap();
-  inputs.segments = {{0, 1'000'000, 3}, {1, 1'000'000, 3}, {2, 1'000'000, 1}};
+  inputs.segments = {{0, 1'000'000}, {1, 1'000'000}, {2, 1'000'000}};
   inputs.reliabilityBasisPoints = {{"a", 10000}, {"b", 10000}, {"c", 10000}};
   return inputs;
 }
@@ -129,7 +130,8 @@ void testConstantRateBelowTarget() {
 
 void testScarcityPaysMore() {
   ArchivalRewardInputs inputs = baseInputs();
-  inputs.slots = {slot("a", 0, 4, 4), slot("c", 2, 4, 4)};
+  inputs.slots = {slot("a", 0, 4, 4), slot("b", 0, 4, 4),
+                  slot("d", 0, 4, 4), slot("c", 2, 4, 4)};
   const ArchivalRewardSettlement settlement =
       ArchivalRewardSchedule::settle(parameters(), inputs);
   const auto common = rewardOf(settlement, "a").rawUnits();
@@ -140,24 +142,33 @@ void testScarcityPaysMore() {
           "the scarcity tier sets the multiplier");
 }
 
-void testOversubscriptionSharesTheBudget() {
+void testUnassignedAndSybilSlotsRejected() {
   ArchivalRewardInputs inputs;
   inputs.epoch = 1;
   inputs.epochEmissionCap = cap();
-  inputs.segments = {{0, 1000, 1}};
+  inputs.segments = {{0, 1000}};
   for (int index = 0; index < 8; ++index) {
     const std::string id = "p" + std::to_string(index);
     inputs.slots.push_back(slot(id, 0, 4, 4));
     inputs.reliabilityBasisPoints[id] = 10000;
   }
-  const ArchivalRewardSettlement settlement =
-      ArchivalRewardSchedule::settle(parameters(), inputs);
-  require(settlement.demandBasisPoints == 10000 && settlement.isValid() &&
-              settlement.distributed <= settlement.budget,
-          "oversubscribed work never mints more than the budget");
-  require(settlement.budget.rawUnits() - settlement.distributed.rawUnits() <
-              static_cast<std::int64_t>(settlement.rewards.size()),
-          "only rounding dust stays unminted when fully subscribed");
+  bool rejected = false;
+  try {
+    (void)ArchivalRewardSchedule::settle(parameters(), inputs);
+  } catch (const std::invalid_argument &) {
+    rejected = true;
+  }
+  require(rejected, "extra identities cannot claim unassigned replica slots");
+
+  inputs.slots = {slot("a", 0, 4, 4),
+                  ArchivalRewardSlot{"b", "operator-a", 0, 4, 4, false}};
+  rejected = false;
+  try {
+    (void)ArchivalRewardSchedule::settle(parameters(), inputs);
+  } catch (const std::invalid_argument &) {
+    rejected = true;
+  }
+  require(rejected, "one economic operator cannot claim two segment replicas");
 }
 
 void testWorkTaxonomy() {
@@ -182,7 +193,7 @@ int main() {
     testNoRewardWithoutProof();
     testConstantRateBelowTarget();
     testScarcityPaysMore();
-    testOversubscriptionSharesTheBudget();
+    testUnassignedAndSybilSlotsRejected();
     testWorkTaxonomy();
     std::cout << "Archival reward schedule tests passed.\n";
     return 0;

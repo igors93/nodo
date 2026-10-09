@@ -382,7 +382,13 @@ ArchiveReplicationReport ArchiveReplicationReport::build(
   }
   ArchiveReplicationReport report;
   std::map<std::uint64_t, std::uint32_t> assigned;
+  std::set<std::pair<std::uint64_t, std::string>> assignedProviders;
   for (const ArchiveSlot &slot : slots) {
+    if (slot.segmentIndex >= segments.size() ||
+        segments[slot.segmentIndex].segmentIndex() != slot.segmentIndex ||
+        !assignedProviders.insert({slot.segmentIndex, slot.providerId}).second) {
+      throw std::invalid_argument("Replication report has an invalid assignment.");
+    }
     ++assigned[slot.segmentIndex];
   }
   const std::uint32_t target = parameters.archiveReplicationTarget();
@@ -395,11 +401,20 @@ ArchiveReplicationReport ArchiveReplicationReport::build(
     status.segmentIndex = segment.segmentIndex();
     status.totalBytes = segment.totalBytes();
     status.assignedReplicas = assigned[segment.segmentIndex()];
-    status.provenReplicas =
-        summary == nullptr
-            ? 0
-            : summary->provenReplicas(segment.segmentIndex(),
-                                      parameters.archiveMinAvailabilityBasisPoints());
+    std::set<std::string> provenOperators;
+    if (summary != nullptr) {
+      for (const ArchivalSlotTally &tally : summary->slots) {
+        if (tally.segmentIndex == segment.segmentIndex() &&
+            assignedProviders.count({tally.segmentIndex, tally.providerId}) != 0 &&
+            !tally.operatorId.empty() && tally.fraud == 0 &&
+            tally.issued > 0 &&
+            tally.availabilityBasisPoints() >=
+                parameters.archiveMinAvailabilityBasisPoints()) {
+          provenOperators.insert(tally.operatorId);
+        }
+      }
+    }
+    status.provenReplicas = static_cast<std::uint32_t>(provenOperators.size());
     status.scarcityMultiplierBasisPoints =
         parameters.scarcityMultiplierBasisPoints(status.provenReplicas);
     status.underReplicated = status.provenReplicas < target;

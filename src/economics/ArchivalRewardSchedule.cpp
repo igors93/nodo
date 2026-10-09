@@ -3,6 +3,7 @@
 #include "economics/ProtectionWorkType.hpp"
 #include "serialization/CanonicalWriter.hpp"
 #include "serialization/V1EncodingPrimitives.hpp"
+#include "utils/SafeScalar.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -114,8 +115,9 @@ ArchivalRewardSchedule::settle(const config::HistoryParameters &parameters,
   std::map<std::uint64_t, ArchivalRewardSegment> segments;
   Wide target = 0;
   for (const ArchivalRewardSegment &segment : inputs.segments) {
-    if (!segments.emplace(segment.segmentIndex, segment).second) {
-      throw std::invalid_argument("Duplicate archival reward segment.");
+    if (segment.totalBytes == 0 ||
+        !segments.emplace(segment.segmentIndex, segment).second) {
+      throw std::invalid_argument("Invalid or duplicate archival reward segment.");
     }
     target = checkedAdd(
         target, checkedMultiply(checkedMultiply(segment.totalBytes,
@@ -130,16 +132,41 @@ ArchivalRewardSchedule::settle(const config::HistoryParameters &parameters,
   };
   std::map<std::string, ProviderWeight> providers;
   std::set<std::pair<std::string, std::uint64_t>> seenSlots;
+  std::set<std::pair<std::string, std::uint64_t>> seenOperators;
+  std::map<std::string, std::string> operatorByProvider;
+  std::map<std::uint64_t, std::set<std::string>> provenOperators;
+  std::map<std::uint64_t, std::uint32_t> slotCount;
+  for (const ArchivalRewardSlot &slot : inputs.slots) {
+    if (!utils::isSafeIdentifier(slot.providerId, 128, "_-.:") ||
+        !utils::isSafeIdentifier(slot.operatorId, 128, "_-.:") ||
+        slot.passed > slot.issued ||
+        segments.count(slot.segmentIndex) == 0 ||
+        !seenSlots.insert({slot.providerId, slot.segmentIndex}).second ||
+        !seenOperators.insert({slot.operatorId, slot.segmentIndex}).second ||
+        ++slotCount[slot.segmentIndex] > parameters.archiveReplicationTarget()) {
+      throw std::invalid_argument("Archival reward slot is not a unique assigned replica.");
+    }
+    const auto [provider, inserted] =
+        operatorByProvider.emplace(slot.providerId, slot.operatorId);
+    if (!inserted && provider->second != slot.operatorId) {
+      throw std::invalid_argument("Provider changed economic operator within an epoch.");
+    }
+    if (slot.issued != 0 && slot.passed != 0 && !slot.fraud &&
+        static_cast<std::uint64_t>(slot.passed) * kBasisPoints >=
+            static_cast<std::uint64_t>(slot.issued) *
+                parameters.archiveMinAvailabilityBasisPoints()) {
+      provenOperators[slot.segmentIndex].insert(slot.operatorId);
+    }
+  }
+  for (const auto &[providerId, reliability] : inputs.reliabilityBasisPoints) {
+    if (reliability > kBasisPoints ||
+        !utils::isSafeIdentifier(providerId, 128, "_-.:")) {
+      throw std::invalid_argument("Invalid archival reliability input.");
+    }
+  }
   Wide total = 0;
   for (const ArchivalRewardSlot &slot : inputs.slots) {
-    if (!seenSlots.insert({slot.providerId, slot.segmentIndex}).second ||
-        slot.passed > slot.issued) {
-      throw std::invalid_argument("Archival reward slots are inconsistent.");
-    }
     const auto segment = segments.find(slot.segmentIndex);
-    if (segment == segments.end()) {
-      throw std::invalid_argument("Archival reward slot names no segment.");
-    }
     if (slot.issued == 0 || slot.passed == 0 || slot.fraud) {
       continue; // No proof, no reward; fraud forfeits the slot.
     }
@@ -149,12 +176,13 @@ ArchivalRewardSchedule::settle(const config::HistoryParameters &parameters,
       continue;
     }
     const std::uint32_t scarcity =
-        parameters.scarcityMultiplierBasisPoints(segment->second.provenReplicas);
+        parameters.scarcityMultiplierBasisPoints(
+            static_cast<std::uint32_t>(provenOperators[slot.segmentIndex].size()));
     const auto reliabilityFound = inputs.reliabilityBasisPoints.find(slot.providerId);
     const std::uint32_t reliability =
-        std::min(kBasisPoints, reliabilityFound == inputs.reliabilityBasisPoints.end()
-                                   ? parameters.archiveReliabilityFloorBasisPoints()
-                                   : reliabilityFound->second);
+        reliabilityFound == inputs.reliabilityBasisPoints.end()
+            ? parameters.archiveReliabilityFloorBasisPoints()
+            : reliabilityFound->second;
     const Wide weight = checkedMultiply(
         checkedMultiply(checkedMultiply(segment->second.totalBytes, scarcity),
                         availability),

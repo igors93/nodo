@@ -407,6 +407,13 @@ void testAssignmentAndSybilResistance() {
     tally.passed = slot.segmentIndex == 0 ? 0 : 1;
     summary.slots.push_back(tally);
   }
+  ArchivalSlotTally unassigned;
+  unassigned.providerId = "unassigned";
+  unassigned.operatorId = "unassigned-operator";
+  unassigned.segmentIndex = 0;
+  unassigned.issued = 1;
+  unassigned.passed = 1;
+  summary.slots.push_back(unassigned);
   const ArchiveReplicationReport report =
       ArchiveReplicationReport::build(params, segments, slots, &summary);
   require(report.segments.front().provenReplicas == 0 &&

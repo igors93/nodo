@@ -53,7 +53,9 @@ struct ArchivalEpochSummary {
   std::uint64_t fraud = 0;
   std::uint64_t missed = 0;
 
-  // Distinct operators that met the availability floor without fraud.
+  // Distinct operator labels in this summary that met the availability floor.
+  // This alone does not authenticate assignment; use ArchiveReplicationReport
+  // with the finalized slot set for a replication decision.
   std::uint32_t provenReplicas(std::uint64_t segmentIndex,
                                std::uint32_t minAvailabilityBasisPoints) const;
   std::string digest() const;

@@ -14,8 +14,6 @@ namespace nodo::economics {
 struct ArchivalRewardSegment {
   std::uint64_t segmentIndex = 0;
   std::uint64_t totalBytes = 0;
-  // Distinct operators that proved the segment this epoch.
-  std::uint32_t provenReplicas = 0;
 };
 
 struct ArchivalRewardSlot {
@@ -73,6 +71,9 @@ struct ArchivalRewardSettlement {
  * passed challenge, availability under the floor, or fraud earns nothing.
  * The sum of rewards never exceeds the budget; the remainder is not minted.
  * Integer arithmetic only; identical on every node.
+ * Proven replica counts are derived from eligible slot tallies; callers
+ * cannot set a scarcity count. Duplicate providers or operators on the same
+ * segment and claims beyond the assignment target are rejected.
  * This is a reference calculation: callers supply tallies. It is not an
  * authorization to mint. Activation requires the finalized, replayed ledger
  * and escrowed operator identities specified by roadmap 6.9.
