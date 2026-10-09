@@ -110,7 +110,7 @@ def make_vectors() -> dict[str, object]:
     # Parameter fields follow the exact ADR 0008 order and width.
     parameters = b"".join((
         u64(1440), u64(60), u64(100), u32(262144), u32(1048576),
-        u64(1048576), u64(1), u64(1), u64(100), u64(1000), u64(2),
+        u64(1048576), u64(524288), u64(1), u64(1), u64(100), u64(1000), u64(2),
         u16(3333), u64(2), u64(28 * 86400), u64(21 * 86400),
         u64(14 * 86400), u64(30), u16(500), u16(500), u64(28 * 86400),
     ))
@@ -120,6 +120,9 @@ def make_vectors() -> dict[str, object]:
     validator_set = items(set_entries, structured=True)
     set_root = h("VALSET", obj(10, validator_set))
     param_root = h("PARAMS", obj(11, parameters))
+    initial_rule_set_hash = h(
+        "RULESET", u16(1) + bytes([0x91]) * 32 + bytes([0x92]) * 32 + ZERO
+    )
 
     lots = [lot_ids[i] + bytes([0x40 + i]) * 32 + owners[i] + u64(100) + u8(2)
             for i in range(4)]
@@ -128,7 +131,8 @@ def make_vectors() -> dict[str, object]:
     stakes = [bytes([0x60 + i]) * 32 + owners[i] + validators[i] + items([lot_ids[i]])
               for i in range(4)]
     stakes.sort(key=lambda raw: raw[:32])
-    genesis = (chain + i64(1000) + nested(parameters) + nested(validator_set)
+    genesis = (chain + i64(1000) + initial_rule_set_hash
+               + nested(parameters) + nested(validator_set)
                + items(sorted(pubs, key=lambda pub: h("ACCOUNT", pub)))
                + items(lots, structured=True) + items(stakes, structured=True)
                + items([u64(1) + u64(10) + u64(1)], structured=True))
@@ -145,8 +149,9 @@ def make_vectors() -> dict[str, object]:
     state_root = bytes([0x77]) * 32
     receipt = tx_id + u64(100) + u64(100) + items([]) + state_root
     header = b"".join((
-        chain, genesis_hash, u64(1), u16(1), u64(1), genesis_hash,
-        i64(1060), validators[0], set_root, set_root, param_root, ZERO,
+        chain, genesis_hash, u64(1), u16(1), initial_rule_set_hash,
+        u16(1), initial_rule_set_hash, u64(1), genesis_hash,
+        i64(1060), validators[0], set_root, set_root, param_root, u64(1), ZERO,
         h("BODY", body_bytes), merkle("tx", [tx_bytes]),
         merkle("receipt", [obj(5, receipt)]), merkle("evidence", []),
         state_root, u32(len(body_bytes)), u64(100),
@@ -175,7 +180,7 @@ def make_vectors() -> dict[str, object]:
     artifact = (nested(header) + nested(body) + items([receipt], structured=True)
                 + b"\x00" + nested(qc))
     leaf = u8(1) + blob(owners[0]) + blob(b"fixture")
-    snapshot = (u64(1) + block_id + state_root
+    snapshot = (u64(1) + block_id + u16(1) + initial_rule_set_hash + state_root
                 + items([leaf], structured=True) + items([qc], structured=True))
     envelope_unsigned = (chain + genesis_hash + u16(9) + peers[0]
                          + u64(1) + i64(1062) + u32(30) + blob(obj(6, vote))
@@ -315,6 +320,19 @@ def main() -> None:
         print("V1 object vectors match all 14 generated fixtures.")
     else:
         OUTPUT.write_text(content, encoding="utf-8")
+        markdown_path = ROOT / "docs" / "spec" / "vectors-v1.md"
+        markdown = markdown_path.read_text(encoding="utf-8")
+        for name, vector in result["vectors"].items():
+            row = (f"| {vector['kind']} | {name.replace('_', ' ')} | "
+                   f"{vector['size']} | `{vector['sha256_hex']}` |")
+            pattern = (r"^\| " + str(vector["kind"]) + r" \| "
+                       + re.escape(name.replace("_", " "))
+                       + r" \| \d+ \| `[0-9a-f]{64}` \|$")
+            markdown, count = re.subn(pattern, lambda _: row, markdown,
+                                      flags=re.MULTILINE)
+            if count != 1:
+                raise SystemExit(f"missing or duplicate vector row: {name}")
+        markdown_path.write_text(markdown, encoding="utf-8")
         print(f"Wrote {OUTPUT}")
 
 

@@ -71,20 +71,120 @@ schema bytes with a `u32` length and without a second eight-byte prefix.
 
 | Kind | Object | Bytes | Raw SHA-256 |
 | ---: | --- | ---: | --- |
-| 1 | genesis | 1867 | `725b772d84248b8580a4212436fd6713061df51da0520edf8abb586e1f42e7b7` |
-| 2 | transaction | 249 | `ec2bc81914a4c04ff0d5ff4d682b286c571b2cc106546f9a59c7e7776ef4c8f9` |
-| 3 | header | 438 | `7b1dd1b04a3ba635f4696f3372cd9431ada7624a983cb094004ef50ce0cb0bd0` |
-| 4 | block body | 265 | `a171e1b9c5fe4b2abc2ab7e4e3ea183fa6068a439f9db5d2e9d87ac1bab1faa7` |
-| 5 | receipt | 92 | `f979d17e1799b99a2974570eb655f49c081618996d7adba3ef5bbf21426c88fa` |
-| 6 | vote | 202 | `b1b949d3d2e5ea6de8a3c3af95a7c8a756feab1caeb78dbeec84c4a60b0cea74` |
-| 7 | proposal | 769 | `7634d435f30a35e321158008bdcf1efc8cea36f021a7d7d7026fe862b6058246` |
-| 8 | quorum certificate | 910 | `06a7ab396c4bf3399b0f16f68806d419b846dd0e539aec453155823e5703a138` |
-| 9 | evidence | 421 | `e8cffdf54154e9fec06f4ae4ba27142f9a98959c757c52f2e29cf932cd79771a` |
+| 1 | genesis | 1907 | `fd2c1caaf341d58dd726d6ef96b872f888550ec43fcc6087455c481dfbaccb73` |
+| 2 | transaction | 249 | `e139af3fde99621a05d38dac8d1f9bf8245f107b515b23a727e7962b877f7dbd` |
+| 3 | header | 512 | `db3cf1ffac4487badebc7b246612739a668544685bd9f9fc2493fddea99a3a6b` |
+| 4 | block body | 265 | `275cf248de93df01b8b2a3317ef15767b3ac5e749e9141f7701b4a2fc285cda7` |
+| 5 | receipt | 92 | `d5a2aca9559d40c0a19fa6f3f3edff3942be240c83ab374ed132fe1393e3f1b8` |
+| 6 | vote | 202 | `b8ed110b276a65a1aa0d04cf1154a62084f345ed14c90edaa1b45ffee82b6940` |
+| 7 | proposal | 843 | `fc90479644aad641b6c00541e6f822dae7a51c94cc5f833c7199edd0d4b5411d` |
+| 8 | quorum certificate | 910 | `9c2d9feceade94c846b1ebbd431aee44dcf0501a8d8041fd318682d4705e6491` |
+| 9 | evidence | 421 | `12b716c823b4267e427331002a645a7f52bdd4f3ce6950d9905a7c93912c320d` |
 | 10 | validator set | 448 | `32ff9166c940091bb17a58c7d203aed81b966b316e1aee3b47d20d12a46fa381` |
-| 11 | parameter set | 142 | `ffb5a5aacbcdc6ef18f8eeb60936315243eaa3af40e989ce6ad8fdc9fbd8e0b4` |
-| 12 | finalized artifact | 1702 | `282e2b10e5989e2487aad0fc3e022cbdb7ceea6fc5c98d508a2773fa2108e80d` |
-| 13 | state snapshot | 1046 | `c1bb6e11e97f0fe823c9d58eca4e1843a52366de91be10ead5579852b985b4f0` |
-| 14 | network envelope | 404 | `d8c303c870827a5bdb6528675e339d58b1a0298c3158112caf413910659c5d77` |
+| 11 | parameter set | 150 | `207abdd9785bee5c38ee4a3b883effc1d61a1ff0e6980bb2bd7e113e722dbec5` |
+| 12 | finalized artifact | 1776 | `6f386da6fbead0a1f500e9f5710bcdfe508e269e86c5c0fac1fb87261e7715e7` |
+| 13 | state snapshot | 1080 | `bcb383f73a2681b557d907a367ba74dfbfb4b18298e24cd82a2cb8793095b97b` |
+| 14 | network envelope | 404 | `c85b589069e76ade5bbdd7c92c3e85bb21fc63cf2121c5a71e23696e6e147350` |
+
+## Protocol upgrade vectors
+
+The object fixture's genesis `rule_set_hash` is
+`cf4744102a1a854a942adfce97ca5a05c65d56c97c4fd73f3ca54d6d2d722e8a`:
+`H("RULESET", u16(1) || 91*32 || 92*32 || 00*32)`. The bundle and
+conformance digests here are synthetic encoding fixtures, not published rule
+artifacts. For a version-2 action using `11*32` bundle digest, `22*32`
+vector digest and no migration, `rule_set_hash` is
+`6deaf29d503086905c6e1739276667cc20b29a0b9802bbb2ff935fbb81f3c851`.
+
+With genesis `L=10`, an upgrade executed at height 12 is in epoch 1 and
+cannot activate before height 61 (epoch 6). Heights 21–60 are the four
+complete intervening epochs. Header 59 commits current/next version 1;
+header 60 commits current version 1 and next version 2 with the exact new
+rule hash; header 61 uses version 2. Height 60, 51, a skipped version or a
+second pending action is invalid. If a governed cancellation executes at
+height 60 before header finalization, header 60 instead commits version 1
+for both current and next, and height 61 remains version 1. Cancellation at
+height 61 is too late. These are consensus arithmetic fixtures independent
+of governance signatures and the synthetic object bytes above.
+
+## Weighted proposer vectors
+
+The [v1 proposer decision](adr-0012-proposer-selection.md) uses a frozen,
+ID-sorted set with IDs `01*32`, `02*32`, `03*32`, `04*32`, weights
+`[1,3,1,1]`, total weight 6 and all initial priorities zero. The round-zero
+primaries at heights 1–6 are `[02,01,02,03,04,02]`; the assigned counts are
+exactly `[1,3,1,1]`. At height 1, the sorted round fallback is
+`[02,01,03,04]`; round 4 returns `02`, and round `u64::MAX` returns `04`.
+Finalizing height 1 in round 2 with signer `03` produces the same next
+priorities as round 0 with signer `02`: `[1,-3,1,1]`. A wrong signer is
+invalid. The next state's canonical domain-12 value has 260 bytes with
+set root `aa*32`, last finalized height 1, total weight 6, count 4,
+each entry length 48, sorted
+IDs and signed 16-byte priorities. Its
+`H("STATE-VALUE", exact_value_bytes)` is
+`a178e9d58e90af1ced3dda5bd114d00b1cc836570fa0032792bb36a8b319768a`.
+
+With epoch length 2, replace ID `04` by new ID `05` at the end of height 2.
+The old primary advances first; carried IDs retain their priorities; ID
+`05` begins below the minimum, and the centered next vector is
+`[-1,3,5,-7]`. The next primary is `02`. A set change at height 1 is
+invalid. Over seven stable heights, a weight-4 ID receives four primary
+slots; splitting its stake into two weight-2 IDs still gives the pair four
+slots. These are schedule and byte vectors, not complete executable blocks.
+
+## Fixed-function payload vectors
+
+These check only the closed v1 payload and amount shapes of
+[ADR 0011](adr-0011-fixed-function-v1.md). The bytes shown are the contents
+of a transaction's `payload:bytes`, after its outer `u32` length. State,
+signatures and fees still require independent validation.
+
+| Type | Amount | Payload contents | Shape result |
+| ---: | ---: | --- | --- |
+| 1 TRANSFER | 1 | 32 zero bytes | Valid shape |
+| 1 TRANSFER | 1 | 33 zero bytes | Reject extra byte |
+| 2 BURN | 1 | Empty | Valid shape |
+| 2 BURN | 0 | Empty | Reject amount |
+| 7 VALIDATOR_REGISTER | 0 | 64 zero bytes | Valid shape |
+| 11 GOVERNANCE_PROPOSE | 1 | `03 || 00*32 || 00000000 || 00*8` (45 bytes) | Valid TEXT shape; no execution |
+| 11 GOVERNANCE_PROPOSE | 1 | `03 || 00*32 || 00000004 || 0061736d || 00*8` | Reject nonempty TEXT action, including WASM magic |
+| 11 GOVERNANCE_PROPOSE | 1 | `04 || 00*32 || 0000006a || 00*106 || 00*8` (151 bytes) | Valid upgrade-action shape only; schedule and digest checks still apply |
+| 11 GOVERNANCE_PROPOSE | 1 | Same as above with action length `00000069` | Reject length mismatch |
+| 12 GOVERNANCE_VOTE | 0 | `00*32 || 04 || 00*32` | Reject unknown choice |
+| 14 | 0 | `0061736d` | Reject unknown transaction type |
+
+The only action content lengths are 17 bytes for parameter change, 40 for
+treasury spend, 0 for text, 106 for protocol upgrade and 40 for cancellation.
+Parameter tag 8 and governance kind 6 are invalid. These are shape vectors;
+zero-valued IDs or hashes in them do not claim semantic validity.
+
+## Resource and fee vectors
+
+The [v1 fee decision](adr-0009-resource-fees.md) uses complete top-level
+transaction and receipt lengths. These are arithmetic fixtures, independent
+of the encoding-only transaction above. Reference parameters are
+`max_tx_bytes=262144`, `max_block_bytes=1048576`, `max_tx_units=524288`,
+`max_block_units=1048576`, `fee_base=1`, `fee_per_unit=1`.
+
+| Input | Required result |
+| --- | ---: |
+| TRANSFER, `tx_bytes=249`, `receipt_bytes=92`, `I=1`, `O=1`, `E=0` | `tx_units=2005` |
+| Same transaction at `base_fee_per_unit=1` | `min_fee=2006` |
+| Evidence with `complete_bytes=421` | `evidence_units=2981` |
+| System record with `nested_bytes=100`, `receipt_bytes=156`, `E=2` | `system_units=1408` |
+| Mandatory proposer record with `nested_bytes=105`, `receipt_bytes=124`, `E=1` | `system_units=1317` |
+| Block containing the three above | `resource_units=6394` |
+| Parent `base_fee=100`, `M=1048576`, `U=524288`, child floor 1 | Next base fee `100` |
+| Same parent with `U=1048576` | Next base fee `112` |
+| Same parent with `U=0` | Next base fee `88` |
+| Parent `base_fee=1`, `U=524289` | Next base fee `2` |
+| Parent `base_fee=100`, `U=0`, child floor `200` | Next base fee `200` |
+
+The user transaction budget is `786432` units for this parameter set. A sum
+of `786433` user units is invalid even when the whole block is below
+`1048576`; adding evidence or system work must also keep the full sum at or
+below `1048576`. All multiplication and overflow checks precede comparison
+with an offered u64 fee.
 
 ## Strict weighted quorum vectors
 

@@ -11,11 +11,10 @@ namespace nodo::consensus {
 /*
  * ProposerSchedule selects the block proposer deterministically.
  *
- * Security principle:
- * Proposer selection must be deterministic and unpredictable-ahead-of-time.
- * We derive the index from a hash of chainId + height + round so that no
- * single party can predict the full schedule without knowing future rounds.
- * All nodes must compute the same result given the same inputs.
+ * Development protocol only. This modulo-hash lottery is public and
+ * predictable from chain ID, height, round and the set, and it has modulo
+ * bias. It is not the v1 proposer rule. V1 uses the separately specified
+ * authenticated weighted-priority schedule in ADR 0012.
  */
 class ProposerSchedule {
 public:

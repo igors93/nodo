@@ -4,8 +4,9 @@
 network or `nodo/0.x` artifact is a v1 artifact. This document does not enable
 production operation. The roadmap tracks implementation and external review
 separately. In this document **MUST**, **MUST NOT**, and **SHOULD** are normative.
-Only this document defines v1 consensus rules; the other protocol pages describe
-the current implementation or give background. An implementation MUST reject an
+This document, including the ADR rules it explicitly incorporates, defines
+v1 consensus; the other protocol pages describe the current implementation or
+give background. An implementation MUST reject an
 object when it cannot prove every applicable rule below. A local node MUST NOT
 advertise v1 or sign a v1 vote until it implements the whole contract.
 
@@ -15,7 +16,8 @@ A v1 chain starts from one immutable, canonically encoded genesis document. Its
 `chain_id` is 1–64 lowercase ASCII letters, digits, `-` or `_`; `genesis_hash`
 is the hash of that document. Both identify the network in every signed object
 and handshake. Genesis commits to the initial state, initial active validator
-set, protocol version `1`, cryptographic suite `Ed25519-SHA256`, initial
+set, protocol version `1`, its nonzero content-addressed `rule_set_hash`,
+cryptographic suite `Ed25519-SHA256`, initial
 consensus parameters, and the complete parameter schedule. There is no default
 value for a missing genesis field. Nodes MUST pin the expected genesis hash out
 of band. A different genesis hash is a different chain, even with the same name.
@@ -25,14 +27,16 @@ and `target_block_seconds` (`T`), with `T <= 300` and the checked product
 `86400 <= L*T <= 604800` (one to seven nominal days), plus `min_validator_stake`,
 `max_tx_bytes` (at most 262144),
 `max_block_bytes` (at most 1048576),
-`max_block_units`, `fee_base`, `fee_per_unit`, `min_proposal_deposit`,
+`max_block_units`, `max_tx_units`, `fee_base`, `fee_per_unit`, `min_proposal_deposit`,
 `max_treasury_spend_per_epoch`, and `treasury_timelock_epochs`. Genesis MUST
 contain at least four active validators with positive weight. It also contains
 `max_epoch_churn_basis_points` (1–3333 of previous total weight),
 `activation_delay_epochs` (at least 2), `unbonding_seconds` (at least 28 days),
 `evidence_max_age_seconds` (at most 21 days and strictly less than unbonding),
 `weak_subjectivity_seconds` (at most 14 days), and
-`max_future_skew_seconds` (at most 30). All amounts and costs are unsigned
+`max_future_skew_seconds` (at most 30). Resource and fee parameters obey
+[ADR 0009](adr-0009-resource-fees.md), including a positive `fee_per_unit`
+floor and a checked, finite per-transaction fee. All amounts and costs are unsigned
 raw units (1 NODO = 100000000 raw units); checked arithmetic MUST reject
 overflow. The only encoded quorum fraction is numerator 2, denominator 3;
 the required weight is **strictly more than two thirds**:
@@ -54,9 +58,11 @@ rates, resource limits within the hard caps above, or the treasury spend cap;
 it takes effect at a named epoch at least two epochs after execution. Changes
 to encoding, signatures, consensus, time, issuance, validator eligibility,
 slashing, or governance require a new protocol version and an explicit
-activation height. Nodes MUST retain historical rule sets to replay old blocks.
-Unknown versions and unscheduled transitions are rejected. No v1 mainnet genesis
-or activation height is defined by this repository.
+activation height. [ADR 0010](adr-0010-protocol-upgrades.md) fixes the
+approved schedule, four-full-epoch notice, boundary commitment and
+fail-closed activation. Nodes MUST retain historical rule sets to replay old
+blocks. Unknown versions and unscheduled transitions are rejected. No v1
+mainnet genesis or activation height is defined by this repository.
 
 Epoch membership depends only on height: at positive height `h`,
 `e = floor((h-1)/L)` and a finalized block is an epoch boundary exactly when
@@ -81,8 +87,9 @@ ASCII bytes), `version:u16=1`, `kind:u16`, followed by the kind's fixed schema.
 The prefix is exactly eight bytes. A nested object is `length:u32` followed
 by that object's schema bytes without another top-level prefix; fixed-size
 hashes, keys and signatures are the only nested values without a length.
-Integers are unsigned big-endian unless explicitly `i64` (two's complement
-big-endian). `bool` is one byte, exactly `00` or `01`. `bytes` is a `u32`
+Integers are unsigned big-endian unless explicitly `i64` or `i128`
+(fixed-width two's complement big-endian). `bool` is one byte, exactly `00`
+or `01`. `bytes` is a `u32`
 length followed by that many bytes. UTF-8 fields MUST be valid UTF-8 in NFC,
 with no NUL; fields used as identifiers are restricted to their stated ASCII
 alphabet. Fixed-size hashes, keys and signatures carry no length prefix. Lists
@@ -162,7 +169,7 @@ would allow more, and lower field-specific caps apply. This registry and the
 full nested wire schema are fixed by [ADR 0008](adr-0008-canonical-binary.md).
 
 The remaining container schemas are fixed as follows. Genesis is `chain_id,
-genesis_time:i64, parameter_set, validator_set, initial_accounts:list<key>,
+genesis_time:i64, rule_set_hash:hash, parameter_set, validator_set, initial_accounts:list<key>,
 initial_lots:list<lot>, initial_stakes:list<stake>,
 issuance_ranges:list<range>`; account keys sort by derived account ID, lot
 entries by lot ID, stakes by position ID and ranges by first epoch. A genesis lot is
@@ -172,7 +179,7 @@ owner:account, validator_id:hash, lot_ids:list<hash>` with sorted unique lot
 IDs. Every non-treasury genesis lot owner MUST derive from an initial account
 key. Every STAKED genesis lot MUST belong to exactly one genesis stake, and
 each initial validator's weight MUST equal the sum of its staked lots. A
-parameter set encodes the 20 typed fields in the exact order of
+parameter set encodes the 21 typed fields in the exact order of
 [ADR 0008](adr-0008-canonical-binary.md); a validator-set entry
 is `validator_id, owner:account, consensus_key, weight:u64, status:u8`, sorted
 by validator ID. A consensus proposal (kind 7, distinct from a governance
@@ -189,12 +196,14 @@ second_signed_object:bytes`; only conflicting votes for one
 `(chain,height,round,step,validator)` and conflicting proposals for one
 `(chain,height,round,proposer)` are accepted in v1. The two objects sort by
 their canonical byte strings. A snapshot is `height:u64, header_id:hash,
-state_root:hash, state_leaves:list<state_leaf>, finality_path:list<qc>`;
+protocol_version:u16, rule_set_hash:hash, state_root:hash,
+state_leaves:list<state_leaf>, finality_path:list<qc>`;
 leaves sort by state key. Every nested structured object has a `u32` byte
 length and its canonical schema without a second magic/version prefix.
 System records are tagged `slash`, `stake_maturity`, `validator_set_change`,
 `governance_decision`, `treasury_execution`, `epoch_issuance`, or
-`parameter_change`, followed by the affected ID, previous value hash and new
+`parameter_change`, `upgrade_schedule`, or `proposer_schedule`, followed by the affected ID,
+previous value hash and new
 value bytes. Their order is the system-transition order in section 3, then
 affected ID ascending within a tag. A record with no actual state change is
 invalid. This rule also fixes receipt and root order.
@@ -204,21 +213,41 @@ invalid. This rule also fixes receipt and root order.
 The canonical state is a tuple of account records, coin-lot records, staking
 positions, validator registry and pending set changes, governance proposals and
 votes, treasury balance and execution IDs, supply counters, protocol parameter
-schedule, and processed evidence IDs. Every state key belongs to exactly one
-domain. A transaction executes atomically in block order. Any invalid
+schedule, protocol upgrade schedule, proposer-priority schedule, and processed
+evidence IDs. Every state
+key belongs to exactly one domain. At an upgrade height, the versioned
+deterministic migration and schedule activation execute once on the old
+finalized state before any user transaction. The new version defines their
+exact state effects, receipts, system records and resource accounting;
+failure invalidates the block. A transaction executes atomically in block
+order. Any invalid
 transaction invalidates its containing block; there is no partial success or
 fee deduction on failure. Receipts for valid transactions record transaction
 ID, resource units, charged fee, ordered state-effect IDs and post-transaction
 state root. System transitions run **after** user transactions in this order:
 accepted evidence and slashing, matured stake/validator changes, governance
-decision and execution records, epoch settlement, next-epoch set/parameter
-commitments. Each transition emits a typed receipt and ledger record.
+decision and execution records (including upgrade schedule/cancel), epoch
+settlement, next-epoch set/parameter and next-rule commitments, and the
+proposer-priority update/rebase. Each transition
+emits a typed receipt and ledger record.
+At each height, the required issuance and already committed parameter/set
+transition costs are reserved before user transactions. Evidence inclusion
+requires room for its own verification and slash transition. At a boundary,
+if matured optional queue entries exceed the remaining byte, record-count or
+unit budget, process the deterministic prefix in transition order and affected
+ID order; retain the remainder for the next eligible boundary. An action with
+a fixed activation epoch is invalid when scheduled if its required work cannot
+fit the reserved budget at that epoch. A proposer cannot omit required work to
+make room for a fee-paying transaction.
 
 State-domain tags and value schemas are fixed below. A state key is the tag
 followed by its fixed-width key, except the composite governance-vote key.
 The values use the primitive encoding of section 2. A missing account has
 nonce and balance zero; no other missing key has an implicit default. The
-treasury account ID is `H("TREASURY", empty)`.
+treasury account ID is `H("TREASURY", empty)`. An unknown domain tag or
+user-defined storage key invalidates the state root. V1 has no contract
+account, code store or user-program-controlled state namespace; see
+[ADR 0011](adr-0011-fixed-function-v1.md).
 
 | Tag | Key | Value fields in wire order |
 | --- | --- | --- |
@@ -232,6 +261,34 @@ treasury account ID is `H("TREASURY", empty)`.
 | 8 supply | 32 zero bytes | `genesis:u64, minted:u64, burned:u64, slashed_burned:u64` |
 | 9 parameter schedule | epoch as `u64` | canonical parameter-set bytes |
 | 10 evidence | evidence ID | `inclusion_height:u64, offender:validator, slash:u64` |
+| 11 upgrade schedule | activation height as `u64` | `from_version:u16, to_version:u16, previous_rules_hash:hash, next_rules_hash:hash, rule_bundle_hash:hash, vectors_hash:hash, migration_hash:hash, status:u8` |
+| 12 proposer schedule | 32 zero bytes | `set_root:hash, last_finalized_height:u64, total_weight:u64, entries:list<proposer_entry>`; each entry is a length-prefixed 48-byte `validator_id:validator, priority:i128` |
+
+The proposer-schedule leaf exists from genesis. Its entries match the frozen
+active validator set for the next height exactly and its set root and total
+weight match that set. Genesis priorities and `last_finalized_height` are
+zero; after height `h`, the latter is exactly `h`. After every finalized
+height, the mandatory proposer-priority transition and any boundary rebase
+follow [ADR 0012](adr-0012-proposer-selection.md); the next state root
+commits the result. System-record tag 9 commits the derived next value by
+hash. Its zero-fee receipt has the sole effect ID
+`H("PROPOSER-SCHEDULE", empty)`; the transition consumes the reserved
+system budget. Missing, extra or malformed priority
+entries invalidate a block or imported snapshot.
+
+Upgrade status is 1 PENDING, 2 ACTIVE or 3 CANCELED. An entry is created
+only by an approved upgrade action, becomes ACTIVE exactly at its activation
+height, and can become CANCELED only by an approved cancellation before that
+height. Its key and content hashes never change. The genesis rule-set hash
+anchors version 1; it has no schedule entry. The `upgrade_schedule` system
+record (tag 8) commits each schedule insertion, cancellation or activation
+as a state change, in governance-execution order for insertion/cancellation
+and before user transactions for activation. The fixed activation transition
+must fit the reserved system budget. Its `affected_id` is
+`H("UPGRADE-ID", u64(activation_height))`; its `new_value` is the exact tag-11
+value bytes and `previous_value_hash` is
+`H("STATE-VALUE", previous_exact_value_bytes)`,
+or zero for insertion.
 
 All lot-ID lists are strictly sorted. Lot status tags are 1 AVAILABLE,
 2 STAKED, 3 UNBONDING, 4 TREASURY, 5 SPENT, 6 BURNED. Validator status tags
@@ -301,7 +358,22 @@ from the offender's lots in ascending lot-ID order and jail until at least
 deterministic evidence-derived ID. The same evidence cannot slash twice.
 Jailed stake stays slashable through unbonding.
 
-Governance has `PARAMETER_CHANGE`, `TREASURY_SPEND`, and `TEXT` proposals.
+Governance has `PARAMETER_CHANGE` (kind 1), `TREASURY_SPEND` (2), `TEXT` (3),
+`PROTOCOL_UPGRADE` (4) and `UPGRADE_CANCEL` (5) proposals. Kinds 4 and 5
+have the exact action bytes and scheduling constraints of
+[ADR 0010](adr-0010-protocol-upgrades.md); unknown kinds are invalid.
+The complete action bytes are respectively
+`parameter_tag:u8, new_value:u64, activation_epoch:u64`,
+`recipient:account, amount:u64`, empty,
+`next_version:u16, activation_height:u64, rule_bundle_hash:hash,
+vectors_hash:hash, migration_hash:hash`, or
+`activation_height:u64, rule_set_hash:hash`. Parameter tags are 1 `fee_base`,
+2 `fee_per_unit`, 3 `max_tx_bytes`, 4 `max_block_bytes`, 5 `max_tx_units`,
+6 `max_block_units`, and 7 `max_treasury_spend_per_epoch`; no other parameter
+is governable in v1. U32 parameters encoded through `new_value:u64` must
+fit u32 as well as their protocol hard caps. The only vote choice tags are
+1 YES, 2 NO and 3 ABSTAIN.
+
 Proposal ID is its transaction ID. A proposal opens at the next epoch,
 accepts votes for two full epochs, and snapshots the validator set and linear
 weights at opening. Each owner may cast one signed vote per proposal for its
@@ -312,12 +384,16 @@ Uncast weight does not count as approval. The decision is deterministic at the
 first block after voting closes. An approved action can be executed only once,
 after `treasury_timelock_epochs`, before its explicit expiry epoch. A text
 proposal has no executable state effect. Parameter actions are limited to the
-allowlist in section 1 and cannot retroactively affect validation.
+allowlist in section 1 and cannot retroactively affect validation. Upgrade
+actions cannot execute unless their notice, version, content commitments and
+sole-pending-entry invariants hold; cancellation requires the same governance
+authorization and must finalize before its boundary commitment.
 
 Treasury coins are lots owned by the reserved treasury account. A spend
-requires the exact approved proposal ID, matching recipient and amount,
-unexpired decision, elapsed timelock, per-epoch cap and sufficient treasury
-lots. Executing consumes treasury lots and creates recipient/change lots.
+requires a positive action amount, the exact approved proposal ID, matching
+recipient and amount, unexpired decision, elapsed timelock, per-epoch cap
+and sufficient treasury lots. Executing consumes treasury lots and creates
+recipient/change lots.
 Direct transfers from the treasury account and independent minting are invalid.
 Epoch issuance, if nonzero in genesis, creates only the scheduled issuance lots
 in the treasury at the epoch boundary; allocation to rewards requires a
@@ -337,6 +413,12 @@ valid only for the types whose schema is empty. A successful transaction
 increments nonce exactly once. Mempool replacement and ordering are local
 policy, never validity rules.
 
+V1 is a fixed-function chain: these 13 types are the entire executable
+user-transaction registry. The `payload:bytes` contents must decode to the
+one exact schema below with full consumption. There is no contract-call,
+deployment, VM, script or extension type. Unknown types and extra bytes are
+invalid, including when carried in a validly signed transaction.
+
 | Type tag | Payload fields in wire order | Valid state effect |
 | --- | --- | --- |
 | 1 TRANSFER | `recipient:account` | Move positive `amount` to recipient; sender differs. |
@@ -353,23 +435,32 @@ policy, never validity rules.
 | 12 GOVERNANCE_VOTE | `proposal:hash, choice:u8, validator:validator` | Record one snapshot-weight vote. |
 | 13 GOVERNANCE_EXECUTE | `proposal:hash` | Execute exact approved action once. |
 
-For types 7–10 and 12–13, `amount` MUST be zero. Type 11 `amount` is the
-positive proposal deposit and MUST meet `min_proposal_deposit`. A proposal's action is
-exactly one typed parameter change (`parameter_tag:u8, new_value:u64,
-activation_epoch:u64`), treasury spend (`recipient:account, amount:u64`), or
-empty for text; all are canonical. No arbitrary code or opaque state-changing
-payload is valid. The proposal deposit is refunded on approval and burned on
+For types 1–6 and 11, `amount` MUST be positive. For types 7–10 and 12–13,
+`amount` MUST be zero. Type 11 `amount` is the proposal deposit and MUST meet
+`min_proposal_deposit`. Its `action:bytes` must have the exact schema for its
+kind in section 3; the nested `bytes` length is checked before reading and
+trailing bytes are invalid. `TEXT` has an empty action, and its `title_hash`
+is inert metadata. No arbitrary code or opaque state-changing payload is
+valid. The proposal deposit is refunded on approval and burned on
 rejection; its minimum is the genesis parameter. For stake unlock/withdraw,
 `amount` identifies the portion of the position, and only the fee is drawn
-from available input lots. Transaction fees are checked with
-`units = encoded_tx_bytes + 96 + 32 * input_lot_count + 64 * output_lot_count`.
-The output count is one for each positive primary output (recipient, stake,
-unbonding, withdrawal or proposal escrow) plus one for positive change; fee
-burns make no output. This is determined after computing the required debit:
-`amount + fee` for types 1, 2, 3, 6 and 11; `fee` for all others. The primary
-output is absent for type 2. `fee >= fee_base + fee_per_unit * units`,
-`units <= max_tx_bytes * 4`, and the sum of units in
-a block is at most `max_block_units`. The entire offered fee is burned.
+from available input lots. The offered fee participates in the required
+debit and any positive change creates a new coin lot; fee burns create none.
+The required debit is `amount + fee` for types 1, 2, 3, 6 and 11; `fee` for
+all others. The primary output is absent for type 2. The normative
+[resource and fee schedule](adr-0009-resource-fees.md) derives `tx_units`
+from complete transaction and receipt bytes, one signature, input and
+new-lot counts, receipt effect IDs and the fixed type surcharge.
+`input_lots <= 128`, newly created lots `<= 2`, and receipt effect IDs
+`<= 256`. The complete transaction must fit `max_tx_bytes`, and its units
+must fit `max_tx_units`. The transaction's offered fee must be at least
+`fee_base + header.base_fee_per_unit * tx_units`, using checked arithmetic;
+the entire offered fee is burned. Validators re-execute and verify the
+receipt units and fee. Evidence and system transitions also consume block
+units, though their receipts have zero fee. User transactions may consume at
+most three quarters of `max_block_units`; all work together must fit that
+limit. A proposer cannot make an invalid transaction valid by claiming a
+different receipt or unit count.
 
 The following is the **closed** rejection-code registry. Validators check in
 table order, then type-specific predicates in the order shown. The first
@@ -404,21 +495,45 @@ not to a permissive fallback. Peer-specific codes are not consensus data.
 ## 5. Blocks, consensus and finality
 
 Header fields in order are `chain_id:str, genesis_hash:hash, height:u64,
-protocol_version:u16, round:u64, parent_id:hash, time:i64,
+protocol_version:u16, rule_set_hash:hash, next_protocol_version:u16,
+next_rule_set_hash:hash, round:u64, parent_id:hash, time:i64,
 proposer:validator, validator_set_root:hash, next_validator_set_root:hash,
-parameter_root:hash, parent_qc_hash:hash, body_root:hash, tx_root:hash, receipt_root:hash,
+parameter_root:hash, base_fee_per_unit:u64, parent_qc_hash:hash, body_root:hash, tx_root:hash, receipt_root:hash,
 evidence_root:hash, state_root:hash, body_bytes:u32, resource_units:u64`.
 The block body is ordered transactions then sorted unique evidence records and
 the deterministic system-transition records. The block ID covers only the
 compact header; roots commit to the entire body and resulting state. Genesis
 uses height 0, zero parent/QC hashes, and its own rules. Every later header
+MUST match the active and next rule commitments derived from the authenticated
+schedule. At the last old-rule height before activation, its finality QC
+authenticates the exact next version/hash; the next block uses that version's
+prefix and rules. An unsupported or mismatched version MUST halt validation
+and signing, never fall back to the prior version. Every later header
 must have the prior finalized block ID and a verified parent PRECOMMIT QC.
 Height 1 is the sole exception: its parent is genesis, `parent_qc_hash` is all
 zero bytes and `parent_qc` is absent. It uses the genesis validator-set
 commitment as its trust anchor. Body, receipt, transaction, evidence, state, set and parameter roots
-MUST be recomputed, never trusted from a peer. A finalized artifact contains
+MUST be recomputed, never trusted from a peer. The header's
+`base_fee_per_unit` is checked from the parent header's price, metered units
+and historical block limit, then the active child fee floor. Its
+`resource_units` is the exact sum of transaction, evidence and system work
+under [ADR 0009](adr-0009-resource-fees.md). At height 1 the price is the
+genesis `fee_per_unit`. A finalized artifact contains
 the header, body, receipts, state-transition records, parent QC and the new
 PRECOMMIT QC, all canonically encoded.
+
+The header's `round` is zero based. The sole authorized proposer for `(h,r)`
+is selected from the frozen height-`h` set and the authenticated
+proposer-priority vector in the state finalized at `h-1`, according to
+[ADR 0012](adr-0012-proposer-selection.md). Rank validators by
+`priority + weight` descending and validator ID ascending; select index
+`r mod active_validator_count`. A valid signature from a different validator
+does not authorize the proposal. Finalization advances the weighted primary
+priority once, regardless of the successful round; failed rounds do not
+change persistent state. Boundary set changes rebase priorities as specified
+in ADR 0012. Validators, importers and light clients must verify this rule
+from an authenticated set and schedule state, not from the header's claimed
+proposer alone.
 
 At height `h`, the active set is the immutable set committed for `h` by the
 last finalized boundary. Its checked total weight `W` MUST be positive. If
@@ -558,7 +673,7 @@ rejected; no executable payload is accepted through a generic extension tag.
 | 1 HELLO | `peer_id:hash, ephemeral_key:key, nonce:hash, capabilities:u32` | Handshake only. |
 | 2 CHALLENGE | `peer_id:hash, ephemeral_key:key, nonce:hash, hello_hash:hash` | Handshake only. |
 | 3 AUTH | `hello_hash:hash, challenge_hash:hash, transcript_signature:sig` | Handshake only; binds both identities and ephemeral keys. |
-| 4 STATUS | `height:u64, block_id:hash, qc_hash:hash, set_root:hash` | Advisory until proofs verify. |
+| 4 STATUS | `height:u64, block_id:hash, qc_hash:hash, set_root:hash, protocol_version:u16, rule_set_hash:hash, next_activation_height:u64, next_protocol_version:u16, next_rule_set_hash:hash, supported_versions:list<u16>` | Advisory until proofs verify; zero activation height means none. |
 | 5 TX_INV | `ids:list<hash>` (at most 128) | Inventory only. |
 | 6 TX_REQUEST | `request_id:u64, ids:list<hash>` (at most 128) | Request only missing IDs. |
 | 7 TX_BODY | `request_id:u64, transactions:list<transaction>` (at most 128) | IDs and bodies must match the request; revalidate. |
@@ -568,14 +683,22 @@ rejected; no executable payload is accepted through a generic extension tag.
 | 11 FINALIZED | Canonical finalized artifact | Replay before acceptance. |
 | 12 BLOCK_RANGE_REQUEST | `request_id:u64, first_height:u64, count:u8` (1–4) | Only contiguous heights. |
 | 13 BLOCK_RANGE_RESPONSE | `request_id:u64, artifacts:list<artifact>` (1–4) | Contiguous, requested and within frame cap. |
-| 14 CHECKPOINT | `height:u64, block_id:hash, state_root:hash, qc:qc` | Verify from a trusted checkpoint. |
+| 14 CHECKPOINT | `height:u64, block_id:hash, protocol_version:u16, rule_set_hash:hash, state_root:hash, qc:qc` | Match the verified header and QC path from a trusted checkpoint. |
 | 15 EVIDENCE_INV | `ids:list<hash>` (at most 64) | Inventory only. |
 | 16 EVIDENCE_BODY | `request_id:u64, evidence:list<evidence>` (at most 64) | Verify each item and request binding. |
-| 17 SNAPSHOT_MANIFEST | `request_id:u64, height:u64, header_id:hash, state_root:hash, chunk_roots:list<hash>` | Header/QC proof required. |
+| 17 SNAPSHOT_MANIFEST | `request_id:u64, height:u64, header_id:hash, protocol_version:u16, rule_set_hash:hash, state_root:hash, chunk_roots:list<hash>` | Version/hash must match the verified header/QC path. |
 | 18 SNAPSHOT_CHUNK | `request_id:u64, index:u32, bytes:bytes, proof:list<hash>` (at most 256 KiB data) | Verify chunk and final state root. |
 | 19 PEER_EXCHANGE | `peers:list<signed_peer_record>` (at most 32) | Never grants automatic trust. |
 | 20 PING | `nonce:u64` | Session liveness only. |
 | 21 PONG | `nonce:u64` | Must match an outstanding PING. |
+
+STATUS `supported_versions` is a strictly increasing list of at most 32
+distinct nonzero `u16` values. It describes locally installed and verified
+codecs only; the sender's claimed finalized version/hash and pending
+activation must be checked against a verified chain. With no pending upgrade,
+`next_activation_height` is zero and `next_protocol_version` and
+`next_rule_set_hash` equal the advertised active pair. These signals never
+alter the consensus activation height.
 
 HELLO and CHALLENGE envelopes are each capped at 4096 complete bytes. The
 CHALLENGE `hello_hash` is `H("HANDSHAKE-MSG", complete_signed_HELLO_envelope)`;
@@ -600,7 +723,9 @@ Independent implementations MUST agree on canonical bytes and hashes for
 every kind, every transaction type, every Merkle edge case, genesis and epoch
 boundaries, vote/lock recovery, and each rejection code. Conformance tests
 MUST include malformed lengths, duplicate/sorted fields, overflow, unknown
-versions, cross-chain replay, historical set verification, evidence after
+versions, unknown transaction/governance tags, extra payload bytes, nonempty
+TEXT actions and attempts to submit code or contract storage, cross-chain
+replay, historical set verification, evidence after
 unbonding, competing QCs and crash-after-persist/before-broadcast. Fuzz
 decoders and compare a second implementation before public testnet. A v1
 genesis cannot be published until its concrete parameters, economic schedule,

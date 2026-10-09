@@ -6,6 +6,32 @@ Nodo does not yet publish versioned production releases. This changelog starts a
 
 ### Security
 
+- **V1 proposer selection has a checked weighted-priority design.**
+  [ADR 0012](docs/spec/adr-0012-proposer-selection.md) replaces the
+  development hash lottery with height-bound stake-weighted primaries,
+  deterministic round fallback, authenticated priority state and checked
+  epoch rebasing. A C++ reference and adversarial tests anchor the decision.
+  Runtime wiring, state codecs and light-sync proofs remain Phase 2, 4 and 5
+  activation gates.
+- **V1 programmability is explicitly fixed-function.**
+  [ADR 0011](docs/spec/adr-0011-fixed-function-v1.md) closes transaction,
+  governance-action and state-domain registries, with no VM, arbitrary code
+  execution or contract storage at launch. A checked payload-shape reference
+  rejects unknown types, extra bytes and unlisted actions. The live v1 typed
+  decoder and execution dispatch remain Phase 2.1 and Phase 3 gates.
+- **V1 protocol upgrades have a height-gated design contract and checked
+  reference.** [ADR 0010](docs/spec/adr-0010-protocol-upgrades.md) fixes
+  governance authorization, sequential rule versions, four full epochs of
+  notice, active/next header commitments, governed cancellation, historical
+  replay and fail-closed behavior. Canonical object fixtures now carry rule
+  hashes. The development runtime still needs the Phase 2.1 codecs, Phase
+  3.15 migration path and Phase 7.1 activation enforcement before v1 launch.
+- **V1 resources and fees have one checked consensus schedule.**
+  [ADR 0009](docs/spec/adr-0009-resource-fees.md) fixes transaction,
+  evidence and system-work units, hard limits, a parent-derived header base
+  fee and full fee burn. A C++ reference and overflow/boundary tests anchor
+  the rule. The development runtime still needs the typed-codec, execution,
+  validation, mempool and supply migration before v1 activation.
 - **The v1 canonical binary format is specified for all 14 consensus kinds.**
   [ADR 0008](docs/spec/adr-0008-canonical-binary.md) fixes versioned schemas,
   signed preimages, object limits and an ordered, count-committed Merkle tree.

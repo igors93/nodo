@@ -9,13 +9,17 @@ header-only sync remain Phase 2 and Phase 5 gates.
 A block ID MUST identify a bounded-size, canonical header, independently of
 the size of its body. The v1 header is the ordered binary schema in
 [protocol v1, section 5](protocol-v1.md#5-blocks-consensus-and-finality).
-It commits to chain ID and genesis hash, height and rule version, consensus
+It commits to chain ID and genesis hash, height, active and next rule version
+and rule-set hash under [ADR 0010](adr-0010-protocol-upgrades.md), consensus
 round and parent ID, BFT time and proposer, the active and next validator-set
-roots, the parameter root, the parent PRECOMMIT QC hash, the complete body
-root and length, transaction, receipt and evidence roots, the resulting state
+roots, the parameter root and derived base fee per unit, the parent PRECOMMIT
+QC hash, the complete body root and length, transaction, receipt and evidence
+roots, the resulting state
 root, and resource units. The block ID is `H("BLOCK", canonical_header_bytes)`,
 where those bytes include the complete eight-byte v1 top-level header prefix.
 No body record, signature or QC bytes are embedded in the header.
+The derived fee is recomputed from the parent's authenticated resource usage
+and historical limit under [ADR 0009](adr-0009-resource-fees.md).
 
 `body_root = H("BODY", canonical_body_bytes)` binds every byte of the complete
 top-level body, including its eight-byte v1 prefix and ordered
@@ -25,8 +29,14 @@ and unique before commitment; transaction order is execution order. The
 validator-set and parameter roots use the canonical binary snapshots selected
 for that height, not mutable current-node objects. A boundary block commits
 the next set before validators vote on the block. The next header MUST use the
-set committed for its height. These rules prevent a valid QC from being
+set committed for its height. At an upgrade boundary the old-rule finality
+QC authenticates the next version and rule-set hash before the new codec
+takes effect. These rules prevent a valid QC from being
 reinterpreted under another set, chain or parameter schedule.
+The resulting state root also commits the next-height proposer-priority
+vector under [ADR 0012](adr-0012-proposer-selection.md). The header's
+proposer ID is checked against the prior finalized state's vector and its
+round, rather than trusted as a free choice.
 
 At height 0, parent ID and parent QC hash are all zero and genesis validation
 uses the genesis-specific body and state rules. Height 1 has the genesis ID

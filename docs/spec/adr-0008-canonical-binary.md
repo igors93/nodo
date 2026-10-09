@@ -15,8 +15,9 @@ schema_bytes`, without another prefix. Fixed hashes, keys and signatures are
 32, 32 and 64 raw bytes without a length. A `bytes` or `str` field has one
 big-endian `u32` byte length. A list has one big-endian `u32` count, then
 length-delimited structured elements or fixed-size primitives. An optional
-has a single `00`/`01` flag followed by the value only for `01`. `i64` uses
-two's-complement big-endian. No alternative decimal, text, JSON, protobuf,
+has a single `00`/`01` flag followed by the value only for `01`. `i64` and
+`i128` use fixed-width two's-complement big-endian. No alternative decimal,
+text, JSON, protobuf,
 field map, padding, implicit default or extension encoding is accepted.
 
 For kinds 2, 6, 7 and 14, the signed preimage is the complete top-level
@@ -64,9 +65,9 @@ protocol v1 sections 4–6.
 
 | Kind | Schema fields in order |
 | --- | --- |
-| 1 genesis | `chain_id:str, genesis_time:i64, parameters:parameter_set, validators:validator_set, initial_accounts:list<key>, initial_lots:list<genesis_lot>, initial_stakes:list<genesis_stake>, issuance_ranges:list<issuance_range>` |
+| 1 genesis | `chain_id:str, genesis_time:i64, rule_set_hash:hash, parameters:parameter_set, validators:validator_set, initial_accounts:list<key>, initial_lots:list<genesis_lot>, initial_stakes:list<genesis_stake>, issuance_ranges:list<issuance_range>` |
 | 2 transaction | `chain_id:str, genesis_hash:hash, type:u8, sender_key:key, nonce:u64, expiry_height:u64, amount:u64, fee:u64, input_lots:list<hash>, payload:bytes, signature:sig` |
-| 3 header | `chain_id:str, genesis_hash:hash, height:u64, protocol_version:u16, round:u64, parent_id:hash, time:i64, proposer:validator, validator_set_root:hash, next_validator_set_root:hash, parameter_root:hash, parent_qc_hash:hash, body_root:hash, tx_root:hash, receipt_root:hash, evidence_root:hash, state_root:hash, body_bytes:u32, resource_units:u64` |
+| 3 header | `chain_id:str, genesis_hash:hash, height:u64, protocol_version:u16, rule_set_hash:hash, next_protocol_version:u16, next_rule_set_hash:hash, round:u64, parent_id:hash, time:i64, proposer:validator, validator_set_root:hash, next_validator_set_root:hash, parameter_root:hash, base_fee_per_unit:u64, parent_qc_hash:hash, body_root:hash, tx_root:hash, receipt_root:hash, evidence_root:hash, state_root:hash, body_bytes:u32, resource_units:u64` |
 | 4 body | `transactions:list<transaction>, evidence:list<evidence>, system_records:list<system_record>` |
 | 5 receipt | `tx_or_record_id:hash, units:u64, fee:u64, effect_ids:list<hash>, post_state_root:hash` |
 | 6 vote | `chain_id:str, genesis_hash:hash, height:u64, round:u64, step:u8, block_id:optional<hash>, validator_id:validator, vote_time:i64, signature:sig` |
@@ -74,15 +75,15 @@ protocol v1 sections 4–6.
 | 8 QC | `height:u64, round:u64, step:u8, block_id:optional<hash>, set_root:hash, votes:list<vote>, total_weight:u64, signed_weight:u64, required_weight:u64` |
 | 9 evidence | `kind:u8, first_signed_object:bytes, second_signed_object:bytes` |
 | 10 validator set | `entries:list<validator_entry>` |
-| 11 parameter set | the 20 exact fields listed below |
+| 11 parameter set | the 21 exact fields listed below |
 | 12 finalized artifact | `header:header, body:body, receipts:list<receipt>, parent_qc:optional<qc>, final_qc:qc` |
-| 13 state snapshot | `height:u64, header_id:hash, state_root:hash, state_leaves:list<state_leaf>, finality_path:list<qc>` |
+| 13 state snapshot | `height:u64, header_id:hash, protocol_version:u16, rule_set_hash:hash, state_root:hash, state_leaves:list<state_leaf>, finality_path:list<qc>` |
 | 14 network envelope | `chain_id:str, genesis_hash:hash, type:u16, sender_id:hash, sequence:u64, created_at:i64, ttl_seconds:u32, payload:bytes, payload_hash:hash, signature:sig` |
 
 Parameter-set fields in exact order and type are
 `epoch_length_blocks:u64, target_block_seconds:u64,
 min_validator_stake:u64, max_tx_bytes:u32, max_block_bytes:u32,
-max_block_units:u64, fee_base:u64, fee_per_unit:u64,
+max_block_units:u64, max_tx_units:u64, fee_base:u64, fee_per_unit:u64,
 min_proposal_deposit:u64, max_treasury_spend_per_epoch:u64,
 treasury_timelock_epochs:u64, max_epoch_churn_basis_points:u16,
 activation_delay_epochs:u64, unbonding_seconds:u64,
@@ -90,6 +91,8 @@ evidence_max_age_seconds:u64, weak_subjectivity_seconds:u64,
 max_future_skew_seconds:u64, double_vote_slash_bps:u16,
 double_proposal_slash_bps:u16, jail_seconds:u64`. These fields are present in
 both genesis and committed parameter roots, including fields immutable in v1.
+The exact limits and derived header fee are fixed by
+[ADR 0009](adr-0009-resource-fees.md).
 
 `genesis_lot = lot_id:hash, origin_id:hash, owner:account, amount:u64,
 status:u8`; `genesis_stake = position_id:hash, owner:account,
@@ -98,9 +101,18 @@ first_epoch:u64, last_epoch:u64, units_per_epoch:u64`. A `validator_entry`
 is `validator_id:validator, owner:account, consensus_key:key, weight:u64,
 status:u8`. A `state_leaf` is `domain:u8, key:bytes, value:bytes`.
 `system_record` is `tag:u8, affected_id:hash, previous_value_hash:hash,
-new_value:bytes`; tags 1–7 are slash, stake maturity, validator-set change,
-governance decision, treasury execution, epoch issuance and parameter change
-in that order. Sorted lists use the ordering specified by protocol v1;
+new_value:bytes`; tags 1–9 are slash, stake maturity, validator-set change,
+governance decision, treasury execution, epoch issuance, parameter change,
+upgrade schedule and proposer schedule in that order. Upgrade schedule `new_value` is the exact
+tag-11 state value; the affected ID and transition order are defined in
+[ADR 0010](adr-0010-protocol-upgrades.md) and protocol v1 section 3.
+Proposer-schedule tag 9 carries the exact 32-byte next-value hash defined in
+[ADR 0012](adr-0012-proposer-selection.md). The tag-12 state value's
+wire order is `set_root:hash, last_finalized_height:u64,
+total_weight:u64, entries:list<proposer_entry>`. Each
+`proposer_entry` has a four-byte length of 48, followed by a 32-byte
+validator ID and a 16-byte signed two's-complement big-endian priority.
+Sorted lists use the ordering specified by protocol v1;
 duplicate keys, voters, lot IDs or evidence objects are noncanonical.
 
 The QC `block_id` is optional so nil PREVOTE or PRECOMMIT QCs have one
@@ -149,7 +161,8 @@ stable membership-proof tree shape.
 The C++ `V1EncodingPrimitives` deliberately supplies only framing, byte caps,
 domain hashing and Merkle roots. It never treats an opaque payload as a valid
 object. Phase 2.1 must implement typed encoders and strict decoders for **all
-14 kinds**, all 13 transaction payloads and all 21 message payloads, then
+14 kinds**, all 13 transaction payloads, all five closed governance actions
+under [ADR 0011](adr-0011-fixed-function-v1.md), and all 21 message payloads, then
 switch production, voting, hashing, signatures, storage, replay, import and
 sync in one incompatible activation. Until that happens `nodo/0.7` remains a
 development protocol and cannot claim v1 wire or signature compatibility.

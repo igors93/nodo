@@ -292,21 +292,55 @@ contract is not wire-compatible with the current development runtime.
   strict typed codecs for all kinds and variants and migrate every live,
   persisted, replay, sync and import path in one incompatible activation.
 
-- [ ] **1.10 · High · There is no resource or fee model.**
-  The fee is an absolute amount per transaction, and the mempool orders by absolute fee (`sortedEntriesByPriority` in [`Mempool.cpp`](../src/mempool/Mempool.cpp)). A 200 KiB transaction pays the same as a 200-byte one, and nothing meters bytes, signature checks, or state writes.
-  *Decide:* fees per resource unit, block resource limits, and a base-fee mechanism if any.
+- [x] **1.10 · High · There is no resource or fee model.**
+  [ADR 0009](spec/adr-0009-resource-fees.md) fixes v1 resource units for
+  canonical transaction and receipt bytes, signature checks, lot operations,
+  recorded state effects, evidence and system transitions. It fixes per-kind
+  counts, per-transaction and block unit limits, a reserved system-work budget,
+  a parent-derived congestion base fee committed in the header, checked fee
+  arithmetic and full fee burn. The `V1ResourceFee` reference and adversarial
+  vectors test boundaries and overflow. This closes the Phase 1 **decision**;
+  `nodo/0.7` still uses absolute fees and a 50/30/20 split. Phase 2.1 must
+  encode the expanded v1 header and parameter set; 3.10 and 3.12 must meter
+  and reject identically in production, voting, replay, import and the
+  mempool. Phase 6 must reconcile burn and supply accounting before activation.
 
-- [ ] **1.11 · High · There is no protocol upgrade mechanism.**
-  Rules are not versioned by activation height; the protocol version is just the string `nodo/0.7`.
-  *Specify:* how rule changes activate (height-gated rule sets, version in the header, client signalling) and how historical rules stay replayable.
+- [x] **1.11 · High · There is no protocol upgrade mechanism.**
+  [ADR 0010](spec/adr-0010-protocol-upgrades.md) fixes a governance-approved,
+  content-addressed rule schedule, sequential versions, four full future
+  epochs of notice, first-height-of-epoch activation, an old-rule boundary
+  commitment, governed cancellation, advisory client signalling and
+  fail-closed historical replay. The `V1UpgradeSchedule` reference and vectors
+  test the arithmetic and commitments. This closes the Phase 1 **decision**;
+  `nodo/0.7` has no v1 upgrade runtime. Phase 2.1 must encode the new
+  commitments and actions, 3.15 must make migrations crash recoverable, and
+  7.1 must enforce activation and replay on every validation path before v1
+  is advertised or launched.
 
-- [ ] **1.12 · Medium · Programmability is undecided.**
-  Nodo has 13 fixed transaction types and no VM.
-  *Decide:* whether launch requires smart contracts (and which VM, for example WASM), or whether Nodo stays a fixed-function L1 with a later upgrade path. The answer changes the state model, fees, and storage.
+- [x] **1.12 · Medium · Programmability is undecided.**
+  [ADR 0011](spec/adr-0011-fixed-function-v1.md) fixes v1 as a
+  fixed-function L1 with exactly 13 transaction types, five typed governance
+  actions and twelve state domains. There is no VM, contract deployment,
+  arbitrary calldata execution, plugin fallback or user-defined storage at
+  launch. The `V1FixedFunctionPolicy` reference rejects unknown types,
+  noncanonical action shapes and extra bytes; its tests cover the closed
+  registry. This closes the Phase 1 **decision**. Phase 2.1 must implement
+  strict typed decoding, and Phase 3 must use the same closed dispatch in all
+  live execution paths before v1 activation. Any future VM requires a new
+  protocol version under 1.11, with separate metering, storage and review.
 
-- [ ] **1.13 · Medium · The proposer selection rule is weak.**
-  `ProposerSchedule::selectProposer` draws a hash lottery per `(height, round)`. It gives no fairness bound over short windows, has a modulo bias, and is predictable arbitrarily far ahead, which makes targeted DoS on upcoming proposers easy.
-  *Specify:* weighted round-robin (proposer priority) or a VRF-based rule.
+- [x] **1.13 · Medium · The proposer selection rule is weak.**
+  [ADR 0012](spec/adr-0012-proposer-selection.md) fixes deterministic
+  stake-weighted proposer priority for each finalized height, a bounded
+  round fallback that gives every active validator one slot within `n`
+  rounds, signed `i128` priority state and checked rebasing at set changes.
+  The `V1WeightedProposerSchedule` reference and adversarial vectors cover
+  fairness, split stake, large rounds, wrong signers and churn. This closes
+  the Phase 1 **decision**; `nodo/0.7` still uses the hash lottery. Phase
+  2.1 must encode the new state/record, 4.8 must replace every proposer
+  path, and 5.3 must prove the schedule state during light sync. A public
+  weighted schedule remains predictable; targeted DoS needs operational
+  defenses and does not disappear by changing the selector.
 
 - [ ] **1.14 · Medium · Liveness faults have no accountability.**
   Penalty reasons are only `DOUBLE_SIGN`, `INVALID_PROPOSAL`, `INVALID_SIGNATURE` and `MANUAL_REVIEW` (`ValidatorPenaltyRecord.hpp`). There is no downtime or missed-vote jailing, and `MANUAL_REVIEW` contradicts "no penalty without evidence".
@@ -328,7 +362,11 @@ contract is not wire-compatible with the current development runtime.
 **Goal:** implement the byte-level base defined in Phase 1. Every higher layer hashes, signs, and stores these bytes.
 
 - [ ] **2.1 · High · Implement the canonical binary encoding** (1.9) for all
-  14 kinds, all 13 transaction payloads and all 21 network message payloads.
+  14 kinds, all 13 transaction payloads, all five typed governance actions
+  and all 21 network message payloads. Enforce the closed 1.12 registry,
+  amount classes, nested action lengths and full payload consumption.
+  Include the signed `i128` proposer-priority state leaf and compact
+  transition record from 1.13.
   Enforce strict decoding and signature preimages on production, voting,
   replay, import, storage and sync together. Remove text serialization from
   every consensus hashing and signing path; keep text for diagnostics only.
@@ -435,13 +473,19 @@ contract is not wire-compatible with the current development runtime.
 
 - [ ] **3.10 · High · Validators do not enforce block limits.**
   `NetworkParameters::maxTransactionsPerBlock` (500 on testnet-candidate) is applied only by the local producer. Validators accept up to `ProtocolLimits::MAX_BLOCK_RECORDS` (10,000 records, 1 MiB) from any proposer.
-  *Fix:* enforce every limit from 1.10 in block validation.
+  *Fix:* enforce the byte, count, per-transaction, reserved user-work and
+  total resource limits from 1.10 in both block production and validation.
 
 - [ ] **3.11 · Medium · Amounts are signed.**
   `utils::Amount` is a signed 64-bit integer, so negative amounts can be represented anywhere.
   *Fix:* unsigned checked arithmetic (or 128-bit), and reject negative values at decode.
 
-- [ ] **3.12 · Medium · Implement resource metering** (1.10) in execution and the mempool: fee per resource unit, per-sender limits, and eviction by fee rate.
+- [ ] **3.12 · Medium · Implement resource metering** (1.10) in deterministic
+  execution, receipts, production, voting, replay and import. Recompute the
+  header price from the parent and historical parameters; replace the
+  development fee split with the v1 full burn and checked supply update.
+  Simulate units at mempool admission, apply per-sender quotas and evict by
+  fee rate. Verify worst-case mandatory epoch work fits the block budget.
 
 - [ ] **3.13 · Medium · Pruning is undefined on a real store.**
   *Fix:* implement archive and pruned modes with the proofs each mode must keep (open item in [sync, pruning and snapshots](development/sync-pruning-snapshots.md)).
@@ -452,6 +496,10 @@ contract is not wire-compatible with the current development runtime.
 
 - [ ] **3.15 · Medium · No storage migrations.**
   The docs require explicit, versioned, tested migrations, but only schema-version checks exist.
+  *Fix:* implement atomic, crash-recoverable storage migrations keyed by
+  finalized protocol version and rule-set hash. Persist old codec/migration
+  metadata for replay; verify input/output state roots, reject partial
+  application and rehearse restart at every write boundary before 7.1.
 
 - [ ] **3.16 · Critical · Bootstrap voting stake is synthesized rather than proven by locked coin lots.**
   `GenesisBuilder::build` floors each `bootstrapWeight` to `MIN_VALIDATOR_STAKE_RAW_UNITS` before registering its voting weight. The resulting registry entry is not a proof that distinct genesis coin lots of that amount were locked to that validator. Linear weights alone cannot establish a stake-based Byzantine bound without that backing.
@@ -502,8 +550,10 @@ contract is not wire-compatible with the current development runtime.
   one-to-one stake backing (3.16), prove the epoch transition and bounded
   churn rules of 1.4 against the dynamic-set fault model, implement the v1
   evidence-driven jail exception, BFT time (1.7), genesis-bound epoch and
-  block cadence (1.8), and proposer rule (1.13). Production, voting,
-  finalization, replay and import must share the same checked cadence rule.
+  block cadence (1.8), and the priority/fallback/rebase proposer rule (1.13).
+  Production, voting, finalization, replay and import must share the same
+  checked cadence and proposer state. Reject wrong-signature proposals and
+  state-root mismatches across heights and epoch boundaries.
 
 - [ ] **4.9 · High · Complete the evidence lifecycle.**
   `nodo/0.5` enforces a 21-epoch maximum age on evidence admission and
@@ -543,7 +593,10 @@ contract is not wire-compatible with the current development runtime.
 
 - [ ] **5.3 · Critical · Fast sync is not anchored to finality.**
   `FastSyncSnapshotVerifier` checks only the genesis id, the chain id, and that the snapshot matches a manifest supplied by the source peer. Nothing checks a quorum certificate for the snapshot height or a validator-set chain from genesis. `PersistentBlockStateSyncApplier::importSnapshot` is called only from tests.
-  *Fix:* state sync that verifies a light-client chain of QCs and validator-set transitions (or a weak-subjectivity checkpoint) up to the snapshot header, then downloads chunked state with proofs against the state root.
+  *Fix:* state sync that verifies a light-client chain of QCs and validator-set
+  transitions (or a weak-subjectivity checkpoint) up to the snapshot header,
+  then downloads chunked state with proofs against the state root, including
+  the full proposer-priority leaf required by 1.13.
 
 - [ ] **5.4 · High · Sync fetches one block per round trip.**
   `ProtocolLimits::MAX_PERSISTENT_SYNC_BLOCK_BATCH` is 1.
@@ -560,10 +613,14 @@ contract is not wire-compatible with the current development runtime.
   validator-set transition proofs, trusted checkpoints and bounded proof sizes.
 
 - [ ] **5.7 · Medium · Validator node protection is undefined.**
-  *Specify:* sentry and private-peer topologies, and how peer identity keys relate to validator keys and rotate (8.2).
+  *Specify:* sentry and private-peer topologies, how peer identity keys
+  relate to validator keys and rotate (8.2), and redundant proposer
+  connectivity/failover for the publicly predictable 1.13 schedule.
 
 - [ ] **5.8 · Medium · No adversarial network test suite.**
-  *Fix:* automate slowloris, oversized frames, per-type floods, eclipse attempts, reconnect storms and malformed handshakes against the devnet in CI.
+  *Fix:* automate slowloris, oversized frames, per-type floods, targeted
+  proposer disruption, eclipse attempts, reconnect storms and malformed
+  handshakes against the devnet in CI.
 
 **Exit gate:**
 - The adversarial suite passes.
@@ -615,7 +672,14 @@ contract is not wire-compatible with the current development runtime.
 
 **Goal:** on-chain decisions and rule changes that cannot bypass validation and can be executed safely on a live network.
 
-- [ ] **7.1 · Critical · Implement the upgrade mechanism** (1.11): height-activated rule sets, version signalling, replay with historical rules, and a coordinated upgrade procedure.
+- [ ] **7.1 · Critical · Implement the upgrade mechanism** (1.11): authorize
+  upgrade/cancel actions through snapshot-weight governance; persist the
+  authenticated schedule; verify active and next rule hashes on every header
+  and the old-rule boundary QC; dispatch the exact codec and state machine by
+  finalized height in production, sync, snapshot import and light clients;
+  retain historical codecs and evidence validation; halt signing on unknown
+  rules. Rehearse reproducible releases, deterministic migrations, rollback
+  refusal and cancellation on a staged testnet before v1 activation.
 
 - [ ] **7.2 · High · Governance rules are not final.**
   *Fix:* settle the voting-power source (a stake snapshot at proposal start), quorum, thresholds, voting period, timelock, cancellation and veto, and the emergency path. These are the open items in the [governance docs](governance/governance-overview.md).
@@ -713,7 +777,8 @@ contract is not wire-compatible with the current development runtime.
 
 These tracks start only if Phase 1 decided they are not needed at launch:
 
-- programmability (VM, metering, contract storage), if 1.12 deferred it;
+- optional programmability only through a later protocol version with a
+  complete VM, metering, contract-state and migration specification (1.12);
 - performance (parallel execution, larger validator sets with aggregated signatures).
 
 ---

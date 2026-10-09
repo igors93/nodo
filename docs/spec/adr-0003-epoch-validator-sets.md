@@ -43,6 +43,10 @@ top-K cap. The selected set must retain positive total voting weight.
 only at a change point. A lookup for an intermediate height returns the last
 snapshot at or before it; it cannot use a later registry. This avoids a full
 registry copy per block while retaining exact historical QC verification.
+The v1 boundary additionally rebases the authenticated proposer-priority
+vector onto the next frozen set under
+[ADR 0012](adr-0012-proposer-selection.md); it never recomputes an old
+height's proposer from the latest registry or priority state.
 
 ## Security boundary
 
